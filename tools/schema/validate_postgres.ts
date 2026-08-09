@@ -1,0 +1,501 @@
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+interface AuditValidation {
+  readonly status: string;
+  readonly source_tables: number;
+  readonly source_columns: number;
+  readonly audited_v3_tables: number;
+  readonly audited_v3_columns: number;
+  readonly explicit_indexes: number;
+  readonly foreign_keys: number;
+  readonly jsonb_fields: number;
+  readonly workspace_id_fields: number;
+  readonly table_mapping_rows: number;
+  readonly column_mapping_rows: number;
+  readonly field_catalog_rows: number;
+  readonly change_log_rows: number;
+  readonly deferred_foreign_keys: number;
+  readonly sha256: Readonly<Record<string, string>>;
+}
+
+interface LiveMetrics {
+  readonly tables: number;
+  readonly columns: number;
+  readonly foreign_keys: number;
+  readonly explicit_indexes: number;
+  readonly jsonb_fields: number;
+  readonly workspace_id_fields: number;
+  readonly forward_reference_foreign_keys: number;
+  readonly primary_keys: number;
+  readonly all_indexes: number;
+  readonly check_constraints: number;
+  readonly unique_constraints: number;
+}
+
+interface CommandOptions {
+  readonly quiet?: boolean;
+  readonly allowFailure?: boolean;
+}
+
+const DEFAULT_POSTGRES_IMAGE = "postgres:18.4-alpine3.23";
+const SCHEMA_DATABASE = "crm_schema_test";
+const ROLLBACK_DATABASE = "crm_rollback_test";
+const DATABASE_USER = "crm_test";
+
+const scriptDirectory = resolve(
+  fileURLToPath(new URL(".", import.meta.url)),
+);
+const repositoryRoot = resolve(scriptDirectory, "../..");
+const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v1");
+const validationPath = resolve(
+  schemaDirectory,
+  "personal_crm_schema_v3_validation.json",
+);
+
+function parsePostgresImage(args: readonly string[]): string {
+  let image = DEFAULT_POSTGRES_IMAGE;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--postgres-image") {
+      const value = args[index + 1];
+      if (value === undefined) {
+        throw new Error("--postgres-image requires a value");
+      }
+      image = value;
+      index += 1;
+      continue;
+    }
+    if (argument?.startsWith("--postgres-image=")) {
+      image = argument.slice("--postgres-image=".length);
+      continue;
+    }
+    if (argument === "--help") {
+      console.log(
+        "Usage: deno task test:schema [--postgres-image <official-image>]",
+      );
+      Deno.exit(0);
+    }
+    throw new Error(`Unknown argument: ${argument}`);
+  }
+
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]+$/.test(image)) {
+    throw new Error(`Invalid PostgreSQL image reference: ${image}`);
+  }
+
+  return image;
+}
+
+function decode(bytes: Uint8Array): string {
+  return new TextDecoder().decode(bytes).trim();
+}
+
+function formatFailure(
+  executable: string,
+  args: readonly string[],
+  code: number,
+  stdout: Uint8Array,
+  stderr: Uint8Array,
+): string {
+  return [
+    `Command failed (${code}): ${executable} ${args.join(" ")}`,
+    decode(stdout),
+    decode(stderr),
+  ].filter((line) => line.length > 0).join("\n");
+}
+
+async function sha256(path: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    await Deno.readFile(path),
+  );
+  return Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+async function verifyAuditArtifacts(
+  validation: AuditValidation,
+): Promise<void> {
+  if (validation.status !== "passed") {
+    throw new Error(`Audited validation status is ${validation.status}`);
+  }
+
+  for (const [filename, expectedHash] of Object.entries(validation.sha256)) {
+    const actualHash = await sha256(resolve(schemaDirectory, filename));
+    if (actualHash !== expectedHash) {
+      throw new Error(
+        `Audited artifact hash mismatch for ${filename}: ${actualHash}`,
+      );
+    }
+  }
+}
+
+function countCsvRows(path: string): Promise<number> {
+  return Deno.readTextFile(path).then((contents) => {
+    const lines = contents.trimEnd().split(/\r?\n/);
+    return Math.max(0, lines.length - 1);
+  });
+}
+
+function assertEqual(
+  label: string,
+  actual: number,
+  expected: number,
+): void {
+  if (actual !== expected) {
+    throw new Error(`${label}: expected ${expected}, got ${actual}`);
+  }
+}
+
+const postgresImage = parsePostgresImage(Deno.args);
+const projectName = `relationships-schema-${Deno.pid}-${Date.now()}`;
+const composePrefix = [
+  "compose",
+  "--file",
+  resolve(repositoryRoot, "compose.schema-test.yaml"),
+  "--project-name",
+  projectName,
+];
+
+async function runDocker(
+  args: readonly string[],
+  options: CommandOptions = {},
+): Promise<string> {
+  const command = new Deno.Command("docker", {
+    args: [...args],
+    cwd: repositoryRoot,
+    env: { POSTGRES_IMAGE: postgresImage },
+    stdin: "null",
+    stdout: "piped",
+    stderr: "piped",
+  });
+  const output = await command.output();
+  const stdout = decode(output.stdout);
+  const stderr = decode(output.stderr);
+
+  if (!output.success && !options.allowFailure) {
+    throw new Error(
+      formatFailure("docker", args, output.code, output.stdout, output.stderr),
+    );
+  }
+  if (!options.quiet) {
+    if (stdout.length > 0) console.log(stdout);
+    if (stderr.length > 0) console.error(stderr);
+  }
+  return stdout;
+}
+
+function runCompose(
+  args: readonly string[],
+  options: CommandOptions = {},
+): Promise<string> {
+  return runDocker([...composePrefix, ...args], options);
+}
+
+function runPsql(
+  database: string,
+  args: readonly string[],
+  options: CommandOptions = {},
+): Promise<string> {
+  return runCompose([
+    "exec",
+    "-T",
+    "postgres",
+    "psql",
+    "-X",
+    "-q",
+    "-v",
+    "ON_ERROR_STOP=1",
+    "-U",
+    DATABASE_USER,
+    "-d",
+    database,
+    ...args,
+  ], options);
+}
+
+async function copyFixture(
+  repositoryRelativePath: string,
+  containerPath: string,
+): Promise<void> {
+  await runCompose([
+    "cp",
+    repositoryRelativePath,
+    `postgres:${containerPath}`,
+  ], { quiet: true });
+}
+
+async function readAuditValidation(): Promise<AuditValidation> {
+  const parsed: unknown = JSON.parse(await Deno.readTextFile(validationPath));
+  if (typeof parsed !== "object" || parsed === null || !("sha256" in parsed)) {
+    throw new Error("Invalid audited validation JSON");
+  }
+  return parsed as AuditValidation;
+}
+
+async function readLiveMetrics(): Promise<LiveMetrics> {
+  const query = `
+    SELECT json_build_object(
+      'tables', (SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname = 'crm'),
+      'columns', (SELECT count(*) FROM information_schema.columns WHERE table_schema = 'crm'),
+      'foreign_keys', (SELECT count(*) FROM pg_catalog.pg_constraint WHERE connamespace = 'crm'::regnamespace AND contype = 'f'),
+      'explicit_indexes', (
+        SELECT count(*)
+        FROM pg_catalog.pg_class AS indexes
+        JOIN pg_catalog.pg_namespace AS namespaces ON namespaces.oid = indexes.relnamespace
+        WHERE namespaces.nspname = 'crm'
+          AND indexes.relkind = 'i'
+          AND NOT EXISTS (
+            SELECT 1 FROM pg_catalog.pg_constraint AS constraints
+            WHERE constraints.conindid = indexes.oid
+          )
+      ),
+      'jsonb_fields', (SELECT count(*) FROM information_schema.columns WHERE table_schema = 'crm' AND data_type = 'jsonb'),
+      'workspace_id_fields', (SELECT count(*) FROM information_schema.columns WHERE table_schema = 'crm' AND column_name = 'workspace_id'),
+      'forward_reference_foreign_keys', (
+        SELECT count(*) FROM pg_catalog.pg_constraint
+        WHERE connamespace = 'crm'::regnamespace
+          AND contype = 'f'
+          AND conname IN ('workspace_members_self_person_fk', 'person_first_meetings_location_fk')
+      ),
+      'primary_keys', (SELECT count(*) FROM pg_catalog.pg_constraint WHERE connamespace = 'crm'::regnamespace AND contype = 'p'),
+      'all_indexes', (SELECT count(*) FROM pg_catalog.pg_indexes WHERE schemaname = 'crm'),
+      'check_constraints', (SELECT count(*) FROM pg_catalog.pg_constraint WHERE connamespace = 'crm'::regnamespace AND contype = 'c'),
+      'unique_constraints', (SELECT count(*) FROM pg_catalog.pg_constraint WHERE connamespace = 'crm'::regnamespace AND contype = 'u')
+    )::text;
+  `;
+  const output = await runPsql(
+    SCHEMA_DATABASE,
+    ["-A", "-t", "-c", query],
+    { quiet: true },
+  );
+  return JSON.parse(output) as LiveMetrics;
+}
+
+async function assertAuditCounts(validation: AuditValidation): Promise<void> {
+  assertEqual(
+    "table mapping rows",
+    await countCsvRows(resolve(schemaDirectory, "monica_table_mapping_v3.csv")),
+    validation.table_mapping_rows,
+  );
+  assertEqual(
+    "column mapping rows",
+    await countCsvRows(
+      resolve(schemaDirectory, "monica_column_mapping_v3.csv"),
+    ),
+    validation.column_mapping_rows,
+  );
+  assertEqual(
+    "field catalog rows",
+    await countCsvRows(
+      resolve(schemaDirectory, "personal_crm_field_catalog_v3.csv"),
+    ),
+    validation.field_catalog_rows,
+  );
+  assertEqual(
+    "change log rows",
+    await countCsvRows(
+      resolve(schemaDirectory, "personal_crm_v1_to_v3_changes.csv"),
+    ),
+    validation.change_log_rows,
+  );
+}
+
+async function applySchema(database: string): Promise<void> {
+  await runPsql(database, [
+    "--single-transaction",
+    "-f",
+    "/tmp/personal_crm_rewrite_schema_v3.sql",
+  ], { quiet: true });
+}
+
+async function assertRollback(): Promise<void> {
+  await runPsql("postgres", [
+    "-c",
+    `CREATE DATABASE ${ROLLBACK_DATABASE}`,
+  ], { quiet: true });
+
+  try {
+    await runPsql(ROLLBACK_DATABASE, [
+      "-c",
+      "BEGIN",
+      "-f",
+      "/tmp/personal_crm_rewrite_schema_v3.sql",
+      "-c",
+      "ROLLBACK",
+    ], { quiet: true });
+
+    const remaining = await runPsql(ROLLBACK_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname = 'crm';",
+    ], { quiet: true });
+    if (remaining !== "0") {
+      throw new Error(
+        `transaction rollback left the crm schema behind: ${remaining}`,
+      );
+    }
+  } finally {
+    await runPsql("postgres", [
+      "-c",
+      `DROP DATABASE IF EXISTS ${ROLLBACK_DATABASE}`,
+    ], { quiet: true });
+  }
+}
+
+async function main(): Promise<void> {
+  const validation = await readAuditValidation();
+  await verifyAuditArtifacts(validation);
+  await assertAuditCounts(validation);
+
+  const dockerVersion = await runDocker(
+    ["info", "--format", "{{.ServerVersion}}"],
+    { quiet: true },
+  );
+  console.log(`Docker Engine ${dockerVersion}`);
+  console.log(`Testing ${postgresImage}`);
+
+  let started = false;
+  try {
+    await runCompose(["up", "--detach", "--wait", "--wait-timeout", "90"]);
+    started = true;
+
+    await copyFixture(
+      "personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql",
+      "/tmp/personal_crm_rewrite_schema_v3.sql",
+    );
+    await copyFixture(
+      "personal-crm-schema/v1/personal_crm_field_catalog_v3.csv",
+      "/tmp/personal_crm_field_catalog_v3.csv",
+    );
+    await copyFixture(
+      "tools/schema/assert_schema.sql",
+      "/tmp/assert_schema.sql",
+    );
+    await copyFixture(
+      "tools/schema/assert_behavior.sql",
+      "/tmp/assert_behavior.sql",
+    );
+
+    const serverVersion = await runPsql(
+      SCHEMA_DATABASE,
+      ["-A", "-t", "-c", "SHOW server_version;"],
+      { quiet: true },
+    );
+    console.log(`PostgreSQL ${serverVersion}`);
+
+    await assertRollback();
+    console.log("PASS atomic apply rollback");
+
+    await applySchema(SCHEMA_DATABASE);
+    console.log("PASS clean schema apply");
+
+    const metrics = await readLiveMetrics();
+    assertEqual("live tables", metrics.tables, validation.audited_v3_tables);
+    assertEqual("live columns", metrics.columns, validation.audited_v3_columns);
+    assertEqual(
+      "live foreign keys",
+      metrics.foreign_keys,
+      validation.foreign_keys,
+    );
+    assertEqual(
+      "live explicit indexes",
+      metrics.explicit_indexes,
+      validation.explicit_indexes,
+    );
+    assertEqual(
+      "live JSONB fields",
+      metrics.jsonb_fields,
+      validation.jsonb_fields,
+    );
+    assertEqual(
+      "live workspace_id fields",
+      metrics.workspace_id_fields,
+      validation.workspace_id_fields,
+    );
+    assertEqual(
+      "live forward-reference foreign keys",
+      metrics.forward_reference_foreign_keys,
+      validation.deferred_foreign_keys,
+    );
+    assertEqual(
+      "one primary key per table",
+      metrics.primary_keys,
+      metrics.tables,
+    );
+
+    await runPsql(
+      SCHEMA_DATABASE,
+      ["-f", "/tmp/assert_schema.sql"],
+      { quiet: true },
+    );
+    console.log("PASS catalog and field-catalog assertions");
+
+    await runPsql(
+      SCHEMA_DATABASE,
+      ["-f", "/tmp/assert_behavior.sql"],
+      { quiet: true },
+    );
+    console.log("PASS database behavior assertions");
+
+    await runPsql(
+      SCHEMA_DATABASE,
+      ["-c", "DROP SCHEMA crm CASCADE"],
+      { quiet: true },
+    );
+    const remainingTables = await runPsql(SCHEMA_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      "SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname = 'crm';",
+    ], { quiet: true });
+    if (remainingTables !== "0") {
+      throw new Error(`schema teardown left tables behind: ${remainingTables}`);
+    }
+    console.log("PASS schema teardown");
+
+    await applySchema(SCHEMA_DATABASE);
+    const reappliedMetrics = await readLiveMetrics();
+    assertEqual(
+      "reapplied tables",
+      reappliedMetrics.tables,
+      validation.audited_v3_tables,
+    );
+    assertEqual(
+      "reapplied columns",
+      reappliedMetrics.columns,
+      validation.audited_v3_columns,
+    );
+    console.log("PASS clean reapply after teardown");
+
+    console.log(JSON.stringify(
+      {
+        postgresImage,
+        serverVersion,
+        sourceTables: validation.source_tables,
+        sourceColumns: validation.source_columns,
+        ...metrics,
+      },
+      null,
+      2,
+    ));
+  } catch (error) {
+    if (started) {
+      await runCompose(["logs", "--no-color", "postgres"], {
+        allowFailure: true,
+      });
+    }
+    throw error;
+  } finally {
+    await runCompose(
+      ["down", "--volumes", "--remove-orphans", "--timeout", "10"],
+      { allowFailure: true, quiet: true },
+    );
+  }
+}
+
+await main();

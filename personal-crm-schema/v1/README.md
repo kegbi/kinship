@@ -27,8 +27,10 @@ The SQL, specification, field catalog, mappings, audit, and validation report fo
 
 If the SQL, specification, field catalog, or mappings disagree, stop and resolve the inconsistency instead of choosing one silently.
 
-## Known validation gap
+## Live PostgreSQL validation
 
-The accepted bundle passed structural cross-validation, but its DDL was not executed against a live PostgreSQL server. Before production migrations are accepted, CI must prove clean apply, teardown or rollback, schema introspection, cross-workspace rejection, import idempotency, partial-date behavior, reminder regeneration, missing-file handling, and non-activation of legacy credentials.
+After the external audit was accepted, the unchanged audited DDL passed the repository's live test harness on PostgreSQL 18.4 and 17.10. The harness verifies audited hashes, atomic apply and rollback, teardown and reapply, live catalog agreement, field-catalog membership, constraints, partial-date shapes, import identity uniqueness, reminder occurrence uniqueness, and missing-file representation. See [../../docs/validation/postgresql-schema-v1.md](../../docs/validation/postgresql-schema-v1.md) and run `deno task test:schema:matrix` from the repository root.
+
+The historical validation JSON remains unchanged and correctly describes the external audit environment, where PostgreSQL execution was unavailable. Cross-workspace authorization, full importer behavior, time-zone-aware reminder generation, object-store failures, and legacy credential activation are application-level concerns and remain mandatory integration tests once those implementations exist.
 
 One Monica field remains an explicit product-policy decision: `accounts.legacy_free_plan_unlimited_contacts`. It is retained in import reporting and is not part of the canonical CRM domain.

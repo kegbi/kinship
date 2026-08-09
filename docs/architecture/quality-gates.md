@@ -94,6 +94,13 @@ substitute for the 100% coverage gate.
 
 ## Required Schema Tests
 
+The baseline database harness is
+[`tools/schema/validate_postgres.ts`](../../tools/schema/validate_postgres.ts).
+Run `deno task test:schema:matrix` for the pinned PostgreSQL 18 primary image
+and PostgreSQL 17 compatibility image. Its current verified result is recorded
+in
+[`docs/validation/postgresql-schema-v1.md`](../validation/postgresql-schema-v1.md).
+
 Before implementation migrations are accepted, CI must prove all requirements
 already named in `AGENTS.md`, including:
 
@@ -111,6 +118,12 @@ already named in `AGENTS.md`, including:
 
 Run these tests against PostgreSQL, not an in-memory substitute or SQLite
 compatibility layer.
+
+The baseline harness covers the database-enforceable subset now. Generated
+Kysely drift, cross-workspace application rejection, complete importer
+semantics, time-zone-aware reminder generation, object-store behavior, and
+credential activation require application code and must be added without
+weakening the existing database checks.
 
 ## Deno Dependency and Security Gates
 

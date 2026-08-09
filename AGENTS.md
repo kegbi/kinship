@@ -89,8 +89,17 @@ Monica mappings in each schema version and
 describe import compatibility only; they must not be used to reintroduce
 Monica-specific storage choices into canonical product tables.
 
-The current DDL has been structurally cross-validated but not executed against
-PostgreSQL. Before accepting implementation migrations, CI must cover clean
-apply, teardown or rollback, schema introspection, cross-workspace negative
-cases, import idempotency, partial dates, reminder regeneration, missing
-attachments, and legacy credential non-activation.
+The DDL has passed the repository's live PostgreSQL validation matrix on
+PostgreSQL 18.4 and 17.10. See
+[docs/validation/postgresql-schema-v1.md](docs/validation/postgresql-schema-v1.md)
+and rerun `deno task test:schema:matrix` after any schema-test or toolchain
+change. The external audit JSON remains immutable and still records that live
+execution was unavailable in the audit environment.
+
+The current database harness proves clean apply, transactional rollback,
+teardown and reapply, exact catalog shape, constraint behavior, partial-date
+storage shapes, import identity-map idempotency, reminder occurrence uniqueness,
+and missing-file representation. Before accepting application migrations and use
+cases, CI must additionally cover cross-workspace rejection, full import
+idempotency, time-zone-aware reminder regeneration, object-store failure
+handling, and legacy credential non-activation through the application boundary.

@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:18.4-alpine3.23}
+    environment:
+      POSTGRES_DB: crm_schema_test
+      POSTGRES_USER: crm_test
+      POSTGRES_PASSWORD: crm_test_password
+    tmpfs:
+      - /var/lib/postgresql
+    shm_size: 128mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm_test -d crm_schema_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 2s
+    stop_grace_period: 10s
