@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "useUnknownInCatchVariables": true,
+    "verbatimModuleSyntax": true
+  },
+  "fmt": {
+    "lineWidth": 80,
+    "include": [
+      "AGENTS.md",
+      "compose.schema-test.yaml",
+      "deno.json",
+      "docs/",
+      "tools/"
+    ]
+  },
+  "lint": {
+    "include": ["tools/"],
+    "rules": {
+      "tags": ["recommended"],
+      "include": ["eqeqeq"]
+    }
+  },
+  "tasks": {
+    "fmt": "deno fmt",
+    "fmt:check": "deno fmt --check",
+    "lint": "deno lint",
+    "check": "deno check tools/schema/validate_postgres.ts",
+    "test:schema": "deno run --allow-read=personal-crm-schema/v1 --allow-run=docker tools/schema/validate_postgres.ts",
+    "test:schema:compat": "deno task test:schema --postgres-image postgres:17.10-alpine3.23",
+    "test:schema:matrix": "deno task test:schema && deno task test:schema:compat"
+  }
+}
