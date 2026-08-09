@@ -1,0 +1,656 @@
+schemaVersion: 1
+decisionStatus: accepted
+defaultDeliveryStatus: planned
+
+testPolicy:
+  idAnnotation: flow
+  requiredRunner: playwright
+  requiredBrowsers: [chromium, firefox, webkit]
+  accessibilityOnRepresentativeStates: true
+  keyboardOnlyOnPrimaryPaths: true
+
+flows:
+  - id: AUTH-001
+    title: Create the first workspace
+    priority: P0
+    actor: anonymous-person
+    trigger: The person chooses to create an account.
+    preconditions: [registration-is-available]
+    steps:
+      - Submit identity and workspace information.
+      - Verify the email address when required.
+      - Create the owner membership atomically.
+      - Enter the authenticated application.
+    alternateOutcomes: [
+      duplicate-email,
+      invalid-or-expired-verification,
+      creation-rollback,
+    ]
+    result: One user, workspace, and active owner membership exist.
+    auditEffect: workspace-created
+    pageIds: [auth.sign-up, auth.verify-email, app.today]
+    moduleIds: [identity, workspaces]
+    permissions: [registration.create]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: AUTH-002
+    title: Invite and add a workspace member
+    priority: P0
+    actor: workspace-admin
+    trigger: An owner or admin invites another person.
+    preconditions: [active-admin-membership]
+    steps:
+      - Create a single-use invitation.
+      - Deliver or expose the invitation link.
+      - Authenticate or register the invitee.
+      - Accept the invitation into the intended workspace.
+    alternateOutcomes: [
+      expired-token,
+      revoked-token,
+      already-a-member,
+      wrong-authenticated-user,
+    ]
+    result: The invitee has one active membership and the invitation cannot be reused.
+    auditEffect: workspace-member-joined
+    pageIds: [settings.members, invitation.accept]
+    moduleIds: [identity, workspaces]
+    permissions: [workspace.members.invite]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: AUTH-003
+    title: Sign in through password and MFA challenges
+    priority: P0
+    actor: registered-person
+    trigger: The person submits credentials.
+    preconditions: [active-credential]
+    steps:
+      - Validate the primary credential without revealing account existence.
+      - Require the configured second factor.
+      - Rotate and persist the authenticated session.
+      - Enter the selected active workspace.
+    alternateOutcomes: [
+      invalid-credential,
+      invalid-mfa,
+      recovery-code,
+      suspended-membership,
+      expired-reset,
+    ]
+    result: A revocable session exists only after all required challenges pass.
+    auditEffect: authentication-succeeded-or-failed
+    pageIds: [
+      auth.sign-in,
+      auth.mfa,
+      auth.recover,
+      auth.reset,
+      settings.security,
+    ]
+    moduleIds: [identity, workspaces]
+    permissions: [session.create]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: AUTH-004
+    title: Manage preferences and sessions
+    priority: P0
+    actor: active-member
+    trigger: The member changes a preference or revokes a session.
+    preconditions: [authenticated-session]
+    steps:
+      - Load only the current member's preferences and sessions.
+      - Save a validated preference or revoke the selected session.
+      - Apply the change without affecting another member.
+    alternateOutcomes: [
+      current-session-revoked,
+      stale-session,
+      forbidden-session-id,
+    ]
+    result: Member-owned state changes and revoked credentials stop working.
+    auditEffect: member-security-or-preference-updated
+    pageIds: [settings.profile, settings.security]
+    moduleIds: [identity, workspaces]
+    permissions: [member.self.manage]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: WORKSPACE-001
+    title: Manage workspace settings and members
+    priority: P1
+    actor: workspace-admin
+    trigger: An administrator changes workspace configuration.
+    preconditions: [active-admin-membership]
+    steps:
+      - Load the current workspace configuration.
+      - Apply a role-appropriate validated change.
+      - Keep the last owner and tenant boundary protected.
+    alternateOutcomes: [
+      member-forbidden,
+      last-owner-removal,
+      cross-workspace-member,
+    ]
+    result: Only the intended workspace configuration changes.
+    auditEffect: workspace-configuration-updated
+    pageIds: [settings.workspace, settings.members]
+    moduleIds: [workspaces]
+    permissions: [workspace.manage]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: PEOPLE-001
+    title: Create a person
+    priority: P0
+    actor: crm-writer
+    trigger: The member chooses to add a person.
+    preconditions: [active-membership]
+    steps:
+      - Enter the minimal known identity data.
+      - Preserve unknown and partial values explicitly.
+      - Create the workspace-owned person.
+      - Open the complete person workspace.
+    alternateOutcomes: [
+      validation-error,
+      possible-duplicate,
+      save-and-add-another,
+    ]
+    result: A new person exists only in the active workspace.
+    auditEffect: person-created
+    pageIds: [people.create, people.profile]
+    moduleIds: [people]
+    permissions: [people.write]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: PEOPLE-002
+    title: Find a person
+    priority: P0
+    actor: active-member
+    trigger: The member searches, filters, sorts, or browses people.
+    preconditions: [active-membership]
+    steps:
+      - Query only the active workspace.
+      - Apply search, tag, archive, and sort criteria.
+      - Open the selected person workspace.
+    alternateOutcomes: [empty-result, archived-result, not-found, stale-cursor]
+    result: Results never reveal another workspace's people.
+    auditEffect: none
+    pageIds: [people.index, people.archived, people.profile]
+    moduleIds: [people]
+    permissions: [people.read]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: PEOPLE-003
+    title: Read the complete person workspace
+    priority: P0
+    actor: active-member
+    trigger: The member opens a person.
+    preconditions: [person-in-active-workspace]
+    steps:
+      - Load the identity and due-information summary first.
+      - Compose enabled person sections through approved read models.
+      - Load heavy sections independently without losing page context.
+      - Deep-link and focus a requested section when present.
+    alternateOutcomes: [
+      archived-read-only,
+      partial-person-reconciliation,
+      section-error,
+      person-not-found,
+    ]
+    result: Nearly all person-specific information is available on one canonical route.
+    auditEffect: none
+    pageIds: [people.profile]
+    moduleIds: [
+      people,
+      relationships,
+      interactions,
+      journal,
+      planning,
+      files,
+      gifts,
+    ]
+    permissions: [people.read]
+    testLayers: [integration, contract, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: PEOPLE-004
+    title: Edit, archive, restore, or delete a person
+    priority: P0
+    actor: crm-writer
+    trigger: The member invokes a person lifecycle action.
+    preconditions: [person-in-active-workspace]
+    steps:
+      - Check the action-specific permission and current lifecycle state.
+      - Apply the state transition atomically.
+      - Refresh the profile and relevant people list.
+    alternateOutcomes: [
+      archived-write-rejected,
+      delete-confirmation-cancelled,
+      cross-workspace-id,
+    ]
+    result: The lifecycle state is explicit and dependent records follow canonical policy.
+    auditEffect: person-updated-archived-restored-or-deleted
+    pageIds: [people.profile, people.index, people.archived]
+    moduleIds: [people]
+    permissions: [people.write, people.delete]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: PEOPLE-005
+    title: Record important and partial dates
+    priority: P0
+    actor: crm-writer
+    trigger: The member records a birthday, first meeting, death, or custom date.
+    preconditions: [person-in-active-workspace]
+    steps:
+      - Select known components and explicit precision.
+      - Reject contradictory components.
+      - Persist the partial date without invented values.
+      - Regenerate associated future reminder state when required.
+    alternateOutcomes: [
+      unknown-year,
+      month-only,
+      approximate-year,
+      invalid-calendar-date,
+    ]
+    result: Display and scheduling preserve the exact stated precision.
+    auditEffect: person-date-updated
+    pageIds: [people.profile]
+    moduleIds: [people, planning, journal]
+    permissions: [people.write]
+    testLayers: [unit, integration, schema, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: PEOPLE-006
+    title: Maintain person profile facts and enabled sections
+    priority: P1
+    actor: crm-writer
+    trigger: The member edits contact methods, addresses, work, tags, pets, or profile modules.
+    preconditions: [active-membership]
+    steps:
+      - Validate the owning workspace vocabulary and target person.
+      - Apply the local profile change through its owning use case.
+      - Keep hidden-module data intact.
+      - Refresh only the affected profile section.
+    alternateOutcomes: [
+      custom-type-disabled,
+      hidden-section,
+      cross-workspace-link,
+    ]
+    result: Profile facts remain available from the single person workspace.
+    auditEffect: person-profile-fact-or-workspace-module-updated
+    pageIds: [people.profile, settings.personalization]
+    moduleIds: [people, workspaces]
+    permissions: [people.write, workspace.personalization.manage]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: RELATIONSHIP-001
+    title: Create or change a relationship between people
+    priority: P0
+    actor: crm-writer
+    trigger: The member edits a relationship from a person workspace.
+    preconditions: [source-person-in-active-workspace]
+    steps:
+      - Select an existing person or create a new related person.
+      - Select a workspace relationship type.
+      - Validate both endpoints belong to the active workspace.
+      - Create or update the directional relationship and inverse display.
+    alternateOutcomes: [
+      self-link-rejected,
+      duplicate-edge,
+      cross-workspace-target,
+      unlink-only,
+    ]
+    result: Both person workspaces show a consistent relationship graph.
+    auditEffect: relationship-created-updated-or-removed
+    pageIds: [people.profile]
+    moduleIds: [people, relationships, workspaces]
+    permissions: [relationships.write]
+    testLayers: [unit, integration, schema, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: INTERACTION-001
+    title: Log and review an activity or note
+    priority: P0
+    actor: crm-writer
+    trigger: The member records an interaction from quick capture or a person workspace.
+    preconditions: [active-membership]
+    steps:
+      - Select participants and the actual occurrence time.
+      - Add optional category, details, and emotions.
+      - Persist the interaction and its participants atomically.
+      - Refresh person history and Today projections.
+    alternateOutcomes: [
+      multi-person-activity,
+      note-favorited,
+      cross-workspace-participant,
+    ]
+    result: The event is visible from every valid participant profile and relevant projection.
+    auditEffect: interaction-or-note-created
+    pageIds: [people.profile, app.today]
+    moduleIds: [people, interactions]
+    permissions: [interactions.write]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: INTERACTION-002
+    title: Log a call or conversation
+    priority: P1
+    actor: crm-writer
+    trigger: The member records communication with a person.
+    preconditions: [person-in-active-workspace]
+    steps:
+      - Select the channel, direction, participants, and occurrence time.
+      - Record optional messages, details, and emotions.
+      - Persist the communication in the active workspace.
+      - Update the person history and last-contact projection.
+    alternateOutcomes: [
+      unknown-direction,
+      multiple-messages,
+      invalid-contact-method,
+    ]
+    result: Communication history remains embedded in the person workspace.
+    auditEffect: communication-created
+    pageIds: [people.profile]
+    moduleIds: [people, interactions]
+    permissions: [interactions.write]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: PLANNING-001
+    title: Create and complete a task
+    priority: P0
+    actor: crm-writer
+    trigger: The member creates or changes a task.
+    preconditions: [active-membership]
+    steps:
+      - Create an account-wide or person-linked task.
+      - Display it in the relevant person workspace and global task list.
+      - Complete or reopen it idempotently.
+    alternateOutcomes: [
+      no-person,
+      archived-person-read-only,
+      repeated-completion,
+    ]
+    result: Person and workspace task projections agree.
+    auditEffect: task-created-or-state-changed
+    pageIds: [people.profile, tasks.index, app.today]
+    moduleIds: [people, planning]
+    permissions: [tasks.write]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: PLANNING-002
+    title: Schedule and deliver a reminder
+    priority: P0
+    actor: crm-writer
+    trigger: The member creates a reminder or stay-in-touch cadence.
+    preconditions: [active-membership, valid-member-timezone]
+    steps:
+      - Save the definition and recurrence in calendar terms.
+      - Generate unique future occurrences.
+      - Claim a due occurrence from the worker.
+      - Deliver once or record a retry-safe failure.
+      - Display the next state on Today and the person workspace.
+    alternateOutcomes: [
+      daylight-saving-transition,
+      duplicate-worker,
+      provider-timeout,
+      definition-disabled,
+    ]
+    result: Occurrences are deterministic, observable, and never duplicated by retry.
+    auditEffect: reminder-created-generated-delivered-or-failed
+    pageIds: [people.profile, app.today]
+    moduleIds: [people, planning, operations]
+    permissions: [reminders.write, reminder-delivery.execute]
+    testLayers: [unit, integration, schema, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: FILES-001
+    title: Attach and retrieve a person file
+    priority: P0
+    actor: crm-writer
+    trigger: The member uploads or opens a document or photo.
+    preconditions: [person-in-active-workspace, storage-available]
+    steps:
+      - Validate size, media type, and ownership before storage.
+      - Persist metadata and the typed person link.
+      - Retrieve through an authorized opaque object reference.
+      - Preserve an explicit state if bytes are missing or quarantined.
+    alternateOutcomes: [
+      storage-limit,
+      rejected-media,
+      missing-object,
+      quarantined-object,
+      cross-workspace-file,
+    ]
+    result: Metadata and object state stay consistent and tenant-safe.
+    auditEffect: file-uploaded-read-or-removed
+    pageIds: [people.profile]
+    moduleIds: [people, files]
+    permissions: [files.write, files.read]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: GIFTS-001
+    title: Manage gifts and debts for a person
+    priority: P1
+    actor: crm-writer
+    trigger: The member records a gift idea/history item or debt.
+    preconditions: [person-in-active-workspace]
+    steps:
+      - Select the record type, direction/status, currency, and optional amount.
+      - Validate any recipient or attachment in the active workspace.
+      - Save and display the item inside the person workspace.
+      - Transition gift or debt state without losing history.
+    alternateOutcomes: [
+      unknown-amount,
+      no-recipient,
+      missing-attachment,
+      invalid-status-transition,
+    ]
+    result: Practical relationship details remain person-centered.
+    auditEffect: gift-or-debt-created-or-updated
+    pageIds: [people.profile]
+    moduleIds: [people, gifts, files]
+    permissions: [gifts.write]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: JOURNAL-001
+    title: Maintain the personal journal
+    priority: P1
+    actor: active-member
+    trigger: The member adds, reads, edits, or removes a journal item or day rating.
+    preconditions: [active-membership]
+    steps:
+      - Select a calendar date and item type.
+      - Save text, rating, or an allowed linked activity.
+      - Display the chronological journal without crossing workspaces.
+    alternateOutcomes: [
+      partial-linked-event,
+      deleted-linked-activity,
+      same-day-rating-update,
+    ]
+    result: The journal preserves ordered personal history.
+    auditEffect: journal-item-created-updated-or-removed
+    pageIds: [journal.index, journal.item, people.profile]
+    moduleIds: [journal, interactions, people]
+    permissions: [journal.write]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: IMPORT-001
+    title: Import Monica data safely and idempotently
+    priority: P0
+    actor: data-admin
+    trigger: The administrator uploads a supported Monica export.
+    preconditions: [active-admin-membership]
+    steps:
+      - Detect and parse the bounded source format into staging.
+      - Produce a dry-run report with counts, orphans, unsupported data, and missing files.
+      - Commit only after explicit confirmation and complete validation.
+      - Re-run the same source without duplicating canonical entities.
+      - Keep all legacy credentials inactive.
+    alternateOutcomes: [
+      malformed-source,
+      orphaned-reference,
+      missing-attachment,
+      cancelled-dry-run,
+      partial-failure,
+    ]
+    result: The import is atomic, diagnosable, tenant-safe, and idempotent.
+    auditEffect: import-started-validated-committed-or-failed
+    pageIds: [settings.import, settings.import-report]
+    moduleIds: [
+      import-export,
+      identity,
+      workspaces,
+      people,
+      interactions,
+      journal,
+      planning,
+      relationships,
+      files,
+      gifts,
+      integrations,
+    ]
+    permissions: [data.import]
+    testLayers: [unit, integration, schema, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: EXPORT-001
+    title: Export workspace or person data
+    priority: P0
+    actor: data-admin
+    trigger: The administrator requests a portable export or a member exports a vCard.
+    preconditions: [active-membership]
+    steps:
+      - Authorize the requested scope.
+      - Build a versioned manifest with row and attachment checksums.
+      - Complete the resumable export job.
+      - Download through a short-lived authorized reference.
+    alternateOutcomes: [
+      missing-attachment,
+      expired-download,
+      cancelled-job,
+      member-vcard-only,
+    ]
+    result: The export is portable, complete, and does not leak secrets.
+    auditEffect: export-requested-completed-or-downloaded
+    pageIds: [settings.export, people.profile]
+    moduleIds: [import-export, people, files]
+    permissions: [data.export, people.vcard.export]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: API-001
+    title: Create and revoke an API token
+    priority: P2
+    actor: workspace-admin
+    trigger: The administrator manages programmatic access.
+    preconditions: [active-admin-membership]
+    steps:
+      - Select explicit scopes and an optional expiry.
+      - Display the secret exactly once.
+      - Store only the protected verifier representation.
+      - Revoke the token and reject subsequent use.
+    alternateOutcomes: [invalid-scope, expired-token, revoked-token]
+    result: Programmatic access is scoped, auditable, and revocable.
+    auditEffect: api-token-created-or-revoked
+    pageIds: [settings.api-access]
+    moduleIds: [api-access, workspaces]
+    permissions: [api-tokens.manage]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: INTEGRATION-001
+    title: Configure and synchronize DAV
+    priority: P2
+    actor: workspace-admin
+    trigger: The administrator enables DAV synchronization.
+    preconditions: [integration-module-enabled]
+    steps:
+      - Configure a local or subscribed address book.
+      - Synchronize contacts and tasks through adapter-owned state.
+      - Resolve retries and conflicts without polluting person records.
+      - Disable the integration without deleting core CRM data.
+    alternateOutcomes: [
+      remote-auth-failure,
+      etag-conflict,
+      partial-sync,
+      integration-disabled,
+    ]
+    result: Optional integration state remains isolated and recoverable.
+    auditEffect: integration-configured-synchronized-or-failed
+    pageIds: [settings.integrations]
+    moduleIds: [integrations, people, planning]
+    permissions: [integrations.manage]
+    testLayers: [unit, adapter-contract, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: GOVERNANCE-001
+    title: Review and accept a legal document
+    priority: P1
+    actor: authenticated-person
+    trigger: A required legal document has a new applicable version.
+    preconditions: [authenticated-session]
+    steps:
+      - Display the exact immutable document version.
+      - Record explicit acceptance with actor and time.
+      - Continue only when required policy is satisfied.
+    alternateOutcomes: [
+      document-not-required,
+      acceptance-declined,
+      superseded-version,
+    ]
+    result: Acceptance is immutable and attributable.
+    auditEffect: legal-document-accepted
+    pageIds: [legal.privacy, legal.terms, compliance.accept]
+    moduleIds: [governance, identity]
+    permissions: [legal.accept]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: GOVERNANCE-002
+    title: Review person audit history
+    priority: P1
+    actor: audit-reader
+    trigger: An authorized member opens audit history.
+    preconditions: [person-in-active-workspace]
+    steps:
+      - Authorize audit access separately from ordinary person read access.
+      - Return an append-oriented, redacted history for the selected person.
+      - Paginate without changing historical ordering.
+    alternateOutcomes: [
+      member-forbidden,
+      redacted-sensitive-value,
+      cross-workspace-person,
+    ]
+    result: Authorized users can explain changes without exposing secrets.
+    auditEffect: none
+    pageIds: [people.audit, people.profile]
+    moduleIds: [governance, people]
+    permissions: [audit.read]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: BILLING-001
+    title: Manage optional workspace billing
+    priority: P2
+    actor: workspace-owner
+    trigger: The owner changes a subscription or retrieves an invoice.
+    preconditions: [billing-module-enabled, active-owner-membership]
+    steps:
+      - Create or update provider-agnostic billing state.
+      - Complete provider confirmation through an adapter.
+      - Reflect entitlement without coupling core CRM modules to billing internals.
+    alternateOutcomes: [payment-required, provider-timeout, module-disabled]
+    result: Billing remains optional and cannot corrupt CRM data.
+    auditEffect: billing-state-updated
+    pageIds: [settings.billing]
+    moduleIds: [billing, workspaces]
+    permissions: [billing.manage]
+    testLayers: [unit, adapter-contract, integration, e2e]
+    e2e: { required: true, testRefs: [] }

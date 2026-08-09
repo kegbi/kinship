@@ -1,0 +1,334 @@
+schemaVersion: 1
+decisionStatus: accepted
+defaultDeliveryStatus: planned
+routeParameterSyntax: colon
+sectionDeepLinkParameter: section
+
+renderingStrategies:
+  static:
+    description: Built without request-specific data.
+  static-shell-islands:
+    description: Prerendered shell with authenticated data loaded by focused islands.
+  on-demand:
+    description: Server-rendered per request because protected state affects the first response.
+
+defaultStates:
+  public:
+    - ready
+    - not-found
+  authenticated:
+    - loading
+    - ready
+    - empty
+    - error
+    - forbidden
+    - not-found
+
+pages:
+  - id: public.home
+    path: /
+    access: public
+    rendering: static
+    owner: web
+    flowIds: []
+
+  - id: public.features
+    path: /features
+    access: public
+    rendering: static
+    owner: web
+    flowIds: []
+
+  - id: legal.privacy
+    path: /privacy
+    access: public
+    rendering: static
+    owner: governance
+    flowIds: [GOVERNANCE-001]
+
+  - id: legal.terms
+    path: /terms
+    access: public
+    rendering: static
+    owner: governance
+    flowIds: [GOVERNANCE-001]
+
+  - id: auth.sign-in
+    path: /auth/sign-in
+    access: anonymous-or-authenticated
+    rendering: static-shell-islands
+    owner: identity
+    flowIds: [AUTH-003]
+
+  - id: auth.sign-up
+    path: /auth/sign-up
+    access: anonymous
+    rendering: static-shell-islands
+    owner: identity
+    flowIds: [AUTH-001]
+
+  - id: auth.verify-email
+    path: /auth/verify-email
+    access: anonymous-or-authenticated
+    rendering: on-demand
+    owner: identity
+    flowIds: [AUTH-001]
+
+  - id: auth.recover
+    path: /auth/forgot-password
+    access: anonymous
+    rendering: static-shell-islands
+    owner: identity
+    flowIds: [AUTH-003]
+
+  - id: auth.reset
+    path: /auth/reset-password
+    access: anonymous
+    rendering: on-demand
+    owner: identity
+    flowIds: [AUTH-003]
+
+  - id: auth.mfa
+    path: /auth/mfa
+    access: authentication-challenge
+    rendering: on-demand
+    owner: identity
+    flowIds: [AUTH-003]
+
+  - id: invitation.accept
+    path: /invite/:token
+    access: anonymous-or-authenticated
+    rendering: on-demand
+    owner: workspaces
+    flowIds: [AUTH-002]
+
+  - id: app.today
+    path: /app
+    access: active-member
+    rendering: static-shell-islands
+    owner: web
+    readModel: today
+    flowIds: [PLANNING-002, INTERACTION-001]
+    sections:
+      - upcoming-reminders
+      - open-tasks
+      - people-due-for-contact
+      - recent-interactions
+      - favorite-notes
+
+  - id: people.index
+    path: /app/people
+    access: active-member
+    rendering: static-shell-islands
+    owner: people
+    flowIds: [PEOPLE-002]
+    sections:
+      - search
+      - saved-filters
+      - tags
+      - active-people
+
+  - id: people.archived
+    path: /app/people/archived
+    access: active-member
+    rendering: static-shell-islands
+    owner: people
+    flowIds: [PEOPLE-002, PEOPLE-004]
+
+  - id: people.create
+    path: /app/people/new
+    access: crm-write
+    rendering: static-shell-islands
+    owner: people
+    flowIds: [PEOPLE-001]
+
+  - id: people.profile
+    path: /app/people/:personId
+    access: active-member
+    rendering: static-shell-islands
+    owner: people
+    readModel: person-profile
+    flowIds:
+      - PEOPLE-003
+      - PEOPLE-004
+      - PEOPLE-005
+      - PEOPLE-006
+      - RELATIONSHIP-001
+      - INTERACTION-001
+      - INTERACTION-002
+      - PLANNING-001
+      - PLANNING-002
+      - FILES-001
+      - GIFTS-001
+    sections:
+      - identity-summary
+      - important-dates
+      - contact-methods
+      - addresses
+      - relationships
+      - first-meeting
+      - work
+      - food-preferences
+      - pets
+      - life-events
+      - notes
+      - conversations
+      - calls
+      - activities
+      - tasks
+      - reminders
+      - stay-in-touch
+      - gifts
+      - debts
+      - documents
+      - photos
+      - audit-summary
+    localActions:
+      - edit-person
+      - set-avatar
+      - favorite
+      - log-activity
+      - log-call
+      - log-conversation
+      - add-note
+      - add-task
+      - add-reminder
+      - attach-file
+      - export-vcard
+      - archive
+      - restore
+      - delete
+    separatePersonPages:
+      - people.activity-report
+      - people.audit
+
+  - id: people.activity-report
+    path: /app/people/:personId/activity-report
+    access: active-member
+    rendering: static-shell-islands
+    owner: interactions
+    flowIds: [INTERACTION-001]
+
+  - id: people.audit
+    path: /app/people/:personId/audit
+    access: audit-read
+    rendering: static-shell-islands
+    owner: governance
+    flowIds: [GOVERNANCE-002]
+
+  - id: tasks.index
+    path: /app/tasks
+    access: active-member
+    rendering: static-shell-islands
+    owner: planning
+    flowIds: [PLANNING-001]
+    sections:
+      - open
+      - completed
+      - person-filter
+
+  - id: journal.index
+    path: /app/journal
+    access: active-member
+    rendering: static-shell-islands
+    owner: journal
+    flowIds: [JOURNAL-001]
+
+  - id: journal.item
+    path: /app/journal/:journalItemId
+    access: active-member
+    rendering: static-shell-islands
+    owner: journal
+    flowIds: [JOURNAL-001]
+
+  - id: settings.index
+    path: /app/settings
+    access: active-member
+    rendering: static-shell-islands
+    owner: workspaces
+    flowIds: []
+
+  - id: settings.profile
+    path: /app/settings/profile
+    access: active-member
+    rendering: static-shell-islands
+    owner: workspaces
+    flowIds: [AUTH-004]
+
+  - id: settings.workspace
+    path: /app/settings/workspace
+    access: workspace-admin
+    rendering: static-shell-islands
+    owner: workspaces
+    flowIds: [WORKSPACE-001]
+
+  - id: settings.members
+    path: /app/settings/members
+    access: workspace-admin
+    rendering: static-shell-islands
+    owner: workspaces
+    flowIds: [AUTH-002, WORKSPACE-001]
+
+  - id: settings.personalization
+    path: /app/settings/personalization
+    access: workspace-admin
+    rendering: static-shell-islands
+    owner: workspaces
+    flowIds: [PEOPLE-006]
+
+  - id: settings.security
+    path: /app/settings/security
+    access: active-member
+    rendering: static-shell-islands
+    owner: identity
+    flowIds: [AUTH-003, AUTH-004]
+
+  - id: settings.api-access
+    path: /app/settings/api
+    access: workspace-admin
+    rendering: static-shell-islands
+    owner: api-access
+    flowIds: [API-001]
+
+  - id: settings.integrations
+    path: /app/settings/integrations
+    access: workspace-admin
+    rendering: static-shell-islands
+    owner: integrations
+    flowIds: [INTEGRATION-001]
+
+  - id: settings.import
+    path: /app/settings/import
+    access: data-admin
+    rendering: static-shell-islands
+    owner: import-export
+    flowIds: [IMPORT-001]
+
+  - id: settings.import-report
+    path: /app/settings/import/:importId
+    access: data-admin
+    rendering: static-shell-islands
+    owner: import-export
+    flowIds: [IMPORT-001]
+
+  - id: settings.export
+    path: /app/settings/export
+    access: data-admin
+    rendering: static-shell-islands
+    owner: import-export
+    flowIds: [EXPORT-001]
+
+  - id: settings.billing
+    path: /app/settings/billing
+    access: workspace-owner
+    rendering: static-shell-islands
+    owner: billing
+    availability: optional-module
+    flowIds: [BILLING-001]
+
+  - id: compliance.accept
+    path: /app/compliance
+    access: authenticated
+    rendering: on-demand
+    owner: governance
+    flowIds: [GOVERNANCE-001]

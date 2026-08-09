@@ -1,0 +1,105 @@
+# Configuration And Secrets Contract
+
+## Principles
+
+- Configuration is validated once at each composition root before serving work.
+- Domain and application code receive typed values or capabilities, never raw
+  environment access.
+- Missing, malformed, contradictory, or unsafe production configuration fails
+  startup with a redacted actionable error.
+- Defaults are limited to harmless local-development behavior. Security,
+  persistence, origins, and credentials never gain production defaults.
+- Secret values are never committed, logged, included in problem details,
+  returned by diagnostics, or placed in client bundles.
+
+## Sources And Precedence
+
+Lowest to highest precedence:
+
+1. checked-in non-secret application defaults;
+2. a documented local `.env` file ignored by Git;
+3. Compose environment and secret files;
+4. deployment-provided secret/configuration mechanisms.
+
+The scaffold adds `.env.example` containing names, descriptions, and safe sample
+shapes only. It never contains working credentials.
+
+## Configuration Ownership
+
+| Area                 | Owner                | Examples                                                  |
+| -------------------- | -------------------- | --------------------------------------------------------- |
+| Application identity | bootstrap            | environment name, public origin, build metadata           |
+| Database             | PostgreSQL adapter   | connection URL, pool bounds, statement timeout            |
+| Browser session      | identity adapter     | cookie name/domain/security and signing/encryption keyset |
+| Object storage       | files adapter        | endpoint, bucket, region, access identity, size limits    |
+| Mail                 | notification adapter | transport endpoint, sender identity, bounded retry policy |
+| Telemetry            | platform telemetry   | OTLP endpoint, sampling, service identity, log level      |
+| Import/export        | import-export module | input/output limits and temporary storage policy          |
+| Optional providers   | owning integration   | provider endpoint and credentials                         |
+
+The exact variable catalog is finalized with the first consuming code. Variable
+names should be stable, uppercase, and capability-specific. Public browser
+variables use an explicit public prefix; no secret is ever renamed into that
+namespace.
+
+## Runtime Schema
+
+Each process defines a Zod schema at its composition boundary and transforms raw
+strings into domain-appropriate values such as URLs, durations, byte limits,
+booleans, and bounded integers. The parsed object is immutable.
+
+Validation also checks relationships that a single field cannot express:
+
+- production origins use HTTPS;
+- secure cookies are enabled outside deliberate local HTTP development;
+- public and internal origins are not accidentally confused;
+- database and provider timeouts are positive and bounded;
+- object bucket and application environment cannot point at a known test target
+  in production;
+- optional modules cannot be enabled without their complete configuration.
+
+## Secret Lifecycle
+
+- Store authentication key material as a versioned keyset so rotation can
+  validate old sessions while issuing only with the active key.
+- Store API and provider secrets through deployment secret mounts or equivalent
+  mechanisms, not normal source-controlled environment files.
+- Record secret owner, rotation procedure, last rotation, and affected services
+  outside the secret value itself.
+- Rotating a secret is a tested operation. Session-signing rotation, storage-key
+  rotation, and provider-key rotation have independent procedures.
+- Imported Monica credentials, MFA seeds, sessions, OAuth secrets, and recovery
+  codes are never copied into active secret stores.
+
+## Redaction
+
+Structured telemetry uses an allowlist of fields. At minimum, redact:
+
+- authorization and cookie headers;
+- password, recovery, MFA, WebAuthn challenge, and session material;
+- API/OAuth tokens and provider credentials;
+- full email, phone, address, note, message, journal, and import source content;
+- signed object/download URLs and raw file names when they contain user data;
+- database URLs and exception strings that embed connection properties.
+
+Identifiers may be logged only when useful for operations and after the
+workspace/security implications are understood. Prefer trace and operation IDs.
+
+## Deno Permission Profiles
+
+| Process          | Filesystem                                      | Environment                  | Network                                 | Subprocess          |
+| ---------------- | ----------------------------------------------- | ---------------------------- | --------------------------------------- | ------------------- |
+| API              | built assets/config and bounded temp paths only | explicit API allowlist       | PostgreSQL and configured adapters      | none by default     |
+| Worker           | bounded job/temp paths                          | explicit worker allowlist    | PostgreSQL and configured adapters      | none by default     |
+| Migrate          | read-only migration bundle                      | database/migration allowlist | PostgreSQL only                         | none                |
+| Repository tools | task-specific repository paths                  | task-specific allowlist      | only when the tool contract requires it | explicit tools only |
+
+`--allow-all` is forbidden for normal development, tests, CI, and containers.
+Permission changes are reviewed like dependency changes.
+
+## Client Configuration
+
+The Astro build receives only explicitly public values. Private API location,
+provider credentials, session keys, database configuration, and internal
+topology remain server-side. Runtime user/workspace data comes from authorized
+API contracts rather than environment substitution into static files.

@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://relationships-assistant.local/schemas/module-boundaries.schema.json",
+  "title": "Personal CRM module boundary manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "decisionStatus",
+    "schemaSource",
+    "sharedKernel",
+    "compositionRoots",
+    "generatedContracts",
+    "layerRules",
+    "modules",
+    "readModels"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "decisionStatus": { "const": "accepted" },
+    "schemaSource": { "type": "string", "minLength": 1 },
+    "sharedKernel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "allowedContents", "forbiddenContents"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "allowedContents": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "forbiddenContents": { "$ref": "#/$defs/nonEmptyUniqueStrings" }
+      }
+    },
+    "compositionRoots": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+    "generatedContracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "source", "consumers"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "source": { "$ref": "#/$defs/path" },
+        "consumers": { "$ref": "#/$defs/nonEmptyUniqueStrings" }
+      }
+    },
+    "layerRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "domainMayImport",
+        "applicationMayImport",
+        "portsMayImport",
+        "adaptersMayImport",
+        "transportMayImport",
+        "compositionMayImport",
+        "frontendMayImport",
+        "forbiddenCrossModuleTargets"
+      ],
+      "properties": {
+        "domainMayImport": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "applicationMayImport": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "portsMayImport": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "adaptersMayImport": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "transportMayImport": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "compositionMayImport": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "frontendMayImport": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "forbiddenCrossModuleTargets": {
+          "$ref": "#/$defs/nonEmptyUniqueStrings"
+        }
+      }
+    },
+    "modules": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/module" }
+    },
+    "readModels": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/readModel" }
+    }
+  },
+  "$defs": {
+    "path": { "type": "string", "minLength": 1, "pattern": "^[^\\\\]+$" },
+    "nonEmptyUniqueStrings": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "uniqueStrings": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "kind",
+        "description",
+        "ownsTables",
+        "publicEntryPoints",
+        "allowedModuleDependencies",
+        "publishes",
+        "consumes"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "path": { "$ref": "#/$defs/path" },
+        "kind": { "enum": ["core", "optional", "runtime"] },
+        "description": { "type": "string", "minLength": 1 },
+        "ownsTables": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "publicEntryPoints": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "allowedModuleDependencies": { "$ref": "#/$defs/uniqueStrings" },
+        "publishes": { "$ref": "#/$defs/uniqueStrings" },
+        "consumes": { "$ref": "#/$defs/uniqueStrings" }
+      }
+    },
+    "readModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "sourceModules", "consumers", "writeAccess"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "path": { "$ref": "#/$defs/path" },
+        "sourceModules": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "consumers": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "writeAccess": { "const": false }
+      }
+    }
+  }
+}

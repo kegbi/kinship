@@ -14,6 +14,14 @@ lines. Generated code, declarations, exhaustive type-only helpers, and
 unreachable defensive assertions may be excluded only through a reviewed,
 documented allowlist. A blanket coverage-ignore comment is forbidden.
 
+The canonical workflow inventory is
+[`docs/product/user-flows.yaml`](../product/user-flows.yaml), and the canonical
+page inventory is
+[`docs/product/page-catalog.yaml`](../product/page-catalog.yaml). E2E tests
+carry their flow ID in a Playwright annotation or title. CI rejects unknown IDs,
+delivered required flows without tests, shipped routes missing from the page
+catalog, and catalog references to unknown pages or modules.
+
 ## Canonical Commands
 
 The implementation should expose stable top-level `deno task` commands even when
@@ -23,13 +31,17 @@ binary:
 ```text
 deno task fmt
 deno task fmt:check
+deno task fix
 deno task lint
 deno task check
+deno task check:architecture
 deno task test:unit
 deno task test:integration
 deno task test:schema
+deno task test:contract
 deno task test:e2e
 deno task test:coverage
+deno task test:prepush
 deno task test
 deno task ci
 ```
@@ -41,9 +53,16 @@ different hook-only validation pipeline.
 
 Enable strict TypeScript settings, including `strict`,
 `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`,
-`useUnknownInCatchVariables`, and `verbatimModuleSyntax`. Production code must
-not use `any`; unsafe assertions require a localized validation boundary or an
-explanatory lint suppression.
+`noImplicitReturns`, `noFallthroughCasesInSwitch`, `noUnusedLocals`,
+`noUnusedParameters`, `useUnknownInCatchVariables`, and `verbatimModuleSyntax`.
+Production code must not use `any`; unsafe assertions require a localized
+validation boundary or an explanatory lint suppression.
+
+Use member-specific Deno/TypeScript configuration when backend, worker, browser,
+or generated-code library contexts differ. Root tasks aggregate the members.
+Require explicit return types on exported application/module boundaries, not on
+every small local function. Validate `unknown` at process and persistence
+boundaries and use branded IDs for aggregate identifiers.
 
 Deno lint should enable strict rules intentionally rather than relying only on
 its recommended default set. A project lint plugin and graph check should
@@ -60,6 +79,14 @@ enforce at least:
 - no circular package or module dependencies;
 - no frontend import from backend internals;
 - no unapproved edits or formatting of the synchronized canonical schema bundle.
+
+The architecture checker also validates
+[`module-boundaries.yaml`](module-boundaries.yaml), verifies exact one-owner
+coverage of all canonical tables, rejects unknown dependencies and read-model
+sources, and compares the implementation graph with the manifest. Do not depend
+on an unstable CLI JSON format without a pinned compatibility test; use a
+reviewed module-graph library or a repository-owned parser selected during
+scaffolding.
 
 Test custom lint rules with Deno's lint-plugin test API. Keep an explicit,
 minimal allowlist for read models and composition roots.
@@ -149,11 +176,22 @@ default.
 
 Deno has no Git-hook manager. Use Lefthook only to invoke repository tasks:
 
-- pre-commit: formatter check for staged owned files, lint, type check,
-  architecture checks, and the fast affected unit suite;
-- pre-push: full unit/integration/schema/contract suite when practical;
+- pre-commit: non-mutating formatter check, lint, type check, architecture
+  checks, and the fast unit suite;
+- pre-push: full unit/integration/schema/contract suite and a Chromium smoke E2E
+  project when practical;
 - CI: the authoritative full suite, including all E2E browsers and
   security/dependency gates.
+
+Pre-commit must not format, fix, stage, or restage files. `deno task fix` is an
+explicit developer action. Target less than 15 seconds for pre-commit and less
+than three minutes for pre-push; measured checks that exceed those budgets move
+to CI rather than being silently skipped. Add staged-file filtering only after
+the complete repository checks have become measurably slow.
+
+Do not add or pin Lefthook before canonical scaffold tasks exist. At that point,
+commit its configuration and expose an idempotent `deno task hooks:install`.
+Hooks are convenience feedback and remain bypassable; CI is authoritative.
 
 Hooks improve feedback time but are bypassable. Protected-branch rules and
 required CI checks enforce the contract. A repository-local `.githooks`
@@ -163,8 +201,8 @@ parallel-execution conveniences.
 
 ## Suggested CI Stages
 
-1. Lockfile, generated-file, schema-bundle, formatting, lint, architecture, and
-   type checks.
+1. Lockfile, generated-file, catalog/schema-bundle, formatting, lint,
+   architecture, workflow/page coverage, and type checks.
 2. Backend and frontend unit/component suites with coverage gates.
 3. Fresh PostgreSQL schema and adapter integration suites.
 4. Build pinned production images and generate an immutable Compose test stack.
