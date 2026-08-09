@@ -1,0 +1,33 @@
+{
+  "status": "passed",
+  "source_tables": 94,
+  "source_columns": 823,
+  "v1_tables": 88,
+  "v1_columns": 856,
+  "audited_v3_tables": 87,
+  "audited_v3_columns": 811,
+  "table_constraints": 91,
+  "explicit_indexes": 144,
+  "foreign_keys": 168,
+  "jsonb_fields": 17,
+  "workspace_id_fields": 44,
+  "table_mapping_rows": 94,
+  "column_mapping_rows": 823,
+  "field_catalog_rows": 811,
+  "change_log_rows": 73,
+  "deferred_foreign_keys": 2,
+  "live_postgresql_execution": false,
+  "errors": [],
+  "warnings": [
+    "DDL was structurally parsed but not applied: PostgreSQL server/client is not installed in this runtime. CI must run apply/rollback and migration integration tests."
+  ],
+  "sha256": {
+    "personal_crm_rewrite_schema_v3.sql": "3d082df6641ddeea9706adee39b41b90656709979a5f980cc93a7d98d1a79e91",
+    "personal_crm_rewrite_schema_spec_v3.md": "1aa8294d2f53c2d45f396fe93229c086587587bf3629cd8767925dbd7a97210a",
+    "monica_table_mapping_v3.csv": "c80a8ee59d7c19a2a3a5d49bfd3ff0165a50c2f492d07ce16f77756942787af0",
+    "monica_column_mapping_v3.csv": "586b75e959fc16e8600f220ce0e83a5fef0e915cf59c961b55c1a6b94b9f2e3c",
+    "personal_crm_field_catalog_v3.csv": "45572ae55009e822dc74385040850903f71868143db091721cda843ad850558c",
+    "personal_crm_v1_to_v3_changes.csv": "6fe451c1f6190f588c0898c45e30eb3df02ef51f9c6e9f492964d3bbdc8f9ecf",
+    "personal_crm_schema_reaudit_v3.md": "ac381f73e46b816c45cf4aa3d1791fca7c23baf8b881c23992c5ecca193d37b9"
+  }
+}
