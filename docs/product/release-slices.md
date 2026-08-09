@@ -40,7 +40,11 @@ Deliver:
 
 - registration, verification, sign-in, MFA/session baseline, and invitations;
 - workspace membership and active-workspace resolution;
+- the settings shell, overview, personal profile, preferences, and security
+  routes;
 - people list, search, create, archived list, and canonical person workspace;
+- the Today shell and first-workspace onboarding state, before its complete due
+  projection arrives in Slice 4;
 - person identity summary and explicit empty/loading/error states;
 - cross-workspace negative tests for every introduced identifier.
 
@@ -49,12 +53,14 @@ already be the single canonical route rather than a temporary subpage tree.
 
 ## Slice 2: Complete Profile Facts And Relationships
 
-Flows: `PEOPLE-004`, `PEOPLE-005`, `PEOPLE-006`, and `RELATIONSHIP-001`.
+Flows: `PEOPLE-004`, `PEOPLE-005`, `PEOPLE-006`, `RELATIONSHIP-001`, and
+`WORKSPACE-003`.
 
 Deliver contact methods, addresses, important dates, first meeting, work,
 organizations, tags, pets, food preferences, relationships, archive/restore,
-profile-module settings, and partial-date behavior. All appear as sections or
-local actions in the person workspace.
+profile-module settings, controlled-vocabulary settings, and partial-date
+behavior. Person data appears as sections or local actions in the person
+workspace; related vocabularies use the accepted personalization deep links.
 
 ## Slice 3: Interactions And Person History
 
@@ -64,13 +70,14 @@ Deliver notes, activities, participants, calls, conversations/messages,
 emotions, the person history projection, activity report, and audit history.
 Prove that the read composition does not permit cross-module writes.
 
-## Slice 4: Planning And Worker Reliability
+## Slice 4: Today, Planning, And Worker Reliability
 
-Flows: `PLANNING-001` and `PLANNING-002`.
+Flows: `TODAY-001`, `PLANNING-001`, and `PLANNING-002`.
 
 Deliver global tasks, person tasks, reminders, stay-in-touch cadence, Today
 projections, occurrence generation, worker claiming, retries, time-zone and
-daylight-saving behavior, and duplicate-delivery tests.
+daylight-saving behavior, secondary-region failure isolation, and
+duplicate-delivery tests.
 
 ## Slice 5: Files, Gifts, And Debts
 
@@ -78,7 +85,8 @@ Flows: `FILES-001` and `GIFTS-001`.
 
 Deliver object-storage adapters, person documents/photos, gift attachments,
 gifts, debts, storage limits, missing/quarantined object states, and authorized
-downloads.
+downloads. Include the workspace storage settings surface without exposing file
+inventory to ordinary members.
 
 ## Slice 6: Journal And Governance
 
@@ -88,13 +96,15 @@ Deliver journal posts, day ratings, ordered journal items, legal-document
 acceptance, and the necessary global navigation. Keep person-linked history
 visible in the person workspace without making Journal a people submodule.
 
-## Slice 7: Import And Export
+## Slice 7: Data Lifecycle, Import, And Export
 
-Flows: `IMPORT-001` and `EXPORT-001`.
+Flows: `IMPORT-001`, `EXPORT-001`, `AUTH-005`, and `WORKSPACE-002`.
 
 Deliver format detection, bounded staging, identity mapping, dry-run reports,
 atomic commit, idempotent rerun, attachment manifests, vCard export, workspace
-exports, and explicit legacy credential non-activation.
+exports, and explicit legacy credential non-activation. Complete workspace reset
+and deletion only after every introduced module participates in the atomic data
+lifecycle and impact preview.
 
 ## Slice 8: Optional Platform Modules
 

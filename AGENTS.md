@@ -93,6 +93,11 @@ pins, and frozen CI installs are mandatory.
 - [docs/product/person-workspace.md](docs/product/person-workspace.md) records
   what belongs on the one person workspace and when a separate page is
   justified.
+- [docs/product/monica-import-compatibility.md](docs/product/monica-import-compatibility.md)
+  records the supported Monica export formats, the imported data, the limits,
+  and the documented exclusions.
+- [docs/product/dashboard-settings-design.md](docs/product/dashboard-settings-design.md)
+  is the accepted UX and route contract for Today and settings.
 
 The product is person-centered. `/app/people/:personId` is the one canonical
 person workspace and must expose nearly all person-specific information through
@@ -107,6 +112,21 @@ The `person-profile` read model may compose the source modules allowlisted in
 `module-boundaries.yaml`, but it is read-only. Every mutation must call the
 public application facade of the module that owns the changed table. A unified
 screen is never permission to bypass module boundaries.
+
+`/app` is the one Today route. Prioritize its attention queue, people due for
+contact, upcoming work, recent people, reference notes, and recent activity in
+the documented semantic order. Do not add a product-news card, lifetime
+counters, a three-month reminder wall, or a calls/notes/debts/tasks tab mixture.
+The `today` read model is also read-only; inline actions call the owning
+module's public use case.
+
+Settings use the stable hierarchy in `dashboard-settings-design.md` and
+`page-catalog.yaml`. Keep personal, workspace, data, developer, and optional
+billing scopes visibly grouped. Related workspace vocabularies share
+`/app/settings/personalization?section=<section-id>`; do not create separate
+page routes for their CRUD forms. Preserve standalone routes for resumable data
+jobs, operational administration, and the owner-only workspace danger zone. Do
+not place destructive workspace actions beside routine preferences.
 
 Every shipped route must have a page-catalog ID. Every required workflow must
 have a Playwright test carrying its stable flow ID. Update catalogs, tests, and

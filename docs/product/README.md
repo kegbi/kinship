@@ -24,6 +24,10 @@ CRM schema, application modules, and executable end-to-end tests.
 
 - [`person-workspace.md`](person-workspace.md) records what belongs on the one
   person workspace and when a separate page is justified.
+- [`monica-import-compatibility.md`](monica-import-compatibility.md) records the
+  supported Monica export formats, imported data, limits, and exclusions.
+- [`dashboard-settings-design.md`](dashboard-settings-design.md) fixes the
+  accepted Today and settings UX, route hierarchy, and responsive behavior.
 - [`information-architecture.md`](information-architecture.md) defines the
   application navigation and person-profile composition.
 - [`page-catalog.yaml`](page-catalog.yaml) is the machine-readable page and
@@ -41,6 +45,7 @@ CRM schema, application modules, and executable end-to-end tests.
 4. The Monica import mappings and compatibility notes define what an import must
    accept, preserve, and report.
 
-Changing a stable page ID, flow ID, or the person-profile composition requires
-updating the affected catalogs, release slices, tests, and `AGENTS.md` in the
-same change.
+Changing a stable page ID, flow ID, person-profile composition, Today content
+order, settings route, or personalization section ID requires updating the
+affected design contract, catalogs, release slices, tests, and `AGENTS.md` in
+the same change.

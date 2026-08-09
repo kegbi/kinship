@@ -43,6 +43,15 @@ permissions:
     roles: [owner, admin, member]
     scope: own-user-and-membership
 
+  - id: member.self.delete
+    roles: [owner, admin, member]
+    scope: own-user-and-membership
+    requires: [
+      recent-authentication,
+      explicit-confirmation,
+      no-orphaned-workspace,
+    ]
+
   - id: workspace.read
     roles: [owner, admin, member]
     scope: active-workspace
@@ -54,6 +63,16 @@ permissions:
   - id: workspace.delete
     roles: [owner]
     scope: active-workspace
+    requires: [recent-authentication, typed-confirmation]
+
+  - id: workspace.reset
+    roles: [owner]
+    scope: active-workspace
+    requires: [
+      recent-authentication,
+      typed-confirmation,
+      current-impact-preview,
+    ]
 
   - id: workspace.members.invite
     roles: [owner, admin]
@@ -152,6 +171,8 @@ invariants:
   - Cross-workspace links are rejected before persistence even if a foreign key would accept them.
   - An admin cannot remove, demote, or suspend the last active owner.
   - A member manages only their own credentials, factors, recovery codes, and sessions.
+  - Personal identity deletion cannot orphan an owned workspace or leave an active session.
+  - Workspace reset and deletion revalidate ownership and current impact after confirmation.
   - Secrets are never returned through audit, administrator, import, or export access.
   - Worker permission is capability-specific and does not imply ordinary member access.
   - Optional modules add permissions but cannot broaden a core permission implicitly.
