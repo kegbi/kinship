@@ -24,10 +24,24 @@ better designs, current production technologies, and AI assistance built in.
   constraints, plus the evaluated framework and library candidates.
 - [docs/architecture/backend-architecture.md](docs/architecture/backend-architecture.md)
   defines the modular-monolith boundaries, dependency direction, workspace
-  isolation rules, API contract, and proposed container topology.
+  isolation rules, API contract, and accepted container topology.
 - [docs/architecture/quality-gates.md](docs/architecture/quality-gates.md)
   defines the mandatory coverage interpretation, Deno-first checks, schema
   tests, dependency controls, hooks, and CI gates.
+- [docs/architecture/repository-layout.md](docs/architecture/repository-layout.md)
+  fixes the scaffold paths, public entry points, import rules, and generated
+  artifact locations.
+- [docs/architecture/module-boundaries.yaml](docs/architecture/module-boundaries.yaml)
+  is the machine-readable authority for module IDs, table ownership, allowed
+  dependencies, events, and cross-module read models.
+- [docs/architecture/authorization-matrix.yaml](docs/architecture/authorization-matrix.yaml)
+  defines the baseline roles, permissions, scopes, and tenant-security
+  invariants.
+- [docs/architecture/compose-contract.md](docs/architecture/compose-contract.md),
+  [docs/architecture/configuration-and-secrets.md](docs/architecture/configuration-and-secrets.md),
+  [docs/architecture/migration-policy.md](docs/architecture/migration-policy.md),
+  and [docs/architecture/observability.md](docs/architecture/observability.md)
+  define the infrastructure contract before implementation versions are chosen.
 
 The accepted implementation baseline is Docker Compose, PostgreSQL, a Deno
 backend, Astro as a static-first frontend, TypeScript throughout application
@@ -44,7 +58,7 @@ Modules communicate through public application interfaces or explicitly approved
 read models, never by importing another module's adapters or repository
 internals.
 
-The selected implementation stack includes Hono, Zod 4, Kysely with Postgres.js,
+The selected implementation stack includes Hono, Zod, Kysely with Postgres.js,
 and Lefthook. A bounded Better Auth compatibility spike is approved, but Better
 Auth itself is not an accepted dependency until the spike proves exact
 compatibility with the canonical identity schema. Do not silently substitute
@@ -56,6 +70,45 @@ The PostgreSQL DDL below remains the sole schema source of truth. Any new
 persistent queue, outbox, auth table, ORM-generated DDL, or other database
 change requires a synchronized new schema version rather than an ad hoc
 migration.
+
+Architecture and product documents do not pin snapshot package versions. Choose
+and lock exact compatible versions only when an executable scaffold or approved
+spike first needs them; from then on, committed manifests, lockfiles, container
+pins, and frozen CI installs are mandatory.
+
+## Product And User-Flow Contract
+
+- [docs/product/README.md](docs/product/README.md) is the product-contract entry
+  point.
+- [docs/product/information-architecture.md](docs/product/information-architecture.md)
+  and [docs/product/page-catalog.yaml](docs/product/page-catalog.yaml) define
+  navigation, rendering, page states, and stable page IDs.
+- [docs/product/user-flows.md](docs/product/user-flows.md) and
+  [docs/product/user-flows.yaml](docs/product/user-flows.yaml) define the
+  user-facing and Monica-compatibility workflows that require E2E coverage.
+- [docs/product/release-slices.md](docs/product/release-slices.md) defines the
+  accepted vertical implementation order.
+- [docs/product/monica-person-profile-analysis.md](docs/product/monica-person-profile-analysis.md)
+  records the source-derived person-profile behavior to preserve without copying
+  Monica's obsolete UI.
+
+The product is person-centered. `/app/people/:personId` is the one canonical
+person workspace and must expose nearly all person-specific information through
+composable, deep-linkable sections and local actions. Do not create mandatory
+subpages for contact methods, addresses, relationships, life events, notes,
+conversations, calls, activities, reminders, tasks, gifts, debts, documents, or
+photos. Separate person pages are reserved for scale-heavy reports and full
+audit history; cross-person, long-running, administrative, and settings
+workflows may have their own pages.
+
+The `person-profile` read model may compose the source modules allowlisted in
+`module-boundaries.yaml`, but it is read-only. Every mutation must call the
+public application facade of the module that owns the changed table. A unified
+screen is never permission to bypass module boundaries.
+
+Every shipped route must have a page-catalog ID. Every required workflow must
+have a Playwright test carrying its stable flow ID. Update catalogs, tests, and
+affected architecture documents together; never reuse a released ID.
 
 ## Canonical Personal CRM Schema
 

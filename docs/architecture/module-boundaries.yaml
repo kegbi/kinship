@@ -1,0 +1,393 @@
+schemaVersion: 1
+decisionStatus: accepted
+schemaSource: personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql
+
+sharedKernel:
+  path: packages/backend/shared-kernel
+  allowedContents:
+    - branded-identifiers
+    - result-and-error-primitives
+    - clock-and-instant-contracts
+    - partial-date-values
+    - pagination-primitives
+  forbiddenContents:
+    - generic-repositories
+    - framework-wrappers
+    - database-types
+    - vendor-clients
+    - miscellaneous-utils
+
+compositionRoots:
+  - apps/api/composition.ts
+  - apps/worker/composition.ts
+
+generatedContracts:
+  path: packages/contracts/generated
+  source: packages/contracts/openapi
+  consumers:
+    - apps/web
+    - tests/e2e
+
+layerRules:
+  domainMayImport: [same-module-domain, shared-kernel]
+  applicationMayImport: [
+    same-module-domain,
+    same-module-ports,
+    shared-kernel,
+    allowed-module-public,
+  ]
+  portsMayImport: [same-module-domain, shared-kernel]
+  adaptersMayImport: [
+    same-module-domain,
+    same-module-application,
+    same-module-ports,
+    shared-kernel,
+  ]
+  transportMayImport: [
+    same-module-public,
+    same-module-application,
+    generated-contract-support,
+  ]
+  compositionMayImport: [module-public, module-adapters, platform, bootstrap]
+  frontendMayImport: [contracts-generated, frontend-code]
+  forbiddenCrossModuleTargets: [domain, application, ports, adapters, transport]
+
+modules:
+  - id: identity
+    path: packages/backend/modules/identity
+    kind: core
+    description: Login identity, credentials, verification, MFA, WebAuthn, and sessions.
+    ownsTables:
+      - users
+      - password_reset_requests
+      - email_verification_tokens
+      - user_mfa_totp
+      - user_recovery_codes
+      - webauthn_credentials
+      - user_sessions
+    publicEntryPoints: [packages/backend/modules/identity/public.ts]
+    allowedModuleDependencies: []
+    publishes: [identity.user-registered, identity.session-revoked]
+    consumes: []
+
+  - id: workspaces
+    path: packages/backend/modules/workspaces
+    kind: core
+    description: Workspace membership, preferences, invitations, and configurable vocabularies.
+    ownsTables:
+      - currencies
+      - workspaces
+      - workspace_members
+      - member_preferences
+      - workspace_invitations
+      - gender_options
+      - workspace_settings
+      - workspace_profile_modules
+      - contact_method_types
+      - contact_labels
+      - activity_type_categories
+      - activity_types
+      - emotion_options
+      - life_event_categories
+      - life_event_types
+      - relationship_type_groups
+      - relationship_types
+      - pet_categories
+    publicEntryPoints: [packages/backend/modules/workspaces/public.ts]
+    allowedModuleDependencies: [identity]
+    publishes: [
+      workspace.created,
+      workspace.member-joined,
+      workspace.configuration-changed,
+    ]
+    consumes: [identity.user-registered]
+
+  - id: people
+    path: packages/backend/modules/people
+    kind: core
+    description: Person identity, profile facts, dates, contact methods, places, work, tags, and pets.
+    ownsTables:
+      - people
+      - person_avatars
+      - person_dates
+      - person_first_meetings
+      - person_contact_methods
+      - person_contact_method_labels
+      - locations
+      - person_addresses
+      - person_address_labels
+      - organizations
+      - person_occupations
+      - tags
+      - person_tags
+      - pets
+    publicEntryPoints: [packages/backend/modules/people/public.ts]
+    allowedModuleDependencies: [workspaces]
+    publishes: [
+      people.person-created,
+      people.person-updated,
+      people.person-archived,
+    ]
+    consumes: [workspace.configuration-changed]
+
+  - id: relationships
+    path: packages/backend/modules/relationships
+    kind: core
+    description: Directional person relationship graph and romantic metadata.
+    ownsTables:
+      - relationships
+      - romantic_relationship_details
+    publicEntryPoints: [packages/backend/modules/relationships/public.ts]
+    allowedModuleDependencies: [people, workspaces]
+    publishes: [relationships.relationship-changed]
+    consumes: [people.person-archived]
+
+  - id: interactions
+    path: packages/backend/modules/interactions
+    kind: core
+    description: Activities, notes, calls, conversations, messages, participants, and emotions.
+    ownsTables:
+      - activities
+      - activity_participants
+      - activity_emotions
+      - notes
+      - calls
+      - call_emotions
+      - conversation_threads
+      - messages
+    publicEntryPoints: [packages/backend/modules/interactions/public.ts]
+    allowedModuleDependencies: [people, workspaces]
+    publishes: [interactions.interaction-recorded, interactions.note-changed]
+    consumes: [people.person-archived]
+
+  - id: journal
+    path: packages/backend/modules/journal
+    kind: core
+    description: Journal posts, day ratings, ordered journal items, and person life events.
+    ownsTables:
+      - journal_posts
+      - journal_day_ratings
+      - journal_items
+      - life_events
+    publicEntryPoints: [packages/backend/modules/journal/public.ts]
+    allowedModuleDependencies: [interactions, people, workspaces]
+    publishes: [journal.item-changed, journal.life-event-changed]
+    consumes: [interactions.interaction-recorded]
+
+  - id: planning
+    path: packages/backend/modules/planning
+    kind: core
+    description: Tasks, reminder definitions and occurrences, rules, and stay-in-touch cadence.
+    ownsTables:
+      - tasks
+      - reminder_rules
+      - reminders
+      - reminder_occurrences
+      - stay_in_touch_cadences
+    publicEntryPoints: [packages/backend/modules/planning/public.ts]
+    allowedModuleDependencies: [people, workspaces]
+    publishes: [
+      planning.task-changed,
+      planning.reminder-due,
+      planning.reminder-delivered,
+    ]
+    consumes: [people.person-updated, workspace.configuration-changed]
+
+  - id: files
+    path: packages/backend/modules/files
+    kind: core
+    description: File metadata, object lifecycle, and typed links to people and gifts.
+    ownsTables:
+      - files
+      - person_file_links
+      - gift_file_links
+    publicEntryPoints: [packages/backend/modules/files/public.ts]
+    allowedModuleDependencies: [people, workspaces]
+    publishes: [files.file-attached, files.file-missing, files.file-removed]
+    consumes: [people.person-archived]
+
+  - id: gifts
+    path: packages/backend/modules/gifts
+    kind: core
+    description: Gift ideas/history and debts between a member and a person.
+    ownsTables:
+      - gifts
+      - debts
+    publicEntryPoints: [packages/backend/modules/gifts/public.ts]
+    allowedModuleDependencies: [files, people, workspaces]
+    publishes: [gifts.gift-changed, gifts.debt-changed]
+    consumes: [files.file-removed, people.person-archived]
+
+  - id: integrations
+    path: packages/backend/modules/integrations
+    kind: optional
+    description: DAV synchronization and location weather cache isolated from core person rows.
+    ownsTables:
+      - dav_address_books
+      - dav_address_book_subscriptions
+      - dav_objects
+      - dav_sync_tokens
+      - location_weather_cache
+    publicEntryPoints: [packages/backend/modules/integrations/public.ts]
+    allowedModuleDependencies: [people, planning, workspaces]
+    publishes: [integrations.sync-completed, integrations.sync-failed]
+    consumes: [people.person-updated, planning.task-changed]
+
+  - id: import-export
+    path: packages/backend/modules/import-export
+    kind: core
+    description: Versioned imports, source identity mapping, reports, and portable exports.
+    ownsTables:
+      - data_imports
+      - data_import_entities
+      - data_import_reports
+      - data_exports
+    publicEntryPoints: [packages/backend/modules/import-export/public.ts]
+    allowedModuleDependencies:
+      - files
+      - gifts
+      - governance
+      - identity
+      - integrations
+      - interactions
+      - journal
+      - people
+      - planning
+      - relationships
+      - workspaces
+    publishes: [
+      data.import-validated,
+      data.import-committed,
+      data.export-completed,
+    ]
+    consumes: []
+
+  - id: api-access
+    path: packages/backend/modules/api-access
+    kind: runtime
+    description: API request history, personal tokens, and optional OAuth server state.
+    ownsTables:
+      - api_request_logs
+      - api_tokens
+      - oauth_clients
+      - oauth_authorization_codes
+      - oauth_access_tokens
+      - oauth_refresh_tokens
+    publicEntryPoints: [packages/backend/modules/api-access/public.ts]
+    allowedModuleDependencies: [governance, identity, workspaces]
+    publishes: [api-access.token-revoked]
+    consumes: [identity.session-revoked]
+
+  - id: governance
+    path: packages/backend/modules/governance
+    kind: core
+    description: Product audit history, legal documents, and immutable acceptances.
+    ownsTables:
+      - audit_events
+      - legal_documents
+      - legal_acceptances
+    publicEntryPoints: [packages/backend/modules/governance/public.ts]
+    allowedModuleDependencies: [
+      identity,
+      interactions,
+      people,
+      planning,
+      workspaces,
+    ]
+    publishes: [governance.legal-accepted]
+    consumes:
+      - identity.user-registered
+      - interactions.interaction-recorded
+      - people.person-created
+      - planning.reminder-delivered
+      - workspace.configuration-changed
+
+  - id: billing
+    path: packages/backend/modules/billing
+    kind: optional
+    description: Provider-neutral customer and subscription state.
+    ownsTables:
+      - billing_customers
+      - billing_subscriptions
+      - billing_subscription_items
+    publicEntryPoints: [packages/backend/modules/billing/public.ts]
+    allowedModuleDependencies: [governance, workspaces]
+    publishes: [billing.entitlement-changed]
+    consumes: [workspace.created]
+
+  - id: operations
+    path: packages/backend/modules/operations
+    kind: runtime
+    description: Scheduled-run history, instance metadata, and aggregate statistics snapshots.
+    ownsTables:
+      - scheduled_job_runs
+      - app_instances
+      - statistics_snapshots
+    publicEntryPoints: [packages/backend/modules/operations/public.ts]
+    allowedModuleDependencies: [
+      import-export,
+      integrations,
+      planning,
+      workspaces,
+    ]
+    publishes: [operations.job-run-recorded]
+    consumes:
+      - data.export-completed
+      - data.import-committed
+      - integrations.sync-completed
+      - planning.reminder-delivered
+
+readModels:
+  - id: person-profile
+    path: packages/backend/read-models/person-profile
+    sourceModules: [
+      files,
+      gifts,
+      governance,
+      integrations,
+      interactions,
+      journal,
+      people,
+      planning,
+      relationships,
+      workspaces,
+    ]
+    consumers: [apps/api]
+    writeAccess: false
+
+  - id: today
+    path: packages/backend/read-models/today
+    sourceModules: [
+      gifts,
+      governance,
+      interactions,
+      people,
+      planning,
+      workspaces,
+    ]
+    consumers: [apps/api]
+    writeAccess: false
+
+  - id: people-directory
+    path: packages/backend/read-models/people-directory
+    sourceModules: [people, workspaces]
+    consumers: [apps/api]
+    writeAccess: false
+
+  - id: activity-report
+    path: packages/backend/read-models/activity-report
+    sourceModules: [interactions, people, workspaces]
+    consumers: [apps/api]
+    writeAccess: false
+
+  - id: journal-timeline
+    path: packages/backend/read-models/journal-timeline
+    sourceModules: [interactions, journal, people, workspaces]
+    consumers: [apps/api]
+    writeAccess: false
+
+  - id: audit-history
+    path: packages/backend/read-models/audit-history
+    sourceModules: [governance, people, workspaces]
+    consumers: [apps/api]
+    writeAccess: false

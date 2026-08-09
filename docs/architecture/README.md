@@ -24,22 +24,46 @@ at that time rather than copying version numbers from this research snapshot.
 ## Documents
 
 - [`technology-baseline.md`](technology-baseline.md) records platform choices,
-  evaluated frameworks, the proposed Compose topology, and dependencies.
+  evaluated frameworks, the accepted Compose topology, and dependency policy.
 - [`backend-architecture.md`](backend-architecture.md) defines module
   boundaries, dependency rules, data access, tenancy, HTTP contracts, and
   background work.
+- [`repository-layout.md`](repository-layout.md) fixes the scaffold layout,
+  public entry points, import rules, and generated-file locations.
+- [`module-boundaries.yaml`](module-boundaries.yaml) is the machine-readable
+  module, table-ownership, dependency, event, and read-model allowlist. Its
+  shape is defined by
+  [`module-boundaries.schema.json`](module-boundaries.schema.json).
+- [`authorization-matrix.yaml`](authorization-matrix.yaml) defines roles,
+  permissions, scopes, and mandatory tenant-security invariants.
+- [`compose-contract.md`](compose-contract.md) defines services, profiles,
+  readiness, isolation, data lifecycle, and image policy.
+- [`configuration-and-secrets.md`](configuration-and-secrets.md) defines
+  configuration ownership, validation, secret handling, redaction, and Deno
+  permissions.
+- [`migration-policy.md`](migration-policy.md) defines immutable SQL lifecycle,
+  runner requirements, deployment, compatibility, and recovery.
+- [`observability.md`](observability.md) separates telemetry, health, audit, and
+  sensitive-data handling.
 - [`quality-gates.md`](quality-gates.md) defines automated enforcement, tests,
   coverage, dependency controls, hooks, and CI stages.
+- [`decisions`](decisions/README.md) contains accepted and spike-required
+  architecture decisions.
+
+The user-facing counterpart is [`docs/product/README.md`](../product/README.md),
+which defines the page catalog, person-centered information architecture,
+workflow catalog, and release slices.
 
 ## Precedence
 
 1. The canonical schema SQL and synchronized schema bundle define persisted
    data.
 2. These documents define implementation boundaries and technology decisions.
-3. The Monica specifications define source behavior, feature coverage, and
+3. The product contract defines page composition and user workflows.
+4. The Monica specifications define source behavior, feature coverage, and
    import compatibility.
-4. Framework defaults, generated code, and convenience APIs must adapt to the
-   first three; they must not silently redefine them.
+5. Framework defaults, generated code, and convenience APIs must adapt to the
+   first four; they must not silently redefine them.
 
 Research snapshot: 2026-08-09. The locally available backend runtime was
 verified as Deno 2.9.5.

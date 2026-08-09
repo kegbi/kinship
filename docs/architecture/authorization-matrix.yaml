@@ -1,0 +1,157 @@
+schemaVersion: 1
+decisionStatus: accepted
+
+roles:
+  owner:
+    description: Final workspace authority. At least one active owner must remain.
+  admin:
+    description: Manages members, configuration, and workspace data but not ownership-only actions.
+  member:
+    description: Reads and maintains ordinary CRM data in an active workspace.
+
+principalClasses:
+  anonymous:
+    description: A request that has not completed authentication.
+  authenticated-user:
+    description: A verified user before or outside active workspace resolution.
+  system-worker:
+    description: Non-human principal with only the capabilities required by one worker command.
+
+accessAliases:
+  authenticated: [owner, admin, member]
+  active-member: [owner, admin, member]
+  crm-write: [owner, admin, member]
+  workspace-admin: [owner, admin]
+  data-admin: [owner, admin]
+  audit-read: [owner, admin]
+  workspace-owner: [owner]
+
+permissions:
+  - id: registration.create
+    principals: [anonymous]
+    scope: new-identity-and-workspace
+
+  - id: session.create
+    principals: [anonymous, authenticated-user]
+    scope: authentication-challenge
+
+  - id: legal.accept
+    principals: [authenticated-user]
+    scope: own-legal-acceptance
+
+  - id: member.self.manage
+    roles: [owner, admin, member]
+    scope: own-user-and-membership
+
+  - id: workspace.read
+    roles: [owner, admin, member]
+    scope: active-workspace
+
+  - id: workspace.manage
+    roles: [owner, admin]
+    scope: active-workspace
+
+  - id: workspace.delete
+    roles: [owner]
+    scope: active-workspace
+
+  - id: workspace.members.invite
+    roles: [owner, admin]
+    scope: active-workspace
+
+  - id: workspace.members.manage
+    roles: [owner, admin]
+    scope: active-workspace
+
+  - id: workspace.personalization.manage
+    roles: [owner, admin]
+    scope: active-workspace
+
+  - id: people.read
+    roles: [owner, admin, member]
+    scope: active-workspace
+
+  - id: people.write
+    roles: [owner, admin, member]
+    scope: active-workspace
+
+  - id: people.delete
+    roles: [owner, admin, member]
+    scope: active-workspace
+    requires: [explicit-confirmation]
+
+  - id: people.vcard.export
+    roles: [owner, admin, member]
+    scope: active-workspace
+
+  - id: relationships.write
+    roles: [owner, admin, member]
+    scope: active-workspace
+
+  - id: interactions.write
+    roles: [owner, admin, member]
+    scope: active-workspace
+
+  - id: journal.write
+    roles: [owner, admin, member]
+    scope: active-workspace
+
+  - id: tasks.write
+    roles: [owner, admin, member]
+    scope: active-workspace
+
+  - id: reminders.write
+    roles: [owner, admin, member]
+    scope: active-workspace
+
+  - id: reminder-delivery.execute
+    principals: [system-worker]
+    scope: claimed-reminder-occurrences
+
+  - id: files.read
+    roles: [owner, admin, member]
+    scope: active-workspace
+
+  - id: files.write
+    roles: [owner, admin, member]
+    scope: active-workspace
+
+  - id: gifts.write
+    roles: [owner, admin, member]
+    scope: active-workspace
+
+  - id: data.import
+    roles: [owner, admin]
+    scope: active-workspace
+
+  - id: data.export
+    roles: [owner, admin]
+    scope: active-workspace
+
+  - id: audit.read
+    roles: [owner, admin]
+    scope: active-workspace
+
+  - id: api-tokens.manage
+    roles: [owner, admin]
+    scope: active-workspace
+
+  - id: integrations.manage
+    roles: [owner, admin]
+    scope: active-workspace
+
+  - id: billing.manage
+    roles: [owner]
+    scope: active-workspace
+
+invariants:
+  - A role is ignored unless the membership is active.
+  - A body or route workspace identifier is never authorization evidence.
+  - Every aggregate identifier is resolved together with the active workspace.
+  - Strict child rows are reachable only through an already authorized aggregate.
+  - Cross-workspace links are rejected before persistence even if a foreign key would accept them.
+  - An admin cannot remove, demote, or suspend the last active owner.
+  - A member manages only their own credentials, factors, recovery codes, and sessions.
+  - Secrets are never returned through audit, administrator, import, or export access.
+  - Worker permission is capability-specific and does not imply ordinary member access.
+  - Optional modules add permissions but cannot broaden a core permission implicitly.

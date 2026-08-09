@@ -26,7 +26,7 @@ Frameworks are implementation details at the edges. A module's domain and use
 cases must remain runnable in tests without Hono, PostgreSQL, Deno environment
 access, the filesystem, or a network.
 
-## Suggested Repository Shape
+## Repository Shape
 
 ```text
 apps/
@@ -53,8 +53,10 @@ packages/
 tools/                    # repository checks, schema verification, generators
 ```
 
-The exact folder names may be refined during scaffolding, but the dependency
-direction and public/private boundaries are mandatory.
+The scaffold-level path and entry-point contract is now accepted in
+[`repository-layout.md`](repository-layout.md). The sketch above is
+illustrative; where it differs in detail, that contract and
+[`module-boundaries.yaml`](module-boundaries.yaml) are authoritative.
 
 ## Dependency Rules
 
@@ -86,7 +88,7 @@ The shared kernel should contain only stable primitives such as branded
 identifiers, result/error types, clocks, instants, and explicit partial-date
 values. It must not become a generic `utils` package.
 
-## Initial Module Boundaries
+## Module Boundaries
 
 Align bounded contexts with the canonical schema and Monica behavior
 specifications, not necessarily one module per table:
@@ -106,8 +108,30 @@ specifications, not necessarily one module per table:
 - compliance and audit;
 - billing and operations as optional outer modules.
 
-Refining these boundaries requires dependency evidence from use cases. Do not
-split them into services merely because their tables are grouped separately.
+The accepted module IDs, exact table ownership, allowed module dependencies,
+public entry points, events, and read models are recorded in
+[`module-boundaries.yaml`](module-boundaries.yaml). Refining them requires
+dependency evidence from use cases and a synchronized manifest/documentation
+change. Do not split modules into services merely because their tables are
+grouped separately.
+
+## Person Profile Read Composition
+
+The product has one canonical person workspace at `/app/people/:personId`.
+Following Monica's useful contact-centered behavior, it composes identity,
+profile facts, relationships, life events, notes, communications, activities,
+tasks, reminders, gifts, debts, documents, and photos on the same user-facing
+surface.
+
+This does not turn `people` into a module that owns all those tables. The
+`person-profile` read model is an explicit query-only exception allowed to read
+the source modules named in the boundary manifest. It cannot write, return raw
+database rows as process contracts, or expose a general query builder.
+
+Every profile mutation calls the public application facade of the module that
+owns the changed data. The API may compose those facades; the profile read model
+may not bypass them. Heavy sections can be loaded independently so one optional
+failure does not make the complete profile unavailable.
 
 ## Data Access and Transactions
 
@@ -214,6 +238,8 @@ deterministic fakes for tests. No domain code calls vendor SDKs directly.
 The intended dependency graph must be machine-enforced, not left to review
 memory. The quality strategy requires:
 
+- validation of `module-boundaries.yaml` against its JSON Schema;
+- proof that every canonical table has exactly one module owner;
 - a Deno lint plugin for forbidden imports and layer-only APIs;
 - a dependency-graph test for cycles and illegal module edges;
 - lint rules preventing framework, environment, filesystem, network, and

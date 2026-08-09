@@ -38,7 +38,7 @@ implementation manifests and lockfiles.
 | Concern            | Selection                                      | Why                                                                                                                                                                            |
 | ------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | HTTP adapter       | Hono                                           | Small Web Standards surface, first-class Deno support, typed handlers, routing composition, testing helpers, and OpenAPI integrations. Keep it at the transport boundary.      |
-| Runtime validation | Zod 4 through Hono's Standard Schema validator | Mature TypeScript inference and one boundary schema for request validation and OpenAPI generation. Domain value objects remain framework-independent.                          |
+| Runtime validation | Zod through Hono's Standard Schema validator   | Mature TypeScript inference and one boundary schema for request validation and OpenAPI generation. Domain value objects remain framework-independent.                          |
 | API description    | OpenAPI 3.1 plus RFC 9457 problem details      | Stable process boundary for the Astro client, importers, integrations, and future external clients.                                                                            |
 | SQL access         | Kysely plus Postgres.js                        | SQL-shaped, strongly typed access with good Deno support and escape hatches for PostgreSQL features. Generate database types from a live database created by canonical SQL.    |
 | SQL migrations     | Immutable raw SQL with checksums               | Preserve the audited DDL as source of truth. Select a thin Deno-compatible runner only after it proves locking, failure recovery, and drift detection against real PostgreSQL. |
@@ -68,7 +68,7 @@ adapters.
 Kysely is preferable to Drizzle for this project because the database contract
 already exists as audited PostgreSQL SQL. A schema-in-TypeScript ORM model would
 be a second definition that can drift. Kysely supplies typed queries without
-claiming ownership of DDL. Likewise, Zod 4 is the selected default; Hono's
+claiming ownership of DDL. Likewise, Zod is the selected default; Hono's
 Standard Schema integration leaves Valibot available if measured client bundle
 cost later justifies a change, but the initial implementation should not carry
 two validation libraries.
@@ -106,7 +106,8 @@ not create a parallel auth schema.
 ## Compose Topology
 
 The initial topology uses a base `compose.yaml`, a development override, and an
-isolated test override.
+isolated test override. The accepted lifecycle, readiness, isolation, storage,
+and reset behavior is defined in [`compose-contract.md`](compose-contract.md).
 
 | Service          | Responsibility                                                   | Lifecycle                                               |
 | ---------------- | ---------------------------------------------------------------- | ------------------------------------------------------- |
@@ -162,6 +163,13 @@ project-wide compiler diagnostics.
 
 ## Dependency and Runtime Policy
 
+- Architecture and product documents intentionally do not pin snapshot package
+  versions. Select compatible current stable releases only when the first
+  executable scaffold or approved spike needs them.
+- Once executable code exists, pin exact resolved dependencies,
+  runtime/container versions, and action revisions in committed manifests and
+  lockfiles. Do not use the pre-scaffold policy as permission for floating
+  production builds.
 - Pin the Deno image and Node LTS major; commit all lockfiles.
 - Use `deno ci` in CI and reject lockfile drift.
 - Keep npm lifecycle scripts disabled by default; explicitly allowlist any
@@ -192,5 +200,5 @@ project-wide compiler diagnostics.
 - [React hooks lint plugin](https://react.dev/reference/eslint-plugin-react-hooks)
 - [shadcn/ui for Astro](https://ui.shadcn.com/docs/installation/astro)
 - [Kysely documentation](https://www.kysely.dev/)
-- [Zod 4 documentation](https://zod.dev/)
+- [Zod documentation](https://zod.dev/)
 - [Lefthook](https://lefthook.dev/)

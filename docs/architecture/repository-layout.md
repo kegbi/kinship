@@ -1,0 +1,150 @@
+# Repository Layout Contract
+
+## Status
+
+Accepted before scaffolding. Exact dependencies are intentionally absent. The
+first executable scaffold may add files inside this shape but may not weaken its
+public/private boundaries without an architecture decision.
+
+## Canonical Shape
+
+```text
+apps/
+  api/
+    main.ts
+    composition.ts
+  worker/
+    main.ts
+    composition.ts
+  web/
+    src/
+      pages/
+      layouts/
+      components/
+      islands/
+      lib/
+    public/
+
+packages/
+  backend/
+    bootstrap/
+    shared-kernel/
+    platform/
+    modules/
+      <module-id>/
+        domain/
+        application/
+        ports/
+        adapters/
+          postgres/
+        transport/
+          http/
+        public.ts
+    read-models/
+      <read-model-id>/
+  contracts/
+    openapi/
+    generated/
+
+tests/
+  e2e/
+  fixtures/
+  support/
+
+tools/
+  architecture/
+  contracts/
+  schema/
+  workflows/
+```
+
+Directories are created only when a real implementation needs them. Empty module
+scaffolds are forbidden because they create apparent architecture without
+executable boundaries.
+
+## Entry Points
+
+- `apps/api/main.ts` and `apps/worker/main.ts` are executable entry points.
+- Their adjacent `composition.ts` files are composition roots and may
+  instantiate concrete adapters.
+- Each backend module exposes exactly one code-level public entry point:
+  `packages/backend/modules/<module-id>/public.ts`.
+- Read models expose their own public entry point and remain query-only.
+- `apps/web` consumes generated contracts. It never imports `packages/backend`.
+
+Tests may import private code only when testing that exact module. A test for
+one module may not use a private import from another module as a convenience.
+
+## Layer Contents
+
+### Domain
+
+Entities, value objects, invariants, pure policies, domain errors, and domain
+events. Domain code has no framework, runtime, I/O, environment, wall-clock, or
+random-number dependency.
+
+### Application
+
+Commands, queries, use cases, authorization policy, transaction boundaries, and
+coordination through ports or another module's public facade. Public use-case
+input and output types are explicit.
+
+### Ports
+
+Capability-specific interfaces owned by their consumer. Examples are
+`PersonRepository`, `Clock`, `FileObjectStore`, and `ReminderDelivery`; a
+generic repository base class is forbidden.
+
+### Adapters
+
+PostgreSQL queries and external service implementations. An adapter never
+becomes a public module API. SQL writes live with the module that owns the table
+in `module-boundaries.yaml`.
+
+### Transport
+
+Hono routes, Zod request/response schemas, cookies, status codes, OpenAPI
+annotations, and mapping to RFC 9457 problems. Transport code calls application
+use cases and does not contain business decisions.
+
+### Read models
+
+Named query-only compositions for person profile, Today, directories, reports,
+and audit views. Their cross-module access is allowlisted in
+[`module-boundaries.yaml`](module-boundaries.yaml).
+
+## Import Names
+
+The scaffold should define stable aliases without using aliases to conceal an
+illegal import:
+
+```text
+@app/          apps and composition roots
+@backend/      backend package root
+@contracts/    OpenAPI and generated process contracts
+@test/         shared test fixtures and harnesses
+```
+
+Inside a module, relative imports are preferred. Cross-module imports must name
+the target module's `public.ts`; paths into `domain`, `application`, `ports`,
+`adapters`, or `transport` of another module are always illegal.
+
+## Generated And Canonical Files
+
+- Generated database types live under an explicit generated path and are never
+  edited by hand.
+- Generated API client/types live in `packages/contracts/generated` and may be
+  imported by the web application.
+- OpenAPI artifacts are checked in and checked for drift.
+- The canonical schema bundle remains outside generator and formatter write
+  targets.
+- A generated-file header names its generator command and source artifact.
+
+## Tests
+
+Unit and adapter contract tests may be colocated with the production code they
+exercise. Cross-module integration tests live at the narrowest shared boundary.
+Browser workflows live under `tests/e2e` and carry IDs from
+[`docs/product/user-flows.yaml`](../product/user-flows.yaml).
+
+No test-only barrel may expose private production internals across modules.
