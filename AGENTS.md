@@ -44,11 +44,13 @@ Modules communicate through public application interfaces or explicitly approved
 read models, never by importing another module's adapters or repository
 internals.
 
-Hono, Zod 4, Kysely with Postgres.js, Lefthook, and a Better Auth compatibility
-spike are recommendations, not yet accepted dependencies. Do not silently
-substitute Bun, add Redis, introduce microservices, or let an ORM become a
-second schema source of truth. Record approval and update the architecture
-documents before treating a proposed choice as mandatory.
+The selected implementation stack includes Hono, Zod 4, Kysely with Postgres.js,
+and Lefthook. A bounded Better Auth compatibility spike is approved, but Better
+Auth itself is not an accepted dependency until the spike proves exact
+compatibility with the canonical identity schema. Do not silently substitute
+Bun, add Redis, introduce microservices, or let an ORM become a second schema
+source of truth. Record a new architecture decision before changing these
+choices.
 
 The PostgreSQL DDL below remains the sole schema source of truth. Any new
 persistent queue, outbox, auth table, ORM-generated DDL, or other database

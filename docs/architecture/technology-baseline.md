@@ -24,17 +24,18 @@ remains the backend runtime and the top-level task orchestrator. Adding Bun
 would create a third JavaScript runtime without solving a current requirement,
 so Bun is deferred.
 
-At scaffolding time, prefer shadcn/ui's current default primitive family (Base
-UI in this research snapshot) unless an accessibility or component-coverage
-spike shows a concrete gap. Keep the choice consistent across the application;
-do not mix Base UI and Radix primitives component by component without a
-documented reason.
+At scaffolding time, use shadcn/ui's current default primitive family (Base UI
+in this research snapshot) unless an accessibility or component-coverage test
+shows a concrete blocker. Keep the choice consistent across the application; do
+not mix Base UI and Radix primitives component by component without a documented
+architecture decision.
 
-## Recommended Backend Stack
+## Accepted Backend Stack
 
-These choices are recommendations pending explicit approval.
+These choices were accepted on 2026-08-09. Exact versions remain pinned by the
+implementation manifests and lockfiles.
 
-| Concern            | Recommendation                                 | Why                                                                                                                                                                            |
+| Concern            | Selection                                      | Why                                                                                                                                                                            |
 | ------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | HTTP adapter       | Hono                                           | Small Web Standards surface, first-class Deno support, typed handlers, routing composition, testing helpers, and OpenAPI integrations. Keep it at the transport boundary.      |
 | Runtime validation | Zod 4 through Hono's Standard Schema validator | Mature TypeScript inference and one boundary schema for request validation and OpenAPI generation. Domain value objects remain framework-independent.                          |
@@ -55,7 +56,7 @@ client must work without importing the API application's source tree.
 
 | Framework | Assessment                                                                                                                                           |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Hono      | **Recommended.** Best fit for Deno, Web Standards, a thin HTTP layer, typed routes, and the desired modular architecture.                            |
+| Hono      | **Selected.** Best fit for Deno, Web Standards, a thin HTTP layer, typed routes, and the desired modular architecture.                               |
 | Oak       | Strong second choice when a conventional Koa/Express-style middleware model matters more than minimal surface area and typed RPC/OpenAPI ergonomics. |
 | H3 v2     | Promising universal HTTP core, but v2 is still documented as beta in this research snapshot. Do not base the initial production architecture on it.  |
 | Elysia    | Attractive when Bun is the primary runtime. Its main optimization target does not match the accepted Deno runtime.                                   |
@@ -67,7 +68,7 @@ adapters.
 Kysely is preferable to Drizzle for this project because the database contract
 already exists as audited PostgreSQL SQL. A schema-in-TypeScript ORM model would
 be a second definition that can drift. Kysely supplies typed queries without
-claiming ownership of DDL. Likewise, Zod 4 is the default recommendation; Hono's
+claiming ownership of DDL. Likewise, Zod 4 is the selected default; Hono's
 Standard Schema integration leaves Valibot available if measured client bundle
 cost later justifies a change, but the initial implementation should not carry
 two validation libraries.
@@ -82,9 +83,10 @@ safety.
 
 ## Authentication Decision
 
-Better Auth is a **spike-required candidate**, not an accepted dependency. Its
-Hono integration, passkey support, and relational adapter model are useful, but
-its default data model overlaps the canonical users, sessions, verification,
+The Better Auth compatibility spike is **accepted and required before the auth
+implementation begins**. Better Auth itself is not yet an accepted dependency.
+Its Hono integration, passkey support, and relational adapter model are useful,
+but its default data model overlaps the canonical users, sessions, verification,
 recovery, MFA, and WebAuthn tables.
 
 The spike must map Better Auth to the exact canonical schema through supported
@@ -103,7 +105,7 @@ not create a parallel auth schema.
 
 ## Compose Topology
 
-The proposed topology uses a base `compose.yaml`, a development override, and an
+The initial topology uses a base `compose.yaml`, a development override, and an
 isolated test override.
 
 | Service          | Responsibility                                                   | Lifecycle                                               |
@@ -145,8 +147,8 @@ Deno 2.9 already covers the backend's core toolchain:
 - deny-by-default runtime permissions;
 - built-in OpenTelemetry export.
 
-Deno does not manage Git hooks. Lefthook is recommended only as a thin trigger
-for canonical `deno task` commands. Astro formatting in Deno 2.9 is behind the
+Deno does not manage Git hooks. Lefthook is used only as a thin trigger for
+canonical `deno task` commands. Astro formatting in Deno 2.9 is behind the
 component-formatting unstable flag; trial it with the runtime version pinned and
 fall back to Prettier only if repository examples expose correctness or
 stability problems.
