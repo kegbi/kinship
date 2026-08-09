@@ -108,9 +108,41 @@ flows:
     ]
     result: Member-owned state changes and revoked credentials stop working.
     auditEffect: member-security-or-preference-updated
-    pageIds: [settings.profile, settings.security]
+    pageIds: [
+      settings.index,
+      settings.profile,
+      settings.preferences,
+      settings.security,
+    ]
     moduleIds: [identity, workspaces]
     permissions: [member.self.manage]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: AUTH-005
+    title: Leave a workspace or delete the personal identity safely
+    priority: P1
+    actor: active-member
+    trigger: The member chooses a personal account lifecycle action.
+    preconditions: [authenticated-session, recent-authentication]
+    steps:
+      - Preview affected memberships, active sessions, and owned workspaces.
+      - Require ownership transfer or workspace deletion before removing a last owner.
+      - Explain retained legal records separately from CRM data.
+      - Require explicit confirmation and execute the selected personal lifecycle action atomically.
+      - Revoke affected sessions and redirect to the next valid workspace or signed-out state.
+    alternateOutcomes: [
+      confirmation-cancelled,
+      unresolved-owned-workspace,
+      last-owner-removal,
+      retention-policy-applies,
+      transactional-failure,
+    ]
+    result: A member can leave or remove their identity without orphaning a workspace or silently retaining access.
+    auditEffect: member-left-or-identity-deletion-attempted
+    pageIds: [settings.index, settings.profile]
+    moduleIds: [governance, identity, workspaces]
+    permissions: [member.self.delete]
     testLayers: [unit, integration, e2e]
     e2e: { required: true, testRefs: [] }
 
@@ -135,6 +167,99 @@ flows:
     moduleIds: [workspaces]
     permissions: [workspace.manage]
     testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: WORKSPACE-002
+    title: Reset or delete a workspace safely
+    priority: P1
+    actor: workspace-owner
+    trigger: The owner opens the workspace danger zone and chooses a destructive action.
+    preconditions: [active-owner-membership, recent-authentication]
+    steps:
+      - Load impact counts for the active workspace without exposing another workspace.
+      - Explain whether the action resets CRM data or deletes the workspace itself.
+      - Require typed confirmation and revalidate owner invariants on the server.
+      - Execute the selected lifecycle operation atomically or leave all data intact.
+      - Revoke or redirect affected sessions and record the result outside deleted data.
+    alternateOutcomes: [
+      confirmation-cancelled,
+      stale-impact-preview,
+      last-required-owner-invariant,
+      cross-workspace-id,
+      transactional-failure,
+    ]
+    result: Destructive workspace lifecycle changes are explicit, authorized, atomic, and auditable.
+    auditEffect: workspace-reset-or-deletion-attempted
+    pageIds: [settings.workspace-danger]
+    moduleIds: [
+      identity,
+      workspaces,
+      people,
+      relationships,
+      interactions,
+      journal,
+      planning,
+      files,
+      gifts,
+      integrations,
+      governance,
+      operations,
+    ]
+    permissions: [workspace.reset, workspace.delete]
+    testLayers: [unit, integration, schema, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: WORKSPACE-003
+    title: Configure profile modules and controlled vocabularies
+    priority: P1
+    actor: workspace-admin
+    trigger: An administrator opens a personalization section.
+    preconditions: [active-admin-membership]
+    steps:
+      - Deep-link to one profile-module or vocabulary section.
+      - Validate names, ordering, defaults, and workspace ownership.
+      - Preview references before replacing, disabling, or deleting an option.
+      - Apply the change through the module that owns the affected records.
+      - Keep data in disabled profile modules and refresh affected forms and projections.
+    alternateOutcomes: [
+      option-in-use-requires-replacement,
+      required-default,
+      duplicate-name,
+      cross-workspace-option,
+      member-forbidden,
+    ]
+    result: Workspace terminology and profile composition change without deleting person history or bypassing module boundaries.
+    auditEffect: workspace-personalization-updated
+    pageIds: [settings.personalization]
+    moduleIds: [people, planning, workspaces]
+    permissions: [workspace.personalization.manage]
+    testLayers: [unit, integration, e2e]
+    e2e: { required: true, testRefs: [] }
+
+  - id: TODAY-001
+    title: Review and act on today's relationship priorities
+    priority: P0
+    actor: active-member
+    trigger: The member enters the authenticated application.
+    preconditions: [active-membership, valid-member-timezone]
+    steps:
+      - Load overdue, today, and next-seven-day attention items for the active workspace.
+      - Show due stay-in-touch people with last-interaction context.
+      - Complete a task or navigate to the owning person section.
+      - Refresh only affected projections while preserving the rest of the page.
+    alternateOutcomes: [
+      first-workspace-onboarding,
+      no-due-work,
+      secondary-region-error,
+      midnight-boundary,
+      daylight-saving-transition,
+    ]
+    result: The member can identify and advance the most important current relationship work.
+    auditEffect: only-the-invoked-owning-use-case
+    pageIds: [app.today, people.profile, tasks.index]
+    moduleIds: [people, interactions, planning, workspaces]
+    permissions: [people.read, tasks.write]
+    testLayers: [unit, integration, contract, e2e]
     e2e: { required: true, testRefs: [] }
 
   - id: PEOPLE-001
@@ -262,26 +387,26 @@ flows:
     e2e: { required: true, testRefs: [] }
 
   - id: PEOPLE-006
-    title: Maintain person profile facts and enabled sections
+    title: Maintain person profile facts within enabled sections
     priority: P1
     actor: crm-writer
-    trigger: The member edits contact methods, addresses, work, tags, pets, or profile modules.
+    trigger: The member edits contact methods, addresses, work, tags, pets, or other profile facts.
     preconditions: [active-membership]
     steps:
       - Validate the owning workspace vocabulary and target person.
       - Apply the local profile change through its owning use case.
-      - Keep hidden-module data intact.
+      - Respect disabled profile modules without treating hidden data as deleted.
       - Refresh only the affected profile section.
     alternateOutcomes: [
       custom-type-disabled,
       hidden-section,
       cross-workspace-link,
     ]
-    result: Profile facts remain available from the single person workspace.
-    auditEffect: person-profile-fact-or-workspace-module-updated
-    pageIds: [people.profile, settings.personalization]
+    result: Profile facts remain available from the single person workspace and use current workspace terminology.
+    auditEffect: person-profile-fact-updated
+    pageIds: [people.profile]
     moduleIds: [people, workspaces]
-    permissions: [people.write, workspace.personalization.manage]
+    permissions: [people.write]
     testLayers: [unit, integration, e2e]
     e2e: { required: true, testRefs: [] }
 
@@ -328,7 +453,7 @@ flows:
     ]
     result: The event is visible from every valid participant profile and relevant projection.
     auditEffect: interaction-or-note-created
-    pageIds: [people.profile, app.today]
+    pageIds: [people.profile, people.activity-report, app.today]
     moduleIds: [people, interactions]
     permissions: [interactions.write]
     testLayers: [unit, integration, e2e]
@@ -427,7 +552,7 @@ flows:
     ]
     result: Metadata and object state stay consistent and tenant-safe.
     auditEffect: file-uploaded-read-or-removed
-    pageIds: [people.profile]
+    pageIds: [people.profile, settings.storage]
     moduleIds: [people, files]
     permissions: [files.write, files.read]
     testLayers: [unit, integration, e2e]
@@ -502,7 +627,7 @@ flows:
     ]
     result: The import is atomic, diagnosable, tenant-safe, and idempotent.
     auditEffect: import-started-validated-committed-or-failed
-    pageIds: [settings.import, settings.import-report]
+    pageIds: [settings.import, settings.import-new, settings.import-report]
     moduleIds: [
       import-export,
       identity,
@@ -614,24 +739,26 @@ flows:
     e2e: { required: true, testRefs: [] }
 
   - id: GOVERNANCE-002
-    title: Review person audit history
+    title: Review authorized audit history
     priority: P1
     actor: audit-reader
-    trigger: An authorized member opens audit history.
-    preconditions: [person-in-active-workspace]
+    trigger: An authorized member opens person or workspace audit history.
+    preconditions: [auditable-scope-in-active-workspace]
     steps:
       - Authorize audit access separately from ordinary person read access.
-      - Return an append-oriented, redacted history for the selected person.
+      - Apply the selected workspace, person, actor, action, and time filters.
+      - Return an append-oriented and redacted history for the authorized scope.
       - Paginate without changing historical ordering.
     alternateOutcomes: [
       member-forbidden,
       redacted-sensitive-value,
-      cross-workspace-person,
+      cross-workspace-scope,
+      stale-pagination-cursor,
     ]
-    result: Authorized users can explain changes without exposing secrets.
+    result: Authorized users can explain workspace or person changes without exposing secrets.
     auditEffect: none
-    pageIds: [people.audit, people.profile]
-    moduleIds: [governance, people]
+    pageIds: [people.audit, people.profile, settings.audit]
+    moduleIds: [governance, people, workspaces]
     permissions: [audit.read]
     testLayers: [unit, integration, e2e]
     e2e: { required: true, testRefs: [] }

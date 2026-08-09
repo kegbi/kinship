@@ -108,13 +108,20 @@ pages:
     rendering: static-shell-islands
     owner: web
     readModel: today
-    flowIds: [PLANNING-002, INTERACTION-001]
+    flowIds: [TODAY-001, PLANNING-002, INTERACTION-001]
     sections:
-      - upcoming-reminders
-      - open-tasks
+      - attention-queue
       - people-due-for-contact
-      - recent-interactions
+      - upcoming
+      - recently-viewed-people
       - favorite-notes
+      - recent-activity
+    localActions:
+      - quick-capture
+      - complete-task
+      - open-person
+      - open-person-section
+      - open-all-tasks
 
   - id: people.index
     path: /app/people
@@ -245,36 +252,38 @@ pages:
     path: /app/settings
     access: active-member
     rendering: static-shell-islands
-    owner: workspaces
-    flowIds: []
+    owner: web
+    flowIds: [AUTH-004, AUTH-005]
+    sections:
+      - settings-search
+      - personal-settings
+      - workspace-settings
+      - data-management
+      - developer-and-integrations
+      - billing-when-enabled
 
   - id: settings.profile
     path: /app/settings/profile
     access: active-member
     rendering: static-shell-islands
+    owner: identity
+    flowIds: [AUTH-004, AUTH-005]
+    sections:
+      - identity
+      - self-person-link
+      - account-lifecycle
+
+  - id: settings.preferences
+    path: /app/settings/preferences
+    access: active-member
+    rendering: static-shell-islands
     owner: workspaces
     flowIds: [AUTH-004]
-
-  - id: settings.workspace
-    path: /app/settings/workspace
-    access: workspace-admin
-    rendering: static-shell-islands
-    owner: workspaces
-    flowIds: [WORKSPACE-001]
-
-  - id: settings.members
-    path: /app/settings/members
-    access: workspace-admin
-    rendering: static-shell-islands
-    owner: workspaces
-    flowIds: [AUTH-002, WORKSPACE-001]
-
-  - id: settings.personalization
-    path: /app/settings/personalization
-    access: workspace-admin
-    rendering: static-shell-islands
-    owner: workspaces
-    flowIds: [PEOPLE-006]
+    sections:
+      - locale-and-time-zone
+      - regional-formats
+      - reminder-delivery-time
+      - display-and-density
 
   - id: settings.security
     path: /app/settings/security
@@ -282,6 +291,73 @@ pages:
     rendering: static-shell-islands
     owner: identity
     flowIds: [AUTH-003, AUTH-004]
+    sections:
+      - password
+      - multi-factor-authentication
+      - passkeys
+      - recovery-codes
+      - sessions
+
+  - id: settings.workspace
+    path: /app/settings/workspace
+    access: workspace-admin
+    rendering: static-shell-islands
+    owner: workspaces
+    flowIds: [WORKSPACE-001]
+    sections:
+      - workspace-identity
+      - workspace-defaults
+
+  - id: settings.members
+    path: /app/settings/members
+    access: workspace-admin
+    rendering: static-shell-islands
+    owner: workspaces
+    flowIds: [AUTH-002, WORKSPACE-001]
+    sections:
+      - active-members
+      - pending-invitations
+      - roles
+
+  - id: settings.personalization
+    path: /app/settings/personalization
+    access: workspace-admin
+    rendering: static-shell-islands
+    owner: workspaces
+    flowIds: [WORKSPACE-003]
+    sections:
+      - profile-modules
+      - gender-options
+      - contact-method-types
+      - contact-labels
+      - activity-types
+      - emotion-options
+      - life-event-types
+      - relationship-types
+      - pet-categories
+      - reminder-rules
+      - tags
+
+  - id: settings.workspace-danger
+    path: /app/settings/workspace/danger-zone
+    access: workspace-owner
+    rendering: static-shell-islands
+    owner: workspaces
+    flowIds: [WORKSPACE-002]
+    sections:
+      - reset-workspace-data
+      - delete-workspace
+
+  - id: settings.storage
+    path: /app/settings/storage
+    access: workspace-admin
+    rendering: static-shell-islands
+    owner: files
+    flowIds: [FILES-001]
+    sections:
+      - usage-and-limits
+      - object-state
+      - file-lookup
 
   - id: settings.api-access
     path: /app/settings/api
@@ -303,6 +379,21 @@ pages:
     rendering: static-shell-islands
     owner: import-export
     flowIds: [IMPORT-001]
+    sections:
+      - first-import-state
+      - import-history
+
+  - id: settings.import-new
+    path: /app/settings/import/new
+    access: data-admin
+    rendering: static-shell-islands
+    owner: import-export
+    flowIds: [IMPORT-001]
+    sections:
+      - source-upload
+      - format-detection
+      - dry-run
+      - commit-confirmation
 
   - id: settings.import-report
     path: /app/settings/import/:importId
@@ -310,6 +401,12 @@ pages:
     rendering: static-shell-islands
     owner: import-export
     flowIds: [IMPORT-001]
+    sections:
+      - progress
+      - summary
+      - diagnostics
+      - missing-attachments
+      - retry-or-rerun
 
   - id: settings.export
     path: /app/settings/export
@@ -317,6 +414,20 @@ pages:
     rendering: static-shell-islands
     owner: import-export
     flowIds: [EXPORT-001]
+    sections:
+      - create-export
+      - export-history
+      - downloads
+
+  - id: settings.audit
+    path: /app/settings/audit
+    access: audit-read
+    rendering: static-shell-islands
+    owner: governance
+    flowIds: [GOVERNANCE-002]
+    sections:
+      - filters
+      - audit-events
 
   - id: settings.billing
     path: /app/settings/billing

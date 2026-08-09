@@ -23,6 +23,10 @@ CRM schema, application modules, and executable end-to-end tests.
 
 - [`monica-person-profile-analysis.md`](monica-person-profile-analysis.md)
   records the behavioral lessons taken from Monica's contact profile.
+- [`monica-dashboard-settings-analysis.md`](monica-dashboard-settings-analysis.md)
+  records Monica's historical dashboard/settings composition and routes.
+- [`dashboard-settings-design.md`](dashboard-settings-design.md) fixes the
+  accepted Today and settings UX, route hierarchy, and responsive behavior.
 - [`information-architecture.md`](information-architecture.md) defines the
   application navigation and person-profile composition.
 - [`page-catalog.yaml`](page-catalog.yaml) is the machine-readable page and
@@ -40,6 +44,7 @@ CRM schema, application modules, and executable end-to-end tests.
 4. Monica specifications define source behavior, feature coverage, and import
    compatibility.
 
-Changing a stable page ID, flow ID, or the person-profile composition requires
-updating the affected catalogs, release slices, tests, and `AGENTS.md` in the
-same change.
+Changing a stable page ID, flow ID, person-profile composition, Today content
+order, settings route, or personalization section ID requires updating the
+affected design contract, catalogs, release slices, tests, and `AGENTS.md` in
+the same change.

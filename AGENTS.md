@@ -91,6 +91,11 @@ pins, and frozen CI installs are mandatory.
 - [docs/product/monica-person-profile-analysis.md](docs/product/monica-person-profile-analysis.md)
   records the source-derived person-profile behavior to preserve without copying
   Monica's obsolete UI.
+- [docs/product/monica-dashboard-settings-analysis.md](docs/product/monica-dashboard-settings-analysis.md)
+  records Monica's source-derived dashboard/settings composition, standalone
+  surfaces, and historical routes.
+- [docs/product/dashboard-settings-design.md](docs/product/dashboard-settings-design.md)
+  is the accepted UX and route contract for Today and settings.
 
 The product is person-centered. `/app/people/:personId` is the one canonical
 person workspace and must expose nearly all person-specific information through
@@ -105,6 +110,21 @@ The `person-profile` read model may compose the source modules allowlisted in
 `module-boundaries.yaml`, but it is read-only. Every mutation must call the
 public application facade of the module that owns the changed table. A unified
 screen is never permission to bypass module boundaries.
+
+`/app` is the one Today route. Prioritize its attention queue, people due for
+contact, upcoming work, recent people, reference notes, and recent activity in
+the documented semantic order. Do not restore Monica's product-news card,
+lifetime counters, three-month reminder wall, or calls/notes/debts/tasks tab
+mixture. The `today` read model is also read-only; inline actions call the
+owning module's public use case.
+
+Settings use the stable hierarchy in `dashboard-settings-design.md` and
+`page-catalog.yaml`. Keep personal, workspace, data, developer, and optional
+billing scopes visibly grouped. Related workspace vocabularies share
+`/app/settings/personalization?section=<section-id>`; do not create separate
+page routes for their CRUD forms. Preserve standalone routes for resumable data
+jobs, operational administration, and the owner-only workspace danger zone. Do
+not place destructive workspace actions beside routine preferences.
 
 Every shipped route must have a page-catalog ID. Every required workflow must
 have a Playwright test carrying its stable flow ID. Update catalogs, tests, and

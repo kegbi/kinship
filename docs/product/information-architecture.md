@@ -33,13 +33,24 @@ Application
   Journal
     Journal item
   Settings
-    Personal profile and preferences
-    Workspace and members
-    Personalization and vocabularies
-    Security and sessions
-    API access and integrations
-    Import and import reports
-    Export
+    Overview and settings search
+    Personal
+      Profile
+      Preferences
+      Security and sessions
+    Workspace
+      General
+      Members
+      Personalization and vocabularies
+      Danger zone
+    Data
+      Storage
+      Import and import reports
+      Export
+      Audit history
+    Developer
+      Integrations
+      API access
     Billing when enabled
 ```
 
@@ -49,6 +60,52 @@ person-specific reminders belong to the person workspace. Upcoming reminders
 belong on Today, account-wide planning belongs on Tasks, and the personal record
 belongs in Journal. A later power-user view needs usage evidence and a product
 decision rather than an anticipatory route.
+
+## Today
+
+`/app` is the only authenticated home route. It prioritizes a unified attention
+queue, people due for contact, upcoming items, recently viewed people, favorite
+notes, and recent activity in that order. It does not display product news,
+lifetime vanity counters, or unrelated datasets hidden behind a single tab.
+
+The attention queue composes overdue, today, and next-seven-day work from tasks,
+reminders, important dates, and stay-in-touch cadences. The wider upcoming
+preview is bounded to the next 30 days. Every item links back to its canonical
+person section or global task surface; Today does not create duplicate detail
+pages or write directly through its read model.
+
+The accepted desktop and mobile composition, empty states, and interaction rules
+are fixed in [`dashboard-settings-design.md`](dashboard-settings-design.md).
+
+## Settings
+
+`/app/settings` is a searchable category overview, not a long general-settings
+form. Ordinary pages share a grouped local navigation on desktop and compact
+category context on mobile. The stable category routes are:
+
+- personal: `/app/settings/profile`, `/app/settings/preferences`, and
+  `/app/settings/security`;
+- workspace: `/app/settings/workspace`, `/app/settings/members`,
+  `/app/settings/personalization`, and the owner-only
+  `/app/settings/workspace/danger-zone`;
+- data: `/app/settings/storage`, `/app/settings/import`,
+  `/app/settings/import/new`, `/app/settings/import/:importId`,
+  `/app/settings/export`, and `/app/settings/audit`;
+- developer: `/app/settings/integrations` and `/app/settings/api`;
+- optional owner billing: `/app/settings/billing`.
+
+Related controlled vocabularies do not become a forest of CRUD routes.
+`/app/settings/personalization?section=<section-id>` shows one focused
+vocabulary/module view and preserves it in browser history. Dialogs, drawers, or
+inline rows handle local create/edit/replace/delete actions. Imports and reports
+remain standalone because they are long-running and resumable; member invitation
+creation stays local to the members page.
+
+Personal and workspace scopes must be visibly labeled. Permission-dependent
+navigation never replaces server authorization. Destructive workspace actions
+are isolated from ordinary preferences and require owner permission,
+reauthentication when policy requires it, impact disclosure, typed confirmation,
+and invariant checks.
 
 ## Person Workspace
 

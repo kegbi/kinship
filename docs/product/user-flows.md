@@ -61,6 +61,24 @@ notes, calls, conversations, activities, tasks, reminders, gifts, debts, pets,
 and files. Separate routes are not required merely because separate backend
 modules own those records.
 
+## Today And Settings Flow Pattern
+
+`TODAY-001` treats `/app` as an action-oriented projection. Due items retain
+their owning module and canonical detail location: Today may complete a task or
+navigate to a person section through an approved use case, but its read model
+never becomes a cross-module write service. Secondary-region failures are
+isolated from the attention queue, and time-zone boundaries are explicit test
+cases.
+
+Settings workflows use category-level page routes from
+[`page-catalog.yaml`](page-catalog.yaml). Related personalization vocabularies
+share one route and stable `?section=` values; local CRUD actions do not invent
+page routes. `WORKSPACE-003` owns the cross-module administration contract, but
+each mutation still enters the module that owns the affected record.
+Long-running import reports and the workspace danger zone remain standalone
+because resumption, diagnostics, or destructive scope materially change the
+workflow.
+
 ## P0 Acceptance Emphasis
 
 P0 must prove all of the following before broader feature work:
@@ -71,11 +89,17 @@ P0 must prove all of the following before broader feature work:
 - the person workspace composes multiple module sections without granting a
   cross-module write shortcut;
 - interactions, tasks, and reminders update their global projections;
+- Today orders overdue and current work in the member's effective time zone and
+  remains usable when a secondary projection fails;
 - reminder delivery is retry-safe and idempotent;
 - missing attachments have an explicit recoverable state;
 - Monica import supports dry-run, atomic commit, complete diagnostics, and an
   idempotent rerun;
 - imported legacy credentials never become active.
+
+Before destructive personal or workspace lifecycle work ships, `AUTH-005` and
+`WORKSPACE-002` must also prove typed confirmation, current impact counts, owner
+invariants, atomic failure, and post-operation session behavior.
 
 ## Test Reference Lifecycle
 
