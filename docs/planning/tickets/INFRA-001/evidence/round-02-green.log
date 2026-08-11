@@ -1,0 +1,19 @@
+INFRA-001 round 2 GREEN
+
+Frozen RED revision: 2ca5d15
+Frozen test SHA-256 values:
+- worktree_eol_invariant_test.ts:
+  ca3e575bc331d26a7a46700f6fc36b48b15596a2f6083f8ffbbfead089f9108b
+- schema_audit_bytes_test.ts:
+  a17d3bc4be722c020e0ac96f62c67e4a89d7f21231370d7f9f7fb53d3aac505a
+
+Production change:
+.gitattributes preserves non-CSV schema artifacts and materializes the four
+audited CSV files as CRLF, while all normal project text remains LF.
+
+Fresh-worktree focused result:
+3 passed, 0 failed.
+
+Fresh-worktree schema matrix:
+- PostgreSQL 18.4: passed
+- PostgreSQL 17.10: passed
