@@ -40,9 +40,26 @@ digests. Do not rewrite any existing test or prior evidence.
 - Affected criterion: AC-03
 - Contract: `docs/development/autonomous-delivery.md#ticket-packet`
 
+## Orchestrator guard — validate pre-candidate phases
+
+- Severity/lens: P1 / bug_correctness
+- Expected behavior: `deno task ticket:validate <ticket-directory>` validates a
+  clean committed `ready` or `red` packet whose candidate revision is correctly
+  `null`.
+- Observed behavior: filesystem validation casts the absent candidate to a Git
+  argument and enters ancestry/metadata checks that apply only after a candidate
+  exists.
+- Required regression: clean committed ready and RED packet fixtures with no
+  candidate, plus a candidate-phase control.
+- Required remediation: make Git evidence validation phase-aware, while still
+  verifying repository identity, canonical paths, committed metadata, the base
+  revision, and any RED revision available in the current phase.
+- Affected criterion: AC-03
+- Contract: `docs/development/autonomous-delivery.md#state-machine`
+
 ## Constraints
 
-- The two findings must be RED together before production changes.
+- All three gaps must be RED together before production changes.
 - Preserve the one-megabyte per-file and ten-kilobyte generic-output limits.
 - Stop consuming a blob when the remaining aggregate byte budget is exhausted.
 - Do not edit prior frozen tests, ticket authority, state, events, results,
