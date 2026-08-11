@@ -41,6 +41,7 @@ interface GitResult {
 async function runGit(
   ticketDirectory: string,
   args: readonly string[],
+  outputLimitBytes = MAX_GIT_OUTPUT_BYTES,
 ): Promise<GitResult> {
   const process = new Deno.Command("git", {
     args: [...args],
@@ -56,10 +57,10 @@ async function runGit(
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
-      const remaining = MAX_GIT_OUTPUT_BYTES - byteLength;
+      const remaining = outputLimitBytes - byteLength;
       if (value.byteLength > remaining) {
         if (remaining > 0) chunks.push(value.subarray(0, remaining));
-        byteLength = MAX_GIT_OUTPUT_BYTES;
+        byteLength = outputLimitBytes;
         limited = true;
         await reader.cancel();
         break;
@@ -184,6 +185,31 @@ async function sha256(value: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) =>
     byte.toString(16).padStart(2, "0")
   ).join("");
+}
+
+async function validateGitBlob(
+  ticketDirectory: string,
+  blobSpec: string,
+  outputLimitBytes: number,
+  expectedSha256: string,
+  readFailures: readonly [ValidationIssue, ValidationIssue],
+  hashMismatch: ValidationIssue,
+  issues: ValidationIssue[],
+): Promise<boolean> {
+  const blob = await runGit(
+    ticketDirectory,
+    ["show", blobSpec],
+    outputLimitBytes,
+  );
+  if (!blob.success) {
+    issues.push(readFailures[Number(blob.limited)]!);
+    return false;
+  }
+  if (await sha256(blob.output) !== expectedSha256) {
+    issues.push(hashMismatch);
+    return false;
+  }
+  return true;
 }
 
 function readText(
@@ -867,16 +893,56 @@ async function validateGitEvidence(
         );
         continue;
       }
-      const blob = await runGit(ticketDirectory, ["show", blobSpec]);
-      if (await sha256(blob.output) !== testSha256) {
-        issues.push(
+      const redBlobValid = await validateGitBlob(
+        ticketDirectory,
+        blobSpec,
+        blobSize,
+        testSha256,
+        [
+          issue(
+            `${resultPath}.red.testFiles[${fileIndex}].path`,
+            "content_missing",
+            "Declared RED test blob could not be read",
+          ),
+          issue(
+            `${resultPath}.red.testFiles[${fileIndex}].path`,
+            "git_output_limit",
+            "Declared RED test blob could not be read within the validation limit",
+          ),
+        ],
+        issue(
+          `${resultPath}.red.testFiles[${fileIndex}].sha256`,
+          "content_hash_mismatch",
+          "Declared RED test digest does not match the Git blob",
+        ),
+        issues,
+      );
+      if (!redBlobValid) continue;
+
+      await validateGitBlob(
+        ticketDirectory,
+        `${candidateRevision}:${testPath}`,
+        blobSize,
+        testSha256,
+        [
+          issue(
+            `${resultPath}.red.testFiles[${fileIndex}].path`,
+            "content_missing",
+            "Declared RED test blob does not exist in the candidate",
+          ),
           issue(
             `${resultPath}.red.testFiles[${fileIndex}].sha256`,
             "content_hash_mismatch",
-            "Declared RED test digest does not match the Git blob",
+            "Declared RED test digest does not match the candidate Git blob",
           ),
-        );
-      }
+        ],
+        issue(
+          `${resultPath}.red.testFiles[${fileIndex}].sha256`,
+          "content_hash_mismatch",
+          "Declared RED test digest does not match the candidate Git blob",
+        ),
+        issues,
+      );
     }
 
     const redPaths = await changedPaths(
