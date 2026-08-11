@@ -6,7 +6,7 @@
   "outcome": "A dependency-free Deno validator rejects invalid delivery evidence and accepts one complete exact-revision ticket record.",
   "baseRevision": "9d4693e1335797f1ecf98c4515ddba8e2603d8fb",
   "dependencies": [],
-  "maxRounds": 5,
+  "maxRounds": 6,
   "scope": [
     "Workflow validator, CLI, tests, coverage tasks, protocol templates, and current-command documentation"
   ],
