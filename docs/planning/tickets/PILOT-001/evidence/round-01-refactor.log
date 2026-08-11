@@ -1,0 +1,37 @@
+ticket=PILOT-001
+round=01
+phase=REFACTOR
+status=all candidate gates green after controller verification
+
+command=deno fmt <15 formatter-supported candidate paths>
+exitCode=0
+output=Checked 15 files.
+command=deno fmt --check <15 formatter-supported candidate paths>
+exitCode=0
+output=Checked 15 files.
+command=deno task fmt:check
+exitCode=1
+output=38 untouched baseline files differed only by line endings, including protected ticket/dispatch files; none were rewritten.
+command=deno task lint
+exitCode=0
+output=Checked 5 files.
+command=deno task check
+exitCode=0
+output=Schema validator and both production workflow modules type-checked.
+command=deno task test:workflow
+exitCode=0
+output=46 passed; 0 failed.
+command=deno task test:workflow:coverage
+exitCode=0
+output=46 passed; 0 failed. ticket_contract.ts 100% branches/functions/lines (857/857); validate_ticket.ts 100% branches/functions/lines (202/202); aggregate 100% branches/functions/lines.
+
+cliEvidence=Temporary valid directory exited 0; missing, malformed, oversized, unsafe-reference, invalid-invocation, and direct entry-point cases passed deterministic tests without stack/content leakage.
+scopeEvidence=docs/planning/README.md normalized content matches the integration checkout; no protected ticket/state/events/dispatch/review/acceptance record was edited.
+excludedGate[deno task test:schema:matrix]=Reserved for the orchestrator by round-01-green.md.
+excludedGate[actual ticket acceptance]=Reserved for the orchestrator while the real ticket remains open.
+candidateRevision=uncommitted; trusted orchestrator assigns the exact candidate revision.
+controllerFollowUp=The trusted controller ran the repository formatter to normalize checkout-only line endings. The 38 out-of-scope paths retained no content diff and were not included in the candidate.
+controllerCommand=deno task fmt:check
+controllerExitCode=0
+controllerOutput=Checked 58 files.
+blocker=none

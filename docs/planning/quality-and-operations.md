@@ -42,15 +42,18 @@ nothing is never an acceptable harness.
 
 At the 2026-08-11 baseline, `deno.json` exposes only these real tasks:
 
-| Command                        | Current executable scope                                     |
-| ------------------------------ | ------------------------------------------------------------ |
-| `deno task fmt`                | Format paths currently owned by the root Deno configuration. |
-| `deno task fmt:check`          | Check formatting for those current paths without mutation.   |
-| `deno task lint`               | Lint the existing repository tools.                          |
-| `deno task check`              | Type-check the PostgreSQL schema validator entry point.      |
-| `deno task test:schema`        | Run the primary live PostgreSQL schema harness.              |
-| `deno task test:schema:compat` | Run the compatibility PostgreSQL schema harness.             |
-| `deno task test:schema:matrix` | Run both current schema harness variants.                    |
+| Command                            | Current executable scope                                     |
+| ---------------------------------- | ------------------------------------------------------------ |
+| `deno task fmt`                    | Format paths currently owned by the root Deno configuration. |
+| `deno task fmt:check`              | Check formatting for those current paths without mutation.   |
+| `deno task lint`                   | Lint the existing repository tools.                          |
+| `deno task check`                  | Type-check the PostgreSQL schema and workflow tools.         |
+| `deno task ticket:validate`        | Validate one autonomous ticket evidence directory.           |
+| `deno task test:workflow`          | Run the dependency-free workflow validator suite.            |
+| `deno task test:workflow:coverage` | Enforce 100% line, branch, and function workflow coverage.   |
+| `deno task test:schema`            | Run the primary live PostgreSQL schema harness.              |
+| `deno task test:schema:compat`     | Run the compatibility PostgreSQL schema harness.             |
+| `deno task test:schema:matrix`     | Run both current schema harness variants.                    |
 
 No application unit, integration, contract, coverage, browser, hook, main
 Compose, or CI aggregate command exists yet. Do not cite a future command as

@@ -29,9 +29,11 @@ itself.
 10. Parallel write-enabled agents never share a worktree.
 
 Coverage remains mandatory, but coverage obtained from tests written after the
-implementation is not RED evidence. A broken commit does not need to be kept in
-Git history; the ticket retains the command, non-zero exit, focused output, and
-test-only change list.
+implementation is not RED evidence. The first RED proof in a round is frozen as
+an exact test-only Git revision before GREEN. The ticket retains that revision,
+the command, non-zero exit, intended assertion, focused output, test-only change
+list, and a lowercase SHA-256 digest of every changed test/check file's exact
+bytes.
 
 ## Roles and authority
 
@@ -157,16 +159,23 @@ state.json uses schemaVersion 1 and one of these states:
 
 It records the base revision, ordered phase events, implementation rounds,
 reviews, orchestrator checks, open findings, and accepted candidate revision.
-The repository validator rejects unknown properties and invalid transitions.
-events.jsonl is the append-only human-auditable transition ledger; state.json is
-the current machine-readable summary. Never rewrite failed round evidence.
+Its `dependencyRevisions` object maps every dependency ticket ID to the exact
+integrated Git revision verified before the ticket became ready. The repository
+validator rejects unknown properties and invalid transitions. events.jsonl is
+the append-only human-auditable transition ledger; state.json is the current
+machine-readable summary. The ordered transition views use one contract:
+state.events exactly matches events.jsonl. Each entry includes the transition's
+evidence reference and exact revision. Append a new line and matching state
+event for every transition; never rewrite prior ledger lines or failed round
+evidence.
 
 Each implementation round records:
 
 - round number and fresh implementer run ID;
 - input dispatch path and base revision;
-- RED command, exit code, intended assertion, log path, changed test/check
-  files, and an empty production-file change list;
+- exact test-only RED revision; RED command, exit code, intended assertion,
+  concise redacted output, log path, changed test/check paths and their SHA-256
+  file digests, and an empty production-file change list;
 - GREEN command, zero exit code, log path, and changed production files;
 - REFACTOR summary, command, zero exit code, and broader gates;
 - resulting clean candidate commit ID, filled only after the trusted controller
@@ -175,11 +184,15 @@ Each implementation round records:
 A Git commit cannot contain its own commit ID. Do not put a guessed or floating
 HEAD value into the candidate commit. Use this sequence:
 
-1. commit code, tests, and redacted phase logs as the candidate;
-2. record that candidate ID in result/state files and commit only ticket
+1. commit the first failing test/check and RED log as the test-only RED
+   revision, then record its full Git ID and SHA-256 file digests in the GREEN
+   dispatch;
+2. resume the same round, verify the frozen RED revision and file digests, and
+   commit code, tests, and redacted phase logs as the candidate;
+3. record that candidate ID in result/state files and commit only ticket
    metadata;
-3. review the recorded candidate ID;
-4. persist the review in another ticket-metadata-only commit.
+4. review the recorded candidate ID;
+5. persist the review in another ticket-metadata-only commit.
 
 Before acceptance and integration, verify that every path changed after the
 candidate commit is inside that ticket's docs/planning/tickets/<ticket-id>/
@@ -401,22 +414,27 @@ reviewers operate on the assigned checkout.
 
 ## Command truth
 
-Run only tasks that exist and have real implementations. At the time this
-workflow was accepted, the executable root tasks were:
+Run only tasks that exist and have real implementations. The current executable
+root tasks are:
 
 - deno task fmt
 - deno task fmt:check
 - deno task lint
 - deno task check
+- deno task ticket:validate <ticket-directory>
+- deno task test:workflow
+- deno task test:workflow:coverage
 - deno task test:schema
 - deno task test:schema:compat
 - deno task test:schema:matrix
 
-Their scope is still narrow: lint covers tools, check covers the schema tool,
-and the schema tasks cover the canonical database harness. Planned app, UI,
-contract, E2E, coverage, CI, hook, and Compose tasks become gates only when a
-real harness is added through its own RED/GREEN ticket. Never report a planned
-task as passed and never add a no-op placeholder.
+Their scope is still narrow: lint covers tools, check covers the schema and
+workflow tools, the workflow tasks validate autonomous ticket records with 100%
+line/branch/function coverage, and the schema tasks cover the canonical database
+harness. Planned app, UI, contract, E2E, aggregate coverage, CI, hook, and
+Compose tasks become gates only when a real harness is added through its own
+RED/GREEN ticket. Never report a planned task as passed and never add a no-op
+placeholder.
 
 ## Codex capability basis and local compatibility
 

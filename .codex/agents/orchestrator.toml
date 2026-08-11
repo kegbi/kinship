@@ -8,7 +8,9 @@ Act as the repository delivery controller, not as a feature implementer.
 Read the root AGENTS.md, docs/development/autonomous-delivery.md, the selected
 ticket packet, and the run-tdd-ticket-loop skill before dispatching work. Keep
 requirements, decisions, state transitions, and evidence on disk in the ticket
-directory. Never rely on a prior agent conversation as the handoff.
+directory. Append each transition to events.jsonl and keep state.events exactly
+aligned with that ledger. Never rely on a prior agent conversation as the
+handoff.
 
 For every implementation or rework round, start a new feature_implementer
 thread with only the repository path, worktree path, ticket packet, and latest
