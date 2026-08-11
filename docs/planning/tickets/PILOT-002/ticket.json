@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "ticketId": "PILOT-002",
+  "revision": 1,
+  "title": "Document protected control-path routing",
+  "outcome": "The autonomous-delivery protocol routes changes to .git, .codex, and .agents away from ordinary spawned implementers and to a trusted top-level maintenance context.",
+  "baseRevision": "de45825cf6a087e98a9fdb0338176ad6d82ad2a8",
+  "dependencies": [],
+  "maxRounds": 2,
+  "scope": [
+    "Static workflow-contract coverage for protected control-path guidance",
+    "Role-boundary guidance in docs/development/autonomous-delivery.md"
+  ],
+  "nonGoals": [
+    "Runtime sandbox or validator enforcement",
+    "Changes to .git, .codex, .agents, agent definitions, skills, templates, Deno tasks, or application code"
+  ],
+  "allowedWrites": [
+    "tools/workflows/workflow_assets_test.ts",
+    "docs/development/autonomous-delivery.md"
+  ],
+  "contractRefs": [
+    "AGENTS.md#mandatory-change-method",
+    "docs/development/autonomous-delivery.md",
+    "docs/development/autonomous-delivery.md#feature-implementer",
+    "docs/development/autonomous-delivery.md#worktrees-branches-and-threads"
+  ],
+  "acceptanceCriteria": [
+    {
+      "id": "AC-01",
+      "text": "The delivery protocol identifies .git, .codex, and .agents as protected control paths for ordinary ticket work and routes required changes to a trusted top-level maintenance context, with a static contract test locking both statements.",
+      "redProof": "deno test --allow-read tools/workflows/workflow_assets_test.ts fails only because the two protected-path statements are absent before the documentation change."
+    }
+  ],
+  "requiredTasks": [
+    "fmt:check",
+    "lint",
+    "check",
+    "test:workflow",
+    "test:workflow:coverage"
+  ],
+  "risks": [
+    "Static documentation guidance could be mistaken for runtime sandbox enforcement"
+  ],
+  "unresolvedDecisions": []
+}
