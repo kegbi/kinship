@@ -1104,3 +1104,24 @@ Deno.test("validate_ticket CLI entry point exits zero for a valid directory", ()
     Deno.removeSync(directory, { recursive: true });
   }
 });
+
+Deno.test("validateTicketBundle rejects accepted state without lifecycle or review evidence", () => {
+  const bundle = validBundle();
+  asRecord(bundle.ticket).requiredTasks = [];
+  const state = asRecord(bundle.state);
+  state.events = [];
+  state.resultRefs = [];
+  state.reviewRefs = [];
+  state.orchestratorChecks = [];
+  state.candidateRevision = null;
+  state.acceptedCandidateRevision = null;
+  bundle.events = [];
+  bundle.results = [];
+  bundle.reviews = [];
+
+  assertIssue(
+    validateTicketBundle(bundle, AVAILABLE_TASKS),
+    "$.state.events",
+    "lifecycle_incomplete",
+  );
+});
