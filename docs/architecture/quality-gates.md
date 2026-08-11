@@ -97,6 +97,14 @@ deno task test:workflow
 deno task test:workflow:coverage
 ```
 
+Run `ticket:validate` from the canonical project Git root and pass the exact
+`docs/planning/tickets/<ticket-id>` directory. The validator rejects linked or
+external evidence, dirty/untracked ticket metadata, metadata HEADs that do not
+descend from the candidate, and post-candidate changes outside that ticket
+directory. Git status/diff evidence includes additions, copies, deletions,
+modifications, renames (both paths), type changes, unmerged paths, and unknown
+status classes, with subprocess output bounded while it is consumed.
+
 As real harnesses are added, the implementation must expose stable top-level
 `deno task` commands even when they delegate to pnpm, Astro, Vitest, Playwright,
 Docker Compose, or a helper binary:

@@ -95,7 +95,23 @@ const REVIEW_FIELDS = new Set([
   "findings",
   "notes",
 ]);
-const LENS_FIELDS = new Set(["verdict", "evidence"]);
+const REQUIRED_LENS_FIELDS = ["verdict", "evidence"] as const;
+const LENS_FIELDS = new Set([
+  "verdict",
+  "evidence",
+  "notApplicableAgreement",
+]);
+const NOT_APPLICABLE_AGREEMENT_FIELDS = new Set([
+  "orchestratorRunId",
+  "scopeOrContractRef",
+  "rationale",
+]);
+const WAIVER_FIELDS = new Set([
+  "authority",
+  "rationale",
+  "owner",
+  "expiresAt",
+]);
 
 const TICKET_FIELDS = new Set([
   "schemaVersion",
@@ -127,7 +143,7 @@ const REVIEW_LENSES = [
   "tests_tdd",
 ] as const;
 
-const FINDING_FIELDS = [
+const REQUIRED_FINDING_FIELDS = [
   "id",
   "lens",
   "severity",
@@ -142,26 +158,269 @@ const FINDING_FIELDS = [
   "verification",
   "status",
 ] as const;
-const FINDING_FIELD_SET = new Set<string>(FINDING_FIELDS);
-
-const VALID_TRANSITIONS = new Set([
-  "planned:ready",
-  "planned:blocked",
-  "ready:red",
-  "ready:blocked",
-  "red:green",
-  "red:blocked",
-  "green:refactor",
-  "green:blocked",
-  "refactor:review",
-  "refactor:blocked",
-  "review:accepted",
-  "review:rework",
-  "review:blocked",
-  "rework:red",
-  "rework:blocked",
-  "accepted:integrated",
+const FINDING_FIELD_SET = new Set<string>([
+  ...REQUIRED_FINDING_FIELDS,
+  "waiver",
 ]);
+
+export type WorkflowPhase =
+  | "planned"
+  | "ready"
+  | "red"
+  | "green"
+  | "refactor"
+  | "review"
+  | "rework"
+  | "accepted"
+  | "integrated"
+  | "blocked"
+  | "cancelled";
+
+type TransitionActor = "implementer" | "reviewer" | "orchestrator";
+type TransitionRevision = "base" | "red" | "candidate" | "unbound";
+type TransitionEvidence =
+  | "ticket"
+  | "red"
+  | "green"
+  | "refactor"
+  | "result"
+  | "review"
+  | "acceptance"
+  | "unbound";
+
+interface WorkflowTransitionRule {
+  readonly from: WorkflowPhase;
+  readonly to: WorkflowPhase;
+  readonly actor: TransitionActor;
+  readonly revision: TransitionRevision;
+  readonly evidence: TransitionEvidence;
+  readonly round: "zero" | "first" | "same" | "next";
+}
+
+interface WorkflowPhaseRule {
+  readonly requiresCandidate: boolean;
+  readonly requiresReview: boolean;
+  readonly requiresAcceptanceClosure: boolean;
+}
+
+export interface WorkflowPolicy {
+  readonly phases: Readonly<Record<WorkflowPhase, WorkflowPhaseRule>>;
+  readonly transitions: readonly WorkflowTransitionRule[];
+  readonly round: {
+    readonly initial: number;
+    readonly firstImplementation: number;
+  };
+  readonly evidence: {
+    readonly ticket: string;
+    readonly acceptance: string;
+    readonly roundRecords: Readonly<
+      Partial<Record<TransitionEvidence, string>>
+    >;
+  };
+}
+
+export const WORKFLOW_POLICY: WorkflowPolicy = {
+  phases: {
+    planned: {
+      requiresCandidate: false,
+      requiresReview: false,
+      requiresAcceptanceClosure: false,
+    },
+    ready: {
+      requiresCandidate: false,
+      requiresReview: false,
+      requiresAcceptanceClosure: false,
+    },
+    red: {
+      requiresCandidate: false,
+      requiresReview: false,
+      requiresAcceptanceClosure: false,
+    },
+    green: {
+      requiresCandidate: false,
+      requiresReview: false,
+      requiresAcceptanceClosure: false,
+    },
+    refactor: {
+      requiresCandidate: false,
+      requiresReview: false,
+      requiresAcceptanceClosure: false,
+    },
+    review: {
+      requiresCandidate: true,
+      requiresReview: false,
+      requiresAcceptanceClosure: false,
+    },
+    rework: {
+      requiresCandidate: true,
+      requiresReview: true,
+      requiresAcceptanceClosure: false,
+    },
+    accepted: {
+      requiresCandidate: true,
+      requiresReview: true,
+      requiresAcceptanceClosure: true,
+    },
+    integrated: {
+      requiresCandidate: true,
+      requiresReview: true,
+      requiresAcceptanceClosure: true,
+    },
+    blocked: {
+      requiresCandidate: false,
+      requiresReview: false,
+      requiresAcceptanceClosure: false,
+    },
+    cancelled: {
+      requiresCandidate: false,
+      requiresReview: false,
+      requiresAcceptanceClosure: false,
+    },
+  },
+  transitions: [
+    {
+      from: "planned",
+      to: "ready",
+      actor: "orchestrator",
+      revision: "base",
+      evidence: "ticket",
+      round: "zero",
+    },
+    {
+      from: "planned",
+      to: "blocked",
+      actor: "orchestrator",
+      revision: "unbound",
+      evidence: "unbound",
+      round: "zero",
+    },
+    {
+      from: "ready",
+      to: "red",
+      actor: "implementer",
+      revision: "red",
+      evidence: "red",
+      round: "first",
+    },
+    {
+      from: "ready",
+      to: "blocked",
+      actor: "orchestrator",
+      revision: "unbound",
+      evidence: "unbound",
+      round: "zero",
+    },
+    {
+      from: "red",
+      to: "green",
+      actor: "implementer",
+      revision: "candidate",
+      evidence: "green",
+      round: "same",
+    },
+    {
+      from: "red",
+      to: "blocked",
+      actor: "orchestrator",
+      revision: "unbound",
+      evidence: "unbound",
+      round: "same",
+    },
+    {
+      from: "green",
+      to: "refactor",
+      actor: "implementer",
+      revision: "candidate",
+      evidence: "refactor",
+      round: "same",
+    },
+    {
+      from: "green",
+      to: "blocked",
+      actor: "orchestrator",
+      revision: "unbound",
+      evidence: "unbound",
+      round: "same",
+    },
+    {
+      from: "refactor",
+      to: "review",
+      actor: "orchestrator",
+      revision: "candidate",
+      evidence: "result",
+      round: "same",
+    },
+    {
+      from: "refactor",
+      to: "blocked",
+      actor: "orchestrator",
+      revision: "unbound",
+      evidence: "unbound",
+      round: "same",
+    },
+    {
+      from: "review",
+      to: "accepted",
+      actor: "orchestrator",
+      revision: "candidate",
+      evidence: "acceptance",
+      round: "same",
+    },
+    {
+      from: "review",
+      to: "rework",
+      actor: "reviewer",
+      revision: "candidate",
+      evidence: "review",
+      round: "same",
+    },
+    {
+      from: "review",
+      to: "blocked",
+      actor: "orchestrator",
+      revision: "unbound",
+      evidence: "unbound",
+      round: "same",
+    },
+    {
+      from: "rework",
+      to: "red",
+      actor: "implementer",
+      revision: "red",
+      evidence: "red",
+      round: "next",
+    },
+    {
+      from: "rework",
+      to: "blocked",
+      actor: "orchestrator",
+      revision: "unbound",
+      evidence: "unbound",
+      round: "same",
+    },
+    {
+      from: "accepted",
+      to: "integrated",
+      actor: "orchestrator",
+      revision: "candidate",
+      evidence: "acceptance",
+      round: "same",
+    },
+  ],
+  round: { initial: 0, firstImplementation: 1 },
+  evidence: {
+    ticket: "ticket.json",
+    acceptance: "acceptance.md",
+    roundRecords: { result: "results", review: "reviews" },
+  },
+};
+
+const TRANSITION_BY_KEY = new Map(
+  WORKFLOW_POLICY.transitions.map((transition) => [
+    `${transition.from}:${transition.to}`,
+    transition,
+  ]),
+);
 
 const VALID_PHASES = new Set([
   "planned",
@@ -176,6 +435,12 @@ const VALID_PHASES = new Set([
   "blocked",
   "cancelled",
 ]);
+
+function phaseRule(value: unknown): WorkflowPhaseRule | undefined {
+  return typeof value === "string" && VALID_PHASES.has(value)
+    ? WORKFLOW_POLICY.phases[value as WorkflowPhase]
+    : undefined;
+}
 const VALID_REVIEW_VERDICTS = new Set(["APPROVED", "CHANGES_REQUESTED"]);
 const VALID_LENS_VERDICTS = new Set(["pass", "fail", "not_applicable"]);
 const VALID_FINDING_LENSES = new Set<string>(REVIEW_LENSES);
@@ -599,7 +864,7 @@ function validateEvents(events: unknown, issues: ValidationIssue[]): void {
       );
     }
     if (
-      !VALID_TRANSITIONS.has(`${from}:${to}`) ||
+      !TRANSITION_BY_KEY.has(`${from}:${to}`) ||
       (previousTo !== undefined && from !== previousTo)
     ) {
       addIssue(
@@ -615,8 +880,6 @@ function validateEvents(events: unknown, issues: ValidationIssue[]): void {
 
 function validateResults(
   results: unknown,
-  baseRevision: unknown,
-  candidateRevision: unknown,
   issues: ValidationIssue[],
 ): void {
   if (!Array.isArray(results)) {
@@ -675,28 +938,6 @@ function validateResults(
         "Expected a RED evidence object",
       );
       return;
-    }
-    if (
-      typeof baseRevision === "string" &&
-      result.inputBaseRevision !== baseRevision
-    ) {
-      addIssue(
-        issues,
-        `${resultPath}.inputBaseRevision`,
-        "base_mismatch",
-        "Result input base must match the ticket base",
-      );
-    }
-    if (
-      typeof candidateRevision === "string" &&
-      result.candidateRevision !== candidateRevision
-    ) {
-      addIssue(
-        issues,
-        `${resultPath}.candidateRevision`,
-        "candidate_mismatch",
-        "Result must name the state's exact candidate",
-      );
     }
     validateSafePath(result.dispatchRef, `${resultPath}.dispatchRef`, issues);
     const red = result.red;
@@ -897,16 +1138,17 @@ function validateFinding(
   path: string,
   criterionIds: ReadonlySet<string>,
   contractRefs: ReadonlySet<string>,
+  blocksOpenFindings: boolean,
   issues: ValidationIssue[],
 ): void {
   validateFields(
     finding,
     path,
     FINDING_FIELD_SET,
-    FINDING_FIELDS,
+    REQUIRED_FINDING_FIELDS,
     issues,
   );
-  for (const field of FINDING_FIELDS) {
+  for (const field of REQUIRED_FINDING_FIELDS) {
     validateNonEmptyString(finding[field], `${path}.${field}`, issues);
   }
   if (
@@ -964,7 +1206,7 @@ function validateFinding(
       "Finding must reference a declared contract",
     );
   }
-  if (finding.status === "open") {
+  if (finding.status === "open" && blocksOpenFindings) {
     addIssue(
       issues,
       `${path}.status`,
@@ -972,14 +1214,51 @@ function validateFinding(
       "Open findings block ticket acceptance",
     );
   }
+  if (finding.status === "waived") {
+    const nonWaivable = finding.severity === "P0" ||
+      finding.severity === "P1" || finding.lens === "security_privacy" ||
+      finding.lens === "architecture_contracts" || finding.lens === "tests_tdd";
+    if (nonWaivable) {
+      addIssue(
+        issues,
+        `${path}.status`,
+        "waiver_forbidden",
+        "This finding category cannot be waived",
+      );
+    }
+    const waiver = { ...(finding.waiver as JsonRecord | undefined) };
+    validateFields(
+      waiver,
+      `${path}.waiver`,
+      WAIVER_FIELDS,
+      [...WAIVER_FIELDS],
+      issues,
+    );
+    for (const field of WAIVER_FIELDS) {
+      validateNonEmptyString(
+        waiver[field],
+        `${path}.waiver.${field}`,
+        issues,
+      );
+    }
+    if (!(Date.parse(String(waiver.expiresAt)) > Date.now())) {
+      addIssue(
+        issues,
+        `${path}.waiver.expiresAt`,
+        "waiver_expired",
+        "Waiver authority must have a valid future expiry",
+      );
+    }
+  }
 }
 
 function validateReviews(
   reviews: unknown,
   baseRevision: unknown,
-  candidateRevision: unknown,
+  phase: unknown,
   criterionIds: ReadonlySet<string>,
   contractRefs: ReadonlySet<string>,
+  scopeOrContractRefs: ReadonlySet<string>,
   issues: ValidationIssue[],
 ): void {
   if (!Array.isArray(reviews)) {
@@ -997,6 +1276,8 @@ function validateReviews(
       return;
     }
     const reviewPath = `$.reviews[${reviewIndex}]`;
+    const blocksOpenFindings = phaseRule(phase)?.requiresAcceptanceClosure ===
+      true;
     validateFields(
       review,
       reviewPath,
@@ -1057,11 +1338,18 @@ function validateReviews(
         );
       }
     } else {
+      if (review.verdict === "APPROVED" && review.commands.length === 0) {
+        addIssue(
+          issues,
+          `${reviewPath}.commands`,
+          "evidence_required",
+          "Approved reviews require successful command evidence",
+        );
+      }
+      const commandNames = new Set<string>();
       review.commands.forEach((command, commandIndex) => {
         const commandPath = `${reviewPath}.commands[${commandIndex}]`;
-        if (typeof command === "string") {
-          validateNonEmptyString(command, commandPath, issues);
-        } else if (isRecord(command)) {
+        if (isRecord(command)) {
           validateFields(
             command,
             commandPath,
@@ -1080,12 +1368,31 @@ function validateReviews(
             0,
             issues,
           );
+          if (typeof command.command === "string") {
+            if (commandNames.has(command.command)) {
+              addIssue(
+                issues,
+                `${commandPath}.command`,
+                "duplicate_value",
+                "Review commands must be unique",
+              );
+            }
+            commandNames.add(command.command);
+          }
+          if (review.verdict === "APPROVED" && command.exitCode !== 0) {
+            addIssue(
+              issues,
+              `${commandPath}.exitCode`,
+              "review_command_failed",
+              "Approved review commands must pass",
+            );
+          }
         } else {
           addIssue(
             issues,
             commandPath,
             "invalid_type",
-            "Expected a command string or result object",
+            "Expected a review-command result object",
           );
         }
       });
@@ -1111,17 +1418,6 @@ function validateReviews(
         "Reviewer and implementer run IDs must differ",
       );
     }
-    if (
-      typeof candidateRevision === "string" &&
-      review.candidateRevision !== candidateRevision
-    ) {
-      addIssue(
-        issues,
-        `${reviewPath}.candidateRevision`,
-        "candidate_mismatch",
-        "Review must cover the state's exact candidate",
-      );
-    }
     if (isRecord(review.lenses)) {
       validateFields(
         review.lenses,
@@ -1145,7 +1441,7 @@ function validateReviews(
           lensRecord,
           `${reviewPath}.lenses.${lens}`,
           LENS_FIELDS,
-          [...LENS_FIELDS],
+          REQUIRED_LENS_FIELDS,
           issues,
         );
         validateStringArray(
@@ -1164,6 +1460,45 @@ function validateReviews(
             "invalid_value",
             "Review lens verdict is invalid",
           );
+        }
+        const agreementPath =
+          `${reviewPath}.lenses.${lens}.notApplicableAgreement`;
+        if (lensRecord.verdict === "not_applicable") {
+          if (!isRecord(lensRecord.notApplicableAgreement)) {
+            addIssue(
+              issues,
+              agreementPath,
+              "agreement_required",
+              "Not-applicable lenses require orchestrator agreement",
+            );
+          } else {
+            const agreement = lensRecord.notApplicableAgreement;
+            validateFields(
+              agreement,
+              agreementPath,
+              NOT_APPLICABLE_AGREEMENT_FIELDS,
+              [...NOT_APPLICABLE_AGREEMENT_FIELDS],
+              issues,
+            );
+            for (const field of NOT_APPLICABLE_AGREEMENT_FIELDS) {
+              validateNonEmptyString(
+                agreement[field],
+                `${agreementPath}.${field}`,
+                issues,
+              );
+            }
+            if (
+              typeof agreement.scopeOrContractRef === "string" &&
+              !scopeOrContractRefs.has(agreement.scopeOrContractRef)
+            ) {
+              addIssue(
+                issues,
+                `${agreementPath}.scopeOrContractRef`,
+                "unknown_reference",
+                "Agreement must cite declared scope or a contract",
+              );
+            }
+          }
         }
       }
     } else {
@@ -1194,6 +1529,7 @@ function validateReviews(
             `${reviewPath}.findings[${findingIndex}]`,
             criterionIds,
             contractRefs,
+            blocksOpenFindings,
             issues,
           );
         } else {
@@ -1264,6 +1600,8 @@ function validateState(
   issues: ValidationIssue[],
 ): void {
   validateFields(state, "$.state", STATE_FIELDS, [...STATE_FIELDS], issues);
+  const acceptancePhase = phaseRule(state.phase)?.requiresAcceptanceClosure ===
+    true;
   if (state.schemaVersion !== 1) {
     addIssue(
       issues,
@@ -1355,6 +1693,7 @@ function validateState(
     );
   }
   if (
+    acceptancePhase &&
     typeof state.candidateRevision === "string" &&
     state.acceptedCandidateRevision !== state.candidateRevision
   ) {
@@ -1382,12 +1721,14 @@ function validateState(
         );
       }
       if (typeof _findingId === "string") findingIds.add(_findingId);
-      addIssue(
-        issues,
-        `$.state.openFindingIds[${index}]`,
-        "open_finding",
-        "Open findings block ticket acceptance",
-      );
+      if (acceptancePhase) {
+        addIssue(
+          issues,
+          `$.state.openFindingIds[${index}]`,
+          "open_finding",
+          "Open findings block ticket acceptance",
+        );
+      }
     });
   } else if (state.openFindingIds !== undefined) {
     addIssue(
@@ -1461,7 +1802,7 @@ function validateState(
         }
         checkRunIds.add(check.runId);
       }
-      if (check.exitCode !== 0) {
+      if (acceptancePhase && check.exitCode !== 0) {
         addIssue(
           issues,
           `$.state.orchestratorChecks[${index}].exitCode`,
@@ -1470,6 +1811,7 @@ function validateState(
         );
       }
       if (
+        acceptancePhase &&
         typeof state.candidateRevision === "string" &&
         check.revision !== state.candidateRevision
       ) {
@@ -1490,6 +1832,7 @@ function validateState(
     );
   }
   if (
+    acceptancePhase &&
     Array.isArray(requiredTasks) &&
     requiredTasks.some((task) =>
       typeof task === "string" && !commands.has(`deno task ${task}`)
@@ -1516,13 +1859,9 @@ function validateLifecycle(
   const reviews = Array.isArray(bundle.reviews) ? bundle.reviews : [];
   const resultRefs = Array.isArray(state.resultRefs) ? state.resultRefs : [];
   const reviewRefs = Array.isArray(state.reviewRefs) ? state.reviewRefs : [];
-  const candidatePhases = new Set([
-    "review",
-    "rework",
-    "accepted",
-    "integrated",
-  ]);
-  const reviewedPhases = new Set(["rework", "accepted", "integrated"]);
+  const maxRounds = Number(ticket.maxRounds);
+  const currentPhaseRule = phaseRule(phase);
+  const acceptancePhase = currentPhaseRule?.requiresAcceptanceClosure === true;
 
   if (
     events.length === 0 || !isRecord(events[0]) ||
@@ -1537,7 +1876,7 @@ function validateLifecycle(
     );
   }
 
-  if (candidatePhases.has(String(phase))) {
+  if (currentPhaseRule?.requiresCandidate === true) {
     if (results.length === 0 || resultRefs.length !== results.length) {
       addIssue(
         issues,
@@ -1556,7 +1895,7 @@ function validateLifecycle(
     }
   }
 
-  if (reviewedPhases.has(String(phase))) {
+  if (currentPhaseRule?.requiresReview === true) {
     if (reviews.length === 0 || reviewRefs.length !== reviews.length) {
       addIssue(
         issues,
@@ -1567,7 +1906,7 @@ function validateLifecycle(
     }
   }
 
-  if (phase === "accepted" || phase === "integrated") {
+  if (acceptancePhase) {
     const review = reviews.at(-1);
     if (!isRecord(review) || review.verdict !== "APPROVED") {
       addIssue(
@@ -1614,6 +1953,16 @@ function validateLifecycle(
       "State base revision must match the ticket packet",
     );
   }
+  if (
+    typeof state.round === "number" && state.round > maxRounds
+  ) {
+    addIssue(
+      issues,
+      "$.state.round",
+      "round_limit_exceeded",
+      "State round exceeds the ticket maximum",
+    );
+  }
 
   const resultsByRound = new Map<number, JsonRecord>();
   results.forEach((value, index) => {
@@ -1634,11 +1983,75 @@ function validateLifecycle(
         "Result ticket revision must match the ticket packet",
       );
     }
+    const expectedRound = index + WORKFLOW_POLICY.round.firstImplementation;
+    if (value.round !== expectedRound) {
+      addIssue(
+        issues,
+        `$.results[${index}].round`,
+        "round_sequence",
+        "Implementation result rounds must be contiguous and one-based",
+      );
+    }
+    if (
+      typeof value.round === "number" && value.round > maxRounds
+    ) {
+      addIssue(
+        issues,
+        `$.results[${index}].round`,
+        "round_limit_exceeded",
+        "Implementation result exceeds the ticket maximum round",
+      );
+    }
+    const previousResult = index > 0 && isRecord(results[index - 1])
+      ? results[index - 1]
+      : undefined;
+    if (
+      index === 0 && typeof ticket.baseRevision === "string" &&
+      value.inputBaseRevision !== ticket.baseRevision
+    ) {
+      addIssue(
+        issues,
+        `$.results[${index}].inputBaseRevision`,
+        "base_mismatch",
+        "The first implementation round must begin at the ticket base",
+      );
+    } else if (
+      index > 0 && previousResult !== undefined &&
+      value.inputBaseRevision !== previousResult.candidateRevision
+    ) {
+      addIssue(
+        issues,
+        `$.results[${index}].inputBaseRevision`,
+        "round_chain_mismatch",
+        "Each implementation round must begin at the prior candidate",
+      );
+    }
     if (typeof value.round === "number") {
       resultsByRound.set(value.round, value);
     }
   });
 
+  const lastResult = results.at(-1);
+  if (currentPhaseRule?.requiresCandidate === true && isRecord(lastResult)) {
+    if (state.candidateRevision !== lastResult.candidateRevision) {
+      addIssue(
+        issues,
+        `$.results[${results.length - 1}].candidateRevision`,
+        "candidate_mismatch",
+        "Latest implementation candidate must match the state candidate",
+      );
+    }
+    if (state.round !== lastResult.round) {
+      addIssue(
+        issues,
+        "$.state.round",
+        "round_mismatch",
+        "State round must match the latest implementation result",
+      );
+    }
+  }
+
+  const reviewsByRound = new Map<number, JsonRecord>();
   reviews.forEach((value, index) => {
     if (!isRecord(value)) return;
     if (value.ticketId !== ticket.ticketId) {
@@ -1658,12 +2071,12 @@ function validateLifecycle(
       );
     }
     const result = resultsByRound.get(value.round as number);
-    if (result === undefined || value.round !== state.round) {
+    if (result === undefined) {
       addIssue(
         issues,
         `$.reviews[${index}].round`,
         "round_mismatch",
-        "Review round must match its result and the current state",
+        "Review round must match an implementation result",
       );
     }
     if (
@@ -1677,22 +2090,100 @@ function validateLifecycle(
         "Review must identify the round implementer",
       );
     }
+    if (
+      result !== undefined &&
+      value.candidateRevision !== result.candidateRevision
+    ) {
+      addIssue(
+        issues,
+        `$.reviews[${index}].candidateRevision`,
+        "candidate_mismatch",
+        "Review must cover its round's exact candidate",
+      );
+    }
+    if (typeof value.round === "number") {
+      reviewsByRound.set(value.round, value);
+    }
   });
 
+  let activeRound = WORKFLOW_POLICY.round.initial;
   events.forEach((value, index) => {
     if (!isRecord(value) || typeof value.round !== "number") return;
-    const result = resultsByRound.get(value.round);
-    if (result === undefined) return;
+    const transition = typeof value.from === "string" &&
+        typeof value.to === "string"
+      ? TRANSITION_BY_KEY.get(`${value.from}:${value.to}`)
+      : undefined;
+    if (transition === undefined) return;
+    const expectedRound = transition.round === "zero"
+      ? WORKFLOW_POLICY.round.initial
+      : transition.round === "first"
+      ? WORKFLOW_POLICY.round.firstImplementation
+      : transition.round === "next"
+      ? activeRound + 1
+      : activeRound;
+    if (value.round !== expectedRound) {
+      addIssue(
+        issues,
+        `$.state.events[${index}].round`,
+        "round_mismatch",
+        "Lifecycle transition must use its derived implementation round",
+      );
+    }
+    if (transition.round === "first" || transition.round === "next") {
+      activeRound = expectedRound!;
+    }
+    const result = resultsByRound.get(expectedRound);
+    if (transition.round !== "zero" && result === undefined) {
+      addIssue(
+        issues,
+        `$.state.events[${index}].round`,
+        "round_mismatch",
+        "Lifecycle transition must bind to an implementation round",
+      );
+      return;
+    }
     if (
-      (value.to === "red" || value.to === "green" ||
-        value.to === "refactor") &&
-      value.actorRunId !== result.implementerRunId
+      expectedRound > maxRounds
+    ) {
+      addIssue(
+        issues,
+        `$.state.events[${index}].round`,
+        "round_limit_exceeded",
+        "Lifecycle transition exceeds the ticket maximum round",
+      );
+    }
+    const roundResult = result ?? {};
+    const expectedRevision: Readonly<Record<TransitionRevision, unknown>> = {
+      base: ticket.baseRevision,
+      red: roundResult.redRevision,
+      candidate: roundResult.candidateRevision,
+      unbound: undefined,
+    };
+    if (
+      typeof expectedRevision[transition.revision] === "string" &&
+      value.revision !== expectedRevision[transition.revision]
+    ) {
+      addIssue(
+        issues,
+        `$.state.events[${index}].revision`,
+        "revision_mismatch",
+        "Lifecycle transition revision must match its round evidence",
+      );
+    }
+    const review = reviewsByRound.get(expectedRound);
+    const expectedActor = transition.actor === "implementer"
+      ? result?.implementerRunId
+      : transition.actor === "reviewer"
+      ? review?.reviewerRunId
+      : undefined;
+    if (
+      typeof expectedActor === "string" && value.actorRunId !== expectedActor
     ) {
       addIssue(
         issues,
         `$.state.events[${index}].actorRunId`,
         "run_mismatch",
-        "Implementation transitions must identify the round implementer",
+        "Lifecycle transition actor must match its round evidence",
       );
     }
   });
@@ -1712,6 +2203,7 @@ export function validateTicketBundle(
   const state = isRecord(bundle.state) ? bundle.state : undefined;
   const criterionIds = new Set<string>();
   const contractRefs = new Set<string>();
+  const scopeOrContractRefs = new Set<string>();
   if (ticket !== undefined) {
     if (Array.isArray(ticket.acceptanceCriteria)) {
       ticket.acceptanceCriteria.forEach((criterion) => {
@@ -1722,7 +2214,15 @@ export function validateTicketBundle(
     }
     if (Array.isArray(ticket.contractRefs)) {
       ticket.contractRefs.forEach((reference) => {
-        if (typeof reference === "string") contractRefs.add(reference);
+        if (typeof reference === "string") {
+          contractRefs.add(reference);
+          scopeOrContractRefs.add(reference);
+        }
+      });
+    }
+    if (Array.isArray(ticket.scope)) {
+      ticket.scope.forEach((scope) => {
+        if (typeof scope === "string") scopeOrContractRefs.add(scope);
       });
     }
   }
@@ -1749,9 +2249,10 @@ export function validateTicketBundle(
     validateReviews(
       bundle.reviews,
       ticket?.baseRevision,
-      state.candidateRevision,
+      state.phase,
       criterionIds,
       contractRefs,
+      scopeOrContractRefs,
       issues,
     );
     if (ticket !== undefined) {
@@ -1771,8 +2272,6 @@ export function validateTicketBundle(
   }
   validateResults(
     bundle.results,
-    ticket?.baseRevision,
-    state?.candidateRevision,
     issues,
   );
   return issues.sort((left, right) =>

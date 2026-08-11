@@ -2,6 +2,11 @@
 
 Candidate reviewed: <40-character Git SHA> Required next state: RED
 
+Before any production, configuration, template, or protocol edit, add every
+regression dispatched below. Run them together against the unchanged input
+candidate, then stop for the trusted controller to freeze one test/check-only
+RED revision and the SHA-256 of every changed test/check file.
+
 ## Required changes
 
 ### <FINDING-ID>: <short title>
@@ -20,4 +25,6 @@ Candidate reviewed: <40-character Git SHA> Required next state: RED
 
 ## Constraints preserved
 
+- RED changes contain only explicit test/check paths and ticket evidence.
+- Round <N> starts from the prior round's exact candidate revision.
 - <Accepted contract or boundary that must remain unchanged>

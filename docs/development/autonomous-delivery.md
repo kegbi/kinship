@@ -172,7 +172,9 @@ evidence.
 Each implementation round records:
 
 - round number and fresh implementer run ID;
-- input dispatch path and base revision;
+- input dispatch path and base revision. Results form contiguous one-based
+  history within `maxRounds`: round one uses the ticket base and every later
+  round uses the immediately preceding candidate revision;
 - exact test-only RED revision; RED command, exit code, intended assertion,
   concise redacted output, log path, changed test/check paths and their SHA-256
   file digests, and an empty production-file change list;
@@ -197,12 +199,18 @@ HEAD value into the candidate commit. Use this sequence:
 Before acceptance and integration, verify that every path changed after the
 candidate commit is inside that ticket's docs/planning/tickets/<ticket-id>/
 directory. Any other change creates a new candidate and invalidates the review.
+Run this validation from the canonical project Git root against that exact
+ticket path. The ticket tree must contain no symlink, junction, or other link
+component; all ticket metadata and referenced evidence must be clean and
+committed at HEAD, and HEAD must descend from the reviewed candidate. Untracked,
+dirty, external-repository, non-descendant, or post-candidate production
+evidence is invalid.
 
 Each review records:
 
 - round number and a fresh reviewer run ID different from the implementer;
 - exact base and candidate commit IDs;
-- commands and evidence inspected;
+- commands and evidence inspected as unique `{ command, exitCode }` records;
 - one evidence-backed record for every required lens;
 - findings and resolution state;
 - APPROVED or CHANGES_REQUESTED.
@@ -242,6 +250,14 @@ Mechanical transition guards:
 | review to rework       | Any actionable finding, failed gate, missing lens/evidence, stale revision, or changed candidate                                                                  |
 | review to accepted     | Fresh reviewer covered all lenses for exact candidate; no open actionable finding; orchestrator independently verified gates                                      |
 | accepted to integrated | Exact reviewed commit merged; integration tree clean; aggregate gates pass                                                                                        |
+
+The event `round`, `revision`, `actorRunId`, and `evidenceRef` are derived from
+the full `from`/`to` transition, not trusted independently. `planned` to `ready`
+uses the ticket at round zero; `ready` to `red` starts round one; `rework` to
+`red` starts the next round; other implementation transitions keep the active
+round. RED/GREEN/REFACTOR transitions use their phase logs, `refactor` to
+`review` uses the round result, `review` to `rework` uses the round review, and
+acceptance/integration transitions use `acceptance.md`.
 
 Changing production code, tests, generated output, contracts, or a relevant
 configuration after review invalidates the review. Conflict resolution is a
@@ -297,8 +313,10 @@ The review JSON contains exactly these lenses:
 6. tests_tdd
 
 Each lens has verdict pass, fail, or not_applicable and non-empty evidence. A
-not_applicable result requires a scope or contract citation and orchestrator
-agreement; it is not a shortcut around analysis.
+not_applicable result additionally carries `notApplicableAgreement` with a
+non-empty `orchestratorRunId`, `scopeOrContractRef`, and `rationale`. The
+citation must exactly match declared ticket scope or a contract reference; N/A
+is not a shortcut around analysis.
 
 An actionable finding contains:
 
@@ -311,10 +329,12 @@ An actionable finding contains:
 - status open, resolved, or waived.
 
 All actionable findings block acceptance regardless of severity. Use a separate
-notes array for genuinely optional observations. A waiver needs explicit
-authority, rationale, owner, and expiry; credentials exposure, workspace or
-authorization isolation, required coverage, schema/catalog integrity, and
-accepted architecture constraints cannot be waived by the orchestrator.
+notes array for genuinely optional observations. A waived finding carries a
+`waiver` object with non-empty `authority`, `rationale`, `owner`, and a valid
+future `expiresAt`. Only P2/P3 findings under bug/correctness,
+performance/reliability, or style/maintainability may be waived. P0/P1 findings
+and every security/privacy, architecture/contracts, or tests/TDD finding are
+non-waivable.
 
 Reviewer lens guidance:
 
@@ -345,6 +365,8 @@ The orchestrator may mark accepted only when all of these are true:
 - every acceptance criterion maps to passing evidence from that candidate;
 - RED evidence proves production files were untouched in RED;
 - every required review lens has evidence and there are no open findings;
+- the approved review records at least one unique command and every recorded
+  exit code is zero;
 - the orchestrator independently reran the focused test and every applicable
   currently implemented gate;
 - production TypeScript retains 100% line, branch, and function coverage;

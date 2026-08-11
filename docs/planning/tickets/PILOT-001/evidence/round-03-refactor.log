@@ -1,0 +1,52 @@
+PILOT-001 round 03 REFACTOR evidence
+Date: 2026-08-11
+
+Refactor summary:
+- replaced duplicated phase and destination-only lifecycle conditionals with
+  exported typed WORKFLOW_POLICY phase/transition/round/evidence data shared by
+  structural and filesystem validation;
+- derived event rounds from lifecycle progression before selecting result and
+  review evidence;
+- unified revision and round-record source lookups;
+- checked only loaded evidence path components for links, avoiding an unbounded
+  filesystem-tree walk;
+- kept Git parsing, output, file, reference, aggregate-byte, and changed-path
+  limits dependency-free and deterministic;
+- synchronized review/result/dispatch assets, agent role instructions, skill
+  protocol, and accepted delivery/quality-gate documentation.
+
+REFACTOR commands and observed results:
+- deno test --allow-read --allow-write --allow-run=deno,git
+  --coverage=.coverage/workflows-round3 --clean
+  tools/workflows/round3_git_regression_test.ts
+  tools/workflows/validate_ticket_test.ts
+  exit 0; 63 passed, 0 failed.
+- deno coverage --detailed --threshold=100 .coverage/workflows-round3
+  exit 0; ticket_contract.ts and validate_ticket.ts each reached exactly
+  100.0% branch, 100.0% function, and 100.0% line coverage.
+- deno test --allow-read tools/workflows/workflow_assets_test.ts
+  exit 0; 5 passed, 0 failed.
+- deno task fmt:check
+  exit 0; 68 files checked.
+- deno task lint
+  exit 0; 7 files checked.
+- deno task check
+  exit 0; schema and both workflow production modules checked.
+- quick_validate.py .agents/skills/run-tdd-ticket-loop
+  exit 0; Skill is valid.
+- Python tomllib parse of .codex/agents/*.toml
+  exit 0; 3 agent files parsed.
+- git diff --check
+  exit 0.
+
+The exact unfiltered `deno task test:workflow` run observed 71 passes and the
+single expected pre-candidate failure
+`PILOT-001-R2-004 current RED diff contains tests and evidence only`. That
+assertion proves the immutable RED snapshot and necessarily sees authorized
+uncommitted GREEN/REFACTOR production paths now. The trusted controller must
+rerun it from the clean candidate tree, where it is required to pass. All other
+workflow tests and the 100% production coverage threshold passed before this
+log was written.
+
+No commit, staging operation, integration, or orchestrator-owned metadata write
+was performed.

@@ -1,0 +1,35 @@
+PILOT-001 round 03 GREEN evidence
+Date: 2026-08-11
+Input RED revision: 7ab21b784b25a30a573b5082323bdb0bf99acac8
+
+Frozen test/check hashes verified before production work:
+- tools/workflows/validate_ticket_test.ts: 69988a17b1afeb75b0fb45c237141f7214d01e5e6e77bb43a3962e23f755cfef
+- tools/workflows/round3_git_regression_test.ts: 7c7f209c1bdcdb8eca1af61081cc2d6d5df5bc4ec508f2d55f21b845ce40c3b3
+- tools/workflows/round3_policy_regression_test.ts: 658d4b70341dd1cffe4bf4c50e40fe2405b3c747347d4389ad33b27dd04cd423
+
+Implemented behavior:
+- phase-aware candidate, review, finding, and orchestrator-check closure;
+- contiguous per-round base/RED/candidate history within maxRounds;
+- exact transition round, revision, actor, and evidence binding;
+- conservative not-applicable agreement and finding waiver authority;
+- non-empty, unique, zero-exit command evidence for APPROVED reviews;
+- complete Git status/rename auditing and explicit RED test/check classification;
+- canonical repository/ticket paths, link-free referenced evidence, and clean
+  committed metadata ancestry/scope;
+- bounded in-flight Git stdout consumption;
+- stable redacted diagnostics, including file_unreadable for invalid roots.
+
+GREEN commands and observed results:
+- deno test --filter=PILOT-001 tools/workflows/validate_ticket_test.ts
+  exit 0; 8 passed, 0 failed.
+- deno test --allow-read --allow-write --allow-run=git
+  tools/workflows/round3_git_regression_test.ts
+  exit 0; 4 passed, 0 failed.
+- deno test --allow-read --allow-write --allow-run=git,deno
+  tools/workflows/validate_ticket_test.ts
+  exit 0; 59 passed, 0 failed.
+- Minimum-permission focused executions of R2-008, R2-009, and the round-03
+  dispatch freeze guard each exited 0; 1 passed, 0 failed.
+
+No frozen test was weakened or edited during GREEN. No Git metadata, ticket
+state, result, review, acceptance, or event record was changed.

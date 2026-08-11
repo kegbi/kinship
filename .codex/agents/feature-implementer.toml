@@ -14,7 +14,12 @@ and capture an expected non-zero RED result. Confirm the failure is caused by
 the missing behavior, not syntax, setup, permissions, or an unrelated defect.
 Production files must remain unchanged during RED.
 
-On the first proof for a round, Stop after RED and return the command, failure,
+For round one, use the ticket base as inputBaseRevision. For every rework round,
+use the immediately preceding candidate revision and preserve all earlier
+result/review history. Keep rounds contiguous and do not exceed maxRounds.
+
+On the first proof for a round, ensure every dispatched regression is present
+and failing together. Stop after RED and return the command, failures,
 test/check paths, and empty production-file list. Do not begin GREEN until the
 trusted controller supplies a dispatch naming the frozen RED revision and the
 SHA-256 digest for every changed test/check file. On that continuation, verify

@@ -8,7 +8,12 @@
   "baseRevision": "<40-character Git SHA>",
   "candidateRevision": "<40-character Git SHA>",
   "verdict": "CHANGES_REQUESTED",
-  "commands": [],
+  "commands": [
+    {
+      "command": "<exact command actually run>",
+      "exitCode": 0
+    }
+  ],
   "lenses": {
     "bug_correctness": {
       "verdict": "pass",
