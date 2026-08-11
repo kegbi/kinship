@@ -2,6 +2,7 @@
 # formatter and content-addressed RED evidence require repository-standard LF.
 * text=auto eol=lf
 
-# The audited schema bundle is hash-verified. Preserve its repository bytes on
-# every platform instead of applying Git line-ending conversion.
+# The audited schema bundle is hash-verified. Preserve non-CSV repository bytes
+# and materialize the CSV files with the CRLF bytes recorded by the audit.
 personal-crm-schema/v1/* -text
+personal-crm-schema/v1/*.csv text eol=crlf
