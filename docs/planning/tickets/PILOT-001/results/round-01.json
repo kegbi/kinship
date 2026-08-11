@@ -5,7 +5,7 @@
   "round": 1,
   "implementerRunId": "pilot-red-retry",
   "inputBaseRevision": "9d4693e1335797f1ecf98c4515ddba8e2603d8fb",
-  "dispatchRef": "dispatch/round-01-green.md",
+  "dispatchRef": "dispatch/round-01.md",
   "redRevision": "960d91526ea6b9779754d7c2ba13193974aa6448",
   "red": {
     "command": "deno test tools/workflows/validate_ticket_test.ts",
