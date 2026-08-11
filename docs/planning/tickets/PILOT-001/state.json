@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "ticketId": "PILOT-001",
   "ticketRevision": 1,
-  "phase": "ready",
-  "round": 0,
+  "phase": "red",
+  "round": 1,
   "baseRevision": "9d4693e1335797f1ecf98c4515ddba8e2603d8fb",
   "candidateRevision": null,
   "events": [
@@ -13,6 +13,14 @@
       "to": "ready",
       "round": 0,
       "actorRunId": "root-orchestrator-20260811"
+    },
+    {
+      "sequence": 2,
+      "from": "ready",
+      "to": "red",
+      "round": 1,
+      "actorRunId": "pilot-red-retry",
+      "sourceRevision": "960d91526ea6b9779754d7c2ba13193974aa6448"
     }
   ],
   "resultRefs": [],

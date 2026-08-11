@@ -1,2 +1,3 @@
 {"sequence":1,"from":"planned","to":"ready","round":0,"actorRunId":"root-orchestrator-20260811","evidence":"dispatch/round-01.md"}
+{"sequence":2,"from":"ready","to":"red","round":1,"actorRunId":"pilot-red-retry","sourceRevision":"960d91526ea6b9779754d7c2ba13193974aa6448","evidence":"evidence/round-01-red.log","testSha256":"94c3c75525c4d11ffc81afc650dfa79473adae3f17a5259bf95d7bbcb9a55625"}
 
