@@ -54,6 +54,13 @@ The user-facing counterpart is [`docs/product/README.md`](../product/README.md),
 which defines the page catalog, person-centered information architecture,
 workflow catalog, and release slices.
 
+The subordinate proposed execution plan is
+[`docs/planning/README.md`](../planning/README.md). It turns these accepted
+boundaries into dependency-ordered work, compatibility spikes,
+quality/operations gates, and module/page/flow traceability. Planning documents
+may identify a required decision, but they do not promote a proposal or override
+an ADR.
+
 ## Precedence
 
 1. The canonical schema SQL and synchronized schema bundle define persisted
@@ -65,5 +72,5 @@ workflow catalog, and release slices.
 5. Framework defaults, generated code, and convenience APIs must adapt to the
    first four; they must not silently redefine them.
 
-Research snapshot: 2026-08-09. The locally available backend runtime was
-verified as Deno 2.9.5.
+Architecture research snapshot: 2026-08-09. Delivery research was revalidated on
+2026-08-11. The locally available backend runtime was verified as Deno 2.9.5.

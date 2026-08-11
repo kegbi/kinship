@@ -36,6 +36,9 @@ CRM schema, application modules, and executable end-to-end tests.
 - [`user-flows.yaml`](user-flows.yaml) is the machine-readable workflow catalog.
 - [`release-slices.md`](release-slices.md) orders implementation as complete
   vertical slices.
+- [`../planning/README.md`](../planning/README.md) is the subordinate execution
+  index for the proposed MVP roadmap, dependency gates, quality/operations
+  strategy, research, and delivery traceability.
 
 ## Precedence
 
