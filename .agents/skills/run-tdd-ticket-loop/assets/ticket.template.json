@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "ticketId": "<TICKET-ID>",
+  "revision": 1,
+  "title": "<title>",
+  "baseRevision": "<40-character Git SHA>",
+  "maxRounds": 3,
+  "scope": ["<observable in-scope behavior>"],
+  "nonGoals": ["<explicit exclusion>"],
+  "allowedWrites": ["<repository-relative path or directory/>"],
+  "contractRefs": ["<repository-relative accepted contract>"],
+  "acceptanceCriteria": [
+    {
+      "id": "AC-01",
+      "text": "<independently testable outcome>"
+    }
+  ],
+  "requiredTasks": ["fmt:check"]
+}

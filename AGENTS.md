@@ -14,6 +14,49 @@ better designs, current production technologies, and AI assistance built in.
 - Preserve solid architectural boundaries so each application module can be
   swapped, extended, or replaced independently.
 
+## Mandatory Change Method
+
+Every new or changed production behavior must be developed in small RED -> GREEN
+-> REFACTOR cycles. This applies to features, bug fixes, UI, API, workers,
+database access, migrations, infrastructure and configuration, generators,
+security controls, and repository enforcement tooling.
+
+1. RED adds or changes the narrowest appropriate automated test or deterministic
+   executable check before production implementation. Run it and confirm that it
+   fails for the intended missing or incorrect behavior, not because
+   compilation, fixtures, permissions, services, or the environment are broken.
+   Production files remain unchanged during RED. A bug fix begins with a failing
+   regression test.
+2. GREEN makes the smallest architecture-compliant production change needed to
+   pass the RED proof. Never weaken, delete, skip, exclude, or over-mock a test
+   to make it pass.
+3. REFACTOR improves structure only while the focused and affected tests remain
+   green. New behavior discovered during refactoring starts another RED cycle.
+
+Coverage and tests written after implementation do not substitute for recorded
+RED evidence. If a truthful harness does not exist, bootstrap and self-test the
+harness first; never add a no-op task. Documentation, contract, catalog,
+configuration, architecture, and infrastructure changes require a failing
+validator, contract test, schema test, or bounded executable probe before the
+change.
+
+Every code candidate then passes a separate clean-context review. The reviewer
+must not be the implementation context and receives only the ticket, accepted
+contracts, exact base and candidate revisions, diff, and RED/GREEN/REFACTOR
+evidence. Review covers bugs/correctness, security/privacy, architecture,
+performance/reliability, style/maintainability, and tests/TDD. Every actionable
+finding returns to a fresh implementer context for a new RED -> GREEN ->
+REFACTOR round, followed by a fresh review of the new exact candidate.
+
+The orchestrator alone accepts and integrates a ticket after independently
+rerunning applicable repository gates. Implementer self-review, hook success, or
+CI success does not replace independent review. Full role boundaries, worktree
+isolation, ticket artifacts, state transitions, and escalation rules are defined
+in
+[docs/development/autonomous-delivery.md](docs/development/autonomous-delivery.md).
+Invoke the repo-local run-tdd-ticket-loop skill for autonomous implementation
+runs; use the project custom agents under .codex/agents for clean role contexts.
+
 ## Technology and Architecture Baseline
 
 - [docs/architecture/README.md](docs/architecture/README.md) is the entry point
@@ -129,6 +172,30 @@ not place destructive workspace actions beside routine preferences.
 Every shipped route must have a page-catalog ID. Every required workflow must
 have a Playwright test carrying its stable flow ID. Update catalogs, tests, and
 affected architecture documents together; never reuse a released ID.
+
+## Delivery Planning
+
+- [docs/planning/README.md](docs/planning/README.md) defines the proposed
+  milestone vocabulary, execution method, status, and entry points for the
+  delivery plan.
+- [docs/planning/roadmap.md](docs/planning/roadmap.md) is the proposed,
+  dependency-ordered plan from Foundation through MVP, optional modules, AI
+  decisioning, and production-readiness proof.
+- [docs/planning/quality-and-operations.md](docs/planning/quality-and-operations.md)
+  expands the required test, E2E, Compose, CI, security, observability,
+  migration, backup, and release gates.
+- [docs/planning/traceability.md](docs/planning/traceability.md) maps every
+  current module, read model, page group, and required user flow to its proposed
+  complete delivery slice and acceptance evidence.
+- [docs/planning/research.md](docs/planning/research.md) records the official
+  implementation research, stack capabilities, bounded compatibility spikes, and
+  still-open product/provider decisions.
+
+These planning documents are proposed executable guidance subordinate to the
+accepted schema, architecture, and product contracts. Their status is recorded
+in the planning entry point; proposed milestones and reassignments are not
+authoritative until approved. They may expose a blocking decision but must not
+silently resolve it by violating an accepted constraint.
 
 ## Canonical Personal CRM Schema
 
