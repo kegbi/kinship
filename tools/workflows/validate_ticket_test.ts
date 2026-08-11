@@ -484,19 +484,13 @@ async function captureValidatorRun(args: readonly string[]): Promise<{
 async function captureValidatorRunInRepository(
   repositoryRoot: string,
   args: readonly string[],
+  commitPendingMetadata = true,
 ): Promise<{
   readonly exitCode: number;
   readonly output: string;
 }> {
-  const pendingMetadata = runGit(repositoryRoot, ["status", "--porcelain"]);
-  if (pendingMetadata.length > 0) {
-    runGit(repositoryRoot, ["add", "--all"]);
-    runGit(repositoryRoot, [
-      "commit",
-      "--quiet",
-      "-m",
-      "ticket metadata fixture",
-    ]);
+  if (commitPendingMetadata) {
+    commitPendingTicketMetadata(repositoryRoot);
   }
   const originalDirectory = Deno.cwd();
   try {
@@ -505,6 +499,18 @@ async function captureValidatorRunInRepository(
   } finally {
     Deno.chdir(originalDirectory);
   }
+}
+
+function commitPendingTicketMetadata(repositoryRoot: string): void {
+  const pendingMetadata = runGit(repositoryRoot, ["status", "--porcelain"]);
+  if (pendingMetadata.length === 0) return;
+  runGit(repositoryRoot, ["add", "--all"]);
+  runGit(repositoryRoot, [
+    "commit",
+    "--quiet",
+    "-m",
+    "ticket metadata fixture",
+  ]);
 }
 
 Deno.test("validateTicketBundle accepts one complete valid bundle", () => {
@@ -1789,10 +1795,12 @@ Deno.test("runTicketValidator verifies Git content-addressed TDD lineage", async
     if (!brokenObject.startsWith(`${objectsRoot}\\`)) {
       throw new Error("Git fixture object escaped its temporary repository");
     }
+    commitPendingTicketMetadata(brokenTree.root);
     Deno.removeSync(brokenObject);
     const brokenDiff = await captureValidatorRunInRepository(
       brokenTree.root,
       [brokenTree.ticketDirectory],
+      false,
     );
 
     const diagnostics = [
