@@ -1,0 +1,19 @@
+AUTONOMY-001 AC-05 asset-contract RED
+
+Command:
+deno test --allow-read tools/workflows/autonomy_v2_assets_test.ts
+
+Exit code: 1
+Result: 0 passed, 4 failed.
+
+Intended failures:
+- ticket/state templates do not express v2 authority and integration fields;
+- result/review templates do not bind controller issuance;
+- the skill, dispatch, and role prompts omit enforced v2 controls; and
+- delivery and quality contracts omit durable integration and task guards.
+
+Frozen test SHA-256:
+6571fcb3964282f54b4b0d2cf32e473a77735efef413b3bbb07874a5b186afb9
+
+No template, skill, agent prompt, or delivery-document change preceded this
+RED. The uncommitted validator GREEN is a separate AC-01 through AC-04 slice.
