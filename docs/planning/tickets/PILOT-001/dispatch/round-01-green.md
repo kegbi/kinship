@@ -16,8 +16,11 @@ evidence/dispatch paths. Production files were unchanged.
    implementation, then make only its GREEN change.
 3. Implement the safe ticket-directory CLI and truthful Deno tasks under tests.
 4. REFACTOR while focused tests remain green, then run every required gate in
-   ticket.md except the PostgreSQL matrix; the orchestrator runs that aggregate
-   matrix after candidate integration.
+   ticket.md except the PostgreSQL matrix and the actual-ticket acceptance run;
+   the orchestrator runs the matrix and validates the actual ticket after review
+   closes its findings. Exercise the CLI against complete valid/invalid
+   temporary fixtures now; the real ticket must remain non-zero while findings
+   are open.
 5. Write concise redacted round-01-green.log and round-01-refactor.log evidence.
 6. Stop with a cleanly formatted but uncommitted candidate. Do not edit state,
    events, reviews, acceptance, or Git metadata; the orchestrator commits and
