@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ticketId": "PILOT-001",
+  "ticketRevision": 1,
+  "phase": "ready",
+  "round": 0,
+  "baseRevision": "9d4693e1335797f1ecf98c4515ddba8e2603d8fb",
+  "candidateRevision": null,
+  "events": [
+    {
+      "sequence": 1,
+      "from": "planned",
+      "to": "ready",
+      "round": 0,
+      "actorRunId": "root-orchestrator-20260811"
+    }
+  ],
+  "resultRefs": [],
+  "reviewRefs": [],
+  "openFindingIds": ["WFR-001", "WFR-002", "WFR-003", "WFR-004", "WFR-005"],
+  "orchestratorChecks": [],
+  "acceptedCandidateRevision": null,
+  "blocker": null
+}
