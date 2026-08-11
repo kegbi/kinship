@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 2,
+  "ticketId": "AUTONOMY-001",
+  "revision": 1,
+  "title": "Harden autonomous delivery controls",
+  "outcome": "Tickets have durable integration history, controller-scoped execution authority, fresh role identities, and revision-bound quality gates.",
+  "baseRevision": "e55f935db7825543757ca7083308ba3126195543",
+  "controllerRunId": "AUTONOMY-001/orchestrator/r0/00000000-0000-4000-8000-000000000101",
+  "executionClass": "protected-config-maintenance",
+  "protectedWriteAuthorization": {
+    "authorizedByControllerRunId": "AUTONOMY-001/orchestrator/r0/00000000-0000-4000-8000-000000000101",
+    "paths": [
+      ".agents/skills/run-tdd-ticket-loop/SKILL.md",
+      ".agents/skills/run-tdd-ticket-loop/assets/dispatch.template.md",
+      ".agents/skills/run-tdd-ticket-loop/assets/result.template.json",
+      ".agents/skills/run-tdd-ticket-loop/assets/review.template.json",
+      ".agents/skills/run-tdd-ticket-loop/assets/state.template.json",
+      ".agents/skills/run-tdd-ticket-loop/assets/ticket.template.json",
+      ".codex/agents/feature-implementer.toml",
+      ".codex/agents/orchestrator.toml",
+      ".codex/agents/reviewer.toml"
+    ],
+    "contractRef": "docs/planning/tickets/AUTONOMY-001/contract.md",
+    "rationale": "The accepted criteria change the exact agent and skill controls guarded by those files."
+  },
+  "dependencies": [],
+  "maxRounds": 3,
+  "scope": [
+    "Durable integration anchors and dependency-at-base validation",
+    "Version-2 execution authority and controller-issued role identities",
+    "Revision-bound Deno task definitions and independent guards",
+    "Matching agent, skill, template, and delivery documentation"
+  ],
+  "nonGoals": [
+    "Cryptographic operating-system identity attestation",
+    "Changing application or canonical schema behavior",
+    "Silently repairing historical PILOT-001 evidence"
+  ],
+  "allowedWrites": [
+    ".agents/skills/run-tdd-ticket-loop/SKILL.md",
+    ".agents/skills/run-tdd-ticket-loop/assets/dispatch.template.md",
+    ".agents/skills/run-tdd-ticket-loop/assets/result.template.json",
+    ".agents/skills/run-tdd-ticket-loop/assets/review.template.json",
+    ".agents/skills/run-tdd-ticket-loop/assets/state.template.json",
+    ".agents/skills/run-tdd-ticket-loop/assets/ticket.template.json",
+    ".codex/agents/feature-implementer.toml",
+    ".codex/agents/orchestrator.toml",
+    ".codex/agents/reviewer.toml",
+    "docs/architecture/quality-gates.md",
+    "docs/development/autonomous-delivery.md",
+    "docs/planning/tickets/AUTONOMY-001/",
+    "tools/workflows/"
+  ],
+  "contractRefs": [
+    "AGENTS.md#mandatory-change-method",
+    "docs/planning/tickets/AUTONOMY-001/contract.md",
+    "docs/development/autonomous-delivery.md",
+    "docs/architecture/quality-gates.md"
+  ],
+  "acceptanceCriteria": [
+    {
+      "id": "AC-01",
+      "text": "Integrated tickets remain historically valid after later unrelated commits and dependencies are proven integrated at the dependent ticket base.",
+      "redProof": "integration_anchor_regression_test.ts fails on missing integration anchors, integration checks, integration.md binding, and dependency-at-base validation."
+    },
+    {
+      "id": "AC-02",
+      "text": "Ordinary tickets cannot write protected control paths and protected maintenance is limited to exact controller-authorized files; .git is always forbidden.",
+      "redProof": "control_guards_regression_test.ts fails because execution classes and protected-path authorization are not validated."
+    },
+    {
+      "id": "AC-03",
+      "text": "Every new implementer and reviewer run is controller-issued, namespaced to the ticket, role- and round-bound, and fresh at its issuance site.",
+      "redProof": "control_guards_regression_test.ts fails because v2 run provenance and cross-round freshness are not enforced."
+    },
+    {
+      "id": "AC-04",
+      "text": "Required task definitions are read from exact base and candidate revisions, and changed tasks require an unchanged independent guard.",
+      "redProof": "real-Git task fixtures fail because the validator trusts mutable task names and self-reported exits."
+    },
+    {
+      "id": "AC-05",
+      "text": "Agent prompts, the ticket-loop skill, templates, and delivery documentation match the enforced v2 protocol.",
+      "redProof": "Static asset tests added after core GREEN must fail before each corresponding documentation or template change."
+    }
+  ],
+  "requiredTasks": {
+    "baseline": [
+      { "name": "fmt:check", "definition": "deno fmt --check" },
+      { "name": "lint", "definition": "deno lint" },
+      {
+        "name": "check",
+        "definition": "deno check tools/schema/validate_postgres.ts tools/workflows/ticket_contract.ts tools/workflows/validate_ticket.ts"
+      },
+      {
+        "name": "test:workflow",
+        "definition": "deno test --allow-read --allow-write --allow-run=deno,git tools/workflows"
+      },
+      {
+        "name": "test:workflow:coverage",
+        "definition": "deno test --allow-read --allow-write --allow-run=deno,git --coverage=.coverage/workflows --clean tools/workflows && deno coverage --detailed --threshold=100 --include=\"tools/workflows/(ticket_contract|validate_ticket)\\.ts$\" .coverage/workflows"
+      },
+      {
+        "name": "test:schema:matrix",
+        "definition": "deno task test:schema && deno task test:schema:compat"
+      }
+    ],
+    "candidate": [
+      {
+        "name": "fmt:check",
+        "definition": "deno fmt --check",
+        "guardedBy": null
+      },
+      { "name": "lint", "definition": "deno lint", "guardedBy": null },
+      {
+        "name": "check",
+        "definition": "deno check tools/schema/validate_postgres.ts tools/workflows/ticket_contract.ts tools/workflows/validate_ticket.ts",
+        "guardedBy": null
+      },
+      {
+        "name": "test:workflow",
+        "definition": "deno test --allow-read --allow-write --allow-run=deno,git tools/workflows",
+        "guardedBy": null
+      },
+      {
+        "name": "test:workflow:coverage",
+        "definition": "deno test --allow-read --allow-write --allow-run=deno,git --coverage=.coverage/workflows --clean tools/workflows && deno coverage --detailed --threshold=100 --include=\"tools/workflows/(ticket_contract|validate_ticket)\\.ts$\" .coverage/workflows",
+        "guardedBy": null
+      },
+      {
+        "name": "test:schema:matrix",
+        "definition": "deno task test:schema && deno task test:schema:compat",
+        "guardedBy": null
+      }
+    ]
+  },
+  "risks": [
+    "A permissive legacy exception could bypass the new authority model",
+    "A mutable task definition could self-certify a no-op quality gate",
+    "An unbounded Git inspection could exhaust resources",
+    "An integration anchor could conceal merge-time changes to reviewed files"
+  ],
+  "unresolvedDecisions": []
+}
