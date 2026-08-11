@@ -1,0 +1,14 @@
+PILOT-001 round 02 REFACTOR evidence
+
+Final gates after formatting:
+- deno fmt deno.json .agents/skills/run-tdd-ticket-loop/assets/result.template.json tools/workflows/ticket_contract.ts tools/workflows/validate_ticket.ts tools/workflows/validate_ticket_test.ts -> exit 0, 5 files checked.
+- deno task fmt:check -> exit 0, 61 files checked.
+- deno task lint -> exit 0, 5 files checked.
+- deno task check -> exit 0, schema validator and both production workflow modules checked.
+- deno task test:workflow -> exit 0, 56 passed, 0 failed.
+- deno task test:workflow:coverage -> exit 0, 56 passed, 0 failed.
+
+Production workflow coverage:
+- tools/workflows/ticket_contract.ts: 100.000% line, 100.0% branch, 100.0% function.
+- tools/workflows/validate_ticket.ts: 100.000% line, 100.0% branch, 100.0% function.
+- aggregate: 100.0% line, 100.0% branch, 100.0% function.

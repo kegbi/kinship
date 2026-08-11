@@ -1,0 +1,27 @@
+ticket=PILOT-001
+round=05
+phase=RED
+inputRevision=ffba1b89cb4d8a75b1f2b8f772d21806512164d3
+rejectedCandidateRevision=b300c0fcb276ce82c17555049b48702c4d2c6f61
+compileCommand=deno check tools/workflows/round5_git_regression_test.ts
+compileExitCode=0
+command=deno test --allow-read --allow-write --allow-run=git tools/workflows/round5_git_regression_test.ts
+exitCode=1
+summary=0 passed | 3 failed test groups; 6 intended missing-behavior assertions
+productionFiles=[]
+
+passingControl.final-candidate-unchanged=accepted
+passingControl.aggregate-reference-boundary=100 references accepted
+passingControl.aggregate-byte-boundary=5000000 combined RED/final-candidate bytes accepted
+passingControl.accepted-candidate-phase=accepted
+
+PILOT-001-R4-001.deleted-final-candidate=expected $.results[0].red.testFiles[0].path:content_missing; received exit 0 with ok=true and issues=[]
+PILOT-001-R4-001.replaced-final-candidate=expected $.results[0].red.testFiles[0].sha256:content_hash_mismatch; received exit 0 with ok=true and issues=[]
+PILOT-001-R4-001.skipped-final-candidate=expected $.results[0].red.testFiles[0].sha256:content_hash_mismatch; received exit 0 with ok=true and issues=[]
+PILOT-001-R4-002.aggregate-reference-over-limit=expected $.results:reference_limit at 101 references; received exit 0 with ok=true and issues=[]
+PILOT-001-R4-002.aggregate-byte-over-limit=expected $.results[0].red.testFiles[2].path:aggregate_too_large above 5000000 combined bytes; received exit 0 with ok=true and issues=[]
+PILOT-001-AC-03.ready-null-candidate=expected exit 0; received $.state.candidateRevision:metadata_ancestry_mismatch
+
+testFile[0].path=tools/workflows/round5_git_regression_test.ts
+testFile[0].sha256=b20a6cede75aa488f5187a52eab395e5ad18bd13ee8044e614a2f55b0e0d0643
+testFile[0].hashBasis=SHA-256 of exact bytes to be stored as the RED Git blob

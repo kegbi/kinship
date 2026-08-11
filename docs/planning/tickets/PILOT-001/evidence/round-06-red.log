@@ -1,0 +1,24 @@
+PILOT-001 round 06 RED evidence
+inputHead=ee395b61ed8a67b2d1bb31c873898925d9e69980
+productionFiles=[]
+
+format.command=deno fmt tools/workflows/round6_ready_base_regression_test.ts
+format.exitCode=0
+format.result=formatted 1 new test file
+
+check.command=deno check tools/workflows/round6_ready_base_regression_test.ts
+check.runs=2
+check.exitCodes=0,0
+check.result=Checked 1 file on each run
+
+focused.command=deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/round6_ready_base_regression_test.ts
+focused.validRedRun.exitCode=1
+focused.validRedRun.result=2 passed; 2 assertion-level failures; fixture setup and candidate-bearing controls passed
+focused.validRedRun.missingGuard[0]=divergent existing base expected exactly $.ticket.baseRevision:ready_base_ancestry_mismatch; unchanged validator returned exit 0 with ok=true and issues=[]
+focused.validRedRun.missingGuard[1]=production change after base expected exactly $.ticket.baseRevision:ready_base_scope_violation; unchanged validator returned exit 0 with ok=true and issues=[]
+focused.preliminaryRun.exitCode=1
+focused.preliminaryRun.result=discarded as RED evidence because divergent fixture setup failed before assertion; redundant orphan-tree removal was corrected in the new test only
+
+testFile[0].path=tools/workflows/round6_ready_base_regression_test.ts
+testFile[0].sha256=a86ab39740ea07d1d430beddbdd1ddb56e91b73edfdcbf31a475cb734f3d14a1
+testFile[0].hashBasis=SHA-256 of exact new test bytes after the valid focused RED run

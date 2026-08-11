@@ -17,6 +17,8 @@
       "AGENTS.md",
       "compose.schema-test.yaml",
       "deno.json",
+      ".agents/skills/run-tdd-ticket-loop/",
+      ".codex/agents/",
       "docs/",
       "tools/"
     ]
@@ -32,7 +34,10 @@
     "fmt": "deno fmt",
     "fmt:check": "deno fmt --check",
     "lint": "deno lint",
-    "check": "deno check tools/schema/validate_postgres.ts",
+    "check": "deno check tools/schema/validate_postgres.ts tools/workflows/ticket_contract.ts tools/workflows/validate_ticket.ts",
+    "ticket:validate": "deno run --allow-read --allow-run=git tools/workflows/validate_ticket.ts",
+    "test:workflow": "deno test --allow-read --allow-write --allow-run=deno,git tools/workflows",
+    "test:workflow:coverage": "deno test --allow-read --allow-write --allow-run=deno,git --coverage=.coverage/workflows --clean tools/workflows && deno coverage --detailed --threshold=100 --include=\"tools/workflows/(ticket_contract|validate_ticket)\\.ts$\" .coverage/workflows",
     "test:schema": "deno run --allow-read=personal-crm-schema/v1 --allow-run=docker tools/schema/validate_postgres.ts",
     "test:schema:compat": "deno task test:schema --postgres-image postgres:17.10-alpine3.23",
     "test:schema:matrix": "deno task test:schema && deno task test:schema:compat"

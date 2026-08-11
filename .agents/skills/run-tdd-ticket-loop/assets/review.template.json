@@ -8,7 +8,12 @@
   "baseRevision": "<40-character Git SHA>",
   "candidateRevision": "<40-character Git SHA>",
   "verdict": "CHANGES_REQUESTED",
-  "commands": [],
+  "commands": [
+    {
+      "command": "<exact command actually run>",
+      "exitCode": 0
+    }
+  ],
   "lenses": {
     "bug_correctness": {
       "verdict": "pass",
@@ -35,6 +40,22 @@
       "evidence": ["<source or command evidence>"]
     }
   },
-  "findings": [],
+  "findings": [
+    {
+      "id": "<stable finding ID>",
+      "lens": "<one exact lens key>",
+      "severity": "<P0|P1|P2|P3>",
+      "location": "<exact path plus line, symbol, route, query, or config key>",
+      "expectedBehavior": "<accepted expected behavior>",
+      "observedBehavior": "<evidence-backed observed behavior>",
+      "reproduction": "<command or deterministic source reproduction>",
+      "impact": "<concrete user, security, reliability, or delivery impact>",
+      "affectedCriterion": "<acceptance criterion ID>",
+      "contractRef": "<repository-relative accepted contract and section>",
+      "requiredRemediation": "<observable required correction>",
+      "verification": "<regression test or static check proving remediation>",
+      "status": "open"
+    }
+  ],
   "notes": []
 }

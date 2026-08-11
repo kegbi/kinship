@@ -1,0 +1,52 @@
+PILOT-001 round 04 REFACTOR evidence
+Date: 2026-08-11
+
+Refactor summary:
+- centralized bounded Git blob reading, success/limit classification, and
+  SHA-256 comparison in validateGitBlob;
+- reused the same helper for the historical RED blob and reviewed candidate
+  blob so missing and changed evidence follow one auditable path;
+- retained in-flight stream cancellation at the configured hard bound and
+  kept all emitted diagnostics redacted and deterministic.
+
+REFACTOR commands and observed results:
+- deno test --allow-read --allow-write --allow-run=git
+  tools/workflows/round4_git_regression_test.ts
+  exit 0; 8 passed, 0 failed.
+- deno task test:workflow:coverage
+  exit 0 in a disposable clean candidate clone whose committed
+  tools/workflows/validate_ticket.ts Git blob exactly matched the worktree
+  source blob 1035c68717d052f593f990aadcd8b69a24f0b0fd; 80 passed, 0 failed;
+  ticket_contract.ts and validate_ticket.ts each reached exactly 100.0% line,
+  branch, and function coverage (validate_ticket.ts 884/884 covered lines).
+- deno task fmt:check
+  exit 0; 72 files checked.
+- deno task lint
+  exit 0; 8 files checked.
+- deno task check
+  exit 0; the schema tool and both workflow production modules checked.
+- deno task ticket:validate docs/planning/tickets/PILOT-001
+  exit 1 because current orchestrator-owned metadata still names the rejected
+  round-three candidate and HEAD includes the frozen round-four RED test;
+  diagnostics were metadata_scope_violation plus content_hash_mismatch for the
+  round-one and round-two frozen tests that their recorded candidates changed.
+
+The exact unfiltered worktree deno task test:workflow run observed 79 passes and
+the single expected pre-candidate failure
+PILOT-001-R2-004 current RED diff contains tests and evidence only. The exact
+clean candidate clone subsequently ran the same complete 80-test set through
+the coverage task with zero failures. The canonical ticket packet cannot pass
+until the orchestrator records a candidate and resolves its pre-existing frozen
+test history; this implementer did not rewrite that authority or history.
+
+Self-audit:
+- security/privacy: no new input, permission, shell interpolation, or diagnostic
+  data exposure; blob output remains bounded and redacted;
+- performance/reliability: generic output remains capped at 10000 bytes, blob
+  reads stop in flight at the already-verified maximum, and no blob is buffered
+  beyond 1000000 bytes;
+- maintainability: one typed helper owns the read/hash policy, with no duplicate
+  candidate-specific streaming implementation.
+
+No commit, staging operation, integration, or orchestrator-owned metadata write
+was performed.

@@ -1,0 +1,37 @@
+ticket=PILOT-001
+round=03
+phase=RED
+inputRevision=a451b3cae84d504468bb5e1003428233a9643621
+rejectedCandidateRevision=81fb66070c510e053cc0d4524145f3f3020bd9d1
+implementerRuns=[round3-red-contract,round3-red-git]
+supersedesRedRevision=2beed5a27c67fe6f2fde6f7c546a6a8a4f011d9e
+supersedesPriorCorrection=79e63acea4c93bf9befa7e486ed2e6fa64abca78
+supersedesDiagnosticRevision=7d1deb6129e009a263eb2284fc59c20b65f25407
+supersedesCanonicalRevision=5401df2aa3298c36db790f32b896d53835a75ade
+supersedesManifestRevision=965d58b0efa8409b9961fc1b2ad3241225224fa7
+supersedesMetadataRevision=e5d734b639094343a91552a768a9b5b8d3461b57
+supersessionReason=Equivalent transition fixtures and exact Git diagnostics were corrected first. Valid temporary repositories now have canonical roots, task manifests, and committed metadata; the corrupt-object case commits metadata before corrupting the object and skips only the fixture preflight so the validator observes the intended Git failure.
+command=deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/validate_ticket_test.ts tools/workflows/round3_git_regression_test.ts tools/workflows/round3_policy_regression_test.ts
+exitCode=1
+verification=Run from the immutable superseding RED revision before any GREEN implementation resumes.
+productionFiles=[]
+
+R2-001=review/rework phases rejected by acceptance-only guards
+R2-002=truthful chained per-round base rejected; round-chain diagnostic absent
+R2-003=production/out-of-scope deletions, rename paths, and false test classification accepted
+R2-004=all-regressions-before-production dispatch guard and test-only working diff passed
+R2-005=truthful refactor-to-review result evidence rejected while destination-only mapping accepted
+R2-006=not-applicable agreement and waiver metadata unknown; forbidden waivers accepted
+R2-007=link escape, wrong ticket path, and external repository accepted
+R2-008=Git outputSync buffers before cap; no incremental termination seam
+R2-009=no exported shared typed lifecycle/evidence policy; destination-only duplication remains
+R2-010=dirty, untracked, stale, and non-descendant metadata accepted
+R2-011=max-round, sequence, event revision, round, and actor binding diagnostics absent
+R2-012=empty, duplicate, failed, and malformed approved-review commands accepted
+
+testFile[0].path=tools/workflows/validate_ticket_test.ts
+testFile[0].sha256=69988a17b1afeb75b0fb45c237141f7214d01e5e6e77bb43a3962e23f755cfef
+testFile[1].path=tools/workflows/round3_git_regression_test.ts
+testFile[1].sha256=7c7f209c1bdcdb8eca1af61081cc2d6d5df5bc4ec508f2d55f21b845ce40c3b3
+testFile[2].path=tools/workflows/round3_policy_regression_test.ts
+testFile[2].sha256=658d4b70341dd1cffe4bf4c50e40fe2405b3c747347d4389ad33b27dd04cd423
