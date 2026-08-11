@@ -1,0 +1,6 @@
+command=deno test tools/workflows/validate_ticket_test.ts
+exitCode=1
+intendedAssertion=A complete valid bundle yields zero validation issues.
+output=1 test ran; 0 passed; 1 failed. The zero-issues assertion received [{"path":"$","code":"not_implemented","message":"Ticket validation is not implemented"}].
+testPath=tools/workflows/validate_ticket_test.ts
+productionFiles=[]
