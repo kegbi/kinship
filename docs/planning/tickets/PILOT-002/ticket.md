@@ -1,9 +1,10 @@
 # PILOT-002: Document protected control-path routing
 
-Status: ready\
+Status: accepted\
 Owner: orchestrator\
 Base revision: `de45825cf6a087e98a9fdb0338176ad6d82ad2a8`\
-Depends on: none
+Depends on: none\
+Accepted candidate: `405209c6f224f1c3c398bcd4043fac022f016e78`
 
 ## Outcome
 
