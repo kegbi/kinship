@@ -9,7 +9,8 @@ supersedesPriorCorrection=79e63acea4c93bf9befa7e486ed2e6fa64abca78
 supersedesDiagnosticRevision=7d1deb6129e009a263eb2284fc59c20b65f25407
 supersedesCanonicalRevision=5401df2aa3298c36db790f32b896d53835a75ade
 supersedesManifestRevision=965d58b0efa8409b9961fc1b2ad3241225224fa7
-supersessionReason=Equivalent transition fixtures and exact Git diagnostics were corrected first. Valid temporary repositories now have canonical roots, root task manifests, and committed ticket metadata, so containment and metadata-integrity checks cannot invalidate positive cases.
+supersedesMetadataRevision=e5d734b639094343a91552a768a9b5b8d3461b57
+supersessionReason=Equivalent transition fixtures and exact Git diagnostics were corrected first. Valid temporary repositories now have canonical roots, task manifests, and committed metadata; the corrupt-object case commits metadata before corrupting the object and skips only the fixture preflight so the validator observes the intended Git failure.
 command=deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/validate_ticket_test.ts tools/workflows/round3_git_regression_test.ts tools/workflows/round3_policy_regression_test.ts
 exitCode=1
 verification=Run from the immutable superseding RED revision before any GREEN implementation resumes.
@@ -29,7 +30,7 @@ R2-011=max-round, sequence, event revision, round, and actor binding diagnostics
 R2-012=empty, duplicate, failed, and malformed approved-review commands accepted
 
 testFile[0].path=tools/workflows/validate_ticket_test.ts
-testFile[0].sha256=ad251c06abb646e0e8428bd1b7a666e0592c00ba862593ca4f71750b8991eab6
+testFile[0].sha256=69988a17b1afeb75b0fb45c237141f7214d01e5e6e77bb43a3962e23f755cfef
 testFile[1].path=tools/workflows/round3_git_regression_test.ts
 testFile[1].sha256=7c7f209c1bdcdb8eca1af61081cc2d6d5df5bc4ec508f2d55f21b845ce40c3b3
 testFile[2].path=tools/workflows/round3_policy_regression_test.ts
