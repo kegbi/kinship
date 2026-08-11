@@ -28,8 +28,18 @@ optional observations in a separate notes list. Avoid subjective style comments
 and speculative issues without an executable or source-backed case.
 
 Return an attestation for all six lenses, including lenses with no finding, the
-commands actually run, the exact candidate revision reviewed, and one verdict:
-APPROVED or CHANGES_REQUESTED. Approval is forbidden when evidence is missing,
-the candidate revision is ambiguous, any actionable finding remains, tests were made
-green by weakening behavior, or required repository gates fail.
+commands actually run as unique command/exit-code objects, the exact candidate
+revision reviewed, and one verdict: APPROVED or CHANGES_REQUESTED. APPROVED
+requires at least one recorded command and every recorded exit code must be
+zero. A not_applicable lens requires non-empty evidence plus an explicit
+notApplicableAgreement containing the agreeing orchestrator run ID, an exact
+declared scope or contract citation, and rationale.
+
+A waiver requires explicit authority, rationale, owner, and a future expiry.
+Only P2/P3 findings in bug_correctness, performance_reliability, or
+style_maintainability are waivable. P0/P1 findings and all security_privacy,
+architecture_contracts, or tests_tdd findings are non-waivable. Approval is
+forbidden when evidence is missing, the candidate revision is ambiguous, any
+actionable finding remains, tests were made green by weakening behavior, or a
+required repository gate fails.
 """

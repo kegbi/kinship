@@ -1,6 +1,8 @@
 import {
   validateTicketBundle,
   type ValidationIssue,
+  WORKFLOW_POLICY,
+  type WorkflowPhase,
 } from "./ticket_contract.ts";
 
 type JsonRecord = Record<string, unknown>;
@@ -36,22 +38,73 @@ interface GitResult {
   readonly limited: boolean;
 }
 
-function runGit(ticketDirectory: string, args: readonly string[]): GitResult {
-  const result = new Deno.Command("git", {
+async function runGit(
+  ticketDirectory: string,
+  args: readonly string[],
+): Promise<GitResult> {
+  const process = new Deno.Command("git", {
     args: [...args],
     cwd: ticketDirectory,
     stdout: "piped",
     stderr: "null",
-  }).outputSync();
+  }).spawn();
+  const reader = process.stdout.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  let limited = false;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const remaining = MAX_GIT_OUTPUT_BYTES - byteLength;
+      if (value.byteLength > remaining) {
+        if (remaining > 0) chunks.push(value.subarray(0, remaining));
+        byteLength = MAX_GIT_OUTPUT_BYTES;
+        limited = true;
+        await reader.cancel();
+        break;
+      }
+      chunks.push(value);
+      byteLength += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const status = await process.status;
+  const output = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
   return {
-    success: result.success,
-    output: result.stdout,
-    limited: result.stdout.byteLength > MAX_GIT_OUTPUT_BYTES,
+    success: status.success && !limited,
+    output,
+    limited,
   };
 }
 
 function gitText(result: GitResult): string {
   return new TextDecoder().decode(result.output).trim();
+}
+
+function normalizedFsPath(path: string): string {
+  return path.replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
+function sameFsPath(left: string, right: string): boolean {
+  return normalizedFsPath(left) === normalizedFsPath(right);
+}
+
+function pathContainsLink(root: string, path: string): boolean {
+  const components = [root];
+  let current = root.replace(/[\\/]$/, "");
+  for (const part of path.slice(root.length).split(/[\\/]+/)) {
+    if (part === "") continue;
+    current = `${current}/${part}`;
+    components.push(current);
+  }
+  return components.some((component) => Deno.lstatSync(component).isSymlink);
 }
 
 function isAllowedWrite(
@@ -63,17 +116,24 @@ function isAllowedWrite(
   );
 }
 
-function changedPaths(
+function isApprovedRedTestPath(path: string): boolean {
+  return /(?:^|\/)[^/]*(?:_test|\.test|\.spec|_check)\.[cm]?[jt]sx?$/.test(
+    path,
+  );
+}
+
+async function changedPaths(
   ticketDirectory: string,
   fromRevision: string,
   toRevision: string,
   diagnosticPath: string,
   issues: ValidationIssue[],
-): readonly string[] | undefined {
-  const result = runGit(ticketDirectory, [
+): Promise<readonly string[] | undefined> {
+  const result = await runGit(ticketDirectory, [
     "diff",
-    "--name-only",
-    "--diff-filter=ACMRTUXB",
+    "--name-status",
+    "--find-renames",
+    "--diff-filter=ACDMRTUXB",
     "-z",
     fromRevision,
     toRevision,
@@ -89,9 +149,20 @@ function changedPaths(
     );
     return undefined;
   }
-  const paths = new TextDecoder().decode(result.output).split("\0").filter(
-    (path) => path.length > 0,
-  );
+  const fields = new TextDecoder().decode(result.output).split("\0");
+  const paths: string[] = [];
+  for (let index = 0; index < fields.length;) {
+    const status = fields[index++];
+    if (status === undefined || status === "") break;
+    const firstPath = fields[index++]!;
+    paths.push(firstPath);
+    if (status.startsWith("R") || status.startsWith("C")) {
+      const secondPath = fields[index++];
+      if (secondPath !== undefined && secondPath !== "") {
+        paths.push(secondPath);
+      }
+    }
+  }
   if (paths.length > MAX_CHANGED_PATHS) {
     issues.push(
       issue(
@@ -120,12 +191,26 @@ function readText(
   diagnosticPath: string,
   issues: ValidationIssue[],
   budget?: ReadBudget,
+  containmentRoot?: string,
 ): string | undefined {
   try {
     const info = Deno.statSync(filePath);
     if (!info.isFile) {
       issues.push(
         issue(diagnosticPath, "file_missing", "Required file is missing"),
+      );
+      return undefined;
+    }
+    if (
+      containmentRoot !== undefined &&
+      pathContainsLink(containmentRoot, filePath)
+    ) {
+      issues.push(
+        issue(
+          diagnosticPath,
+          "path_escape",
+          "Ticket evidence must not traverse filesystem links",
+        ),
       );
       return undefined;
     }
@@ -168,8 +253,15 @@ function readJson(
   diagnosticPath: string,
   issues: ValidationIssue[],
   budget?: ReadBudget,
+  containmentRoot?: string,
 ): unknown {
-  const text = readText(filePath, diagnosticPath, issues, budget);
+  const text = readText(
+    filePath,
+    diagnosticPath,
+    issues,
+    budget,
+    containmentRoot,
+  );
   if (text === undefined) {
     return undefined;
   }
@@ -260,6 +352,7 @@ function readReferencedJson(
       `${statePath}[${index}]`,
       issues,
       budget,
+      ticketDirectory,
     );
     if (value !== undefined) {
       values.push(value);
@@ -278,6 +371,7 @@ function readEvents(
     "events.jsonl",
     issues,
     budget,
+    ticketDirectory,
   );
   if (text === undefined) {
     return undefined;
@@ -327,12 +421,14 @@ function loadTicketDirectory(ticketDirectory: string): LoadedBundle {
     "ticket.json",
     issues,
     budget,
+    ticketDirectory,
   );
   const state = readJson(
     `${ticketDirectory}/state.json`,
     "state.json",
     issues,
     budget,
+    ticketDirectory,
   );
   const events = readEvents(ticketDirectory, issues, budget);
   const results = readReferencedJson(
@@ -411,6 +507,7 @@ function validateEvidenceFiles(
       diagnosticPath,
       issues,
       budget,
+      ticketDirectory,
     );
   };
   const resultsByRound = new Map<number, JsonRecord>();
@@ -495,21 +592,27 @@ function validateEvidenceFiles(
     const round = event.round as number;
     const result = resultsByRound.get(round);
     let expectedReference: string | undefined;
-    if (event.to === "ready") expectedReference = "ticket.json";
-    if (event.to === "red" && isRecord(result?.red)) {
+    const transition = WORKFLOW_POLICY.transitions.find((candidate) =>
+      candidate.from === event.from && candidate.to === event.to
+    )!;
+    const recordDirectory =
+      WORKFLOW_POLICY.evidence.roundRecords[transition.evidence];
+    if (transition.evidence === "ticket") {
+      expectedReference = WORKFLOW_POLICY.evidence.ticket;
+    } else if (transition.evidence === "red" && isRecord(result?.red)) {
       expectedReference = result.red.logRef as string;
-    }
-    if (event.to === "green" && isRecord(result?.green)) {
+    } else if (
+      transition.evidence === "green" && isRecord(result?.green)
+    ) {
       expectedReference = result.green.logRef as string;
-    }
-    if (event.to === "refactor" && isRecord(result?.refactor)) {
+    } else if (
+      transition.evidence === "refactor" && isRecord(result?.refactor)
+    ) {
       expectedReference = result.refactor.logRef as string;
-    }
-    if (event.to === "review" || event.to === "rework") {
-      expectedReference = roundReference("reviews", round, "json");
-    }
-    if (event.to === "accepted" || event.to === "integrated") {
-      expectedReference = "acceptance.md";
+    } else if (recordDirectory !== undefined) {
+      expectedReference = roundReference(recordDirectory, round, "json");
+    } else if (transition.evidence === "acceptance") {
+      expectedReference = WORKFLOW_POLICY.evidence.acceptance;
     }
     if (
       expectedReference !== undefined && event.evidenceRef !== expectedReference
@@ -525,7 +628,10 @@ function validateEvidenceFiles(
     requireFile(event.evidenceRef as string, eventPath);
   });
 
-  if (state.phase === "accepted" || state.phase === "integrated") {
+  if (
+    WORKFLOW_POLICY.phases[state.phase as WorkflowPhase]
+      .requiresAcceptanceClosure
+  ) {
     requireFile("acceptance.md", "acceptance.md");
   }
   return issues;
@@ -536,7 +642,10 @@ async function validateGitEvidence(
   bundle: JsonRecord,
 ): Promise<readonly ValidationIssue[]> {
   const issues: ValidationIssue[] = [];
-  const repository = runGit(ticketDirectory, ["rev-parse", "--show-toplevel"]);
+  const repository = await runGit(ticketDirectory, [
+    "rev-parse",
+    "--show-toplevel",
+  ]);
   if (!repository.success || repository.limited || gitText(repository) === "") {
     return [
       issue(
@@ -553,21 +662,118 @@ async function validateGitEvidence(
   const ticketId = ticket.ticketId as string;
   const allowedWrites = ticket.allowedWrites as string[];
   const ticketEvidencePrefix = `docs/planning/tickets/${ticketId}/`;
-  const checkedRevisions = new Map<string, boolean>();
-  const revisionExists = (revision: string): boolean => {
+  const repositoryRoot = Deno.realPathSync(gitText(repository));
+  const invocationRepository = await runGit(Deno.cwd(), [
+    "rev-parse",
+    "--show-toplevel",
+  ]);
+  if (
+    !invocationRepository.success || invocationRepository.limited ||
+    gitText(invocationRepository) === "" ||
+    !sameFsPath(
+      repositoryRoot,
+      Deno.realPathSync(gitText(invocationRepository)),
+    )
+  ) {
+    issues.push(
+      issue(
+        "$",
+        "repository_mismatch",
+        "Ticket evidence must belong to the repository being validated",
+      ),
+    );
+  }
+
+  const expectedTicketDirectory = `${repositoryRoot}/${ticketEvidencePrefix}`
+    .replace(/\/$/, "");
+  const physicalTicketDirectory = Deno.realPathSync(ticketDirectory);
+  if (!sameFsPath(physicalTicketDirectory, expectedTicketDirectory)) {
+    issues.push(
+      issue(
+        "$",
+        "ticket_path_mismatch",
+        "Ticket evidence must use its canonical repository path",
+      ),
+    );
+  }
+  if (issues.length > 0) return issues;
+
+  const metadataStatus = await runGit(repositoryRoot, [
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--untracked-files=all",
+    "--",
+    ticketEvidencePrefix,
+  ]);
+  if (
+    !metadataStatus.success || metadataStatus.limited ||
+    metadataStatus.output.byteLength > 0
+  ) {
+    issues.push(
+      issue(
+        "$",
+        "metadata_dirty",
+        "Ticket metadata must be clean and committed at HEAD",
+      ),
+    );
+  }
+
+  const head = await runGit(ticketDirectory, ["rev-parse", "HEAD"]);
+  const candidateRevision = state.candidateRevision as string;
+  const metadataAncestry = await runGit(ticketDirectory, [
+    "merge-base",
+    "--is-ancestor",
+    candidateRevision,
+    gitText(head),
+  ]);
+  if (
+    !head.success || head.limited || gitText(head) === "" ||
+    !metadataAncestry.success
+  ) {
+    issues.push(
+      issue(
+        "$.state.candidateRevision",
+        "metadata_ancestry_mismatch",
+        "Committed ticket metadata must descend from the reviewed candidate",
+      ),
+    );
+  } else {
+    const metadataPaths = await changedPaths(
+      ticketDirectory,
+      candidateRevision,
+      gitText(head),
+      "$.state.candidateRevision",
+      issues,
+    );
+    if (
+      metadataPaths !== undefined &&
+      metadataPaths.some((path) => !path.startsWith(ticketEvidencePrefix))
+    ) {
+      issues.push(
+        issue(
+          "$.state.candidateRevision",
+          "metadata_scope_violation",
+          "Post-candidate commits may change only canonical ticket metadata",
+        ),
+      );
+    }
+  }
+
+  const checkedRevisions = new Map<string, Promise<boolean>>();
+  const revisionExists = (revision: string): Promise<boolean> => {
     const known = checkedRevisions.get(revision);
     if (known !== undefined) return known;
-    const result = runGit(ticketDirectory, [
+    const check = runGit(ticketDirectory, [
       "cat-file",
       "-e",
       `${revision}^{commit}`,
-    ]);
-    const exists = result.success;
-    checkedRevisions.set(revision, exists);
-    return exists;
+    ]).then((result) => result.success);
+    checkedRevisions.set(revision, check);
+    return check;
   };
   const ticketBaseRevision = ticket.baseRevision as string;
-  if (!revisionExists(ticketBaseRevision)) {
+  if (!await revisionExists(ticketBaseRevision)) {
     issues.push(
       issue(
         "$.ticket.baseRevision",
@@ -592,7 +798,7 @@ async function validateGitEvidence(
     ] as const;
     let allRevisionsExist = true;
     for (const [revision, path] of revisions) {
-      if (!revisionExists(revision)) {
+      if (!await revisionExists(revision)) {
         allRevisionsExist = false;
         issues.push(
           issue(
@@ -605,13 +811,13 @@ async function validateGitEvidence(
     }
     if (!allRevisionsExist) continue;
 
-    const baseToRed = runGit(ticketDirectory, [
+    const baseToRed = await runGit(ticketDirectory, [
       "merge-base",
       "--is-ancestor",
       baseRevision,
       redRevision,
     ]);
-    const redToCandidate = runGit(ticketDirectory, [
+    const redToCandidate = await runGit(ticketDirectory, [
       "merge-base",
       "--is-ancestor",
       redRevision,
@@ -635,7 +841,11 @@ async function validateGitEvidence(
       const testSha256 = testFile.sha256 as string;
       declaredTestPaths.add(testPath);
       const blobSpec = `${redRevision}:${testPath}`;
-      const sizeResult = runGit(ticketDirectory, ["cat-file", "-s", blobSpec]);
+      const sizeResult = await runGit(ticketDirectory, [
+        "cat-file",
+        "-s",
+        blobSpec,
+      ]);
       const blobSize = Number(gitText(sizeResult));
       if (!sizeResult.success || !Number.isSafeInteger(blobSize)) {
         issues.push(
@@ -657,7 +867,7 @@ async function validateGitEvidence(
         );
         continue;
       }
-      const blob = runGit(ticketDirectory, ["show", blobSpec]);
+      const blob = await runGit(ticketDirectory, ["show", blobSpec]);
       if (await sha256(blob.output) !== testSha256) {
         issues.push(
           issue(
@@ -669,7 +879,7 @@ async function validateGitEvidence(
       }
     }
 
-    const redPaths = changedPaths(
+    const redPaths = await changedPaths(
       ticketDirectory,
       baseRevision,
       redRevision,
@@ -681,7 +891,9 @@ async function validateGitEvidence(
       (redPaths.some((path) =>
         !declaredTestPaths.has(path) &&
         !path.startsWith(ticketEvidencePrefix)
-      ) || [...declaredTestPaths].some((path) => !redPaths.includes(path)))
+      ) || [...declaredTestPaths].some((path) =>
+        !redPaths.includes(path) || !isApprovedRedTestPath(path)
+      ))
     ) {
       issues.push(
         issue(
@@ -692,7 +904,7 @@ async function validateGitEvidence(
       );
     }
 
-    const candidatePaths = changedPaths(
+    const candidatePaths = await changedPaths(
       ticketDirectory,
       baseRevision,
       candidateRevision,
