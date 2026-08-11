@@ -18,15 +18,81 @@ The canonical workflow inventory is
 [`docs/product/user-flows.yaml`](../product/user-flows.yaml), and the canonical
 page inventory is
 [`docs/product/page-catalog.yaml`](../product/page-catalog.yaml). E2E tests
-carry their flow ID in a Playwright annotation or title. CI rejects unknown IDs,
-delivered required flows without tests, shipped routes missing from the page
-catalog, and catalog references to unknown pages or modules.
+carry their flow ID in a Playwright annotation or title. Once implemented, the
+required CI gate must reject unknown IDs, delivered required flows without
+tests, shipped routes missing from the page catalog, and catalog references to
+unknown pages or modules.
+
+Coverage is necessary but does not prove test-first development. It cannot
+replace the RED evidence required below.
+
+## Test-First Change Contract
+
+Every new or changed production behavior uses a recorded RED -> GREEN ->
+REFACTOR cycle:
+
+1. RED adds or changes the narrowest automated test or deterministic executable
+   check before production code changes. The implementer runs it and verifies
+   that the intended assertion fails because behavior is absent or incorrect.
+   Syntax, type, harness, fixture, permission, service, timeout, and unrelated
+   failures are invalid RED evidence. A bug fix starts with a failing regression
+   test.
+2. GREEN makes only the smallest compliant production change required to pass
+   the frozen RED test. Tests cannot be weakened, deleted, skipped, excluded,
+   over-mocked, or reversed to obtain GREEN.
+3. REFACTOR improves structure without changing behavior and reruns the focused
+   and affected broader gates. Any new behavior begins another RED cycle.
+
+This contract applies to backend, frontend, API, worker, database, migration,
+infrastructure, configuration, generator, security, and repository-tooling
+behavior. Documentation and contract changes require a failing validator,
+schema/contract test, or bounded executable probe. When no truthful test harness
+exists, its bootstrap and self-test are prerequisite work; no-op task names are
+forbidden.
+
+RED evidence records the command, non-zero exit, expected assertion, concise
+redacted output, changed test/check paths, and proof that production paths were
+unchanged. A permanently failing commit is not required.
+
+## Independent Clean-Context Review
+
+Every candidate receives a separate review after REFACTOR. The reviewer cannot
+be the implementation context. For agent-authored work, use a fresh agent thread
+without inherited implementation discussion and provide only the ticket,
+accepted contracts, exact base and candidate revisions, diff, tests, and phase
+evidence.
+
+The reviewer independently checks and reports evidence for all of these lenses:
+
+- bugs and correctness;
+- security, privacy, authorization, and workspace isolation;
+- architecture, schema ownership, dependency direction, and product/API
+  contracts;
+- performance, concurrency, reliability, and resource use;
+- code style, clarity, maintainability, and unnecessary complexity;
+- test discrimination, RED integrity, coverage, E2E traceability, and flake
+  risk.
+
+Every actionable finding returns through a new RED -> GREEN -> REFACTOR round in
+a fresh implementation context, then a fresh reviewer examines the new exact
+candidate. Any post-review code, test, generated, contract, or relevant config
+change invalidates approval. Implementer self-review, hook success, and CI
+success do not replace this gate. The orchestrator independently reruns the
+applicable gate matrix before accepting and integrating the exact reviewed
+revision. The complete operational protocol is
+[`docs/development/autonomous-delivery.md`](../development/autonomous-delivery.md).
 
 ## Canonical Commands
 
-The implementation should expose stable top-level `deno task` commands even when
-they delegate to pnpm, Astro, Vitest, Playwright, Docker Compose, or a helper
-binary:
+The current executable baseline exposes only `fmt`, `fmt:check`, `lint`,
+`check`, `test:schema`, `test:schema:compat`, and `test:schema:matrix`. Their
+scope is narrow until the application scaffold exists: lint covers `tools/`,
+check covers the schema validator, and schema tasks cover the canonical database
+harness.
+
+As real harnesses are added, the implementation must expose stable top-level
+`deno task` commands even when they delegate to pnpm, Astro, Vitest, Playwright,
+Docker Compose, or a helper binary:
 
 ```text
 deno task fmt
@@ -46,8 +112,11 @@ deno task test
 deno task ci
 ```
 
-Local hooks and CI call these same commands. There must not be a second, subtly
-different hook-only validation pipeline.
+Add each task with its first truthful executable harness before corresponding
+production behavior, not as a placeholder. When local hooks and CI are added,
+they must call these same commands. There must not be a second, subtly different
+hook-only validation pipeline. Lefthook invokes repository tasks; repository
+tests do not delegate their validation semantics to Lefthook.
 
 ## Static Enforcement
 
@@ -91,11 +160,12 @@ scaffolding.
 Test custom lint rules with Deno's lint-plugin test API. Keep an explicit,
 minimal allowlist for read models and composition roots.
 
-Deno lint does not parse `.astro` templates. The frontend gate therefore also
-runs `astro check` with warnings treated as failures and a targeted ESLint flat
-configuration for `eslint-plugin-astro`, Astro accessibility rules, and the
-official React hooks rules on interactive islands. Do not duplicate all generic
-TypeScript style rules in ESLint; Deno remains their canonical owner.
+Deno lint does not parse `.astro` templates. Once the frontend scaffold exists,
+its gate must also run `astro check` with warnings treated as failures and a
+targeted ESLint flat configuration for `eslint-plugin-astro`, Astro
+accessibility rules, and the official React hooks rules on interactive islands.
+Do not duplicate all generic TypeScript style rules in ESLint; Deno remains
+their canonical owner.
 
 ## Test Layers
 

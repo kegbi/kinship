@@ -1,0 +1,7 @@
+interface:
+  display_name: "Autonomous TDD Ticket Loop"
+  short_description: "Run clean-context red-green ticket delivery"
+  default_prompt: "Use $run-tdd-ticket-loop to implement the next accepted ticket through independent review and integration."
+
+policy:
+  allow_implicit_invocation: false

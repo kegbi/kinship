@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ticketId": "<TICKET-ID>",
+  "ticketRevision": 1,
+  "phase": "ready",
+  "round": 0,
+  "baseRevision": "<40-character Git SHA>",
+  "candidateRevision": null,
+  "events": [
+    {
+      "sequence": 1,
+      "from": "planned",
+      "to": "ready",
+      "round": 0,
+      "actorRunId": "<orchestrator run ID>"
+    }
+  ],
+  "resultRefs": [],
+  "reviewRefs": [],
+  "openFindingIds": [],
+  "orchestratorChecks": [],
+  "acceptedCandidateRevision": null,
+  "blocker": null
+}

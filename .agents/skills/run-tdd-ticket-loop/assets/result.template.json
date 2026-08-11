@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "ticketId": "<TICKET-ID>",
+  "ticketRevision": 1,
+  "round": 1,
+  "implementerRunId": "<fresh implementer run ID>",
+  "inputBaseRevision": "<40-character Git SHA>",
+  "dispatchRef": null,
+  "red": {
+    "command": "<focused command>",
+    "exitCode": 1,
+    "expectedFailure": "<intended assertion failure>",
+    "logRef": "evidence/round-01-red.log",
+    "testFiles": ["<changed test/check path>"],
+    "productionFiles": []
+  },
+  "green": {
+    "command": "<focused command>",
+    "exitCode": 0,
+    "logRef": "evidence/round-01-green.log",
+    "productionFiles": ["<changed production path>"]
+  },
+  "refactor": {
+    "summary": "<structural changes or none>",
+    "command": "<affected gate command>",
+    "exitCode": 0,
+    "logRef": "evidence/round-01-refactor.log"
+  },
+  "candidateRevision": "<40-character Git SHA>"
+}
