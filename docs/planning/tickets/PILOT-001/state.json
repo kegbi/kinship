@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "ticketId": "PILOT-001",
   "ticketRevision": 1,
-  "phase": "review",
+  "phase": "rework",
   "round": 2,
   "baseRevision": "9d4693e1335797f1ecf98c4515ddba8e2603d8fb",
   "candidateRevision": "81fb66070c510e053cc0d4524145f3f3020bd9d1",
@@ -96,17 +96,33 @@
       "actorRunId": "root-orchestrator-20260811",
       "evidenceRef": "results/round-02.json",
       "revision": "81fb66070c510e053cc0d4524145f3f3020bd9d1"
+    },
+    {
+      "sequence": 11,
+      "from": "review",
+      "to": "rework",
+      "round": 2,
+      "actorRunId": "pilot-review-clean-20260811-r2",
+      "evidenceRef": "reviews/round-02.json",
+      "revision": "81fb66070c510e053cc0d4524145f3f3020bd9d1"
     }
   ],
   "resultRefs": ["results/round-02.json"],
-  "reviewRefs": [],
+  "reviewRefs": ["reviews/round-02.json"],
   "dependencyRevisions": {},
   "openFindingIds": [
-    "PILOT-001-R1-001",
-    "PILOT-001-R1-002",
-    "PILOT-001-R1-003",
-    "PILOT-001-R1-004",
-    "PILOT-001-R1-005"
+    "PILOT-001-R2-001",
+    "PILOT-001-R2-002",
+    "PILOT-001-R2-003",
+    "PILOT-001-R2-004",
+    "PILOT-001-R2-005",
+    "PILOT-001-R2-006",
+    "PILOT-001-R2-007",
+    "PILOT-001-R2-008",
+    "PILOT-001-R2-009",
+    "PILOT-001-R2-010",
+    "PILOT-001-R2-011",
+    "PILOT-001-R2-012"
   ],
   "orchestratorChecks": [],
   "acceptedCandidateRevision": null,

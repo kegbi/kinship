@@ -8,3 +8,4 @@
 {"sequence":8,"from":"red","to":"green","round":2,"actorRunId":"rework-red-lifecycle","evidenceRef":"evidence/round-02-green.log","revision":"81fb66070c510e053cc0d4524145f3f3020bd9d1"}
 {"sequence":9,"from":"green","to":"refactor","round":2,"actorRunId":"rework-red-lifecycle","evidenceRef":"evidence/round-02-refactor.log","revision":"81fb66070c510e053cc0d4524145f3f3020bd9d1"}
 {"sequence":10,"from":"refactor","to":"review","round":2,"actorRunId":"root-orchestrator-20260811","evidenceRef":"results/round-02.json","revision":"81fb66070c510e053cc0d4524145f3f3020bd9d1"}
+{"sequence":11,"from":"review","to":"rework","round":2,"actorRunId":"pilot-review-clean-20260811-r2","evidenceRef":"reviews/round-02.json","revision":"81fb66070c510e053cc0d4524145f3f3020bd9d1"}
