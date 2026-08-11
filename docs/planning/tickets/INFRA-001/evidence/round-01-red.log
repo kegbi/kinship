@@ -1,0 +1,14 @@
+INFRA-001 round 1 RED
+
+Command:
+deno test --allow-run=git tools/workflows/worktree_eol_test.ts
+
+Expected failure:
+Git reports AGENTS.md eol as unspecified because the repository has no general
+LF worktree policy. The audited schema control remains text: unset.
+
+Observed result:
+0 passed, 1 failed. Expected "AGENTS.md: eol: lf", received
+"AGENTS.md: eol: unspecified".
+
+Production files changed before RED: none.
