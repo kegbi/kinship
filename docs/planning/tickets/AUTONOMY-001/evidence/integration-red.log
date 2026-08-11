@@ -1,53 +1,39 @@
-AUTONOMY-001 integration-anchor RED evidence
+AUTONOMY-001 amended integration-anchor RED evidence
 
-Preflight:
-  deno fmt --check tools/workflows/integration_anchor_regression_test.ts
-  exit: 0
-  output: Checked 1 file
+Accepted contract revision:
+eda37accbeea1df95d8fafbd2d64a5ff831f4f21
 
-  deno check tools/workflows/integration_anchor_regression_test.ts
-  exit: 0
-  output: Check tools/workflows/integration_anchor_regression_test.ts
+Focused command:
+deno test --allow-read --allow-write --allow-run=git tools/workflows/integration_anchor_regression_test.ts tools/workflows/control_guards_regression_test.ts
 
-Focused RED command:
-  deno test --allow-read --allow-write --allow-run=git tools/workflows/integration_anchor_regression_test.ts
+Exit code: 1
+Result: 1 passed, 37 failed (38 total: 17 integration anchors, 21 control guards)
 
-Exit: 1
-Result: FAILED | 0 passed | 6 failed
+Frozen integration test candidate:
+- path: tools/workflows/integration_anchor_regression_test.ts
+- SHA-256: 821466ff9c5e69e9575caf77d7404c17b974010a07825b4e90ba502894166ee0
 
-Intended failures:
-  1. accepted -> integrated still binds candidateRevision and acceptance.md;
-     the policy has no integration revision/evidence binding.
-  2. integrationRevision and integrationChecks are rejected as unknown state
-     fields, and the integration event is still required to use the candidate.
-  3. integrated state does not require integrationRevision.
-  4. integrated state does not require integration checks for every ticket task.
-  5. a real Git history cannot validate from its durable integration anchor;
-     structural validation rejects the new fields before historical Git checks.
-  6. a real Git history incorrectly accepts a dependency that became integrated
-     only on a side branch after the dependent ticket's base revision.
+The integration suite contributes 17 intended missing-behavior failures:
+- bind accepted -> integrated to integrationRevision and integration.md
+- require a durable anchor and a successful, exact, unique check per task
+- reject acceptance-check run-ID reuse during integration
+- reject missing, unrelated, or non-ancestral integration revisions
+- reject integration metadata that does not descend from its anchor
+- reject later mutation of the integrated ticket packet
+- reject integration-time changes to reviewed candidate content
+- keep an integrated ticket valid after later unrelated commits
+- read dependency state at the dependent ticket base
+- distinguish a dependency not integrated at base from an exact pin mismatch
 
-Observed focused diagnostics:
-  Expected accepted->integrated to bind integrationRevision and integration.md,
-  received revision=candidate and evidence=acceptance.
+All AUTONOMY-001 and FOUNDATION-001 ticket/result/review fixtures use the
+accepted v2 authority, run-ID, and task-definition contract. State and events
+remain schema version 1 with optional integration fields. This removes the
+draft RED's v1 migration contradiction.
 
-  Expected no validation issues, received:
-    $.state.events[6].revision:revision_mismatch
-    $.state.integrationChecks:unknown_field
-    $.state.integrationRevision:unknown_field
+Preflight commands:
+- deno fmt --check tools/workflows/integration_anchor_regression_test.ts tools/workflows/control_guards_regression_test.ts (exit 0)
+- deno lint tools/workflows/integration_anchor_regression_test.ts tools/workflows/control_guards_regression_test.ts (exit 0)
+- deno check tools/workflows/integration_anchor_regression_test.ts tools/workflows/control_guards_regression_test.ts (exit 0)
 
-  Expected $.state.integrationRevision:integration_required; no such issue was
-  emitted.
-
-  Expected $.state.integrationChecks:check_missing; only unknown_field was
-  emitted.
-
-  Expected historical validation to pass; it exited 1 with the three structural
-  diagnostics above.
-
-  Expected $.state.dependencyRevisions.FOUNDATION-001:
-  dependency_not_integrated_at_base; current validation exited 0 with
-  {"ok":true,"issues":[]}.
-
-No production files, existing tests, configuration, documentation contracts, or
-Git metadata were changed during this RED phase.
+No production, template, skill, agent, accepted delivery-document, or Git
+metadata change was made during this amended RED phase.

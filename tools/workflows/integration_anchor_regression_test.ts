@@ -8,6 +8,7 @@ import { runTicketValidator } from "./validate_ticket.ts";
 const CURRENT_TICKET_ID = "AUTONOMY-001";
 const DEPENDENCY_TICKET_ID = "FOUNDATION-001";
 const REQUIRED_TASKS = ["check"] as const;
+const TASK_DEFINITION = "echo";
 const AVAILABLE_TASKS = new Set(REQUIRED_TASKS);
 const STRUCTURAL_BASE = "1111111111111111111111111111111111111111";
 const STRUCTURAL_RED = "2222222222222222222222222222222222222222";
@@ -71,6 +72,12 @@ function writeJson(root: string, relativePath: string, value: unknown): void {
   writeText(root, relativePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function readJson(root: string, relativePath: string): JsonRecord {
+  return asRecord(
+    JSON.parse(Deno.readTextFileSync(pathIn(root, relativePath))),
+  );
+}
+
 function runGitBytes(root: string, args: readonly string[]): Uint8Array {
   const result = new Deno.Command("git", {
     args: [...args],
@@ -104,6 +111,32 @@ function commit(root: string, message: string, allowEmpty = false): string {
   return runGit(root, ["rev-parse", "HEAD"]);
 }
 
+function controllerRunId(ticketId: string): string {
+  return `${ticketId}/orchestrator/r0/00000000-0000-4000-8000-000000000001`;
+}
+
+function implementerRunId(ticketId: string): string {
+  return `${ticketId}/implementer/r1/00000000-0000-4000-8000-000000000002`;
+}
+
+function reviewerRunId(ticketId: string): string {
+  return `${ticketId}/reviewer/r1/00000000-0000-4000-8000-000000000003`;
+}
+
+function taskDefinitions(): JsonRecord {
+  return {
+    baseline: REQUIRED_TASKS.map((name) => ({
+      name,
+      definition: TASK_DEFINITION,
+    })),
+    candidate: REQUIRED_TASKS.map((name) => ({
+      name,
+      definition: TASK_DEFINITION,
+      guardedBy: null,
+    })),
+  };
+}
+
 async function sha256(value: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -120,16 +153,22 @@ function initializeRepository(prefix: string): string {
   runGit(root, ["config", "user.email", "workflow@example.invalid"]);
   runGit(root, ["config", "user.name", "Workflow Fixture"]);
   writeJson(root, "deno.json", {
-    tasks: Object.fromEntries(REQUIRED_TASKS.map((task) => [task, "echo"])),
+    tasks: Object.fromEntries(
+      REQUIRED_TASKS.map((task) => [task, TASK_DEFINITION]),
+    ),
   });
   writeText(root, "tools/workflows/base.ts", "export const base = true;\n");
   commit(root, "repository base");
   return root;
 }
 
-function checks(revision: string, prefix: string): JsonRecord[] {
+function checks(
+  ticketId: string,
+  revision: string,
+  prefix: string,
+): JsonRecord[] {
   return REQUIRED_TASKS.map((task, index) => ({
-    runId: `${prefix}-${index + 1}`,
+    runId: `${controllerRunId(ticketId)}/${prefix}-${index + 1}`,
     revision,
     command: `deno task ${task}`,
     exitCode: 0,
@@ -137,6 +176,7 @@ function checks(revision: string, prefix: string): JsonRecord[] {
 }
 
 function acceptedEvents(
+  ticketId: string,
   baseRevision: string,
   redRevision: string,
   candidateRevision: string,
@@ -147,7 +187,7 @@ function acceptedEvents(
       from: "planned",
       to: "ready",
       round: 0,
-      actorRunId: "orchestrator-ready",
+      actorRunId: controllerRunId(ticketId),
       evidenceRef: "ticket.json",
       revision: baseRevision,
     },
@@ -156,7 +196,7 @@ function acceptedEvents(
       from: "ready",
       to: "red",
       round: 1,
-      actorRunId: "implementer-round-01",
+      actorRunId: implementerRunId(ticketId),
       evidenceRef: "evidence/round-01-red.log",
       revision: redRevision,
     },
@@ -165,7 +205,7 @@ function acceptedEvents(
       from: "red",
       to: "green",
       round: 1,
-      actorRunId: "implementer-round-01",
+      actorRunId: implementerRunId(ticketId),
       evidenceRef: "evidence/round-01-green.log",
       revision: candidateRevision,
     },
@@ -174,7 +214,7 @@ function acceptedEvents(
       from: "green",
       to: "refactor",
       round: 1,
-      actorRunId: "implementer-round-01",
+      actorRunId: implementerRunId(ticketId),
       evidenceRef: "evidence/round-01-refactor.log",
       revision: candidateRevision,
     },
@@ -183,7 +223,7 @@ function acceptedEvents(
       from: "refactor",
       to: "review",
       round: 1,
-      actorRunId: "orchestrator-review",
+      actorRunId: controllerRunId(ticketId),
       evidenceRef: "results/round-01.json",
       revision: candidateRevision,
     },
@@ -192,7 +232,7 @@ function acceptedEvents(
       from: "review",
       to: "accepted",
       round: 1,
-      actorRunId: "orchestrator-accept",
+      actorRunId: controllerRunId(ticketId),
       evidenceRef: "acceptance.md",
       revision: candidateRevision,
     },
@@ -200,19 +240,20 @@ function acceptedEvents(
 }
 
 function integratedEvents(
+  ticketId: string,
   baseRevision: string,
   redRevision: string,
   candidateRevision: string,
   integrationRevision: string,
 ): JsonRecord[] {
   return [
-    ...acceptedEvents(baseRevision, redRevision, candidateRevision),
+    ...acceptedEvents(ticketId, baseRevision, redRevision, candidateRevision),
     {
       sequence: 7,
       from: "accepted",
       to: "integrated",
       round: 1,
-      actorRunId: "orchestrator-integrate",
+      actorRunId: controllerRunId(ticketId),
       evidenceRef: "integration.md",
       revision: integrationRevision,
     },
@@ -225,24 +266,27 @@ function ticket(
   dependencies: readonly string[] = [],
 ): JsonRecord {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     ticketId,
     revision: 1,
     title: "Anchor autonomous ticket integration",
     outcome: "Integrated evidence remains historically verifiable.",
     baseRevision,
+    controllerRunId: controllerRunId(ticketId),
+    executionClass: "ordinary",
+    protectedWriteAuthorization: null,
     dependencies: [...dependencies],
     maxRounds: 2,
     scope: ["Workflow integration validation"],
     nonGoals: ["Application behavior"],
     allowedWrites: ["tools/workflows/"],
-    contractRefs: ["docs/development/autonomous-delivery.md#state-machine"],
+    contractRefs: ["docs/planning/tickets/AUTONOMY-001/contract.md"],
     acceptanceCriteria: [{
       id: "AC-01",
       text: "Bind integration and dependency evidence to durable revisions.",
       redProof: "Real Git histories expose HEAD-relative validation gaps.",
     }],
-    requiredTasks: [...REQUIRED_TASKS],
+    requiredTasks: taskDefinitions(),
     risks: ["Mutable HEAD state could rewrite historical acceptance."],
     unresolvedDecisions: [],
   };
@@ -257,11 +301,12 @@ function result(
   testSha256: string,
 ): JsonRecord {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     ticketId,
     ticketRevision: 1,
     round: 1,
-    implementerRunId: "implementer-round-01",
+    implementerRunId: implementerRunId(ticketId),
+    issuedByControllerRunId: controllerRunId(ticketId),
     inputBaseRevision: baseRevision,
     dispatchRef: "dispatch/round-01.md",
     redRevision,
@@ -300,12 +345,13 @@ function review(
     evidence: [evidence],
   });
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     ticketId,
     ticketRevision: 1,
     round: 1,
-    implementerRunId: "implementer-round-01",
-    reviewerRunId: "reviewer-round-01",
+    implementerRunId: implementerRunId(ticketId),
+    reviewerRunId: reviewerRunId(ticketId),
+    issuedByControllerRunId: controllerRunId(ticketId),
     baseRevision,
     candidateRevision,
     verdict: "APPROVED",
@@ -333,7 +379,12 @@ function acceptedBundle(
   dependencies: readonly string[] = [],
   dependencyRevisions: Readonly<Record<string, string>> = {},
 ): JsonRecord {
-  const events = acceptedEvents(baseRevision, redRevision, candidateRevision);
+  const events = acceptedEvents(
+    ticketId,
+    baseRevision,
+    redRevision,
+    candidateRevision,
+  );
   return {
     ticket: ticket(ticketId, baseRevision, dependencies),
     state: {
@@ -349,7 +400,11 @@ function acceptedBundle(
       reviewRefs: ["reviews/round-01.json"],
       dependencyRevisions: { ...dependencyRevisions },
       openFindingIds: [],
-      orchestratorChecks: checks(candidateRevision, "acceptance-check"),
+      orchestratorChecks: checks(
+        ticketId,
+        candidateRevision,
+        "acceptance-check",
+      ),
       acceptedCandidateRevision: candidateRevision,
       blocker: null,
     },
@@ -376,6 +431,7 @@ function integrateBundle(
   const ticket = asRecord(bundle.ticket);
   const resultEntry = asRecord(asArray(bundle.results)[0]);
   const events = integratedEvents(
+    ticket.ticketId as string,
     ticket.baseRevision as string,
     resultEntry.redRevision as string,
     resultEntry.candidateRevision as string,
@@ -384,7 +440,11 @@ function integrateBundle(
   state.phase = "integrated";
   state.events = events;
   state.integrationRevision = integrationRevision;
-  state.integrationChecks = checks(integrationRevision, "integration-check");
+  state.integrationChecks = checks(
+    ticket.ticketId as string,
+    integrationRevision,
+    "integration-check",
+  );
   bundle.events = structuredClone(events);
 }
 
@@ -451,7 +511,7 @@ function writeReadyPacket(
     from: "planned",
     to: "ready",
     round: 0,
-    actorRunId: "orchestrator-ready",
+    actorRunId: controllerRunId(CURRENT_TICKET_ID),
     evidenceRef: "ticket.json",
     revision: baseRevision,
   }];
@@ -529,6 +589,82 @@ function integrateTicket(
   writePacket(root, ticketEntry.bundle);
   commit(root, `${ticketId} integrated metadata`);
   return integrationRevision;
+}
+
+async function createIntegratedTicketFixture(): Promise<GitFixture> {
+  const root = initializeRepository("integration-anchor-lineage-");
+  try {
+    const ticketEntry = await createAcceptedTicket(root, CURRENT_TICKET_ID);
+    integrateTicket(root, ticketEntry, CURRENT_TICKET_ID);
+    return {
+      root,
+      ticketDirectory: pathIn(root, ticketPath(CURRENT_TICKET_ID)),
+    };
+  } catch (error) {
+    Deno.removeSync(root, { recursive: true });
+    throw error;
+  }
+}
+
+async function createChangedIntegrationContentFixture(): Promise<GitFixture> {
+  const root = initializeRepository("integration-anchor-content-");
+  try {
+    const ticketEntry = await createAcceptedTicket(root, CURRENT_TICKET_ID);
+    writeText(
+      root,
+      `tools/workflows/${CURRENT_TICKET_ID.toLowerCase()}.ts`,
+      "export const ticket = 'changed during integration';\n",
+    );
+    const integrationRevision = commit(
+      root,
+      "integration anchor changes reviewed content",
+    );
+    integrateBundle(ticketEntry.bundle, integrationRevision);
+    writePacket(root, ticketEntry.bundle);
+    commit(root, "integrated metadata after changed content");
+    return {
+      root,
+      ticketDirectory: pathIn(root, ticketPath(CURRENT_TICKET_ID)),
+    };
+  } catch (error) {
+    Deno.removeSync(root, { recursive: true });
+    throw error;
+  }
+}
+
+function rewriteIntegrationRevision(
+  fixture: GitFixture,
+  integrationRevision: string,
+): void {
+  const path = ticketPath(CURRENT_TICKET_ID);
+  const state = readJson(fixture.root, `${path}/state.json`);
+  const events = asArray(state.events);
+  const integrationEvent = asRecord(events.at(-1));
+  integrationEvent.revision = integrationRevision;
+  state.integrationRevision = integrationRevision;
+  state.integrationChecks = checks(
+    CURRENT_TICKET_ID,
+    integrationRevision,
+    "integration-check",
+  );
+  writeJson(fixture.root, `${path}/state.json`, state);
+  writeText(
+    fixture.root,
+    `${path}/events.jsonl`,
+    `${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
+  );
+  commit(fixture.root, "rewrite integration anchor evidence");
+}
+
+function createSideRevision(
+  root: string,
+  parentRevision: string,
+): string {
+  const originalBranch = runGit(root, ["branch", "--show-current"]);
+  runGit(root, ["switch", "--quiet", "--detach", parentRevision]);
+  const revision = commit(root, "side integration anchor", true);
+  runGit(root, ["switch", "--quiet", originalBranch]);
+  return revision;
 }
 
 async function createHistoricalIntegratedFixture(): Promise<GitFixture> {
@@ -615,6 +751,25 @@ async function createLateDependencyFixture(): Promise<GitFixture> {
       dependencyIntegration,
     );
     commit(root, "dependent ready metadata");
+    return { root, ticketDirectory };
+  } catch (error) {
+    Deno.removeSync(root, { recursive: true });
+    throw error;
+  }
+}
+
+async function createMismatchedDependencyPinFixture(): Promise<GitFixture> {
+  const root = initializeRepository("integration-anchor-dependency-pin-");
+  try {
+    const dependency = await createAcceptedTicket(root, DEPENDENCY_TICKET_ID);
+    integrateTicket(root, dependency, DEPENDENCY_TICKET_ID);
+    const ticketBase = runGit(root, ["rev-parse", "HEAD"]);
+    const ticketDirectory = writeReadyPacket(
+      root,
+      ticketBase,
+      dependency.candidateRevision,
+    );
+    commit(root, "dependent ready metadata with mismatched pin");
     return { root, ticketDirectory };
   } catch (error) {
     Deno.removeSync(root, { recursive: true });
@@ -749,6 +904,161 @@ Deno.test("AUTONOMY-001 requires every ticket task in integration checks", () =>
   );
 });
 
+Deno.test("AUTONOMY-001 binds integration checks to the exact integration revision", () => {
+  const bundle = structuralIntegratedBundle();
+  const integrationChecks = asArray(
+    asRecord(bundle.state).integrationChecks,
+  );
+  asRecord(integrationChecks[0]).revision = STRUCTURAL_CANDIDATE;
+  assertIssue(
+    validateTicketBundle(bundle, AVAILABLE_TASKS),
+    "$.state.integrationChecks[0].revision",
+    "integration_mismatch",
+  );
+});
+
+Deno.test("AUTONOMY-001 rejects a failed integration check", () => {
+  const bundle = structuralIntegratedBundle();
+  const integrationChecks = asArray(
+    asRecord(bundle.state).integrationChecks,
+  );
+  asRecord(integrationChecks[0]).exitCode = 1;
+  assertIssue(
+    validateTicketBundle(bundle, AVAILABLE_TASKS),
+    "$.state.integrationChecks[0].exitCode",
+    "check_failed",
+  );
+});
+
+Deno.test("AUTONOMY-001 rejects duplicate integration-check run IDs", () => {
+  const bundle = structuralIntegratedBundle();
+  const integrationChecks = asArray(
+    asRecord(bundle.state).integrationChecks,
+  );
+  const duplicate = asRecord(structuredClone(integrationChecks[0]));
+  duplicate.command = "deno task check --duplicate-run-probe";
+  integrationChecks.push(duplicate);
+  assertIssue(
+    validateTicketBundle(bundle, AVAILABLE_TASKS),
+    "$.state.integrationChecks[1].runId",
+    "duplicate_value",
+  );
+});
+
+Deno.test("AUTONOMY-001 rejects duplicate integration-check commands", () => {
+  const bundle = structuralIntegratedBundle();
+  const integrationChecks = asArray(
+    asRecord(bundle.state).integrationChecks,
+  );
+  const duplicate = asRecord(structuredClone(integrationChecks[0]));
+  duplicate.runId = `${controllerRunId(CURRENT_TICKET_ID)}/integration-check-2`;
+  integrationChecks.push(duplicate);
+  assertIssue(
+    validateTicketBundle(bundle, AVAILABLE_TASKS),
+    "$.state.integrationChecks[1].command",
+    "duplicate_value",
+  );
+});
+
+Deno.test("AUTONOMY-001 rejects reuse of an acceptance check run ID during integration", () => {
+  const bundle = structuralIntegratedBundle();
+  const state = asRecord(bundle.state);
+  const integrationChecks = asArray(state.integrationChecks);
+  const orchestratorChecks = asArray(state.orchestratorChecks);
+  asRecord(integrationChecks[0]).runId = asRecord(orchestratorChecks[0]).runId;
+  assertIssue(
+    validateTicketBundle(bundle, AVAILABLE_TASKS),
+    "$.state.integrationChecks[0].runId",
+    "duplicate_value",
+  );
+});
+
+Deno.test("AUTONOMY-001 rejects a nonexistent integration revision", async () => {
+  const fixture = await createIntegratedTicketFixture();
+  try {
+    rewriteIntegrationRevision(fixture, "9".repeat(40));
+    assertRejectedWithIssue(
+      await captureValidatorRun(fixture),
+      "$.state.integrationRevision",
+      "revision_not_found",
+    );
+  } finally {
+    removeFixture(fixture);
+  }
+});
+
+Deno.test("AUTONOMY-001 requires the integration revision to descend from the candidate", async () => {
+  const fixture = await createIntegratedTicketFixture();
+  try {
+    const ticketEntry = readJson(
+      fixture.root,
+      `${ticketPath(CURRENT_TICKET_ID)}/ticket.json`,
+    );
+    rewriteIntegrationRevision(fixture, ticketEntry.baseRevision as string);
+    assertRejectedWithIssue(
+      await captureValidatorRun(fixture),
+      "$.state.integrationRevision",
+      "integration_ancestry_mismatch",
+    );
+  } finally {
+    removeFixture(fixture);
+  }
+});
+
+Deno.test("AUTONOMY-001 requires integration metadata to descend from its anchor", async () => {
+  const fixture = await createIntegratedTicketFixture();
+  try {
+    const state = readJson(
+      fixture.root,
+      `${ticketPath(CURRENT_TICKET_ID)}/state.json`,
+    );
+    const sideRevision = createSideRevision(
+      fixture.root,
+      state.candidateRevision as string,
+    );
+    rewriteIntegrationRevision(fixture, sideRevision);
+    assertRejectedWithIssue(
+      await captureValidatorRun(fixture),
+      "$.state.integrationRevision",
+      "integration_metadata_ancestry_mismatch",
+    );
+  } finally {
+    removeFixture(fixture);
+  }
+});
+
+Deno.test("AUTONOMY-001 rejects later mutation of the integrated ticket packet", async () => {
+  const fixture = await createIntegratedTicketFixture();
+  try {
+    writeText(
+      fixture.root,
+      `${ticketPath(CURRENT_TICKET_ID)}/acceptance.md`,
+      "Mutated after integration.\n",
+    );
+    commit(fixture.root, "mutate integrated ticket packet");
+    assertRejectedWithIssue(
+      await captureValidatorRun(fixture),
+      "$.state.integrationRevision",
+      "integration_metadata_mutated",
+    );
+  } finally {
+    removeFixture(fixture);
+  }
+});
+
+Deno.test("AUTONOMY-001 rejects integration-time changes to reviewed candidate content", async () => {
+  const fixture = await createChangedIntegrationContentFixture();
+  try {
+    assertRejectedWithIssue(
+      await captureValidatorRun(fixture),
+      "$.state.integrationRevision",
+      "integration_content_mismatch",
+    );
+  } finally {
+    removeFixture(fixture);
+  }
+});
+
 Deno.test("AUTONOMY-001 validates an integrated ticket after unrelated later commits using dependency state at its base", async () => {
   const fixture = await createHistoricalIntegratedFixture();
   try {
@@ -765,6 +1075,19 @@ Deno.test("AUTONOMY-001 rejects a dependency integrated only after the ticket ba
       await captureValidatorRun(fixture),
       `$.state.dependencyRevisions.${DEPENDENCY_TICKET_ID}`,
       "dependency_not_integrated_at_base",
+    );
+  } finally {
+    removeFixture(fixture);
+  }
+});
+
+Deno.test("AUTONOMY-001 rejects a dependency pin that differs from its base-state integration revision", async () => {
+  const fixture = await createMismatchedDependencyPinFixture();
+  try {
+    assertRejectedWithIssue(
+      await captureValidatorRun(fixture),
+      `$.state.dependencyRevisions.${DEPENDENCY_TICKET_ID}`,
+      "dependency_revision_mismatch",
     );
   } finally {
     removeFixture(fixture);
