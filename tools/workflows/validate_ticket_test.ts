@@ -66,7 +66,7 @@ function validEvents(): Record<string, unknown>[] {
       to: "review",
       round: 1,
       actorRunId: "orchestrator-review-20260811",
-      evidenceRef: "reviews/round-01.json",
+      evidenceRef: "results/round-01.json",
       revision: CANDIDATE_REVISION,
     },
     {

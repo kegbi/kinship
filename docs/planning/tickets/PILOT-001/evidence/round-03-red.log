@@ -4,6 +4,8 @@ phase=RED
 inputRevision=a451b3cae84d504468bb5e1003428233a9643621
 rejectedCandidateRevision=81fb66070c510e053cc0d4524145f3f3020bd9d1
 implementerRuns=[round3-red-contract,round3-red-git]
+supersedesRedRevision=2beed5a27c67fe6f2fde6f7c546a6a8a4f011d9e
+supersessionReason=Two equivalent positive/negative fixtures used the same legacy transition mapping; corrected to the accepted from-to mapping before GREEN acceptance.
 command=deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/validate_ticket_test.ts tools/workflows/round3_git_regression_test.ts tools/workflows/round3_policy_regression_test.ts
 exitCode=1
 baselineAndProcessGuards=53 passed
@@ -24,8 +26,8 @@ R2-011=max-round, sequence, event revision, round, and actor binding diagnostics
 R2-012=empty, duplicate, failed, and malformed approved-review commands accepted
 
 testFile[0].path=tools/workflows/validate_ticket_test.ts
-testFile[0].sha256=ff2ee379040cda4613bdf1dd433bdd51eed47f2c0cf0e1a486c557e2d13b8e28
+testFile[0].sha256=5daf9cbd35b4beb1359d82a36e3136a91c2a3b5eefa45e0906e91800e39e1406
 testFile[1].path=tools/workflows/round3_git_regression_test.ts
-testFile[1].sha256=c02e14ac1f05de05698accbdff3e7f9aabb38e832d8e936ac68c51ea696ddde8
+testFile[1].sha256=45322ffc1429dc0f0ffa29c517ee7f3fb1a2c42f104cf0382140da50017bbbeb
 testFile[2].path=tools/workflows/round3_policy_regression_test.ts
 testFile[2].sha256=658d4b70341dd1cffe4bf4c50e40fe2405b3c747347d4389ad33b27dd04cd423
