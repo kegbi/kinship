@@ -175,7 +175,10 @@ function validBundle(): Record<string, unknown> {
       baseRevision: BASE_REVISION,
       candidateRevision: CANDIDATE_REVISION,
       verdict: "APPROVED",
-      commands: ["deno task test:workflow:coverage"],
+      commands: [{
+        command: "deno task test:workflow:coverage",
+        exitCode: 0,
+      }],
       lenses: {
         bug_correctness: {
           verdict: "pass",
@@ -2130,4 +2133,525 @@ Deno.test("runTicketValidator rejects malformed references and non-repositories"
     Deno.removeSync(malformedDirectory, { recursive: true });
     Deno.removeSync(nonRepositoryDirectory, { recursive: true });
   }
+});
+
+const ROUND_TWO_RED_REVISION = "3333333333333333333333333333333333333333";
+const ROUND_TWO_CANDIDATE_REVISION = "4444444444444444444444444444444444444444";
+const UNRELATED_REVISION = "5555555555555555555555555555555555555555";
+
+function reviewFinding(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: "PILOT-001-REVIEW-001",
+    lens: "bug_correctness",
+    severity: "P2",
+    location: "tools/workflows/ticket_contract.ts:validateReviews",
+    expectedBehavior: "Review authority is validated before acceptance.",
+    observedBehavior: "Review authority was accepted without validation.",
+    reproduction: "Run the focused structural workflow test.",
+    impact: "A ticket could be accepted without trustworthy review evidence.",
+    affectedCriterion: "AC-01",
+    contractRef: "AGENTS.md#mandatory-change-method",
+    requiredRemediation: "Validate the complete review authority record.",
+    verification: "The focused structural mutant is rejected.",
+    status: "resolved",
+    ...overrides,
+  };
+}
+
+function validWaiver(): Record<string, unknown> {
+  return {
+    authority: "repository-owner-20260811",
+    rationale: "The bounded P2 correctness risk is accepted temporarily.",
+    owner: "workflow-maintainer",
+    expiresAt: "2999-12-31T23:59:59.000Z",
+  };
+}
+
+function missingIssue(
+  issues: readonly ValidationIssue[],
+  path: string,
+  code: string,
+): string | undefined {
+  return issues.some((issue) => issue.path === path && issue.code === code)
+    ? undefined
+    : `Expected ${path}:${code}, received ${JSON.stringify(issues)}`;
+}
+
+function assertTableFailures(failures: readonly string[]): void {
+  if (failures.length > 0) {
+    throw new Error(failures.join("\n"));
+  }
+}
+
+function preAcceptanceBundle(phase: "review" | "rework") {
+  const bundle = validBundle();
+  const state = asRecord(bundle.state);
+  const stateEvents = asArray(state.events);
+  state.phase = phase;
+  state.acceptedCandidateRevision = null;
+  state.orchestratorChecks = [];
+
+  if (phase === "review") {
+    stateEvents.pop();
+    state.reviewRefs = [];
+    bundle.reviews = [];
+  } else {
+    const review = asRecord(asArray(bundle.reviews)[0]);
+    review.verdict = "CHANGES_REQUESTED";
+    asRecord(asRecord(review.lenses).bug_correctness).verdict = "fail";
+    review.findings = [reviewFinding({ status: "open" })];
+    state.openFindingIds = ["PILOT-001-REVIEW-001"];
+    const finalEvent = asRecord(stateEvents.at(-1));
+    finalEvent.to = "rework";
+    finalEvent.actorRunId = review.reviewerRunId;
+    finalEvent.evidenceRef = "reviews/round-01.json";
+  }
+
+  bundle.events = structuredClone(stateEvents);
+  return bundle;
+}
+
+function twoRoundAcceptedBundle(): Record<string, unknown> {
+  const bundle = validBundle();
+  const state = asRecord(bundle.state);
+  const firstResult = asRecord(asArray(bundle.results)[0]);
+  const firstReview = asRecord(asArray(bundle.reviews)[0]);
+
+  firstReview.verdict = "CHANGES_REQUESTED";
+  firstReview.commands = [{
+    command: "deno task test:workflow",
+    exitCode: 0,
+  }];
+  asRecord(asRecord(firstReview.lenses).bug_correctness).verdict = "fail";
+  firstReview.findings = [reviewFinding()];
+
+  const secondResult = structuredClone(firstResult);
+  secondResult.round = 2;
+  secondResult.implementerRunId = "implementer-round-02-20260811";
+  secondResult.inputBaseRevision = CANDIDATE_REVISION;
+  secondResult.dispatchRef = "dispatch/round-02.md";
+  secondResult.redRevision = ROUND_TWO_RED_REVISION;
+  asRecord(secondResult.red).logRef = "evidence/round-02-red.log";
+  asRecord(secondResult.green).logRef = "evidence/round-02-green.log";
+  asRecord(secondResult.refactor).logRef = "evidence/round-02-refactor.log";
+  secondResult.candidateRevision = ROUND_TWO_CANDIDATE_REVISION;
+
+  const secondReview = structuredClone(
+    asRecord(asArray(validBundle().reviews)[0]),
+  );
+  secondReview.round = 2;
+  secondReview.implementerRunId = secondResult.implementerRunId;
+  secondReview.reviewerRunId = "reviewer-round-02-20260811";
+  secondReview.candidateRevision = ROUND_TWO_CANDIDATE_REVISION;
+  secondReview.commands = [{
+    command: "deno task test:workflow:coverage",
+    exitCode: 0,
+  }];
+
+  const events: Record<string, unknown>[] = [
+    ...validEvents().slice(0, 5),
+    {
+      sequence: 6,
+      from: "review",
+      to: "rework",
+      round: 1,
+      actorRunId: firstReview.reviewerRunId,
+      evidenceRef: "reviews/round-01.json",
+      revision: CANDIDATE_REVISION,
+    },
+    {
+      sequence: 7,
+      from: "rework",
+      to: "red",
+      round: 2,
+      actorRunId: secondResult.implementerRunId,
+      evidenceRef: "evidence/round-02-red.log",
+      revision: ROUND_TWO_RED_REVISION,
+    },
+    {
+      sequence: 8,
+      from: "red",
+      to: "green",
+      round: 2,
+      actorRunId: secondResult.implementerRunId,
+      evidenceRef: "evidence/round-02-green.log",
+      revision: ROUND_TWO_CANDIDATE_REVISION,
+    },
+    {
+      sequence: 9,
+      from: "green",
+      to: "refactor",
+      round: 2,
+      actorRunId: secondResult.implementerRunId,
+      evidenceRef: "evidence/round-02-refactor.log",
+      revision: ROUND_TWO_CANDIDATE_REVISION,
+    },
+    {
+      sequence: 10,
+      from: "refactor",
+      to: "review",
+      round: 2,
+      actorRunId: "orchestrator-review-round-02-20260811",
+      evidenceRef: "results/round-02.json",
+      revision: ROUND_TWO_CANDIDATE_REVISION,
+    },
+    {
+      sequence: 11,
+      from: "review",
+      to: "accepted",
+      round: 2,
+      actorRunId: "orchestrator-accept-round-02-20260811",
+      evidenceRef: "acceptance.md",
+      revision: ROUND_TWO_CANDIDATE_REVISION,
+    },
+  ];
+
+  state.phase = "accepted";
+  state.round = 2;
+  state.candidateRevision = ROUND_TWO_CANDIDATE_REVISION;
+  state.acceptedCandidateRevision = ROUND_TWO_CANDIDATE_REVISION;
+  state.events = events;
+  state.resultRefs = ["results/round-01.json", "results/round-02.json"];
+  state.reviewRefs = ["reviews/round-01.json", "reviews/round-02.json"];
+  for (const check of asArray(state.orchestratorChecks)) {
+    asRecord(check).revision = ROUND_TWO_CANDIDATE_REVISION;
+  }
+  bundle.events = structuredClone(events);
+  bundle.results = [firstResult, secondResult];
+  bundle.reviews = [firstReview, secondReview];
+  return bundle;
+}
+
+Deno.test("PILOT-001-R2-001 permits structurally valid review and rework before acceptance", () => {
+  const failures = (["review", "rework"] as const).flatMap((phase) => {
+    const issues = validateTicketBundle(
+      preAcceptanceBundle(phase),
+      AVAILABLE_TASKS,
+    );
+    return issues.length === 0 ? [] : [{ phase, issues }];
+  });
+  if (failures.length > 0) {
+    throw new Error(
+      `Expected pre-acceptance phases to be structurally valid: ${
+        JSON.stringify(failures)
+      }`,
+    );
+  }
+});
+
+Deno.test("PILOT-001-R2-002 validates a chained per-round input base", () => {
+  const failures: string[] = [];
+  const chained = twoRoundAcceptedBundle();
+  const chainedIssues = validateTicketBundle(chained, AVAILABLE_TASKS);
+  if (chainedIssues.length > 0) {
+    failures.push(`Valid chain was rejected: ${JSON.stringify(chainedIssues)}`);
+  }
+
+  const broken = twoRoundAcceptedBundle();
+  asRecord(asArray(broken.results)[1]).inputBaseRevision = UNRELATED_REVISION;
+  const missing = missingIssue(
+    validateTicketBundle(broken, AVAILABLE_TASKS),
+    "$.results[1].inputBaseRevision",
+    "round_chain_mismatch",
+  );
+  if (missing !== undefined) failures.push(missing);
+  assertTableFailures(failures);
+});
+
+Deno.test("PILOT-001-R2-006 requires explicit not-applicable agreement", () => {
+  const failures: string[] = [];
+  const agreed = validBundle();
+  const agreedLens = asRecord(
+    asRecord(asRecord(asArray(agreed.reviews)[0]).lenses).security_privacy,
+  );
+  agreedLens.verdict = "not_applicable";
+  agreedLens.notApplicableAgreement = {
+    orchestratorRunId: "orchestrator-scope-agreement-20260811",
+    scopeOrContractRef: "AGENTS.md#mandatory-change-method",
+    rationale: "The ticket processes public synthetic workflow metadata only.",
+  };
+  const agreedIssues = validateTicketBundle(agreed, AVAILABLE_TASKS);
+  if (agreedIssues.length > 0) {
+    failures.push(
+      `Explicit agreement was rejected: ${JSON.stringify(agreedIssues)}`,
+    );
+  }
+
+  const unsupported = validBundle();
+  asRecord(
+    asRecord(asRecord(asArray(unsupported.reviews)[0]).lenses)
+      .security_privacy,
+  ).verdict = "not_applicable";
+  const missing = missingIssue(
+    validateTicketBundle(unsupported, AVAILABLE_TASKS),
+    "$.reviews[0].lenses.security_privacy.notApplicableAgreement",
+    "agreement_required",
+  );
+  if (missing !== undefined) failures.push(missing);
+
+  for (
+    const field of [
+      "orchestratorRunId",
+      "scopeOrContractRef",
+      "rationale",
+    ] as const
+  ) {
+    const incomplete = validBundle();
+    const agreement: Record<string, unknown> = {
+      orchestratorRunId: "orchestrator-scope-agreement-20260811",
+      scopeOrContractRef: "AGENTS.md#mandatory-change-method",
+      rationale: "The lens is outside the declared workflow scope.",
+    };
+    delete agreement[field];
+    const lens = asRecord(
+      asRecord(asRecord(asArray(incomplete.reviews)[0]).lenses)
+        .security_privacy,
+    );
+    lens.verdict = "not_applicable";
+    lens.notApplicableAgreement = agreement;
+    const missingField = missingIssue(
+      validateTicketBundle(incomplete, AVAILABLE_TASKS),
+      `$.reviews[0].lenses.security_privacy.notApplicableAgreement.${field}`,
+      "required_field",
+    );
+    if (missingField !== undefined) failures.push(missingField);
+  }
+
+  const unknownCitation = validBundle();
+  const unknownCitationLens = asRecord(
+    asRecord(asRecord(asArray(unknownCitation.reviews)[0]).lenses)
+      .security_privacy,
+  );
+  unknownCitationLens.verdict = "not_applicable";
+  unknownCitationLens.notApplicableAgreement = {
+    orchestratorRunId: "orchestrator-scope-agreement-20260811",
+    scopeOrContractRef: "docs/unknown-contract.md",
+    rationale: "The lens is outside the declared workflow scope.",
+  };
+  const missingCitation = missingIssue(
+    validateTicketBundle(unknownCitation, AVAILABLE_TASKS),
+    "$.reviews[0].lenses.security_privacy.notApplicableAgreement.scopeOrContractRef",
+    "unknown_reference",
+  );
+  if (missingCitation !== undefined) failures.push(missingCitation);
+  assertTableFailures(failures);
+});
+
+Deno.test("PILOT-001-R2-006 requires complete unexpired waiver authority", () => {
+  const failures: string[] = [];
+  const valid = validBundle();
+  asRecord(asArray(valid.reviews)[0]).findings = [reviewFinding({
+    status: "waived",
+    waiver: validWaiver(),
+  })];
+  const validIssues = validateTicketBundle(valid, AVAILABLE_TASKS);
+  if (validIssues.length > 0) {
+    failures.push(`Valid waiver was rejected: ${JSON.stringify(validIssues)}`);
+  }
+
+  const cases = [
+    ["authority", "required_field"],
+    ["rationale", "required_field"],
+    ["owner", "required_field"],
+    ["expiresAt", "required_field"],
+  ] as const;
+  for (const [field, code] of cases) {
+    const bundle = validBundle();
+    const waiver = validWaiver();
+    delete waiver[field];
+    asRecord(asArray(bundle.reviews)[0]).findings = [reviewFinding({
+      status: "waived",
+      waiver,
+    })];
+    const missing = missingIssue(
+      validateTicketBundle(bundle, AVAILABLE_TASKS),
+      `$.reviews[0].findings[0].waiver.${field}`,
+      code,
+    );
+    if (missing !== undefined) failures.push(missing);
+  }
+
+  const expired = validBundle();
+  asRecord(asArray(expired.reviews)[0]).findings = [reviewFinding({
+    status: "waived",
+    waiver: {
+      ...validWaiver(),
+      expiresAt: "2000-01-01T00:00:00.000Z",
+    },
+  })];
+  const missing = missingIssue(
+    validateTicketBundle(expired, AVAILABLE_TASKS),
+    "$.reviews[0].findings[0].waiver.expiresAt",
+    "waiver_expired",
+  );
+  if (missing !== undefined) failures.push(missing);
+  assertTableFailures(failures);
+});
+
+Deno.test("PILOT-001-R2-006 rejects non-waivable findings", () => {
+  const failures: string[] = [];
+  const cases = [
+    { severity: "P0", lens: "bug_correctness" },
+    { severity: "P1", lens: "bug_correctness" },
+    { severity: "P2", lens: "security_privacy" },
+    { severity: "P2", lens: "architecture_contracts" },
+    { severity: "P2", lens: "tests_tdd" },
+  ] as const;
+  for (const testCase of cases) {
+    const bundle = validBundle();
+    asRecord(asArray(bundle.reviews)[0]).findings = [reviewFinding({
+      ...testCase,
+      status: "waived",
+      waiver: validWaiver(),
+    })];
+    const missing = missingIssue(
+      validateTicketBundle(bundle, AVAILABLE_TASKS),
+      "$.reviews[0].findings[0].status",
+      "waiver_forbidden",
+    );
+    if (missing !== undefined) {
+      failures.push(`${JSON.stringify(testCase)}: ${missing}`);
+    }
+  }
+  assertTableFailures(failures);
+});
+
+Deno.test("PILOT-001-R2-011 enforces maximum and contiguous rounds", () => {
+  const failures: string[] = [];
+  const cases: Array<{
+    readonly mutate: (bundle: Record<string, unknown>) => void;
+    readonly path: string;
+    readonly code: string;
+  }> = [
+    {
+      mutate: (bundle) => void (asRecord(bundle.ticket).maxRounds = 1),
+      path: "$.state.round",
+      code: "round_limit_exceeded",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(bundle.state).round = 3;
+        asRecord(asArray(bundle.results)[1]).round = 3;
+        asRecord(asArray(bundle.reviews)[1]).round = 3;
+        for (const event of asArray(asRecord(bundle.state).events).slice(6)) {
+          asRecord(event).round = 3;
+        }
+        bundle.events = structuredClone(asRecord(bundle.state).events);
+      },
+      path: "$.results[1].round",
+      code: "round_sequence",
+    },
+  ];
+  for (const testCase of cases) {
+    const bundle = twoRoundAcceptedBundle();
+    testCase.mutate(bundle);
+    const missing = missingIssue(
+      validateTicketBundle(bundle, AVAILABLE_TASKS),
+      testCase.path,
+      testCase.code,
+    );
+    if (missing !== undefined) failures.push(missing);
+  }
+  assertTableFailures(failures);
+});
+
+Deno.test("PILOT-001-R2-011 binds every event to exact round revisions and actors", () => {
+  const failures: string[] = [];
+  const revisionCases = [0, 1, 2, 3, 4, 5] as const;
+  for (const index of revisionCases) {
+    const bundle = validBundle();
+    asRecord(asArray(asRecord(bundle.state).events)[index]).revision =
+      UNRELATED_REVISION;
+    bundle.events = structuredClone(asRecord(bundle.state).events);
+    const missing = missingIssue(
+      validateTicketBundle(bundle, AVAILABLE_TASKS),
+      `$.state.events[${index}].revision`,
+      "revision_mismatch",
+    );
+    if (missing !== undefined) failures.push(missing);
+  }
+
+  const wrongRound = validBundle();
+  const stateEvents = asArray(asRecord(wrongRound.state).events);
+  asRecord(stateEvents[1]).round = 2;
+  asRecord(stateEvents[1]).actorRunId = "unbound-implementer";
+  wrongRound.events = structuredClone(stateEvents);
+  const missingRound = missingIssue(
+    validateTicketBundle(wrongRound, AVAILABLE_TASKS),
+    "$.state.events[1].round",
+    "round_mismatch",
+  );
+  if (missingRound !== undefined) failures.push(missingRound);
+
+  const wrongReviewer = twoRoundAcceptedBundle();
+  const reworkEvent = asRecord(
+    asArray(asRecord(wrongReviewer.state).events)[5],
+  );
+  reworkEvent.actorRunId = "different-reviewer";
+  wrongReviewer.events = structuredClone(asRecord(wrongReviewer.state).events);
+  const missingReviewer = missingIssue(
+    validateTicketBundle(wrongReviewer, AVAILABLE_TASKS),
+    "$.state.events[5].actorRunId",
+    "run_mismatch",
+  );
+  if (missingReviewer !== undefined) failures.push(missingReviewer);
+  assertTableFailures(failures);
+});
+
+Deno.test("PILOT-001-R2-012 requires passing unique approved-review commands", () => {
+  const failures: string[] = [];
+  const valid = validBundle();
+  asRecord(asArray(valid.reviews)[0]).commands = [{
+    command: "deno task test:workflow:coverage",
+    exitCode: 0,
+  }];
+  const validIssues = validateTicketBundle(valid, AVAILABLE_TASKS);
+  if (validIssues.length > 0) {
+    failures.push(
+      `Valid approved commands were rejected: ${JSON.stringify(validIssues)}`,
+    );
+  }
+
+  const cases: Array<{
+    readonly commands: unknown[];
+    readonly path: string;
+    readonly code: string;
+  }> = [
+    {
+      commands: [],
+      path: "$.reviews[0].commands",
+      code: "evidence_required",
+    },
+    {
+      commands: [
+        { command: "deno task test:workflow", exitCode: 0 },
+        { command: "deno task test:workflow", exitCode: 0 },
+      ],
+      path: "$.reviews[0].commands[1].command",
+      code: "duplicate_value",
+    },
+    {
+      commands: [{ command: "deno task test:workflow", exitCode: 1 }],
+      path: "$.reviews[0].commands[0].exitCode",
+      code: "review_command_failed",
+    },
+    {
+      commands: ["deno task test:workflow"],
+      path: "$.reviews[0].commands[0]",
+      code: "invalid_type",
+    },
+  ];
+  for (const testCase of cases) {
+    const bundle = validBundle();
+    asRecord(asArray(bundle.reviews)[0]).commands = testCase.commands;
+    const missing = missingIssue(
+      validateTicketBundle(bundle, AVAILABLE_TASKS),
+      testCase.path,
+      testCase.code,
+    );
+    if (missing !== undefined) failures.push(missing);
+  }
+  assertTableFailures(failures);
 });
