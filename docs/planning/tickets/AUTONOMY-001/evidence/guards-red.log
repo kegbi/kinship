@@ -1,0 +1,29 @@
+AUTONOMY-001 control-guard RED evidence
+
+Focused command:
+deno test --allow-read --allow-write --allow-run=git tools/workflows/control_guards_regression_test.ts
+
+Exit code: 1
+Result: 1 passed, 10 failed (11 total)
+
+Passing compatibility proof:
+- control guards preserve only the two legacy PILOT v1 packets
+
+Intended missing-behavior failures:
+- non-PILOT v1 packet returned no legacy_schema_forbidden issue
+- v2 controller fields and schemaVersion 2 were rejected as unsupported
+- ordinary/protected-config path authorization diagnostics were absent
+- controller-issued namespace and cross-round freshness diagnostics were absent
+- real-Git task-definition binding and changed-task guard diagnostics were absent
+
+The real-Git fixtures completed repository setup and reached validator output;
+they did not fail because of Git, permissions, missing files, or fixture setup.
+
+Preflight commands:
+- deno fmt --check tools/workflows/control_guards_regression_test.ts (exit 0)
+- deno check tools/workflows/control_guards_regression_test.ts (exit 0)
+
+RED conclusion:
+The suite fails only because the requested v2 control guards and legacy cutoff
+are not implemented. The production validator and all existing tests were left
+unchanged.
