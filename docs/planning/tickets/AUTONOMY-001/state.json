@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "ticketId": "AUTONOMY-001",
   "ticketRevision": 1,
-  "phase": "ready",
-  "round": 0,
+  "phase": "red",
+  "round": 1,
   "baseRevision": "e55f935db7825543757ca7083308ba3126195543",
   "candidateRevision": null,
   "events": [
@@ -15,6 +15,15 @@
       "actorRunId": "AUTONOMY-001/orchestrator/r0/00000000-0000-4000-8000-000000000101",
       "evidenceRef": "ticket.json",
       "revision": "e55f935db7825543757ca7083308ba3126195543"
+    },
+    {
+      "sequence": 2,
+      "from": "ready",
+      "to": "red",
+      "round": 1,
+      "actorRunId": "AUTONOMY-001/implementer/r1/00000000-0000-4000-8000-000000000102",
+      "evidenceRef": "evidence/integration-red.log",
+      "revision": "71b4d224ab019a6729fc3fe316326c869681eafa"
     }
   ],
   "resultRefs": [],

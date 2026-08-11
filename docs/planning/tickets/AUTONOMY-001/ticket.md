@@ -1,6 +1,6 @@
 # AUTONOMY-001: Harden autonomous delivery controls
 
-Status: ready\
+Status: red\
 Owner: trusted top-level orchestrator\
 Base revision: `e55f935db7825543757ca7083308ba3126195543`\
 Execution class: `protected-config-maintenance`\
