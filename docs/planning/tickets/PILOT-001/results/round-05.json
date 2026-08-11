@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "ticketId": "PILOT-001",
+  "ticketRevision": 1,
+  "round": 5,
+  "implementerRunId": "round5-red-green",
+  "inputBaseRevision": "b300c0fcb276ce82c17555049b48702c4d2c6f61",
+  "dispatchRef": "dispatch/round-05.md",
+  "redRevision": "2b49ff8887c9e2319f8ce3766ca0d91cf8e22c5e",
+  "red": {
+    "command": "deno test --allow-read --allow-write --allow-run=git tools/workflows/round5_git_regression_test.ts",
+    "exitCode": 1,
+    "expectedFailure": "Six assertions expose missing final-candidate RED retention, aggregate Git evidence bounds, and ready-state null-candidate handling.",
+    "output": "Zero groups passed and three grouped tests failed only on the six intended missing-behavior assertions; four internal controls passed.",
+    "logRef": "evidence/round-05-red.log",
+    "testFiles": [
+      {
+        "path": "tools/workflows/round5_git_regression_test.ts",
+        "sha256": "b20a6cede75aa488f5187a52eab395e5ad18bd13ee8044e614a2f55b0e0d0643"
+      }
+    ],
+    "productionFiles": []
+  },
+  "green": {
+    "command": "deno test --allow-read --allow-write --allow-run=git tools/workflows/round5_git_regression_test.ts",
+    "exitCode": 0,
+    "logRef": "evidence/round-05-green.log",
+    "productionFiles": [
+      "tools/workflows/ticket_contract.ts",
+      "tools/workflows/validate_ticket.ts"
+    ]
+  },
+  "refactor": {
+    "summary": "Centralized aggregate Git blob accounting and phase-aware candidate checks while removing duplicate exhaustion branches.",
+    "command": "deno task test:workflow:coverage",
+    "exitCode": 0,
+    "logRef": "evidence/round-05-refactor.log"
+  },
+  "candidateRevision": "bfdef5b88f20de4ec465a63b6d7e9825c41723ce"
+}

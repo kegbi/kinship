@@ -19,3 +19,8 @@
 {"sequence":19,"from":"green","to":"refactor","round":4,"actorRunId":"round4-red","evidenceRef":"evidence/round-04-refactor.log","revision":"b300c0fcb276ce82c17555049b48702c4d2c6f61"}
 {"sequence":20,"from":"refactor","to":"review","round":4,"actorRunId":"root-orchestrator-20260811","evidenceRef":"results/round-04.json","revision":"b300c0fcb276ce82c17555049b48702c4d2c6f61"}
 {"sequence":21,"from":"review","to":"rework","round":4,"actorRunId":"pilot-clean-review-20260811-r4","evidenceRef":"reviews/round-04.json","revision":"b300c0fcb276ce82c17555049b48702c4d2c6f61"}
+{"sequence":22,"from":"rework","to":"red","round":5,"actorRunId":"round5-red-green","evidenceRef":"evidence/round-05-red.log","revision":"2b49ff8887c9e2319f8ce3766ca0d91cf8e22c5e"}
+{"sequence":23,"from":"red","to":"green","round":5,"actorRunId":"round5-red-green","evidenceRef":"evidence/round-05-green.log","revision":"bfdef5b88f20de4ec465a63b6d7e9825c41723ce"}
+{"sequence":24,"from":"green","to":"refactor","round":5,"actorRunId":"round5-red-green","evidenceRef":"evidence/round-05-refactor.log","revision":"bfdef5b88f20de4ec465a63b6d7e9825c41723ce"}
+{"sequence":25,"from":"refactor","to":"review","round":5,"actorRunId":"root-orchestrator-20260811","evidenceRef":"results/round-05.json","revision":"bfdef5b88f20de4ec465a63b6d7e9825c41723ce"}
+{"sequence":26,"from":"review","to":"rework","round":5,"actorRunId":"codex-ephemeral-review-019ff2a9-r5","evidenceRef":"reviews/round-05.json","revision":"bfdef5b88f20de4ec465a63b6d7e9825c41723ce"}

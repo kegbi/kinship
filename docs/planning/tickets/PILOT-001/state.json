@@ -3,9 +3,9 @@
   "ticketId": "PILOT-001",
   "ticketRevision": 1,
   "phase": "rework",
-  "round": 4,
+  "round": 5,
   "baseRevision": "9d4693e1335797f1ecf98c4515ddba8e2603d8fb",
-  "candidateRevision": "b300c0fcb276ce82c17555049b48702c4d2c6f61",
+  "candidateRevision": "bfdef5b88f20de4ec465a63b6d7e9825c41723ce",
   "events": [
     {
       "sequence": 1,
@@ -195,22 +195,69 @@
       "actorRunId": "pilot-clean-review-20260811-r4",
       "evidenceRef": "reviews/round-04.json",
       "revision": "b300c0fcb276ce82c17555049b48702c4d2c6f61"
+    },
+    {
+      "sequence": 22,
+      "from": "rework",
+      "to": "red",
+      "round": 5,
+      "actorRunId": "round5-red-green",
+      "evidenceRef": "evidence/round-05-red.log",
+      "revision": "2b49ff8887c9e2319f8ce3766ca0d91cf8e22c5e"
+    },
+    {
+      "sequence": 23,
+      "from": "red",
+      "to": "green",
+      "round": 5,
+      "actorRunId": "round5-red-green",
+      "evidenceRef": "evidence/round-05-green.log",
+      "revision": "bfdef5b88f20de4ec465a63b6d7e9825c41723ce"
+    },
+    {
+      "sequence": 24,
+      "from": "green",
+      "to": "refactor",
+      "round": 5,
+      "actorRunId": "round5-red-green",
+      "evidenceRef": "evidence/round-05-refactor.log",
+      "revision": "bfdef5b88f20de4ec465a63b6d7e9825c41723ce"
+    },
+    {
+      "sequence": 25,
+      "from": "refactor",
+      "to": "review",
+      "round": 5,
+      "actorRunId": "root-orchestrator-20260811",
+      "evidenceRef": "results/round-05.json",
+      "revision": "bfdef5b88f20de4ec465a63b6d7e9825c41723ce"
+    },
+    {
+      "sequence": 26,
+      "from": "review",
+      "to": "rework",
+      "round": 5,
+      "actorRunId": "codex-ephemeral-review-019ff2a9-r5",
+      "evidenceRef": "reviews/round-05.json",
+      "revision": "bfdef5b88f20de4ec465a63b6d7e9825c41723ce"
     }
   ],
   "resultRefs": [
     "results/round-01.json",
     "results/round-02.json",
     "results/round-03.json",
-    "results/round-04.json"
+    "results/round-04.json",
+    "results/round-05.json"
   ],
   "reviewRefs": [
     "reviews/round-01.json",
     "reviews/round-02.json",
     "reviews/round-03.json",
-    "reviews/round-04.json"
+    "reviews/round-04.json",
+    "reviews/round-05.json"
   ],
   "dependencyRevisions": {},
-  "openFindingIds": ["PILOT-001-R4-001", "PILOT-001-R4-002"],
+  "openFindingIds": ["PILOT-001-R5-001"],
   "orchestratorChecks": [],
   "acceptedCandidateRevision": null,
   "blocker": null
