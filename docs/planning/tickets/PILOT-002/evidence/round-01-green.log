@@ -1,0 +1,11 @@
+PILOT-002 round 01 GREEN evidence
+Input RED HEAD: 3eda205b06fef16891457a08d0891004fd059f23
+Frozen test: tools/workflows/workflow_assets_test.ts
+Frozen test SHA-256: b90a0e0e103e658f9c58eca3c0ac629386860b0467143d2484cdba9ce2ec5f93
+
+Command: deno test --allow-read tools/workflows/workflow_assets_test.ts
+Exit code: 0
+Result: 6 passed; 0 failed. The protected-control-path contract test passed.
+
+Changed test files: none
+Changed production file: docs/development/autonomous-delivery.md

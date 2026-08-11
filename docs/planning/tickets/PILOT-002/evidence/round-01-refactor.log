@@ -1,0 +1,32 @@
+PILOT-002 round 01 REFACTOR evidence
+Input RED revision: 3eda205b06fef16891457a08d0891004fd059f23
+
+Refactor summary: no structural refactor was needed; the documentation change
+is limited to the two frozen contract sentences and one sandbox-enforcement
+clarification.
+
+Command: deno test --allow-read tools/workflows/workflow_assets_test.ts
+Exit code: 0
+Result: 6 passed; 0 failed.
+
+Command: deno fmt --check docs/development/autonomous-delivery.md
+  tools/workflows/workflow_assets_test.ts
+Exit code: 0
+Result: Both ticket-owned paths are formatted.
+
+Command: deno task lint
+Exit code: 0
+Result: 10 files checked.
+
+Command: deno task check
+Exit code: 0
+Result: Configured schema and workflow production entry points type-check.
+
+Repository-wide fmt note: the newly created Windows worktree checked unrelated
+tracked text files out with CRLF because the repository has no general LF
+attribute. The controller will run all candidate gates from an exact clean
+LF checkout and track the repository EOL policy as a separate infrastructure
+defect; no unrelated file is reformatted in this ticket.
+
+Changed tests: none after RED.
+Changed production file: docs/development/autonomous-delivery.md

@@ -1,0 +1,18 @@
+PILOT-002 round 01 RED evidence
+HEAD: 5cdf892a0669b25b447cf782e280530b66a6ed25
+
+Command: deno test --allow-read tools/workflows/workflow_assets_test.ts
+Exit code: 1
+Result: 5 passed; 1 failed. The new protected-control-path test failed only because the first required sentence was absent from docs/development/autonomous-delivery.md.
+
+Command: deno fmt --check tools/workflows/workflow_assets_test.ts
+Exit code: 0
+Result: Checked 1 file.
+
+Command: deno check tools/workflows/workflow_assets_test.ts
+Exit code: 0
+Result: Checked 1 file.
+
+Changed test file: tools/workflows/workflow_assets_test.ts
+SHA-256: b90a0e0e103e658f9c58eca3c0ac629386860b0467143d2484cdba9ce2ec5f93
+Changed production files: none
