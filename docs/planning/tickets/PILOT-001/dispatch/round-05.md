@@ -44,16 +44,15 @@ digests. Do not rewrite any existing test or prior evidence.
 
 - Severity/lens: P1 / bug_correctness
 - Expected behavior: `deno task ticket:validate <ticket-directory>` validates a
-  clean committed `ready` or `red` packet whose candidate revision is correctly
-  `null`.
+  clean committed `ready` packet whose candidate revision is correctly `null`.
 - Observed behavior: filesystem validation casts the absent candidate to a Git
   argument and enters ancestry/metadata checks that apply only after a candidate
   exists.
-- Required regression: clean committed ready and RED packet fixtures with no
-  candidate, plus a candidate-phase control.
+- Required regression: a clean committed ready packet fixture with no candidate,
+  plus a candidate-phase control.
 - Required remediation: make Git evidence validation phase-aware, while still
-  verifying repository identity, canonical paths, committed metadata, the base
-  revision, and any RED revision available in the current phase.
+  verifying repository identity, canonical paths, committed metadata, and the
+  declared base revision.
 - Affected criterion: AC-03
 - Contract: `docs/development/autonomous-delivery.md#state-machine`
 
