@@ -432,7 +432,7 @@ async function createFixture(
     candidateRevision,
     testFiles,
     productionFiles,
-    options.transitionMapping ?? "legacy",
+    options.transitionMapping ?? "from-to",
   );
 
   const metadataMode = options.metadataMode ?? "committed";
