@@ -492,12 +492,19 @@ function removeFixture(fixture: GitFixture): void {
   Deno.removeSync(fixture.root, { recursive: true });
 }
 
-function summarizeUnexpectedAcceptances(
-  results: readonly [string, ValidatorRun][],
-): string[] {
-  return results.filter(([, result]) => result.exitCode === 0).map(
-    ([label]) => label,
-  );
+function issueCodes(result: ValidatorRun): ReadonlySet<string> {
+  try {
+    const parsed = JSON.parse(result.output) as {
+      readonly issues?: readonly { readonly code?: unknown }[];
+    };
+    return new Set(
+      (parsed.issues ?? []).flatMap((entry) =>
+        typeof entry.code === "string" ? [entry.code] : []
+      ),
+    );
+  } catch {
+    return new Set();
+  }
 }
 
 Deno.test("R2-003 audits deletions, both rename paths, and RED file kinds", async () => {
@@ -583,11 +590,21 @@ Deno.test("R2-003 audits deletions, both rename paths, and RED file kinds", asyn
         await captureValidatorRun(fixture.ticketDirectory, fixture.root),
       ]);
     }
-    const accepted = summarizeUnexpectedAcceptances(runs);
-    if (accepted.length > 0) {
+    const expectedCodes = [
+      "red_scope_violation",
+      "red_scope_violation",
+      "candidate_scope_violation",
+      "red_scope_violation",
+      "candidate_scope_violation",
+      "red_scope_violation",
+    ] as const;
+    const missing = runs.flatMap(([label, run], index) =>
+      issueCodes(run).has(expectedCodes[index]!) ? [] : [label]
+    );
+    if (missing.length > 0) {
       throw new Error(
-        `Expected complete Git status/path auditing; validator accepted: ${
-          accepted.join(", ")
+        `Expected complete Git status/path diagnostics; missing: ${
+          missing.join(", ")
         }`,
       );
     }
@@ -683,11 +700,18 @@ Deno.test("R2-007 rejects linked evidence and non-canonical repositories", async
         await captureValidatorRun(external.ticketDirectory, canonical.root),
       ],
     ];
-    const accepted = summarizeUnexpectedAcceptances(runs);
-    if (accepted.length > 0) {
+    const expectedCodes = [
+      "path_escape",
+      "ticket_path_mismatch",
+      "repository_mismatch",
+    ] as const;
+    const missing = runs.flatMap(([label, run], index) =>
+      issueCodes(run).has(expectedCodes[index]!) ? [] : [label]
+    );
+    if (missing.length > 0) {
       throw new Error(
-        `Expected physical and canonical containment rejection; validator accepted: ${
-          accepted.join(", ")
+        `Expected physical and canonical containment diagnostics; missing: ${
+          missing.join(", ")
         }`,
       );
     }
@@ -712,18 +736,30 @@ Deno.test("R2-010 binds clean committed metadata to a candidate descendant", asy
       genuine.ticketDirectory,
       genuine.root,
     );
-    const negativeRuns: [string, ValidatorRun][] = [];
+    const negativeRuns: [string, string, ValidatorRun][] = [];
     for (
-      const [label, fixture] of [
-        ["dirty metadata", dirty],
-        ["untracked metadata", untracked],
-        ["stale metadata after post-review production", stale],
-        ["metadata commit not descended from candidate", nonDescendant],
+      const [label, expectedCode, fixture] of [
+        ["dirty metadata", "metadata_dirty", dirty],
+        ["untracked metadata", "metadata_dirty", untracked],
+        [
+          "stale metadata after post-review production",
+          "metadata_scope_violation",
+          stale,
+        ],
+        [
+          "metadata commit not descended from candidate",
+          "metadata_ancestry_mismatch",
+          nonDescendant,
+        ],
       ] as const
     ) {
       negativeRuns.push([
         label,
-        await captureValidatorRun(fixture.ticketDirectory, fixture.root),
+        expectedCode,
+        await captureValidatorRun(
+          fixture.ticketDirectory,
+          fixture.root,
+        ),
       ]);
     }
     const failures: string[] = [];
@@ -732,7 +768,11 @@ Deno.test("R2-010 binds clean committed metadata to a candidate descendant", asy
         `genuine committed descendant rejected: ${genuineRun.output}`,
       );
     }
-    failures.push(...summarizeUnexpectedAcceptances(negativeRuns));
+    failures.push(
+      ...negativeRuns.flatMap(([label, expectedCode, run]) =>
+        issueCodes(run).has(expectedCode) ? [] : [label]
+      ),
+    );
     if (failures.length > 0) {
       throw new Error(
         `Expected immutable candidate-bound metadata; failures: ${

@@ -5,11 +5,11 @@ inputRevision=a451b3cae84d504468bb5e1003428233a9643621
 rejectedCandidateRevision=81fb66070c510e053cc0d4524145f3f3020bd9d1
 implementerRuns=[round3-red-contract,round3-red-git]
 supersedesRedRevision=2beed5a27c67fe6f2fde6f7c546a6a8a4f011d9e
-supersessionReason=Two equivalent positive/negative fixtures used the same legacy transition mapping; corrected to the accepted from-to mapping before GREEN acceptance.
+supersedesPriorCorrection=79e63acea4c93bf9befa7e486ed2e6fa64abca78
+supersessionReason=Equivalent positive/negative fixtures were corrected to the accepted from-to mapping, then the Git-boundary assertions were tightened to require their exact diagnostics so an unrelated transition error cannot mask missing behavior.
 command=deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/validate_ticket_test.ts tools/workflows/round3_git_regression_test.ts tools/workflows/round3_policy_regression_test.ts
 exitCode=1
-baselineAndProcessGuards=53 passed
-intendedRegressions=14 failed
+verification=Run from the immutable superseding RED revision before any GREEN implementation resumes.
 productionFiles=[]
 
 R2-001=review/rework phases rejected by acceptance-only guards
@@ -28,6 +28,6 @@ R2-012=empty, duplicate, failed, and malformed approved-review commands accepted
 testFile[0].path=tools/workflows/validate_ticket_test.ts
 testFile[0].sha256=5daf9cbd35b4beb1359d82a36e3136a91c2a3b5eefa45e0906e91800e39e1406
 testFile[1].path=tools/workflows/round3_git_regression_test.ts
-testFile[1].sha256=45322ffc1429dc0f0ffa29c517ee7f3fb1a2c42f104cf0382140da50017bbbeb
+testFile[1].sha256=7c7f209c1bdcdb8eca1af61081cc2d6d5df5bc4ec508f2d55f21b845ce40c3b3
 testFile[2].path=tools/workflows/round3_policy_regression_test.ts
 testFile[2].sha256=658d4b70341dd1cffe4bf4c50e40fe2405b3c747347d4389ad33b27dd04cd423
