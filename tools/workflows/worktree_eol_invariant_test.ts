@@ -44,9 +44,20 @@ Deno.test("LF applies across normal paths and every schema artifact stays binary
   }
 
   for (const path of schemaPaths) {
-    assertEquals(
-      git("check-attr", "text", "--", path),
-      `${path}: text: unset`,
-    );
+    if (path.endsWith(".csv")) {
+      assertEquals(
+        git("check-attr", "text", "--", path),
+        `${path}: text: set`,
+      );
+      assertEquals(
+        git("check-attr", "eol", "--", path),
+        `${path}: eol: crlf`,
+      );
+    } else {
+      assertEquals(
+        git("check-attr", "text", "--", path),
+        `${path}: text: unset`,
+      );
+    }
   }
 });
