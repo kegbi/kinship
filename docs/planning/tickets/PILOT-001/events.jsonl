@@ -24,3 +24,8 @@
 {"sequence":24,"from":"green","to":"refactor","round":5,"actorRunId":"round5-red-green","evidenceRef":"evidence/round-05-refactor.log","revision":"bfdef5b88f20de4ec465a63b6d7e9825c41723ce"}
 {"sequence":25,"from":"refactor","to":"review","round":5,"actorRunId":"root-orchestrator-20260811","evidenceRef":"results/round-05.json","revision":"bfdef5b88f20de4ec465a63b6d7e9825c41723ce"}
 {"sequence":26,"from":"review","to":"rework","round":5,"actorRunId":"codex-ephemeral-review-019ff2a9-r5","evidenceRef":"reviews/round-05.json","revision":"bfdef5b88f20de4ec465a63b6d7e9825c41723ce"}
+{"sequence":27,"from":"rework","to":"red","round":6,"actorRunId":"codex-ephemeral-implementer-019ff2b5-r6","evidenceRef":"evidence/round-06-red.log","revision":"c881ab9d9dc15206bef12a5715dc86a0d7a531ff"}
+{"sequence":28,"from":"red","to":"green","round":6,"actorRunId":"codex-ephemeral-implementer-019ff2b5-r6","evidenceRef":"evidence/round-06-green.log","revision":"82fd90410eeaf512a8c3bf3875731b4d9b543fc9"}
+{"sequence":29,"from":"green","to":"refactor","round":6,"actorRunId":"codex-ephemeral-implementer-019ff2b5-r6","evidenceRef":"evidence/round-06-refactor.log","revision":"82fd90410eeaf512a8c3bf3875731b4d9b543fc9"}
+{"sequence":30,"from":"refactor","to":"review","round":6,"actorRunId":"root-orchestrator-20260811","evidenceRef":"results/round-06.json","revision":"82fd90410eeaf512a8c3bf3875731b4d9b543fc9"}
+{"sequence":31,"from":"review","to":"blocked","round":6,"actorRunId":"root-orchestrator-20260811","evidenceRef":"evidence/bootstrap-integrity-blocker.md","revision":"82fd90410eeaf512a8c3bf3875731b4d9b543fc9"}

@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "ticketId": "PILOT-001",
   "ticketRevision": 1,
-  "phase": "rework",
-  "round": 5,
+  "phase": "blocked",
+  "round": 6,
   "baseRevision": "9d4693e1335797f1ecf98c4515ddba8e2603d8fb",
-  "candidateRevision": "bfdef5b88f20de4ec465a63b6d7e9825c41723ce",
+  "candidateRevision": "82fd90410eeaf512a8c3bf3875731b4d9b543fc9",
   "events": [
     {
       "sequence": 1,
@@ -240,6 +240,51 @@
       "actorRunId": "codex-ephemeral-review-019ff2a9-r5",
       "evidenceRef": "reviews/round-05.json",
       "revision": "bfdef5b88f20de4ec465a63b6d7e9825c41723ce"
+    },
+    {
+      "sequence": 27,
+      "from": "rework",
+      "to": "red",
+      "round": 6,
+      "actorRunId": "codex-ephemeral-implementer-019ff2b5-r6",
+      "evidenceRef": "evidence/round-06-red.log",
+      "revision": "c881ab9d9dc15206bef12a5715dc86a0d7a531ff"
+    },
+    {
+      "sequence": 28,
+      "from": "red",
+      "to": "green",
+      "round": 6,
+      "actorRunId": "codex-ephemeral-implementer-019ff2b5-r6",
+      "evidenceRef": "evidence/round-06-green.log",
+      "revision": "82fd90410eeaf512a8c3bf3875731b4d9b543fc9"
+    },
+    {
+      "sequence": 29,
+      "from": "green",
+      "to": "refactor",
+      "round": 6,
+      "actorRunId": "codex-ephemeral-implementer-019ff2b5-r6",
+      "evidenceRef": "evidence/round-06-refactor.log",
+      "revision": "82fd90410eeaf512a8c3bf3875731b4d9b543fc9"
+    },
+    {
+      "sequence": 30,
+      "from": "refactor",
+      "to": "review",
+      "round": 6,
+      "actorRunId": "root-orchestrator-20260811",
+      "evidenceRef": "results/round-06.json",
+      "revision": "82fd90410eeaf512a8c3bf3875731b4d9b543fc9"
+    },
+    {
+      "sequence": 31,
+      "from": "review",
+      "to": "blocked",
+      "round": 6,
+      "actorRunId": "root-orchestrator-20260811",
+      "evidenceRef": "evidence/bootstrap-integrity-blocker.md",
+      "revision": "82fd90410eeaf512a8c3bf3875731b4d9b543fc9"
     }
   ],
   "resultRefs": [
@@ -247,18 +292,20 @@
     "results/round-02.json",
     "results/round-03.json",
     "results/round-04.json",
-    "results/round-05.json"
+    "results/round-05.json",
+    "results/round-06.json"
   ],
   "reviewRefs": [
     "reviews/round-01.json",
     "reviews/round-02.json",
     "reviews/round-03.json",
     "reviews/round-04.json",
-    "reviews/round-05.json"
+    "reviews/round-05.json",
+    "reviews/round-06.json"
   ],
   "dependencyRevisions": {},
-  "openFindingIds": ["PILOT-001-R5-001"],
+  "openFindingIds": [],
   "orchestratorChecks": [],
   "acceptedCandidateRevision": null,
-  "blocker": null
+  "blocker": "Bootstrap rounds one and two changed their declared immutable RED test blobs; non-waivable historical TDD evidence prevents ticket acceptance."
 }
