@@ -488,6 +488,16 @@ async function captureValidatorRunInRepository(
   readonly exitCode: number;
   readonly output: string;
 }> {
+  const pendingMetadata = runGit(repositoryRoot, ["status", "--porcelain"]);
+  if (pendingMetadata.length > 0) {
+    runGit(repositoryRoot, ["add", "--all"]);
+    runGit(repositoryRoot, [
+      "commit",
+      "--quiet",
+      "-m",
+      "ticket metadata fixture",
+    ]);
+  }
   const originalDirectory = Deno.cwd();
   try {
     Deno.chdir(repositoryRoot);
@@ -1290,6 +1300,13 @@ Deno.test("validateTicketBundle identifies a malformed event destination", () =>
 Deno.test("validate_ticket CLI entry point exits zero for a valid directory", async () => {
   const fixture = await writeGitBundleDirectory();
   try {
+    runGit(fixture.root, ["add", "--all"]);
+    runGit(fixture.root, [
+      "commit",
+      "--quiet",
+      "-m",
+      "ticket metadata fixture",
+    ]);
     const validatorPath = Deno.realPathSync(
       new URL("./validate_ticket.ts", import.meta.url),
     );
