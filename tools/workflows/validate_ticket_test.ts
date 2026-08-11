@@ -467,6 +467,22 @@ async function captureValidatorRun(args: readonly string[]): Promise<{
   }
 }
 
+async function captureValidatorRunInRepository(
+  repositoryRoot: string,
+  args: readonly string[],
+): Promise<{
+  readonly exitCode: number;
+  readonly output: string;
+}> {
+  const originalDirectory = Deno.cwd();
+  try {
+    Deno.chdir(repositoryRoot);
+    return await captureValidatorRun(args);
+  } finally {
+    Deno.chdir(originalDirectory);
+  }
+}
+
 Deno.test("validateTicketBundle accepts one complete valid bundle", () => {
   assertNoIssues(validateTicketBundle(validBundle(), AVAILABLE_TASKS));
 });
@@ -816,7 +832,10 @@ Deno.test("validateTicketBundle rejects duplicate finding IDs and invalid lens v
 Deno.test("runTicketValidator accepts a complete temporary ticket directory", async () => {
   const fixture = await writeGitBundleDirectory();
   try {
-    const result = await captureValidatorRun([fixture.ticketDirectory]);
+    const result = await captureValidatorRunInRepository(
+      fixture.root,
+      [fixture.ticketDirectory],
+    );
     if (result.exitCode !== 0) {
       throw new Error(
         `Expected CLI exit 0 for a valid directory, received ${result.exitCode}: ${result.output}`,
@@ -1257,15 +1276,18 @@ Deno.test("validateTicketBundle identifies a malformed event destination", () =>
 Deno.test("validate_ticket CLI entry point exits zero for a valid directory", async () => {
   const fixture = await writeGitBundleDirectory();
   try {
+    const validatorPath = Deno.realPathSync(
+      new URL("./validate_ticket.ts", import.meta.url),
+    );
     const result = new Deno.Command(Deno.execPath(), {
       args: [
         "run",
         "--allow-read",
         "--allow-run=git",
-        "tools/workflows/validate_ticket.ts",
+        validatorPath,
         fixture.ticketDirectory,
       ],
-      cwd: new URL("../../", import.meta.url),
+      cwd: fixture.root,
       stdout: "piped",
       stderr: "piped",
     }).outputSync();
@@ -1631,7 +1653,10 @@ Deno.test("runTicketValidator verifies Git content-addressed TDD lineage", async
   });
   const brokenTree = await writeGitBundleDirectory();
   try {
-    const genuineRun = await captureValidatorRun([genuine.ticketDirectory]);
+    const genuineRun = await captureValidatorRunInRepository(
+      genuine.root,
+      [genuine.ticketDirectory],
+    );
 
     const exactAllowedBundle = structuredClone(genuine.bundle);
     asRecord(exactAllowedBundle.ticket).allowedWrites = [
@@ -1639,7 +1664,10 @@ Deno.test("runTicketValidator verifies Git content-addressed TDD lineage", async
       "tools/workflows/ticket_contract.ts",
     ];
     writeBundleFiles(genuine.ticketDirectory, exactAllowedBundle);
-    const exactAllowed = await captureValidatorRun([genuine.ticketDirectory]);
+    const exactAllowed = await captureValidatorRunInRepository(
+      genuine.root,
+      [genuine.ticketDirectory],
+    );
 
     const integratedBundle = structuredClone(genuine.bundle);
     const integratedState = asRecord(integratedBundle.state);
@@ -1656,21 +1684,30 @@ Deno.test("runTicketValidator verifies Git content-addressed TDD lineage", async
     });
     integratedBundle.events = structuredClone(integratedEvents);
     writeBundleFiles(genuine.ticketDirectory, integratedBundle);
-    const integrated = await captureValidatorRun([genuine.ticketDirectory]);
+    const integrated = await captureValidatorRunInRepository(
+      genuine.root,
+      [genuine.ticketDirectory],
+    );
 
     const wrongHashBundle = structuredClone(genuine.bundle);
     const wrongHashResult = asRecord(asArray(wrongHashBundle.results)[0]);
     asRecord(asArray(asRecord(wrongHashResult.red).testFiles)[0]).sha256 = "0"
       .repeat(64);
     writeBundleFiles(genuine.ticketDirectory, wrongHashBundle);
-    const wrongHash = await captureValidatorRun([genuine.ticketDirectory]);
+    const wrongHash = await captureValidatorRunInRepository(
+      genuine.root,
+      [genuine.ticketDirectory],
+    );
 
     const missingBlobBundle = structuredClone(genuine.bundle);
     const missingBlobResult = asRecord(asArray(missingBlobBundle.results)[0]);
     asRecord(asArray(asRecord(missingBlobResult.red).testFiles)[0]).path =
       "tools/workflows/missing_test.ts";
     writeBundleFiles(genuine.ticketDirectory, missingBlobBundle);
-    const missingBlob = await captureValidatorRun([genuine.ticketDirectory]);
+    const missingBlob = await captureValidatorRunInRepository(
+      genuine.root,
+      [genuine.ticketDirectory],
+    );
 
     const nonexistentBundle = structuredClone(genuine.bundle);
     const nonexistentState = asRecord(nonexistentBundle.state);
@@ -1699,7 +1736,10 @@ Deno.test("runTicketValidator verifies Git content-addressed TDD lineage", async
       asRecord(check).revision = nonexistentCandidate;
     }
     writeBundleFiles(genuine.ticketDirectory, nonexistentBundle);
-    const nonexistent = await captureValidatorRun([genuine.ticketDirectory]);
+    const nonexistent = await captureValidatorRunInRepository(
+      genuine.root,
+      [genuine.ticketDirectory],
+    );
 
     const brokenCandidate = asRecord(brokenTree.bundle.state)
       .candidateRevision as string;
@@ -1719,34 +1759,55 @@ Deno.test("runTicketValidator verifies Git content-addressed TDD lineage", async
       throw new Error("Git fixture object escaped its temporary repository");
     }
     Deno.removeSync(brokenObject);
-    const brokenDiff = await captureValidatorRun([brokenTree.ticketDirectory]);
+    const brokenDiff = await captureValidatorRunInRepository(
+      brokenTree.root,
+      [brokenTree.ticketDirectory],
+    );
 
     const diagnostics = [
       [wrongHash, "content_hash_mismatch"],
       [missingBlob, "content_missing"],
       [nonexistent, "revision_not_found"],
       [
-        await captureValidatorRun([redProduction.ticketDirectory]),
+        await captureValidatorRunInRepository(
+          redProduction.root,
+          [redProduction.ticketDirectory],
+        ),
         "red_scope_violation",
       ],
       [
-        await captureValidatorRun([staleCandidate.ticketDirectory]),
+        await captureValidatorRunInRepository(
+          staleCandidate.root,
+          [staleCandidate.ticketDirectory],
+        ),
         "ancestry_mismatch",
       ],
       [
-        await captureValidatorRun([outsideCandidate.ticketDirectory]),
+        await captureValidatorRunInRepository(
+          outsideCandidate.root,
+          [outsideCandidate.ticketDirectory],
+        ),
         "candidate_scope_violation",
       ],
       [
-        await captureValidatorRun([oversizedRedTest.ticketDirectory]),
+        await captureValidatorRunInRepository(
+          oversizedRedTest.root,
+          [oversizedRedTest.ticketDirectory],
+        ),
         "git_output_limit",
       ],
       [
-        await captureValidatorRun([excessivePaths.ticketDirectory]),
+        await captureValidatorRunInRepository(
+          excessivePaths.root,
+          [excessivePaths.ticketDirectory],
+        ),
         "git_output_limit",
       ],
       [
-        await captureValidatorRun([excessiveOutput.ticketDirectory]),
+        await captureValidatorRunInRepository(
+          excessiveOutput.root,
+          [excessiveOutput.ticketDirectory],
+        ),
         "git_output_limit",
       ],
       [brokenDiff, "git_output_limit"],
@@ -1796,24 +1857,26 @@ Deno.test("runTicketValidator requires exact complete evidence mappings", async 
   const fixture = await writeGitBundleDirectory();
   const directory = fixture.ticketDirectory;
   try {
-    const complete = await captureValidatorRun([directory]);
+    const run = () =>
+      captureValidatorRunInRepository(fixture.root, [directory]);
+    const complete = await run();
 
     Deno.removeSync(`${directory}/dispatch/round-01.md`);
-    const missingDispatch = await captureValidatorRun([directory]);
+    const missingDispatch = await run();
     writeRequiredEvidenceFiles(directory, fixture.bundle);
 
     Deno.removeSync(`${directory}/evidence/round-01-red.log`);
-    const missingLog = await captureValidatorRun([directory]);
+    const missingLog = await run();
     writeRequiredEvidenceFiles(directory, fixture.bundle);
 
     Deno.removeSync(`${directory}/acceptance.md`);
-    const missingAcceptance = await captureValidatorRun([directory]);
+    const missingAcceptance = await run();
     writeRequiredEvidenceFiles(directory, fixture.bundle);
 
     const wrongPrefixBundle = structuredClone(fixture.bundle);
     asRecord(wrongPrefixBundle.state).resultRefs = ["evidence/ignored.json"];
     writeBundleFiles(directory, wrongPrefixBundle);
-    const wrongPrefix = await captureValidatorRun([directory]);
+    const wrongPrefix = await run();
 
     const mismatchedRoundBundle = structuredClone(fixture.bundle);
     asRecord(mismatchedRoundBundle.state).resultRefs = [
@@ -1824,12 +1887,12 @@ Deno.test("runTicketValidator requires exact complete evidence mappings", async 
       `${directory}/results/round-02.json`,
       `${JSON.stringify(asArray(mismatchedRoundBundle.results)[0], null, 2)}\n`,
     );
-    const mismatchedRound = await captureValidatorRun([directory]);
+    const mismatchedRound = await run();
 
     writeBundleFiles(directory, fixture.bundle);
     Deno.removeSync(`${directory}/evidence/round-01-green.log`);
     Deno.mkdirSync(`${directory}/evidence/round-01-green.log`);
-    const nonFileLog = await captureValidatorRun([directory]);
+    const nonFileLog = await run();
     Deno.removeSync(`${directory}/evidence/round-01-green.log`, {
       recursive: true,
     });
@@ -1839,7 +1902,7 @@ Deno.test("runTicketValidator requires exact complete evidence mappings", async 
       `${directory}/evidence/round-01-refactor.log`,
       "x".repeat(1_000_001),
     );
-    const oversizedLog = await captureValidatorRun([directory]);
+    const oversizedLog = await run();
     writeRequiredEvidenceFiles(directory, fixture.bundle);
 
     const dispatchMismatchBundle = structuredClone(fixture.bundle);
@@ -1847,14 +1910,14 @@ Deno.test("runTicketValidator requires exact complete evidence mappings", async 
       "dispatch/round-02.md";
     writeBundleFiles(directory, dispatchMismatchBundle);
     writeRequiredEvidenceFiles(directory, dispatchMismatchBundle);
-    const dispatchMismatch = await captureValidatorRun([directory]);
+    const dispatchMismatch = await run();
 
     const logMismatchBundle = structuredClone(fixture.bundle);
     asRecord(asRecord(asArray(logMismatchBundle.results)[0]).red).logRef =
       "evidence/round-02-red.log";
     writeBundleFiles(directory, logMismatchBundle);
     writeRequiredEvidenceFiles(directory, logMismatchBundle);
-    const logMismatch = await captureValidatorRun([directory]);
+    const logMismatch = await run();
 
     const reviewMismatchBundle = structuredClone(fixture.bundle);
     asRecord(reviewMismatchBundle.state).reviewRefs = [
@@ -1865,7 +1928,7 @@ Deno.test("runTicketValidator requires exact complete evidence mappings", async 
       `${directory}/reviews/round-02.json`,
       `${JSON.stringify(asArray(reviewMismatchBundle.reviews)[0], null, 2)}\n`,
     );
-    const reviewMismatch = await captureValidatorRun([directory]);
+    const reviewMismatch = await run();
 
     const eventMismatchBundle = structuredClone(fixture.bundle);
     asRecord(asArray(asRecord(eventMismatchBundle.state).events)[0])
@@ -1873,7 +1936,7 @@ Deno.test("runTicketValidator requires exact complete evidence mappings", async 
     asRecord(asArray(eventMismatchBundle.events)[0]).evidenceRef =
       "acceptance.md";
     writeBundleFiles(directory, eventMismatchBundle);
-    const eventMismatch = await captureValidatorRun([directory]);
+    const eventMismatch = await run();
 
     const diagnostics = [
       [missingDispatch, "file_missing"],
