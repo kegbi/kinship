@@ -9,3 +9,7 @@
 {"sequence":9,"from":"green","to":"refactor","round":2,"actorRunId":"rework-red-lifecycle","evidenceRef":"evidence/round-02-refactor.log","revision":"81fb66070c510e053cc0d4524145f3f3020bd9d1"}
 {"sequence":10,"from":"refactor","to":"review","round":2,"actorRunId":"root-orchestrator-20260811","evidenceRef":"results/round-02.json","revision":"81fb66070c510e053cc0d4524145f3f3020bd9d1"}
 {"sequence":11,"from":"review","to":"rework","round":2,"actorRunId":"pilot-review-clean-20260811-r2","evidenceRef":"reviews/round-02.json","revision":"81fb66070c510e053cc0d4524145f3f3020bd9d1"}
+{"sequence":12,"from":"rework","to":"red","round":3,"actorRunId":"round3-red-contract","evidenceRef":"evidence/round-03-red.log","revision":"7ab21b784b25a30a573b5082323bdb0bf99acac8"}
+{"sequence":13,"from":"red","to":"green","round":3,"actorRunId":"round3-red-contract","evidenceRef":"evidence/round-03-green.log","revision":"66d5d28e981e344f9dfecf68528b00d216ace182"}
+{"sequence":14,"from":"green","to":"refactor","round":3,"actorRunId":"round3-red-contract","evidenceRef":"evidence/round-03-refactor.log","revision":"66d5d28e981e344f9dfecf68528b00d216ace182"}
+{"sequence":15,"from":"refactor","to":"review","round":3,"actorRunId":"root-orchestrator-20260811","evidenceRef":"results/round-03.json","revision":"66d5d28e981e344f9dfecf68528b00d216ace182"}
