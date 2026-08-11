@@ -1,0 +1,34 @@
+PILOT-001 round 05 GREEN evidence
+Date: 2026-08-11
+Input RED revision: 2b49ff8887c9e2319f8ce3766ca0d91cf8e22c5e
+
+Frozen test/check hash verified from the immutable RED Git blob before and
+after production work:
+- tools/workflows/round5_git_regression_test.ts:
+  b20a6cede75aa488f5187a52eab395e5ad18bd13ee8044e614a2f55b0e0d0643
+
+Implemented behavior:
+- every historical RED test blob must retain its declared SHA-256 content in
+  the final state candidate as well as its own recorded candidate;
+- result evidence is limited to 100 aggregate RED test references, with the
+  exact $.results:reference_limit diagnostic above that boundary;
+- complete RED and candidate Git blob reads share a 5000000-byte aggregate
+  budget, reject before starting a read that would exceed it, emit the exact
+  aggregate_too_large diagnostic at the current test path, and stop further Git
+  evidence traversal after exhaustion;
+- a structurally valid ready packet with a null candidate still validates the
+  canonical repository, ticket path, committed metadata, and base revision,
+  then omits candidate-only ancestry and evidence checks.
+
+GREEN command and observed result:
+- deno test --allow-read --allow-write --allow-run=git
+  tools/workflows/round5_git_regression_test.ts
+  exit 0; 3 passed, 0 failed in 1m32s.
+
+Changed production files:
+- tools/workflows/ticket_contract.ts
+- tools/workflows/validate_ticket.ts
+
+No frozen or prior test was edited during GREEN. No ticket authority, state,
+event, result, review, dispatch, agent configuration, skill, Git metadata, or
+unrelated file was changed in the ticket worktree.

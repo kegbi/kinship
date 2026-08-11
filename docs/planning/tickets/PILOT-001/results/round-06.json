@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "ticketId": "PILOT-001",
+  "ticketRevision": 1,
+  "round": 6,
+  "implementerRunId": "codex-ephemeral-implementer-019ff2b5-r6",
+  "inputBaseRevision": "bfdef5b88f20de4ec465a63b6d7e9825c41723ce",
+  "dispatchRef": "dispatch/round-06.md",
+  "redRevision": "c881ab9d9dc15206bef12a5715dc86a0d7a531ff",
+  "red": {
+    "command": "deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/round6_ready_base_regression_test.ts",
+    "exitCode": 1,
+    "expectedFailure": "The divergent ready base and post-base production-change assertions fail while metadata-only ready and candidate controls pass.",
+    "output": "Two controls passed and two assertion-level missing-guard cases failed against the unchanged round-five candidate.",
+    "logRef": "evidence/round-06-red.log",
+    "testFiles": [
+      {
+        "path": "tools/workflows/round6_ready_base_regression_test.ts",
+        "sha256": "a86ab39740ea07d1d430beddbdd1ddb56e91b73edfdcbf31a475cb734f3d14a1"
+      }
+    ],
+    "productionFiles": []
+  },
+  "green": {
+    "command": "deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/round6_ready_base_regression_test.ts",
+    "exitCode": 0,
+    "logRef": "evidence/round-06-green.log",
+    "productionFiles": ["tools/workflows/validate_ticket.ts"]
+  },
+  "refactor": {
+    "summary": "Reused bounded Git ancestry and changed-path helpers for the null-candidate ready phase while preserving candidate behavior.",
+    "command": "deno task test:workflow:coverage",
+    "exitCode": 0,
+    "logRef": "evidence/round-06-refactor.log"
+  },
+  "candidateRevision": "82fd90410eeaf512a8c3bf3875731b4d9b543fc9"
+}

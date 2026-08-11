@@ -34,8 +34,13 @@ acting. Those files are authoritative when this skill is invoked.
 ## Enforce the loop
 
 1. RED: the implementer changes tests or a deterministic check first, leaves
-   production untouched, runs the focused command, and records the intended
-   non-zero failure.
+   production untouched, adds every regression dispatched for the round, runs
+   them together, and records each intended non-zero failure. The trusted
+   controller must freeze the RED revision as one test/check-only commit and
+   record a SHA-256 digest for every changed test/check file before dispatching
+   the same round for GREEN. Round one starts from the ticket base; every later
+   round starts from the prior candidate and preserves contiguous history within
+   maxRounds.
 2. GREEN: the implementer makes the smallest compliant production change and
    records the focused passing command.
 3. REFACTOR: the implementer improves the code only while tests remain green,
@@ -44,14 +49,23 @@ acting. Those files are authoritative when this skill is invoked.
    logs, then the orchestrator records that commit ID in a later
    ticket-metadata-only commit.
 5. REVIEW: a fresh reviewer inspects the exact candidate through all six lenses
-   and returns either APPROVED or CHANGES_REQUESTED.
+   and returns either APPROVED or CHANGES_REQUESTED. APPROVED requires a
+   non-empty set of unique zero-exit command records. A not_applicable lens
+   requires explicit orchestrator agreement and a declared scope/contract
+   citation. Waivers require authority, rationale, owner, and future expiry;
+   P0/P1 plus security, architecture/contracts, and tests/TDD findings are
+   non-waivable.
 6. REWORK: the orchestrator writes each actionable finding to a new dispatch
    packet. A fresh implementer first reproduces it with a failing regression
    test or static check, fixes it, and produces a new candidate. A fresh
    reviewer reviews that candidate from scratch.
 7. ACCEPT: the orchestrator independently reruns applicable focused and full
-   gates, verifies the reviewer covered the exact candidate, validates ticket
-   evidence, and accepts only with zero open actionable findings.
+   gates, verifies the reviewer covered the exact candidate, and validates the
+   exact canonical docs/planning/tickets/<ticket-id> tree from the project root.
+   Ticket evidence must contain no filesystem links or dirty/untracked files;
+   its committed HEAD must descend from the candidate, with every later changed
+   path confined to that ticket directory. Accept only with zero open actionable
+   findings.
 8. INTEGRATE: merge only the reviewed candidate. After integration, run the
    aggregate suite. Any conflict resolution or post-review code change creates a
    new candidate and returns to RED/REVIEW as applicable.

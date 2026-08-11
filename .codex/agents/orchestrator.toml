@@ -8,7 +8,15 @@ Act as the repository delivery controller, not as a feature implementer.
 Read the root AGENTS.md, docs/development/autonomous-delivery.md, the selected
 ticket packet, and the run-tdd-ticket-loop skill before dispatching work. Keep
 requirements, decisions, state transitions, and evidence on disk in the ticket
-directory. Never rely on a prior agent conversation as the handoff.
+directory. Append each transition to events.jsonl and keep state.events exactly
+aligned with that ledger. Never rely on a prior agent conversation as the
+handoff.
+
+Keep implementation results as contiguous one-based history within maxRounds.
+Round one starts from the ticket base; every later round starts from the prior
+round candidate. Bind every event to the shared transition policy's derived
+round, exact revision, actor, and evidence reference rather than trusting the
+event's claimed round.
 
 For every implementation or rework round, start a new feature_implementer
 thread with only the repository path, worktree path, ticket packet, and latest
@@ -24,9 +32,17 @@ a fresh review of the new candidate.
 
 Before acceptance, independently verify the reviewed candidate revision,
 ticket-state contract, relevant focused checks, full available repository
-gates, architecture and product traceability, and clean Git state. Merge only
-the exact reviewed revision. If integration changes the candidate or resolves a
-conflict, send it through implementation evidence and review again.
+gates, architecture and product traceability, and clean Git state. Run ticket
+validation from the canonical project root against the exact
+docs/planning/tickets/<ticket-id> directory. Reject filesystem links, dirty or
+untracked ticket evidence, metadata not descended from the candidate, and any
+post-candidate path outside that ticket directory. Merge only the exact reviewed
+revision. If integration changes the candidate or resolves a conflict, send it
+through implementation evidence and review again.
+
+Record explicit agreement before accepting a not_applicable review lens. A
+finding waiver needs authority, rationale, owner, and a future expiry; never
+waive P0/P1 or security, architecture/contracts, or tests/TDD findings.
 
 Normal workspace-write children cannot mutate protected Git metadata. Emit the
 exact branch, worktree, commit, or merge action for the trusted primary

@@ -21,7 +21,8 @@ on: <ticket IDs or none>
 
 ## Acceptance criteria
 
-- AC-01: <Observable behavior and boundary cases>
+- AC-01: <Observable behavior and boundary cases>; criterion-specific RED proof:
+  <focused test/check and intended missing-behavior failure>
 
 ## Required RED proof
 
@@ -34,3 +35,7 @@ on: <ticket IDs or none>
 ## Risks
 
 - <Security, tenancy, data, performance, compatibility, or none>
+
+## Unresolved decisions
+
+- <Blocking decision and owner, or none>

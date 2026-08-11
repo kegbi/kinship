@@ -1,7 +1,12 @@
 # PILOT-001: Enforce autonomous ticket evidence
 
-Status: ready Owner: orchestrator Base revision:
-9d4693e1335797f1ecf98c4515ddba8e2603d8fb Depends on: none
+Status: blocked (bootstrap evidence integrity) Owner: orchestrator Base
+revision: 9d4693e1335797f1ecf98c4515ddba8e2603d8fb Depends on: none
+
+The final implementation passed independent review and all gates, but this
+bootstrap ticket cannot be accepted because rounds one and two changed their
+declared immutable RED test blobs. See
+`evidence/bootstrap-integrity-blocker.md`.
 
 ## Outcome
 

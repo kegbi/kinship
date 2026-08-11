@@ -4,14 +4,21 @@
   "ticketRevision": 1,
   "round": 1,
   "implementerRunId": "<fresh implementer run ID>",
-  "inputBaseRevision": "<40-character Git SHA>",
-  "dispatchRef": null,
+  "inputBaseRevision": "<ticket base for round 1; prior candidate SHA for a later round>",
+  "dispatchRef": "dispatch/round-01.md",
+  "redRevision": "<40-character test-only RED Git SHA>",
   "red": {
     "command": "<focused command>",
     "exitCode": 1,
     "expectedFailure": "<intended assertion failure>",
+    "output": "<concise redacted observed output>",
     "logRef": "evidence/round-01-red.log",
-    "testFiles": ["<changed test/check path>"],
+    "testFiles": [
+      {
+        "path": "<changed test/check path>",
+        "sha256": "<64-character lowercase SHA-256 of exact RED file bytes>"
+      }
+    ],
     "productionFiles": []
   },
   "green": {

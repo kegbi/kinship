@@ -1,0 +1,24 @@
+ticket=PILOT-001
+round=04
+phase=RED
+inputRevision=4c3cadf56c836b36946647f03a520d73a714ba35
+rejectedCandidateRevision=66d5d28e981e344f9dfecf68528b00d216ace182
+compileCommand=deno check tools/workflows/round4_git_regression_test.ts
+compileExitCode=0
+command=deno test --allow-read --allow-write --allow-run=git tools/workflows/round4_git_regression_test.ts
+exitCode=1
+summary=3 passed | 5 failed
+productionFiles=[]
+
+PILOT-001-R3-001.valid-64-KiB=expected exit 0; received content_hash_mismatch at $.results[0].red.testFiles[0].sha256
+PILOT-001-R3-001.valid-1-MB=expected exit 0; received content_hash_mismatch at $.results[0].red.testFiles[0].sha256
+PILOT-001-R3-001.wrong-hash-large=passed exact content_hash_mismatch control
+PILOT-001-R3-001.truly-oversized=passed exact git_output_limit control at 1000001 bytes
+PILOT-001-R3-002.unchanged-candidate=passed exact success control
+PILOT-001-R3-002.deleted-candidate=expected content_missing; received exit 0 with ok=true and issues=[]
+PILOT-001-R3-002.replaced-candidate=expected content_hash_mismatch; received exit 0 with ok=true and issues=[]
+PILOT-001-R3-002.skipped-candidate=expected content_hash_mismatch; received exit 0 with ok=true and issues=[]
+
+testFile[0].path=tools/workflows/round4_git_regression_test.ts
+testFile[0].sha256=6e68ea39e960142c16569189122f7afa7eb11d33458d7eb0c62c548955491423
+testFile[0].hashBasis=SHA-256 of exact bytes to be stored as the RED Git blob

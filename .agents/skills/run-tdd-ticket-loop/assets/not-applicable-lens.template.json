@@ -1,0 +1,9 @@
+{
+  "verdict": "not_applicable",
+  "evidence": ["<evidence explaining why the lens is outside scope>"],
+  "notApplicableAgreement": {
+    "orchestratorRunId": "<agreeing orchestrator run ID>",
+    "scopeOrContractRef": "<exact declared scope entry or contract reference>",
+    "rationale": "<why the citation makes this lens inapplicable>"
+  }
+}
