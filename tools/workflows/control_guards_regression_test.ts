@@ -23,7 +23,11 @@ const IMPLEMENTER_TWO_RUN_ID =
 const REVIEWER_TWO_RUN_ID =
   `${TICKET_ID}/reviewer/r2/00000000-0000-4000-8000-000000000005`;
 const BASE_CHECK_DEFINITION = "deno check tools/workflows/production.ts";
+const CHANGED_CHECK_DEFINITION =
+  "deno check tools/workflows/production.ts tools/workflows/task_guard_test.ts";
 const WORKFLOW_TEST_DEFINITION = "deno test tools/workflows";
+const CHANGED_WORKFLOW_TEST_DEFINITION =
+  "deno test --fail-fast tools/workflows";
 const NOOP_CHECK_DEFINITION = "deno eval true";
 const AVAILABLE_TASKS = new Set([
   "fmt:check",
@@ -41,9 +45,12 @@ type JsonRecord = Record<string, unknown>;
 
 interface TaskFixtureOptions {
   readonly candidateCheckDefinition?: string;
+  readonly candidateWorkflowDefinition?: string;
   readonly recordedBaseCheckDefinition?: string;
   readonly recordedCandidateCheckDefinition?: string;
+  readonly recordedCandidateWorkflowDefinition?: string;
   readonly guardedBy?: string | null;
+  readonly workflowGuardedBy?: string | null;
 }
 
 interface GitFixture {
@@ -478,6 +485,33 @@ function replaceTicketId(bundle: JsonRecord, ticketId: string): void {
   }
 }
 
+function authorizeProtectedWrites(
+  bundle: JsonRecord,
+  paths: readonly string[],
+  authorizedByControllerRunId = CONTROLLER_RUN_ID,
+): void {
+  const ticket = asRecord(bundle.ticket);
+  ticket.executionClass = "protected-config-maintenance";
+  ticket.allowedWrites = [...paths];
+  ticket.protectedWriteAuthorization = {
+    authorizedByControllerRunId,
+    paths: [...paths],
+    contractRef: "AGENTS.md#mandatory-change-method",
+    rationale: "Update only the exact controller-authorized control assets.",
+  };
+}
+
+function setEventActor(
+  bundle: JsonRecord,
+  eventIndex: number,
+  actorRunId: string,
+): void {
+  const stateEvents = asArray(asRecord(bundle.state).events);
+  const ledgerEvents = asArray(bundle.events);
+  asRecord(stateEvents[eventIndex]).actorRunId = actorRunId;
+  asRecord(ledgerEvents[eventIndex]).actorRunId = actorRunId;
+}
+
 function pathIn(root: string, relativePath: string): string {
   return `${root}/${relativePath}`;
 }
@@ -604,6 +638,8 @@ async function createTaskFixture(
 
     const candidateCheckDefinition = options.candidateCheckDefinition ??
       BASE_CHECK_DEFINITION;
+    const candidateWorkflowDefinition = options.candidateWorkflowDefinition ??
+      WORKFLOW_TEST_DEFINITION;
     writeText(
       root,
       "deno.json",
@@ -612,7 +648,7 @@ async function createTaskFixture(
           {
             tasks: {
               check: candidateCheckDefinition,
-              "test:workflow": WORKFLOW_TEST_DEFINITION,
+              "test:workflow": candidateWorkflowDefinition,
             },
           },
           null,
@@ -649,8 +685,9 @@ async function createTaskFixture(
         },
         {
           name: "test:workflow",
-          definition: WORKFLOW_TEST_DEFINITION,
-          guardedBy: null,
+          definition: options.recordedCandidateWorkflowDefinition ??
+            candidateWorkflowDefinition,
+          guardedBy: options.workflowGuardedBy ?? null,
         },
       ],
     };
@@ -672,7 +709,10 @@ async function createTaskFixture(
     asRecord(asArray(asRecord(implementation.red).testFiles)[0]).sha256 =
       await sha256(testSource);
     asRecord(implementation.green).productionFiles = [
-      "deno.json",
+      ...(candidateCheckDefinition !== BASE_CHECK_DEFINITION ||
+          candidateWorkflowDefinition !== WORKFLOW_TEST_DEFINITION
+        ? ["deno.json"]
+        : []),
       "tools/workflows/production.ts",
     ];
     const candidateReview = asRecord(asArray(bundle.reviews)[0]);
@@ -764,85 +804,223 @@ Deno.test("control guards reject v1 packets outside the legacy allowlist", () =>
   );
 });
 
+Deno.test("control guards reject same-ID mutations of legacy v1 packets", () => {
+  for (const ticketId of ["PILOT-001", "PILOT-002"] as const) {
+    const bundle = readLegacyBundle(ticketId);
+    asRecord(bundle.ticket).outcome =
+      "Mutated legacy content must not inherit historical authority.";
+    assertIssue(
+      validateTicketBundle(bundle, AVAILABLE_TASKS),
+      "$.ticket.schemaVersion",
+      "legacy_packet_mismatch",
+    );
+  }
+});
+
 Deno.test("control guards accept an ordinary v2 controller packet", () => {
   assertNoIssues(validateTicketBundle(acceptedV2Bundle(), AVAILABLE_TASKS));
 });
 
-Deno.test("ordinary v2 tickets cannot write protected control paths", () => {
-  const bundle = acceptedV2Bundle();
-  asRecord(bundle.ticket).allowedWrites = [
-    ".codex/agents/reviewer.toml",
-    ".agents/skills/run-tdd-ticket-loop/SKILL.md",
-  ];
-  const issues = validateTicketBundle(bundle, AVAILABLE_TASKS);
-  assertIssue(issues, "$.ticket.allowedWrites[0]", "protected_path_forbidden");
-  assertIssue(issues, "$.ticket.allowedWrites[1]", "protected_path_forbidden");
+Deno.test("ordinary v2 tickets reject protected roots and descendants", () => {
+  for (
+    const protectedPath of [
+      ".codex",
+      ".codex/agents/reviewer.toml",
+      ".agents",
+      ".agents/skills/run-tdd-ticket-loop/SKILL.md",
+    ]
+  ) {
+    const bundle = acceptedV2Bundle();
+    asRecord(bundle.ticket).allowedWrites = [protectedPath];
+    assertIssue(
+      validateTicketBundle(bundle, AVAILABLE_TASKS),
+      "$.ticket.allowedWrites[0]",
+      "protected_path_forbidden",
+    );
+  }
 });
 
 Deno.test("protected-config v2 tickets accept exact controller authority", () => {
   const bundle = acceptedV2Bundle();
-  const ticket = asRecord(bundle.ticket);
-  ticket.executionClass = "protected-config-maintenance";
-  ticket.allowedWrites = [
+  authorizeProtectedWrites(bundle, [
     ".codex/agents/reviewer.toml",
     ".agents/skills/run-tdd-ticket-loop/SKILL.md",
-  ];
-  ticket.protectedWriteAuthorization = {
-    authorizedByControllerRunId: CONTROLLER_RUN_ID,
-    paths: [...asArray(ticket.allowedWrites)],
-    contractRef: "AGENTS.md#mandatory-change-method",
-    rationale: "Update the exact reviewed autonomous-control assets.",
-  };
+  ]);
   assertNoIssues(validateTicketBundle(bundle, AVAILABLE_TASKS));
 });
 
-Deno.test("protected-config authority is exact and never permits .git", () => {
-  const bundle = acceptedV2Bundle();
-  const ticket = asRecord(bundle.ticket);
-  ticket.executionClass = "protected-config-maintenance";
-  ticket.allowedWrites = [".codex/agents/reviewer.toml", ".git/config"];
-  ticket.protectedWriteAuthorization = {
-    authorizedByControllerRunId: CONTROLLER_RUN_ID,
-    paths: [".codex/agents/feature-implementer.toml", ".git/config"],
-    contractRef: "AGENTS.md#mandatory-change-method",
-    rationale: "Attempt a mismatched protected write.",
-  };
-  const issues = validateTicketBundle(bundle, AVAILABLE_TASKS);
+Deno.test("protected maintenance requires controller authorization", () => {
+  const missingAuthorization = acceptedV2Bundle();
+  const missingTicket = asRecord(missingAuthorization.ticket);
+  missingTicket.executionClass = "protected-config-maintenance";
+  missingTicket.allowedWrites = [".codex/agents/reviewer.toml"];
   assertIssue(
-    issues,
+    validateTicketBundle(missingAuthorization, AVAILABLE_TASKS),
+    "$.ticket.protectedWriteAuthorization",
+    "authorization_required",
+  );
+
+  const wrongController = acceptedV2Bundle();
+  authorizeProtectedWrites(
+    wrongController,
+    [".codex/agents/reviewer.toml"],
+    `${TICKET_ID}/orchestrator/r0/00000000-0000-4000-8000-000000000099`,
+  );
+  assertIssue(
+    validateTicketBundle(wrongController, AVAILABLE_TASKS),
+    "$.ticket.protectedWriteAuthorization.authorizedByControllerRunId",
+    "controller_mismatch",
+  );
+});
+
+Deno.test("protected-config authorization paths exactly match allowed writes", () => {
+  const bundle = acceptedV2Bundle();
+  authorizeProtectedWrites(bundle, [".codex/agents/reviewer.toml"]);
+  asRecord(asRecord(bundle.ticket).protectedWriteAuthorization).paths = [
+    ".codex/agents/feature-implementer.toml",
+  ];
+  assertIssue(
+    validateTicketBundle(bundle, AVAILABLE_TASKS),
     "$.ticket.protectedWriteAuthorization.paths",
     "authorization_mismatch",
   );
-  assertIssue(issues, "$.ticket.allowedWrites[1]", "git_path_forbidden");
 });
 
-Deno.test("v2 role runs are controller-issued, namespaced, and fresh", () => {
-  const bundle = acceptedV2Bundle(2);
-  const results = asArray(bundle.results);
-  const reviews = asArray(bundle.reviews);
-  const stateEvents = asArray(asRecord(bundle.state).events);
-  const ledgerEvents = asArray(bundle.events);
-
-  asRecord(results[0]).issuedByControllerRunId =
-    `${TICKET_ID}/orchestrator/r0/00000000-0000-4000-8000-000000000099`;
-  const invalidImplementer =
-    `OTHER-TICKET/implementer/r1/00000000-0000-4000-8000-000000000002`;
-  asRecord(results[0]).implementerRunId = invalidImplementer;
-  asRecord(reviews[0]).implementerRunId = invalidImplementer;
-  for (const index of [1, 2, 3]) {
-    asRecord(stateEvents[index]).actorRunId = invalidImplementer;
-    asRecord(ledgerEvents[index]).actorRunId = invalidImplementer;
+Deno.test(".git is forbidden at root, below root, nested, and by case", () => {
+  for (
+    const gitPath of [
+      ".git",
+      ".git/hooks/pre-commit",
+      "nested/.git/config",
+      ".GiT/config",
+    ]
+  ) {
+    const bundle = acceptedV2Bundle();
+    authorizeProtectedWrites(bundle, [gitPath]);
+    assertIssue(
+      validateTicketBundle(bundle, AVAILABLE_TASKS),
+      "$.ticket.allowedWrites[0]",
+      "git_path_forbidden",
+    );
   }
-  asRecord(reviews[1]).reviewerRunId = REVIEWER_ONE_RUN_ID;
+});
 
-  const issues = validateTicketBundle(bundle, AVAILABLE_TASKS);
+Deno.test("v2 controller IDs are ticket, role, round, and UUID bound", () => {
+  for (
+    const invalidControllerRunId of [
+      `OTHER-TICKET/orchestrator/r0/00000000-0000-4000-8000-000000000001`,
+      `${TICKET_ID}/implementer/r0/00000000-0000-4000-8000-000000000001`,
+      `${TICKET_ID}/orchestrator/r1/00000000-0000-4000-8000-000000000001`,
+      `${TICKET_ID}/orchestrator/r0/not-a-uuid`,
+    ]
+  ) {
+    const bundle = acceptedV2Bundle();
+    asRecord(bundle.ticket).controllerRunId = invalidControllerRunId;
+    assertIssue(
+      validateTicketBundle(bundle, AVAILABLE_TASKS),
+      "$.ticket.controllerRunId",
+      "run_id_invalid",
+    );
+  }
+});
+
+Deno.test("v2 role IDs enforce namespace, role, round, and UUID", () => {
+  for (
+    const invalidImplementerRunId of [
+      `OTHER-TICKET/implementer/r1/00000000-0000-4000-8000-000000000002`,
+      `${TICKET_ID}/reviewer/r1/00000000-0000-4000-8000-000000000002`,
+      `${TICKET_ID}/implementer/r2/00000000-0000-4000-8000-000000000002`,
+      `${TICKET_ID}/implementer/r1/not-a-uuid`,
+    ]
+  ) {
+    const bundle = acceptedV2Bundle();
+    asRecord(asArray(bundle.results)[0]).implementerRunId =
+      invalidImplementerRunId;
+    assertIssue(
+      validateTicketBundle(bundle, AVAILABLE_TASKS),
+      "$.results[0].implementerRunId",
+      "run_id_invalid",
+    );
+  }
+
+  for (
+    const invalidReviewerRunId of [
+      `${TICKET_ID}/implementer/r1/00000000-0000-4000-8000-000000000003`,
+      `${TICKET_ID}/reviewer/r2/00000000-0000-4000-8000-000000000003`,
+      `${TICKET_ID}/reviewer/r1/not-a-uuid`,
+    ]
+  ) {
+    const bundle = acceptedV2Bundle();
+    asRecord(asArray(bundle.reviews)[0]).reviewerRunId = invalidReviewerRunId;
+    assertIssue(
+      validateTicketBundle(bundle, AVAILABLE_TASKS),
+      "$.reviews[0].reviewerRunId",
+      "run_id_invalid",
+    );
+  }
+});
+
+Deno.test("implementation and review records require controller issuance", () => {
+  const wrongControllerRunId =
+    `${TICKET_ID}/orchestrator/r0/00000000-0000-4000-8000-000000000099`;
+  for (
+    const [collection, path] of [
+      ["results", "$.results[0].issuedByControllerRunId"],
+      ["reviews", "$.reviews[0].issuedByControllerRunId"],
+    ] as const
+  ) {
+    const bundle = acceptedV2Bundle();
+    asRecord(asArray(bundle[collection])[0]).issuedByControllerRunId =
+      wrongControllerRunId;
+    assertIssue(
+      validateTicketBundle(bundle, AVAILABLE_TASKS),
+      path,
+      "controller_mismatch",
+    );
+  }
+});
+
+Deno.test("implementer and reviewer identities are fresh across rounds", () => {
+  const reusedImplementer = acceptedV2Bundle(2);
+  asRecord(asArray(reusedImplementer.results)[1]).implementerRunId =
+    IMPLEMENTER_ONE_RUN_ID;
   assertIssue(
-    issues,
-    "$.results[0].issuedByControllerRunId",
+    validateTicketBundle(reusedImplementer, AVAILABLE_TASKS),
+    "$.results[1].implementerRunId",
+    "run_id_not_fresh",
+  );
+
+  const reusedReviewer = acceptedV2Bundle(2);
+  asRecord(asArray(reusedReviewer.reviews)[1]).reviewerRunId =
+    REVIEWER_ONE_RUN_ID;
+  assertIssue(
+    validateTicketBundle(reusedReviewer, AVAILABLE_TASKS),
+    "$.reviews[1].reviewerRunId",
+    "run_id_not_fresh",
+  );
+});
+
+Deno.test("controller-owned lifecycle events reject other role identities", () => {
+  for (const eventIndex of [0, 4, 5]) {
+    const bundle = acceptedV2Bundle();
+    setEventActor(bundle, eventIndex, IMPLEMENTER_ONE_RUN_ID);
+    assertIssue(
+      validateTicketBundle(bundle, AVAILABLE_TASKS),
+      `$.state.events[${eventIndex}].actorRunId`,
+      "controller_mismatch",
+    );
+  }
+});
+
+Deno.test("orchestrator checks reject non-controller identities", () => {
+  const bundle = acceptedV2Bundle();
+  asRecord(asArray(asRecord(bundle.state).orchestratorChecks)[0]).runId =
+    `${IMPLEMENTER_ONE_RUN_ID}/check-1`;
+  assertIssue(
+    validateTicketBundle(bundle, AVAILABLE_TASKS),
+    "$.state.orchestratorChecks[0].runId",
     "controller_mismatch",
   );
-  assertIssue(issues, "$.results[0].implementerRunId", "run_id_invalid");
-  assertIssue(issues, "$.reviews[1].reviewerRunId", "run_id_not_fresh");
 });
 
 Deno.test("Git task guards accept unchanged base/candidate definitions", async () => {
@@ -880,10 +1058,10 @@ Deno.test("Git task guards bind recorded definitions to both commits", async () 
   }
 });
 
-Deno.test("a changed no-op task cannot guard or self-certify itself", async () => {
+Deno.test("a changed task requires an unchanged independent guard", async () => {
   for (const guardedBy of [null, "check"] as const) {
     const fixture = await createTaskFixture({
-      candidateCheckDefinition: NOOP_CHECK_DEFINITION,
+      candidateCheckDefinition: CHANGED_CHECK_DEFINITION,
       guardedBy,
     });
     try {
@@ -898,13 +1076,46 @@ Deno.test("a changed no-op task cannot guard or self-certify itself", async () =
   }
 });
 
-Deno.test("an unchanged independent task may guard a changed task", async () => {
+Deno.test("an obvious no-op is rejected even with an independent guard", async () => {
   const fixture = await createTaskFixture({
     candidateCheckDefinition: NOOP_CHECK_DEFINITION,
     guardedBy: "test:workflow",
   });
   try {
+    assertValidatorIssue(
+      await captureValidatorRun(fixture),
+      "$.ticket.requiredTasks.candidate[0].definition",
+      "task_definition_noop",
+    );
+  } finally {
+    Deno.removeSync(fixture.root, { recursive: true });
+  }
+});
+
+Deno.test("an unchanged independent task may guard a legitimate change", async () => {
+  const fixture = await createTaskFixture({
+    candidateCheckDefinition: CHANGED_CHECK_DEFINITION,
+    guardedBy: "test:workflow",
+  });
+  try {
     assertValidatorSuccess(await captureValidatorRun(fixture));
+  } finally {
+    Deno.removeSync(fixture.root, { recursive: true });
+  }
+});
+
+Deno.test("a changed task cannot act as an independent guard", async () => {
+  const fixture = await createTaskFixture({
+    candidateCheckDefinition: CHANGED_CHECK_DEFINITION,
+    candidateWorkflowDefinition: CHANGED_WORKFLOW_TEST_DEFINITION,
+    guardedBy: "test:workflow",
+  });
+  try {
+    assertValidatorIssue(
+      await captureValidatorRun(fixture),
+      "$.ticket.requiredTasks.candidate[0].guardedBy",
+      "task_guard_invalid",
+    );
   } finally {
     Deno.removeSync(fixture.root, { recursive: true });
   }
