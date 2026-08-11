@@ -7,10 +7,19 @@ type JsonRecord = Record<string, unknown>;
 
 const MAX_FILE_BYTES = 1_000_000;
 const MAX_LEDGER_EVENTS = 1_000;
+const MAX_REFERENCES = 100;
+const MAX_AGGREGATE_BYTES = 5_000_000;
+const MAX_GIT_OUTPUT_BYTES = 10_000;
+const MAX_CHANGED_PATHS = 100;
+
+interface ReadBudget {
+  bytes: number;
+}
 
 interface LoadedBundle {
   readonly bundle?: JsonRecord;
   readonly issues: readonly ValidationIssue[];
+  readonly budget: ReadBudget;
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -21,10 +30,96 @@ function issue(path: string, code: string, message: string): ValidationIssue {
   return { path, code, message };
 }
 
+interface GitResult {
+  readonly success: boolean;
+  readonly output: Uint8Array;
+  readonly limited: boolean;
+}
+
+function runGit(ticketDirectory: string, args: readonly string[]): GitResult {
+  const result = new Deno.Command("git", {
+    args: [...args],
+    cwd: ticketDirectory,
+    stdout: "piped",
+    stderr: "null",
+  }).outputSync();
+  return {
+    success: result.success,
+    output: result.stdout,
+    limited: result.stdout.byteLength > MAX_GIT_OUTPUT_BYTES,
+  };
+}
+
+function gitText(result: GitResult): string {
+  return new TextDecoder().decode(result.output).trim();
+}
+
+function isAllowedWrite(
+  path: string,
+  allowedWrites: readonly string[],
+): boolean {
+  return allowedWrites.some((allowed) =>
+    allowed.endsWith("/") ? path.startsWith(allowed) : path === allowed
+  );
+}
+
+function changedPaths(
+  ticketDirectory: string,
+  fromRevision: string,
+  toRevision: string,
+  diagnosticPath: string,
+  issues: ValidationIssue[],
+): readonly string[] | undefined {
+  const result = runGit(ticketDirectory, [
+    "diff",
+    "--name-only",
+    "--diff-filter=ACMRTUXB",
+    "-z",
+    fromRevision,
+    toRevision,
+    "--",
+  ]);
+  if (!result.success || result.limited) {
+    issues.push(
+      issue(
+        diagnosticPath,
+        "git_output_limit",
+        "Git path evidence could not be read within limits",
+      ),
+    );
+    return undefined;
+  }
+  const paths = new TextDecoder().decode(result.output).split("\0").filter(
+    (path) => path.length > 0,
+  );
+  if (paths.length > MAX_CHANGED_PATHS) {
+    issues.push(
+      issue(
+        diagnosticPath,
+        "git_output_limit",
+        "Git path evidence contains too many changed paths",
+      ),
+    );
+    return undefined;
+  }
+  return paths;
+}
+
+async function sha256(value: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    Uint8Array.from(value).buffer,
+  );
+  return [...new Uint8Array(digest)].map((byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+}
+
 function readText(
   filePath: string,
   diagnosticPath: string,
   issues: ValidationIssue[],
+  budget?: ReadBudget,
 ): string | undefined {
   try {
     const info = Deno.statSync(filePath);
@@ -44,7 +139,21 @@ function readText(
       );
       return undefined;
     }
-    return Deno.readTextFileSync(filePath);
+    if (
+      budget !== undefined && budget.bytes + info.size > MAX_AGGREGATE_BYTES
+    ) {
+      issues.push(
+        issue(
+          diagnosticPath,
+          "aggregate_too_large",
+          "Ticket evidence exceeds the aggregate validation limit",
+        ),
+      );
+      return undefined;
+    }
+    const text = Deno.readTextFileSync(filePath);
+    if (budget !== undefined) budget.bytes += info.size;
+    return text;
   } catch (error) {
     const code = error instanceof Deno.errors.NotFound
       ? "file_missing"
@@ -58,8 +167,9 @@ function readJson(
   filePath: string,
   diagnosticPath: string,
   issues: ValidationIssue[],
+  budget?: ReadBudget,
 ): unknown {
-  const text = readText(filePath, diagnosticPath, issues);
+  const text = readText(filePath, diagnosticPath, issues, budget);
   if (text === undefined) {
     return undefined;
   }
@@ -81,31 +191,75 @@ function isSafeReference(value: string, directory: string): boolean {
     );
 }
 
-function referencedFiles(state: unknown, field: string): readonly string[] {
+function referencedFiles(
+  state: unknown,
+  field: string,
+  expectedDirectory: string,
+  statePath: string,
+  issues: ValidationIssue[],
+): readonly string[] {
   if (!isRecord(state) || !Array.isArray(state[field])) {
     return [];
   }
-  return state[field].filter((value): value is string =>
-    typeof value === "string"
-  );
+  const references = state[field];
+  if (references.length > MAX_REFERENCES) {
+    issues.push(
+      issue(
+        statePath,
+        "reference_limit",
+        "Reference collection exceeds the validation limit",
+      ),
+    );
+    return [];
+  }
+  const seen = new Set<string>();
+  const safeReferences: string[] = [];
+  references.forEach((reference, index) => {
+    if (typeof reference !== "string") return;
+    if (!isSafeReference(reference, expectedDirectory)) {
+      const traverses = reference.includes("\\") || reference.startsWith("/") ||
+        /^[A-Za-z]:/.test(reference) || reference.split("/").some((part) =>
+          part === "" || part === "." || part === ".."
+        );
+      issues.push(
+        issue(
+          `${statePath}[${index}]`,
+          traverses ? "path_traversal" : "invalid_reference",
+          "Evidence reference is outside its required directory",
+        ),
+      );
+      return;
+    }
+    if (seen.has(reference)) {
+      issues.push(
+        issue(
+          `${statePath}[${index}]`,
+          "duplicate_reference",
+          "Evidence references must be unique",
+        ),
+      );
+      return;
+    }
+    seen.add(reference);
+    safeReferences.push(reference);
+  });
+  return safeReferences;
 }
 
 function readReferencedJson(
   ticketDirectory: string,
   references: readonly string[],
-  expectedDirectory: string,
   statePath: string,
   issues: ValidationIssue[],
+  budget: ReadBudget,
 ): unknown[] {
   const values: unknown[] = [];
   references.forEach((reference, index) => {
-    if (!isSafeReference(reference, expectedDirectory)) {
-      return;
-    }
     const value = readJson(
       `${ticketDirectory}/${reference}`,
       `${statePath}[${index}]`,
       issues,
+      budget,
     );
     if (value !== undefined) {
       values.push(value);
@@ -117,11 +271,13 @@ function readReferencedJson(
 function readEvents(
   ticketDirectory: string,
   issues: ValidationIssue[],
+  budget: ReadBudget,
 ): unknown[] | undefined {
   const text = readText(
     `${ticketDirectory}/events.jsonl`,
     "events.jsonl",
     issues,
+    budget,
   );
   if (text === undefined) {
     return undefined;
@@ -165,48 +321,410 @@ function availableTasks(issues: ValidationIssue[]): ReadonlySet<string> {
 
 function loadTicketDirectory(ticketDirectory: string): LoadedBundle {
   const issues: ValidationIssue[] = [];
+  const budget: ReadBudget = { bytes: 0 };
   const ticket = readJson(
     `${ticketDirectory}/ticket.json`,
     "ticket.json",
     issues,
+    budget,
   );
   const state = readJson(
     `${ticketDirectory}/state.json`,
     "state.json",
     issues,
+    budget,
   );
-  const events = readEvents(ticketDirectory, issues);
+  const events = readEvents(ticketDirectory, issues, budget);
   const results = readReferencedJson(
     ticketDirectory,
-    referencedFiles(state, "resultRefs"),
-    "results",
+    referencedFiles(
+      state,
+      "resultRefs",
+      "results",
+      "$.state.resultRefs",
+      issues,
+    ),
     "$.state.resultRefs",
     issues,
+    budget,
   );
   const reviews = readReferencedJson(
     ticketDirectory,
-    referencedFiles(state, "reviewRefs"),
-    "reviews",
+    referencedFiles(
+      state,
+      "reviewRefs",
+      "reviews",
+      "$.state.reviewRefs",
+      issues,
+    ),
     "$.state.reviewRefs",
     issues,
+    budget,
   );
   if (
     issues.length > 0 || ticket === undefined || state === undefined ||
     events === undefined
   ) {
-    return { issues };
+    return { issues, budget };
   }
   return {
     bundle: { ticket, state, events, results, reviews },
     issues,
+    budget,
   };
+}
+
+function roundReference(
+  directory: string,
+  round: number,
+  extension: string,
+): string {
+  return `${directory}/round-${String(round).padStart(2, "0")}.${extension}`;
+}
+
+function validateEvidenceFiles(
+  ticketDirectory: string,
+  bundle: JsonRecord,
+  budget: ReadBudget,
+): readonly ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  // This helper runs only after the structural contract has returned no issues.
+  const state = bundle.state as JsonRecord;
+  const results = bundle.results as unknown[];
+  const reviews = bundle.reviews as unknown[];
+  const events = bundle.events as unknown[];
+  const resultRefs = state.resultRefs as unknown[];
+  const reviewRefs = state.reviewRefs as unknown[];
+  const loadedReferences = new Set<string>([
+    "ticket.json",
+    "state.json",
+    "events.jsonl",
+    ...resultRefs.filter((value): value is string => typeof value === "string"),
+    ...reviewRefs.filter((value): value is string => typeof value === "string"),
+  ]);
+  const checkedReferences = new Set(loadedReferences);
+  const requireFile = (reference: string, diagnosticPath: string): void => {
+    if (checkedReferences.has(reference)) return;
+    checkedReferences.add(reference);
+    readText(
+      `${ticketDirectory}/${reference}`,
+      diagnosticPath,
+      issues,
+      budget,
+    );
+  };
+  const resultsByRound = new Map<number, JsonRecord>();
+
+  results.forEach((value, index) => {
+    const resultRecord = value as JsonRecord;
+    const round = resultRecord.round as number;
+    resultsByRound.set(round, resultRecord);
+    const resultPath = `$.results[${index}]`;
+    const expectedResultRef = roundReference("results", round, "json");
+    if (resultRefs[index] !== expectedResultRef) {
+      issues.push(
+        issue(
+          `$.state.resultRefs[${index}]`,
+          "reference_mismatch",
+          "Result reference must exactly match its round record",
+        ),
+      );
+    }
+    const expectedDispatchRef = roundReference(
+      "dispatch",
+      round,
+      "md",
+    );
+    if (resultRecord.dispatchRef !== expectedDispatchRef) {
+      issues.push(
+        issue(
+          `${resultPath}.dispatchRef`,
+          "reference_mismatch",
+          "Dispatch reference must exactly match the result round",
+        ),
+      );
+    }
+    requireFile(
+      resultRecord.dispatchRef as string,
+      `${resultPath}.dispatchRef`,
+    );
+    for (
+      const [phase, evidence] of [
+        ["red", resultRecord.red],
+        ["green", resultRecord.green],
+        ["refactor", resultRecord.refactor],
+      ] as const
+    ) {
+      const evidenceRecord = evidence as JsonRecord;
+      const expectedLogRef = `evidence/round-${
+        String(round).padStart(2, "0")
+      }-${phase}.log`;
+      if (evidenceRecord.logRef !== expectedLogRef) {
+        issues.push(
+          issue(
+            `${resultPath}.${phase}.logRef`,
+            "reference_mismatch",
+            "Phase log reference must exactly match the result round",
+          ),
+        );
+      }
+      requireFile(
+        evidenceRecord.logRef as string,
+        `${resultPath}.${phase}.logRef`,
+      );
+    }
+  });
+
+  reviews.forEach((value, index) => {
+    const round = (value as JsonRecord).round as number;
+    const expectedReviewRef = roundReference("reviews", round, "json");
+    if (reviewRefs[index] !== expectedReviewRef) {
+      issues.push(
+        issue(
+          `$.state.reviewRefs[${index}]`,
+          "reference_mismatch",
+          "Review reference must exactly match its round record",
+        ),
+      );
+    }
+  });
+
+  events.forEach((value, index) => {
+    const event = value as JsonRecord;
+    const eventPath = `$.events[${index}].evidenceRef`;
+    const round = event.round as number;
+    const result = resultsByRound.get(round);
+    let expectedReference: string | undefined;
+    if (event.to === "ready") expectedReference = "ticket.json";
+    if (event.to === "red" && isRecord(result?.red)) {
+      expectedReference = result.red.logRef as string;
+    }
+    if (event.to === "green" && isRecord(result?.green)) {
+      expectedReference = result.green.logRef as string;
+    }
+    if (event.to === "refactor" && isRecord(result?.refactor)) {
+      expectedReference = result.refactor.logRef as string;
+    }
+    if (event.to === "review" || event.to === "rework") {
+      expectedReference = roundReference("reviews", round, "json");
+    }
+    if (event.to === "accepted" || event.to === "integrated") {
+      expectedReference = "acceptance.md";
+    }
+    if (
+      expectedReference !== undefined && event.evidenceRef !== expectedReference
+    ) {
+      issues.push(
+        issue(
+          eventPath,
+          "reference_mismatch",
+          "Event evidence must exactly match its lifecycle transition",
+        ),
+      );
+    }
+    requireFile(event.evidenceRef as string, eventPath);
+  });
+
+  if (state.phase === "accepted" || state.phase === "integrated") {
+    requireFile("acceptance.md", "acceptance.md");
+  }
+  return issues;
+}
+
+async function validateGitEvidence(
+  ticketDirectory: string,
+  bundle: JsonRecord,
+): Promise<readonly ValidationIssue[]> {
+  const issues: ValidationIssue[] = [];
+  const repository = runGit(ticketDirectory, ["rev-parse", "--show-toplevel"]);
+  if (!repository.success || repository.limited || gitText(repository) === "") {
+    return [
+      issue(
+        "$",
+        "repository_unavailable",
+        "Ticket evidence must be validated inside a Git repository",
+      ),
+    ];
+  }
+  // This helper runs only after structural and filesystem evidence is valid.
+  const ticket = bundle.ticket as JsonRecord;
+  const state = bundle.state as JsonRecord;
+  const results = bundle.results as unknown[];
+  const ticketId = ticket.ticketId as string;
+  const allowedWrites = ticket.allowedWrites as string[];
+  const ticketEvidencePrefix = `docs/planning/tickets/${ticketId}/`;
+  const checkedRevisions = new Map<string, boolean>();
+  const revisionExists = (revision: string): boolean => {
+    const known = checkedRevisions.get(revision);
+    if (known !== undefined) return known;
+    const result = runGit(ticketDirectory, [
+      "cat-file",
+      "-e",
+      `${revision}^{commit}`,
+    ]);
+    const exists = result.success;
+    checkedRevisions.set(revision, exists);
+    return exists;
+  };
+  const ticketBaseRevision = ticket.baseRevision as string;
+  if (!revisionExists(ticketBaseRevision)) {
+    issues.push(
+      issue(
+        "$.ticket.baseRevision",
+        "revision_not_found",
+        "Git commit evidence does not exist",
+      ),
+    );
+  }
+
+  for (let resultIndex = 0; resultIndex < results.length; resultIndex++) {
+    const result = results[resultIndex] as JsonRecord;
+    const red = result.red as JsonRecord;
+    const resultPath = `$.results[${resultIndex}]`;
+    const baseRevision = result.inputBaseRevision as string;
+    const redRevision = result.redRevision as string;
+    const candidateRevision = result.candidateRevision as string;
+    const revisions = [
+      [baseRevision, `${resultPath}.inputBaseRevision`],
+      [redRevision, `${resultPath}.redRevision`],
+      [candidateRevision, `${resultPath}.candidateRevision`],
+      [state.candidateRevision as string, "$.state.candidateRevision"],
+    ] as const;
+    let allRevisionsExist = true;
+    for (const [revision, path] of revisions) {
+      if (!revisionExists(revision)) {
+        allRevisionsExist = false;
+        issues.push(
+          issue(
+            path,
+            "revision_not_found",
+            "Git commit evidence does not exist",
+          ),
+        );
+      }
+    }
+    if (!allRevisionsExist) continue;
+
+    const baseToRed = runGit(ticketDirectory, [
+      "merge-base",
+      "--is-ancestor",
+      baseRevision,
+      redRevision,
+    ]);
+    const redToCandidate = runGit(ticketDirectory, [
+      "merge-base",
+      "--is-ancestor",
+      redRevision,
+      candidateRevision,
+    ]);
+    if (!baseToRed.success || !redToCandidate.success) {
+      issues.push(
+        issue(
+          `${resultPath}.candidateRevision`,
+          "ancestry_mismatch",
+          "Candidate lineage must descend from the exact RED revision",
+        ),
+      );
+    }
+
+    const testFiles = red.testFiles as unknown[];
+    const declaredTestPaths = new Set<string>();
+    for (let fileIndex = 0; fileIndex < testFiles.length; fileIndex++) {
+      const testFile = testFiles[fileIndex] as JsonRecord;
+      const testPath = testFile.path as string;
+      const testSha256 = testFile.sha256 as string;
+      declaredTestPaths.add(testPath);
+      const blobSpec = `${redRevision}:${testPath}`;
+      const sizeResult = runGit(ticketDirectory, ["cat-file", "-s", blobSpec]);
+      const blobSize = Number(gitText(sizeResult));
+      if (!sizeResult.success || !Number.isSafeInteger(blobSize)) {
+        issues.push(
+          issue(
+            `${resultPath}.red.testFiles[${fileIndex}].path`,
+            "content_missing",
+            "Declared RED test blob does not exist",
+          ),
+        );
+        continue;
+      }
+      if (blobSize > MAX_FILE_BYTES) {
+        issues.push(
+          issue(
+            `${resultPath}.red.testFiles[${fileIndex}].path`,
+            "git_output_limit",
+            "Declared RED test blob exceeds the validation limit",
+          ),
+        );
+        continue;
+      }
+      const blob = runGit(ticketDirectory, ["show", blobSpec]);
+      if (await sha256(blob.output) !== testSha256) {
+        issues.push(
+          issue(
+            `${resultPath}.red.testFiles[${fileIndex}].sha256`,
+            "content_hash_mismatch",
+            "Declared RED test digest does not match the Git blob",
+          ),
+        );
+      }
+    }
+
+    const redPaths = changedPaths(
+      ticketDirectory,
+      baseRevision,
+      redRevision,
+      `${resultPath}.redRevision`,
+      issues,
+    );
+    if (
+      redPaths !== undefined &&
+      (redPaths.some((path) =>
+        !declaredTestPaths.has(path) &&
+        !path.startsWith(ticketEvidencePrefix)
+      ) || [...declaredTestPaths].some((path) => !redPaths.includes(path)))
+    ) {
+      issues.push(
+        issue(
+          `${resultPath}.redRevision`,
+          "red_scope_violation",
+          "RED changes must contain only declared tests and ticket evidence",
+        ),
+      );
+    }
+
+    const candidatePaths = changedPaths(
+      ticketDirectory,
+      baseRevision,
+      candidateRevision,
+      `${resultPath}.candidateRevision`,
+      issues,
+    );
+    if (
+      candidatePaths !== undefined &&
+      candidatePaths.some((path) =>
+        !isAllowedWrite(path, allowedWrites) &&
+        !path.startsWith(ticketEvidencePrefix)
+      )
+    ) {
+      issues.push(
+        issue(
+          `${resultPath}.candidateRevision`,
+          "candidate_scope_violation",
+          "Candidate changes must remain inside the ticket write scope",
+        ),
+      );
+    }
+  }
+  return issues;
 }
 
 function emit(ok: boolean, issues: readonly ValidationIssue[]): void {
   console.log(JSON.stringify({ ok, issues }));
 }
 
-export function runTicketValidator(args: readonly string[]): number {
+export async function runTicketValidator(
+  args: readonly string[],
+): Promise<number> {
   if (args.length !== 1) {
     emit(false, [
       issue(
@@ -230,7 +748,19 @@ export function runTicketValidator(args: readonly string[]): number {
       emit(false, taskIssues);
       return 1;
     }
-    const issues = validateTicketBundle(loadResult.bundle, tasks);
+    const issues = [...validateTicketBundle(loadResult.bundle, tasks)];
+    if (issues.length === 0) {
+      issues.push(
+        ...validateEvidenceFiles(
+          args[0]!,
+          loadResult.bundle,
+          loadResult.budget,
+        ),
+      );
+    }
+    if (issues.length === 0) {
+      issues.push(...await validateGitEvidence(args[0]!, loadResult.bundle));
+    }
     emit(issues.length === 0, issues);
     return issues.length === 0 ? 0 : 1;
   } catch {
@@ -242,5 +772,5 @@ export function runTicketValidator(args: readonly string[]): number {
 }
 
 if (import.meta.main) {
-  Deno.exit(runTicketValidator(Deno.args));
+  Deno.exit(await runTicketValidator(Deno.args));
 }

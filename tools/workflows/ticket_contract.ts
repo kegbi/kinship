@@ -71,6 +71,7 @@ const EVENT_FIELDS = new Set([
   "revision",
 ]);
 const CHECK_FIELDS = new Set(["runId", "revision", "command", "exitCode"]);
+const REVIEW_COMMAND_FIELDS = new Set(["command", "exitCode"]);
 const TEST_FILE_FIELDS = new Set(["path", "sha256"]);
 const GREEN_FIELDS = new Set([
   "command",
@@ -162,6 +163,25 @@ const VALID_TRANSITIONS = new Set([
   "accepted:integrated",
 ]);
 
+const VALID_PHASES = new Set([
+  "planned",
+  "ready",
+  "red",
+  "green",
+  "refactor",
+  "review",
+  "rework",
+  "accepted",
+  "integrated",
+  "blocked",
+  "cancelled",
+]);
+const VALID_REVIEW_VERDICTS = new Set(["APPROVED", "CHANGES_REQUESTED"]);
+const VALID_LENS_VERDICTS = new Set(["pass", "fail", "not_applicable"]);
+const VALID_FINDING_LENSES = new Set<string>(REVIEW_LENSES);
+const VALID_FINDING_SEVERITIES = new Set(["P0", "P1", "P2", "P3"]);
+const VALID_FINDING_STATUSES = new Set(["open", "resolved", "waived"]);
+
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -209,9 +229,100 @@ function validateRevision(
   path: string,
   issues: ValidationIssue[],
 ): void {
-  if (typeof value === "string" && !REVISION_PATTERN.test(value)) {
+  if (value === undefined) return;
+  if (typeof value !== "string") {
+    addIssue(issues, path, "invalid_type", "Expected a Git revision string");
+  } else if (!REVISION_PATTERN.test(value)) {
     addIssue(issues, path, "invalid_revision", "Expected a full Git revision");
   }
+}
+
+function validateNullableRevision(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+): void {
+  if (value !== null) validateRevision(value, path, issues);
+}
+
+function validateSha256(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+): void {
+  if (value === undefined) return;
+  if (typeof value !== "string") {
+    addIssue(issues, path, "invalid_type", "Expected a SHA-256 string");
+  } else if (!SHA256_PATTERN.test(value)) {
+    addIssue(
+      issues,
+      path,
+      "invalid_sha256",
+      "Expected a lowercase SHA-256 digest",
+    );
+  }
+}
+
+function validateNonEmptyString(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+): value is string {
+  if (value === undefined) return false;
+  if (typeof value !== "string") {
+    addIssue(issues, path, "invalid_type", "Expected a string");
+    return false;
+  }
+  if (value.trim().length === 0) {
+    addIssue(issues, path, "empty_value", "String value cannot be empty");
+    return false;
+  }
+  return true;
+}
+
+function validateInteger(
+  value: unknown,
+  path: string,
+  minimum: number,
+  issues: ValidationIssue[],
+): value is number {
+  if (value === undefined) return false;
+  if (!Number.isInteger(value) || Number(value) < minimum) {
+    addIssue(issues, path, "invalid_type", "Expected an integer in range");
+    return false;
+  }
+  return true;
+}
+
+function validateStringArray(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+  options: { readonly minimum?: number; readonly unique?: boolean } = {},
+): value is string[] {
+  if (!Array.isArray(value)) {
+    if (value !== undefined) {
+      addIssue(issues, path, "invalid_type", "Expected an array");
+    }
+    return false;
+  }
+  if (value.length < (options.minimum ?? 0)) {
+    addIssue(issues, path, "evidence_required", "Array cannot be empty");
+  }
+  const seen = new Set<string>();
+  value.forEach((item, index) => {
+    if (!validateNonEmptyString(item, `${path}[${index}]`, issues)) return;
+    if (options.unique && seen.has(item)) {
+      addIssue(
+        issues,
+        `${path}[${index}]`,
+        "duplicate_value",
+        "Array values must be unique",
+      );
+    }
+    seen.add(item);
+  });
+  return value.every((item) => typeof item === "string");
 }
 
 function isSafeRepositoryPath(value: string): boolean {
@@ -232,7 +343,8 @@ function validateSafePath(
   path: string,
   issues: ValidationIssue[],
 ): void {
-  if (typeof value === "string" && !isSafeRepositoryPath(value)) {
+  if (!validateNonEmptyString(value, path, issues)) return;
+  if (!isSafeRepositoryPath(value)) {
     addIssue(
       issues,
       path,
@@ -247,11 +359,26 @@ function validateSafePathArray(
   path: string,
   issues: ValidationIssue[],
 ): void {
-  if (Array.isArray(value)) {
-    value.forEach((item, index) =>
-      validateSafePath(item, `${path}[${index}]`, issues)
-    );
+  if (!Array.isArray(value)) {
+    if (value !== undefined) {
+      addIssue(issues, path, "invalid_type", "Expected a path array");
+    }
+    return;
   }
+  const seen = new Set<string>();
+  value.forEach((item, index) => {
+    const itemPath = `${path}[${index}]`;
+    validateSafePath(item, itemPath, issues);
+    if (typeof item === "string" && seen.has(item)) {
+      addIssue(
+        issues,
+        itemPath,
+        "duplicate_value",
+        "Path values must be unique",
+      );
+    }
+    if (typeof item === "string") seen.add(item);
+  });
 }
 
 function validateTicket(
@@ -259,17 +386,13 @@ function validateTicket(
   availableTasks: ReadonlySet<string>,
   issues: ValidationIssue[],
 ): void {
-  for (const field of REQUIRED_TICKET_FIELDS) {
-    if (!(field in ticket)) {
-      addIssue(
-        issues,
-        `$.ticket.${field}`,
-        "required_field",
-        "Required ticket field is missing",
-      );
-    }
-  }
-
+  validateFields(
+    ticket,
+    "$.ticket",
+    TICKET_FIELDS,
+    REQUIRED_TICKET_FIELDS,
+    issues,
+  );
   if (ticket.schemaVersion !== 1) {
     addIssue(
       issues,
@@ -278,21 +401,58 @@ function validateTicket(
       "Unsupported ticket schema version",
     );
   }
+  validateNonEmptyString(ticket.ticketId, "$.ticket.ticketId", issues);
+  validateInteger(ticket.revision, "$.ticket.revision", 1, issues);
+  validateNonEmptyString(ticket.title, "$.ticket.title", issues);
+  validateNonEmptyString(ticket.outcome, "$.ticket.outcome", issues);
+  validateRevision(ticket.baseRevision, "$.ticket.baseRevision", issues);
+  validateStringArray(ticket.dependencies, "$.ticket.dependencies", issues, {
+    unique: true,
+  });
+  validateInteger(ticket.maxRounds, "$.ticket.maxRounds", 1, issues);
+  validateStringArray(ticket.scope, "$.ticket.scope", issues, {
+    minimum: 1,
+    unique: true,
+  });
+  validateStringArray(ticket.nonGoals, "$.ticket.nonGoals", issues, {
+    unique: true,
+  });
+  validateSafePathArray(ticket.allowedWrites, "$.ticket.allowedWrites", issues);
+  validateStringArray(ticket.contractRefs, "$.ticket.contractRefs", issues, {
+    minimum: 1,
+    unique: true,
+  });
+  validateStringArray(ticket.requiredTasks, "$.ticket.requiredTasks", issues, {
+    unique: true,
+  });
+  validateStringArray(ticket.risks, "$.ticket.risks", issues, {
+    unique: true,
+  });
+  validateStringArray(
+    ticket.unresolvedDecisions,
+    "$.ticket.unresolvedDecisions",
+    issues,
+    { unique: true },
+  );
 
-  for (const field of Object.keys(ticket).sort()) {
-    if (!TICKET_FIELDS.has(field)) {
+  if (!Array.isArray(ticket.acceptanceCriteria)) {
+    if (ticket.acceptanceCriteria !== undefined) {
       addIssue(
         issues,
-        `$.ticket.${field}`,
-        "unknown_field",
-        "Unknown ticket field",
+        "$.ticket.acceptanceCriteria",
+        "invalid_type",
+        "Expected an acceptance-criteria array",
       );
     }
-  }
-
-  validateRevision(ticket.baseRevision, "$.ticket.baseRevision", issues);
-
-  if (Array.isArray(ticket.acceptanceCriteria)) {
+  } else {
+    if (ticket.acceptanceCriteria.length === 0) {
+      addIssue(
+        issues,
+        "$.ticket.acceptanceCriteria",
+        "evidence_required",
+        "At least one acceptance criterion is required",
+      );
+    }
     const ids = new Set<string>();
     ticket.acceptanceCriteria.forEach((criterion, index) => {
       const criterionPath = `$.ticket.acceptanceCriteria[${index}]`;
@@ -312,7 +472,13 @@ function validateTicket(
         [...CRITERION_FIELDS],
         issues,
       );
-      if (typeof criterion.id === "string") {
+      if (
+        validateNonEmptyString(
+          criterion.id,
+          `${criterionPath}.id`,
+          issues,
+        )
+      ) {
         if (ids.has(criterion.id)) {
           addIssue(
             issues,
@@ -323,12 +489,16 @@ function validateTicket(
         }
         ids.add(criterion.id);
       }
-    });
-  }
-
-  if (Array.isArray(ticket.allowedWrites)) {
-    ticket.allowedWrites.forEach((path, index) => {
-      validateSafePath(path, `$.ticket.allowedWrites[${index}]`, issues);
+      validateNonEmptyString(
+        criterion.text,
+        `${criterionPath}.text`,
+        issues,
+      );
+      validateNonEmptyString(
+        criterion.redProof,
+        `${criterionPath}.redProof`,
+        issues,
+      );
     });
   }
 
@@ -384,6 +554,15 @@ function validateEvents(events: unknown, issues: ValidationIssue[]): void {
     );
     const from = event.from;
     const to = event.to;
+    validateInteger(event.sequence, `${eventPath}.sequence`, 1, issues);
+    validateInteger(event.round, `${eventPath}.round`, 0, issues);
+    validateNonEmptyString(
+      event.actorRunId,
+      `${eventPath}.actorRunId`,
+      issues,
+    );
+    validateSafePath(event.evidenceRef, `${eventPath}.evidenceRef`, issues);
+    validateRevision(event.revision, `${eventPath}.revision`, issues);
     if (event.sequence !== index + 1) {
       addIssue(
         issues,
@@ -410,6 +589,14 @@ function validateEvents(events: unknown, issues: ValidationIssue[]): void {
         );
       }
       return;
+    }
+    if (!VALID_PHASES.has(from) || !VALID_PHASES.has(to)) {
+      addIssue(
+        issues,
+        eventPath,
+        "invalid_value",
+        "Event state is not recognized",
+      );
     }
     if (
       !VALID_TRANSITIONS.has(`${from}:${to}`) ||
@@ -447,6 +634,37 @@ function validateResults(
       resultPath,
       RESULT_FIELDS,
       [...RESULT_FIELDS],
+      issues,
+    );
+    if (result.schemaVersion !== 1) {
+      addIssue(
+        issues,
+        `${resultPath}.schemaVersion`,
+        "invalid_value",
+        "Unsupported result schema version",
+      );
+    }
+    validateNonEmptyString(result.ticketId, `${resultPath}.ticketId`, issues);
+    validateInteger(
+      result.ticketRevision,
+      `${resultPath}.ticketRevision`,
+      1,
+      issues,
+    );
+    validateInteger(result.round, `${resultPath}.round`, 1, issues);
+    validateNonEmptyString(
+      result.implementerRunId,
+      `${resultPath}.implementerRunId`,
+      issues,
+    );
+    validateRevision(
+      result.inputBaseRevision,
+      `${resultPath}.inputBaseRevision`,
+      issues,
+    );
+    validateRevision(
+      result.candidateRevision,
+      `${resultPath}.candidateRevision`,
       issues,
     );
     if (!isRecord(result.red)) {
@@ -489,6 +707,14 @@ function validateResults(
       [...RED_FIELDS],
       issues,
     );
+    validateNonEmptyString(red.command, `${resultPath}.red.command`, issues);
+    validateInteger(red.exitCode, `${resultPath}.red.exitCode`, 0, issues);
+    validateNonEmptyString(
+      red.expectedFailure,
+      `${resultPath}.red.expectedFailure`,
+      issues,
+    );
+    validateNonEmptyString(red.output, `${resultPath}.red.output`, issues);
     validateRevision(
       result.redRevision,
       `$.results[${resultIndex}].redRevision`,
@@ -543,18 +769,28 @@ function validateResults(
           "Expected a test-file evidence object",
         );
       }
-      if (
-        isRecord(testFile) && typeof testFile.sha256 === "string" &&
-        !SHA256_PATTERN.test(testFile.sha256)
-      ) {
-        addIssue(
-          issues,
-          `$.results[${resultIndex}].red.testFiles[${fileIndex}].sha256`,
-          "invalid_sha256",
-          "Expected a lowercase SHA-256 digest",
-        );
+      if (isRecord(testFile)) {
+        validateSha256(testFile.sha256, `${testFilePath}.sha256`, issues);
       }
     });
+    const testFilePaths = new Set<string>();
+    red.testFiles.forEach((testFile, fileIndex) => {
+      if (!isRecord(testFile) || typeof testFile.path !== "string") return;
+      if (testFilePaths.has(testFile.path)) {
+        addIssue(
+          issues,
+          `${resultPath}.red.testFiles[${fileIndex}].path`,
+          "duplicate_value",
+          "RED test-file paths must be unique",
+        );
+      }
+      testFilePaths.add(testFile.path);
+    });
+    validateSafePathArray(
+      red.productionFiles,
+      `${resultPath}.red.productionFiles`,
+      issues,
+    );
     if (Array.isArray(red.productionFiles) && red.productionFiles.length > 0) {
       addIssue(
         issues,
@@ -569,6 +805,17 @@ function validateResults(
         `${resultPath}.green`,
         GREEN_FIELDS,
         [...GREEN_FIELDS],
+        issues,
+      );
+      validateNonEmptyString(
+        result.green.command,
+        `${resultPath}.green.command`,
+        issues,
+      );
+      validateInteger(
+        result.green.exitCode,
+        `${resultPath}.green.exitCode`,
+        0,
         issues,
       );
       if (result.green.exitCode !== 0) {
@@ -605,6 +852,22 @@ function validateResults(
         [...REFACTOR_FIELDS],
         issues,
       );
+      validateNonEmptyString(
+        result.refactor.summary,
+        `${resultPath}.refactor.summary`,
+        issues,
+      );
+      validateNonEmptyString(
+        result.refactor.command,
+        `${resultPath}.refactor.command`,
+        issues,
+      );
+      validateInteger(
+        result.refactor.exitCode,
+        `${resultPath}.refactor.exitCode`,
+        0,
+        issues,
+      );
       if (result.refactor.exitCode !== 0) {
         addIssue(
           issues,
@@ -618,6 +881,13 @@ function validateResults(
         `${resultPath}.refactor.logRef`,
         issues,
       );
+    } else {
+      addIssue(
+        issues,
+        `${resultPath}.refactor`,
+        "invalid_type",
+        "Expected a REFACTOR evidence object",
+      );
     }
   });
 }
@@ -625,6 +895,8 @@ function validateResults(
 function validateFinding(
   finding: JsonRecord,
   path: string,
+  criterionIds: ReadonlySet<string>,
+  contractRefs: ReadonlySet<string>,
   issues: ValidationIssue[],
 ): void {
   validateFields(
@@ -635,14 +907,62 @@ function validateFinding(
     issues,
   );
   for (const field of FINDING_FIELDS) {
-    if (!(field in finding)) {
-      addIssue(
-        issues,
-        `${path}.${field}`,
-        "required_field",
-        "Required finding field is missing",
-      );
-    }
+    validateNonEmptyString(finding[field], `${path}.${field}`, issues);
+  }
+  if (
+    typeof finding.lens === "string" &&
+    !VALID_FINDING_LENSES.has(finding.lens)
+  ) {
+    addIssue(
+      issues,
+      `${path}.lens`,
+      "invalid_value",
+      "Finding lens is invalid",
+    );
+  }
+  if (
+    typeof finding.severity === "string" &&
+    !VALID_FINDING_SEVERITIES.has(finding.severity)
+  ) {
+    addIssue(
+      issues,
+      `${path}.severity`,
+      "invalid_value",
+      "Finding severity is invalid",
+    );
+  }
+  if (
+    typeof finding.status === "string" &&
+    !VALID_FINDING_STATUSES.has(finding.status)
+  ) {
+    addIssue(
+      issues,
+      `${path}.status`,
+      "invalid_value",
+      "Finding status is invalid",
+    );
+  }
+  if (
+    typeof finding.affectedCriterion === "string" &&
+    !criterionIds.has(finding.affectedCriterion)
+  ) {
+    addIssue(
+      issues,
+      `${path}.affectedCriterion`,
+      "unknown_reference",
+      "Finding must reference a known acceptance criterion",
+    );
+  }
+  if (
+    typeof finding.contractRef === "string" &&
+    !contractRefs.has(finding.contractRef)
+  ) {
+    addIssue(
+      issues,
+      `${path}.contractRef`,
+      "unknown_reference",
+      "Finding must reference a declared contract",
+    );
   }
   if (finding.status === "open") {
     addIssue(
@@ -658,6 +978,8 @@ function validateReviews(
   reviews: unknown,
   baseRevision: unknown,
   candidateRevision: unknown,
+  criterionIds: ReadonlySet<string>,
+  contractRefs: ReadonlySet<string>,
   issues: ValidationIssue[],
 ): void {
   if (!Array.isArray(reviews)) {
@@ -682,6 +1004,92 @@ function validateReviews(
       [...REVIEW_FIELDS],
       issues,
     );
+    if (review.schemaVersion !== 1) {
+      addIssue(
+        issues,
+        `${reviewPath}.schemaVersion`,
+        "invalid_value",
+        "Unsupported review schema version",
+      );
+    }
+    validateNonEmptyString(review.ticketId, `${reviewPath}.ticketId`, issues);
+    validateInteger(
+      review.ticketRevision,
+      `${reviewPath}.ticketRevision`,
+      1,
+      issues,
+    );
+    validateInteger(review.round, `${reviewPath}.round`, 1, issues);
+    validateNonEmptyString(
+      review.implementerRunId,
+      `${reviewPath}.implementerRunId`,
+      issues,
+    );
+    validateNonEmptyString(
+      review.reviewerRunId,
+      `${reviewPath}.reviewerRunId`,
+      issues,
+    );
+    validateRevision(review.baseRevision, `${reviewPath}.baseRevision`, issues);
+    validateRevision(
+      review.candidateRevision,
+      `${reviewPath}.candidateRevision`,
+      issues,
+    );
+    if (
+      typeof review.verdict !== "string" ||
+      !VALID_REVIEW_VERDICTS.has(review.verdict)
+    ) {
+      addIssue(
+        issues,
+        `${reviewPath}.verdict`,
+        "invalid_value",
+        "Review verdict is invalid",
+      );
+    }
+    if (!Array.isArray(review.commands)) {
+      if (review.commands !== undefined) {
+        addIssue(
+          issues,
+          `${reviewPath}.commands`,
+          "invalid_type",
+          "Expected a review-command array",
+        );
+      }
+    } else {
+      review.commands.forEach((command, commandIndex) => {
+        const commandPath = `${reviewPath}.commands[${commandIndex}]`;
+        if (typeof command === "string") {
+          validateNonEmptyString(command, commandPath, issues);
+        } else if (isRecord(command)) {
+          validateFields(
+            command,
+            commandPath,
+            REVIEW_COMMAND_FIELDS,
+            [...REVIEW_COMMAND_FIELDS],
+            issues,
+          );
+          validateNonEmptyString(
+            command.command,
+            `${commandPath}.command`,
+            issues,
+          );
+          validateInteger(
+            command.exitCode,
+            `${commandPath}.exitCode`,
+            0,
+            issues,
+          );
+        } else {
+          addIssue(
+            issues,
+            commandPath,
+            "invalid_type",
+            "Expected a command string or result object",
+          );
+        }
+      });
+    }
     if (
       typeof baseRevision === "string" && review.baseRevision !== baseRevision
     ) {
@@ -715,6 +1123,13 @@ function validateReviews(
       );
     }
     if (isRecord(review.lenses)) {
+      validateFields(
+        review.lenses,
+        `${reviewPath}.lenses`,
+        VALID_FINDING_LENSES,
+        REVIEW_LENSES,
+        issues,
+      );
       for (const lens of REVIEW_LENSES) {
         const lensRecord = review.lenses[lens];
         if (!isRecord(lensRecord)) {
@@ -733,20 +1148,15 @@ function validateReviews(
           [...LENS_FIELDS],
           issues,
         );
+        validateStringArray(
+          lensRecord.evidence,
+          `${reviewPath}.lenses.${lens}.evidence`,
+          issues,
+          { minimum: 1 },
+        );
         if (
-          !Array.isArray(lensRecord.evidence) ||
-          lensRecord.evidence.length === 0
-        ) {
-          addIssue(
-            issues,
-            `${reviewPath}.lenses.${lens}.evidence`,
-            "evidence_required",
-            "Review lens evidence cannot be empty",
-          );
-        }
-        if (
-          lensRecord.verdict !== "pass" && lensRecord.verdict !== "fail" &&
-          lensRecord.verdict !== "not_applicable"
+          typeof lensRecord.verdict !== "string" ||
+          !VALID_LENS_VERDICTS.has(lensRecord.verdict)
         ) {
           addIssue(
             issues,
@@ -782,6 +1192,8 @@ function validateReviews(
           validateFinding(
             finding,
             `${reviewPath}.findings[${findingIndex}]`,
+            criterionIds,
+            contractRefs,
             issues,
           );
         } else {
@@ -793,6 +1205,53 @@ function validateReviews(
           );
         }
       });
+    } else if (review.findings !== undefined) {
+      addIssue(
+        issues,
+        `${reviewPath}.findings`,
+        "invalid_type",
+        "Expected a findings array",
+      );
+    }
+    validateStringArray(review.notes, `${reviewPath}.notes`, issues);
+
+    if (review.verdict === "APPROVED" && isRecord(review.lenses)) {
+      const failedLens = REVIEW_LENSES.some((lens) =>
+        isRecord(review.lenses) &&
+        isRecord(review.lenses[lens]) &&
+        review.lenses[lens].verdict === "fail"
+      );
+      const unresolvedFinding = Array.isArray(review.findings) &&
+        review.findings.some((finding) =>
+          isRecord(finding) && finding.status === "open"
+        );
+      if (failedLens || unresolvedFinding) {
+        addIssue(
+          issues,
+          `${reviewPath}.verdict`,
+          "verdict_conflict",
+          "An approved review cannot contain failed lenses or open findings",
+        );
+      }
+    }
+    if (review.verdict === "CHANGES_REQUESTED" && isRecord(review.lenses)) {
+      const failedLens = REVIEW_LENSES.some((lens) =>
+        isRecord(review.lenses) &&
+        isRecord(review.lenses[lens]) &&
+        review.lenses[lens].verdict === "fail"
+      );
+      const openFinding = Array.isArray(review.findings) &&
+        review.findings.some((finding) =>
+          isRecord(finding) && finding.status === "open"
+        );
+      if (!failedLens && !openFinding) {
+        addIssue(
+          issues,
+          `${reviewPath}.verdict`,
+          "verdict_conflict",
+          "Changes requested requires a failed lens or open finding",
+        );
+      }
     }
   });
 }
@@ -805,6 +1264,39 @@ function validateState(
   issues: ValidationIssue[],
 ): void {
   validateFields(state, "$.state", STATE_FIELDS, [...STATE_FIELDS], issues);
+  if (state.schemaVersion !== 1) {
+    addIssue(
+      issues,
+      "$.state.schemaVersion",
+      "invalid_value",
+      "Unsupported state schema version",
+    );
+  }
+  validateNonEmptyString(state.ticketId, "$.state.ticketId", issues);
+  validateInteger(state.ticketRevision, "$.state.ticketRevision", 1, issues);
+  if (typeof state.phase !== "string" || !VALID_PHASES.has(state.phase)) {
+    addIssue(
+      issues,
+      "$.state.phase",
+      "invalid_value",
+      "State phase is invalid",
+    );
+  }
+  validateInteger(state.round, "$.state.round", 0, issues);
+  validateRevision(state.baseRevision, "$.state.baseRevision", issues);
+  validateNullableRevision(
+    state.candidateRevision,
+    "$.state.candidateRevision",
+    issues,
+  );
+  validateNullableRevision(
+    state.acceptedCandidateRevision,
+    "$.state.acceptedCandidateRevision",
+    issues,
+  );
+  if (state.blocker !== null) {
+    validateNonEmptyString(state.blocker, "$.state.blocker", issues);
+  }
   if (typeof ticketId === "string" && state.ticketId !== ticketId) {
     addIssue(
       issues,
@@ -817,6 +1309,28 @@ function validateState(
   validateSafePathArray(state.reviewRefs, "$.state.reviewRefs", issues);
   const dependencyRevisions = state.dependencyRevisions;
   if (isRecord(dependencyRevisions)) {
+    const knownDependencies = new Set(
+      Array.isArray(dependencies)
+        ? dependencies.filter((value): value is string =>
+          typeof value === "string"
+        )
+        : [],
+    );
+    Object.entries(dependencyRevisions).forEach(([dependency, revision]) => {
+      validateRevision(
+        revision,
+        `$.state.dependencyRevisions.${dependency}`,
+        issues,
+      );
+      if (!knownDependencies.has(dependency)) {
+        addIssue(
+          issues,
+          `$.state.dependencyRevisions.${dependency}`,
+          "unknown_reference",
+          "Dependency revision key is not declared by the ticket",
+        );
+      }
+    });
     if (Array.isArray(dependencies)) {
       dependencies.forEach((dependency) => {
         if (
@@ -852,7 +1366,22 @@ function validateState(
     );
   }
   if (Array.isArray(state.openFindingIds)) {
+    const findingIds = new Set<string>();
     state.openFindingIds.forEach((_findingId, index) => {
+      validateNonEmptyString(
+        _findingId,
+        `$.state.openFindingIds[${index}]`,
+        issues,
+      );
+      if (typeof _findingId === "string" && findingIds.has(_findingId)) {
+        addIssue(
+          issues,
+          `$.state.openFindingIds[${index}]`,
+          "duplicate_value",
+          "Open finding IDs must be unique",
+        );
+      }
+      if (typeof _findingId === "string") findingIds.add(_findingId);
       addIssue(
         issues,
         `$.state.openFindingIds[${index}]`,
@@ -860,9 +1389,17 @@ function validateState(
         "Open findings block ticket acceptance",
       );
     });
+  } else if (state.openFindingIds !== undefined) {
+    addIssue(
+      issues,
+      "$.state.openFindingIds",
+      "invalid_type",
+      "Expected an open-finding ID array",
+    );
   }
 
   const commands = new Set<string>();
+  const checkRunIds = new Set<string>();
   if (Array.isArray(state.orchestratorChecks)) {
     state.orchestratorChecks.forEach((check, index) => {
       if (!isRecord(check)) {
@@ -881,8 +1418,48 @@ function validateState(
         [...CHECK_FIELDS],
         issues,
       );
+      validateNonEmptyString(
+        check.runId,
+        `$.state.orchestratorChecks[${index}].runId`,
+        issues,
+      );
+      validateRevision(
+        check.revision,
+        `$.state.orchestratorChecks[${index}].revision`,
+        issues,
+      );
+      validateNonEmptyString(
+        check.command,
+        `$.state.orchestratorChecks[${index}].command`,
+        issues,
+      );
+      validateInteger(
+        check.exitCode,
+        `$.state.orchestratorChecks[${index}].exitCode`,
+        0,
+        issues,
+      );
       if (typeof check.command === "string") {
+        if (commands.has(check.command)) {
+          addIssue(
+            issues,
+            `$.state.orchestratorChecks[${index}].command`,
+            "duplicate_value",
+            "Orchestrator check commands must be unique",
+          );
+        }
         commands.add(check.command);
+      }
+      if (typeof check.runId === "string") {
+        if (checkRunIds.has(check.runId)) {
+          addIssue(
+            issues,
+            `$.state.orchestratorChecks[${index}].runId`,
+            "duplicate_value",
+            "Orchestrator check run IDs must be unique",
+          );
+        }
+        checkRunIds.add(check.runId);
       }
       if (check.exitCode !== 0) {
         addIssue(
@@ -904,6 +1481,13 @@ function validateState(
         );
       }
     });
+  } else if (state.orchestratorChecks !== undefined) {
+    addIssue(
+      issues,
+      "$.state.orchestratorChecks",
+      "invalid_type",
+      "Expected an orchestrator-check array",
+    );
   }
   if (
     Array.isArray(requiredTasks) &&
@@ -920,6 +1504,200 @@ function validateState(
   }
 }
 
+function validateLifecycle(
+  bundle: JsonRecord,
+  ticket: JsonRecord,
+  state: JsonRecord,
+  issues: ValidationIssue[],
+): void {
+  const phase = state.phase;
+  const events = Array.isArray(state.events) ? state.events : [];
+  const results = Array.isArray(bundle.results) ? bundle.results : [];
+  const reviews = Array.isArray(bundle.reviews) ? bundle.reviews : [];
+  const resultRefs = Array.isArray(state.resultRefs) ? state.resultRefs : [];
+  const reviewRefs = Array.isArray(state.reviewRefs) ? state.reviewRefs : [];
+  const candidatePhases = new Set([
+    "review",
+    "rework",
+    "accepted",
+    "integrated",
+  ]);
+  const reviewedPhases = new Set(["rework", "accepted", "integrated"]);
+
+  if (
+    events.length === 0 || !isRecord(events[0]) ||
+    events[0].from !== "planned" || !isRecord(events.at(-1)) ||
+    events.at(-1)?.to !== phase
+  ) {
+    addIssue(
+      issues,
+      "$.state.events",
+      "lifecycle_incomplete",
+      "The lifecycle must start at planned and end at the declared phase",
+    );
+  }
+
+  if (candidatePhases.has(String(phase))) {
+    if (results.length === 0 || resultRefs.length !== results.length) {
+      addIssue(
+        issues,
+        "$.results",
+        "lifecycle_incomplete",
+        "Candidate phases require exactly referenced implementation results",
+      );
+    }
+    if (typeof state.candidateRevision !== "string") {
+      addIssue(
+        issues,
+        "$.state.candidateRevision",
+        "candidate_required",
+        "Candidate phases require an exact candidate revision",
+      );
+    }
+  }
+
+  if (reviewedPhases.has(String(phase))) {
+    if (reviews.length === 0 || reviewRefs.length !== reviews.length) {
+      addIssue(
+        issues,
+        "$.reviews",
+        "review_required",
+        "The declared phase requires exactly referenced reviews",
+      );
+    }
+  }
+
+  if (phase === "accepted" || phase === "integrated") {
+    const review = reviews.at(-1);
+    if (!isRecord(review) || review.verdict !== "APPROVED") {
+      addIssue(
+        issues,
+        "$.reviews",
+        "review_required",
+        "Acceptance requires an approved review of the exact candidate",
+      );
+    }
+    if (state.acceptedCandidateRevision !== state.candidateRevision) {
+      addIssue(
+        issues,
+        "$.state.acceptedCandidateRevision",
+        "candidate_mismatch",
+        "Acceptance must identify the current candidate",
+      );
+    }
+    if (
+      !Array.isArray(state.orchestratorChecks) ||
+      state.orchestratorChecks.length === 0
+    ) {
+      addIssue(
+        issues,
+        "$.state.orchestratorChecks",
+        "check_missing",
+        "Acceptance requires independent orchestrator checks",
+      );
+    }
+  }
+
+  if (state.ticketRevision !== ticket.revision) {
+    addIssue(
+      issues,
+      "$.state.ticketRevision",
+      "ticket_revision_mismatch",
+      "State ticket revision must match the ticket packet",
+    );
+  }
+  if (state.baseRevision !== ticket.baseRevision) {
+    addIssue(
+      issues,
+      "$.state.baseRevision",
+      "base_mismatch",
+      "State base revision must match the ticket packet",
+    );
+  }
+
+  const resultsByRound = new Map<number, JsonRecord>();
+  results.forEach((value, index) => {
+    if (!isRecord(value)) return;
+    if (value.ticketId !== ticket.ticketId) {
+      addIssue(
+        issues,
+        `$.results[${index}].ticketId`,
+        "ticket_mismatch",
+        "Result ticket ID must match the ticket packet",
+      );
+    }
+    if (value.ticketRevision !== ticket.revision) {
+      addIssue(
+        issues,
+        `$.results[${index}].ticketRevision`,
+        "ticket_revision_mismatch",
+        "Result ticket revision must match the ticket packet",
+      );
+    }
+    if (typeof value.round === "number") {
+      resultsByRound.set(value.round, value);
+    }
+  });
+
+  reviews.forEach((value, index) => {
+    if (!isRecord(value)) return;
+    if (value.ticketId !== ticket.ticketId) {
+      addIssue(
+        issues,
+        `$.reviews[${index}].ticketId`,
+        "ticket_mismatch",
+        "Review ticket ID must match the ticket packet",
+      );
+    }
+    if (value.ticketRevision !== ticket.revision) {
+      addIssue(
+        issues,
+        `$.reviews[${index}].ticketRevision`,
+        "ticket_revision_mismatch",
+        "Review ticket revision must match the ticket packet",
+      );
+    }
+    const result = resultsByRound.get(value.round as number);
+    if (result === undefined || value.round !== state.round) {
+      addIssue(
+        issues,
+        `$.reviews[${index}].round`,
+        "round_mismatch",
+        "Review round must match its result and the current state",
+      );
+    }
+    if (
+      result !== undefined &&
+      value.implementerRunId !== result.implementerRunId
+    ) {
+      addIssue(
+        issues,
+        `$.reviews[${index}].implementerRunId`,
+        "run_mismatch",
+        "Review must identify the round implementer",
+      );
+    }
+  });
+
+  events.forEach((value, index) => {
+    if (!isRecord(value) || typeof value.round !== "number") return;
+    const result = resultsByRound.get(value.round);
+    if (result === undefined) return;
+    if (
+      (value.to === "red" || value.to === "green" ||
+        value.to === "refactor") &&
+      value.actorRunId !== result.implementerRunId
+    ) {
+      addIssue(
+        issues,
+        `$.state.events[${index}].actorRunId`,
+        "run_mismatch",
+        "Implementation transitions must identify the round implementer",
+      );
+    }
+  });
+}
+
 export function validateTicketBundle(
   bundle: unknown,
   availableTasks: ReadonlySet<string>,
@@ -932,6 +1710,22 @@ export function validateTicketBundle(
   validateFields(bundle, "$", BUNDLE_FIELDS, [...BUNDLE_FIELDS], issues);
   const ticket = isRecord(bundle.ticket) ? bundle.ticket : undefined;
   const state = isRecord(bundle.state) ? bundle.state : undefined;
+  const criterionIds = new Set<string>();
+  const contractRefs = new Set<string>();
+  if (ticket !== undefined) {
+    if (Array.isArray(ticket.acceptanceCriteria)) {
+      ticket.acceptanceCriteria.forEach((criterion) => {
+        if (isRecord(criterion) && typeof criterion.id === "string") {
+          criterionIds.add(criterion.id);
+        }
+      });
+    }
+    if (Array.isArray(ticket.contractRefs)) {
+      ticket.contractRefs.forEach((reference) => {
+        if (typeof reference === "string") contractRefs.add(reference);
+      });
+    }
+  }
   if (ticket === undefined) {
     if ("ticket" in bundle) {
       addIssue(issues, "$.ticket", "invalid_type", "Expected a ticket object");
@@ -956,8 +1750,13 @@ export function validateTicketBundle(
       bundle.reviews,
       ticket?.baseRevision,
       state.candidateRevision,
+      criterionIds,
+      contractRefs,
       issues,
     );
+    if (ticket !== undefined) {
+      validateLifecycle(bundle, ticket, state, issues);
+    }
     if (
       Array.isArray(bundle.events) && Array.isArray(state.events) &&
       JSON.stringify(bundle.events) !== JSON.stringify(state.events)
