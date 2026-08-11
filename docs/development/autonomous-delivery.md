@@ -434,6 +434,12 @@ run; it never broadens a child sandbox to bypass this boundary. The orchestrator
 supplies and verifies the exact requested Git action, while implementers and
 reviewers operate on the assigned checkout.
 
+<!-- deno-fmt-ignore -->
+For ordinary ticket work, `.git`, `.codex`, and `.agents` are protected control paths.
+Spawned workspace-write implementers must route any required change to those paths to a trusted top-level maintenance context.
+This guidance documents authority routing; it does not override Codex sandbox
+enforcement.
+
 ## Command truth
 
 Run only tasks that exist and have real implementations. The current executable
