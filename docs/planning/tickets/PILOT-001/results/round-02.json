@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "ticketId": "PILOT-001",
+  "ticketRevision": 1,
+  "round": 2,
+  "implementerRunId": "rework-red-lifecycle",
+  "inputBaseRevision": "9d4693e1335797f1ecf98c4515ddba8e2603d8fb",
+  "dispatchRef": "dispatch/round-02.md",
+  "redRevision": "ed596c64a14e8068d3eb5a6351f9822844a1815c",
+  "red": {
+    "command": "deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/validate_ticket_test.ts",
+    "exitCode": 1,
+    "expectedFailure": "An accepted ticket without lifecycle or review evidence is rejected.",
+    "output": "Expected $.state.events:lifecycle_incomplete, received no validation issues; 41 baseline tests passed and one regression failed.",
+    "logRef": "evidence/round-02-red.log",
+    "testFiles": [
+      {
+        "path": "tools/workflows/validate_ticket_test.ts",
+        "sha256": "97ecd18c0ec9117dbf9e8b2b311061f2f595bd2df78a5e4e46ced63806b004b1"
+      }
+    ],
+    "productionFiles": []
+  },
+  "green": {
+    "command": "deno task test:workflow",
+    "exitCode": 0,
+    "logRef": "evidence/round-02-green.log",
+    "productionFiles": [
+      "tools/workflows/ticket_contract.ts",
+      "tools/workflows/validate_ticket.ts"
+    ]
+  },
+  "refactor": {
+    "summary": "Added phase-aware semantic validation, bounded evidence loading, Git-backed TDD attestation, exact evidence mapping, and complete branch characterization.",
+    "command": "deno task test:workflow:coverage",
+    "exitCode": 0,
+    "logRef": "evidence/round-02-refactor.log"
+  },
+  "candidateRevision": "81fb66070c510e053cc0d4524145f3f3020bd9d1"
+}
