@@ -357,6 +357,20 @@ async function writeGitBundleDirectory(
   runGit(root, ["config", "user.name", "Workflow Test"]);
   Deno.mkdirSync(`${root}/tools/workflows`, { recursive: true });
   Deno.writeTextFileSync(`${root}/tools/workflows/base.ts`, "export {};\n");
+  Deno.writeTextFileSync(
+    `${root}/deno.json`,
+    `${
+      JSON.stringify(
+        {
+          tasks: Object.fromEntries(
+            REQUIRED_TASKS.map((task) => [task, "deno eval true"]),
+          ),
+        },
+        null,
+        2,
+      )
+    }\n`,
+  );
   runGit(root, ["add", "--all"]);
   runGit(root, ["commit", "--quiet", "-m", "base"]);
   const baseRevision = runGit(root, ["rev-parse", "HEAD"]);

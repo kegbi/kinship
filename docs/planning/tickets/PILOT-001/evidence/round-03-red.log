@@ -7,7 +7,8 @@ implementerRuns=[round3-red-contract,round3-red-git]
 supersedesRedRevision=2beed5a27c67fe6f2fde6f7c546a6a8a4f011d9e
 supersedesPriorCorrection=79e63acea4c93bf9befa7e486ed2e6fa64abca78
 supersedesDiagnosticRevision=7d1deb6129e009a263eb2284fc59c20b65f25407
-supersessionReason=Equivalent transition fixtures and exact Git diagnostics were corrected first. Valid temporary-repository fixtures now execute from their own canonical repository roots so the required external-repository rejection cannot invalidate positive cases.
+supersedesCanonicalRevision=5401df2aa3298c36db790f32b896d53835a75ade
+supersessionReason=Equivalent transition fixtures and exact Git diagnostics were corrected first. Valid temporary-repository fixtures now execute from their own canonical roots and include the required root task manifest, so repository containment cannot invalidate positive cases.
 command=deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/validate_ticket_test.ts tools/workflows/round3_git_regression_test.ts tools/workflows/round3_policy_regression_test.ts
 exitCode=1
 verification=Run from the immutable superseding RED revision before any GREEN implementation resumes.
@@ -27,7 +28,7 @@ R2-011=max-round, sequence, event revision, round, and actor binding diagnostics
 R2-012=empty, duplicate, failed, and malformed approved-review commands accepted
 
 testFile[0].path=tools/workflows/validate_ticket_test.ts
-testFile[0].sha256=680fed2b823d27de112cc240dc8aa5a443f4800ecdd2a9b4ca644f01f611a64b
+testFile[0].sha256=7eb79a309a761071e5050799fa9dfd344012de64cadd2973d90792d4881032d6
 testFile[1].path=tools/workflows/round3_git_regression_test.ts
 testFile[1].sha256=7c7f209c1bdcdb8eca1af61081cc2d6d5df5bc4ec508f2d55f21b845ce40c3b3
 testFile[2].path=tools/workflows/round3_policy_regression_test.ts
