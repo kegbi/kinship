@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "ticketId": "PILOT-001",
+  "ticketRevision": 1,
+  "round": 1,
+  "implementerRunId": "pilot-red-retry",
+  "reviewerRunId": "pilot-review-clean-20260811-r1",
+  "baseRevision": "9d4693e1335797f1ecf98c4515ddba8e2603d8fb",
+  "candidateRevision": "43dfb1887e377ec2d3a20a795a74ef6567e28038",
+  "verdict": "CHANGES_REQUESTED",
+  "commands": [
+    {
+      "command": "deno task fmt:check",
+      "exitCode": 0
+    },
+    {
+      "command": "deno task lint",
+      "exitCode": 0
+    },
+    {
+      "command": "deno task check",
+      "exitCode": 0
+    },
+    {
+      "command": "deno task test:workflow",
+      "exitCode": 0
+    },
+    {
+      "command": "deno task test:workflow:coverage",
+      "exitCode": 0
+    },
+    {
+      "command": "deno eval lifecycle and evidence counterexamples",
+      "exitCode": 0
+    }
+  ],
+  "lenses": {
+    "bug_correctness": {
+      "verdict": "fail",
+      "evidence": [
+        "PILOT-001-R1-001 and PILOT-001-R1-005 demonstrate acceptance without mandatory lifecycle, review, and evidence closure."
+      ]
+    },
+    "security_privacy": {
+      "verdict": "fail",
+      "evidence": [
+        "PILOT-001-R1-003 leaves an availability/resource-exhaustion path through repeated references."
+      ]
+    },
+    "architecture_contracts": {
+      "verdict": "fail",
+      "evidence": [
+        "PILOT-001-R1-001, PILOT-001-R1-002, and PILOT-001-R1-004 violate exact state, review, and content-address contracts."
+      ]
+    },
+    "performance_reliability": {
+      "verdict": "fail",
+      "evidence": [
+        "PILOT-001-R1-003 shows unbounded repeated referenced-file I/O and allocation."
+      ]
+    },
+    "style_maintainability": {
+      "verdict": "pass",
+      "evidence": [
+        "The implementation is dependency-free, organized into focused helpers, formatted, lint-clean, and type-clean."
+      ]
+    },
+    "tests_tdd": {
+      "verdict": "fail",
+      "evidence": [
+        "The authentic RED and 100 percent coverage gates pass, but semantic mutants in PILOT-001-R1-001, R1-002, R1-004, and R1-005 survive."
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "PILOT-001-R1-001",
+      "lens": "bug_correctness",
+      "severity": "P1",
+      "location": "tools/workflows/ticket_contract.ts:validateReviews, validateState, validateTicketBundle",
+      "expectedBehavior": "Acceptance requires a lifecycle ending at the declared phase and an APPROVED exact-candidate fresh review with six satisfactory lenses and no unresolved finding.",
+      "observedBehavior": "A review-phase packet with empty reviewRefs and reviews validates after only candidate/check fields are populated; empty evidence collections and a ledger that ends at review are accepted.",
+      "reproduction": "Starting from the valid fixture, empty results, reviews, refs, events, and checks; null both candidate fields; keep phase accepted and requiredTasks empty. Validation returns no issues.",
+      "impact": "A controller can manufacture acceptance without TDD evidence, lifecycle closure, or independent review.",
+      "affectedCriterion": "AC-01; AC-02; WFR-001; WFR-004",
+      "contractRef": "docs/development/autonomous-delivery.md#state-machine; docs/development/autonomous-delivery.md#orchestrator-acceptance-guard",
+      "requiredRemediation": "Add phase-aware minimum cardinalities and enforce exact ticket, revision, round, actor, result, review, candidate, and final-event relationships.",
+      "verification": "Add table-driven mutants for empty records, mismatched IDs/revisions/rounds/runs, nonterminal ledgers, absent approved review, failed lenses, and CHANGES_REQUESTED verdicts.",
+      "status": "open"
+    },
+    {
+      "id": "PILOT-001-R1-002",
+      "lens": "architecture_contracts",
+      "severity": "P1",
+      "location": "tools/workflows/ticket_contract.ts:validateRevision, validateSafePath, validateFinding, validateReviews; assets/result.template.json",
+      "expectedBehavior": "Strict packets reject malformed primitive types, empty evidence, invalid enums, unknown references, and contradictory review semantics; templates must instantiate valid records.",
+      "observedBehavior": "Non-string revisions, paths, and hashes bypass checks; review verdict and finding values are weakly constrained; the result template supplies a null dispatchRef.",
+      "reproduction": "Set ticket.baseRevision or a test digest to 42, review verdict to an arbitrary value, or required finding values to null; the relevant stable diagnostic is absent.",
+      "impact": "Meaningless or forged evidence can satisfy the mechanical acceptance shape.",
+      "affectedCriterion": "AC-02; AC-04; AC-05; WFR-003; WFR-004",
+      "contractRef": "docs/development/autonomous-delivery.md#ticket-files; docs/development/autonomous-delivery.md#review-contract",
+      "requiredRemediation": "Validate all primitive types, non-empty strings, enums, unique IDs/paths/tasks, finding criterion/contract/lens references, verdict-lens-finding consistency, and make dispatchRef a required safe path.",
+      "verification": "Add table-driven negative tests for every malformed primitive, enum, empty string, duplicate, unknown reference, and contradictory review combination.",
+      "status": "open"
+    },
+    {
+      "id": "PILOT-001-R1-003",
+      "lens": "performance_reliability",
+      "severity": "P2",
+      "location": "tools/workflows/validate_ticket.ts:referencedFiles and readReferencedJson",
+      "expectedBehavior": "CLI input count, aggregate bytes, and repeated work are deterministically bounded.",
+      "observedBehavior": "A sub-1 MB state file can contain thousands of duplicate result/review references, causing the same near-1 MB file to be read, parsed, and retained repeatedly.",
+      "reproduction": "Create thousands of repeated results/r.json references and one near-limit JSON file; the CLI performs one read and parse per duplicate.",
+      "impact": "Corrupt ticket data can exhaust CI or reviewer memory and CPU despite per-file limits.",
+      "affectedCriterion": "AC-03; WFR-001",
+      "contractRef": "docs/planning/tickets/PILOT-001/ticket.md#risks",
+      "requiredRemediation": "Bound and deduplicate references and collections, cap aggregate bytes/records before parsing, and emit stable limit diagnostics.",
+      "verification": "Add CLI tests for duplicate refs, over-limit counts, and aggregate-byte exhaustion that fail before unbounded reads.",
+      "status": "open"
+    },
+    {
+      "id": "PILOT-001-R1-004",
+      "lens": "tests_tdd",
+      "severity": "P1",
+      "location": "tools/workflows/ticket_contract.ts:validateRevision and validateResults; tools/workflows/validate_ticket.ts:runTicketValidator",
+      "expectedBehavior": "RED and candidate revisions exist, ancestry is valid, declared RED test hashes match Git blobs, and the RED diff contains no production change.",
+      "observedBehavior": "The validator checks only 40/64-character patterns; nonexistent all-zero revisions and fabricated hashes validate.",
+      "reproduction": "Replace redRevision, candidateRevision, and each SHA-256 with syntactically valid nonexistent values in an otherwise valid fixture; structural validation emits no content-address issue.",
+      "impact": "Fabricated RED/candidate evidence can manufacture compliance with the mandatory TDD gate.",
+      "affectedCriterion": "AC-04; WFR-003",
+      "contractRef": "docs/development/autonomous-delivery.md#content-addressed-red-proof",
+      "requiredRemediation": "At the CLI boundary, resolve commit objects and ancestry, hash declared files from redRevision, compare the RED diff with declared test/check and ticket-evidence paths, and audit candidate changed paths against allowedWrites.",
+      "verification": "Use a temporary Git repository to test nonexistent revisions, wrong hashes, production changes in RED, stale/non-descendant candidates, and a genuine valid lineage.",
+      "status": "open"
+    },
+    {
+      "id": "PILOT-001-R1-005",
+      "lens": "bug_correctness",
+      "severity": "P1",
+      "location": "tools/workflows/validate_ticket.ts:readReferencedJson and loadTicketDirectory",
+      "expectedBehavior": "Every declared result, review, dispatch, phase log, event evidence, and accepted-state artifact exists as a bounded regular file under the ticket directory and maps exactly to its record.",
+      "observedBehavior": "The valid-directory test omits dispatch and phase log files yet passes; invalid-prefix refs are silently skipped, and no acceptance artifact is required.",
+      "reproduction": "Run the current valid-directory fixture without creating dispatch or log files, or point resultRefs at evidence/ignored.json; the CLI does not emit the required missing/unsafe-reference diagnostic.",
+      "impact": "The CLI can approve fabricated or absent execution/review evidence.",
+      "affectedCriterion": "AC-01; AC-03; AC-04; WFR-001; WFR-005",
+      "contractRef": "docs/development/autonomous-delivery.md#ticket-files; docs/development/autonomous-delivery.md#orchestrator-acceptance-guard",
+      "requiredRemediation": "Reject every invalid, duplicate, or unmapped reference and verify safe containment, existence, file type, size, and round correspondence for all evidence; require acceptance.md only in accepted/integrated phases.",
+      "verification": "Add directory-level negative tests for missing, wrong-prefix, duplicate, non-file, oversized, mismatched-round, and escaped evidence plus a complete valid directory.",
+      "status": "open"
+    }
+  ],
+  "notes": [
+    "PILOT-001-R1-004 and PILOT-001-R1-005 were added by the orchestrator from a second independent clean-context adversarial audit.",
+    "The PostgreSQL 18.4/17.10 matrix passed from the integration checkout; the linked worktree exposes a pre-existing line-ending-sensitive audit-hash limitation without changing schema files."
+  ]
+}
