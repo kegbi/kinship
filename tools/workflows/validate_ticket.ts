@@ -773,7 +773,8 @@ async function validateGitEvidence(
     return check;
   };
   const ticketBaseRevision = ticket.baseRevision as string;
-  if (!await revisionExists(ticketBaseRevision)) {
+  const ticketBaseExists = await revisionExists(ticketBaseRevision);
+  if (!ticketBaseExists) {
     issues.push(
       issue(
         "$.ticket.baseRevision",
@@ -782,9 +783,52 @@ async function validateGitEvidence(
       ),
     );
   }
-  if (state.candidateRevision === null) return issues;
 
   const head = await runGit(ticketDirectory, ["rev-parse", "HEAD"]);
+  if (state.candidateRevision === null) {
+    if (ticketBaseExists) {
+      const readyAncestry = await runGit(ticketDirectory, [
+        "merge-base",
+        "--is-ancestor",
+        ticketBaseRevision,
+        gitText(head),
+      ]);
+      if (
+        !head.success || head.limited || gitText(head) === "" ||
+        !readyAncestry.success
+      ) {
+        issues.push(
+          issue(
+            "$.ticket.baseRevision",
+            "ready_base_ancestry_mismatch",
+            "Committed ready metadata must descend from the ticket base",
+          ),
+        );
+      } else {
+        const readyPaths = await changedPaths(
+          ticketDirectory,
+          ticketBaseRevision,
+          gitText(head),
+          "$.ticket.baseRevision",
+          issues,
+        );
+        if (
+          readyPaths !== undefined &&
+          readyPaths.some((path) => !path.startsWith(ticketEvidencePrefix))
+        ) {
+          issues.push(
+            issue(
+              "$.ticket.baseRevision",
+              "ready_base_scope_violation",
+              "Ready-phase commits may change only canonical ticket metadata",
+            ),
+          );
+        }
+      }
+    }
+    return issues;
+  }
+
   const candidateRevision = state.candidateRevision as string;
   const metadataAncestry = await runGit(ticketDirectory, [
     "merge-base",
