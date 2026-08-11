@@ -84,11 +84,18 @@ revision. The complete operational protocol is
 
 ## Canonical Commands
 
-The current executable baseline exposes only `fmt`, `fmt:check`, `lint`,
-`check`, `test:schema`, `test:schema:compat`, and `test:schema:matrix`. Their
-scope is narrow until the application scaffold exists: lint covers `tools/`,
-check covers the schema validator, and schema tasks cover the canonical database
-harness.
+The current executable baseline exposes `fmt`, `fmt:check`, `lint`, `check`,
+`ticket:validate`, `test:workflow`, `test:workflow:coverage`, `test:schema`,
+`test:schema:compat`, and `test:schema:matrix`. Their scope is narrow until the
+application scaffold exists: lint covers `tools/`, check covers the schema and
+workflow tools, workflow tasks cover autonomous ticket validation, and schema
+tasks cover the canonical database harness.
+
+```text
+deno task ticket:validate <ticket-directory>
+deno task test:workflow
+deno task test:workflow:coverage
+```
 
 As real harnesses are added, the implementation must expose stable top-level
 `deno task` commands even when they delegate to pnpm, Astro, Vitest, Playwright,

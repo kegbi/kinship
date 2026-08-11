@@ -14,6 +14,12 @@ and capture an expected non-zero RED result. Confirm the failure is caused by
 the missing behavior, not syntax, setup, permissions, or an unrelated defect.
 Production files must remain unchanged during RED.
 
+On the first proof for a round, Stop after RED and return the command, failure,
+test/check paths, and empty production-file list. Do not begin GREEN until the
+trusted controller supplies a dispatch naming the frozen RED revision and the
+SHA-256 digest for every changed test/check file. On that continuation, verify
+the digest before changing production code.
+
 Implement the smallest architecture-compliant change that makes the focused
 test GREEN. Do not weaken, delete, skip, or over-mock a test to make it pass.
 Then REFACTOR only while the focused suite stays green. Run all relevant unit,

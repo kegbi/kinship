@@ -35,7 +35,9 @@ acting. Those files are authoritative when this skill is invoked.
 
 1. RED: the implementer changes tests or a deterministic check first, leaves
    production untouched, runs the focused command, and records the intended
-   non-zero failure.
+   non-zero failure. The trusted controller must freeze the RED revision and
+   record a SHA-256 digest for every changed test/check file before dispatching
+   the same round for GREEN.
 2. GREEN: the implementer makes the smallest compliant production change and
    records the focused passing command.
 3. REFACTOR: the implementer improves the code only while tests remain green,

@@ -19,7 +19,10 @@ Reproduce or inspect enough evidence to assess every required lens:
 
 Return findings first. Every finding must include a stable ID, lens, P0-P3
 severity, exact file and line or symbol, concrete evidence or reproduction,
-impact, required change, and the regression test or deterministic check needed.
+expected and observed behavior, impact, affected acceptance criterion, contract
+reference (the contract reference), required remediation, regression test or
+deterministic check, and
+resolution status.
 All actionable findings request changes regardless of severity. Put genuinely
 optional observations in a separate notes list. Avoid subjective style comments
 and speculative issues without an executable or source-backed case.

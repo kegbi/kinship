@@ -3,7 +3,9 @@
   "ticketId": "<TICKET-ID>",
   "revision": 1,
   "title": "<title>",
+  "outcome": "<one observable result>",
   "baseRevision": "<40-character Git SHA>",
+  "dependencies": [],
   "maxRounds": 3,
   "scope": ["<observable in-scope behavior>"],
   "nonGoals": ["<explicit exclusion>"],
@@ -12,8 +14,11 @@
   "acceptanceCriteria": [
     {
       "id": "AC-01",
-      "text": "<independently testable outcome>"
+      "text": "<independently testable outcome>",
+      "redProof": "<focused command and intended missing-behavior failure>"
     }
   ],
-  "requiredTasks": ["fmt:check"]
+  "requiredTasks": ["fmt:check"],
+  "risks": ["<security, tenancy, data, performance, compatibility, or none>"],
+  "unresolvedDecisions": []
 }

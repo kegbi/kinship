@@ -12,11 +12,14 @@
       "from": "planned",
       "to": "ready",
       "round": 0,
-      "actorRunId": "<orchestrator run ID>"
+      "actorRunId": "<orchestrator run ID>",
+      "evidenceRef": "ticket.json",
+      "revision": "<40-character base Git SHA>"
     }
   ],
   "resultRefs": [],
   "reviewRefs": [],
+  "dependencyRevisions": {},
   "openFindingIds": [],
   "orchestratorChecks": [],
   "acceptedCandidateRevision": null,
