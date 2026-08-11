@@ -31,6 +31,8 @@
     "docs/architecture/quality-gates.md#test-first-change-contract",
     "docs/architecture/quality-gates.md#independent-clean-context-review",
     "docs/development/autonomous-delivery.md",
+    "docs/development/autonomous-delivery.md#ticket-packet",
+    "docs/development/autonomous-delivery.md#state-machine",
     "docs/architecture/repository-layout.md#canonical-shape"
   ],
   "acceptanceCriteria": [
