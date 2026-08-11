@@ -2,17 +2,19 @@
   "schemaVersion": 1,
   "ticketId": "PILOT-001",
   "ticketRevision": 1,
-  "phase": "red",
+  "phase": "review",
   "round": 1,
   "baseRevision": "9d4693e1335797f1ecf98c4515ddba8e2603d8fb",
-  "candidateRevision": null,
+  "candidateRevision": "43dfb1887e377ec2d3a20a795a74ef6567e28038",
   "events": [
     {
       "sequence": 1,
       "from": "planned",
       "to": "ready",
       "round": 0,
-      "actorRunId": "root-orchestrator-20260811"
+      "actorRunId": "root-orchestrator-20260811",
+      "evidenceRef": "ticket.json",
+      "revision": "9d4693e1335797f1ecf98c4515ddba8e2603d8fb"
     },
     {
       "sequence": 2,
@@ -20,12 +22,41 @@
       "to": "red",
       "round": 1,
       "actorRunId": "pilot-red-retry",
-      "sourceRevision": "960d91526ea6b9779754d7c2ba13193974aa6448"
+      "evidenceRef": "evidence/round-01-red.log",
+      "revision": "960d91526ea6b9779754d7c2ba13193974aa6448"
+    },
+    {
+      "sequence": 3,
+      "from": "red",
+      "to": "green",
+      "round": 1,
+      "actorRunId": "pilot-red-retry",
+      "evidenceRef": "evidence/round-01-green.log",
+      "revision": "43dfb1887e377ec2d3a20a795a74ef6567e28038"
+    },
+    {
+      "sequence": 4,
+      "from": "green",
+      "to": "refactor",
+      "round": 1,
+      "actorRunId": "pilot-red-retry",
+      "evidenceRef": "evidence/round-01-refactor.log",
+      "revision": "43dfb1887e377ec2d3a20a795a74ef6567e28038"
+    },
+    {
+      "sequence": 5,
+      "from": "refactor",
+      "to": "review",
+      "round": 1,
+      "actorRunId": "root-orchestrator-20260811",
+      "evidenceRef": "results/round-01.json",
+      "revision": "43dfb1887e377ec2d3a20a795a74ef6567e28038"
     }
   ],
-  "resultRefs": [],
+  "resultRefs": ["results/round-01.json"],
   "reviewRefs": [],
-  "openFindingIds": ["WFR-001", "WFR-002", "WFR-003", "WFR-004", "WFR-005"],
+  "dependencyRevisions": {},
+  "openFindingIds": [],
   "orchestratorChecks": [],
   "acceptedCandidateRevision": null,
   "blocker": null
