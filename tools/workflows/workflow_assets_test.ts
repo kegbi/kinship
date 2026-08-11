@@ -217,6 +217,18 @@ Deno.test("event ledger template is append-only and agrees with state events", (
   assertIncludes(read(".codex/agents/orchestrator.toml"), "events.jsonl");
 });
 
+Deno.test("delivery protocol routes protected control-path changes", () => {
+  const delivery = read("docs/development/autonomous-delivery.md");
+  assertIncludes(
+    delivery,
+    "For ordinary ticket work, `.git`, `.codex`, and `.agents` are protected control paths.",
+  );
+  assertIncludes(
+    delivery,
+    "Spawned workspace-write implementers must route any required change to those paths to a trusted top-level maintenance context.",
+  );
+});
+
 Deno.test("root workflow tasks and current-command documentation are truthful", () => {
   const deno = parseObject("deno.json");
   const tasks = deno.tasks;
