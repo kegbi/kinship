@@ -244,10 +244,12 @@ function assertIssue(
   }
 }
 
-function writeBundleDirectory(bundle: Record<string, unknown>): string {
-  const directory = Deno.makeTempDirSync({ prefix: "ticket-validator-" });
-  Deno.mkdirSync(`${directory}/results`);
-  Deno.mkdirSync(`${directory}/reviews`);
+function writeBundleFiles(
+  directory: string,
+  bundle: Record<string, unknown>,
+): string {
+  Deno.mkdirSync(`${directory}/results`, { recursive: true });
+  Deno.mkdirSync(`${directory}/reviews`, { recursive: true });
   Deno.writeTextFileSync(
     `${directory}/ticket.json`,
     `${JSON.stringify(bundle.ticket, null, 2)}\n`,
@@ -272,10 +274,177 @@ function writeBundleDirectory(bundle: Record<string, unknown>): string {
   return directory;
 }
 
-function captureValidatorRun(args: readonly string[]): {
+function writeRequiredEvidenceFiles(
+  directory: string,
+  bundle: Record<string, unknown>,
+): void {
+  Deno.mkdirSync(`${directory}/dispatch`, { recursive: true });
+  Deno.mkdirSync(`${directory}/evidence`, { recursive: true });
+  for (const value of asArray(bundle.results)) {
+    const result = asRecord(value);
+    for (
+      const reference of [
+        result.dispatchRef,
+        asRecord(result.red).logRef,
+        asRecord(result.green).logRef,
+        asRecord(result.refactor).logRef,
+      ]
+    ) {
+      if (typeof reference === "string") {
+        Deno.writeTextFileSync(`${directory}/${reference}`, "verified\n");
+      }
+    }
+  }
+  Deno.writeTextFileSync(`${directory}/acceptance.md`, "Accepted.\n");
+}
+
+function writeBundleDirectory(bundle: Record<string, unknown>): string {
+  const directory = writeBundleFiles(
+    Deno.makeTempDirSync({ prefix: "ticket-validator-" }),
+    bundle,
+  );
+  writeRequiredEvidenceFiles(directory, bundle);
+  return directory;
+}
+
+function runGit(directory: string, args: readonly string[]): string {
+  const result = new Deno.Command("git", {
+    args: [...args],
+    cwd: directory,
+    stdout: "piped",
+    stderr: "piped",
+  }).outputSync();
+  if (!result.success) {
+    throw new Error(
+      `Git fixture command failed: ${
+        new TextDecoder().decode(result.stderr).trim()
+      }`,
+    );
+  }
+  return new TextDecoder().decode(result.stdout).trim();
+}
+
+async function sha256Text(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return [...new Uint8Array(digest)].map((byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+}
+
+async function writeGitBundleDirectory(
+  options: {
+    readonly redProduction?: boolean;
+    readonly staleCandidate?: boolean;
+    readonly outsideCandidate?: boolean;
+    readonly oversizedRedTest?: boolean;
+    readonly candidateFileCount?: number;
+    readonly longCandidatePaths?: boolean;
+  } = {},
+): Promise<{
+  readonly root: string;
+  readonly ticketDirectory: string;
+  readonly bundle: Record<string, unknown>;
+}> {
+  const root = Deno.makeTempDirSync({ prefix: "ticket-validator-git-" });
+  runGit(root, ["init", "--quiet"]);
+  runGit(root, ["config", "user.email", "workflow@example.invalid"]);
+  runGit(root, ["config", "user.name", "Workflow Test"]);
+  Deno.mkdirSync(`${root}/tools/workflows`, { recursive: true });
+  Deno.writeTextFileSync(`${root}/tools/workflows/base.ts`, "export {};\n");
+  runGit(root, ["add", "--all"]);
+  runGit(root, ["commit", "--quiet", "-m", "base"]);
+  const baseRevision = runGit(root, ["rev-parse", "HEAD"]);
+
+  const testText = options.oversizedRedTest
+    ? `// ${"x".repeat(1_000_000)}\n`
+    : "Deno.test('red proof', () => {});\n";
+  Deno.writeTextFileSync(
+    `${root}/tools/workflows/validate_ticket_test.ts`,
+    testText,
+  );
+  if (options.redProduction) {
+    Deno.writeTextFileSync(
+      `${root}/tools/workflows/ticket_contract.ts`,
+      "export const redProduction = true;\n",
+    );
+  }
+  runGit(root, ["add", "--all"]);
+  runGit(root, ["commit", "--quiet", "-m", "red"]);
+  const redRevision = runGit(root, ["rev-parse", "HEAD"]);
+
+  if (options.staleCandidate) {
+    runGit(root, ["checkout", "--quiet", "--detach", baseRevision]);
+  }
+  const productionPaths = Array.from(
+    { length: options.candidateFileCount ?? 1 },
+    (_, index) => {
+      if (options.outsideCandidate) return "outside/production.ts";
+      if (options.longCandidatePaths) {
+        return `tools/workflows/${"x".repeat(110)}-${index}.ts`;
+      }
+      return options.candidateFileCount === undefined
+        ? "tools/workflows/ticket_contract.ts"
+        : `tools/workflows/generated-${index}.ts`;
+    },
+  );
+  for (const productionPath of productionPaths) {
+    const productionDirectory = productionPath.slice(
+      0,
+      productionPath.lastIndexOf("/"),
+    );
+    Deno.mkdirSync(`${root}/${productionDirectory}`, { recursive: true });
+    Deno.writeTextFileSync(
+      `${root}/${productionPath}`,
+      "export const green = true;\n",
+    );
+  }
+  runGit(root, ["add", "--all"]);
+  runGit(root, ["commit", "--quiet", "-m", "candidate"]);
+  const candidateRevision = runGit(root, ["rev-parse", "HEAD"]);
+
+  const bundle = validBundle();
+  const ticket = asRecord(bundle.ticket);
+  const state = asRecord(bundle.state);
+  ticket.baseRevision = baseRevision;
+  state.baseRevision = baseRevision;
+  state.candidateRevision = candidateRevision;
+  state.acceptedCandidateRevision = candidateRevision;
+  const events = asArray(state.events);
+  asRecord(events[0]).revision = baseRevision;
+  asRecord(events[1]).revision = redRevision;
+  for (const event of events.slice(2)) {
+    asRecord(event).revision = candidateRevision;
+  }
+  bundle.events = structuredClone(events);
+  const result = asRecord(asArray(bundle.results)[0]);
+  result.inputBaseRevision = baseRevision;
+  result.redRevision = redRevision;
+  result.candidateRevision = candidateRevision;
+  asRecord(asArray(asRecord(result.red).testFiles)[0]).sha256 =
+    await sha256Text(
+      testText,
+    );
+  asRecord(result.green).productionFiles = productionPaths;
+  const review = asRecord(asArray(bundle.reviews)[0]);
+  review.baseRevision = baseRevision;
+  review.candidateRevision = candidateRevision;
+  for (const check of asArray(state.orchestratorChecks)) {
+    asRecord(check).revision = candidateRevision;
+  }
+
+  const ticketDirectory = `${root}/docs/planning/tickets/PILOT-001`;
+  writeBundleFiles(ticketDirectory, bundle);
+  writeRequiredEvidenceFiles(ticketDirectory, bundle);
+  return { root, ticketDirectory, bundle };
+}
+
+async function captureValidatorRun(args: readonly string[]): Promise<{
   readonly exitCode: number;
   readonly output: string;
-} {
+}> {
   const lines: string[] = [];
   const originalLog = console.log;
   const originalError = console.error;
@@ -285,7 +454,10 @@ function captureValidatorRun(args: readonly string[]): {
   console.log = capture;
   console.error = capture;
   try {
-    return { exitCode: runTicketValidator(args), output: lines.join("\n") };
+    return {
+      exitCode: await runTicketValidator(args),
+      output: lines.join("\n"),
+    };
   } finally {
     console.log = originalLog;
     console.error = originalError;
@@ -638,10 +810,10 @@ Deno.test("validateTicketBundle rejects duplicate finding IDs and invalid lens v
   );
 });
 
-Deno.test("runTicketValidator accepts a complete temporary ticket directory", () => {
-  const directory = writeBundleDirectory(validBundle());
+Deno.test("runTicketValidator accepts a complete temporary ticket directory", async () => {
+  const fixture = await writeGitBundleDirectory();
   try {
-    const result = captureValidatorRun([directory]);
+    const result = await captureValidatorRun([fixture.ticketDirectory]);
     if (result.exitCode !== 0) {
       throw new Error(
         `Expected CLI exit 0 for a valid directory, received ${result.exitCode}: ${result.output}`,
@@ -651,11 +823,11 @@ Deno.test("runTicketValidator accepts a complete temporary ticket directory", ()
       throw new Error(`Expected safe success JSON, received ${result.output}`);
     }
   } finally {
-    Deno.removeSync(directory, { recursive: true });
+    Deno.removeSync(fixture.root, { recursive: true });
   }
 });
 
-Deno.test("runTicketValidator rejects missing and malformed files safely", () => {
+Deno.test("runTicketValidator rejects missing and malformed files safely", async () => {
   const missingDirectory = Deno.makeTempDirSync({
     prefix: "ticket-validator-missing-",
   });
@@ -663,7 +835,7 @@ Deno.test("runTicketValidator rejects missing and malformed files safely", () =>
     prefix: "ticket-validator-malformed-",
   });
   try {
-    const missing = captureValidatorRun([missingDirectory]);
+    const missing = await captureValidatorRun([missingDirectory]);
     if (missing.exitCode === 0 || !missing.output.includes('"file_missing"')) {
       throw new Error(
         `Expected a file_missing diagnostic, received ${missing.output}`,
@@ -674,7 +846,7 @@ Deno.test("runTicketValidator rejects missing and malformed files safely", () =>
       `${malformedDirectory}/ticket.json`,
       '{"token":"do-not-echo"',
     );
-    const malformed = captureValidatorRun([malformedDirectory]);
+    const malformed = await captureValidatorRun([malformedDirectory]);
     if (
       malformed.exitCode === 0 ||
       !malformed.output.includes('"malformed_json"')
@@ -697,8 +869,8 @@ Deno.test("runTicketValidator rejects missing and malformed files safely", () =>
   }
 });
 
-Deno.test("runTicketValidator rejects an invalid invocation deterministically", () => {
-  const result = captureValidatorRun([]);
+Deno.test("runTicketValidator rejects an invalid invocation deterministically", async () => {
+  const result = await captureValidatorRun([]);
   if (result.exitCode === 0 || !result.output.includes('"usage"')) {
     throw new Error(`Expected a usage diagnostic, received ${result.output}`);
   }
@@ -897,7 +1069,7 @@ Deno.test("validateTicketBundle reports malformed evidence entries", () => {
   }
 });
 
-Deno.test("runTicketValidator bounds files and ledger input", () => {
+Deno.test("runTicketValidator bounds files and ledger input", async () => {
   const oversizedDirectory = Deno.makeTempDirSync({
     prefix: "ticket-validator-oversized-",
   });
@@ -907,7 +1079,7 @@ Deno.test("runTicketValidator bounds files and ledger input", () => {
       `${oversizedDirectory}/ticket.json`,
       "x".repeat(1_000_001),
     );
-    const oversized = captureValidatorRun([oversizedDirectory]);
+    const oversized = await captureValidatorRun([oversizedDirectory]);
     if (
       oversized.exitCode === 0 ||
       !oversized.output.includes('"file_too_large"')
@@ -921,7 +1093,7 @@ Deno.test("runTicketValidator bounds files and ledger input", () => {
       `${ledgerDirectory}/events.jsonl`,
       `${Array.from({ length: 1_001 }, () => "{}").join("\n")}\n`,
     );
-    const ledger = captureValidatorRun([ledgerDirectory]);
+    const ledger = await captureValidatorRun([ledgerDirectory]);
     if (ledger.exitCode === 0 || !ledger.output.includes('"file_too_large"')) {
       throw new Error(
         `Expected a ledger bound diagnostic, received ${ledger.output}`,
@@ -933,12 +1105,12 @@ Deno.test("runTicketValidator bounds files and ledger input", () => {
   }
 });
 
-Deno.test("runTicketValidator rejects malformed ledger lines and missing references", () => {
+Deno.test("runTicketValidator rejects malformed ledger lines and missing references", async () => {
   const malformedDirectory = writeBundleDirectory(validBundle());
   const missingReferenceDirectory = writeBundleDirectory(validBundle());
   try {
     Deno.writeTextFileSync(`${malformedDirectory}/events.jsonl`, "not-json\n");
-    const malformed = captureValidatorRun([malformedDirectory]);
+    const malformed = await captureValidatorRun([malformedDirectory]);
     if (
       malformed.exitCode === 0 ||
       !malformed.output.includes('"malformed_json"')
@@ -949,7 +1121,7 @@ Deno.test("runTicketValidator rejects malformed ledger lines and missing referen
     }
 
     Deno.removeSync(`${missingReferenceDirectory}/results/round-01.json`);
-    const missing = captureValidatorRun([missingReferenceDirectory]);
+    const missing = await captureValidatorRun([missingReferenceDirectory]);
     if (missing.exitCode === 0 || !missing.output.includes('"file_missing"')) {
       throw new Error(
         `Expected a missing reference diagnostic: ${missing.output}`,
@@ -961,12 +1133,12 @@ Deno.test("runTicketValidator rejects malformed ledger lines and missing referen
   }
 });
 
-Deno.test("runTicketValidator never follows unsafe evidence references", () => {
+Deno.test("runTicketValidator never follows unsafe evidence references", async () => {
   const bundle = validBundle();
   asRecord(bundle.state).resultRefs = ["../outside.json"];
   const directory = writeBundleDirectory(bundle);
   try {
-    const result = captureValidatorRun([directory]);
+    const result = await captureValidatorRun([directory]);
     if (
       result.exitCode === 0 ||
       !result.output.includes('"path_traversal"')
@@ -980,20 +1152,20 @@ Deno.test("runTicketValidator never follows unsafe evidence references", () => {
   }
 });
 
-Deno.test("runTicketValidator handles non-files and unreadable paths safely", () => {
+Deno.test("runTicketValidator handles non-files and unreadable paths safely", async () => {
   const directory = Deno.makeTempDirSync({
     prefix: "ticket-validator-nonfile-",
   });
   try {
     Deno.mkdirSync(`${directory}/ticket.json`);
-    const nonFile = captureValidatorRun([directory]);
+    const nonFile = await captureValidatorRun([directory]);
     if (nonFile.exitCode === 0 || !nonFile.output.includes('"file_missing"')) {
       throw new Error(
         `Expected a non-file diagnostic, received ${nonFile.output}`,
       );
     }
 
-    const unreadable = captureValidatorRun(["\0"]);
+    const unreadable = await captureValidatorRun(["\0"]);
     if (
       unreadable.exitCode === 0 ||
       !unreadable.output.includes('"file_unreadable"')
@@ -1007,14 +1179,14 @@ Deno.test("runTicketValidator handles non-files and unreadable paths safely", ()
   }
 });
 
-Deno.test("runTicketValidator rejects malformed root task configuration", () => {
+Deno.test("runTicketValidator rejects malformed root task configuration", async () => {
   const directory = writeBundleDirectory(validBundle());
   const fakeRoot = Deno.makeTempDirSync({ prefix: "ticket-validator-config-" });
   const originalDirectory = Deno.cwd();
   try {
     Deno.writeTextFileSync(`${fakeRoot}/deno.json`, "{}\n");
     Deno.chdir(fakeRoot);
-    const result = captureValidatorRun([directory]);
+    const result = await captureValidatorRun([directory]);
     if (result.exitCode === 0 || !result.output.includes('"invalid_type"')) {
       throw new Error(`Expected a tasks diagnostic, received ${result.output}`);
     }
@@ -1025,7 +1197,7 @@ Deno.test("runTicketValidator rejects malformed root task configuration", () => 
   }
 });
 
-Deno.test("runTicketValidator maps unexpected failures without a stack", () => {
+Deno.test("runTicketValidator maps unexpected failures without a stack", async () => {
   const directory = writeBundleDirectory(validBundle());
   const originalLog = console.log;
   const lines: string[] = [];
@@ -1038,7 +1210,7 @@ Deno.test("runTicketValidator maps unexpected failures without a stack", () => {
     lines.push(values.map(String).join(" "));
   };
   try {
-    const exitCode = runTicketValidator([directory]);
+    const exitCode = await runTicketValidator([directory]);
     const output = lines.join("\n");
     if (exitCode === 0 || !output.includes('"io_error"')) {
       throw new Error(`Expected a safe I/O diagnostic, received ${output}`);
@@ -1079,15 +1251,16 @@ Deno.test("validateTicketBundle identifies a malformed event destination", () =>
   );
 });
 
-Deno.test("validate_ticket CLI entry point exits zero for a valid directory", () => {
-  const directory = writeBundleDirectory(validBundle());
+Deno.test("validate_ticket CLI entry point exits zero for a valid directory", async () => {
+  const fixture = await writeGitBundleDirectory();
   try {
     const result = new Deno.Command(Deno.execPath(), {
       args: [
         "run",
         "--allow-read",
+        "--allow-run=git",
         "tools/workflows/validate_ticket.ts",
-        directory,
+        fixture.ticketDirectory,
       ],
       cwd: new URL("../../", import.meta.url),
       stdout: "piped",
@@ -1101,7 +1274,7 @@ Deno.test("validate_ticket CLI entry point exits zero for a valid directory", ()
       );
     }
   } finally {
-    Deno.removeSync(directory, { recursive: true });
+    Deno.removeSync(fixture.root, { recursive: true });
   }
 });
 
@@ -1124,4 +1297,837 @@ Deno.test("validateTicketBundle rejects accepted state without lifecycle or revi
     "$.state.events",
     "lifecycle_incomplete",
   );
+});
+
+Deno.test("validateTicketBundle enforces phase-aware lifecycle record agreement", () => {
+  const cases: Array<{
+    readonly mutate: (bundle: Record<string, unknown>) => void;
+    readonly path: string;
+    readonly code: string;
+  }> = [
+    {
+      mutate: (bundle) => {
+        asArray(asRecord(bundle.state).events).pop();
+        asArray(bundle.events).pop();
+      },
+      path: "$.state.events",
+      code: "lifecycle_incomplete",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(bundle.state).resultRefs = [];
+        bundle.results = [];
+      },
+      path: "$.results",
+      code: "lifecycle_incomplete",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(bundle.state).reviewRefs = [];
+        bundle.reviews = [];
+      },
+      path: "$.reviews",
+      code: "review_required",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(bundle.results)[0]).ticketId = "OTHER-001";
+      },
+      path: "$.results[0].ticketId",
+      code: "ticket_mismatch",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(bundle.results)[0]).ticketRevision = 2;
+      },
+      path: "$.results[0].ticketRevision",
+      code: "ticket_revision_mismatch",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(bundle.reviews)[0]).round = 2;
+      },
+      path: "$.reviews[0].round",
+      code: "round_mismatch",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(bundle.reviews)[0]).implementerRunId =
+          "different-implementer";
+      },
+      path: "$.reviews[0].implementerRunId",
+      code: "run_mismatch",
+    },
+    {
+      mutate: (bundle) => {
+        const state = asRecord(bundle.state);
+        const stateEvent = asRecord(asArray(state.events)[1]);
+        const ledgerEvent = asRecord(asArray(bundle.events)[1]);
+        stateEvent.actorRunId = "different-implementer";
+        ledgerEvent.actorRunId = "different-implementer";
+      },
+      path: "$.state.events[1].actorRunId",
+      code: "run_mismatch",
+    },
+  ];
+
+  for (const testCase of cases) {
+    const bundle = validBundle();
+    testCase.mutate(bundle);
+    assertIssue(
+      validateTicketBundle(bundle, AVAILABLE_TASKS),
+      testCase.path,
+      testCase.code,
+    );
+  }
+});
+
+Deno.test("validateTicketBundle rejects malformed and contradictory semantic records", () => {
+  const addFinding = (
+    bundle: Record<string, unknown>,
+  ): Record<string, unknown> => {
+    const finding: Record<string, unknown> = {
+      id: "WFR-001",
+      lens: "tests_tdd",
+      severity: "P1",
+      location: "tools/workflows/ticket_contract.ts:validateTicketBundle",
+      expectedBehavior: "Valid evidence is accepted.",
+      observedBehavior: "Malformed evidence was accepted.",
+      reproduction: "Run the focused semantic mutant test.",
+      impact: "Ticket evidence could be meaningless.",
+      affectedCriterion: "AC-01",
+      contractRef: "AGENTS.md#mandatory-change-method",
+      requiredRemediation: "Validate required semantic values.",
+      verification: "The semantic mutant test passes.",
+      status: "resolved",
+    };
+    asRecord(asArray(bundle.reviews)[0]).findings = [finding];
+    return finding;
+  };
+  const cases: Array<{
+    readonly mutate: (bundle: Record<string, unknown>) => void;
+    readonly path: string;
+    readonly code: string;
+  }> = [
+    {
+      mutate: (bundle) => void (asRecord(bundle.ticket).baseRevision = 42),
+      path: "$.ticket.baseRevision",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => void (asRecord(bundle.ticket).title = "  "),
+      path: "$.ticket.title",
+      code: "empty_value",
+    },
+    {
+      mutate: (bundle) => void (asRecord(bundle.ticket).dependencies = false),
+      path: "$.ticket.dependencies",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => {
+        asArray(asRecord(bundle.ticket).requiredTasks).push("lint");
+      },
+      path: "$.ticket.requiredTasks[7]",
+      code: "duplicate_value",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(asRecord(bundle.ticket).acceptanceCriteria)[0]).text =
+          null;
+      },
+      path: "$.ticket.acceptanceCriteria[0].text",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(bundle.results)[0]).dispatchRef = null;
+      },
+      path: "$.results[0].dispatchRef",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => {
+        const red = asRecord(asRecord(asArray(bundle.results)[0]).red);
+        asRecord(asArray(red.testFiles)[0]).sha256 = 42;
+      },
+      path: "$.results[0].red.testFiles[0].sha256",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => {
+        const red = asRecord(asRecord(asArray(bundle.results)[0]).red);
+        asArray(red.testFiles).push(structuredClone(asArray(red.testFiles)[0]));
+      },
+      path: "$.results[0].red.testFiles[1].path",
+      code: "duplicate_value",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(bundle.reviews)[0]).verdict = "MAYBE";
+      },
+      path: "$.reviews[0].verdict",
+      code: "invalid_value",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(bundle.reviews)[0]).commands = [42];
+      },
+      path: "$.reviews[0].commands[0]",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => {
+        const review = asRecord(asArray(bundle.reviews)[0]);
+        asRecord(asRecord(review.lenses).tests_tdd).evidence = [""];
+      },
+      path: "$.reviews[0].lenses.tests_tdd.evidence[0]",
+      code: "empty_value",
+    },
+    {
+      mutate: (bundle) => void (addFinding(bundle).lens = "unknown"),
+      path: "$.reviews[0].findings[0].lens",
+      code: "invalid_value",
+    },
+    {
+      mutate: (bundle) => void (addFinding(bundle).severity = "P9"),
+      path: "$.reviews[0].findings[0].severity",
+      code: "invalid_value",
+    },
+    {
+      mutate: (bundle) => void (addFinding(bundle).status = "ignored"),
+      path: "$.reviews[0].findings[0].status",
+      code: "invalid_value",
+    },
+    {
+      mutate: (bundle) =>
+        void (
+          addFinding(bundle).affectedCriterion = "AC-404"
+        ),
+      path: "$.reviews[0].findings[0].affectedCriterion",
+      code: "unknown_reference",
+    },
+    {
+      mutate: (bundle) =>
+        void (
+          addFinding(bundle).contractRef = "docs/unknown.md"
+        ),
+      path: "$.reviews[0].findings[0].contractRef",
+      code: "unknown_reference",
+    },
+    {
+      mutate: (bundle) => {
+        const review = asRecord(asArray(bundle.reviews)[0]);
+        asRecord(asRecord(review.lenses).tests_tdd).verdict = "fail";
+      },
+      path: "$.reviews[0].verdict",
+      code: "verdict_conflict",
+    },
+  ];
+
+  for (const testCase of cases) {
+    const bundle = validBundle();
+    testCase.mutate(bundle);
+    assertIssue(
+      validateTicketBundle(bundle, AVAILABLE_TASKS),
+      testCase.path,
+      testCase.code,
+    );
+  }
+});
+
+Deno.test("result evidence template contains a valid dispatch reference", () => {
+  const template = JSON.parse(
+    Deno.readTextFileSync(
+      new URL(
+        "../../.agents/skills/run-tdd-ticket-loop/assets/result.template.json",
+        import.meta.url,
+      ),
+    ),
+  );
+  if (template.dispatchRef !== "dispatch/round-01.md") {
+    throw new Error(
+      `Expected round dispatch reference, received ${template.dispatchRef}`,
+    );
+  }
+});
+
+Deno.test("runTicketValidator bounds duplicate count and aggregate references", async () => {
+  const duplicateBundle = validBundle();
+  asRecord(duplicateBundle.state).resultRefs = [
+    "results/round-01.json",
+    "results/round-01.json",
+  ];
+  const duplicateDirectory = writeBundleDirectory(duplicateBundle);
+
+  const countBundle = validBundle();
+  asRecord(countBundle.state).resultRefs = Array.from(
+    { length: 101 },
+    (_, index) => `results/count-${index}.json`,
+  );
+  const countDirectory = writeBundleDirectory(countBundle);
+
+  const aggregateBundle = validBundle();
+  const aggregateRefs = Array.from(
+    { length: 6 },
+    (_, index) => `results/aggregate-${index}.json`,
+  );
+  asRecord(aggregateBundle.state).resultRefs = aggregateRefs;
+  const aggregateDirectory = writeBundleDirectory(aggregateBundle);
+  try {
+    for (const reference of aggregateRefs) {
+      Deno.writeTextFileSync(
+        `${aggregateDirectory}/${reference}`,
+        JSON.stringify({ padding: "x".repeat(899_900) }),
+      );
+    }
+
+    const duplicate = await captureValidatorRun([duplicateDirectory]);
+    const count = await captureValidatorRun([countDirectory]);
+    const aggregate = await captureValidatorRun([aggregateDirectory]);
+    const diagnostics = [
+      [duplicate, "duplicate_reference"],
+      [count, "reference_limit"],
+      [aggregate, "aggregate_too_large"],
+    ] as const;
+    const missing = diagnostics.filter(([result, code]) =>
+      result.exitCode === 0 || !result.output.includes(`"${code}"`)
+    );
+    if (missing.length > 0) {
+      throw new Error(
+        `Expected bounded reference diagnostics, missing ${
+          missing.map(([, code]) => code).join(",")
+        }`,
+      );
+    }
+  } finally {
+    Deno.removeSync(duplicateDirectory, { recursive: true });
+    Deno.removeSync(countDirectory, { recursive: true });
+    Deno.removeSync(aggregateDirectory, { recursive: true });
+  }
+});
+
+Deno.test("runTicketValidator verifies Git content-addressed TDD lineage", async () => {
+  const genuine = await writeGitBundleDirectory();
+  const redProduction = await writeGitBundleDirectory({ redProduction: true });
+  const staleCandidate = await writeGitBundleDirectory({
+    staleCandidate: true,
+  });
+  const outsideCandidate = await writeGitBundleDirectory({
+    outsideCandidate: true,
+  });
+  const oversizedRedTest = await writeGitBundleDirectory({
+    oversizedRedTest: true,
+  });
+  const excessivePaths = await writeGitBundleDirectory({
+    candidateFileCount: 101,
+  });
+  const excessiveOutput = await writeGitBundleDirectory({
+    candidateFileCount: 80,
+    longCandidatePaths: true,
+  });
+  const brokenTree = await writeGitBundleDirectory();
+  try {
+    const genuineRun = await captureValidatorRun([genuine.ticketDirectory]);
+
+    const exactAllowedBundle = structuredClone(genuine.bundle);
+    asRecord(exactAllowedBundle.ticket).allowedWrites = [
+      "tools/workflows/validate_ticket_test.ts",
+      "tools/workflows/ticket_contract.ts",
+    ];
+    writeBundleFiles(genuine.ticketDirectory, exactAllowedBundle);
+    const exactAllowed = await captureValidatorRun([genuine.ticketDirectory]);
+
+    const integratedBundle = structuredClone(genuine.bundle);
+    const integratedState = asRecord(integratedBundle.state);
+    integratedState.phase = "integrated";
+    const integratedEvents = asArray(integratedState.events);
+    integratedEvents.push({
+      sequence: 7,
+      from: "accepted",
+      to: "integrated",
+      round: 1,
+      actorRunId: "orchestrator-integrate-20260811",
+      evidenceRef: "acceptance.md",
+      revision: integratedState.candidateRevision,
+    });
+    integratedBundle.events = structuredClone(integratedEvents);
+    writeBundleFiles(genuine.ticketDirectory, integratedBundle);
+    const integrated = await captureValidatorRun([genuine.ticketDirectory]);
+
+    const wrongHashBundle = structuredClone(genuine.bundle);
+    const wrongHashResult = asRecord(asArray(wrongHashBundle.results)[0]);
+    asRecord(asArray(asRecord(wrongHashResult.red).testFiles)[0]).sha256 = "0"
+      .repeat(64);
+    writeBundleFiles(genuine.ticketDirectory, wrongHashBundle);
+    const wrongHash = await captureValidatorRun([genuine.ticketDirectory]);
+
+    const missingBlobBundle = structuredClone(genuine.bundle);
+    const missingBlobResult = asRecord(asArray(missingBlobBundle.results)[0]);
+    asRecord(asArray(asRecord(missingBlobResult.red).testFiles)[0]).path =
+      "tools/workflows/missing_test.ts";
+    writeBundleFiles(genuine.ticketDirectory, missingBlobBundle);
+    const missingBlob = await captureValidatorRun([genuine.ticketDirectory]);
+
+    const nonexistentBundle = structuredClone(genuine.bundle);
+    const nonexistentState = asRecord(nonexistentBundle.state);
+    const nonexistentBase = "d".repeat(40);
+    const nonexistentRed = "e".repeat(40);
+    const nonexistentCandidate = "f".repeat(40);
+    asRecord(nonexistentBundle.ticket).baseRevision = nonexistentBase;
+    nonexistentState.baseRevision = nonexistentBase;
+    nonexistentState.candidateRevision = nonexistentCandidate;
+    nonexistentState.acceptedCandidateRevision = nonexistentCandidate;
+    const nonexistentEvents = asArray(nonexistentState.events);
+    asRecord(nonexistentEvents[0]).revision = nonexistentBase;
+    asRecord(nonexistentEvents[1]).revision = nonexistentRed;
+    for (const event of nonexistentEvents.slice(2)) {
+      asRecord(event).revision = nonexistentCandidate;
+    }
+    nonexistentBundle.events = structuredClone(nonexistentEvents);
+    const nonexistentResult = asRecord(asArray(nonexistentBundle.results)[0]);
+    nonexistentResult.inputBaseRevision = nonexistentBase;
+    nonexistentResult.redRevision = nonexistentRed;
+    nonexistentResult.candidateRevision = nonexistentCandidate;
+    const nonexistentReview = asRecord(asArray(nonexistentBundle.reviews)[0]);
+    nonexistentReview.baseRevision = nonexistentBase;
+    nonexistentReview.candidateRevision = nonexistentCandidate;
+    for (const check of asArray(nonexistentState.orchestratorChecks)) {
+      asRecord(check).revision = nonexistentCandidate;
+    }
+    writeBundleFiles(genuine.ticketDirectory, nonexistentBundle);
+    const nonexistent = await captureValidatorRun([genuine.ticketDirectory]);
+
+    const brokenCandidate = asRecord(brokenTree.bundle.state)
+      .candidateRevision as string;
+    const brokenTreeRevision = runGit(brokenTree.root, [
+      "show",
+      "-s",
+      "--format=%T",
+      brokenCandidate,
+    ]);
+    const objectsRoot = await Deno.realPath(`${brokenTree.root}/.git/objects`);
+    const brokenObject = await Deno.realPath(
+      `${objectsRoot}/${brokenTreeRevision.slice(0, 2)}/${
+        brokenTreeRevision.slice(2)
+      }`,
+    );
+    if (!brokenObject.startsWith(`${objectsRoot}\\`)) {
+      throw new Error("Git fixture object escaped its temporary repository");
+    }
+    Deno.removeSync(brokenObject);
+    const brokenDiff = await captureValidatorRun([brokenTree.ticketDirectory]);
+
+    const diagnostics = [
+      [wrongHash, "content_hash_mismatch"],
+      [missingBlob, "content_missing"],
+      [nonexistent, "revision_not_found"],
+      [
+        await captureValidatorRun([redProduction.ticketDirectory]),
+        "red_scope_violation",
+      ],
+      [
+        await captureValidatorRun([staleCandidate.ticketDirectory]),
+        "ancestry_mismatch",
+      ],
+      [
+        await captureValidatorRun([outsideCandidate.ticketDirectory]),
+        "candidate_scope_violation",
+      ],
+      [
+        await captureValidatorRun([oversizedRedTest.ticketDirectory]),
+        "git_output_limit",
+      ],
+      [
+        await captureValidatorRun([excessivePaths.ticketDirectory]),
+        "git_output_limit",
+      ],
+      [
+        await captureValidatorRun([excessiveOutput.ticketDirectory]),
+        "git_output_limit",
+      ],
+      [brokenDiff, "git_output_limit"],
+    ] as const;
+    const missing = diagnostics.filter(([result, code]) =>
+      result.exitCode === 0 || !result.output.includes(`"${code}"`)
+    );
+    if (
+      genuineRun.exitCode !== 0 || exactAllowed.exitCode !== 0 ||
+      integrated.exitCode !== 0 || missing.length > 0
+    ) {
+      throw new Error(
+        `Expected genuine Git lineage and forged-evidence diagnostics; genuine=${genuineRun.output}; exact=${exactAllowed.output}; integrated=${integrated.output}; missing=${
+          missing.map(([, code]) => code).join(",")
+        }`,
+      );
+    }
+  } finally {
+    Deno.removeSync(genuine.root, { recursive: true });
+    Deno.removeSync(redProduction.root, { recursive: true });
+    Deno.removeSync(staleCandidate.root, { recursive: true });
+    Deno.removeSync(outsideCandidate.root, { recursive: true });
+    Deno.removeSync(oversizedRedTest.root, { recursive: true });
+    Deno.removeSync(excessivePaths.root, { recursive: true });
+    Deno.removeSync(excessiveOutput.root, { recursive: true });
+    Deno.removeSync(brokenTree.root, { recursive: true });
+  }
+});
+
+Deno.test("workflow tasks grant only the required Git subprocess permission", () => {
+  const config = JSON.parse(
+    Deno.readTextFileSync(new URL("../../deno.json", import.meta.url)),
+  );
+  const expected = [
+    ["ticket:validate", "--allow-run=git"],
+    ["test:workflow", "--allow-run=deno,git"],
+    ["test:workflow:coverage", "--allow-run=deno,git"],
+  ] as const;
+  for (const [task, permission] of expected) {
+    if (!String(config.tasks[task]).includes(permission)) {
+      throw new Error(`Expected ${task} to include ${permission}`);
+    }
+  }
+});
+
+Deno.test("runTicketValidator requires exact complete evidence mappings", async () => {
+  const fixture = await writeGitBundleDirectory();
+  const directory = fixture.ticketDirectory;
+  try {
+    const complete = await captureValidatorRun([directory]);
+
+    Deno.removeSync(`${directory}/dispatch/round-01.md`);
+    const missingDispatch = await captureValidatorRun([directory]);
+    writeRequiredEvidenceFiles(directory, fixture.bundle);
+
+    Deno.removeSync(`${directory}/evidence/round-01-red.log`);
+    const missingLog = await captureValidatorRun([directory]);
+    writeRequiredEvidenceFiles(directory, fixture.bundle);
+
+    Deno.removeSync(`${directory}/acceptance.md`);
+    const missingAcceptance = await captureValidatorRun([directory]);
+    writeRequiredEvidenceFiles(directory, fixture.bundle);
+
+    const wrongPrefixBundle = structuredClone(fixture.bundle);
+    asRecord(wrongPrefixBundle.state).resultRefs = ["evidence/ignored.json"];
+    writeBundleFiles(directory, wrongPrefixBundle);
+    const wrongPrefix = await captureValidatorRun([directory]);
+
+    const mismatchedRoundBundle = structuredClone(fixture.bundle);
+    asRecord(mismatchedRoundBundle.state).resultRefs = [
+      "results/round-02.json",
+    ];
+    writeBundleFiles(directory, mismatchedRoundBundle);
+    Deno.writeTextFileSync(
+      `${directory}/results/round-02.json`,
+      `${JSON.stringify(asArray(mismatchedRoundBundle.results)[0], null, 2)}\n`,
+    );
+    const mismatchedRound = await captureValidatorRun([directory]);
+
+    writeBundleFiles(directory, fixture.bundle);
+    Deno.removeSync(`${directory}/evidence/round-01-green.log`);
+    Deno.mkdirSync(`${directory}/evidence/round-01-green.log`);
+    const nonFileLog = await captureValidatorRun([directory]);
+    Deno.removeSync(`${directory}/evidence/round-01-green.log`, {
+      recursive: true,
+    });
+    writeRequiredEvidenceFiles(directory, fixture.bundle);
+
+    Deno.writeTextFileSync(
+      `${directory}/evidence/round-01-refactor.log`,
+      "x".repeat(1_000_001),
+    );
+    const oversizedLog = await captureValidatorRun([directory]);
+    writeRequiredEvidenceFiles(directory, fixture.bundle);
+
+    const dispatchMismatchBundle = structuredClone(fixture.bundle);
+    asRecord(asArray(dispatchMismatchBundle.results)[0]).dispatchRef =
+      "dispatch/round-02.md";
+    writeBundleFiles(directory, dispatchMismatchBundle);
+    writeRequiredEvidenceFiles(directory, dispatchMismatchBundle);
+    const dispatchMismatch = await captureValidatorRun([directory]);
+
+    const logMismatchBundle = structuredClone(fixture.bundle);
+    asRecord(asRecord(asArray(logMismatchBundle.results)[0]).red).logRef =
+      "evidence/round-02-red.log";
+    writeBundleFiles(directory, logMismatchBundle);
+    writeRequiredEvidenceFiles(directory, logMismatchBundle);
+    const logMismatch = await captureValidatorRun([directory]);
+
+    const reviewMismatchBundle = structuredClone(fixture.bundle);
+    asRecord(reviewMismatchBundle.state).reviewRefs = [
+      "reviews/round-02.json",
+    ];
+    writeBundleFiles(directory, reviewMismatchBundle);
+    Deno.writeTextFileSync(
+      `${directory}/reviews/round-02.json`,
+      `${JSON.stringify(asArray(reviewMismatchBundle.reviews)[0], null, 2)}\n`,
+    );
+    const reviewMismatch = await captureValidatorRun([directory]);
+
+    const eventMismatchBundle = structuredClone(fixture.bundle);
+    asRecord(asArray(asRecord(eventMismatchBundle.state).events)[0])
+      .evidenceRef = "acceptance.md";
+    asRecord(asArray(eventMismatchBundle.events)[0]).evidenceRef =
+      "acceptance.md";
+    writeBundleFiles(directory, eventMismatchBundle);
+    const eventMismatch = await captureValidatorRun([directory]);
+
+    const diagnostics = [
+      [missingDispatch, "file_missing"],
+      [missingLog, "file_missing"],
+      [missingAcceptance, "file_missing"],
+      [wrongPrefix, "invalid_reference"],
+      [mismatchedRound, "reference_mismatch"],
+      [nonFileLog, "file_missing"],
+      [oversizedLog, "file_too_large"],
+      [dispatchMismatch, "reference_mismatch"],
+      [logMismatch, "reference_mismatch"],
+      [reviewMismatch, "reference_mismatch"],
+      [eventMismatch, "reference_mismatch"],
+    ] as const;
+    const missing = diagnostics.filter(([result, code]) =>
+      result.exitCode === 0 || !result.output.includes(`"${code}"`)
+    );
+    if (complete.exitCode !== 0 || missing.length > 0) {
+      throw new Error(
+        `Expected complete evidence and exact mapping diagnostics; complete=${complete.output}; missing=${
+          missing.map(([, code]) => code).join(",")
+        }`,
+      );
+    }
+  } finally {
+    Deno.removeSync(fixture.root, { recursive: true });
+  }
+});
+
+Deno.test("validateTicketBundle covers strict collection and record diagnostics", () => {
+  const cases: Array<{
+    readonly mutate: (bundle: Record<string, unknown>) => void;
+    readonly path: string;
+    readonly code: string;
+  }> = [
+    {
+      mutate: (bundle) => void (delete asRecord(bundle.state).round),
+      path: "$.state.round",
+      code: "required_field",
+    },
+    {
+      mutate: (bundle) => {
+        const red = asRecord(asRecord(asArray(bundle.results)[0]).red);
+        delete asRecord(asArray(red.testFiles)[0]).sha256;
+      },
+      path: "$.results[0].red.testFiles[0].sha256",
+      code: "required_field",
+    },
+    {
+      mutate: (bundle) => void (asRecord(bundle.state).round = 1.5),
+      path: "$.state.round",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => void (asRecord(bundle.ticket).allowedWrites = 42),
+      path: "$.ticket.allowedWrites",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(bundle.ticket).allowedWrites = [
+          "tools/workflows/",
+          "tools/workflows/",
+        ];
+      },
+      path: "$.ticket.allowedWrites[1]",
+      code: "duplicate_value",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(bundle.ticket).acceptanceCriteria = 42;
+      },
+      path: "$.ticket.acceptanceCriteria",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(bundle.ticket).acceptanceCriteria = [];
+      },
+      path: "$.ticket.acceptanceCriteria",
+      code: "evidence_required",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(asRecord(bundle.state).events)[0]).from = "unknown";
+        asRecord(asArray(bundle.events)[0]).from = "unknown";
+      },
+      path: "$.state.events[0]",
+      code: "invalid_value",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(bundle.results)[0]).schemaVersion = 2;
+      },
+      path: "$.results[0].schemaVersion",
+      code: "invalid_value",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(bundle.results)[0]).refactor = 42;
+      },
+      path: "$.results[0].refactor",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(bundle.reviews)[0]).schemaVersion = 2;
+      },
+      path: "$.reviews[0].schemaVersion",
+      code: "invalid_value",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(bundle.reviews)[0]).commands = 42;
+      },
+      path: "$.reviews[0].commands",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(bundle.reviews)[0]).findings = 42;
+      },
+      path: "$.reviews[0].findings",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(bundle.reviews)[0]).verdict = "CHANGES_REQUESTED";
+      },
+      path: "$.reviews[0].verdict",
+      code: "verdict_conflict",
+    },
+    {
+      mutate: (bundle) => void (asRecord(bundle.state).schemaVersion = 2),
+      path: "$.state.schemaVersion",
+      code: "invalid_value",
+    },
+    {
+      mutate: (bundle) => void (asRecord(bundle.state).phase = "unknown"),
+      path: "$.state.phase",
+      code: "invalid_value",
+    },
+    {
+      mutate: (bundle) => void (asRecord(bundle.state).blocker = 42),
+      path: "$.state.blocker",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(bundle.state).dependencyRevisions = { UNKNOWN: 42 };
+      },
+      path: "$.state.dependencyRevisions.UNKNOWN",
+      code: "unknown_reference",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(bundle.state).openFindingIds = ["WFR-001", "WFR-001"];
+      },
+      path: "$.state.openFindingIds[1]",
+      code: "duplicate_value",
+    },
+    {
+      mutate: (bundle) => void (asRecord(bundle.state).openFindingIds = 42),
+      path: "$.state.openFindingIds",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => void (asRecord(bundle.state).resultRefs = 42),
+      path: "$.state.resultRefs",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => void (asRecord(bundle.state).reviewRefs = 42),
+      path: "$.state.reviewRefs",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => {
+        const checks = asArray(asRecord(bundle.state).orchestratorChecks);
+        asRecord(checks[1]).command = asRecord(checks[0]).command;
+      },
+      path: "$.state.orchestratorChecks[1].command",
+      code: "duplicate_value",
+    },
+    {
+      mutate: (bundle) => {
+        const checks = asArray(asRecord(bundle.state).orchestratorChecks);
+        asRecord(checks[1]).runId = asRecord(checks[0]).runId;
+      },
+      path: "$.state.orchestratorChecks[1].runId",
+      code: "duplicate_value",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(bundle.state).orchestratorChecks = 42;
+      },
+      path: "$.state.orchestratorChecks",
+      code: "invalid_type",
+    },
+    {
+      mutate: (bundle) => void (asRecord(bundle.state).ticketRevision = 2),
+      path: "$.state.ticketRevision",
+      code: "ticket_revision_mismatch",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(bundle.reviews)[0]).ticketId = "OTHER-001";
+      },
+      path: "$.reviews[0].ticketId",
+      code: "ticket_mismatch",
+    },
+    {
+      mutate: (bundle) => {
+        asRecord(asArray(bundle.reviews)[0]).ticketRevision = 2;
+      },
+      path: "$.reviews[0].ticketRevision",
+      code: "ticket_revision_mismatch",
+    },
+  ];
+  for (const testCase of cases) {
+    const bundle = validBundle();
+    testCase.mutate(bundle);
+    assertIssue(
+      validateTicketBundle(bundle, AVAILABLE_TASKS),
+      testCase.path,
+      testCase.code,
+    );
+  }
+
+  const commandObjectBundle = validBundle();
+  asRecord(asArray(commandObjectBundle.reviews)[0]).commands = [{
+    command: "deno task test:workflow",
+    exitCode: 0,
+  }];
+  assertNoIssues(
+    validateTicketBundle(commandObjectBundle, AVAILABLE_TASKS),
+  );
+});
+
+Deno.test("runTicketValidator rejects malformed references and non-repositories", async () => {
+  const malformedBundle = validBundle();
+  asRecord(malformedBundle.state).resultRefs = [42];
+  const malformedDirectory = writeBundleDirectory(malformedBundle);
+  const nonRepositoryDirectory = writeBundleDirectory(validBundle());
+  try {
+    const malformed = await captureValidatorRun([malformedDirectory]);
+    const nonRepository = await captureValidatorRun([nonRepositoryDirectory]);
+    if (
+      !malformed.output.includes('"invalid_type"') ||
+      !nonRepository.output.includes('"repository_unavailable"')
+    ) {
+      throw new Error(
+        `Expected malformed-reference and repository diagnostics: ${malformed.output}; ${nonRepository.output}`,
+      );
+    }
+  } finally {
+    Deno.removeSync(malformedDirectory, { recursive: true });
+    Deno.removeSync(nonRepositoryDirectory, { recursive: true });
+  }
 });

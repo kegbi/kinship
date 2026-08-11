@@ -5,7 +5,7 @@
   "round": 1,
   "implementerRunId": "<fresh implementer run ID>",
   "inputBaseRevision": "<40-character Git SHA>",
-  "dispatchRef": null,
+  "dispatchRef": "dispatch/round-01.md",
   "redRevision": "<40-character test-only RED Git SHA>",
   "red": {
     "command": "<focused command>",
