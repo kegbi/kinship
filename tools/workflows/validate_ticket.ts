@@ -12,6 +12,7 @@ const MAX_LEDGER_EVENTS = 1_000;
 const MAX_REFERENCES = 100;
 const MAX_AGGREGATE_BYTES = 5_000_000;
 const MAX_GIT_OUTPUT_BYTES = 10_000;
+const MAX_GIT_BLOB_BYTES = 5_000_000;
 const MAX_CHANGED_PATHS = 100;
 
 interface ReadBudget {
@@ -37,6 +38,12 @@ interface GitResult {
   readonly output: Uint8Array;
   readonly limited: boolean;
 }
+
+interface GitBlobBudget {
+  remaining: number;
+}
+
+type GitBlobValidation = "valid" | "invalid";
 
 async function runGit(
   ticketDirectory: string,
@@ -194,8 +201,16 @@ async function validateGitBlob(
   expectedSha256: string,
   readFailures: readonly [ValidationIssue, ValidationIssue],
   hashMismatch: ValidationIssue,
+  aggregateLimit: ValidationIssue,
   issues: ValidationIssue[],
-): Promise<boolean> {
+  budget: GitBlobBudget,
+): Promise<GitBlobValidation> {
+  if (outputLimitBytes > budget.remaining) {
+    issues.push(aggregateLimit);
+    budget.remaining = -1;
+    return "invalid";
+  }
+  budget.remaining -= outputLimitBytes;
   const blob = await runGit(
     ticketDirectory,
     ["show", blobSpec],
@@ -203,13 +218,13 @@ async function validateGitBlob(
   );
   if (!blob.success) {
     issues.push(readFailures[Number(blob.limited)]!);
-    return false;
+    return "invalid";
   }
   if (await sha256(blob.output) !== expectedSha256) {
     issues.push(hashMismatch);
-    return false;
+    return "invalid";
   }
-  return true;
+  return "valid";
 }
 
 function readText(
@@ -745,6 +760,30 @@ async function validateGitEvidence(
     );
   }
 
+  const checkedRevisions = new Map<string, Promise<boolean>>();
+  const revisionExists = (revision: string): Promise<boolean> => {
+    const known = checkedRevisions.get(revision);
+    if (known !== undefined) return known;
+    const check = runGit(ticketDirectory, [
+      "cat-file",
+      "-e",
+      `${revision}^{commit}`,
+    ]).then((result) => result.success);
+    checkedRevisions.set(revision, check);
+    return check;
+  };
+  const ticketBaseRevision = ticket.baseRevision as string;
+  if (!await revisionExists(ticketBaseRevision)) {
+    issues.push(
+      issue(
+        "$.ticket.baseRevision",
+        "revision_not_found",
+        "Git commit evidence does not exist",
+      ),
+    );
+  }
+  if (state.candidateRevision === null) return issues;
+
   const head = await runGit(ticketDirectory, ["rev-parse", "HEAD"]);
   const candidateRevision = state.candidateRevision as string;
   const metadataAncestry = await runGit(ticketDirectory, [
@@ -786,29 +825,8 @@ async function validateGitEvidence(
     }
   }
 
-  const checkedRevisions = new Map<string, Promise<boolean>>();
-  const revisionExists = (revision: string): Promise<boolean> => {
-    const known = checkedRevisions.get(revision);
-    if (known !== undefined) return known;
-    const check = runGit(ticketDirectory, [
-      "cat-file",
-      "-e",
-      `${revision}^{commit}`,
-    ]).then((result) => result.success);
-    checkedRevisions.set(revision, check);
-    return check;
-  };
-  const ticketBaseRevision = ticket.baseRevision as string;
-  if (!await revisionExists(ticketBaseRevision)) {
-    issues.push(
-      issue(
-        "$.ticket.baseRevision",
-        "revision_not_found",
-        "Git commit evidence does not exist",
-      ),
-    );
-  }
-
+  const finalCandidateRevision = state.candidateRevision as string;
+  const gitBlobBudget: GitBlobBudget = { remaining: MAX_GIT_BLOB_BYTES };
   for (let resultIndex = 0; resultIndex < results.length; resultIndex++) {
     const result = results[resultIndex] as JsonRecord;
     const red = result.red as JsonRecord;
@@ -893,7 +911,12 @@ async function validateGitEvidence(
         );
         continue;
       }
-      const redBlobValid = await validateGitBlob(
+      const aggregateLimit = issue(
+        `${resultPath}.red.testFiles[${fileIndex}].path`,
+        "aggregate_too_large",
+        "Git test evidence exceeds the aggregate blob-byte limit",
+      );
+      const redBlobValidation = await validateGitBlob(
         ticketDirectory,
         blobSpec,
         blobSize,
@@ -915,34 +938,70 @@ async function validateGitEvidence(
           "content_hash_mismatch",
           "Declared RED test digest does not match the Git blob",
         ),
+        aggregateLimit,
         issues,
+        gitBlobBudget,
       );
-      if (!redBlobValid) continue;
-
-      await validateGitBlob(
-        ticketDirectory,
-        `${candidateRevision}:${testPath}`,
-        blobSize,
-        testSha256,
-        [
-          issue(
-            `${resultPath}.red.testFiles[${fileIndex}].path`,
-            "content_missing",
-            "Declared RED test blob does not exist in the candidate",
-          ),
+      if (redBlobValidation === "valid") {
+        await validateGitBlob(
+          ticketDirectory,
+          `${candidateRevision}:${testPath}`,
+          blobSize,
+          testSha256,
+          [
+            issue(
+              `${resultPath}.red.testFiles[${fileIndex}].path`,
+              "content_missing",
+              "Declared RED test blob does not exist in the candidate",
+            ),
+            issue(
+              `${resultPath}.red.testFiles[${fileIndex}].sha256`,
+              "content_hash_mismatch",
+              "Declared RED test digest does not match the candidate Git blob",
+            ),
+          ],
           issue(
             `${resultPath}.red.testFiles[${fileIndex}].sha256`,
             "content_hash_mismatch",
             "Declared RED test digest does not match the candidate Git blob",
           ),
-        ],
-        issue(
-          `${resultPath}.red.testFiles[${fileIndex}].sha256`,
-          "content_hash_mismatch",
-          "Declared RED test digest does not match the candidate Git blob",
-        ),
-        issues,
-      );
+          aggregateLimit,
+          issues,
+          gitBlobBudget,
+        );
+        if (
+          gitBlobBudget.remaining >= 0 &&
+          candidateRevision !== finalCandidateRevision
+        ) {
+          await validateGitBlob(
+            ticketDirectory,
+            `${finalCandidateRevision}:${testPath}`,
+            blobSize,
+            testSha256,
+            [
+              issue(
+                `${resultPath}.red.testFiles[${fileIndex}].path`,
+                "content_missing",
+                "Declared RED test blob does not exist in the final candidate",
+              ),
+              issue(
+                `${resultPath}.red.testFiles[${fileIndex}].sha256`,
+                "content_hash_mismatch",
+                "Declared RED test digest does not match the final candidate Git blob",
+              ),
+            ],
+            issue(
+              `${resultPath}.red.testFiles[${fileIndex}].sha256`,
+              "content_hash_mismatch",
+              "Declared RED test digest does not match the final candidate Git blob",
+            ),
+            aggregateLimit,
+            issues,
+            gitBlobBudget,
+          );
+        }
+      }
+      if (gitBlobBudget.remaining < 0) return issues;
     }
 
     const redPaths = await changedPaths(

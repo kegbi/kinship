@@ -6,6 +6,8 @@ export interface ValidationIssue {
 
 type JsonRecord = Record<string, unknown>;
 
+const MAX_GIT_TEST_REFERENCES = 100;
+
 const REVISION_PATTERN = /^[0-9a-f]{40}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 
@@ -886,6 +888,7 @@ function validateResults(
     addIssue(issues, "$.results", "invalid_type", "Expected a results array");
     return;
   }
+  let testReferenceCount = 0;
   results.forEach((result, resultIndex) => {
     const resultPath = `$.results[${resultIndex}]`;
     if (!isRecord(result)) {
@@ -979,6 +982,7 @@ function validateResults(
       );
       return;
     }
+    testReferenceCount += red.testFiles.length;
     if (red.testFiles.length === 0) {
       addIssue(
         issues,
@@ -1131,6 +1135,14 @@ function validateResults(
       );
     }
   });
+  if (testReferenceCount > MAX_GIT_TEST_REFERENCES) {
+    addIssue(
+      issues,
+      "$.results",
+      "reference_limit",
+      "Git test evidence exceeds the aggregate reference limit",
+    );
+  }
 }
 
 function validateFinding(
