@@ -87,3 +87,86 @@ production/contract file list.
   controller will reproduce RED, verify byte identity and scope, freeze the
   test/check-only revision, compute the exact SHA-256, and issue a GREEN
   continuation for this same round.
+
+## Controller-issued GREEN continuation
+
+The trusted controller independently audited and reproduced the RED handoff and
+authorizes this same round and implementer identity to continue:
+
+- frozen RED revision: `2f75cda6b3df374c195740ef89fd2fe218a19b4a`;
+- frozen check:
+  `tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts`;
+- exact frozen check SHA-256:
+  `6cb3610ece718bb420654301cf12cf94a2987385ef99e0a92d295533f0711542`;
+- changed RED paths were exactly the frozen check and
+  `evidence/round-01-red.log`;
+- every authorized contract file and the page catalog was byte-identical to base
+  during RED;
+- all 22 in-memory discriminator steps passed, and the sole failing test was the
+  authoritative repository assertion reporting 19 missing DG-01 clauses;
+- focused and root formatting/lint/type gates passed; and
+- the exact-byte temporary probe met the 100% line, branch, and function
+  threshold.
+
+Verify the frozen SHA-256 with a filesystem hash command before any contract
+edit and again after all work. Preserve the frozen check bytes exactly. Do not
+edit or split the check, change the page catalog, weaken an expectation, or add
+a helper/test surface.
+
+### GREEN
+
+Reimplement the smallest coherent accepted-contract change required by the
+frozen check in exactly these six instruction/contract paths:
+
+- `AGENTS.md`;
+- `docs/architecture/decisions/0001-astro-personalized-rendering.md`;
+- `docs/architecture/technology-baseline.md`;
+- `docs/architecture/compose-contract.md`;
+- `docs/architecture/configuration-and-secrets.md`; and
+- `docs/architecture/observability.md`.
+
+Reconcile onto the current main-derived base. Do not merge, cherry-pick, check
+out, or broad-diff the blocked lineage. The accepted behavior is the ticket and
+frozen-check contract: private production/test Astro `web` for exactly the five
+cataloged on-demand ID/path pairs; gateway-served
+static/prerendered/fingerprinted output; `/api/v1/*` to separately private
+`api`; gateway-only public exposure; development-only `astro dev`; the narrow
+renderer capability boundary; bounded readiness; correlation and redaction;
+personalized no-store; and immutable fingerprinted assets.
+
+Use coherent prose and tables in their existing sections. Do not alter page
+assignments, add a gateway product or DG-12 choice, claim runtime proof, or
+change any other path. If any predecessor wording or code is used, record exact
+source revision `4b3fec5fbd36bb2d921c993b61890077301dbccd` and each source path
+in the GREEN log. If implementation is independent from the ticket, accepted
+references, and frozen test, record `historicalReuse: none`.
+
+Run the exact focused test and require exit 0. Record concise redacted results
+in `evidence/round-01-green.log`.
+
+### REFACTOR and handoff
+
+Refactor only contract wording or table layout that improves clarity without
+adding behavior. Run and record:
+
+```text
+deno test --allow-read=AGENTS.md,docs/architecture/decisions/0001-astro-personalized-rendering.md,docs/architecture/technology-baseline.md,docs/architecture/compose-contract.md,docs/architecture/configuration-and-secrets.md,docs/architecture/observability.md,docs/product/page-catalog.yaml tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts
+deno fmt --check tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts AGENTS.md docs/architecture/decisions/0001-astro-personalized-rendering.md docs/architecture/technology-baseline.md docs/architecture/compose-contract.md docs/architecture/configuration-and-secrets.md docs/architecture/observability.md
+deno lint tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts
+deno check tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts
+deno task fmt:check
+deno task lint
+deno task check
+```
+
+Repeat the exact-byte temporary coverage probe with the now-green authoritative
+repository assertion and require the 100% line, branch, and function threshold.
+Use `$env:TEMP` notation in evidence, never an absolute profile/worktree path.
+Record all final gates, the unchanged frozen digest, changed contract paths,
+refactor summary, and historical reuse statement in
+`evidence/round-01-refactor.log`.
+
+Stop without committing. Return the exact controller/implementer IDs, commands
+and exits, changed paths, GREEN production/contract files, unchanged frozen
+digest, refactor summary, and historical reuse statement. Do not edit ticket
+authority/state/dispatch, inspect or mutate `.git`, or perform integration.
