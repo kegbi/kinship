@@ -1,0 +1,45 @@
+schemaVersion: 2
+ticketId: FND-002
+round: 1
+phase: RED
+issuedByControllerRunId: FND-002/orchestrator/r0/a16b5b61-a6c8-4366-8752-d530fa3a6d74
+implementerRunId: FND-002/implementer/r1/e2edf3bf-a445-4fc2-8ba4-3fffb9681804
+inputBaseRevision: 603f6621809f61fab70bc29b8b4a9252ebcecb27
+
+command: deno test --allow-read=docs/architecture tools/architecture/FND-002/coordination_contract_test.ts
+authoritativeExitCode: 1
+
+selfCheck:
+  result: PASS
+  observed: manifest discriminator accepts DG-06A and rejects competing choreography ... ok
+  discrimination: compliant fixture produced no issues; identity-driven workspace consumption and both missing governance lifecycle edges were rejected
+
+repositoryContractCheck:
+  result: EXPECTED_FAIL
+  observedSummary: accepted architecture contracts record the DG-06A boundary ... FAILED; 1 passed, 1 failed
+  intendedFailures:
+    - AC-01 accepted ADR absent and ADR 0004 not indexed as accepted
+    - AC-02 workspaces-owned shared transaction/session, rollback, and pre-commit postcondition contract absent
+    - AC-03 workspaces still consumes identity.user-registered and governance lacks workspace.created and workspace.member-joined consumption
+    - AC-04 proof-pending and synchronous transaction-scoped versus durable asynchronous delivery contract absent
+
+preliminaryRuns:
+  - exitCode: 1
+    acceptedAsRedProof: false
+    observed: strict TypeScript check found possible undefined array access in the new harness; test-only correction followed
+  - exitCode: 1
+    acceptedAsRedProof: false
+    observed: intended contract failure plus false publisher diagnostics from multiline-list parsing; test-only correction followed
+  - exitCode: 1
+    acceptedAsRedProof: false
+    observed: intended contract failure; aggregate diagnostic was tightened to name AC-04 explicitly
+  - exitCode: 1
+    acceptedAsRedProof: true
+    observed: self-check passed and repository assertion failed only for AC-01 through AC-04 contract mismatches
+
+changedTestFiles:
+  - tools/architecture/FND-002/coordination_contract_test.ts
+changedProductionFiles: []
+changedEvidenceFiles:
+  - docs/planning/tickets/FND-002/evidence/round-01-red.log
+productionContractsUnchanged: true
