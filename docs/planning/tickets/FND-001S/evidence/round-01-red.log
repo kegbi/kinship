@@ -1,0 +1,33 @@
+FND-001S round 01 RED evidence (schema version 2 result input)
+controllerRunId: FND-001S/orchestrator/r0/940c1592-d106-4088-96d8-b500b1f6f2be
+implementerRunId: FND-001S/implementer/r1/c361d6ab-2e58-4434-8d5a-fe9ce1b582b0
+inputBaseRevision: 976e01716145aa29cc8b5ab22c22210689234ecd
+
+Focused RED command:
+deno test --allow-read=AGENTS.md,docs/architecture/decisions/0001-astro-personalized-rendering.md,docs/architecture/technology-baseline.md,docs/architecture/compose-contract.md,docs/architecture/configuration-and-secrets.md,docs/architecture/observability.md,docs/product/page-catalog.yaml tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts
+exit: 1 (expected RED)
+observed: 22/22 in-memory complete-section discriminator steps passed; the sole failed test was the authoritative repository assertion. It reported 19 absent DG-01 requirements spanning the canonical Gateway Routing and Network Exposure shapes plus AGENTS.md, ADR 0001, technology, Compose lifecycle, renderer capability, correlation/redaction, and cache clauses. No syntax, type, permission, fixture, parser, or catalog-extraction failure occurred.
+
+Direct check commands:
+deno fmt --check tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts
+exit: 0; observed: Checked 1 file.
+deno lint tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts
+exit: 0; observed: Checked 1 file.
+deno check tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts
+exit: 0; observed: Check succeeded.
+
+Temporary exact-coverage probe outside the repository:
+1. Copy the exact check bytes to $env:TEMP\fnd001s-red-probe2-c361d6ab\astro_rendering_topology_contract.ts so Deno's default test-file coverage exclusion does not omit the single self-contained check.
+2. deno test --quiet --coverage=$env:TEMP\fnd001s-red-probe2-c361d6ab\coverage --allow-read=AGENTS.md,docs/architecture/decisions/0001-astro-personalized-rendering.md,docs/architecture/technology-baseline.md,docs/architecture/compose-contract.md,docs/architecture/configuration-and-secrets.md,docs/architecture/observability.md,docs/product/page-catalog.yaml $env:TEMP\fnd001s-red-probe2-c361d6ab\astro_rendering_topology_contract.ts
+exit: 1 (expected repository-only RED); observed: 22/22 discriminator steps passed and only the authoritative repository assertion failed.
+3. deno coverage --detailed --threshold=100 --include=astro_rendering_topology_contract\.ts$ $env:TEMP\fnd001s-red-probe2-c361d6ab\coverage
+exit: 0; observed: 100.000% line (407/407), 100% branch, and 100% function coverage; threshold met.
+
+Changed test/check paths:
+- tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts
+
+Changed evidence paths:
+- docs/planning/tickets/FND-001S/evidence/round-01-red.log
+
+Changed production/contract/catalog paths: none.
+Historical semantics used: none. The check was implemented independently from the accepted ticket/dispatch/contracts and did not inspect or copy Git-bound FND-001 sources.
