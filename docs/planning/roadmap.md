@@ -2,11 +2,11 @@
 
 ## Delivery Assumption
 
-This roadmap assumes the existing P0/P1/P2 priorities remain authoritative.
-Under that assumption, the proposed MVP and core feature-complete milestones are
-expected after Slice 7, pending DG-07 and approval of the release-slice
-amendment. An earlier release may be called a core alpha, but it would omit P0
-files, import, and export.
+The existing P0/P1/P2 priorities and the PRODUCT-001 release subset are
+authoritative. The catalog-derived Proposed MVP and Core feature complete cuts
+currently coincide after Slice 7. An earlier release is Core alpha after Slice
+4, but it omits P0 files, import, and export. Production readiness remains an
+independent release decision.
 
 The roadmap uses vertical slices. Each work package includes the server use
 case, persistence, API contract, generated client, user interface, telemetry,
@@ -89,7 +89,7 @@ implementation must not select an answer implicitly.
 | DG-06B | Interaction-to-planning coordination                       | Before Slices 3/4                                                                               | Approve or reject consumption of `interactions.interaction-recorded` for `stay_in_touch_cadences.last_contacted_at`. Prove idempotency, ordering, retry/rollback behavior, and the manifest edge; interactions code never writes planning tables.                                                                                                                                                                                                                                                     |
 | DG-06C | File-backed avatar and gift coordination                   | Before Slice 5                                                                                  | Define use-case-specific coordination through the people, files, and gifts public facades, including transaction/post-commit object compensation. Prove ownership of `person_avatars` and `gift_file_links` and all failure interleavings.                                                                                                                                                                                                                                                            |
 | DG-06D | Destructive lifecycle and object cleanup coordination      | Before Slice 7                                                                                  | Define reset/delete participation, ordering, atomic database boundaries, session effects, post-commit object cleanup/reconciliation, retries, and optional-module extensions. Prove every dependency/event edge without importing private adapters.                                                                                                                                                                                                                                                   |
-| DG-07  | Remaining product/catalog closure and release amendment    | Before affected slice                                                                           | Approve or reject the proposed Slice 1 assignment for `WORKSPACE-001`, Slice 6 acceptance for `PEOPLE-003`, and milestone definitions. Add executable coverage for life events; decide operations/help surfaces, page-flow semantics, state inheritance, P2 availability, multi-workspace/security/avatar/romantic/saved-filter behavior, and external API parity. Regenerate all counts after closure.                                                                                               |
+| DG-07  | Remaining product/catalog closure                          | Before affected slice                                                                           | PRODUCT-001 accepts the bounded release assignments and milestones; follow-up gates remain open for life-event coverage, operations/help surfaces, page-flow semantics, state inheritance, P2 availability, multi-workspace/security/avatar/romantic/saved-filter behavior, and external API parity. Regenerate catalog-derived counts and cuts after any later catalog change.                                                                                                                       |
 | DG-08  | AI assistance product, privacy, and architecture           | Before any AI code                                                                              | Choose user outcomes, permissions, provider/data-retention policy, human-confirmation rules, evaluation set, failure behavior, page/flow IDs, module/read-model access, and persistence needs. The safest first candidate is a user-requested draft or summary over explicitly selected person data, with no autonomous mutation or send.                                                                                                                                                             |
 | DG-09  | Monica import security and optional-module policy          | Slice 7                                                                                         | Preserve the accepted invariant that imports never activate legacy credentials. Decide which password/TOTP/WebAuthn material may be preserved only in inert form, reported/discarded, or must force reset/re-enrollment; reconcile the canonical mapping through a synchronized bundle if needed. Also define source profiles/versions/sizes/retention and disabled optional-module treatment.                                                                                                        |
 | DG-10  | Security, capacity, and production objectives              | Security checkpoint before Slice 1; MVP performance checkpoint; production-readiness checkpoint | Before Slice 1, approve the threat model and versioned security-verification target. Before proposed-MVP acceptance, choose representative datasets, browser/device and concurrency assumptions, and functional performance ceilings for in-scope UI/API/query/worker/import/export work. Before production promotion, choose deployment ingress/TLS, object storage, mail, telemetry, SLOs/error budgets, RTO/RPO, retention, backup/restore, and secret management. Keep providers behind adapters. |
@@ -102,24 +102,24 @@ implementation must not select an answer implicitly.
 The accountable roles below must be replaced by named people at implementation
 kickoff. A gate without a named owner and accepted artifact remains open.
 
-| Gate   | Owner                                                    | Status | Decision artifact                                                                                                |
-| ------ | -------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------- |
-| DG-01  | Architecture owner                                       | Open   | ADR 0001 plus synchronized technology/Compose/configuration/observability contracts                              |
-| DG-02  | Database/platform owner                                  | Open   | ADR 0003 result; synchronized schema bundle if metadata persists                                                 |
-| DG-03  | Identity/security owner                                  | Open   | ADR 0002 accept/reject result and compatibility evidence                                                         |
-| DG-04  | Backend/API owner                                        | Open   | Pinned compatibility report, manifests/lockfiles, and generation contract                                        |
-| DG-05  | Worker/data-lifecycle owner                              | Open   | Durable-execution design, failure matrix, and synchronized schema bundle if required                             |
-| DG-06A | Architecture, identity, workspace, and governance owners | Open   | Onboarding/invitation/audit transaction record and any manifest/ADR amendment                                    |
-| DG-06B | Architecture, interactions, and planning owners          | Open   | Interaction-to-planning event/coordination decision and manifest amendment                                       |
-| DG-06C | Architecture, people, files, and gifts owners            | Open   | Avatar/gift file-ownership and compensation decision                                                             |
-| DG-06D | Architecture, lifecycle, and affected module owners      | Open   | Reset/delete participation, transaction, and cleanup decision                                                    |
-| DG-07  | Product owner                                            | Open   | Approved product/release amendment and regenerated catalogs/counts                                               |
-| DG-08  | Product, privacy, and security owners                    | Open   | AI capability/privacy contract and architecture decision                                                         |
-| DG-09  | Import/product/security owners                           | Open   | Import support and credential policy; synchronized mapping/schema bundle if changed                              |
-| DG-10  | Security, product/performance, and operations owners     | Open   | Security verification profile, MVP capacity/budget record, then production SLO/provider/retention/runbook record |
-| DG-11  | Security/data-governance owner                           | Open   | Deletion-audit retention decision and schema/ledger contract                                                     |
-| DG-12  | Platform/security owner                                  | Open   | Gateway decision, pinned image/config contract, and TLS test proof                                               |
-| DG-13  | Platform/security owner                                  | Open   | CI provider/trust decision, permissions map, immutable-step policy, and required-check map                       |
+| Gate   | Owner                                                    | Status                                                | Decision artifact                                                                                                |
+| ------ | -------------------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| DG-01  | Architecture owner                                       | Open                                                  | ADR 0001 plus synchronized technology/Compose/configuration/observability contracts                              |
+| DG-02  | Database/platform owner                                  | Open                                                  | ADR 0003 result; synchronized schema bundle if metadata persists                                                 |
+| DG-03  | Identity/security owner                                  | Open                                                  | ADR 0002 accept/reject result and compatibility evidence                                                         |
+| DG-04  | Backend/API owner                                        | Open                                                  | Pinned compatibility report, manifests/lockfiles, and generation contract                                        |
+| DG-05  | Worker/data-lifecycle owner                              | Open                                                  | Durable-execution design, failure matrix, and synchronized schema bundle if required                             |
+| DG-06A | Architecture, identity, workspace, and governance owners | Open                                                  | Onboarding/invitation/audit transaction record and any manifest/ADR amendment                                    |
+| DG-06B | Architecture, interactions, and planning owners          | Open                                                  | Interaction-to-planning event/coordination decision and manifest amendment                                       |
+| DG-06C | Architecture, people, files, and gifts owners            | Open                                                  | Avatar/gift file-ownership and compensation decision                                                             |
+| DG-06D | Architecture, lifecycle, and affected module owners      | Open                                                  | Reset/delete participation, transaction, and cleanup decision                                                    |
+| DG-07  | Product owner                                            | Partially closed by PRODUCT-001; follow-up gates open | Accepted bounded release amendment; later product artifacts for each deferred gap                                |
+| DG-08  | Product, privacy, and security owners                    | Open                                                  | AI capability/privacy contract and architecture decision                                                         |
+| DG-09  | Import/product/security owners                           | Open                                                  | Import support and credential policy; synchronized mapping/schema bundle if changed                              |
+| DG-10  | Security, product/performance, and operations owners     | Open                                                  | Security verification profile, MVP capacity/budget record, then production SLO/provider/retention/runbook record |
+| DG-11  | Security/data-governance owner                           | Open                                                  | Deletion-audit retention decision and schema/ledger contract                                                     |
+| DG-12  | Platform/security owner                                  | Open                                                  | Gateway decision, pinned image/config contract, and TLS test proof                                               |
+| DG-13  | Platform/security owner                                  | Open                                                  | CI provider/trust decision, permissions map, immutable-step policy, and required-check map                       |
 
 ## Slice 0: Prove The Foundation
 
@@ -135,19 +135,20 @@ quality checks make illegal shortcuts fail before feature volume grows.
 #### FND-01: Contract repair
 
 - Resolve DG-01 and correct all affected architecture/product documents.
-- Approve or reject the proposed release reassignment for `WORKSPACE-001` and
-  `PEOPLE-003`, then synchronize the release contract and machine-readable
-  catalogs.
-- Turn the life-event, operations-admin, security-settings, multi-workspace,
-  page-state, help/what's-new, saved-filter, and external-API ambiguities into
-  accepted product decisions or explicitly deferred scope.
-- Propose and approve `Core alpha`, `Proposed MVP`, `Core feature complete`,
-  `Catalog complete`, `AI-enabled complete`, and `Production ready` exactly as
-  in the planning entry point.
+- Preserve the PRODUCT-001 release assignments for `WORKSPACE-001` and
+  `PEOPLE-003` while keeping catalogs synchronized when later decisions change
+  them.
+- Resolve the explicitly deferred life-event, operations-admin,
+  security-settings, multi-workspace, page-state, help/what's-new, saved-filter,
+  and external-API gaps before their affected behavior ships.
+- Preserve the accepted `Core alpha`, `Proposed MVP`, `Core feature complete`,
+  `Catalog complete`, `AI-enabled complete`, and `Production ready` meanings in
+  the planning entry point.
 - Keep every unresolved capability visibly open; do not let a missing flow look
   delivered because its table exists.
-- After DG-07 closes, regenerate priority/milestone counts and require every
-  accepted flow to appear exactly once in the release and traceability matrices.
+- After any later DG-07 catalog decision, regenerate priority/milestone counts
+  and require every accepted flow to appear exactly once in the release and
+  traceability matrices.
 
 Exit proof: all planned work has an authoritative page/flow/module/permission
 home, or a named decision gate and owner.
@@ -447,9 +448,8 @@ Deliver `PEOPLE-004`, `PEOPLE-005`, `PEOPLE-006`, `RELATIONSHIP-001`, and
 
 - Implement contact methods/labels, addresses/locations, important dates, first
   meeting/introducer, organizations/occupations, tags, pets, food preferences,
-  accepted default/generated/external avatar presentation,
   favorite/archive/restore/delete transitions, profile module visibility, and
-  relevant vocabularies. Uploaded/file-backed avatars wait for Slice 5.
+  relevant vocabularies. Avatar behavior remains a deferred product gate.
 - Preserve partial-date precision through domain, SQL, API, client, form,
   display, and export/import boundaries. Use injected clocks and Temporal.
 - Implement directional relationships, inverse display, romantic metadata if
@@ -553,18 +553,17 @@ This is the core-alpha milestone, not the proposed MVP.
 
 ### Flow acceptance
 
-Deliver `FILES-001` and `GIFTS-001`. Resolve the uploaded-avatar and gift-file
-coordination gate DG-06C first.
+Deliver `FILES-001` and `GIFTS-001`. Resolve the gift-file portion of DG-06C
+first. Avatar behavior remains outside the slice until a later product contract
+accepts it.
 
 ### Server and data
 
 - Implement object-store, malware-scan/quarantine, authorized-download, clock,
   and checksum ports with deterministic fakes and S3-compatible adapters.
 - Implement bounded upload streaming, generated opaque object keys, metadata
-  transactions, person links, uploaded/file-backed avatar/photo/document roles,
-  missing/inaccessible/quarantined states, cleanup, and storage usage. A
-  DG-06C-approved coordinator creates the file through `files` and changes the
-  people-owned `person_avatars` row through the people public facade.
+  transactions, person photo/document links, missing/inaccessible/quarantined
+  states, cleanup, and storage usage.
 - Implement gifts, recipients, attachments, status transitions, debts,
   directions, amounts/currencies, and history.
 - Use a gifts-owned application coordinator, which is an allowed consumer of the
@@ -592,18 +591,16 @@ coordination gate DG-06C first.
 
 ### Flow acceptance
 
-Deliver `JOURNAL-001`, `GOVERNANCE-001`, the full `PEOPLE-003` contract, and the
-life-event flow accepted through DG-07 after all core person sections are
-present. Life-event mutation must not ship from prose alone: DG-07 must first
-assign a stable flow ID, observable outcomes, page association, priority, and
-E2E contract. If product instead defers it, the same accepted amendment must
-state whether and how that changes `PEOPLE-003` and core-completeness scope.
+Deliver `JOURNAL-001`, `GOVERNANCE-001`, and the full `PEOPLE-003` read contract
+after every enabled core person section is present. Life-event mutation remains
+unscheduled until a later accepted product contract supplies its stable flow ID,
+observable outcomes, page association, priority, E2E contract, and effect on
+core-completeness scope.
 
 ### Server and data
 
 - Implement journal posts, day ratings, ordered items, allowed activity links,
-  life-event create/edit/remove behavior, deletion behavior, immutable legal
-  documents, applicability, and acceptance.
+  deletion behavior, immutable legal documents, applicability, and acceptance.
 - Complete person-profile composition across all enabled core source modules,
   including independent heavy-section loading and archive/partial-person states.
 - Extend `import-export`-owned journal/legal mappings through public commands,
@@ -611,16 +608,15 @@ state whether and how that changes `PEOPLE-003` and core-completeness scope.
 
 ### UI and routes
 
-- Deliver Journal list/item, privacy, terms, compliance transition, life-event
-  editor/history, and complete person section navigation.
+- Deliver Journal list/item, privacy, terms, compliance transition, and complete
+  person section navigation.
 - Verify the complete person workspace on desktop/mobile with independent
   section loading, error, forbidden, retry, and focus behavior.
 
 ### Required proof
 
-- Journal ordering, same-day rating update, deleted linked activity, life-event
-  partial-date/type/history behavior, immutable legal version,
-  required/superseded/declined acceptance, and compliance gating.
+- Journal ordering, same-day rating update, deleted linked activity, immutable
+  legal version, required/superseded/declined acceptance, and compliance gating.
 - Every core profile section is reachable on the single canonical person route;
   no mandatory per-feature subpage has appeared.
 
@@ -629,10 +625,10 @@ state whether and how that changes `PEOPLE-003` and core-completeness scope.
 ### Flow acceptance
 
 Deliver `IMPORT-001`, `EXPORT-001`, `AUTH-005`, and `WORKSPACE-002` after DG-05,
-DG-06D, DG-07, DG-09, and DG-11 are resolved. Under the current proposed
-catalog, this is the point at which every P0 and P1 flow is expected to be
-delivered; that statement is not a promotion claim until the catalog and release
-amendment are approved and regenerated.
+DG-06D, the applicable remaining DG-07 product gates, DG-09, and DG-11 are
+resolved. Under the current accepted catalog, this is the point at which every
+P0 and P1 flow is assigned for delivery; that statement is not a promotion claim
+until the required evidence passes.
 
 ### Server and data
 
@@ -684,10 +680,10 @@ derived from the then-current catalog is delivered. Promote **Core feature
 complete** only when every P1 flow, both public product pages, and every
 page/state required by P0/P1 flows also pass. Both use the
 [MVP feature-acceptance checklist](quality-and-operations.md#mvp-feature-acceptance-checklist).
-Never hard-code release counts after DG-07; regenerate them from the accepted
-catalog. The current proposed ordering is expected to satisfy both at the end of
-this slice, but their acceptance meanings remain distinct and production
-deployment requires the separate production-release checklist.
+Never hard-code release counts; regenerate them from the accepted catalog. The
+current ordering places both cuts at the end of this slice, but their acceptance
+meanings remain distinct and production deployment requires the separate
+production-release checklist.
 
 ## Slice 8: Optional Platform Modules
 
@@ -704,7 +700,7 @@ deployment requires the separate production-release checklist.
   through provider-owned DAV state and public people/planning facades.
 - Test sync tokens, ETags, conflicts, deletion, retry, partial failure, disable,
   and core operation when the module is absent.
-- Treat weather/geocoding/avatar providers as separately consented adapters with
+- Treat weather and geocoding providers as separately consented adapters with
   their own capability and failure policy.
 
 ### Billing
