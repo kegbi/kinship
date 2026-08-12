@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 2,
+  "ticketId": "FND-003",
+  "revision": 1,
+  "title": "Freeze the immutable candidate runtime graph",
+  "outcome": "One dependency-free, self-tested runtime-graph validator and its exact machine-readable inputs make the repository's candidate Deno, Node, pnpm, frontend, backend, test, and OCI dependency graph immutable, age-eligible, lifecycle-denied by default, and repeatable from clean and offline caches without claiming the separate executable compatibility proofs assigned to named follow-on tickets.",
+  "baseRevision": "895731f27f66d614cb431e9ab6bb570b94d1a476",
+  "controllerRunId": "FND-003/orchestrator/r0/b308fcda-6e91-4fec-8b40-bf19c6e21a16",
+  "executionClass": "ordinary",
+  "protectedWriteAuthorization": null,
+  "dependencies": ["FND-001S"],
+  "maxRounds": 3,
+  "scope": [
+    "Add one dependency-free Deno runtime-graph validator with in-memory harness controls and committed negative fixtures that fail closed for mutable, stale, incompatible, lifecycle-unsafe, lock-drifting, or incorrectly classified OCI graph declarations.",
+    "Select at one recorded UTC proof timestamp the newest compatible stable releases that satisfy the accepted 72-hour minimum age, and record exact versions, publication times, integrity/provenance evidence, compatibility status, exclusions, and upgrade ownership in one machine-readable graph and one human validation report.",
+    "Commit exact root Deno and pnpm manifests, workspace metadata, lockfiles, Corepack descriptor integrity, lifecycle-deny policy, and only non-empty tool-owned fixture members needed to resolve and repeat the candidate graph.",
+    "Prove in disposable clean directories or pinned containers that exact Deno, Node, Corepack, and pnpm identities restore the committed graph from fresh caches and then repeat with network-disabled or cached-only resolution while lockfile hashes remain unchanged and no lifecycle script runs.",
+    "Record and independently inspect immutable multi-architecture OCI indexes for the selected Deno, Node, Playwright, PostgreSQL 18, and PostgreSQL 17 images, distinguishing runnable amd64 and arm64 children from child or attestation manifests.",
+    "Keep executable backend/database, frontend/component/test, browser/image, and command/hook behavior explicitly proof-pending under FND-003A, FND-003B, FND-003C, and FND-003D respectively."
+  ],
+  "nonGoals": [
+    "Claim that package resolution, peer compatibility, import construction, or OCI metadata proves Hono request behavior, Kysely/Postgres.js database behavior, Astro rendering, React hydration, shadcn component generation, Vitest reliability, or Playwright browser behavior.",
+    "Run or accept mutable shadcn registry output; generated Base UI component source and its hashes belong to FND-003B.",
+    "Add or pin Lefthook before truthful canonical scaffold tasks exist; hook and root-command wiring belongs to FND-003D under the accepted FND-12 ordering.",
+    "Add or change root task names or definitions, production Compose, Dockerfiles, application entry points, apps, packages, tests/e2e, generated contracts, business modules, migrations, authentication, Better Auth, Redis, queues, or a second schema authority.",
+    "Modify application or product catalogs, architecture decisions, FND-001S/FND-002/PRODUCT-001 packets, the canonical personal-crm-schema/v1 bundle, compose.schema-test.yaml, .codex, .agents, or .git content.",
+    "Treat FND-002, PRODUCT-001, or the disjoint WORKFLOW-001 rework as dependencies, or merge, push, deploy, integrate main, or create integration.md."
+  ],
+  "allowedWrites": [
+    ".npmrc",
+    "deno.json",
+    "deno.lock",
+    "package.json",
+    "pnpm-workspace.yaml",
+    "pnpm-lock.yaml",
+    "tools/runtime/FND-003/",
+    "docs/validation/runtime-graph-fnd003.md",
+    "docs/validation/runtime-graph-fnd003.json",
+    "docs/planning/tickets/FND-003/"
+  ],
+  "contractRefs": [
+    "AGENTS.md#mandatory-change-method",
+    "docs/development/autonomous-delivery.md#red-green-and-refactor-rules",
+    "docs/development/autonomous-delivery.md#command-truth",
+    "docs/architecture/decisions/0001-astro-personalized-rendering.md#decision",
+    "docs/architecture/technology-baseline.md#accepted-constraints",
+    "docs/architecture/technology-baseline.md#accepted-backend-stack",
+    "docs/architecture/technology-baseline.md#deno-responsibilities",
+    "docs/architecture/technology-baseline.md#dependency-and-runtime-policy",
+    "docs/architecture/repository-layout.md#status",
+    "docs/architecture/repository-layout.md#canonical-shape",
+    "docs/architecture/quality-gates.md#test-first-change-contract",
+    "docs/architecture/quality-gates.md#canonical-commands",
+    "docs/architecture/quality-gates.md#deno-dependency-and-security-gates",
+    "docs/architecture/compose-contract.md#image-and-supply-chain-policy",
+    "docs/planning/roadmap.md#fnd-02-runtime-and-dependency-pins",
+    "docs/planning/research.md#sp-01-pinned-runtime-and-dependency-matrix",
+    "docs/planning/research.md#version-selection-checklist",
+    "docs/planning/quality-and-operations.md#current-executable-commands",
+    "docs/planning/quality-and-operations.md#image-requirements",
+    "docs/planning/quality-and-operations.md#stage-1-reproducibility-and-static-contracts",
+    "docs/planning/tickets/FND-001S/integration.md"
+  ],
+  "acceptanceCriteria": [
+    {
+      "id": "AC-01",
+      "text": "A single dependency-free Deno validator has passing in-memory and committed-fixture controls, then validates the repository graph while rejecting exact negative cases for version ranges or latest, a selection younger than 72 hours, stale or mismatched locks, incompatible peers including TypeScript 7 with the selected Astro check, Kysely without the Postgres.js dialect, mutable shadcn invocation, disabled Corepack integrity, unchecked integrity changes, dangerouslyAllowAllBuilds, non-exact Deno allowScripts, unreviewed pnpm build scripts, floating OCI references, non-index digests, missing amd64 or arm64 children, attestation-as-platform confusion, and Playwright package/image version mismatch.",
+      "redProof": "deno test --allow-read=.npmrc,deno.json,deno.lock,package.json,pnpm-workspace.yaml,pnpm-lock.yaml,tools/runtime/FND-003,docs/validation/runtime-graph-fnd003.json tools/runtime/FND-003/runtime_graph_contract_test.ts passes every harness control but exits non-zero only because the repository manifests, locks, pin record, and provenance snapshot are absent."
+    },
+    {
+      "id": "AC-02",
+      "text": "The committed machine graph and synchronized validation report record one UTC selection timestamp, its 72-hour cutoff, exact direct versions and integrity/provenance for Deno, Node, Corepack, pnpm, Astro and its selected integrations, React and React DOM, Astro check, compatible TypeScript, Tailwind and Vite integration, Vite, Hono, Zod, the Standard Schema validator/spec, Kysely, kysely-postgres-js, Postgres.js, Vitest and coverage-v8, Playwright, and shadcn CLI; every selected release was the newest compatible age-eligible stable release at that timestamp, and every newer excluded release has an evidence-backed reason.",
+      "redProof": "The AC-01 command fails its repository assertion because no timestamped exact graph, official publication/integrity evidence, manifests, or lockfiles exist, while fixture controls prove that ranges, too-young releases, incompatible peers, and missing dialect edges are rejected."
+    },
+    {
+      "id": "AC-03",
+      "text": "package.json carries an exact pnpm Corepack descriptor with registry integrity and exact engine metadata; proof uses COREPACK_DEFAULT_TO_LATEST=0 with signature verification enabled; pnpm uses exact-save and frozen-lock behavior with an explicit reviewed build-script allowlist and no dangerouslyAllowAllBuilds; Deno allowScripts is exactly the reviewed allowlist; the executable scan records every transitive install hook and the initial allowlists remain empty unless a hook is proven unavoidable by an explicit minimal exception.",
+      "redProof": "The AC-01 command fails because no Corepack descriptor, package-manager integrity, lifecycle policy, transitive hook inventory, Deno allowScripts declaration, or exact pnpm build allowlist exists; negative controls for disabled integrity and permissive lifecycle settings pass."
+    },
+    {
+      "id": "AC-04",
+      "text": "A redacted executable proof in disposable directories or pinned containers records exact Deno, Node, Corepack, and pnpm identity; performs network-enabled clean-cache Deno and pnpm frozen resolution; repeats Deno cached-only and pnpm offline resolution from those caches; confirms both lockfile hashes are byte-identical before and after every step; and confirms that no lifecycle or startup install command executed.",
+      "redProof": "The AC-01 command fails because the manifests and locks required for a frozen clean-cache and offline repeat do not exist; the failure is independent of host network, Docker, and package-manager availability."
+    },
+    {
+      "id": "AC-05",
+      "text": "The machine graph pins Deno, Node, Playwright, PostgreSQL 18.4, and PostgreSQL 17.10 by exact tag plus immutable OCI index digest, records the required Linux amd64 and arm64 child digests separately from attestations, and the selection evidence includes successful live registry inspection of those exact indexes without changing compose.schema-test.yaml or adding production Compose.",
+      "redProof": "The AC-01 command fails because no OCI index record or hashed registry evidence exists; fixture controls prove that a floating tag, platform child digest, missing architecture, and attestation masquerading as a runnable platform are rejected."
+    },
+    {
+      "id": "AC-06",
+      "text": "The graph and report label runtime behavior as proof-pending and name FND-003A for Hono/Zod plus Kysely/Postgres.js on both PostgreSQL majors, FND-003B for Astro/static-first React island/shadcn source/Vitest coverage and repeated Windows execution, FND-003C for exact Playwright image/browser smoke, and FND-003D for truthful root-command and Lefthook wiring; no excluded dependency or mutable generated payload appears in the accepted manifests.",
+      "redProof": "The AC-01 command fails because no machine-readable proof-status and follow-on mapping exists; controls reject a graph that marks unresolved runtime behavior proven or includes Lefthook/mutable shadcn payload early."
+    }
+  ],
+  "requiredTasks": {
+    "baseline": [
+      {
+        "name": "fmt:check",
+        "definition": "deno fmt --check"
+      },
+      {
+        "name": "lint",
+        "definition": "deno lint"
+      },
+      {
+        "name": "check",
+        "definition": "deno check tools/schema/validate_postgres.ts tools/workflows/ticket_contract.ts tools/workflows/validate_ticket.ts"
+      },
+      {
+        "name": "test:schema:matrix",
+        "definition": "deno task test:schema && deno task test:schema:compat"
+      }
+    ],
+    "candidate": [
+      {
+        "name": "fmt:check",
+        "definition": "deno fmt --check",
+        "guardedBy": null
+      },
+      {
+        "name": "lint",
+        "definition": "deno lint",
+        "guardedBy": null
+      },
+      {
+        "name": "check",
+        "definition": "deno check tools/schema/validate_postgres.ts tools/workflows/ticket_contract.ts tools/workflows/validate_ticket.ts",
+        "guardedBy": null
+      },
+      {
+        "name": "test:schema:matrix",
+        "definition": "deno task test:schema && deno task test:schema:compat",
+        "guardedBy": null
+      }
+    ]
+  },
+  "risks": [
+    "The 72-hour eligibility boundary can change during the round; the implementer must requery official publication data immediately before freezing one selection timestamp and must not copy the research snapshot as authority.",
+    "A lockfile can look immutable while Corepack fetches a different package manager, lifecycle hooks run implicitly, or an integrity/signature control is disabled.",
+    "Package resolution and peer satisfaction can be overstated as executable runtime compatibility; the machine proof-status and follow-on boundaries must remain explicit.",
+    "A registry tag can resolve to a platform child or attestation rather than the required multi-architecture index, leaving a supported architecture unpinned.",
+    "A mutable shadcn registry response can change generated source independently of the pinned CLI and must not enter this ticket's acceptance evidence.",
+    "Clean-cache checks can accidentally rely on global caches or dirty the worktree; all restore proofs must use disposable explicit cache roots and finish with a clean allowed-write audit.",
+    "Root manifest and lock changes overlap future scaffold, CI, and hook tickets; no concurrent writer may own those paths.",
+    "Dependency and registry diagnostics can expose local filesystem topology, tokens, cookies, or credentials unless evidence is deliberately concise and redacted."
+  ],
+  "unresolvedDecisions": []
+}
