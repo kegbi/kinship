@@ -28,16 +28,19 @@ const OCI_INDEX_MEDIA = "application/vnd.oci.image.index.v1+json";
 const OCI_MANIFEST_MEDIA = "application/vnd.oci.image.manifest.v1+json";
 const MAX_COMPRESSED_EVIDENCE_BYTES = 32 * 1024 * 1024;
 const MAX_DECOMPRESSED_EVIDENCE_BYTES = 64 * 1024 * 1024;
-const COUNTED_TRANSFORM_REGION_START = [
-  "// FND003_COUNTED_TRANSFORM_",
-  "REGION_START",
+const WHOLE_SOURCE_DIGEST_MARKER_START = [
+  "/* FND003_WHOLE_SOURCE_DIGEST_",
+  "START */\n",
 ].join("");
-const COUNTED_TRANSFORM_REGION_END = [
-  "// FND003_COUNTED_TRANSFORM_",
-  "REGION_END",
+const WHOLE_SOURCE_DIGEST_MARKER_END = [
+  "\n/* FND003_WHOLE_SOURCE_DIGEST_",
+  "END */",
 ].join("");
-const REVIEWED_COUNTED_TRANSFORM_REGION_SHA256 =
-  "sha256:4aee33efba89f9e962759fecc52fcf1919db5d35d22f5960ce84102007a66b3f";
+const WHOLE_SOURCE_DIGEST_SENTINEL = "0".repeat(64);
+/* FND003_WHOLE_SOURCE_DIGEST_START */
+const REVIEWED_WHOLE_SOURCE_SHA256 =
+  "sha256:19c56d25f0e83aa629adc770bb7c6f9d2574ffdffd3febc1cbdd905b6f7893d0";
+/* FND003_WHOLE_SOURCE_DIGEST_END */
 
 type EvidenceReader = (
   path: string,
@@ -1419,29 +1422,38 @@ function incrementalSha256() {
   };
 }
 
-function countedTransformRegion(source: string): string {
-  const starts = source.split(COUNTED_TRANSFORM_REGION_START).length - 1;
-  const ends = source.split(COUNTED_TRANSFORM_REGION_END).length - 1;
-  invariant(
-    starts === 1,
-    "counted transform source start marker is not unique",
+function canonicalWholeSource(source: string): string {
+  invariant(!source.includes("\r"), "whole source must use LF line endings");
+  const starts = source.split(WHOLE_SOURCE_DIGEST_MARKER_START).length - 1;
+  const ends = source.split(WHOLE_SOURCE_DIGEST_MARKER_END).length - 1;
+  invariant(starts === 1, "whole source digest start marker is not unique");
+  invariant(ends === 1, "whole source digest end marker is not unique");
+  const start = source.indexOf(WHOLE_SOURCE_DIGEST_MARKER_START) +
+    WHOLE_SOURCE_DIGEST_MARKER_START.length;
+  const end = source.indexOf(WHOLE_SOURCE_DIGEST_MARKER_END, start);
+  invariant(start < end, "whole source digest markers are reordered");
+  const declaration = source.slice(start, end);
+  const match = declaration.match(
+    /^const REVIEWED_WHOLE_SOURCE_SHA256 =\n[ ]{2}"sha256:([0-9a-f]{64})";$/,
   );
-  invariant(ends === 1, "counted transform source end marker is not unique");
-  const start = source.indexOf(COUNTED_TRANSFORM_REGION_START) +
-    COUNTED_TRANSFORM_REGION_START.length;
-  const end = source.indexOf(COUNTED_TRANSFORM_REGION_END);
-  invariant(start < end, "counted transform source markers are reordered");
-  const region = source.slice(start, end);
-  invariant(region.length > 0, "counted transform source region is empty");
-  return region;
+  invariant(match !== null, "whole source digest declaration is malformed");
+  const embedded = match[1]!;
+  invariant(
+    `sha256:${embedded}` === REVIEWED_WHOLE_SOURCE_SHA256,
+    "whole source embedded digest differs from its live constant",
+  );
+  const canonicalDeclaration = declaration.replace(
+    embedded,
+    WHOLE_SOURCE_DIGEST_SENTINEL,
+  );
+  return source.slice(0, start) + canonicalDeclaration + source.slice(end);
 }
 
-async function assertReviewedCountedTransformRegion(
-  region: string,
-): Promise<void> {
+async function assertReviewedWholeSource(source: string): Promise<void> {
   invariant(
-    await sha256Text(region) === REVIEWED_COUNTED_TRANSFORM_REGION_SHA256,
-    "counted transform source region hash drifted",
+    await sha256Text(canonicalWholeSource(source)) ===
+      REVIEWED_WHOLE_SOURCE_SHA256,
+    "whole source digest drifted",
   );
 }
 
@@ -1457,7 +1469,6 @@ function countedHashingStream(
     "counted transform owned-acquire capability is invalid",
   );
   return new TransformStream({
-    // FND003_COUNTED_TRANSFORM_REGION_START
     transform(chunk, controller) {
       invariant(
         chunk.byteLength <= maximum - count.value,
@@ -1467,7 +1478,6 @@ function countedHashingStream(
       count.value += chunk.byteLength;
       controller.enqueue(chunk);
     },
-    // FND003_COUNTED_TRANSFORM_REGION_END
   });
 }
 
@@ -5894,6 +5904,40 @@ async function readRepositoryInputs(
   return contents;
 }
 
+async function executeMutatedWholeSource(
+  source: string,
+): Promise<{ status: string; message: string }> {
+  const workerProgram = [
+    `const source = ${JSON.stringify(source)};`,
+    "const registered = [];",
+    "Deno.test = (name, fn) => registered.push({ name, fn });",
+    "Deno.readTextFile = () => Promise.resolve(source);",
+    'const moduleUrl = URL.createObjectURL(new Blob([source], { type: "application/typescript" }));',
+    "try {",
+    "  await import(moduleUrl);",
+    '  const target = registered.find((test) => test.name === "whole-source digest locks the effective counted transform boundary");',
+    "  await target.fn();",
+    '  postMessage({ status: "fulfilled", message: "accepted" });',
+    "} catch (error) {",
+    '  postMessage({ status: "rejected", message: String(error).replace(/^Error: /, "") });',
+    "} finally {",
+    "  URL.revokeObjectURL(moduleUrl);",
+    "}",
+  ].join("\n");
+  const workerUrl = URL.createObjectURL(
+    new Blob([workerProgram], { type: "text/javascript" }),
+  );
+  const worker = new Worker(workerUrl, { type: "module" });
+  const result = await new Promise<{ status: string; message: string }>(
+    (resolve) => {
+      worker.onmessage = (event) => resolve(event.data);
+    },
+  );
+  worker.terminate();
+  URL.revokeObjectURL(workerUrl);
+  return result;
+}
+
 Deno.test("evidence ingestion rejects wall-clock scheduling and requires an independent raw lease", async () => {
   const source = await Deno.readTextFile(new URL(import.meta.url));
   const forbiddenIdentifiers = [
@@ -6002,64 +6046,35 @@ Deno.test("evidence ingestion rejects wall-clock scheduling and requires an inde
   );
 });
 
-Deno.test("counted transform callback is exact-source locked against copy escapes", async () => {
+Deno.test("whole-source digest locks the effective counted transform boundary", async () => {
   const source = await Deno.readTextFile(new URL(import.meta.url));
-  const region = countedTransformRegion(source);
-  await assertReviewedCountedTransformRegion(region);
+  await assertReviewedWholeSource(source);
 
-  const synthetic =
-    `${COUNTED_TRANSFORM_REGION_START}${region}${COUNTED_TRANSFORM_REGION_END}`;
+  const countedFactoryStart = "function countedHashingStream(\n";
+  const countedFactoryEnd = "\n}\n\nasync function loadEvidence(\n";
   invariant(
-    countedTransformRegion(synthetic) === region,
-    "counted transform synthetic source changed its reviewed region",
+    source.split(countedFactoryStart).length === 2 &&
+      source.split(countedFactoryEnd).length === 2,
+    "counted transform factory boundary is ambiguous",
   );
-  const markerMutations = [
-    {
-      source: synthetic.replace(COUNTED_TRANSFORM_REGION_START, ""),
-      message: "counted transform source start marker is not unique",
-    },
-    {
-      source: synthetic.replace(
-        COUNTED_TRANSFORM_REGION_START,
-        COUNTED_TRANSFORM_REGION_START + COUNTED_TRANSFORM_REGION_START,
-      ),
-      message: "counted transform source start marker is not unique",
-    },
-    {
-      source: synthetic.replace(COUNTED_TRANSFORM_REGION_END, ""),
-      message: "counted transform source end marker is not unique",
-    },
-    {
-      source: synthetic.replace(
-        COUNTED_TRANSFORM_REGION_END,
-        COUNTED_TRANSFORM_REGION_END + COUNTED_TRANSFORM_REGION_END,
-      ),
-      message: "counted transform source end marker is not unique",
-    },
-    {
-      source:
-        `${COUNTED_TRANSFORM_REGION_END}${region}${COUNTED_TRANSFORM_REGION_START}`,
-      message: "counted transform source markers are reordered",
-    },
-  ];
-  for (const mutation of markerMutations) {
-    let message = "accepted";
-    try {
-      countedTransformRegion(mutation.source);
-    } catch (error) {
-      message = (error as Error).message;
-    }
-    invariant(
-      message === mutation.message,
-      `counted transform marker mutation was not rejected exactly: ${message}`,
-    );
-  }
-
+  const factoryStart = source.indexOf(countedFactoryStart);
+  const factoryEnd = source.indexOf(countedFactoryEnd, factoryStart);
+  const factory = source.slice(factoryStart, factoryEnd);
+  const transformStart = "    transform(chunk, controller) {\n";
   const preflight = "      invariant(\n";
+  const objectClose = "    },\n  });";
   invariant(
-    region.split(preflight).length === 2,
-    "counted transform reviewed region has an ambiguous preflight invariant",
+    factory.split(transformStart).length === 2 &&
+      factory.split(preflight).length === 2 &&
+      factory.split(objectClose).length === 2,
+    "counted transform mutation anchors are ambiguous",
   );
+  const loadCall = "          countedHashingStream(\n";
+  invariant(
+    source.split(loadCall).length === 3,
+    "loadEvidence must contain exactly two counted transform call sites",
+  );
+
   const copyEscapes = [
     "      chunk.slice();\n",
     "      new Uint8Array(chunk);\n",
@@ -6071,32 +6086,166 @@ Deno.test("counted transform callback is exact-source locked against copy escape
     '      chunk["slice"]();\n',
     "      ownedAcquire?.acquire(chunk);\n",
   ];
-  for (const copyEscape of copyEscapes) {
-    const mutation = region.replace(preflight, `${copyEscape}${preflight}`);
-    const [result] = await Promise.allSettled([
-      assertReviewedCountedTransformRegion(mutation),
-    ]);
+  const effectiveOverride = `    ["transform"](chunk, controller) {\n` +
+    `      const discarded = new Uint8Array(chunk);\n` +
+    `      void discarded;\n` +
+    `      invariant(\n` +
+    `        chunk.byteLength <= maximum - count.value,\n` +
+    `        \`${"${label}"} exceeds ${"${maximum}"} byte limit\`,\n` +
+    `      );\n` +
+    `      hash.update(chunk);\n` +
+    `      count.value += chunk.byteLength;\n` +
+    `      controller.enqueue(chunk);\n` +
+    `    },\n`;
+  const spreadOverride = `    ...{\n` +
+    `      transform(chunk, controller) {\n` +
+    `        chunk.slice();\n` +
+    `        controller.enqueue(chunk);\n` +
+    `      },\n` +
+    `    },\n`;
+  const helper = `function copiedChunk(chunk: Uint8Array): void {\n` +
+    `  chunk.slice();\n` +
+    `}\n\n`;
+  const alternateFactory = factory.replace(
+    "function countedHashingStream(",
+    "function alternateCountedHashingStream(",
+  );
+  const sourceWithAlternateFactory = source.slice(0, factoryEnd) +
+    "\n}\n\n" + alternateFactory + source.slice(factoryEnd);
+  const firstCall = sourceWithAlternateFactory.indexOf(loadCall);
+  const secondCall = sourceWithAlternateFactory.indexOf(
+    loadCall,
+    firstCall + loadCall.length,
+  );
+  const selfReader =
+    `Deno.test("whole-source digest locks the effective counted transform boundary", async () => {\n` +
+    `  const source = await Deno.readTextFile(new URL(import.meta.url));`;
+  invariant(
+    source.split(selfReader).length === 2,
+    "whole source self-reader is ambiguous",
+  );
+  const wholeSourceMutations = [
+    ...copyEscapes.map((copyEscape) =>
+      source.replace(preflight, `${copyEscape}${preflight}`)
+    ),
+    source.replace(objectClose, `    },\n${effectiveOverride}  });`),
+    source.replace(objectClose, `    },\n${spreadOverride}  });`),
+    source.replace(countedFactoryStart, helper + countedFactoryStart).replace(
+      preflight,
+      "      copiedChunk(chunk);\n" + preflight,
+    ),
+    sourceWithAlternateFactory.slice(0, firstCall) +
+    sourceWithAlternateFactory.slice(firstCall).replace(
+      loadCall,
+      "          alternateCountedHashingStream(\n",
+    ),
+    sourceWithAlternateFactory.slice(0, secondCall) +
+    sourceWithAlternateFactory.slice(secondCall).replace(
+      loadCall,
+      "          alternateCountedHashingStream(\n",
+    ),
+    source.replace(
+      countedFactoryStart,
+      "// decoy reviewed transform region\n" + countedFactoryStart,
+    ),
+    source.replace(
+      selfReader,
+      selfReader.replace(
+        "new URL(import.meta.url)",
+        'new URL(import.meta.url + "#retargeted")',
+      ),
+    ),
+    source.replace(
+      selfReader,
+      selfReader.replace("new URL(import.meta.url)", "import.meta.url"),
+    ),
+    source.replaceAll("\n", "\r\n"),
+    source.replace(transformStart, "     transform(chunk, controller) {\n"),
+  ];
+  for (const [index, mutation] of wholeSourceMutations.entries()) {
+    const result = await executeMutatedWholeSource(mutation);
     invariant(
-      result?.status === "rejected" &&
-        (result.reason as Error).message ===
-          "counted transform source region hash drifted",
-      `counted transform copy escape was not hash-rejected: ${copyEscape.trim()}`,
+      result.status === "rejected" &&
+        result.message ===
+          (mutation.includes("\r")
+            ? "whole source must use LF line endings"
+            : "whole source digest drifted"),
+      `whole-source transform mutation ${index} was not rejected exactly: ${result.status} ${result.message}`,
     );
   }
-  for (
-    const mutation of [
-      region.replaceAll("\n", "\r\n"),
-      region.replace("    transform", "     transform"),
-    ]
-  ) {
-    const [result] = await Promise.allSettled([
-      assertReviewedCountedTransformRegion(mutation),
-    ]);
+
+  const declarationStart = source.indexOf(WHOLE_SOURCE_DIGEST_MARKER_START);
+  const declarationEnd = source.indexOf(
+    WHOLE_SOURCE_DIGEST_MARKER_END,
+    declarationStart,
+  ) + WHOLE_SOURCE_DIGEST_MARKER_END.length;
+  const declarationRegion = source.slice(declarationStart, declarationEnd);
+  const declarationBody = source.slice(
+    declarationStart + WHOLE_SOURCE_DIGEST_MARKER_START.length,
+    declarationEnd - WHOLE_SOURCE_DIGEST_MARKER_END.length,
+  );
+  const markerMutations = [
+    {
+      source,
+      message: "accepted",
+    },
+    {
+      source: source.replace(WHOLE_SOURCE_DIGEST_MARKER_START, ""),
+      message: "whole source digest start marker is not unique",
+    },
+    {
+      source: source.replace(
+        WHOLE_SOURCE_DIGEST_MARKER_START,
+        WHOLE_SOURCE_DIGEST_MARKER_START + WHOLE_SOURCE_DIGEST_MARKER_START,
+      ),
+      message: "whole source digest start marker is not unique",
+    },
+    {
+      source: source.replace(WHOLE_SOURCE_DIGEST_MARKER_END, ""),
+      message: "whole source digest end marker is not unique",
+    },
+    {
+      source: source.replace(
+        WHOLE_SOURCE_DIGEST_MARKER_END,
+        WHOLE_SOURCE_DIGEST_MARKER_END + WHOLE_SOURCE_DIGEST_MARKER_END,
+      ),
+      message: "whole source digest end marker is not unique",
+    },
+    {
+      source: source.slice(0, declarationStart) +
+        WHOLE_SOURCE_DIGEST_MARKER_END + declarationBody +
+        WHOLE_SOURCE_DIGEST_MARKER_START + source.slice(declarationEnd),
+      message: "whole source digest markers are reordered",
+    },
+    {
+      source: source + "\n" + declarationRegion,
+      message: "whole source digest start marker is not unique",
+    },
+    {
+      source: source.slice(0, declarationStart) + declarationRegion.replace(
+        "const REVIEWED_WHOLE_SOURCE_SHA256 =",
+        "const  REVIEWED_WHOLE_SOURCE_SHA256 =",
+      ) + source.slice(declarationEnd),
+      message: "whole source digest declaration is malformed",
+    },
+    {
+      source: source.replace(
+        REVIEWED_WHOLE_SOURCE_SHA256,
+        "sha256:" + "f".repeat(64),
+      ),
+      message: "whole source embedded digest differs from its live constant",
+    },
+  ];
+  for (const mutation of markerMutations) {
+    let message = "accepted";
+    try {
+      await assertReviewedWholeSource(mutation.source);
+    } catch (error) {
+      message = (error as Error).message;
+    }
     invariant(
-      result?.status === "rejected" &&
-        (result.reason as Error).message ===
-          "counted transform source region hash drifted",
-      "counted transform byte-only mutation was not hash-rejected",
+      message === mutation.message,
+      `whole source marker or digest mutation was not rejected exactly: ${message}`,
     );
   }
 });
