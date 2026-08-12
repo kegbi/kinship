@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "ticketId": "WORKFLOW-002",
   "ticketRevision": 3,
-  "phase": "red",
+  "phase": "review",
   "round": 1,
   "baseRevision": "895731f27f66d614cb431e9ab6bb570b94d1a476",
-  "candidateRevision": null,
+  "candidateRevision": "d04b88851d202facafe4fcba495cdae24462cc92",
   "events": [
     {
       "sequence": 1,
@@ -24,13 +24,79 @@
       "actorRunId": "WORKFLOW-002/implementer/r1/986e94e3-88ed-48a8-908f-19fcbb00a6ab",
       "evidenceRef": "evidence/round-01-red.log",
       "revision": "d7a187ae1c2a311be265916121676914388d733e"
+    },
+    {
+      "sequence": 3,
+      "from": "red",
+      "to": "green",
+      "round": 1,
+      "actorRunId": "WORKFLOW-002/implementer/r1/986e94e3-88ed-48a8-908f-19fcbb00a6ab",
+      "evidenceRef": "evidence/round-01-green.log",
+      "revision": "d04b88851d202facafe4fcba495cdae24462cc92"
+    },
+    {
+      "sequence": 4,
+      "from": "green",
+      "to": "refactor",
+      "round": 1,
+      "actorRunId": "WORKFLOW-002/implementer/r1/986e94e3-88ed-48a8-908f-19fcbb00a6ab",
+      "evidenceRef": "evidence/round-01-refactor.log",
+      "revision": "d04b88851d202facafe4fcba495cdae24462cc92"
+    },
+    {
+      "sequence": 5,
+      "from": "refactor",
+      "to": "review",
+      "round": 1,
+      "actorRunId": "WORKFLOW-002/orchestrator/r0/df585d88-eade-43bb-8845-7a7d6a3c3e17",
+      "evidenceRef": "results/round-01.json",
+      "revision": "d04b88851d202facafe4fcba495cdae24462cc92"
     }
   ],
-  "resultRefs": [],
+  "resultRefs": [
+    "results/round-01.json"
+  ],
   "reviewRefs": [],
   "dependencyRevisions": {},
   "openFindingIds": [],
-  "orchestratorChecks": [],
+  "orchestratorChecks": [
+    {
+      "runId": "WORKFLOW-002/orchestrator/r0/df585d88-eade-43bb-8845-7a7d6a3c3e17/candidate-focused",
+      "revision": "d04b88851d202facafe4fcba495cdae24462cc92",
+      "command": "deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/scalable_git_evidence_regression_test.ts",
+      "exitCode": 0
+    },
+    {
+      "runId": "WORKFLOW-002/orchestrator/r0/df585d88-eade-43bb-8845-7a7d6a3c3e17/candidate-fmt",
+      "revision": "d04b88851d202facafe4fcba495cdae24462cc92",
+      "command": "deno task fmt:check",
+      "exitCode": 0
+    },
+    {
+      "runId": "WORKFLOW-002/orchestrator/r0/df585d88-eade-43bb-8845-7a7d6a3c3e17/candidate-lint",
+      "revision": "d04b88851d202facafe4fcba495cdae24462cc92",
+      "command": "deno task lint",
+      "exitCode": 0
+    },
+    {
+      "runId": "WORKFLOW-002/orchestrator/r0/df585d88-eade-43bb-8845-7a7d6a3c3e17/candidate-check",
+      "revision": "d04b88851d202facafe4fcba495cdae24462cc92",
+      "command": "deno task check",
+      "exitCode": 0
+    },
+    {
+      "runId": "WORKFLOW-002/orchestrator/r0/df585d88-eade-43bb-8845-7a7d6a3c3e17/candidate-workflow",
+      "revision": "d04b88851d202facafe4fcba495cdae24462cc92",
+      "command": "deno task test:workflow",
+      "exitCode": 0
+    },
+    {
+      "runId": "WORKFLOW-002/orchestrator/r0/df585d88-eade-43bb-8845-7a7d6a3c3e17/candidate-coverage",
+      "revision": "d04b88851d202facafe4fcba495cdae24462cc92",
+      "command": "deno task test:workflow:coverage",
+      "exitCode": 0
+    }
+  ],
   "acceptedCandidateRevision": null,
   "blocker": null
 }

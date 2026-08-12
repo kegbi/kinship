@@ -1,6 +1,6 @@
 # WORKFLOW-002: Scale Git evidence validation on growing history
 
-Status: RED frozen, round 1\
+Status: review, round 1\
 Owner: trusted top-level orchestrator\
 Ticket revision: 3\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
@@ -11,6 +11,13 @@ Maximum rounds: 3
 Frozen RED revision: `d7a187ae1c2a311be265916121676914388d733e`\
 Frozen regression SHA-256:
 `8a433e183b9091994a747cf4d3dd0fd69152c21f34258a59180e5dfb91e4e71e`
+
+Candidate revision: `d04b88851d202facafe4fcba495cdae24462cc92`
+
+The trusted controller independently verified the focused regression, all
+required candidate tasks, an exact workflow total of 194 tests with zero
+failures, and exact 100% branch/function/line coverage for both validator
+production files before dispatching independent review.
 
 ## Outcome
 

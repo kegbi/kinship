@@ -40,3 +40,33 @@ frozenTestDigestMatch: true
 productionFiles:
 - tools/workflows/validate_ticket.ts
 commit: none
+
+trusted-controller clean candidate gates:
+- revision: d04b88851d202facafe4fcba495cdae24462cc92
+- command: deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/scalable_git_evidence_regression_test.ts
+  exitCode: 0
+  output: ok | 7 passed | 0 failed (34s)
+- command: deno task fmt:check
+  exitCode: 0
+  output: Checked 151 files
+- command: deno task lint
+  exitCode: 0
+  output: Checked 25 files
+- command: deno task check
+  exitCode: 0
+  output: Checked validate_postgres.ts, ticket_contract.ts, and validate_ticket.ts
+- command: deno task test:workflow
+  exitCode: 0
+  output: ok | 194 passed | 0 failed (7m48s)
+- command: deno task test:workflow:coverage
+  exitCode: 0
+  output: ok | 194 passed | 0 failed (6m37s); detailed 100% threshold passed
+
+coverage at candidate:
+- ticket_contract.ts: branch 100.0%, function 100.0%, line 100.0% (2482/2482)
+- validate_ticket.ts: branch 100.0%, function 100.0%, line 100.0% (1309/1309)
+- all included files: branch 100.0%, function 100.0%, line 100.0%
+
+workflowTestCountAtCandidate: 194
+workflowTestResultAtCandidate: 194 passed, 0 failed
+candidateRevision: d04b88851d202facafe4fcba495cdae24462cc92
