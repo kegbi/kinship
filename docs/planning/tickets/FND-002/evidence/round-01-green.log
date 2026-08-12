@@ -1,0 +1,21 @@
+schemaVersion: 2
+ticketId: FND-002
+round: 1
+phase: GREEN_PENDING_AUTHORITATIVE_CONTINUATION
+issuedByControllerRunId: FND-002/orchestrator/r0/a16b5b61-a6c8-4366-8752-d530fa3a6d74
+implementerRunId: FND-002/implementer/r1/e2edf3bf-a445-4fc2-8ba4-3fffb9681804
+
+priorAttempt:
+  disposition: controller-rejected pre-candidate attempt
+  focusedResult: 2 passed, 0 failed
+  invalidatingGate: deno task lint exited 1 on the then-frozen check
+  candidateFormed: false
+  productionEditsRestored: true
+
+authoritativeGreen:
+  status: PENDING
+  prerequisite: controller must reproduce and freeze the recovered lint-clean RED check and issue a new digest-bound continuation
+
+currentChangedProductionFiles: []
+currentArchitectureContractsUnchanged: true
+

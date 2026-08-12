@@ -46,7 +46,7 @@ function listProperty(block: string, property: string): string[] {
     const values: string[] = [];
     for (let index = propertyIndex + 1; index < lines.length; index++) {
       const line = lines[index]!;
-      if (/^    \]/.test(line)) break;
+      if (/^ {4}\]/.test(line)) break;
       const item = line.match(/^\s{6}([^#,\]]+),?\s*$/)?.[1]?.trim();
       if (item) values.push(item);
     }
@@ -56,7 +56,7 @@ function listProperty(block: string, property: string): string[] {
   const values: string[] = [];
   for (let index = propertyIndex + 1; index < lines.length; index++) {
     const line = lines[index]!;
-    if (/^    \S/.test(line)) break;
+    if (/^ {4}\S/.test(line)) break;
     const item = line.match(/^\s{6}-\s+([^#,\]]+)/)?.[1]?.trim();
     if (item) values.push(item);
   }
@@ -117,7 +117,7 @@ function manifestCoordinationIssues(yaml: string): string[] {
     }
   }
 
-  if (/^  - id: .*coordinat(?:or|ion).*$/mi.test(yaml)) {
+  if (/^ {2}- id: .*coordinat(?:or|ion).*$/mi.test(yaml)) {
     issues.push("a generic coordination module is forbidden");
   }
   return issues;
