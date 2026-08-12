@@ -9,6 +9,7 @@ type YamlRecord = { [key: string]: YamlValue };
 const GRAPH_PATH = "docs/validation/runtime-graph-fnd003.json";
 const REPORT_PATH = "docs/validation/runtime-graph-fnd003.md";
 const PROVENANCE_ROOT = "tools/runtime/FND-003/provenance/";
+const REAL_TOOL_FIXTURE_ROOT = "tools/runtime/FND-003/fixtures/real-tool/";
 const REPOSITORY_FILES = [
   ".npmrc",
   "deno.json",
@@ -39,7 +40,7 @@ const WHOLE_SOURCE_DIGEST_MARKER_END = [
 const WHOLE_SOURCE_DIGEST_SENTINEL = "0".repeat(64);
 /* FND003_WHOLE_SOURCE_DIGEST_START */
 const REVIEWED_WHOLE_SOURCE_SHA256 =
-  "sha256:19c56d25f0e83aa629adc770bb7c6f9d2574ffdffd3febc1cbdd905b6f7893d0";
+  "sha256:04aaf058229be0373c448231403a153a9c9533fc4a16bada14f851288828200e";
 /* FND003_WHOLE_SOURCE_DIGEST_END */
 
 type EvidenceReader = (
@@ -126,6 +127,8 @@ const DIRECT = {
     "class-variance-authority",
     "clsx",
     "tailwind-merge",
+    "types-react",
+    "types-react-dom",
     "eslint",
     "eslint-plugin-astro",
     "eslint-plugin-jsx-a11y",
@@ -174,6 +177,7 @@ const IMPORT_PAIRS: Record<string, [string, string]> = {
   "button-cva": ["shadcn", "class-variance-authority"],
   "cn-clsx": ["shadcn", "clsx"],
   "cn-tailwind-merge": ["shadcn", "tailwind-merge"],
+  "types-react-dom-types-react": ["types-react-dom", "types-react"],
   "astro-eslint-parser": ["eslint-plugin-astro", "astro-eslint-parser"],
   "astro-eslint-a11y": ["eslint-plugin-astro", "eslint-plugin-jsx-a11y"],
   "react-hooks-eslint": ["eslint-plugin-react-hooks", "eslint"],
@@ -230,6 +234,7 @@ const MANIFEST_RELATIONS: Record<
   "react-hooks-peer-eslint": "peerDependencies",
   "typescript-eslint-peer-eslint": "peerDependencies",
   "typescript-eslint-peer-typescript": "peerDependencies",
+  "types-react-dom-types-react": "dependencies",
 };
 const MANIFEST_RANGES: Record<string, string> = {
   "astro-react-peer-astro": "^5.0.0",
@@ -257,6 +262,7 @@ const MANIFEST_RANGES: Record<string, string> = {
     "^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0-0 || ^9.0.0 || ^10.0.0",
   "typescript-eslint-peer-eslint": "^8.57.0 || ^9.0.0 || ^10.0.0",
   "typescript-eslint-peer-typescript": ">=4.8.4 <6.1.0",
+  "types-react-dom-types-react": "^19.2.0",
 };
 const FOLLOW_ONS: Record<string, string> = {
   "FND-003A": "backend-database-runtime",
@@ -3098,7 +3104,6 @@ function validatePnpmGraph(
     }
     exactValue(value, expected, `${id} package emitted metadata`);
   }
-  const packageSnapshotCounts = new Map<string, number>();
   for (const snapshot of snapshots) {
     exactKeys(snapshot, [
       "id",
@@ -3117,10 +3122,6 @@ function validatePnpmGraph(
       packageKeyFromSnapshot(key) === packageKey &&
         packageKeys.includes(packageKey),
       `${key} snapshot lacks an exact package record`,
-    );
-    packageSnapshotCounts.set(
-      packageKey,
-      (packageSnapshotCounts.get(packageKey) ?? 0) + 1,
     );
     const value = object(snapshot.value, `${key}.value`);
     invariant(
@@ -3284,10 +3285,6 @@ function validatePnpmGraph(
       );
     }
   }
-  invariant(
-    [...packageSnapshotCounts.values()].some((count) => count >= 2),
-    "pnpm graph must retain multiple peer-qualified snapshots for one package",
-  );
   const root = object(
     importers.find((item) => item.id === ".")?.value,
     "root importer",
@@ -3408,6 +3405,7 @@ function expectedRepeatRuns(graph: JsonRecord): JsonRecord[] {
       setEnvironment: {
         COREPACK_HOME: "isolated:corepack",
         COREPACK_DEFAULT_TO_LATEST: "0",
+        PNPM_CONFIG_CACHE_DIR: "isolated:pnpm-cache",
       },
       unsetEnvironment: ["COREPACK_INTEGRITY_KEYS"],
       nodeModulesState: "absent",
@@ -3426,6 +3424,7 @@ function expectedRepeatRuns(graph: JsonRecord): JsonRecord[] {
         COREPACK_HOME: "isolated:corepack",
         COREPACK_DEFAULT_TO_LATEST: "0",
         COREPACK_ENABLE_NETWORK: "0",
+        PNPM_CONFIG_CACHE_DIR: "isolated:pnpm-cache",
       },
       unsetEnvironment: ["COREPACK_INTEGRITY_KEYS"],
       nodeModulesState: "removed-before-run",
@@ -4336,13 +4335,15 @@ async function makeFixture(): Promise<Fixture> {
   };
   const selectedIds = [...RUNTIMES, ...DIRECT.deno, ...DIRECT.pnpm];
   const pnpmPackageIds = [
-    ...DIRECT.pnpm,
-    "types-react",
-    "types-react-dom",
-    "astro-eslint-parser",
-    "esbuild",
-    "fsevents",
-    "scheduler",
+    ...new Set([
+      ...DIRECT.pnpm,
+      "types-react",
+      "types-react-dom",
+      "astro-eslint-parser",
+      "esbuild",
+      "fsevents",
+      "scheduler",
+    ]),
   ];
   const npmIds = [
     ...new Set<string>([
@@ -5347,6 +5348,7 @@ function makeRepositoryContents(
     minimumReleaseAgeStrict: true,
     minimumReleaseAgeIgnoreMissingTime: false,
     trustLockfile: false,
+    autoInstallPeers: false,
     strictDepBuilds: true,
     dangerouslyAllowAllBuilds: false,
     allowBuilds: clone(allowBuilds) as YamlRecord,
@@ -5467,6 +5469,7 @@ function expectedWorkspace(graph: JsonRecord): JsonRecord {
     minimumReleaseAgeStrict: true,
     minimumReleaseAgeIgnoreMissingTime: false,
     trustLockfile: false,
+    autoInstallPeers: false,
     strictDepBuilds: true,
     dangerouslyAllowAllBuilds: false,
     allowBuilds: clone(
@@ -7927,8 +7930,12 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
       object(candidate.graph.repository, "repository").pnpm,
       "pnpm",
     );
-    array(pnpm.snapshots, "snapshots").pop();
-  }, "pnpm graph must retain multiple peer-qualified snapshots");
+    const snapshots = array(pnpm.snapshots, "snapshots");
+    const index = snapshots.findIndex((raw) =>
+      object(raw, "snapshot").id === "primary:astro"
+    );
+    snapshots.splice(index, 1);
+  }, "resolution is not bound to its exact package and snapshot");
   await expectReject((candidate) => {
     const pnpm = object(
       object(candidate.graph.repository, "repository").pnpm,
@@ -8357,6 +8364,61 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
       renderYaml(workspace as unknown as YamlRecord),
     );
   }, "pnpm workspace policy disagrees");
+  for (const replacement of [undefined, true]) {
+    await expectRepositoryReject((files) => {
+      const workspace = parseYaml(
+        string(files.get("pnpm-workspace.yaml"), "workspace"),
+        "workspace",
+      );
+      if (replacement === undefined) delete workspace.autoInstallPeers;
+      else workspace.autoInstallPeers = replacement;
+      files.set(
+        "pnpm-workspace.yaml",
+        renderYaml(workspace as unknown as YamlRecord),
+      );
+    }, "pnpm workspace policy disagrees");
+  }
+  for (const id of ["types-react", "types-react-dom"]) {
+    await expectReject((candidate) => {
+      const direct = array(
+        object(candidate.graph.repository, "repository").directDependencyIds,
+        "direct dependency IDs",
+      );
+      direct.splice(direct.indexOf(id), 1);
+    }, "direct dependencies membership is not exact");
+  }
+  for (const runId of ["pnpm-clean", "pnpm-offline"]) {
+    await expectReject((candidate) => {
+      const runs = array(
+        object(
+          object(candidate.graph.repository, "repository").repeatability,
+          "repeatability",
+        ).runs,
+        "repeat runs",
+      ).map((raw) => object(raw, "repeat run"));
+      const run = object(
+        runs.find((item) => item.id === runId),
+        runId,
+      );
+      delete object(run.setEnvironment, `${runId} environment`)
+        .PNPM_CONFIG_CACHE_DIR;
+    }, `${runId}.setEnvironment disagrees`);
+  }
+  await expectReject((candidate) => {
+    const runs = array(
+      object(
+        object(candidate.graph.repository, "repository").repeatability,
+        "repeatability",
+      ).runs,
+      "repeat runs",
+    ).map((raw) => object(raw, "repeat run"));
+    const offline = object(
+      runs.find((item) => item.id === "pnpm-offline"),
+      "pnpm-offline",
+    );
+    object(offline.setEnvironment, "pnpm-offline environment")
+      .PNPM_CONFIG_CACHE_DIR = "isolated:other-pnpm-cache";
+  }, "pnpm-offline.setEnvironment disagrees");
   await expectRepositoryReject((files) => {
     const workspace = parseYaml(
       string(files.get("pnpm-workspace.yaml"), "workspace"),
@@ -8423,6 +8485,112 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
   await validateRepositoryGraph(
     (path) => Promise.resolve(string(contents.get(path), path)),
     fixtureReader(fixture),
+  );
+});
+
+Deno.test("real pnpm and Deno outputs satisfy the bounded repository policy", async () => {
+  const metadata = parseJson(
+    await Deno.readTextFile(`${REAL_TOOL_FIXTURE_ROOT}metadata.json`),
+    "real-tool metadata",
+  );
+  exactKeys(metadata, ["schemaVersion", "pnpm", "deno"], "real-tool metadata");
+  invariant(metadata.schemaVersion === 1, "real-tool metadata version drifted");
+  const pnpmObservation = object(metadata.pnpm, "real pnpm observation");
+  const denoObservation = object(metadata.deno, "real Deno observation");
+  const fixtureFiles = new Map<string, string>();
+  for (const observation of [pnpmObservation, denoObservation]) {
+    for (
+      const [path, expectedHash] of Object.entries(
+        object(observation.fixtureFiles, "real fixture hashes"),
+      )
+    ) {
+      const contents = await Deno.readTextFile(
+        `${REAL_TOOL_FIXTURE_ROOT}${path}`,
+      );
+      invariant(
+        await sha256Text(contents) === `sha256:${expectedHash}`,
+        `${path} fixture hash drifted`,
+      );
+      fixtureFiles.set(path, contents);
+    }
+  }
+  const emittedDenoLock = parseJson(
+    string(fixtureFiles.get("deno-2.9.5/deno.lock"), "real Deno lock"),
+    "real Deno lock",
+  );
+  invariant(
+    emittedDenoLock.version === denoObservation.lockfileVersion &&
+      Object.keys(object(emittedDenoLock.specifiers, "real Deno specifiers"))
+          .length ===
+        denoObservation.specifierCount &&
+      Object.keys(object(emittedDenoLock.npm, "real Deno npm nodes")).length ===
+        denoObservation.npmNodeCount,
+    "real Deno v5 closure observation drifted",
+  );
+  const emittedSettings = parseYaml(
+    string(
+      fixtureFiles.get("pnpm-11.21.0/settings.txt"),
+      "real pnpm settings",
+    ),
+    "real pnpm settings",
+  );
+  invariant(
+    emittedSettings.lockfileVersion === pnpmObservation.lockfileVersion &&
+      object(emittedSettings.settings, "real pnpm lock settings")
+          .autoInstallPeers ===
+        false,
+    "real pnpm v9 settings observation drifted",
+  );
+  const reactTypesSlice = string(
+    fixtureFiles.get("pnpm-11.21.0/react-types-importer.txt"),
+    "real React types importer slice",
+  );
+  invariant(
+    reactTypesSlice.includes("'@types/react':") &&
+      reactTypesSlice.includes("'@types/react-dom':"),
+    "real pnpm importer omits explicit React type roots",
+  );
+  const multiplicityKeys = string(
+    fixtureFiles.get("pnpm-11.21.0/one-to-many-snapshots.txt"),
+    "real one-to-many snapshot slice",
+  ).trim().split("\n");
+  invariant(
+    multiplicityKeys.length === 2 &&
+      multiplicityKeys.every((key) =>
+        key.includes(String(pnpmObservation.oneToManyBase))
+      ),
+    "real pnpm one-to-many snapshot observation drifted",
+  );
+
+  const fixture = await makeFixture();
+  const authority = await validateGraph(fixture.graph, fixtureReader(fixture));
+  invariant(
+    expectedWorkspace(fixture.graph).autoInstallPeers === false,
+    "workspace autoInstallPeers policy drifted",
+  );
+  const directPnpmIds: readonly string[] = DIRECT.pnpm;
+  invariant(
+    directPnpmIds.includes("types-react") &&
+      directPnpmIds.includes("types-react-dom"),
+    "explicit React type roots drifted",
+  );
+  const oneSnapshotPerBase = clone(fixture.graph);
+  const onePerPnpm = object(
+    object(oneSnapshotPerBase.repository, "one-per repository").pnpm,
+    "one-per pnpm",
+  );
+  array(onePerPnpm.snapshots, "one-per snapshots").pop();
+  validatePnpmGraph(oneSnapshotPerBase, authority);
+  const pnpmRuns = expectedRepeatRuns(fixture.graph).filter((run) =>
+    run.runtime === "pnpm"
+  );
+  const cacheTokens = pnpmRuns.map((run) =>
+    object(run.setEnvironment, `${run.id} environment`).PNPM_CONFIG_CACHE_DIR
+  );
+  invariant(
+    cacheTokens.length === 2 &&
+      cacheTokens.every((token) => token === "isolated:pnpm-cache"),
+    "shared isolated pnpm metadata cache drifted",
   );
 });
 
