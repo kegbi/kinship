@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "ticketId": "PRODUCT-001",
+  "ticketRevision": 1,
+  "round": 1,
+  "implementerRunId": "PRODUCT-001/implementer/r1/22c02056-b1f4-45fc-ac07-95dc89cfd5ba",
+  "issuedByControllerRunId": "PRODUCT-001/orchestrator/r0/68950167-ba0d-4262-bf70-2f962d862fa0",
+  "inputBaseRevision": "603f6621809f61fab70bc29b8b4a9252ebcecb27",
+  "dispatchRef": "dispatch/round-01.md",
+  "redRevision": "367de245484347847e1914c2c48e91d4356885bf",
+  "red": {
+    "command": "deno test --allow-read=docs/product,docs/planning tools/product/PRODUCT-001/release_contract_test.ts",
+    "exitCode": 1,
+    "expectedFailure": "The catalog extraction controls pass while AC-01 through AC-04 fail on the accepted release/planning contradictions, including missing WORKSPACE-001, misplaced PEOPLE-003, and fractional/duplicate PEOPLE-004 ownership.",
+    "output": "1 catalog control passed; 4 acceptance-contract tests failed for the intended missing or contradictory product contract.",
+    "logRef": "evidence/round-01-red.log",
+    "testFiles": [
+      {
+        "path": "tools/product/PRODUCT-001/release_contract_test.ts",
+        "sha256": "9aab57e93dc888fb9fd7912ffef607a12135ed45a5399efc9fe1ecba90fcdf12"
+      }
+    ],
+    "productionFiles": []
+  },
+  "green": {
+    "command": "deno test --allow-read=docs/product,docs/planning tools/product/PRODUCT-001/release_contract_test.ts",
+    "exitCode": 0,
+    "logRef": "evidence/round-01-green.log",
+    "productionFiles": [
+      "docs/product/release-slices.md",
+      "docs/planning/README.md",
+      "docs/planning/roadmap.md",
+      "docs/planning/traceability.md"
+    ]
+  },
+  "refactor": {
+    "summary": "Synchronized the accepted release and milestone subset, removed obsolete proposal contradictions and uncataloged behavior promises, kept every named product gap deferred, and recorded the clean candidate-bound workflow gate without changing the frozen check.",
+    "command": "deno task test:workflow",
+    "exitCode": 0,
+    "logRef": "evidence/round-01-refactor.log"
+  },
+  "candidateRevision": "decd502fec714371c9bd07097d7835faef0c1ccf"
+}
