@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "ticketId": "FND-003",
-  "revision": 11,
+  "revision": 12,
   "title": "Freeze the immutable candidate runtime graph",
   "outcome": "One dependency-free, self-tested runtime-graph validator and its exact machine-readable inputs make the repository's candidate Deno, Node, pnpm, frontend, backend, test, and OCI dependency graph immutable, age-eligible, lifecycle-denied by default, and repeatable from clean and offline caches without claiming the separate executable compatibility proofs assigned to named follow-on tickets.",
   "baseRevision": "895731f27f66d614cb431e9ab6bb570b94d1a476",
@@ -147,6 +147,7 @@
     "Per-helper byte limits can still permit the validator to overlap full compressed, decompressed, and decoded representations or retain every official response for the full run; the complete evidence-ingestion path must enforce one aggregate active-artifact budget, release raw representations before advancing, and retain only normalized claim data needed by later checks.",
     "A loader-authored event log can self-attest to release while an unobserved raw accumulator survives, and projection before validation can erase unknown official-response fields; the RED oracle must exercise externally controlled raw leases and an accumulator mutant, and validate source key membership before normalization.",
     "Copying a stream chunk before its limit check or releasing its lease immediately after enqueue can put a validator-owned copy outside observable lifetime accounting; compressed and decompressed transforms must preflight source chunks without creating owned copies, while the decoded accumulator remains an opaque scoped capability, and provenance usage must separately prove descriptor metadata and normalized official-byte claims were consumed.",
+    "JavaScript cannot observe an arbitrary discarded typed-array copy after it happens; the complete validator-authored compressed/decompressed transform callback must therefore be an exact source-locked region whose mutation controls reject every direct copy/allocation escape before the guard, while independent runtime spies prove exact-N source identity and N+1 zero hash, write, and owned-acquisition behavior. Any region change requires a fresh RED and review.",
     "Root manifest and lock changes overlap future scaffold, CI, and hook tickets; no concurrent writer may own those paths.",
     "Dependency and registry diagnostics can expose local filesystem topology, tokens, cookies, or credentials unless evidence is deliberately concise and redacted."
   ],

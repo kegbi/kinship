@@ -2,7 +2,7 @@
 
 Status: ready, round 0 (fresh RED retry pending)\
 Owner: trusted top-level orchestrator\
-Packet revision: 11\
+Packet revision: 12\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
 Execution class: `ordinary`\
 Depends on: FND-001S at integration revision
@@ -69,9 +69,16 @@ Rejected RED attempts:
   downstream; the adversarial audit also showed that descriptor metadata alone
   could satisfy unused-evidence accounting without consuming the normalized
   official claim.
+- `ee180e148fc7db42550d6821b03cb9e98ec8f840`, validator SHA-256
+  `a5752cbd3bbc80f8db48564de91ca136dd450bf0117841e875a3859cd5b1e035`: eight
+  control suites, the intended sole repository RED, exact coverage, root gates,
+  and the PostgreSQL matrix passed, and the six-lens reviewer returned zero
+  findings; however, the independent mutation audit proved that a discarded
+  direct typed-array copy inserted before the size guard would evade the
+  acquisition counter while preserving every existing control result.
 
-All nine attempts and all associated evidence remain immutable history and
-confer no production-write authority.
+All ten attempts and all associated evidence remain immutable history and confer
+no production-write authority.
 
 ## Outcome
 
