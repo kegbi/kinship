@@ -147,6 +147,33 @@ failure does not make the complete profile unavailable.
 - Concurrency-sensitive use cases must use explicit PostgreSQL constraints, row
   locks, advisory locks, or compare-and-swap semantics and must have race tests.
 
+### DG-06A onboarding and invitation coordination
+
+The authoritative decision is
+[`ADR 0004`](decisions/0004-onboarding-invitation-and-atomic-audit-coordination.md).
+
+A workspaces-owned, use-case-specific application service coordinates both
+first-user/workspace creation and invitation acceptance. Identity is called only
+through its public application facade, and each module retains ownership of its
+tables and writes.
+
+The workspaces application service owns one transaction/session boundary for the
+identity, workspace membership, invitation, and required governance audit
+effects. The composition root registers the synchronous, transaction-scoped
+governance audit handlers and supplies the same transaction/session capability
+to every participant. This is distinct from durable asynchronous delivery and
+does not create a workspaces-to-governance dependency.
+
+Any failed required effect triggers all-or-nothing rollback. After all effects
+succeed, the service verifies explicit success postconditions before commit; any
+unmet postcondition also triggers rollback. A participant is not permitted to
+use a private adapter import or direct cross-module table write, and this
+specialization does not introduce a generic horizontal coordinator.
+
+FND-002 records this contract but does not implement or prove the application
+behavior, rollback, or postconditions. Protected walking-skeleton and Slice 1
+executable proof remains required.
+
 The first implementation milestone must execute the audited baseline against a
 supported real PostgreSQL image. It must verify clean apply, teardown or
 rollback, catalog introspection, generated-type agreement, and every validation

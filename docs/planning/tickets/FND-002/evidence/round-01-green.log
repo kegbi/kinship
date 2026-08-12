@@ -1,7 +1,7 @@
 schemaVersion: 2
 ticketId: FND-002
 round: 1
-phase: GREEN_PENDING_AUTHORITATIVE_CONTINUATION
+phase: GREEN
 issuedByControllerRunId: FND-002/orchestrator/r0/a16b5b61-a6c8-4366-8752-d530fa3a6d74
 implementerRunId: FND-002/implementer/r1/e2edf3bf-a445-4fc2-8ba4-3fffb9681804
 
@@ -13,8 +13,18 @@ priorAttempt:
   productionEditsRestored: true
 
 authoritativeGreen:
-  status: PENDING
-  prerequisite: controller must reproduce and freeze the recovered lint-clean RED check and issue a new digest-bound continuation
+  status: PASS
+  authoritativeRedRevision: d7924f77019cbf77a4e8fedc6d7bc82afa70c78f
+  frozenCheckPath: tools/architecture/FND-002/coordination_contract_test.ts
+  frozenCheckSha256: 272038a94de02197e9d2cd830fc31d1943ac67d7fffb46bd7c0069a249f6c9a5
+  frozenCheckBytesChanged: false
+  command: deno test --allow-read=docs/architecture tools/architecture/FND-002/coordination_contract_test.ts
+  exitCode: 0
+  observed: 2 passed, 0 failed
 
-currentChangedProductionFiles: []
-currentArchitectureContractsUnchanged: true
+changedProductionFiles:
+  - docs/architecture/decisions/0004-onboarding-invitation-and-atomic-audit-coordination.md
+  - docs/architecture/decisions/README.md
+  - docs/architecture/backend-architecture.md
+  - docs/architecture/module-boundaries.yaml
+changedTestFiles: []

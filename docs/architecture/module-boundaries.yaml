@@ -100,7 +100,7 @@ modules:
       workspace.member-joined,
       workspace.configuration-changed,
     ]
-    consumes: [identity.user-registered]
+    consumes: []
 
   - id: people
     path: packages/backend/modules/people
@@ -300,6 +300,8 @@ modules:
       - interactions.interaction-recorded
       - people.person-created
       - planning.reminder-delivered
+      - workspace.created
+      - workspace.member-joined
       - workspace.configuration-changed
 
   - id: billing
