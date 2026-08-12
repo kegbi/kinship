@@ -70,3 +70,39 @@ any planning contract, either YAML catalog, or ticket authority/state metadata.
   delivered, and leave every deferred gap explicit.
 - REFACTOR only while the focused check and affected repository gates remain
   green. Return evidence; do not commit, review, accept, push, deploy, or merge.
+
+## Controller GREEN resume
+
+The trusted controller independently reproduced the dispatched RED result and
+froze it before authorizing production-contract changes:
+
+- RED revision: `367de245484347847e1914c2c48e91d4356885bf`
+- Focused command:
+  `deno test --allow-read=docs/product,docs/planning tools/product/PRODUCT-001/release_contract_test.ts`
+- Focused result: exit 1; one catalog-extraction control passed and AC-01
+  through AC-04 failed for the intended contract contradictions.
+- Frozen check: `tools/product/PRODUCT-001/release_contract_test.ts`
+- Frozen Git-blob SHA-256:
+  `9aab57e93dc888fb9fd7912ffef607a12135ed45a5399efc9fe1ecba90fcdf12`
+- RED production files: none.
+
+Resume the same round and verify the frozen revision and digest before editing.
+GREEN ownership is restricted to `docs/product/release-slices.md`,
+`docs/planning/README.md`, `docs/planning/roadmap.md`,
+`docs/planning/traceability.md`, `evidence/round-01-green.log`, and
+`evidence/round-01-refactor.log`. Keep the frozen check byte-identical.
+
+Apply the smallest coherent documentation change that satisfies AC-01 through
+AC-04. Remove only PRODUCT-001 proposal/approval contradictions; keep the
+planning program proposed where unrelated choices remain. Record DG-07 as
+partially closed by PRODUCT-001 and keep every named deferred gap open. In
+particular, remove planned Slice 6 life-event mutation/editor/proof work that
+has no catalog flow, avoid promising broader security-settings or avatar
+behavior, and narrow person local-action planning to flow-backed actions. Do not
+change either YAML catalog, any stable ID/priority/delivery status, any task
+definition, or any file outside this authorization.
+
+Run the focused test to GREEN, then the focused format, lint, and type checks
+plus the packet-required root gates that are applicable before returning the
+green/refactor logs and structured result. Stop without committing or editing
+ticket authority/state/events/results/reviews/acceptance metadata.
