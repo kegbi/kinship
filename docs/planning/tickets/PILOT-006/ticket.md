@@ -1,6 +1,6 @@
 # PILOT-006: Canonicalize persistent desktop provenance
 
-Status: ready\
+Status: review, round 1\
 Owner: trusted top-level orchestrator\
 Base revision: `6c6ea8313f0472c315079a605c50cd2548d2835b`\
 Execution class: `ordinary`\
