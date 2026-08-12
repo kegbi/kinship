@@ -56,7 +56,9 @@
   "resultRefs": [
     "results/round-01.json"
   ],
-  "reviewRefs": [],
+  "reviewRefs": [
+    "reviews/round-01.json"
+  ],
   "dependencyRevisions": {},
   "openFindingIds": [],
   "orchestratorChecks": [],
