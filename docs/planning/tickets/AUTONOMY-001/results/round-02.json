@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 2,
+  "ticketId": "AUTONOMY-001",
+  "ticketRevision": 1,
+  "round": 2,
+  "implementerRunId": "AUTONOMY-001/implementer/r2/b318daf3-6ea6-4576-9f4f-13000a53f7e9",
+  "issuedByControllerRunId": "AUTONOMY-001/orchestrator/r0/00000000-0000-4000-8000-000000000101",
+  "inputBaseRevision": "228b86898bc379e6e5615e79d17f425d93f3dd6c",
+  "dispatchRef": "dispatch/round-02.md",
+  "redRevision": "2ca02d7de0cfcec3b7a923f059e24d14eb857c88",
+  "red": {
+    "command": "deno test --allow-read --allow-write --allow-run=git tools/workflows/autonomy_review_regression_test.ts",
+    "exitCode": 1,
+    "expectedFailure": "The reviewed candidate lacks the three dispatched review corrections.",
+    "output": "Thirty-two controls passed and twelve intended assertions failed before the round-two production fix.",
+    "logRef": "evidence/round-02-red.log",
+    "testFiles": [
+      {
+        "path": "tools/workflows/autonomy_review_regression_test.ts",
+        "sha256": "c18966431befb425d59fecf4a167bdd8a83405234e268fd9545202f4dadee9f1"
+      }
+    ],
+    "productionFiles": []
+  },
+  "green": {
+    "command": "deno test --allow-read --allow-write --allow-run=git tools/workflows/autonomy_review_regression_test.ts",
+    "exitCode": 0,
+    "logRef": "evidence/round-02-green.log",
+    "productionFiles": [
+      "tools/workflows/ticket_contract.ts",
+      "tools/workflows/validate_ticket.ts"
+    ]
+  },
+  "refactor": {
+    "summary": "Migrated five dynamic synthetic fixtures to v2 and added defensive coverage while retaining every behavioral assertion.",
+    "command": "deno task test:workflow:coverage",
+    "exitCode": 0,
+    "logRef": "evidence/round-02-refactor.log"
+  },
+  "candidateRevision": "38bcb75a32cce962030119834beab990ce034325"
+}

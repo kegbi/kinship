@@ -1,0 +1,46 @@
+AUTONOMY-001 amended control-guard RED evidence
+
+Accepted contract revision:
+eda37accbeea1df95d8fafbd2d64a5ff831f4f21
+
+Focused command:
+deno test --allow-read --allow-write --allow-run=git tools/workflows/control_guards_regression_test.ts tools/workflows/integration_anchor_regression_test.ts
+
+Exit code: 1
+Result: 1 passed, 37 failed (38 total: 21 control guards, 17 integration anchors)
+
+Frozen control test candidate:
+- path: tools/workflows/control_guards_regression_test.ts
+- SHA-256: 4835f0185f10c3fd83c28e5b5e431fc533a48abe08ef54c790b12d6fc0082cdf
+
+Passing compatibility proof:
+- control guards preserve the exact historical PILOT-001 and PILOT-002 v1
+  packets; this table-driven test is the sole passing baseline
+
+Intended missing-behavior failures added or reconciled here:
+- reject non-PILOT v1 packets and same-ID mutations of grandfathered packets
+- reject ordinary .codex/.agents roots and descendants
+- require exact controller authorization for protected maintenance
+- forbid root, descendant, nested, and case-varied .git paths
+- validate controller, implementer, and reviewer namespace/role/round/UUID
+- reject mismatched issuance, reused role identities, non-controller lifecycle
+  actors, and non-controller orchestrator-check identities
+- bind recorded tasks to both revisions, require an unchanged independent guard,
+  reject a changed guard, and reject an obvious no-op even when independently
+  guarded
+- accept a legitimate changed Deno check only when guarded by an unchanged
+  independent workflow test
+
+The real-Git fixtures completed repository setup and reached validator output;
+the failures were not caused by Git, permissions, missing files, compilation,
+or fixture setup.
+
+Preflight commands:
+- deno fmt --check tools/workflows/control_guards_regression_test.ts tools/workflows/integration_anchor_regression_test.ts (exit 0)
+- deno lint tools/workflows/control_guards_regression_test.ts tools/workflows/integration_anchor_regression_test.ts (exit 0)
+- deno check tools/workflows/control_guards_regression_test.ts tools/workflows/integration_anchor_regression_test.ts (exit 0)
+
+RED conclusion:
+The combined suite fails for the accepted but unimplemented v2 control and
+integration behavior. This reconciliation changed no production file and
+performed no staging or commit.

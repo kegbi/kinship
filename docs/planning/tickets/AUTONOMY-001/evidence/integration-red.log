@@ -1,0 +1,39 @@
+AUTONOMY-001 amended integration-anchor RED evidence
+
+Accepted contract revision:
+eda37accbeea1df95d8fafbd2d64a5ff831f4f21
+
+Focused command:
+deno test --allow-read --allow-write --allow-run=git tools/workflows/integration_anchor_regression_test.ts tools/workflows/control_guards_regression_test.ts
+
+Exit code: 1
+Result: 1 passed, 37 failed (38 total: 17 integration anchors, 21 control guards)
+
+Frozen integration test candidate:
+- path: tools/workflows/integration_anchor_regression_test.ts
+- SHA-256: 821466ff9c5e69e9575caf77d7404c17b974010a07825b4e90ba502894166ee0
+
+The integration suite contributes 17 intended missing-behavior failures:
+- bind accepted -> integrated to integrationRevision and integration.md
+- require a durable anchor and a successful, exact, unique check per task
+- reject acceptance-check run-ID reuse during integration
+- reject missing, unrelated, or non-ancestral integration revisions
+- reject integration metadata that does not descend from its anchor
+- reject later mutation of the integrated ticket packet
+- reject integration-time changes to reviewed candidate content
+- keep an integrated ticket valid after later unrelated commits
+- read dependency state at the dependent ticket base
+- distinguish a dependency not integrated at base from an exact pin mismatch
+
+All AUTONOMY-001 and FOUNDATION-001 ticket/result/review fixtures use the
+accepted v2 authority, run-ID, and task-definition contract. State and events
+remain schema version 1 with optional integration fields. This removes the
+draft RED's v1 migration contradiction.
+
+Preflight commands:
+- deno fmt --check tools/workflows/integration_anchor_regression_test.ts tools/workflows/control_guards_regression_test.ts (exit 0)
+- deno lint tools/workflows/integration_anchor_regression_test.ts tools/workflows/control_guards_regression_test.ts (exit 0)
+- deno check tools/workflows/integration_anchor_regression_test.ts tools/workflows/control_guards_regression_test.ts (exit 0)
+
+No production, template, skill, agent, accepted delivery-document, or Git
+metadata change was made during this amended RED phase.

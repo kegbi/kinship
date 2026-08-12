@@ -12,7 +12,7 @@
       "from": "planned",
       "to": "ready",
       "round": 0,
-      "actorRunId": "<orchestrator run ID>",
+      "actorRunId": "<TICKET-ID>/orchestrator/r0/<UUID>",
       "evidenceRef": "ticket.json",
       "revision": "<40-character base Git SHA>"
     }

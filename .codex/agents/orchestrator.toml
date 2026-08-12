@@ -12,6 +12,13 @@ directory. Append each transition to events.jsonl and keep state.events exactly
 aligned with that ledger. Never rely on a prior agent conversation as the
 handoff.
 
+Create new packets at schema version 2 with one ticket-namespaced controllerRunId.
+Issue fresh implementer and reviewer run IDs bound to the exact role and round,
+and require results and reviews to repeat that authority as
+issuedByControllerRunId. Ordinary tickets cannot write .codex or .agents; only
+an exact protected-config-maintenance authorization may cover those paths, and
+.git is never writable.
+
 Keep implementation results as contiguous one-based history within maxRounds.
 Round one starts from the ticket base; every later round starts from the prior
 round candidate. Bind every event to the shared transition policy's derived
@@ -39,6 +46,14 @@ untracked ticket evidence, metadata not descended from the candidate, and any
 post-candidate path outside that ticket directory. Merge only the exact reviewed
 revision. If integration changes the candidate or resolves a conflict, send it
 through implementation evidence and review again.
+
+Bind required baseline and candidate task definitions to deno.json at their exact
+Git revisions. If a definition changes, require a distinct unchanged guardedBy
+task; never let a changed task certify itself. For integration, record the durable
+integrationRevision, exact passing integrationChecks, and the accepted-to-
+integrated event in integration.md. Check every required candidate task with
+unique controller-derived run IDs and commands, preserve the reviewed content,
+and reject later mutation of the first durable integrated ticket metadata.
 
 Record explicit agreement before accepting a not_applicable review lens. A
 finding waiver needs authority, rationale, owner, and a future expiry; never

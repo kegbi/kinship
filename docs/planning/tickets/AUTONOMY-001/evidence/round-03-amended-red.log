@@ -1,0 +1,22 @@
+AUTONOMY-001 round 03 amended RED evidence
+
+implementerRunId: AUTONOMY-001/implementer/r3/1b889252-9c19-4f70-ae26-7831f17a1b89
+issuedByControllerRunId: AUTONOMY-001/orchestrator/r0/00000000-0000-4000-8000-000000000101
+inputBaseRevision: 38bcb75a32cce962030119834beab990ce034325
+originalRedRevision: dc246a54d15a920089cf5f028e083cbc4113c392
+
+The first round-three candidate fce8169b4c714a4dd8091eec3a30de4dc563792e
+was rejected during fresh review before result/state persistence because quoted
+standalone eval tokens remained accepted. The controller amended round-three
+RED without changing production or earlier frozen tests.
+
+focusedCommand: deno test --allow-read --allow-write --allow-run=git tools/workflows/autonomy_final_regression_test.ts
+exitCode: 1
+summary: 2 tests; 0 passed; 2 intended failures in 29 seconds.
+expectedFailure: unchanged production lacks both inherited-ID safety and complete eval-token normalization.
+
+The amended frozen test covers short/global options plus single- and
+double-quoted eval tokens, including deno.exe and combined-option forms. It
+retains legitimate deno check/test/run controls. Its SHA-256 is
+03562da97e6f41b73de825924d5702f45b771e3643c7610bd97aa814f8be316f.
+Production files remain empty in this amended RED.

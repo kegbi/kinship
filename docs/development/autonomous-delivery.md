@@ -104,17 +104,19 @@ docs/planning/tickets/<ticket-id>/
   reviews/
     round-01.json
   acceptance.md
+  integration.md
 ```
 
 The skill templates under .agents/skills/run-tdd-ticket-loop/assets/ initialize
 these files. ticket.json is the strict machine-readable packet and ticket.md is
 its human-readable explanation; they must agree. The orchestrator owns both
-ticket files, state.json, events.jsonl, dispatch files, persisted reviews, and
-acceptance.md. An implementer writes ticket-scoped code and evidence logs, then
-returns a structured result. The trusted controller creates the green candidate
-commit. The orchestrator persists result JSON in a later metadata-only commit
-after the candidate ID is known. A reviewer returns its structured result to the
-orchestrator for the same kind of metadata-only persistence.
+ticket files, state.json, events.jsonl, dispatch files, persisted reviews,
+acceptance.md, and integration.md. An implementer writes ticket-scoped code and
+evidence logs, then returns a structured result. The trusted controller creates
+the green candidate commit. The orchestrator persists result JSON in a later
+metadata-only commit after the candidate ID is known. A reviewer returns its
+structured result to the orchestrator for the same kind of metadata-only
+persistence.
 
 Bind packets and evidence to full Git commit IDs, never only a branch name or a
 floating HEAD. Logs must be concise and redact credentials, personal data,
@@ -138,8 +140,27 @@ ticket.md and ticket.json must contain:
 
 The JSON packet additionally declares a schema version, ticket revision, maximum
 rounds, allowed write paths, stable acceptance-criterion IDs, and required root
-task names. Required tasks must exist in deno.json and have truthful
-implementations; arbitrary shell strings are not accepted as ticket-wide gates.
+tasks. Every new packet uses `schemaVersion 2`; only the content-addressed,
+historical `PILOT-001` and `PILOT-002` packet identities remain valid at version
+
+1. A v2 packet binds all delegated authority to a `controllerRunId` in the form
+   `<ticket-id>/orchestrator/r0/<UUID>` and declares an `executionClass` of
+   `ordinary` or `protected-config-maintenance`.
+
+Required tasks are revision-bound records rather than names alone. The packet
+records exact baseline and candidate task definitions from `deno.json` at the
+ticket base and candidate revisions. An unchanged candidate task uses
+`guardedBy: null`. If a required task definition changes, `guardedBy` names a
+distinct required task whose definition is unchanged between those revisions; a
+changed task cannot guard itself or certify the candidate by itself. Task
+definitions must be truthful implementations; arbitrary or trivially successful
+commands are not accepted as ticket-wide gates.
+
+An ordinary packet cannot authorize writes under `.codex` or `.agents`. A
+`protected-config-maintenance` packet must carry an exact
+`protectedWriteAuthorization` issued by its own controller run, and every
+protected allowed-write path must appear in that authorization. No ticket or
+authorization may make `.git` writable.
 
 ### State record
 
@@ -158,20 +179,26 @@ state.json uses schemaVersion 1 and one of these states:
 - cancelled
 
 It records the base revision, ordered phase events, implementation rounds,
-reviews, orchestrator checks, open findings, and accepted candidate revision.
+reviews, orchestrator checks, open findings, accepted candidate revision, and,
+after integration, the durable `integrationRevision` and `integrationChecks`.
 Its `dependencyRevisions` object maps every dependency ticket ID to the exact
-integrated Git revision verified before the ticket became ready. The repository
-validator rejects unknown properties and invalid transitions. events.jsonl is
-the append-only human-auditable transition ledger; state.json is the current
-machine-readable summary. The ordered transition views use one contract:
-state.events exactly matches events.jsonl. Each entry includes the transition's
-evidence reference and exact revision. Append a new line and matching state
-event for every transition; never rewrite prior ledger lines or failed round
-evidence.
+integrated Git revision verified before the ticket became ready. Validation
+loads each dependency state from the dependency ticket's base revision, requires
+that historical state to be integrated, and requires the pin to equal that
+state's `integrationRevision`; current working-tree metadata cannot rewrite the
+dependency proof. The repository validator rejects unknown properties and
+invalid transitions. events.jsonl is the append-only human-auditable transition
+ledger; state.json is the current machine-readable summary. The ordered
+transition views use one contract: state.events exactly matches events.jsonl.
+Each entry includes the transition's evidence reference and exact revision.
+Append a new line and matching state event for every transition; never rewrite
+prior ledger lines or failed round evidence.
 
 Each implementation round records:
 
-- round number and fresh implementer run ID;
+- round number and a fresh, controller-issued implementer run ID in the form
+  `<ticket-id>/implementer/r<round>/<UUID>`; the result repeats the ticket's
+  `controllerRunId` as `issuedByControllerRunId`;
 - input dispatch path and base revision. Results form contiguous one-based
   history within `maxRounds`: round one uses the ticket base and every later
   round uses the immediately preceding candidate revision;
@@ -208,7 +235,10 @@ evidence is invalid.
 
 Each review records:
 
-- round number and a fresh reviewer run ID different from the implementer;
+- round number and a fresh, controller-issued reviewer run ID in the form
+  `<ticket-id>/reviewer/r<round>/<UUID>`, different from the implementer and
+  every earlier reviewer; the review repeats the ticket's `controllerRunId` as
+  `issuedByControllerRunId`;
 - exact base and candidate commit IDs;
 - commands and evidence inspected as unique `{ command, exitCode }` records;
 - one evidence-backed record for every required lens;
@@ -240,16 +270,16 @@ stateDiagram-v2
 
 Mechanical transition guards:
 
-| Transition             | Required evidence                                                                                                                                                 |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| planned to ready       | Definition of Ready complete, dependencies integrated, accepted decisions resolved, clean base recorded, runnable RED command available                           |
-| ready or rework to red | Test/check-only change, intended non-zero failure, relevant pre-existing baseline still green                                                                     |
-| red to green           | Frozen RED test now passes; no weakening, deletion, skip, exclusion, or expectation reversal                                                                      |
-| green to refactor      | Focused and affected suites pass; implementation is minimal and in scope                                                                                          |
-| refactor to review     | Exact clean candidate commit plus later metadata record; applicable format, lint, type, architecture, coverage, integration, schema, contract, and E2E gates pass |
-| review to rework       | Any actionable finding, failed gate, missing lens/evidence, stale revision, or changed candidate                                                                  |
-| review to accepted     | Fresh reviewer covered all lenses for exact candidate; no open actionable finding; orchestrator independently verified gates                                      |
-| accepted to integrated | Exact reviewed commit merged; integration tree clean; aggregate gates pass                                                                                        |
+| Transition             | Required evidence                                                                                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| planned to ready       | Definition of Ready complete, dependencies integrated, accepted decisions resolved, clean base recorded, runnable RED command available                                        |
+| ready or rework to red | Test/check-only change, intended non-zero failure, relevant pre-existing baseline still green                                                                                  |
+| red to green           | Frozen RED test now passes; no weakening, deletion, skip, exclusion, or expectation reversal                                                                                   |
+| green to refactor      | Focused and affected suites pass; implementation is minimal and in scope                                                                                                       |
+| refactor to review     | Exact clean candidate commit plus later metadata record; applicable format, lint, type, architecture, coverage, integration, schema, contract, and E2E gates pass              |
+| review to rework       | Any actionable finding, failed gate, missing lens/evidence, stale revision, or changed candidate                                                                               |
+| review to accepted     | Fresh reviewer covered all lenses for exact candidate; no open actionable finding; orchestrator independently verified gates                                                   |
+| accepted to integrated | Integration revision descends from exact reviewed candidate without changing reviewed allowed-write content; clean aggregate gates pass; durable integration evidence recorded |
 
 The event `round`, `revision`, `actorRunId`, and `evidenceRef` are derived from
 the full `from`/`to` transition, not trusted independently. `planned` to `ready`
@@ -257,7 +287,20 @@ uses the ticket at round zero; `ready` to `red` starts round one; `rework` to
 `red` starts the next round; other implementation transitions keep the active
 round. RED/GREEN/REFACTOR transitions use their phase logs, `refactor` to
 `review` uses the round result, `review` to `rework` uses the round review, and
-acceptance/integration transitions use `acceptance.md`.
+`review` to `accepted` uses `acceptance.md`. For a v2 ticket, `accepted` to
+`integrated` instead uses `integration.md`, and its event revision is the exact
+`integrationRevision`.
+
+The v2 integration record is durable. `integrationChecks` contains one exact,
+passing `deno task <name>` command for every required candidate task, all bound
+to the `integrationRevision`. Integration check commands and controller-derived
+run IDs are unique, and integration run IDs cannot reuse acceptance-check run
+IDs. The integration revision must exist, descend from the reviewed candidate,
+and preserve all reviewed content in the ticket's allowed write set. The current
+metadata revision must descend from that anchor. Validation locates the first
+later commit that records this integrated state and rejects any subsequent
+mutation inside the current ticket directory, while allowing unrelated later
+repository commits.
 
 Changing production code, tests, generated output, contracts, or a relevant
 configuration after review invalidates the review. Conflict resolution is a
@@ -436,9 +479,15 @@ reviewers operate on the assigned checkout.
 
 <!-- deno-fmt-ignore -->
 For ordinary ticket work, `.git`, `.codex`, and `.agents` are protected control paths.
+
+<!-- deno-fmt-ignore -->
 Spawned workspace-write implementers must route any required change to those paths to a trusted top-level maintenance context.
-This guidance documents authority routing; it does not override Codex sandbox
-enforcement.
+Matching is case-insensitive, and `.git` is forbidden as any path segment, not
+only at the repository root. A `protected-config-maintenance` ticket may write
+only the exact `.codex` or `.agents` paths listed both in `allowedWrites` and in
+its controller-bound authorization. `.git` remains forbidden for every execution
+class. This guidance documents authority routing; it does not override Codex
+sandbox enforcement.
 
 ## Command truth
 
@@ -463,6 +512,14 @@ harness. Planned app, UI, contract, E2E, aggregate coverage, CI, hook, and
 Compose tasks become gates only when a real harness is added through its own
 RED/GREEN ticket. Never report a planned task as passed and never add a no-op
 placeholder.
+
+For v2 packets, command truth is also historical: validation reads the exact
+`deno.json` at the ticket base and candidate revisions and compares each
+declared task definition with those Git objects. A candidate task whose
+definition changed is accepted only when its `guardedBy` task is required,
+distinct, and unchanged across the same revisions. The changed task cannot be
+its own guard, and a trivially successful definition cannot provide gate
+evidence.
 
 ## Codex capability basis and local compatibility
 
