@@ -2,6 +2,10 @@
 
 Candidate reviewed: <40-character Git SHA> Required next state: RED
 
+Controller run ID: <TICKET-ID>/orchestrator/r0/<UUID> Implementer run ID:
+<TICKET-ID>/implementer/r<N>/<UUID> Execution class:
+<ordinary|protected-config-maintenance>
+
 Before any production, configuration, template, or protocol edit, add every
 regression dispatched below. Run them together against the unchanged input
 candidate, then stop for the trusted controller to freeze one test/check-only

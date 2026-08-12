@@ -15,6 +15,9 @@ Intended failures:
 Authoritative formatted test SHA-256:
 15d0e0f426ecc8ac1446e90e8cd25c5725838e00637a45c669dbdcc6ec8a3b75
 
+Authoritative formatted RED revision:
+2f7399cc9af4b1ad8921fe72516b14b2841214af
+
 The earlier `effe7ee` test blob is superseded because the controller froze it
 before applying repository formatting. The amended RED commit contains only
 this formatting change and evidence; its clean tree still has the unchanged v1

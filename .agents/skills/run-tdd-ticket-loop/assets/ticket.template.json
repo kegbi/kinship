@@ -1,10 +1,13 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "ticketId": "<TICKET-ID>",
   "revision": 1,
   "title": "<title>",
   "outcome": "<one observable result>",
   "baseRevision": "<40-character Git SHA>",
+  "controllerRunId": "<TICKET-ID>/orchestrator/r0/<UUID>",
+  "executionClass": "ordinary",
+  "protectedWriteAuthorization": null,
   "dependencies": [],
   "maxRounds": 3,
   "scope": ["<observable in-scope behavior>"],
@@ -18,7 +21,16 @@
       "redProof": "<focused command and intended missing-behavior failure>"
     }
   ],
-  "requiredTasks": ["fmt:check"],
+  "requiredTasks": {
+    "baseline": [{ "name": "fmt:check", "definition": "deno fmt --check" }],
+    "candidate": [
+      {
+        "name": "fmt:check",
+        "definition": "deno fmt --check",
+        "guardedBy": null
+      }
+    ]
+  },
   "risks": ["<security, tenancy, data, performance, compatibility, or none>"],
   "unresolvedDecisions": []
 }

@@ -15,14 +15,24 @@ acting. Those files are authoritative when this skill is invoked.
 2. Give it one branch and one worktree. Never give two write-enabled agents the
    same worktree.
 3. Create its disk packet under docs/planning/tickets/<ticket-id>/ using the
-   templates in assets/. Keep ticket.md and ticket.json synchronized, replace
-   every placeholder, and run deno task ticket:validate.
-4. Record the base revision, in-scope and out-of-scope files or behavior,
-   architecture references, acceptance criteria, required tests, and commands.
+   templates in assets/. New packets use schema version 2. Keep ticket.md and
+   ticket.json synchronized, replace every placeholder, and run deno task
+   ticket:validate.
+4. Assign one ticket-namespaced controllerRunId at orchestrator round zero, an
+   execution class, exact allowed writes, and controller-issued implementer and
+   reviewer run IDs for their roles and rounds. Ordinary work cannot write
+   .codex or .agents. A protected-config-maintenance ticket needs exact
+   controller authorization for those paths; .git is never writable.
+5. Record the base revision, scope, architecture references, acceptance
+   criteria, and exact baseline/candidate deno.json task definitions. If a task
+   changes, its guardedBy task must be distinct, required, and unchanged.
 
 ## Dispatch with clean contexts
 
 - Start a new orchestrator context for the delivery run when possible.
+- Issue a fresh role- and round-bound run ID from the ticket controller for each
+  implementer and reviewer. Require every result and review to repeat the exact
+  controllerRunId as issuedByControllerRunId.
 - Start a new feature_implementer thread for every implementation or rework
   round. Give it only the repository and worktree paths, both ticket files,
   state.json, accepted contract references, and the latest dispatch packet.
@@ -66,9 +76,15 @@ acting. Those files are authoritative when this skill is invoked.
    its committed HEAD must descend from the candidate, with every later changed
    path confined to that ticket directory. Accept only with zero open actionable
    findings.
-8. INTEGRATE: merge only the reviewed candidate. After integration, run the
-   aggregate suite. Any conflict resolution or post-review code change creates a
-   new candidate and returns to RED/REVIEW as applicable.
+8. INTEGRATE: merge only the reviewed candidate. A v2 integrated state records
+   the durable integrationRevision, exact passing integrationChecks, and an
+   accepted-to-integrated event backed by integration.md. Run every required
+   candidate task at the integration revision with unique controller-derived
+   check IDs and commands; never reuse acceptance-check IDs. Preserve reviewed
+   allowed-write content and the first durable integrated metadata snapshot.
+   Resolve dependencies from the dependency ticket state at this ticket's base
+   revision. Any conflict resolution or post-review code change creates a new
+   candidate and returns to RED/REVIEW as applicable.
 
 Do not skip RED because a change looks small. Documentation, configuration,
 architecture, and migration tickets need a failing validator, contract test,
