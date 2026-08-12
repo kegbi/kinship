@@ -19,3 +19,5 @@ in an ADR written before scaffolding.
 - [`0001-astro-personalized-rendering.md`](0001-astro-personalized-rendering.md)
 - [`0002-authentication-compatibility-spike.md`](0002-authentication-compatibility-spike.md)
 - [`0003-migration-runner-spike.md`](0003-migration-runner-spike.md)
+- [`0004-onboarding-invitation-and-atomic-audit-coordination.md`](0004-onboarding-invitation-and-atomic-audit-coordination.md)
+  — `accepted`

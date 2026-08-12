@@ -2,10 +2,11 @@
 
 ## Status And Purpose
 
-**Status: proposed for explicit product and architecture approval.** The audit,
-inventories, risks, and verification results are factual; milestone names,
-reassigned flows, new catalog work, and recommended architecture choices remain
-proposals until their authoritative contracts are approved.
+**Status: proposed execution program with the PRODUCT-001 subset accepted.** The
+audit, inventories, risks, and verification results are factual. PRODUCT-001
+accepts the release assignments and milestone meanings recorded in the product
+contract; unrelated new catalog work and architecture choices remain proposals
+until their own authorities approve them.
 
 This directory is the execution plan for moving the repository from its current
 schema-and-contract baseline to a production-ready Personal CRM. It derives work
@@ -65,22 +66,23 @@ stack preserves all of its checks.
 These names prevent different meanings of "MVP" or "feature complete" from being
 used during implementation.
 
-| Milestone                  | Meaning                                                                                                                                                                                                                         | Exit point                                                  |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Foundation complete        | The executable architecture, spikes, contracts, Compose topology, and enforcement gates are proven by one protected walking skeleton.                                                                                           | Slice 0                                                     |
-| Core alpha                 | A secure workspace can manage people, interactions, tasks, reminders, and Today, but compatibility and later P0 flows are incomplete.                                                                                           | Slice 4                                                     |
-| Proposed MVP               | Every P0 flow passes in all required browsers, all production TypeScript has 100% line/branch/function coverage, and the production-like stack meets the feature-milestone gates.                                               | Expected Slice 7, pending DG-07 and release-slice approval  |
-| Core feature complete      | Every P0 and P1 flow, both cataloged public product pages, and every surface required by those flows is delivered. It is expected to coincide with the proposed MVP only if DG-07 closes without adding later-slice core scope. | Expected Slice 7, pending DG-07/catalog approval            |
-| Optional platform complete | The explicitly enabled P2 modules are delivered and remain disableable without breaking core CRM behavior.                                                                                                                      | Selected Slice 8 capabilities                               |
-| Catalog complete           | All currently cataloged P0, P1, and P2 flows are delivered, including all three optional P2 flows.                                                                                                                              | Full Slice 8                                                |
-| AI-enabled complete        | An approved AI product/privacy contract and its flows are delivered through a provider-neutral adapter with isolation, safety, and evaluation gates.                                                                            | Not yet schedulable; Decision Gate DG-08                    |
-| Production ready           | Restore, rollout, rollback, security, privacy, accessibility, performance, observability, and operational objectives are proven for a named deployment environment.                                                             | Independent release gate; not implied by feature completion |
+| Milestone                  | Meaning                                                                                                                                                             | Exit point                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| Foundation complete        | The executable architecture, spikes, contracts, Compose topology, and enforcement gates are proven by one protected walking skeleton.                               | Slice 0                    |
+| Core alpha                 | A secure workspace can manage people, interactions, tasks, reminders, and Today, but compatibility and later P0 flows are incomplete.                               | Slice 4                    |
+| Proposed MVP               | Every P0 flow passes in all required browsers with complete pages, states, coverage, and production-like feature-gate evidence.                                     | Slice 7                    |
+| Core feature complete      | Every P0 and P1 flow, both cataloged public product pages, and every surface required by those flows is delivered.                                                  | Slice 7                    |
+| Optional platform complete | The selected enabled P2 modules are delivered and remain disableable without breaking core CRM behavior.                                                            | Slice 8                    |
+| Catalog complete           | All cataloged P0, P1, and P2 flows and their required page contracts are delivered.                                                                                 | Slice 8                    |
+| AI-enabled complete        | An approved AI product and privacy contract and its flows are delivered through a provider-neutral adapter with isolation, safety, and evaluation gates.            | Not yet schedulable; DG-08 |
+| Production ready           | Restore, rollout, rollback, security, privacy, accessibility, performance, observability, and operational objectives are proven for a named deployment environment. | Independent release gate   |
 
-The proposed MVP is intentionally broad. `FILES-001`, `IMPORT-001`, and
-`EXPORT-001` are P0, so a release after Slice 4 would be a core alpha under this
-proposal. Approving or changing that cutoff requires an explicit product
-decision. DG-07 must close and the inventory/counts must be regenerated before
-either milestone becomes authoritative.
+The Proposed MVP is intentionally broad. `FILES-001`, `IMPORT-001`, and
+`EXPORT-001` are P0, so a release after Slice 4 is Core alpha rather than MVP.
+The current catalog-derived Proposed MVP and Core feature complete cuts coincide
+after Slice 7, while their meanings remain distinct. Future catalog changes
+regenerate milestone membership and cuts rather than treating the current count
+as authority. Production ready remains independent of feature completion.
 
 ## Plan Documents
 
