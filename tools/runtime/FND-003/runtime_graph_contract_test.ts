@@ -984,11 +984,169 @@ interface EvidenceLoadOptions {
   observe?: (event: EvidenceIngestionEvent) => void;
   compressedLimit?: number;
   decompressedLimit?: number;
+  rawLeaseFactory?: RawLeaseFactory;
 }
 
 interface NormalizedEvidence {
   kind: string;
   value: unknown;
+}
+
+type RawRepresentation = "compressed" | "decompressed" | "decoded";
+
+interface RawLease<T> {
+  withValue<R>(use: (value: T) => R): R;
+  update(change: (value: T) => T): void;
+  retain(): RawLease<T>;
+  release(): void;
+}
+
+interface RawLeaseScope {
+  acquire<T>(kind: RawRepresentation, value: T): RawLease<T>;
+}
+
+interface RawLeaseFactory {
+  run<T>(
+    descriptorId: string,
+    work: (scope: RawLeaseScope) => Promise<T>,
+  ): Promise<T>;
+}
+
+interface TrackedRawLeaseFactory extends RawLeaseFactory {
+  assertIdle(): void;
+  startedDescriptorIds(): string[];
+}
+
+interface RawLeaseFactoryOptions {
+  // The control owns lease capabilities. It does not claim visibility into V8
+  // garbage collection, native stream queues, or arbitrary primitive copies.
+  onAcquire?: (
+    descriptorId: string,
+    kind: RawRepresentation,
+    lease: RawLease<unknown>,
+  ) => void;
+}
+
+const RAW_RELEASED = Symbol("raw lease released");
+
+function createTrackedRawLeaseFactory(
+  options: RawLeaseFactoryOptions = {},
+): TrackedRawLeaseFactory {
+  interface Cell {
+    kind: RawRepresentation;
+    value: unknown | typeof RAW_RELEASED;
+    references: number;
+  }
+  interface Token {
+    active: boolean;
+    cell: Cell;
+  }
+  interface Group {
+    descriptorId: string;
+    cells: Set<Cell>;
+    tokens: Set<Token>;
+  }
+  let active: Group | undefined;
+  const started: string[] = [];
+
+  const run = async <T>(
+    descriptorId: string,
+    work: (scope: RawLeaseScope) => Promise<T>,
+  ): Promise<T> => {
+    invariant(
+      active === undefined,
+      "a raw descriptor lease is already active",
+    );
+    const group: Group = {
+      descriptorId,
+      cells: new Set(),
+      tokens: new Set(),
+    };
+    active = group;
+    started.push(descriptorId);
+
+    const makeLease = <T>(cell: Cell): RawLease<T> => {
+      const token: Token = { active: true, cell };
+      cell.references += 1;
+      group.tokens.add(token);
+      const liveValue = (): T => {
+        invariant(
+          token.active && cell.value !== RAW_RELEASED,
+          "raw lease is no longer active",
+        );
+        return cell.value as T;
+      };
+      return {
+        withValue<R>(use: (value: T) => R): R {
+          return use(liveValue());
+        },
+        update(change: (value: T) => T): void {
+          cell.value = change(liveValue());
+        },
+        retain(): RawLease<T> {
+          liveValue();
+          return makeLease<T>(cell);
+        },
+        release(): void {
+          liveValue();
+          token.active = false;
+          group.tokens.delete(token);
+          cell.references -= 1;
+          if (cell.references === 0) cell.value = RAW_RELEASED;
+        },
+      };
+    };
+    const scope: RawLeaseScope = {
+      acquire<T>(kind: RawRepresentation, value: T): RawLease<T> {
+        const cell: Cell = { kind, value, references: 0 };
+        group.cells.add(cell);
+        const lease = makeLease<T>(cell);
+        options.onAcquire?.(
+          descriptorId,
+          kind,
+          lease as RawLease<unknown>,
+        );
+        return lease;
+      },
+    };
+
+    let result: T | undefined;
+    let failure: unknown;
+    let failed = false;
+    try {
+      result = await work(scope);
+    } catch (error) {
+      failed = true;
+      failure = error;
+    }
+    const leakedKinds = [...group.tokens]
+      .filter((token) => token.active)
+      .map((token) => token.cell.kind)
+      .sort();
+    for (const token of group.tokens) token.active = false;
+    for (const cell of group.cells) cell.value = RAW_RELEASED;
+    group.tokens.clear();
+    active = undefined;
+    if (leakedKinds.length > 0) {
+      const leak = `${descriptorId} retained raw lease(s): ${
+        leakedKinds.join(", ")
+      }`;
+      if (failed) throw new Error(`${String(failure)}; ${leak}`);
+      throw new Error(leak);
+    }
+    if (failed) throw failure;
+    return result as T;
+  };
+
+  return {
+    run,
+    assertIdle(): void {
+      invariant(active === undefined, "raw lease factory is not idle");
+    },
+    startedDescriptorIds(): string[] {
+      return [...started];
+    },
+  };
 }
 
 function assertNormalizedEvidenceValue(value: unknown, label: string): void {
@@ -1062,16 +1220,79 @@ function normalizedJsonRows(
   );
 }
 
+const NODE_INDEX_FIELDS = [
+  "version",
+  "date",
+  "files",
+  "npm",
+  "v8",
+  "uv",
+  "zlib",
+  "openssl",
+  "modules",
+  "lts",
+  "security",
+] as const;
+
+function normalizeNodeIndex(value: unknown): JsonRecord[] {
+  return array(value, "Node index").map((raw, index) => {
+    const row = object(raw, `Node index row[${index}]`);
+    invariant(
+      ["version", "date", "files", "lts"].every((key) => key in row) &&
+        Object.keys(row).every((key) =>
+          NODE_INDEX_FIELDS.includes(
+            key as (typeof NODE_INDEX_FIELDS)[number],
+          )
+        ),
+      "Node index row fields membership is not exact",
+    );
+    return presentFields(row, NODE_INDEX_FIELDS);
+  });
+}
+
 function normalizeOciIndex(value: unknown): JsonRecord {
   const index = object(value, "OCI index response");
+  exactKeys(
+    index,
+    ["schemaVersion", "mediaType", "manifests"],
+    "OCI index",
+  );
   return {
     ...presentFields(index, ["schemaVersion", "mediaType"]),
     manifests: array(index.manifests, "OCI index manifests").map(
-      (raw, descriptorIndex) =>
-        presentFields(
-          object(raw, `OCI index manifests[${descriptorIndex}]`),
-          ["mediaType", "digest", "size", "platform", "annotations"],
-        ),
+      (raw, descriptorIndex) => {
+        const descriptor = object(
+          raw,
+          `OCI index manifests[${descriptorIndex}]`,
+        );
+        invariant(
+          ["mediaType", "digest", "size", "platform"].every((key) =>
+            key in descriptor
+          ) && Object.keys(descriptor).every((key) =>
+            ["mediaType", "digest", "size", "platform", "annotations"]
+              .includes(key)
+          ),
+          "OCI descriptor fields membership is not exact",
+        );
+        const platform = object(
+          descriptor.platform,
+          `OCI index manifests[${descriptorIndex}].platform`,
+        );
+        invariant(
+          ["os", "architecture"].every((key) => key in platform) &&
+            Object.keys(platform).every((key) =>
+              ["os", "architecture", "variant"].includes(key)
+            ),
+          "OCI descriptor platform fields membership is not exact",
+        );
+        return presentFields(descriptor, [
+          "mediaType",
+          "digest",
+          "size",
+          "platform",
+          "annotations",
+        ]);
+      },
     ),
   };
 }
@@ -1091,28 +1312,16 @@ function normalizeEvidenceBody(
   }
   if (kind === "official-release-index") {
     const source = string(descriptor.sourceUrl, "release index source");
-    const fields = source === "https://nodejs.org/dist/index.json"
-      ? [
-        "version",
-        "date",
-        "files",
-        "npm",
-        "v8",
-        "uv",
-        "zlib",
-        "openssl",
-        "modules",
-        "lts",
-        "security",
-      ]
-      : ["tag_name", "published_at", "draft", "prerelease"];
+    const parsed = parseJsonValue(body, "official release index");
     return {
       kind,
-      value: normalizedJsonRows(
-        parseJsonValue(body, "official release index"),
-        fields,
-        "official release index",
-      ),
+      value: source === "https://nodejs.org/dist/index.json"
+        ? normalizeNodeIndex(parsed)
+        : normalizedJsonRows(
+          parsed,
+          ["tag_name", "published_at", "draft", "prerelease"],
+          "official release index",
+        ),
     };
   }
   if (kind === "official-release-detail") {
@@ -1159,16 +1368,25 @@ function countedHashingStream(
   label: string,
   hash: ReturnType<typeof incrementalSha256>,
   count: { value: number },
+  scope: RawLeaseScope,
+  representation: Exclude<RawRepresentation, "decoded">,
 ): TransformStream<Uint8Array, Uint8Array> {
   return new TransformStream({
     transform(chunk, controller) {
-      invariant(
-        chunk.byteLength <= maximum - count.value,
-        `${label} exceeds ${maximum} byte limit`,
-      );
-      hash.update(chunk);
-      count.value += chunk.byteLength;
-      controller.enqueue(chunk);
+      const lease = scope.acquire(representation, chunk.slice());
+      try {
+        lease.withValue((ownedChunk) => {
+          invariant(
+            ownedChunk.byteLength <= maximum - count.value,
+            `${label} exceeds ${maximum} byte limit`,
+          );
+          hash.update(ownedChunk);
+          count.value += ownedChunk.byteLength;
+          controller.enqueue(ownedChunk);
+        });
+      } finally {
+        lease.release();
+      }
     },
   });
 }
@@ -1194,8 +1412,9 @@ async function loadEvidence(
     compressedLimit > 0 && decompressedLimit > 0,
     "evidence limits must be positive",
   );
+  const rawLeaseFactory = options.rawLeaseFactory ??
+    createTrackedRawLeaseFactory();
   let latestRetrieval: ExactInstant | undefined;
-  let activeDescriptor: string | undefined;
   for (const descriptor of descriptors) {
     exactKeys(descriptor, [
       "id",
@@ -1235,97 +1454,102 @@ async function loadEvidence(
     if (!latestRetrieval || compareInstants(retrievedAt, latestRetrieval) > 0) {
       latestRetrieval = retrievedAt;
     }
-    invariant(
-      activeDescriptor === undefined,
-      "multiple provenance descriptors retained active raw ownership",
-    );
-    activeDescriptor = id;
-    let body = "";
-    let decodedBytes = 0;
-    const compressedCount = { value: 0 };
-    const decompressedCount = { value: 0 };
-    options.observe?.({
-      descriptorId: id,
-      action: "acquire",
-      representation: "decoded",
-      bytes: 0,
-    });
-    try {
-      const compressedHash = incrementalSha256();
-      const contentHash = incrementalSha256();
-      const decoded = (await readEvidence(path)).pipeThrough(
-        countedHashingStream(
-          compressedLimit,
-          `${id} compressed provenance artifact`,
-          compressedHash,
-          compressedCount,
-        ),
-      ).pipeThrough(
-        new DecompressionStream("gzip") as TransformStream<
-          Uint8Array,
-          Uint8Array
-        >,
-      ).pipeThrough(
-        countedHashingStream(
-          decompressedLimit,
-          `${id} decompressed provenance artifact`,
-          contentHash,
-          decompressedCount,
-        ),
-      ).pipeThrough(new TextDecoderStream("utf-8", { fatal: true }));
-      const reader = decoded.getReader();
-      try {
-        while (true) {
-          const result = await reader.read();
-          if (result.done) break;
-          body += result.value;
-          decodedBytes = decompressedCount.value;
-        }
-      } catch (error) {
-        await reader.cancel(error).catch(() => undefined);
-        throw error;
-      } finally {
-        reader.releaseLock();
-      }
-      invariant(
-        compressedHash.digest() ===
-          digest(descriptor.artifactSha256, `${id}.artifactSha256`),
-        `${id} compressed artifact hash drifted`,
-      );
-      invariant(
-        contentHash.digest() ===
-          digest(descriptor.contentSha256, `${id}.contentSha256`),
-        `${id} official response content hash drifted`,
-      );
-      const normalized = normalizeEvidenceBody(descriptor, body);
-      assertNormalizedEvidenceValue(normalized.value, `${id} normalized claim`);
-      claims.set(id, normalized);
+    await rawLeaseFactory.run(id, async (scope) => {
+      let decodedBytes = 0;
+      const compressedCount = { value: 0 };
+      const decompressedCount = { value: 0 };
       options.observe?.({
         descriptorId: id,
-        action: "retain",
-        representation: "normalized",
+        action: "acquire",
+        representation: "decoded",
         bytes: 0,
       });
-      byId.set(id, clone(descriptor));
-    } catch (error) {
-      decodedBytes = decompressedCount.value;
-      options.observe?.({
-        descriptorId: id,
-        action: "cancel",
-        representation: "decoded",
-        bytes: decodedBytes,
-      });
-      throw error;
-    } finally {
-      body = "";
-      options.observe?.({
-        descriptorId: id,
-        action: "release",
-        representation: "decoded",
-        bytes: decodedBytes,
-      });
-      activeDescriptor = undefined;
-    }
+      const decodedLease = scope.acquire("decoded", "");
+      try {
+        const compressedHash = incrementalSha256();
+        const contentHash = incrementalSha256();
+        const decoded = (await readEvidence(path)).pipeThrough(
+          countedHashingStream(
+            compressedLimit,
+            `${id} compressed provenance artifact`,
+            compressedHash,
+            compressedCount,
+            scope,
+            "compressed",
+          ),
+        ).pipeThrough(
+          new DecompressionStream("gzip") as TransformStream<
+            Uint8Array,
+            Uint8Array
+          >,
+        ).pipeThrough(
+          countedHashingStream(
+            decompressedLimit,
+            `${id} decompressed provenance artifact`,
+            contentHash,
+            decompressedCount,
+            scope,
+            "decompressed",
+          ),
+        ).pipeThrough(new TextDecoderStream("utf-8", { fatal: true }));
+        const reader = decoded.getReader();
+        try {
+          while (true) {
+            const result = await reader.read();
+            if (result.done) break;
+            decodedLease.update((body) => body + result.value);
+            decodedBytes = decompressedCount.value;
+          }
+          invariant(
+            compressedHash.digest() ===
+              digest(descriptor.artifactSha256, `${id}.artifactSha256`),
+            `${id} compressed artifact hash drifted`,
+          );
+          invariant(
+            contentHash.digest() ===
+              digest(descriptor.contentSha256, `${id}.contentSha256`),
+            `${id} official response content hash drifted`,
+          );
+          const normalized = decodedLease.withValue((body) =>
+            normalizeEvidenceBody(descriptor, body)
+          );
+          assertNormalizedEvidenceValue(
+            normalized.value,
+            `${id} normalized claim`,
+          );
+          claims.set(id, normalized);
+          options.observe?.({
+            descriptorId: id,
+            action: "retain",
+            representation: "normalized",
+            bytes: 0,
+          });
+          byId.set(id, clone(descriptor));
+        } catch (error) {
+          await reader.cancel(error).catch(() => undefined);
+          throw error;
+        } finally {
+          reader.releaseLock();
+        }
+      } catch (error) {
+        decodedBytes = decompressedCount.value;
+        options.observe?.({
+          descriptorId: id,
+          action: "cancel",
+          representation: "decoded",
+          bytes: decodedBytes,
+        });
+        throw error;
+      } finally {
+        decodedLease.release();
+        options.observe?.({
+          descriptorId: id,
+          action: "release",
+          representation: "decoded",
+          bytes: decodedBytes,
+        });
+      }
+    });
   }
   invariant(
     latestRetrieval?.canonical === selectedAt.canonical,
@@ -5575,6 +5799,181 @@ async function readRepositoryInputs(
   return contents;
 }
 
+Deno.test("evidence ingestion rejects wall-clock scheduling and requires an independent raw lease", async () => {
+  const source = await Deno.readTextFile(new URL(import.meta.url));
+  const forbiddenIdentifiers = [
+    ["set", "Timeout"],
+    ["set", "Interval"],
+    ["Date", ".now"],
+    ["Temporal", ".Now"],
+    ["performance", ".now"],
+  ].map((parts) => parts.join(""));
+  const forbiddenPatterns = forbiddenIdentifiers.map((identifier) =>
+    new RegExp(`\\b${identifier.replace(".", "\\.")}\\s*\\(`)
+  );
+  invariant(
+    forbiddenPatterns.every((pattern, index) =>
+      pattern.test(`${forbiddenIdentifiers[index]}(`) && !pattern.test(source)
+    ),
+    "runtime graph oracle uses forbidden wall-clock scheduling",
+  );
+
+  const selectedAt = instant(
+    "2026-01-10T04:05:06.789Z",
+    "independent lease fixture selection",
+  );
+  const body = "fixture checksum row";
+  const bytes = await gzip(body);
+  const path = `${PROVENANCE_ROOT}independent-lease.gz`;
+  const descriptor = {
+    id: "independent-lease",
+    kind: "release-checksum",
+    path,
+    compression: "gzip",
+    sourceUrl: "https://nodejs.org/dist/v24.11.0/SHASUMS256.txt",
+    retrievedAt: selectedAt.canonical,
+    contentSha256: await sha256Text(body),
+    artifactSha256: await sha256Bytes(bytes),
+  };
+  let independentRuns = 0;
+  const rawLeaseFactory = {
+    run(): Promise<never> {
+      independentRuns += 1;
+      return Promise.reject(new Error("independent raw lease factory reached"));
+    },
+  };
+  const independentReader: EvidenceReader = (requestedPath) => {
+    invariant(
+      requestedPath === path,
+      "independent lease fixture requested the wrong evidence path",
+    );
+    return Promise.resolve(byteStream(bytes));
+  };
+  const readerProbe = await independentReader(path);
+  await readerProbe.cancel();
+  const [result] = await Promise.allSettled([
+    loadEvidence(
+      { provenance: [descriptor] },
+      independentReader,
+      selectedAt,
+      { rawLeaseFactory } as unknown as EvidenceLoadOptions,
+    ),
+  ]);
+  invariant(
+    independentRuns === 1 && result?.status === "rejected" &&
+      (result.reason as Error).message ===
+        "independent raw lease factory reached",
+    "evidence ingestion bypassed the independent raw lease factory",
+  );
+});
+
+Deno.test("official Node rows reject unknown raw fields before projection", async () => {
+  await expectReject(async (candidate) => {
+    const descriptor = object(
+      array(candidate.graph.provenance, "provenance").find((raw) =>
+        object(raw, "descriptor").id === "node-lts-index"
+      ),
+      "Node index descriptor",
+    );
+    const rows = array(
+      parseJsonValue(
+        await gunzipBounded(candidate.evidence.get(String(descriptor.path))!),
+        "Node index",
+      ),
+      "Node index",
+    ).map((raw) => object(raw, "Node row"));
+    rows[0]!.unexpectedProjectionEscape = "hidden";
+    await refreshEvidenceDescriptor(
+      candidate,
+      "node-lts-index",
+      JSON.stringify(rows),
+    );
+  }, "Node index row fields membership is not exact");
+});
+
+Deno.test("OCI descriptors reject unknown raw fields before projection", async () => {
+  await expectReject(async (candidate) => {
+    const image = object(
+      array(candidate.graph.ociImages, "images")[0],
+      "OCI image",
+    );
+    const id = string(image.evidenceId, "OCI evidence ID");
+    const descriptor = object(
+      array(candidate.graph.provenance, "provenance").find((raw) =>
+        object(raw, "descriptor").id === id
+      ),
+      "OCI evidence descriptor",
+    );
+    const index = parseJson(
+      await gunzipBounded(candidate.evidence.get(String(descriptor.path))!),
+      "OCI index",
+    );
+    object(
+      array(index.manifests, "OCI manifests")[0],
+      "OCI raw descriptor",
+    ).unexpectedProjectionEscape = "hidden";
+    const body = JSON.stringify(index);
+    await refreshEvidenceDescriptor(candidate, id, body);
+    const digestValue = await sha256Text(body);
+    image.indexDigest = digestValue;
+    image.reference = `${image.repository}:${image.tag}@${digestValue}`;
+  }, "OCI descriptor fields membership is not exact");
+
+  await expectReject(async (candidate) => {
+    const image = object(
+      array(candidate.graph.ociImages, "images")[0],
+      "OCI image",
+    );
+    const id = string(image.evidenceId, "OCI evidence ID");
+    const descriptor = object(
+      array(candidate.graph.provenance, "provenance").find((raw) =>
+        object(raw, "descriptor").id === id
+      ),
+      "OCI evidence descriptor",
+    );
+    const index = parseJson(
+      await gunzipBounded(candidate.evidence.get(String(descriptor.path))!),
+      "OCI index",
+    );
+    index.unexpectedProjectionEscape = "hidden";
+    const body = JSON.stringify(index);
+    await refreshEvidenceDescriptor(candidate, id, body);
+    const digestValue = await sha256Text(body);
+    image.indexDigest = digestValue;
+    image.reference = `${image.repository}:${image.tag}@${digestValue}`;
+  }, "OCI index fields membership is not exact");
+
+  await expectReject(async (candidate) => {
+    const image = object(
+      array(candidate.graph.ociImages, "images")[0],
+      "OCI image",
+    );
+    const id = string(image.evidenceId, "OCI evidence ID");
+    const descriptor = object(
+      array(candidate.graph.provenance, "provenance").find((raw) =>
+        object(raw, "descriptor").id === id
+      ),
+      "OCI evidence descriptor",
+    );
+    const index = parseJson(
+      await gunzipBounded(candidate.evidence.get(String(descriptor.path))!),
+      "OCI index",
+    );
+    object(
+      object(
+        array(index.manifests, "OCI manifests")[0],
+        "OCI raw descriptor",
+      ).platform,
+      "OCI raw platform",
+    ).unexpectedProjectionEscape = "hidden";
+    const body = JSON.stringify(index);
+    await refreshEvidenceDescriptor(candidate, id, body);
+    const digestValue = await sha256Text(body);
+    image.indexDigest = digestValue;
+    image.reference = `${image.repository}:${image.tag}@${digestValue}`;
+  }, "OCI descriptor platform fields membership is not exact");
+});
+
 Deno.test("aggregate evidence ingestion releases raw ownership per descriptor", async () => {
   const selectedAt = instant(
     "2026-01-10T04:05:06.789Z",
@@ -5630,6 +6029,25 @@ Deno.test("aggregate evidence ingestion releases raw ownership per descriptor", 
   };
   const firstBytes = evidence.get(`${PROVENANCE_ROOT}aggregate-first.gz`)!;
   const bodyLimit = new TextEncoder().encode(bodies.get("first")!).byteLength;
+  const sourceIdentities = new Set(evidence.values());
+  const sourceHashes = new Map<string, string>();
+  for (const [path, value] of evidence) {
+    sourceHashes.set(path, await sha256Bytes(value));
+  }
+  const rawAcquisitions: string[] = [];
+  const rawLeaseFactory = createTrackedRawLeaseFactory({
+    onAcquire(descriptorId, kind, lease) {
+      rawAcquisitions.push(`${descriptorId}:${kind}`);
+      lease.withValue((value) => {
+        if (value instanceof Uint8Array) {
+          invariant(
+            !sourceIdentities.has(value),
+            "ingestion leased its immutable reader-owned source fixture",
+          );
+        }
+      });
+    },
+  });
   invariant(
     firstBytes.byteLength ===
         evidence.get(`${PROVENANCE_ROOT}aggregate-second.gz`)!.byteLength &&
@@ -5644,8 +6062,10 @@ Deno.test("aggregate evidence ingestion releases raw ownership per descriptor", 
       observe,
       compressedLimit: firstBytes.byteLength,
       decompressedLimit: bodyLimit,
+      rawLeaseFactory,
     },
   );
+  rawLeaseFactory.assertIdle();
   invariant(
     JSON.stringify(observed) === JSON.stringify([
           "first:acquire:decoded",
@@ -5656,9 +6076,20 @@ Deno.test("aggregate evidence ingestion releases raw ownership per descriptor", 
           "second:release:decoded",
         ]) &&
       activeDescriptor === undefined && !("text" in authority) &&
-      !("json" in authority),
+      !("json" in authority) &&
+      JSON.stringify(rawLeaseFactory.startedDescriptorIds()) ===
+        JSON.stringify(["first", "second"]) &&
+      ["compressed", "decompressed", "decoded"].every((kind) =>
+        rawAcquisitions.some((entry) => entry.endsWith(`:${kind}`))
+      ),
     "aggregate evidence ingestion retained overlapping or accumulating raw representations",
   );
+  for (const [path, value] of evidence) {
+    invariant(
+      sourceHashes.get(path) === await sha256Bytes(value),
+      "ingestion mutated its immutable reader-owned source fixture",
+    );
+  }
   exactValue(
     authority.checksumRows("second"),
     [[bodies.get("second")]],
@@ -5677,6 +6108,121 @@ Deno.test("aggregate evidence ingestion releases raw ownership per descriptor", 
   authority.descriptor("first");
   authority.descriptor("second");
   authority.assertAllUsed();
+
+  let heldRawLease: RawLease<unknown> | undefined;
+  const mutantEvents: string[] = [];
+  const mutantFactory = createTrackedRawLeaseFactory({
+    onAcquire(descriptorId, kind, lease) {
+      if (descriptorId !== "first" || kind !== "decoded") return;
+      heldRawLease = lease.retain();
+    },
+  });
+  const [mutantResult] = await Promise.allSettled([
+    loadEvidence(
+      { provenance },
+      (path) => Promise.resolve(byteStream(evidence.get(path)!)),
+      selectedAt,
+      {
+        rawLeaseFactory: mutantFactory,
+        compressedLimit: firstBytes.byteLength,
+        decompressedLimit: bodyLimit,
+        observe(event) {
+          mutantEvents.push(
+            `${event.descriptorId}:${event.action}:${event.representation}`,
+          );
+        },
+      },
+    ),
+  ]);
+  invariant(
+    mutantResult?.status === "rejected" &&
+      (mutantResult.reason as Error).message.includes(
+        "first retained raw lease(s): decoded",
+      ) &&
+      JSON.stringify(mutantFactory.startedDescriptorIds()) ===
+        JSON.stringify(["first"]) &&
+      mutantEvents.includes("first:retain:normalized") &&
+      mutantEvents.includes("first:release:decoded") &&
+      !mutantEvents.some((event) => event.startsWith("second:")),
+    "a hidden raw accumulator passed through loader-authored lifecycle events",
+  );
+  mutantFactory.assertIdle();
+  invariant(heldRawLease, "raw accumulator mutant did not retain a lease");
+  let revokedLeaseMessage = "";
+  try {
+    heldRawLease.withValue(() => undefined);
+  } catch (error) {
+    revokedLeaseMessage = (error as Error).message;
+  }
+  invariant(
+    revokedLeaseMessage === "raw lease is no longer active",
+    "retained raw lease remained accessible after descriptor cleanup",
+  );
+
+  let releaseActiveDescriptor!: () => void;
+  const overlapFactory = createTrackedRawLeaseFactory();
+  const activeDescriptorRun = overlapFactory.run(
+    "active",
+    async (scope) => {
+      const lease = scope.acquire("decoded", "active");
+      await new Promise<void>((resolve) => {
+        releaseActiveDescriptor = () => {
+          lease.release();
+          resolve();
+        };
+      });
+    },
+  );
+  const [overlapResult] = await Promise.allSettled([
+    overlapFactory.run("overlap", () => Promise.resolve()),
+  ]);
+  invariant(
+    overlapResult?.status === "rejected" &&
+      (overlapResult.reason as Error).message ===
+        "a raw descriptor lease is already active" &&
+      JSON.stringify(overlapFactory.startedDescriptorIds()) ===
+        JSON.stringify(["active"]),
+    "a second descriptor began while a prior raw lease remained active",
+  );
+  releaseActiveDescriptor();
+  await activeDescriptorRun;
+  overlapFactory.assertIdle();
+
+  let failureChild: RawLease<unknown> | undefined;
+  const combinedFailureFactory = createTrackedRawLeaseFactory({
+    onAcquire(_descriptorId, _kind, lease) {
+      failureChild = lease.retain();
+    },
+  });
+  const [combinedFailure] = await Promise.allSettled([
+    combinedFailureFactory.run("failed", async (scope) => {
+      const lease = scope.acquire("decoded", "raw failure fixture");
+      lease.release();
+      await Promise.resolve();
+      throw new Error("original normalization failure");
+    }),
+  ]);
+  invariant(
+    combinedFailure?.status === "rejected" &&
+      (combinedFailure.reason as Error).message.includes(
+        "original normalization failure",
+      ) && (combinedFailure.reason as Error).message.includes(
+        "failed retained raw lease(s): decoded",
+      ),
+    "raw lease cleanup masked either the original failure or retained lease",
+  );
+  combinedFailureFactory.assertIdle();
+  invariant(failureChild, "combined failure did not retain its child lease");
+  let failureChildMessage = "";
+  try {
+    failureChild.retain();
+  } catch (error) {
+    failureChildMessage = (error as Error).message;
+  }
+  invariant(
+    failureChildMessage === "raw lease is no longer active",
+    "failure cleanup left a retained child capability active",
+  );
 
   for (
     const [limit, expected] of [
@@ -5751,8 +6297,12 @@ Deno.test("aggregate evidence ingestion releases raw ownership per descriptor", 
     artifactSha256: await sha256Bytes(expandedBytes),
   };
   const decompressedLifecycle: EvidenceIngestionEvent[] = [];
-  let decompressedSourceCancelled = false;
-  const [decompressedResult] = await Promise.allSettled([
+  let decompressedCancellationCount = 0;
+  let acknowledgeDecompressedCancellation!: () => void;
+  const decompressedCancellation = new Promise<void>((resolve) => {
+    acknowledgeDecompressedCancellation = resolve;
+  });
+  const decompressedResultPromise = Promise.allSettled([
     loadEvidence(
       { provenance: [expandedDescriptor, provenance[1]] },
       (path) => {
@@ -5768,7 +6318,8 @@ Deno.test("aggregate evidence ingestion releases raw ownership per descriptor", 
               );
             },
             cancel() {
-              decompressedSourceCancelled = true;
+              decompressedCancellationCount += 1;
+              acknowledgeDecompressedCancellation();
             },
           }),
         );
@@ -5782,13 +6333,24 @@ Deno.test("aggregate evidence ingestion releases raw ownership per descriptor", 
         },
       },
     ),
+  ]).then(([result]) => result!);
+  const firstDecompressedOutcome = await Promise.race([
+    decompressedCancellation.then(() => "cancelled" as const),
+    decompressedResultPromise.then(() => "settled" as const),
   ]);
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  invariant(
+    firstDecompressedOutcome === "cancelled",
+    "decompressed N+1 settled before upstream cancellation acknowledgement",
+  );
+  const [, decompressedResult] = await Promise.all([
+    decompressedCancellation,
+    decompressedResultPromise,
+  ]);
   invariant(
     decompressedResult?.status === "rejected" &&
       (decompressedResult.reason as Error).message.includes(
         "decompressed provenance artifact exceeds 1 byte limit",
-      ) && decompressedSourceCancelled &&
+      ) && decompressedCancellationCount === 1 &&
       !decompressedLifecycle.some((event) => event.descriptorId === "second") &&
       decompressedLifecycle.some((event) => event.action === "cancel") &&
       !decompressedLifecycle.some((event) => event.action === "retain"),
