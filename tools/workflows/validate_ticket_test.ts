@@ -9,6 +9,17 @@ const RED_REVISION = "960d91526ea6b9779754d7c2ba13193974aa6448";
 const CANDIDATE_REVISION = "2222222222222222222222222222222222222222";
 const TEST_SHA256 =
   "94c3c75525c4d11ffc81afc650dfa79473adae3f17a5259bf95d7bbcb9a55625";
+const TICKET_ID = "PILOT-001";
+const CONTROLLER_RUN_ID =
+  `${TICKET_ID}/orchestrator/r0/00000000-0000-4000-8000-000000000001`;
+const IMPLEMENTER_RUN_ID =
+  `${TICKET_ID}/implementer/r1/00000000-0000-4000-8000-000000000002`;
+const REVIEWER_RUN_ID =
+  `${TICKET_ID}/reviewer/r1/00000000-0000-4000-8000-000000000003`;
+const ROUND_TWO_IMPLEMENTER_RUN_ID =
+  `${TICKET_ID}/implementer/r2/00000000-0000-4000-8000-000000000004`;
+const ROUND_TWO_REVIEWER_RUN_ID =
+  `${TICKET_ID}/reviewer/r2/00000000-0000-4000-8000-000000000005`;
 
 const REQUIRED_TASKS = [
   "fmt:check",
@@ -19,8 +30,23 @@ const REQUIRED_TASKS = [
   "ticket:validate",
   "test:schema:matrix",
 ] as const;
+const FIXTURE_TASK_DEFINITION = "deno check tools/workflows/base.ts";
 
 const AVAILABLE_TASKS = new Set(REQUIRED_TASKS);
+
+function requiredTaskRecords(): Record<string, unknown> {
+  return {
+    baseline: REQUIRED_TASKS.map((name) => ({
+      name,
+      definition: FIXTURE_TASK_DEFINITION,
+    })),
+    candidate: REQUIRED_TASKS.map((name) => ({
+      name,
+      definition: FIXTURE_TASK_DEFINITION,
+      guardedBy: null,
+    })),
+  };
+}
 
 function validEvents(): Record<string, unknown>[] {
   return [
@@ -29,7 +55,7 @@ function validEvents(): Record<string, unknown>[] {
       from: "planned",
       to: "ready",
       round: 0,
-      actorRunId: "orchestrator-ready-20260811",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: "ticket.json",
       revision: BASE_REVISION,
     },
@@ -38,7 +64,7 @@ function validEvents(): Record<string, unknown>[] {
       from: "ready",
       to: "red",
       round: 1,
-      actorRunId: "implementer-round-01-20260811",
+      actorRunId: IMPLEMENTER_RUN_ID,
       evidenceRef: "evidence/round-01-red.log",
       revision: RED_REVISION,
     },
@@ -47,7 +73,7 @@ function validEvents(): Record<string, unknown>[] {
       from: "red",
       to: "green",
       round: 1,
-      actorRunId: "implementer-round-01-20260811",
+      actorRunId: IMPLEMENTER_RUN_ID,
       evidenceRef: "evidence/round-01-green.log",
       revision: CANDIDATE_REVISION,
     },
@@ -56,7 +82,7 @@ function validEvents(): Record<string, unknown>[] {
       from: "green",
       to: "refactor",
       round: 1,
-      actorRunId: "implementer-round-01-20260811",
+      actorRunId: IMPLEMENTER_RUN_ID,
       evidenceRef: "evidence/round-01-refactor.log",
       revision: CANDIDATE_REVISION,
     },
@@ -65,7 +91,7 @@ function validEvents(): Record<string, unknown>[] {
       from: "refactor",
       to: "review",
       round: 1,
-      actorRunId: "orchestrator-review-20260811",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: "results/round-01.json",
       revision: CANDIDATE_REVISION,
     },
@@ -74,7 +100,7 @@ function validEvents(): Record<string, unknown>[] {
       from: "review",
       to: "accepted",
       round: 1,
-      actorRunId: "orchestrator-accept-20260811",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: "acceptance.md",
       revision: CANDIDATE_REVISION,
     },
@@ -85,12 +111,15 @@ function validBundle(): Record<string, unknown> {
   const events = validEvents();
   return {
     ticket: {
-      schemaVersion: 1,
-      ticketId: "PILOT-001",
+      schemaVersion: 2,
+      ticketId: TICKET_ID,
       revision: 1,
       title: "Enforce autonomous ticket evidence",
       outcome: "A complete ticket record is validated mechanically.",
       baseRevision: BASE_REVISION,
+      controllerRunId: CONTROLLER_RUN_ID,
+      executionClass: "ordinary",
+      protectedWriteAuthorization: null,
       dependencies: [],
       maxRounds: 3,
       scope: ["Workflow validation"],
@@ -103,13 +132,13 @@ function validBundle(): Record<string, unknown> {
         redProof:
           "A valid bundle fails with not_implemented before production changes.",
       }],
-      requiredTasks: [...REQUIRED_TASKS],
+      requiredTasks: requiredTaskRecords(),
       risks: ["False approval from permissive validation"],
       unresolvedDecisions: [],
     },
     state: {
       schemaVersion: 1,
-      ticketId: "PILOT-001",
+      ticketId: TICKET_ID,
       ticketRevision: 1,
       phase: "accepted",
       round: 1,
@@ -121,7 +150,7 @@ function validBundle(): Record<string, unknown> {
       dependencyRevisions: {},
       openFindingIds: [],
       orchestratorChecks: REQUIRED_TASKS.map((task, index) => ({
-        runId: `orchestrator-check-${index + 1}-20260811`,
+        runId: `${CONTROLLER_RUN_ID}/acceptance-check-${index + 1}`,
         revision: CANDIDATE_REVISION,
         command: `deno task ${task}`,
         exitCode: 0,
@@ -131,11 +160,12 @@ function validBundle(): Record<string, unknown> {
     },
     events: structuredClone(events),
     results: [{
-      schemaVersion: 1,
-      ticketId: "PILOT-001",
+      schemaVersion: 2,
+      ticketId: TICKET_ID,
       ticketRevision: 1,
       round: 1,
-      implementerRunId: "implementer-round-01-20260811",
+      implementerRunId: IMPLEMENTER_RUN_ID,
+      issuedByControllerRunId: CONTROLLER_RUN_ID,
       inputBaseRevision: BASE_REVISION,
       dispatchRef: "dispatch/round-01.md",
       redRevision: RED_REVISION,
@@ -166,12 +196,13 @@ function validBundle(): Record<string, unknown> {
       candidateRevision: CANDIDATE_REVISION,
     }],
     reviews: [{
-      schemaVersion: 1,
-      ticketId: "PILOT-001",
+      schemaVersion: 2,
+      ticketId: TICKET_ID,
       ticketRevision: 1,
       round: 1,
-      implementerRunId: "implementer-round-01-20260811",
-      reviewerRunId: "reviewer-round-01-20260811",
+      implementerRunId: IMPLEMENTER_RUN_ID,
+      reviewerRunId: REVIEWER_RUN_ID,
+      issuedByControllerRunId: CONTROLLER_RUN_ID,
       baseRevision: BASE_REVISION,
       candidateRevision: CANDIDATE_REVISION,
       verdict: "APPROVED",
@@ -363,7 +394,7 @@ async function writeGitBundleDirectory(
       JSON.stringify(
         {
           tasks: Object.fromEntries(
-            REQUIRED_TASKS.map((task) => [task, "deno eval true"]),
+            REQUIRED_TASKS.map((task) => [task, FIXTURE_TASK_DEFINITION]),
           ),
         },
         null,
@@ -570,7 +601,7 @@ Deno.test("validateTicketBundle rejects absent required Deno tasks", () => {
 
   assertIssue(
     validateTicketBundle(validBundle(), tasksWithoutLint),
-    "$.ticket.requiredTasks[1]",
+    "$.ticket.requiredTasks.baseline[1].name",
     "task_missing",
   );
 });
@@ -941,7 +972,7 @@ Deno.test("validateTicketBundle strictly validates nested object fields", () => 
 
 Deno.test("validateTicketBundle rejects unsupported schema versions and record mismatches", () => {
   const bundle = validBundle();
-  asRecord(bundle.ticket).schemaVersion = 2;
+  asRecord(bundle.ticket).schemaVersion = 3;
   asRecord(bundle.state).ticketId = "OTHER-001";
 
   const issues = validateTicketBundle(bundle, AVAILABLE_TASKS);
@@ -1488,9 +1519,12 @@ Deno.test("validateTicketBundle rejects malformed and contradictory semantic rec
     },
     {
       mutate: (bundle) => {
-        asArray(asRecord(bundle.ticket).requiredTasks).push("lint");
+        asArray(asRecord(asRecord(bundle.ticket).requiredTasks).baseline).push({
+          name: "lint",
+          definition: FIXTURE_TASK_DEFINITION,
+        });
       },
-      path: "$.ticket.requiredTasks[7]",
+      path: "$.ticket.requiredTasks.baseline[7].name",
       code: "duplicate_value",
     },
     {
@@ -1709,18 +1743,29 @@ Deno.test("runTicketValidator verifies Git content-addressed TDD lineage", async
     const integratedBundle = structuredClone(genuine.bundle);
     const integratedState = asRecord(integratedBundle.state);
     integratedState.phase = "integrated";
+    integratedState.integrationRevision = integratedState.candidateRevision;
+    integratedState.integrationChecks = REQUIRED_TASKS.map((task, index) => ({
+      runId: `${CONTROLLER_RUN_ID}/integration-check-${index + 1}`,
+      revision: integratedState.integrationRevision,
+      command: `deno task ${task}`,
+      exitCode: 0,
+    }));
     const integratedEvents = asArray(integratedState.events);
     integratedEvents.push({
       sequence: 7,
       from: "accepted",
       to: "integrated",
       round: 1,
-      actorRunId: "orchestrator-integrate-20260811",
-      evidenceRef: "acceptance.md",
-      revision: integratedState.candidateRevision,
+      actorRunId: CONTROLLER_RUN_ID,
+      evidenceRef: "integration.md",
+      revision: integratedState.integrationRevision,
     });
     integratedBundle.events = structuredClone(integratedEvents);
     writeBundleFiles(genuine.ticketDirectory, integratedBundle);
+    Deno.writeTextFileSync(
+      `${genuine.ticketDirectory}/integration.md`,
+      "Integrated exact candidate.\n",
+    );
     const integrated = await captureValidatorRunInRepository(
       genuine.root,
       [genuine.ticketDirectory],
@@ -2068,7 +2113,7 @@ Deno.test("validateTicketBundle covers strict collection and record diagnostics"
     },
     {
       mutate: (bundle) => {
-        asRecord(asArray(bundle.results)[0]).schemaVersion = 2;
+        asRecord(asArray(bundle.results)[0]).schemaVersion = 1;
       },
       path: "$.results[0].schemaVersion",
       code: "invalid_value",
@@ -2082,7 +2127,7 @@ Deno.test("validateTicketBundle covers strict collection and record diagnostics"
     },
     {
       mutate: (bundle) => {
-        asRecord(asArray(bundle.reviews)[0]).schemaVersion = 2;
+        asRecord(asArray(bundle.reviews)[0]).schemaVersion = 1;
       },
       path: "$.reviews[0].schemaVersion",
       code: "invalid_value",
@@ -2331,7 +2376,7 @@ function twoRoundAcceptedBundle(): Record<string, unknown> {
 
   const secondResult = structuredClone(firstResult);
   secondResult.round = 2;
-  secondResult.implementerRunId = "implementer-round-02-20260811";
+  secondResult.implementerRunId = ROUND_TWO_IMPLEMENTER_RUN_ID;
   secondResult.inputBaseRevision = CANDIDATE_REVISION;
   secondResult.dispatchRef = "dispatch/round-02.md";
   secondResult.redRevision = ROUND_TWO_RED_REVISION;
@@ -2345,7 +2390,7 @@ function twoRoundAcceptedBundle(): Record<string, unknown> {
   );
   secondReview.round = 2;
   secondReview.implementerRunId = secondResult.implementerRunId;
-  secondReview.reviewerRunId = "reviewer-round-02-20260811";
+  secondReview.reviewerRunId = ROUND_TWO_REVIEWER_RUN_ID;
   secondReview.candidateRevision = ROUND_TWO_CANDIDATE_REVISION;
   secondReview.commands = [{
     command: "deno task test:workflow:coverage",
@@ -2395,7 +2440,7 @@ function twoRoundAcceptedBundle(): Record<string, unknown> {
       from: "refactor",
       to: "review",
       round: 2,
-      actorRunId: "orchestrator-review-round-02-20260811",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: "results/round-02.json",
       revision: ROUND_TWO_CANDIDATE_REVISION,
     },
@@ -2404,7 +2449,7 @@ function twoRoundAcceptedBundle(): Record<string, unknown> {
       from: "review",
       to: "accepted",
       round: 2,
-      actorRunId: "orchestrator-accept-round-02-20260811",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: "acceptance.md",
       revision: ROUND_TWO_CANDIDATE_REVISION,
     },

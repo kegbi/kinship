@@ -19,20 +19,10 @@ const LEGACY_TICKET_IDENTITY_DIGESTS: Readonly<
   Record<string, ReadonlySet<string>>
 > = {
   "PILOT-001": new Set([
-    "40453f15e4042a665773829bde044dcd005f7e4e03e7cb1fa427e427c9a4e667",
-    "842b449eb93971f42217f0c1027bcb633543a558b3072d1eef2abd76f43fdfd8",
-    "49de21b86c3523aa2ed13215893be321a5680c176978f57b538b9aca51227ad5",
-    "427764a4f046b02676be2a32a078a6a359e03a8fdcd66b69e2f6e53fffd89e40",
-    "cbb45e9e4d0441bab6ab8b72cfbc350e49ceb604844717d4cd9ee2ac26208e44",
-    "fdf79a6d4439f15d04eb51427f0ded7b9062d23a42a7664f5875f97617f9e757",
-    "9dff129a86eb8eae00b7d0043f3cf07eb753a6fc0b75cfcb20223981a34a0ecd",
-    "cba59f6daf7c4d11ad205241a8b193749deb373d56811089aa9a7fb8aba5a1ec",
-    "248f1a9b690d0df73de19c720bf09853ef705d382cb4e146564ab98f551d553c",
-    "3d0e3c6e56fa7f87efde3bf9abae9e021ca5ba37fd7ffa64b46cea4024046087",
-    "b85b102e6743e6fc693b246f6e4d2cbc5829211ac3f23ebbb895c00824c0a880",
+    "8f167cc3a211a49862dc23be0d54dba3fb187e119c8e62aa03b24aceeed717d1",
   ]),
   "PILOT-002": new Set([
-    "1cbb5a7c61412d17755000c4e3e0fc0cb93751db607749b4d6123e2d2733e845",
+    "640d43ed67a4bef5597bc2dcf86c735d060e3ea6cbef3893e91fe0ad3aa99b24",
   ]),
 };
 
@@ -978,12 +968,13 @@ function validateExecutionAuthority(
       typeof value === "string"
     )
     : [];
-  if (!sameStrings(allowedWrites, authorizationPaths)) {
+  const protectedAllowedWrites = allowedWrites.filter(isProtectedControlPath);
+  if (!sameStrings(protectedAllowedWrites, authorizationPaths)) {
     addIssue(
       issues,
       "$.ticket.protectedWriteAuthorization.paths",
       "authorization_mismatch",
-      "Protected authorization paths must exactly match allowed writes",
+      "Protected authorization paths must exactly match protected allowed writes",
     );
   }
   validateNonEmptyString(
@@ -2759,10 +2750,7 @@ function validateLegacyPacketIdentity(
   if (ticket.schemaVersion !== 1 || typeof ticket.ticketId !== "string") return;
   const allowedDigests = LEGACY_TICKET_IDENTITY_DIGESTS[ticket.ticketId];
   if (allowedDigests === undefined) return;
-  const identityDigest = sha256Json({
-    ...ticket,
-    baseRevision: "<base-revision>",
-  });
+  const identityDigest = sha256Json(ticket);
   if (allowedDigests.has(identityDigest)) return;
   addIssue(
     issues,
