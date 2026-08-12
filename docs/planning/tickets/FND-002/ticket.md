@@ -1,11 +1,13 @@
 # FND-002: Accept DG-06A coordination boundary
 
-Status: ready, round 0\
+Status: review, round 1\
 Owner: trusted top-level orchestrator\
 Base revision: `603f6621809f61fab70bc29b8b4a9252ebcecb27`\
 Execution class: `ordinary`\
 Depends on: none\
 Maximum rounds: 3
+
+Candidate revision: `820fb4cd5c45e7b4b6a0e748f602c657d4c2cb61`
 
 ## Outcome
 
