@@ -1,0 +1,29 @@
+ticket=PILOT-006
+round=01
+phase=RED
+controllerRunId=PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601
+implementerRunId=PILOT-006/implementer/r1/00000000-0000-4000-8000-000000000602
+packetRevision=ee97d39107849bc0cb5ce93afe006af35dc480a2
+inputRevision=ee97d39107849bc0cb5ce93afe006af35dc480a2
+ticketBaseRevision=6c6ea8313f0472c315079a605c50cd2548d2835b
+productionFiles=[]
+
+focused.command=deno test --allow-read=deno.json,docs/development/autonomous-delivery.md tools/workflows/pilot006/persistent_desktop_provenance_test.ts
+focused.exitCode=1
+focused.result=1 passed; 1 failed
+passingControl.test:workflow.discovery=passed: deno test targets tools/workflows
+passingControl.test:workflow:coverage.discovery=passed: deno test targets tools/workflows
+intendedFailure=Expected the exact contiguous four-paragraph persistent desktop provenance policy once in Worktrees, branches, and threads; found 0 in that section and 0 document-wide
+
+format.command=deno fmt tools/workflows/pilot006/persistent_desktop_provenance_test.ts
+format.exitCode=0
+formatCheck.command=deno fmt --check tools/workflows/pilot006/persistent_desktop_provenance_test.ts
+formatCheck.exitCode=0
+check.command=deno check tools/workflows/pilot006/persistent_desktop_provenance_test.ts
+check.exitCode=0
+lint.command=deno lint tools/workflows/pilot006/persistent_desktop_provenance_test.ts
+lint.exitCode=0
+
+testFile[0].path=tools/workflows/pilot006/persistent_desktop_provenance_test.ts
+testFile[0].sha256=a1ddf54e3b2ca91ff9925b4fa1c7b95c2d3906e395b92135c87d435185cad8bb
+testFile[0].hashBasis=SHA-256 of exact formatted test bytes used by the final focused RED run

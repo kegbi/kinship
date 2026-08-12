@@ -447,6 +447,33 @@ flowchart TD
     O --> G
 ```
 
+Every persistent desktop pilot has exactly one top-level Codex ticket task and
+exactly one corresponding opaque `ticketTaskId`. `integration.md` records that
+ID exactly once. Implementer and reviewer executions are roles of that ticket
+task and do not create, replace, or count as additional ticket-task identities.
+
+For every implementer or reviewer execution, `integration.md` separately records
+exactly one fresh controller-issued `implementerRunId` or `reviewerRunId`, as
+applicable, and exactly one opaque `worktreeRef`. The `ticketTaskId`, the
+ticket's `controllerRunId`, and all implementer and reviewer run IDs are
+mutually distinct; a task ID never substitutes for a run ID or vice versa.
+
+All persisted task, controller, role-run, and worktree identifiers are opaque
+stable identifiers. A `worktreeRef` is a controller-issued alias of the form
+`worktree:<ticket-id>:<ordinal>`. No persisted identifier or reference contains
+an absolute or repository-relative filesystem path, a `..` segment, or user,
+profile, personal, client, credential, secret-bearing, or other sensitive
+topology information. Within one pilot, two executions use the same physical
+worktree if and only if they record the same `worktreeRef`; distinct physical
+worktrees always use distinct references. Once issued, an alias is never rebound
+to another worktree.
+
+Sequential role executions may reuse one physical worktree and its
+`worktreeRef`, or use distinct ones. Concurrent write-enabled executions must
+use distinct physical worktrees and distinct references. Reviewers remain
+read-only; a reviewer may share a worktree with another read-only execution, but
+never with an active write-enabled execution.
+
 Branch names use codex/<ticket-id-lowercase>-<slug>. Record the integration base
 commit in the ticket before work starts. A ticket worktree has one write owner;
 reviewers are read-only. Independent tickets may run concurrently only when
