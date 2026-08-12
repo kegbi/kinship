@@ -40,7 +40,7 @@ const WHOLE_SOURCE_DIGEST_MARKER_END = [
 const WHOLE_SOURCE_DIGEST_SENTINEL = "0".repeat(64);
 /* FND003_WHOLE_SOURCE_DIGEST_START */
 const REVIEWED_WHOLE_SOURCE_SHA256 =
-  "sha256:04aaf058229be0373c448231403a153a9c9533fc4a16bada14f851288828200e";
+  "sha256:c722266aed23f50d9ac749a71dfe9db7aed39bd0de668ba8d174dc7f96d990c0";
 /* FND003_WHOLE_SOURCE_DIGEST_END */
 
 type EvidenceReader = (
@@ -5941,6 +5941,63 @@ async function executeMutatedWholeSource(
   return result;
 }
 
+async function executeRealToolFixtureMutations(
+  source: string,
+  mutations: readonly {
+    label: string;
+    files: Readonly<Record<string, string>>;
+  }[],
+): Promise<readonly { label: string; status: string; message: string }[]> {
+  const workerProgram = [
+    `const source = ${JSON.stringify(source)};`,
+    `const mutations = ${JSON.stringify(mutations)};`,
+    "const registered = [];",
+    "let activeFiles = {};",
+    "Deno.test = (name, fn) => registered.push({ name, fn });",
+    "Deno.readTextFile = (path) => {",
+    '  const normalized = String(path).replaceAll("\\\\", "/");',
+    `  const marker = ${JSON.stringify(REAL_TOOL_FIXTURE_ROOT)};`,
+    "  const markerIndex = normalized.indexOf(marker);",
+    "  if (markerIndex < 0) return Promise.resolve(source);",
+    "  const relative = normalized.slice(markerIndex + marker.length);",
+    "  if (!(relative in activeFiles)) throw new Deno.errors.NotFound(relative);",
+    "  return Promise.resolve(activeFiles[relative]);",
+    "};",
+    'const moduleUrl = URL.createObjectURL(new Blob([source], { type: "application/typescript" }));',
+    "const results = [];",
+    "try {",
+    "  await import(moduleUrl);",
+    '  const target = registered.find((test) => test.name === "real pnpm and Deno outputs satisfy the bounded repository policy");',
+    "  for (const mutation of mutations) {",
+    "    activeFiles = mutation.files;",
+    "    try {",
+    "      await target.fn();",
+    '      results.push({ label: mutation.label, status: "fulfilled", message: "accepted" });',
+    "    } catch (error) {",
+    '      results.push({ label: mutation.label, status: "rejected", message: String(error).replace(/^Error: /, "") });',
+    "    }",
+    "  }",
+    "  postMessage(results);",
+    "} catch (error) {",
+    '  postMessage([{ label: "worker setup", status: "rejected", message: String(error).replace(/^Error: /, "") }]);',
+    "} finally {",
+    "  URL.revokeObjectURL(moduleUrl);",
+    "}",
+  ].join("\n");
+  const workerUrl = URL.createObjectURL(
+    new Blob([workerProgram], { type: "text/javascript" }),
+  );
+  const worker = new Worker(workerUrl, { type: "module" });
+  const results = await new Promise<
+    readonly { label: string; status: string; message: string }[]
+  >((resolve) => {
+    worker.onmessage = (event) => resolve(event.data);
+  });
+  worker.terminate();
+  URL.revokeObjectURL(workerUrl);
+  return results;
+}
+
 Deno.test("evidence ingestion rejects wall-clock scheduling and requires an independent raw lease", async () => {
   const source = await Deno.readTextFile(new URL(import.meta.url));
   const forbiddenIdentifiers = [
@@ -8591,6 +8648,201 @@ Deno.test("real pnpm and Deno outputs satisfy the bounded repository policy", as
     cacheTokens.length === 2 &&
       cacheTokens.every((token) => token === "isolated:pnpm-cache"),
     "shared isolated pnpm metadata cache drifted",
+  );
+});
+
+Deno.test("real-tool fixture claims reject independent and paired drift", async () => {
+  const source = await Deno.readTextFile(new URL(import.meta.url));
+  const fixturePaths = [
+    "metadata.json",
+    "pnpm-11.21.0/settings.txt",
+    "pnpm-11.21.0/react-types-importer.txt",
+    "pnpm-11.21.0/one-to-many-snapshots.txt",
+    "deno-2.9.5/deno.lock",
+  ] as const;
+  const baseFiles: Record<string, string> = {};
+  for (const path of fixturePaths) {
+    baseFiles[path] = await Deno.readTextFile(
+      `${REAL_TOOL_FIXTURE_ROOT}${path}`,
+    );
+  }
+  const baseMetadata = parseJson(
+    string(baseFiles["metadata.json"], "real metadata"),
+    "real metadata",
+  );
+  const mutations: {
+    label: string;
+    files: Readonly<Record<string, string>>;
+  }[] = [];
+  const addMutation = async (
+    label: string,
+    mutateMetadata: (metadata: JsonRecord) => void,
+    fixtureChanges: Readonly<Record<string, string>> = {},
+  ): Promise<void> => {
+    const metadata = clone(baseMetadata);
+    mutateMetadata(metadata);
+    const files = { ...baseFiles, ...fixtureChanges };
+    for (const [path, contents] of Object.entries(fixtureChanges)) {
+      const group = path.startsWith("pnpm-")
+        ? object(metadata.pnpm, "mutated pnpm metadata")
+        : object(metadata.deno, "mutated Deno metadata");
+      object(group.fixtureFiles, "mutated fixture hashes")[path] =
+        (await sha256Text(contents)).slice("sha256:".length);
+    }
+    files["metadata.json"] = JSON.stringify(metadata);
+    mutations.push({ label, files });
+  };
+
+  const pnpmMetadataMutations: readonly [
+    string,
+    (pnpm: JsonRecord) => void,
+  ][] = [
+    ["pnpm.nodeVersion", (pnpm) => pnpm.nodeVersion = "0.0.0"],
+    ["pnpm.requiredNodeVersion", (pnpm) => pnpm.requiredNodeVersion = "0.0.0"],
+    ["pnpm.corepackVersion", (pnpm) => pnpm.corepackVersion = "0.0.0"],
+    ["pnpm.pnpmVersion", (pnpm) => pnpm.pnpmVersion = "0.0.0"],
+    ["pnpm.rootCount", (pnpm) => pnpm.rootCount = 27],
+    ["pnpm.lockfileVersion", (pnpm) => pnpm.lockfileVersion = "8.0"],
+    ["pnpm.wholeLockSha256", (pnpm) => pnpm.wholeLockSha256 = rawDigest("f")],
+    ["pnpm.wholeLockBytes", (pnpm) => pnpm.wholeLockBytes = 274999],
+    ["pnpm.packageCount", (pnpm) => pnpm.packageCount = 918],
+    ["pnpm.snapshotCount", (pnpm) => pnpm.snapshotCount = 919],
+    ["pnpm.oneToManyBase", (pnpm) => pnpm.oneToManyBase = "other@1.0.0"],
+    [
+      "pnpm.executedLifecycle",
+      (pnpm) => pnpm.executedLifecycle = ["unbound@1.0.0 install: ignored"],
+    ],
+    [
+      "pnpm.deniedLifecycleOwners",
+      (pnpm) => pnpm.deniedLifecycleOwners = ["unbound@1.0.0"],
+    ],
+    [
+      "pnpm.fixtureFiles entry",
+      (pnpm) =>
+        object(pnpm.fixtureFiles, "pnpm fixture hashes")[
+          "pnpm-11.21.0/settings.txt"
+        ] = rawDigest("f"),
+    ],
+  ];
+  for (const [label, mutate] of pnpmMetadataMutations) {
+    await addMutation(
+      `metadata:${label}`,
+      (metadata) => mutate(object(metadata.pnpm, "pnpm metadata")),
+    );
+  }
+
+  const denoMetadataMutations: readonly [
+    string,
+    (deno: JsonRecord) => void,
+  ][] = [
+    ["deno.denoVersion", (deno) => deno.denoVersion = "0.0.0"],
+    ["deno.typescriptVersion", (deno) => deno.typescriptVersion = "0.0.0"],
+    ["deno.lockfileVersion", (deno) => deno.lockfileVersion = "4"],
+    ["deno.specifierCount", (deno) => deno.specifierCount = 8],
+    ["deno.npmNodeCount", (deno) => deno.npmNodeCount = 8],
+    ["deno.wholeLockSha256", (deno) => deno.wholeLockSha256 = rawDigest("f")],
+    ["deno.wholeLockBytes", (deno) => deno.wholeLockBytes = 2019],
+    [
+      "deno.fixtureFiles entry",
+      (deno) =>
+        object(deno.fixtureFiles, "Deno fixture hashes")[
+          "deno-2.9.5/deno.lock"
+        ] = rawDigest("f"),
+    ],
+  ];
+  for (const [label, mutate] of denoMetadataMutations) {
+    await addMutation(
+      `metadata:${label}`,
+      (metadata) => mutate(object(metadata.deno, "Deno metadata")),
+    );
+  }
+  await addMutation("metadata:schemaVersion", (metadata) => {
+    metadata.schemaVersion = 2;
+  });
+  await addMutation("metadata:unknown pnpm field", (metadata) => {
+    object(metadata.pnpm, "pnpm metadata").unknown = true;
+  });
+  await addMutation("metadata:unknown Deno field", (metadata) => {
+    object(metadata.deno, "Deno metadata").unknown = true;
+  });
+  await addMutation(
+    "metadata:unknown pnpm fixture path",
+    (metadata) => {
+      object(
+        object(metadata.pnpm, "pnpm metadata").fixtureFiles,
+        "pnpm fixture hashes",
+      )["pnpm-11.21.0/unknown.txt"] = rawDigest("0");
+    },
+    { "pnpm-11.21.0/unknown.txt": "unknown\n" },
+  );
+
+  const oneToManyPath = "pnpm-11.21.0/one-to-many-snapshots.txt";
+  const oneToManyText = string(baseFiles[oneToManyPath], "real 1:N fixture");
+  const oneToManyBase = String(
+    object(baseMetadata.pnpm, "pnpm metadata").oneToManyBase,
+  );
+  const oneToManyMutations = {
+    "paired:1:N malformed":
+      `${oneToManyBase} malformed\n${oneToManyBase} malformed-again\n`,
+    "paired:1:N truncated":
+      `'${oneToManyBase}(@emnapi/core@1.11.1\n'${oneToManyBase}(@emnapi/runtime@1.11.3\n`,
+    "paired:1:N wrong base": oneToManyText.replaceAll(
+      oneToManyBase,
+      "@napi-rs/wasm-runtime@1.2.3",
+    ),
+    "paired:1:N unbalanced peer suffix":
+      `'${oneToManyBase}(@emnapi/core@1.11.1))'\n'${oneToManyBase}((@emnapi/runtime@1.11.3)'\n`,
+    "paired:1:N duplicate peer context": `${oneToManyText.split("\n")[0]}\n${
+      oneToManyText.split("\n")[0]
+    }\n`,
+  };
+  for (const [label, contents] of Object.entries(oneToManyMutations)) {
+    await addMutation(label, () => {}, { [oneToManyPath]: contents });
+  }
+  await addMutation(
+    "paired:pnpm settings content and hash",
+    () => {},
+    {
+      "pnpm-11.21.0/settings.txt": string(
+        baseFiles["pnpm-11.21.0/settings.txt"],
+        "real pnpm settings fixture",
+      ).replace(
+        "excludeLinksFromLockfile: false",
+        "excludeLinksFromLockfile: true",
+      ),
+    },
+  );
+  await addMutation(
+    "paired:React types importer content and hash",
+    () => {},
+    {
+      "pnpm-11.21.0/react-types-importer.txt": string(
+        baseFiles["pnpm-11.21.0/react-types-importer.txt"],
+        "real React types fixture",
+      ).replaceAll("19.2.18", "19.2.17"),
+    },
+  );
+  const denoLock = parseJson(
+    string(baseFiles["deno-2.9.5/deno.lock"], "real Deno lock fixture"),
+    "Deno lock",
+  );
+  object(denoLock.specifiers, "Deno lock specifiers")["npm:zod@4.4.3"] =
+    "4.4.2";
+  await addMutation(
+    "paired:Deno lock content and hash",
+    () => {},
+    { "deno-2.9.5/deno.lock": JSON.stringify(denoLock) },
+  );
+
+  const results = await executeRealToolFixtureMutations(source, mutations);
+  const failures = results.filter((result) =>
+    result.status !== "rejected" ||
+    (result.label.startsWith("paired:") &&
+      result.message.includes("fixture hash drifted"))
+  ).map((result) => `${result.label} (${result.message})`);
+  invariant(
+    failures.length === 0,
+    `real-tool fixture bindings accepted drift: ${failures.join(", ")}`,
   );
 });
 
