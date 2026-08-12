@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "ticketId": "PILOT-006",
+  "ticketRevision": 1,
+  "phase": "ready",
+  "round": 0,
+  "baseRevision": "6c6ea8313f0472c315079a605c50cd2548d2835b",
+  "candidateRevision": null,
+  "events": [
+    {
+      "sequence": 1,
+      "from": "planned",
+      "to": "ready",
+      "round": 0,
+      "actorRunId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601",
+      "evidenceRef": "ticket.json",
+      "revision": "6c6ea8313f0472c315079a605c50cd2548d2835b"
+    }
+  ],
+  "resultRefs": [],
+  "reviewRefs": [],
+  "dependencyRevisions": {},
+  "openFindingIds": [],
+  "orchestratorChecks": [],
+  "acceptedCandidateRevision": null,
+  "blocker": null
+}
