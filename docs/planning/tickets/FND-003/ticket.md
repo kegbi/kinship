@@ -2,7 +2,7 @@
 
 Status: ready, round 0 (fresh RED retry pending)\
 Owner: trusted top-level orchestrator\
-Packet revision: 6\
+Packet revision: 7\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
 Execution class: `ordinary`\
 Depends on: FND-001S at integration revision
@@ -34,8 +34,15 @@ Rejected RED attempts:
   self-asserted, pnpm packages and peer-qualified snapshots were conflated, real
   semver and Deno alias/specifier forms could fail or drift, and lifecycle
   executions were not fully bound to exact manifests and runs.
+- `d6bd646046d2667625a7e3e4584132d78f0bbd42`, validator SHA-256
+  `ad022fa9a9094cd99e9982fd301af0a676a73f9d49c2442af52f94292a21751e`:
+  captured-byte derivation, structural pnpm parsing, exact RED, coverage, and
+  root gates passed, but clean review found a too-small valid-packument bound,
+  incomplete required-peer suffix checks, self-asserted incompatibility
+  exclusions, temporally/unidirectionally bound provenance, missing Node LTS
+  enforcement, and an under-specified human report.
 
-All four attempts and all associated evidence remain immutable history and
+All five attempts and all associated evidence remain immutable history and
 confer no production-write authority.
 
 ## Outcome
