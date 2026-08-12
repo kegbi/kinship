@@ -48,3 +48,58 @@ exact check-file SHA-256, and issue a GREEN continuation to this same round.
   table write, task/manifest schema expansion, or dependency choice is
   permitted.
 - RED writes are limited to the exact check path and FND-002 RED evidence log.
+
+## Controller-issued GREEN continuation
+
+Controller audit status: authorized after the corrected RED freeze. The earlier
+revision `d0ba91da166b6a651cf75fba399bdd39fe5c0fd1` was rejected before
+authorization because its check file was not Deno-formatted; it is not the
+ticket's RED revision.
+
+- Frozen RED revision: `14e717a6fafe2f114806f29f4b728a096fbdccfd`
+- Frozen check: `tools/architecture/FND-002/coordination_contract_test.ts`
+- Exact frozen check SHA-256:
+  `bdada13e04c6aeb240340bb9917ebcd8381831c3f33f5ff93a30dbdff5dccf6a`
+- Controller reproduction:
+  `deno fmt --check tools/architecture/FND-002/coordination_contract_test.ts`
+  exited 0; the focused test command exited 1 with the in-memory discriminator
+  passing and only AC-01 through AC-04 repository mismatches reported.
+
+Resume this same round and verify the frozen revision, path, and digest before
+editing a contract. Do not change the frozen check bytes.
+
+### GREEN
+
+Make the smallest contract-only change that satisfies the frozen check:
+
+- add accepted ADR 0004 at the exact authorized path and index it as accepted;
+- add the use-case-specific transaction/coordination specialization to the
+  backend architecture;
+- in the existing manifest, retain `workspaces -> identity`, remove `workspaces`
+  consumption of `identity.user-registered`, and add governance consumption of
+  the existing `workspace.created` and `workspace.member-joined` events while
+  retaining `identity.user-registered`;
+- state explicitly that FND-002 records but does not implement or prove the
+  application behavior and that protected walking-skeleton plus Slice 1
+  executable proof remains required.
+
+Do not add a task, dependency, schema field, generic coordinator, planning
+status edit, or any other behavior. Write the focused passing result to
+`evidence/round-01-green.log`.
+
+### REFACTOR and handoff
+
+Refactor documentation wording only if it improves clarity without new behavior.
+Preserve the frozen check bytes. Run and record:
+
+```text
+deno test --allow-read=docs/architecture tools/architecture/FND-002/coordination_contract_test.ts
+deno task fmt:check
+deno task lint
+deno task check
+```
+
+Write the affected-gate summary to `evidence/round-01-refactor.log`, then stop
+without committing. Return all changed paths, commands/exits, the unchanged
+check SHA-256, GREEN production paths, and refactor summary using the same
+controller and implementer run IDs.
