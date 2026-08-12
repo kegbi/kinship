@@ -11,11 +11,9 @@ Exact dependency and runtime versions are selected and locked only when the
 first executable scaffold is created. These slices intentionally contain no
 version numbers.
 
-> Planning review, 2026-08-11: the repository audit found flow-assignment and
-> milestone gaps in this accepted summary. Proposed corrections are documented
-> in [the delivery-planning index](../planning/README.md) and in explicitly
-> labeled proposal callouts below. Unlabeled text remains the accepted contract
-> until those proposals receive explicit product approval.
+PRODUCT-001 accepts the bounded flow assignments, page ownership, milestone
+meanings, and deferred-gate ledger below. Other planning and architecture
+choices remain proposals until their own decision gates close.
 
 ## Slice 0: Prove The Foundation
 
@@ -46,36 +44,31 @@ Exit conditions:
 
 ## Slice 1: Identity, Workspace, And People Core
 
-Flows: `AUTH-001`, `AUTH-002`, `AUTH-003`, `AUTH-004`, `PEOPLE-001`,
-`PEOPLE-002`, `PEOPLE-003`, and the read portion of `PEOPLE-004`.
+Flows: `AUTH-001`, `AUTH-002`, `AUTH-003`, `AUTH-004`, `WORKSPACE-001`,
+`PEOPLE-001`, and `PEOPLE-002`.
 
 Deliver:
 
 - registration, verification, sign-in, MFA/session baseline, and invitations;
 - workspace membership and active-workspace resolution;
-- the settings shell, overview, personal profile, preferences, and security
-  routes;
+- the settings shell, overview, personal profile, preferences, flow-backed
+  security/session behavior, and the `settings.workspace` and `settings.members`
+  page contracts;
 - people list, search, create, archived list, and canonical person workspace;
+- the `public.home` and `public.features` static route contracts with the
+  current `ready` and `not-found` public states, navigation and accessibility
+  proof;
 - the Today shell and first-workspace onboarding state, before its complete due
   projection arrives in Slice 4;
 - person identity summary and explicit empty/loading/error states;
 - cross-workspace negative tests for every introduced identifier.
 
-The person workspace may initially contain empty section contracts, but it must
-already be the single canonical route rather than a temporary subpage tree.
+`public.home` and `public.features` have no stable user-flow ID.
 
-> **Proposed Slice 1 flow amendment (DG-07):** accept `AUTH-001`, `AUTH-002`,
-> `AUTH-003`, `AUTH-004`, `WORKSPACE-001`, `PEOPLE-001`, and `PEOPLE-002` here.
-> Start only the typed `PEOPLE-003` person-workspace shell; keep that flow
-> `planned` until its complete contract is delivered in Slice 6, and do not
-> claim a fictional read-only subset of `PEOPLE-004`. Deliver
-> `/app/settings/workspace` and `/app/settings/members`, including invitations,
-> roles, last-owner protection, and forbidden states, with the other Slice 1
-> settings routes. Also deliver the cataloged public home/features route, state,
-> navigation, and accessibility contracts; DG-07 decides whether they need a
-> stable user flow. Close the DG-10 security-verification checkpoint and the
-> onboarding/invitation/atomic-audit coordination decision before the first
-> Slice 1 production behavior.
+The person workspace starts as a typed `PEOPLE-003` shell that remains planned.
+It may initially contain honest unavailable or empty section contracts, but it
+must already be the single canonical route rather than a temporary subpage tree.
+`PEOPLE-003` remains `planned` until its complete Slice 6 contract passes.
 
 ## Slice 2: Complete Profile Facts And Relationships
 
@@ -87,11 +80,10 @@ organizations, tags, pets, food preferences, relationships, archive/restore,
 profile-module settings, controlled-vocabulary settings, and partial-date
 behavior. Person data appears as sections or local actions in the person
 workspace; related vocabularies use the accepted personalization deep links.
+Only flow-backed local actions are scheduled by this slice contract.
 
-> **Proposed avatar phasing:** Slice 2 may deliver accepted default, generated,
-> or external avatar presentation that needs no owned file object. Uploaded or
-> file-backed avatars wait for the Slice 5 object-store lifecycle and the
-> approved people/files coordinator.
+Edit, archive, restore, and delete are one indivisible `PEOPLE-004` flow. Slice
+1 owns no partial form of that flow.
 
 ## Slice 3: Interactions And Person History
 
@@ -119,24 +111,16 @@ gifts, debts, storage limits, missing/quarantined object states, and authorized
 downloads. Include the workspace storage settings surface without exposing file
 inventory to ordinary members.
 
-> **Proposed Slice 5 amendment:** include uploaded/file-backed avatar metadata,
-> object lifecycle, compensation, and tenant-safe retrieval here; do not make
-> Slice 2 depend on object storage.
-
 ## Slice 6: Journal And Governance
 
-Flows: `JOURNAL-001` and `GOVERNANCE-001`.
+Flows: `JOURNAL-001`, `GOVERNANCE-001`, and `PEOPLE-003`.
 
 Deliver journal posts, day ratings, ordered journal items, legal-document
 acceptance, and the necessary global navigation. Keep person-linked history
 visible in the person workspace without making Journal a people submodule.
-
-> **Proposed Slice 6 amendment (DG-07):** accept the complete `PEOPLE-003`
-> person-workspace flow here. A life-event editor/history may ship only after
-> the product catalog adds a stable flow ID, priority, page association,
-> observable outcomes, and E2E contract. Until then it is not covered by
-> `PEOPLE-003` or counted toward a milestone; an explicit deferral must also
-> define its effect on core-completeness scope.
+Complete `PEOPLE-003` here only after every enabled core person section exists
+and its read contract passes. This acceptance does not authorize an uncataloged
+life-event mutation flow.
 
 ## Slice 7: Data Lifecycle, Import, And Export
 
@@ -150,7 +134,7 @@ lifecycle and impact preview.
 
 > **Proposed Slice 7 amendment:** complete the durable import/export job design,
 > destructive-lifecycle coordinator, legacy-credential policy, surviving
-> deletion-record decision, and DG-07 catalog/release amendment before accepting
+> deletion-record decision, and remaining DG-07 product gates before accepting
 > this slice. Imported accounts and password/TOTP/recovery/WebAuthn material
 > must never activate access, issue sessions, or authenticate factors; the open
 > decision is whether to discard, report, or preserve it inertly pending forced
@@ -159,11 +143,10 @@ lifecycle and impact preview.
 > Slice 8 a prerequisite.
 >
 > Slice 7 is only the proposed MVP/core-feature-complete target. Promote either
-> feature milestone from the then-current approved catalog and its passing
-> evidence, never from a fixed flow count. The labels remain unavailable until
-> DG-07 closes, catalogs/counts are regenerated, and all in-scope non-optional
-> flows, pages, states, and performance gates pass. Production promotion remains
-> a separate operational decision.
+> feature milestone from the then-current accepted catalog and its passing
+> evidence, never from a fixed flow count. All in-scope non-optional flows,
+> pages, states, and performance gates must pass. Production promotion remains a
+> separate operational decision.
 
 ## Slice 8: Optional Platform Modules
 
@@ -179,6 +162,46 @@ without breaking core CRM workflows.
 > Treat API access and integrations as optional only after the page catalog
 > gains authoritative availability/feature-gating metadata. Promote each enabled
 > optional module independently.
+
+## Milestone Contract
+
+Feature milestones derive their membership and exit slice from the accepted flow
+and page catalogs plus the complete-flow slice mapping, never from a fixed
+inventory count.
+
+| Milestone                  | Accepted meaning                                                                                                                                          | Current catalog-derived exit |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| Foundation complete        | The executable architecture, spikes, contracts, Compose topology, and enforcement gates are proven by one protected walking skeleton.                     | Slice 0                      |
+| Core alpha                 | A secure workspace can manage people, interactions, tasks, reminders, and Today while later compatibility and P0 work remains incomplete.                 | Slice 4                      |
+| Proposed MVP               | Every P0 flow and its required pages, states, browser, coverage, and feature-gate evidence pass.                                                          | Slice 7                      |
+| Core feature complete      | Every P0 and P1 flow, both cataloged public product pages, and every surface required by those flows pass.                                                | Slice 7                      |
+| Optional platform complete | The selected enabled P2 modules pass and remain disableable without breaking core CRM behavior; a deployment may name the enabled subset.                 | Slice 8                      |
+| Catalog complete           | All cataloged P0, P1, and P2 flows and their required page contracts pass.                                                                                | Slice 8                      |
+| AI-enabled complete        | An approved AI product and privacy contract is delivered through a provider-neutral adapter with isolation, safety, and evaluation gates.                 | Not yet schedulable          |
+| Production ready           | A named environment independently passes restore, rollout, rollback, security, privacy, accessibility, performance, observability, and operational proof. | Independent release gate     |
+
+The current Proposed MVP and Core feature complete cuts coincide after Slice 7
+because of the current catalog assignments, but their accepted meanings remain
+distinct. Production ready is independent of every feature-completion label.
+
+## Deferred Product Gates
+
+PRODUCT-001 chooses no branch and adds no new stable ID for the following
+follow-up decisions:
+
+- the life-event mutation flow, priority, page association, observable outcomes,
+  E2E contract, and effect on later core-completeness scope;
+- an operations user interface, stable page/flow IDs, permissions, states, and
+  E2E contract;
+- whether `page.flowIds` is exhaustive or primary-only;
+- `ready` and `not-found` do not decide state inheritance; it remains deferred;
+- multi-workspace switching, broader security settings, avatar management, help
+  or what's new actions, and saved filters;
+- external API parity, P2 page availability and feature-gating semantics,
+  romantic metadata, and optional-source import behavior.
+
+These gaps remain undecided. Current catalog identities, priorities, delivery
+statuses, page associations, and public-page empty `flowIds` remain unchanged.
 
 ## Slice Acceptance
 

@@ -14,10 +14,10 @@ The current baseline contains:
 - 30 required flows: 17 P0, 10 P1, and 3 P2; and
 - no implemented application flow or populated `testRefs` entry yet.
 
-The slice column below is the **proposed slice in which the complete contract
-would be accepted**, not necessarily the first slice in which a shell or
-dependency is introduced. DG-07 and the release-contract amendment must be
-approved before these assignments become authoritative.
+The slice column below is the **accepted slice in which the complete contract is
+accepted**, not necessarily the first slice in which a shell or dependency is
+introduced. PRODUCT-001 accepts these assignments while leaving the named
+follow-up product gaps open.
 
 ## Module Delivery Matrix
 
@@ -32,7 +32,7 @@ repository, adapter, or transport implementation.
 | `people`        | core     |                                                                2 | Person identity and profile facts, contact methods, locations, organizations, tags, and pets                                                                                     | Tenant-safe repositories, partial dates, archive/restore/delete, `PEOPLE-*` E2E                 |
 | `relationships` | core     |                                                                2 | Directional relationship graph; romantic metadata only if DG-07 accepts its product behavior                                                                                     | Directionality, uniqueness, permissions, archive interactions, `RELATIONSHIP-001`               |
 | `interactions`  | core     |                                                                3 | Notes, activities, calls, conversations, messages, participants, and emotions                                                                                                    | Composition and authorization tests, immutable audit effects, interaction E2E                   |
-| `journal`       | core     |                                                                6 | Journal posts, ratings, and ordered items; person life-event mutations only after DG-07 creates their stable flow contract                                                       | Ordering/concurrency and person projection tests; `JOURNAL-001` and any accepted life-event E2E |
+| `journal`       | core     |                                                                6 | Journal posts, ratings, and ordered items; person life-event mutations remain unscheduled pending a stable flow contract                                                         | Ordering/concurrency and person projection tests; `JOURNAL-001` E2E                             |
 | `planning`      | core     |                                                                4 | Tasks, reminder rules/occurrences, stay-in-touch cadence, and worker work                                                                                                        | Clock/time-zone/DST suites, claim/retry/idempotency/process-death proof, planning E2E           |
 | `files`         | core     |                                                                5 | Metadata, object lifecycle, authorized retrieval, and person/gift links                                                                                                          | Object failure, quarantine/missing states, tenant-safe download, storage-limit tests            |
 | `gifts`         | core     |                                                                5 | Gifts, gift ideas/history, debts, and attachment coordination                                                                                                                    | Amount/currency invariants, file coordination, person-local `GIFTS-001` E2E                     |
@@ -56,14 +56,14 @@ only the allowlisted source modules in
 `docs/architecture/module-boundaries.yaml`; every action returned by a screen
 still invokes the owning module's public use case.
 
-| Read model         | Begins | Complete | Consumers and acceptance                                                                                                                                                    |
-| ------------------ | -----: | -------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `people-directory` |      1 |        1 | People list/search/archive states; tenant, pagination, ordering, and query-budget tests                                                                                     |
-| `person-profile`   |      1 |        6 | Starts as a typed shell; proposed completion is Slice 6 only after DG-07 settles life-event scope and every enabled core section is present; `PEOPLE-003` is accepted there |
-| `activity-report`  |      3 |        3 | Scale-heavy person-specific interaction report with permission and pagination proof                                                                                         |
-| `audit-history`    |      3 |        3 | Person/workspace audit query composition arrives in Slice 3; governance audit writes begin with Slice 1 mutations                                                           |
-| `today`            |      1 |        4 | Starts as onboarding/empty shell; complete semantic queue and inline owning-module actions arrive in Slice 4                                                                |
-| `journal-timeline` |      3 |        6 | Interaction history can seed the projection; journal ordering and any DG-07-accepted life-event contract determine Slice 6 completion                                       |
+| Read model         | Begins | Complete | Consumers and acceptance                                                                                                                                              |
+| ------------------ | -----: | -------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `people-directory` |      1 |        1 | People list/search/archive states; tenant, pagination, ordering, and query-budget tests                                                                               |
+| `person-profile`   |      1 |        6 | Starts as a typed shell; completion is Slice 6 after every enabled core section is present; `PEOPLE-003` is accepted there while life-event mutation remains deferred |
+| `activity-report`  |      3 |        3 | Scale-heavy person-specific interaction report with permission and pagination proof                                                                                   |
+| `audit-history`    |      3 |        3 | Person/workspace audit query composition arrives in Slice 3; governance audit writes begin with Slice 1 mutations                                                     |
+| `today`            |      1 |        4 | Starts as onboarding/empty shell; complete semantic queue and inline owning-module actions arrive in Slice 4                                                          |
+| `journal-timeline` |      3 |        6 | Interaction history can seed the projection; journal ordering determines Slice 6 completion while uncataloged life-event mutation remains deferred                    |
 
 ## Flow-To-Slice Matrix
 
@@ -105,56 +105,55 @@ and exercise the production-like gateway, not an internal service URL.
 | `BILLING-001`      | P2       |              8 | billing settings                                 | Optional entitlement and provider workflow with module disabled by default                              |
 
 For the current 30-flow snapshot, this assignment places all 17 P0 and all 10 P1
-flows at or before Slice 7, so the proposed MVP and core-feature-complete cuts
-are expected to coincide. This remains conditional on DG-07/catalog closure,
-regenerated counts, and explicit approval. Slice 4 is a useful core-alpha cut,
-but it omits current P0 flows.
+flows at or before Slice 7, so the accepted MVP and Core feature complete cuts
+coincide there. The milestone meanings remain distinct and future catalog
+changes regenerate their membership and maximum slice. Slice 4 is the accepted
+Core alpha cut, but it omits current P0 flows.
 
 ## Page Delivery Matrix
 
 The page catalog remains the route authority. The grouping below states when a
 route must work end to end; an earlier slice may introduce a shared shell.
 
-| Route group                    | Catalog IDs                                                                                                                 |                                                     Delivery |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- | -----------------------------------------------------------: |
-| Public product                 | `public.home`, `public.features`                                                                                            |                                                            1 |
-| Legal public                   | `legal.privacy`, `legal.terms`                                                                                              |                                                            6 |
-| Authentication and invitation  | `auth.sign-in`, `auth.sign-up`, `auth.verify-email`, `auth.recover`, `auth.reset`, `auth.mfa`, `invitation.accept`          |                                                            1 |
-| Today                          | `app.today`                                                                                                                 |                                          shell 1; complete 4 |
-| People                         | `people.index`, `people.archived`, `people.create`, `people.profile`                                                        | shell/core 1; read-complete 6; all cataloged local actions 7 |
-| Person reports                 | `people.activity-report`, `people.audit`                                                                                    |                                                            3 |
-| Tasks                          | `tasks.index`                                                                                                               |                                                            4 |
-| Journal                        | `journal.index`, `journal.item`                                                                                             |                                                            6 |
-| Settings foundation            | `settings.index`, `settings.profile`, `settings.preferences`, `settings.security`, `settings.workspace`, `settings.members` |                core settings 1; personal lifecycle actions 7 |
-| Settings personalization       | `settings.personalization`                                                                                                  |                                                            2 |
-| Settings audit                 | `settings.audit`                                                                                                            |                                                            3 |
-| Settings storage               | `settings.storage`                                                                                                          |                                                            5 |
-| Settings danger/data lifecycle | `settings.workspace-danger`, `settings.import`, `settings.import-new`, `settings.import-report`, `settings.export`          |                                                            7 |
-| Optional settings              | `settings.api-access`, `settings.integrations`, `settings.billing`                                                          |                                                            8 |
-| Compliance                     | `compliance.accept`                                                                                                         |                                                            6 |
+| Route group                    | Catalog IDs                                                                                                                 |                                                                          Delivery |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------: |
+| Public product                 | `public.home`, `public.features`                                                                                            |                                                                                 1 |
+| Legal public                   | `legal.privacy`, `legal.terms`                                                                                              |                                                                                 6 |
+| Authentication and invitation  | `auth.sign-in`, `auth.sign-up`, `auth.verify-email`, `auth.recover`, `auth.reset`, `auth.mfa`, `invitation.accept`          |                                                                                 1 |
+| Today                          | `app.today`                                                                                                                 |                                                               shell 1; complete 4 |
+| People                         | `people.index`, `people.archived`, `people.create`, `people.profile`                                                        | shell/core 1; read-complete 6; flow-backed local actions in their assigned slices |
+| Person reports                 | `people.activity-report`, `people.audit`                                                                                    |                                                                                 3 |
+| Tasks                          | `tasks.index`                                                                                                               |                                                                                 4 |
+| Journal                        | `journal.index`, `journal.item`                                                                                             |                                                                                 6 |
+| Settings foundation            | `settings.index`, `settings.profile`, `settings.preferences`, `settings.security`, `settings.workspace`, `settings.members` |                                     core settings 1; personal lifecycle actions 7 |
+| Settings personalization       | `settings.personalization`                                                                                                  |                                                                                 2 |
+| Settings audit                 | `settings.audit`                                                                                                            |                                                                                 3 |
+| Settings storage               | `settings.storage`                                                                                                          |                                                                                 5 |
+| Settings danger/data lifecycle | `settings.workspace-danger`, `settings.import`, `settings.import-new`, `settings.import-report`, `settings.export`          |                                                                                 7 |
+| Optional settings              | `settings.api-access`, `settings.integrations`, `settings.billing`                                                          |                                                                                 8 |
+| Compliance                     | `compliance.accept`                                                                                                         |                                                                                 6 |
 
-`public.home` and `public.features` are proposed for Slice 1 as cataloged route
-contracts even though no current flow owns them; route, state, accessibility,
-and navigation checks are their acceptance evidence until DG-07 adds or
-explicitly declines a public-product flow. The Slice 8 treatment of
-`settings.api-access`, `settings.integrations`, and `settings.billing` is also a
-proposal: only billing currently declares optional availability in the page
-catalog. DG-07 must add authoritative availability/feature-gating metadata or
-reclassify the other pages before optional-platform promotion.
+`public.home` and `public.features` are accepted in Slice 1 as cataloged route
+contracts even though no current flow owns them; route, current public state,
+accessibility, and navigation checks are their acceptance evidence, and their
+`flowIds` remain empty. The Slice 8 treatment of `settings.api-access`,
+`settings.integrations`, and `settings.billing` is also a proposal: only billing
+currently declares optional availability in the page catalog. DG-07 must add
+authoritative availability/feature-gating metadata or reclassify the other pages
+before optional-platform promotion.
 
 The five cataloged `on-demand` pages are `auth.verify-email`, `auth.reset`,
 `auth.mfa`, `invitation.accept`, and `compliance.accept`. They require a
 deployed Astro server adapter/runtime or a formally approved recataloging to
 static-shell/island behavior. The roadmap recommends the former.
 
-## Catalog Repairs Required Before Affected Work
+## Deferred Catalog Repairs Before Affected Work
 
 These are product-contract decisions, not implementation liberties:
 
-1. Add a stable flow for creating/editing/removing a person life event and
-   attach it to the person profile and Journal delivery in Slice 6. Until that
-   contract exists, life-event mutation UI/API must not ship and no current flow
-   or milestone count may treat it as covered.
+1. Decide whether to add a stable flow for creating/editing/removing a person
+   life event. Until that contract exists, life-event mutation UI/API is
+   unscheduled and no current flow or milestone may treat it as covered.
 2. Add an operations/admin page and flow with explicit operator permissions, or
    remove the user-facing administration promise from Slice 8.
 3. Define whether `page.flowIds` lists every flow that visits a page or only the
