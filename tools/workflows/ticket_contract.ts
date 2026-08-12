@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 export interface ValidationIssue {
   readonly path: string;
   readonly code: string;
@@ -10,6 +12,29 @@ const MAX_GIT_TEST_REFERENCES = 100;
 
 const REVISION_PATTERN = /^[0-9a-f]{40}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+const LEGACY_TICKET_IDENTITY_DIGESTS: Readonly<
+  Record<string, ReadonlySet<string>>
+> = {
+  "PILOT-001": new Set([
+    "40453f15e4042a665773829bde044dcd005f7e4e03e7cb1fa427e427c9a4e667",
+    "842b449eb93971f42217f0c1027bcb633543a558b3072d1eef2abd76f43fdfd8",
+    "49de21b86c3523aa2ed13215893be321a5680c176978f57b538b9aca51227ad5",
+    "427764a4f046b02676be2a32a078a6a359e03a8fdcd66b69e2f6e53fffd89e40",
+    "cbb45e9e4d0441bab6ab8b72cfbc350e49ceb604844717d4cd9ee2ac26208e44",
+    "fdf79a6d4439f15d04eb51427f0ded7b9062d23a42a7664f5875f97617f9e757",
+    "9dff129a86eb8eae00b7d0043f3cf07eb753a6fc0b75cfcb20223981a34a0ecd",
+    "cba59f6daf7c4d11ad205241a8b193749deb373d56811089aa9a7fb8aba5a1ec",
+    "248f1a9b690d0df73de19c720bf09853ef705d382cb4e146564ab98f551d553c",
+    "3d0e3c6e56fa7f87efde3bf9abae9e021ca5ba37fd7ffa64b46cea4024046087",
+    "b85b102e6743e6fc693b246f6e4d2cbc5829211ac3f23ebbb895c00824c0a880",
+  ]),
+  "PILOT-002": new Set([
+    "1cbb5a7c61412d17755000c4e3e0fc0cb93751db607749b4d6123e2d2733e845",
+  ]),
+};
 
 const BUNDLE_FIELDS = new Set([
   "ticket",
@@ -34,6 +59,8 @@ const STATE_FIELDS = new Set([
   "openFindingIds",
   "orchestratorChecks",
   "acceptedCandidateRevision",
+  "integrationRevision",
+  "integrationChecks",
   "blocker",
 ]);
 
@@ -43,6 +70,7 @@ const RESULT_FIELDS = new Set([
   "ticketRevision",
   "round",
   "implementerRunId",
+  "issuedByControllerRunId",
   "inputBaseRevision",
   "dispatchRef",
   "redRevision",
@@ -89,6 +117,7 @@ const REVIEW_FIELDS = new Set([
   "round",
   "implementerRunId",
   "reviewerRunId",
+  "issuedByControllerRunId",
   "baseRevision",
   "candidateRevision",
   "verdict",
@@ -115,6 +144,20 @@ const WAIVER_FIELDS = new Set([
   "expiresAt",
 ]);
 
+const REQUIRED_TASK_COLLECTION_FIELDS = new Set(["baseline", "candidate"]);
+const BASELINE_TASK_FIELDS = new Set(["name", "definition"]);
+const CANDIDATE_TASK_FIELDS = new Set([
+  "name",
+  "definition",
+  "guardedBy",
+]);
+const PROTECTED_WRITE_AUTHORIZATION_FIELDS = new Set([
+  "authorizedByControllerRunId",
+  "paths",
+  "contractRef",
+  "rationale",
+]);
+
 const TICKET_FIELDS = new Set([
   "schemaVersion",
   "ticketId",
@@ -122,6 +165,9 @@ const TICKET_FIELDS = new Set([
   "title",
   "outcome",
   "baseRevision",
+  "controllerRunId",
+  "executionClass",
+  "protectedWriteAuthorization",
   "dependencies",
   "maxRounds",
   "scope",
@@ -179,7 +225,12 @@ export type WorkflowPhase =
   | "cancelled";
 
 type TransitionActor = "implementer" | "reviewer" | "orchestrator";
-type TransitionRevision = "base" | "red" | "candidate" | "unbound";
+type TransitionRevision =
+  | "base"
+  | "red"
+  | "candidate"
+  | "integration"
+  | "unbound";
 type TransitionEvidence =
   | "ticket"
   | "red"
@@ -188,6 +239,7 @@ type TransitionEvidence =
   | "result"
   | "review"
   | "acceptance"
+  | "integration"
   | "unbound";
 
 interface WorkflowTransitionRule {
@@ -215,6 +267,7 @@ export interface WorkflowPolicy {
   readonly evidence: {
     readonly ticket: string;
     readonly acceptance: string;
+    readonly integration: string;
     readonly roundRecords: Readonly<
       Partial<Record<TransitionEvidence, string>>
     >;
@@ -404,8 +457,8 @@ export const WORKFLOW_POLICY: WorkflowPolicy = {
       from: "accepted",
       to: "integrated",
       actor: "orchestrator",
-      revision: "candidate",
-      evidence: "acceptance",
+      revision: "integration",
+      evidence: "integration",
       round: "same",
     },
   ],
@@ -413,6 +466,7 @@ export const WORKFLOW_POLICY: WorkflowPolicy = {
   evidence: {
     ticket: "ticket.json",
     acceptance: "acceptance.md",
+    integration: "integration.md",
     roundRecords: { result: "results", review: "reviews" },
   },
 };
@@ -648,24 +702,349 @@ function validateSafePathArray(
   });
 }
 
+function sha256Json(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function validateRunId(
+  value: unknown,
+  path: string,
+  ticketId: unknown,
+  role: "orchestrator" | "implementer" | "reviewer",
+  round: number,
+  issues: ValidationIssue[],
+): value is string {
+  if (!validateNonEmptyString(value, path, issues)) return false;
+  const segments = value.split("/");
+  if (
+    typeof ticketId !== "string" || segments.length !== 4 ||
+    segments[0] !== ticketId || segments[1] !== role ||
+    segments[2] !== `r${round}` || !UUID_PATTERN.test(String(segments[3]))
+  ) {
+    addIssue(
+      issues,
+      path,
+      "run_id_invalid",
+      "Run ID must bind the ticket, role, round, and UUID",
+    );
+    return false;
+  }
+  return true;
+}
+
+function isControllerCheckRunId(
+  value: string,
+  controllerRunId: string,
+): boolean {
+  return value.startsWith(`${controllerRunId}/`) &&
+    value.length > controllerRunId.length + 1;
+}
+
+function pathHasSegment(value: string, segment: string): boolean {
+  const normalizedSegment = segment.toLowerCase();
+  return value.split("/").some((part) =>
+    part.toLowerCase() === normalizedSegment
+  );
+}
+
+function isProtectedControlPath(value: string): boolean {
+  const first = value.split("/")[0]?.toLowerCase();
+  return first === ".codex" || first === ".agents";
+}
+
+function sameStrings(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return left.length === right.length &&
+    left.every((value, index) => value === right[index]);
+}
+
+function validateTaskRecords(
+  value: unknown,
+  path: string,
+  fields: ReadonlySet<string>,
+  candidate: boolean,
+  availableTasks: ReadonlySet<string>,
+  issues: ValidationIssue[],
+): readonly JsonRecord[] {
+  if (!Array.isArray(value)) {
+    if (value !== undefined) {
+      addIssue(issues, path, "invalid_type", "Expected a task array");
+    }
+    return [];
+  }
+  const names = new Set<string>();
+  const records: JsonRecord[] = [];
+  value.forEach((entry, index) => {
+    const entryPath = `${path}[${index}]`;
+    if (!isRecord(entry)) {
+      addIssue(issues, entryPath, "invalid_type", "Expected a task object");
+      return;
+    }
+    records.push(entry);
+    validateFields(entry, entryPath, fields, [...fields], issues);
+    if (validateNonEmptyString(entry.name, `${entryPath}.name`, issues)) {
+      if (names.has(entry.name)) {
+        addIssue(
+          issues,
+          `${entryPath}.name`,
+          "duplicate_value",
+          "Task names must be unique",
+        );
+      }
+      names.add(entry.name);
+      if (!availableTasks.has(entry.name)) {
+        addIssue(
+          issues,
+          `${entryPath}.name`,
+          "task_missing",
+          "Required Deno task is unavailable",
+        );
+      }
+    }
+    validateNonEmptyString(entry.definition, `${entryPath}.definition`, issues);
+    if (candidate && entry.guardedBy !== null) {
+      validateNonEmptyString(entry.guardedBy, `${entryPath}.guardedBy`, issues);
+    }
+  });
+  return records;
+}
+
+function validateRequiredTasksV2(
+  value: unknown,
+  availableTasks: ReadonlySet<string>,
+  issues: ValidationIssue[],
+): void {
+  if (!isRecord(value)) {
+    if (value !== undefined) {
+      addIssue(
+        issues,
+        "$.ticket.requiredTasks",
+        "invalid_type",
+        "Expected baseline and candidate task definitions",
+      );
+    }
+    return;
+  }
+  validateFields(
+    value,
+    "$.ticket.requiredTasks",
+    REQUIRED_TASK_COLLECTION_FIELDS,
+    [...REQUIRED_TASK_COLLECTION_FIELDS],
+    issues,
+  );
+  const baseline = validateTaskRecords(
+    value.baseline,
+    "$.ticket.requiredTasks.baseline",
+    BASELINE_TASK_FIELDS,
+    false,
+    availableTasks,
+    issues,
+  );
+  const candidate = validateTaskRecords(
+    value.candidate,
+    "$.ticket.requiredTasks.candidate",
+    CANDIDATE_TASK_FIELDS,
+    true,
+    availableTasks,
+    issues,
+  );
+  const baselineNames = baseline.map((entry) => entry.name);
+  const candidateNames = candidate.map((entry) => entry.name);
+  if (
+    baselineNames.every((name): name is string => typeof name === "string") &&
+    candidateNames.every((name): name is string => typeof name === "string") &&
+    !sameStrings(baselineNames, candidateNames)
+  ) {
+    addIssue(
+      issues,
+      "$.ticket.requiredTasks.candidate",
+      "task_set_mismatch",
+      "Baseline and candidate task names must match",
+    );
+  }
+}
+
+function candidateTaskNames(requiredTasks: unknown): readonly string[] {
+  if (Array.isArray(requiredTasks)) {
+    return requiredTasks.filter((value): value is string =>
+      typeof value === "string"
+    );
+  }
+  if (!isRecord(requiredTasks) || !Array.isArray(requiredTasks.candidate)) {
+    return [];
+  }
+  return requiredTasks.candidate.flatMap((value) =>
+    isRecord(value) && typeof value.name === "string" ? [value.name] : []
+  );
+}
+
+function validateExecutionAuthority(
+  ticket: JsonRecord,
+  issues: ValidationIssue[],
+): void {
+  validateRunId(
+    ticket.controllerRunId,
+    "$.ticket.controllerRunId",
+    ticket.ticketId,
+    "orchestrator",
+    0,
+    issues,
+  );
+  if (
+    ticket.executionClass !== "ordinary" &&
+    ticket.executionClass !== "protected-config-maintenance"
+  ) {
+    addIssue(
+      issues,
+      "$.ticket.executionClass",
+      "invalid_value",
+      "Execution class is invalid",
+    );
+  }
+  const allowedWrites = Array.isArray(ticket.allowedWrites)
+    ? ticket.allowedWrites.filter((value): value is string =>
+      typeof value === "string"
+    )
+    : [];
+  allowedWrites.forEach((value, index) => {
+    if (pathHasSegment(value, ".git")) {
+      addIssue(
+        issues,
+        `$.ticket.allowedWrites[${index}]`,
+        "git_path_forbidden",
+        ".git is never an authorized write path",
+      );
+    } else if (
+      ticket.executionClass === "ordinary" && isProtectedControlPath(value)
+    ) {
+      addIssue(
+        issues,
+        `$.ticket.allowedWrites[${index}]`,
+        "protected_path_forbidden",
+        "Ordinary tickets cannot write protected control paths",
+      );
+    }
+  });
+  if (ticket.executionClass === "ordinary") {
+    if (ticket.protectedWriteAuthorization !== null) {
+      addIssue(
+        issues,
+        "$.ticket.protectedWriteAuthorization",
+        "authorization_forbidden",
+        "Ordinary tickets cannot carry protected-write authority",
+      );
+    }
+    return;
+  }
+  if (!isRecord(ticket.protectedWriteAuthorization)) {
+    addIssue(
+      issues,
+      "$.ticket.protectedWriteAuthorization",
+      "authorization_required",
+      "Protected maintenance requires controller authorization",
+    );
+    return;
+  }
+  const authorization = ticket.protectedWriteAuthorization;
+  validateFields(
+    authorization,
+    "$.ticket.protectedWriteAuthorization",
+    PROTECTED_WRITE_AUTHORIZATION_FIELDS,
+    [...PROTECTED_WRITE_AUTHORIZATION_FIELDS],
+    issues,
+  );
+  validateNonEmptyString(
+    authorization.authorizedByControllerRunId,
+    "$.ticket.protectedWriteAuthorization.authorizedByControllerRunId",
+    issues,
+  );
+  if (authorization.authorizedByControllerRunId !== ticket.controllerRunId) {
+    addIssue(
+      issues,
+      "$.ticket.protectedWriteAuthorization.authorizedByControllerRunId",
+      "controller_mismatch",
+      "Protected-write authority must come from the ticket controller",
+    );
+  }
+  validateSafePathArray(
+    authorization.paths,
+    "$.ticket.protectedWriteAuthorization.paths",
+    issues,
+  );
+  const authorizationPaths = Array.isArray(authorization.paths)
+    ? authorization.paths.filter((value): value is string =>
+      typeof value === "string"
+    )
+    : [];
+  if (!sameStrings(allowedWrites, authorizationPaths)) {
+    addIssue(
+      issues,
+      "$.ticket.protectedWriteAuthorization.paths",
+      "authorization_mismatch",
+      "Protected authorization paths must exactly match allowed writes",
+    );
+  }
+  validateNonEmptyString(
+    authorization.contractRef,
+    "$.ticket.protectedWriteAuthorization.contractRef",
+    issues,
+  );
+  validateNonEmptyString(
+    authorization.rationale,
+    "$.ticket.protectedWriteAuthorization.rationale",
+    issues,
+  );
+}
+
 function validateTicket(
   ticket: JsonRecord,
   availableTasks: ReadonlySet<string>,
   issues: ValidationIssue[],
 ): void {
+  const schemaVersion = ticket.schemaVersion;
+  const v2 = schemaVersion === 2;
+  const requiredFields = v2
+    ? REQUIRED_TICKET_FIELDS
+    : REQUIRED_TICKET_FIELDS.filter((field) =>
+      field !== "controllerRunId" && field !== "executionClass" &&
+      field !== "protectedWriteAuthorization"
+    );
   validateFields(
     ticket,
     "$.ticket",
     TICKET_FIELDS,
-    REQUIRED_TICKET_FIELDS,
+    requiredFields,
     issues,
   );
-  if (ticket.schemaVersion !== 1) {
+  if (schemaVersion === 1) {
+    const ticketId = typeof ticket.ticketId === "string" ? ticket.ticketId : "";
+    if (!(ticketId in LEGACY_TICKET_IDENTITY_DIGESTS)) {
+      addIssue(
+        issues,
+        "$.ticket.schemaVersion",
+        "legacy_schema_forbidden",
+        "Only grandfathered PILOT packets may use schema version 1",
+      );
+    }
+  } else if (schemaVersion !== 2) {
     addIssue(
       issues,
       "$.ticket.schemaVersion",
       "invalid_value",
       "Unsupported ticket schema version",
+    );
+  } else if (
+    !("controllerRunId" in ticket) || !("executionClass" in ticket) ||
+    !("protectedWriteAuthorization" in ticket) ||
+    !isRecord(ticket.requiredTasks)
+  ) {
+    addIssue(
+      issues,
+      "$.ticket.schemaVersion",
+      "invalid_value",
+      "Schema version 2 requires the complete v2 ticket contract",
     );
   }
   validateNonEmptyString(ticket.ticketId, "$.ticket.ticketId", issues);
@@ -689,9 +1068,17 @@ function validateTicket(
     minimum: 1,
     unique: true,
   });
-  validateStringArray(ticket.requiredTasks, "$.ticket.requiredTasks", issues, {
-    unique: true,
-  });
+  if (v2) {
+    validateRequiredTasksV2(ticket.requiredTasks, availableTasks, issues);
+    validateExecutionAuthority(ticket, issues);
+  } else {
+    validateStringArray(
+      ticket.requiredTasks,
+      "$.ticket.requiredTasks",
+      issues,
+      { unique: true },
+    );
+  }
   validateStringArray(ticket.risks, "$.ticket.risks", issues, {
     unique: true,
   });
@@ -769,7 +1156,7 @@ function validateTicket(
     });
   }
 
-  if (Array.isArray(ticket.requiredTasks)) {
+  if (!v2 && Array.isArray(ticket.requiredTasks)) {
     ticket.requiredTasks.forEach((task, index) => {
       if (typeof task === "string" && !availableTasks.has(task)) {
         addIssue(
@@ -882,6 +1269,7 @@ function validateEvents(events: unknown, issues: ValidationIssue[]): void {
 
 function validateResults(
   results: unknown,
+  ticket: JsonRecord | undefined,
   issues: ValidationIssue[],
 ): void {
   if (!Array.isArray(results)) {
@@ -895,14 +1283,20 @@ function validateResults(
       addIssue(issues, resultPath, "invalid_type", "Expected a result object");
       return;
     }
+    const v2 = ticket?.schemaVersion === 2;
+    const requiredResultFields = v2
+      ? [...RESULT_FIELDS]
+      : [...RESULT_FIELDS].filter((field) =>
+        field !== "issuedByControllerRunId"
+      );
     validateFields(
       result,
       resultPath,
       RESULT_FIELDS,
-      [...RESULT_FIELDS],
+      requiredResultFields,
       issues,
     );
-    if (result.schemaVersion !== 1) {
+    if (result.schemaVersion !== (v2 ? 2 : 1)) {
       addIssue(
         issues,
         `${resultPath}.schemaVersion`,
@@ -918,11 +1312,35 @@ function validateResults(
       issues,
     );
     validateInteger(result.round, `${resultPath}.round`, 1, issues);
-    validateNonEmptyString(
-      result.implementerRunId,
-      `${resultPath}.implementerRunId`,
-      issues,
-    );
+    if (v2 && typeof result.round === "number") {
+      validateRunId(
+        result.implementerRunId,
+        `${resultPath}.implementerRunId`,
+        ticket?.ticketId,
+        "implementer",
+        result.round,
+        issues,
+      );
+      validateNonEmptyString(
+        result.issuedByControllerRunId,
+        `${resultPath}.issuedByControllerRunId`,
+        issues,
+      );
+      if (result.issuedByControllerRunId !== ticket?.controllerRunId) {
+        addIssue(
+          issues,
+          `${resultPath}.issuedByControllerRunId`,
+          "controller_mismatch",
+          "Implementation result must be issued by the ticket controller",
+        );
+      }
+    } else {
+      validateNonEmptyString(
+        result.implementerRunId,
+        `${resultPath}.implementerRunId`,
+        issues,
+      );
+    }
     validateRevision(
       result.inputBaseRevision,
       `${resultPath}.inputBaseRevision`,
@@ -1266,6 +1684,7 @@ function validateFinding(
 
 function validateReviews(
   reviews: unknown,
+  ticket: JsonRecord | undefined,
   baseRevision: unknown,
   phase: unknown,
   criterionIds: ReadonlySet<string>,
@@ -1288,16 +1707,22 @@ function validateReviews(
       return;
     }
     const reviewPath = `$.reviews[${reviewIndex}]`;
+    const v2 = ticket?.schemaVersion === 2;
+    const requiredReviewFields = v2
+      ? [...REVIEW_FIELDS]
+      : [...REVIEW_FIELDS].filter((field) =>
+        field !== "issuedByControllerRunId"
+      );
     const blocksOpenFindings = phaseRule(phase)?.requiresAcceptanceClosure ===
       true;
     validateFields(
       review,
       reviewPath,
       REVIEW_FIELDS,
-      [...REVIEW_FIELDS],
+      requiredReviewFields,
       issues,
     );
-    if (review.schemaVersion !== 1) {
+    if (review.schemaVersion !== (v2 ? 2 : 1)) {
       addIssue(
         issues,
         `${reviewPath}.schemaVersion`,
@@ -1313,16 +1738,48 @@ function validateReviews(
       issues,
     );
     validateInteger(review.round, `${reviewPath}.round`, 1, issues);
-    validateNonEmptyString(
-      review.implementerRunId,
-      `${reviewPath}.implementerRunId`,
-      issues,
-    );
-    validateNonEmptyString(
-      review.reviewerRunId,
-      `${reviewPath}.reviewerRunId`,
-      issues,
-    );
+    if (v2 && typeof review.round === "number") {
+      validateRunId(
+        review.implementerRunId,
+        `${reviewPath}.implementerRunId`,
+        ticket?.ticketId,
+        "implementer",
+        review.round,
+        issues,
+      );
+      validateRunId(
+        review.reviewerRunId,
+        `${reviewPath}.reviewerRunId`,
+        ticket?.ticketId,
+        "reviewer",
+        review.round,
+        issues,
+      );
+      validateNonEmptyString(
+        review.issuedByControllerRunId,
+        `${reviewPath}.issuedByControllerRunId`,
+        issues,
+      );
+      if (review.issuedByControllerRunId !== ticket?.controllerRunId) {
+        addIssue(
+          issues,
+          `${reviewPath}.issuedByControllerRunId`,
+          "controller_mismatch",
+          "Review must be issued by the ticket controller",
+        );
+      }
+    } else {
+      validateNonEmptyString(
+        review.implementerRunId,
+        `${reviewPath}.implementerRunId`,
+        issues,
+      );
+      validateNonEmptyString(
+        review.reviewerRunId,
+        `${reviewPath}.reviewerRunId`,
+        issues,
+      );
+    }
     validateRevision(review.baseRevision, `${reviewPath}.baseRevision`, issues);
     validateRevision(
       review.candidateRevision,
@@ -1604,14 +2061,133 @@ function validateReviews(
   });
 }
 
+function validateChecks(
+  value: unknown,
+  path: string,
+  requiredTasks: readonly string[],
+  exactRevision: string | undefined,
+  revisionIssueCode: string,
+  controllerRunId: string | undefined,
+  requirePassing: boolean,
+  checkRunIds: Set<string>,
+  issues: ValidationIssue[],
+): void {
+  if (!Array.isArray(value)) {
+    if (value !== undefined) {
+      addIssue(
+        issues,
+        path,
+        "invalid_type",
+        "Expected an orchestrator-check array",
+      );
+    }
+    return;
+  }
+  const commands = new Set<string>();
+  value.forEach((check, index) => {
+    const checkPath = `${path}[${index}]`;
+    if (!isRecord(check)) {
+      addIssue(
+        issues,
+        checkPath,
+        "invalid_type",
+        "Expected an orchestrator check object",
+      );
+      return;
+    }
+    validateFields(check, checkPath, CHECK_FIELDS, [...CHECK_FIELDS], issues);
+    validateNonEmptyString(check.runId, `${checkPath}.runId`, issues);
+    validateRevision(check.revision, `${checkPath}.revision`, issues);
+    validateNonEmptyString(check.command, `${checkPath}.command`, issues);
+    validateInteger(check.exitCode, `${checkPath}.exitCode`, 0, issues);
+    if (
+      typeof check.runId === "string" && controllerRunId !== undefined &&
+      !isControllerCheckRunId(check.runId, controllerRunId)
+    ) {
+      addIssue(
+        issues,
+        `${checkPath}.runId`,
+        "controller_mismatch",
+        "Orchestrator check must use controller-issued authority",
+      );
+    }
+    if (typeof check.command === "string") {
+      if (commands.has(check.command)) {
+        addIssue(
+          issues,
+          `${checkPath}.command`,
+          "duplicate_value",
+          "Orchestrator check commands must be unique",
+        );
+      }
+      commands.add(check.command);
+    }
+    if (typeof check.runId === "string") {
+      if (checkRunIds.has(check.runId)) {
+        addIssue(
+          issues,
+          `${checkPath}.runId`,
+          "duplicate_value",
+          "Orchestrator check run IDs must be unique",
+        );
+      }
+      checkRunIds.add(check.runId);
+    }
+    if (requirePassing && check.exitCode !== 0) {
+      addIssue(
+        issues,
+        `${checkPath}.exitCode`,
+        "check_failed",
+        "Orchestrator checks must pass",
+      );
+    }
+    if (
+      exactRevision !== undefined && check.revision !== exactRevision
+    ) {
+      addIssue(
+        issues,
+        `${checkPath}.revision`,
+        revisionIssueCode,
+        "Orchestrator checks must cover the exact lifecycle revision",
+      );
+    }
+  });
+  if (
+    requirePassing &&
+    requiredTasks.some((task) => !commands.has(`deno task ${task}`))
+  ) {
+    addIssue(
+      issues,
+      path,
+      "check_missing",
+      "Every required task needs an orchestrator check",
+    );
+  }
+}
+
 function validateState(
   state: JsonRecord,
   ticketId: unknown,
   dependencies: unknown,
   requiredTasks: unknown,
+  controllerRunId: unknown,
   issues: ValidationIssue[],
 ): void {
-  validateFields(state, "$.state", STATE_FIELDS, [...STATE_FIELDS], issues);
+  const integratedPhase = state.phase === "integrated";
+  const durableIntegratedPhase = integratedPhase &&
+    typeof controllerRunId === "string";
+  const requiredStateFields = durableIntegratedPhase
+    ? [...STATE_FIELDS]
+    : [...STATE_FIELDS].filter((field) =>
+      field !== "integrationRevision" && field !== "integrationChecks"
+    );
+  validateFields(
+    state,
+    "$.state",
+    STATE_FIELDS,
+    requiredStateFields,
+    issues,
+  );
   const acceptancePhase = phaseRule(state.phase)?.requiresAcceptanceClosure ===
     true;
   if (state.schemaVersion !== 1) {
@@ -1644,6 +2220,23 @@ function validateState(
     "$.state.acceptedCandidateRevision",
     issues,
   );
+  if (state.integrationRevision !== undefined) {
+    validateRevision(
+      state.integrationRevision,
+      "$.state.integrationRevision",
+      issues,
+    );
+  }
+  if (
+    durableIntegratedPhase && typeof state.integrationRevision !== "string"
+  ) {
+    addIssue(
+      issues,
+      "$.state.integrationRevision",
+      "integration_required",
+      "Integrated state requires a durable integration revision",
+    );
+  }
   if (state.blocker !== null) {
     validateNonEmptyString(state.blocker, "$.state.blocker", issues);
   }
@@ -1751,110 +2344,34 @@ function validateState(
     );
   }
 
-  const commands = new Set<string>();
   const checkRunIds = new Set<string>();
-  if (Array.isArray(state.orchestratorChecks)) {
-    state.orchestratorChecks.forEach((check, index) => {
-      if (!isRecord(check)) {
-        addIssue(
-          issues,
-          `$.state.orchestratorChecks[${index}]`,
-          "invalid_type",
-          "Expected an orchestrator check object",
-        );
-        return;
-      }
-      validateFields(
-        check,
-        `$.state.orchestratorChecks[${index}]`,
-        CHECK_FIELDS,
-        [...CHECK_FIELDS],
-        issues,
-      );
-      validateNonEmptyString(
-        check.runId,
-        `$.state.orchestratorChecks[${index}].runId`,
-        issues,
-      );
-      validateRevision(
-        check.revision,
-        `$.state.orchestratorChecks[${index}].revision`,
-        issues,
-      );
-      validateNonEmptyString(
-        check.command,
-        `$.state.orchestratorChecks[${index}].command`,
-        issues,
-      );
-      validateInteger(
-        check.exitCode,
-        `$.state.orchestratorChecks[${index}].exitCode`,
-        0,
-        issues,
-      );
-      if (typeof check.command === "string") {
-        if (commands.has(check.command)) {
-          addIssue(
-            issues,
-            `$.state.orchestratorChecks[${index}].command`,
-            "duplicate_value",
-            "Orchestrator check commands must be unique",
-          );
-        }
-        commands.add(check.command);
-      }
-      if (typeof check.runId === "string") {
-        if (checkRunIds.has(check.runId)) {
-          addIssue(
-            issues,
-            `$.state.orchestratorChecks[${index}].runId`,
-            "duplicate_value",
-            "Orchestrator check run IDs must be unique",
-          );
-        }
-        checkRunIds.add(check.runId);
-      }
-      if (acceptancePhase && check.exitCode !== 0) {
-        addIssue(
-          issues,
-          `$.state.orchestratorChecks[${index}].exitCode`,
-          "check_failed",
-          "Orchestrator checks must pass",
-        );
-      }
-      if (
-        acceptancePhase &&
-        typeof state.candidateRevision === "string" &&
-        check.revision !== state.candidateRevision
-      ) {
-        addIssue(
-          issues,
-          `$.state.orchestratorChecks[${index}].revision`,
-          "candidate_mismatch",
-          "Orchestrator checks must cover the exact candidate",
-        );
-      }
-    });
-  } else if (state.orchestratorChecks !== undefined) {
-    addIssue(
+  const taskNames = candidateTaskNames(requiredTasks);
+  validateChecks(
+    state.orchestratorChecks,
+    "$.state.orchestratorChecks",
+    taskNames,
+    acceptancePhase && typeof state.candidateRevision === "string"
+      ? state.candidateRevision
+      : undefined,
+    "candidate_mismatch",
+    typeof controllerRunId === "string" ? controllerRunId : undefined,
+    acceptancePhase,
+    checkRunIds,
+    issues,
+  );
+  if (durableIntegratedPhase) {
+    validateChecks(
+      state.integrationChecks,
+      "$.state.integrationChecks",
+      taskNames,
+      typeof state.integrationRevision === "string"
+        ? state.integrationRevision
+        : undefined,
+      "integration_mismatch",
+      controllerRunId,
+      true,
+      checkRunIds,
       issues,
-      "$.state.orchestratorChecks",
-      "invalid_type",
-      "Expected an orchestrator-check array",
-    );
-  }
-  if (
-    acceptancePhase &&
-    Array.isArray(requiredTasks) &&
-    requiredTasks.some((task) =>
-      typeof task === "string" && !commands.has(`deno task ${task}`)
-    )
-  ) {
-    addIssue(
-      issues,
-      "$.state.orchestratorChecks",
-      "check_missing",
-      "Every required task needs an orchestrator check",
     );
   }
 }
@@ -1872,6 +2389,7 @@ function validateLifecycle(
   const resultRefs = Array.isArray(state.resultRefs) ? state.resultRefs : [];
   const reviewRefs = Array.isArray(state.reviewRefs) ? state.reviewRefs : [];
   const maxRounds = Number(ticket.maxRounds);
+  const v2 = ticket.schemaVersion === 2;
   const currentPhaseRule = phaseRule(phase);
   const acceptancePhase = currentPhaseRule?.requiresAcceptanceClosure === true;
 
@@ -1977,8 +2495,20 @@ function validateLifecycle(
   }
 
   const resultsByRound = new Map<number, JsonRecord>();
+  const implementerRunIds = new Set<string>();
   results.forEach((value, index) => {
     if (!isRecord(value)) return;
+    if (v2 && typeof value.implementerRunId === "string") {
+      if (implementerRunIds.has(value.implementerRunId)) {
+        addIssue(
+          issues,
+          `$.results[${index}].implementerRunId`,
+          "run_id_not_fresh",
+          "Each implementation round requires a fresh run ID",
+        );
+      }
+      implementerRunIds.add(value.implementerRunId);
+    }
     if (value.ticketId !== ticket.ticketId) {
       addIssue(
         issues,
@@ -2064,8 +2594,20 @@ function validateLifecycle(
   }
 
   const reviewsByRound = new Map<number, JsonRecord>();
+  const reviewerRunIds = new Set<string>();
   reviews.forEach((value, index) => {
     if (!isRecord(value)) return;
+    if (v2 && typeof value.reviewerRunId === "string") {
+      if (reviewerRunIds.has(value.reviewerRunId)) {
+        addIssue(
+          issues,
+          `$.reviews[${index}].reviewerRunId`,
+          "run_id_not_fresh",
+          "Each review round requires a fresh run ID",
+        );
+      }
+      reviewerRunIds.add(value.reviewerRunId);
+    }
     if (value.ticketId !== ticket.ticketId) {
       addIssue(
         issues,
@@ -2169,11 +2711,16 @@ function validateLifecycle(
       base: ticket.baseRevision,
       red: roundResult.redRevision,
       candidate: roundResult.candidateRevision,
+      integration: state.integrationRevision,
       unbound: undefined,
     };
+    const revisionRule = !v2 && transition.from === "accepted" &&
+        transition.to === "integrated"
+      ? "candidate"
+      : transition.revision;
     if (
-      typeof expectedRevision[transition.revision] === "string" &&
-      value.revision !== expectedRevision[transition.revision]
+      typeof expectedRevision[revisionRule] === "string" &&
+      value.revision !== expectedRevision[revisionRule]
     ) {
       addIssue(
         issues,
@@ -2187,6 +2734,8 @@ function validateLifecycle(
       ? result?.implementerRunId
       : transition.actor === "reviewer"
       ? review?.reviewerRunId
+      : v2
+      ? ticket.controllerRunId
       : undefined;
     if (
       typeof expectedActor === "string" && value.actorRunId !== expectedActor
@@ -2194,11 +2743,33 @@ function validateLifecycle(
       addIssue(
         issues,
         `$.state.events[${index}].actorRunId`,
-        "run_mismatch",
+        transition.actor === "orchestrator"
+          ? "controller_mismatch"
+          : "run_mismatch",
         "Lifecycle transition actor must match its round evidence",
       );
     }
   });
+}
+
+function validateLegacyPacketIdentity(
+  ticket: JsonRecord,
+  issues: ValidationIssue[],
+): void {
+  if (ticket.schemaVersion !== 1 || typeof ticket.ticketId !== "string") return;
+  const allowedDigests = LEGACY_TICKET_IDENTITY_DIGESTS[ticket.ticketId];
+  if (allowedDigests === undefined) return;
+  const identityDigest = sha256Json({
+    ...ticket,
+    baseRevision: "<base-revision>",
+  });
+  if (allowedDigests.has(identityDigest)) return;
+  addIssue(
+    issues,
+    "$.ticket.schemaVersion",
+    "legacy_packet_mismatch",
+    "Legacy packet identity does not match an immutable historical fixture",
+  );
 }
 
 export function validateTicketBundle(
@@ -2244,6 +2815,7 @@ export function validateTicketBundle(
     }
   } else {
     validateTicket(ticket, availableTasks, issues);
+    validateLegacyPacketIdentity(ticket, issues);
   }
   if (state === undefined) {
     if ("state" in bundle) {
@@ -2256,10 +2828,12 @@ export function validateTicketBundle(
       ticket?.ticketId,
       ticket?.dependencies,
       ticket?.requiredTasks,
+      ticket?.controllerRunId,
       issues,
     );
     validateReviews(
       bundle.reviews,
+      ticket,
       ticket?.baseRevision,
       state.phase,
       criterionIds,
@@ -2284,6 +2858,7 @@ export function validateTicketBundle(
   }
   validateResults(
     bundle.results,
+    ticket,
     issues,
   );
   return issues.sort((left, right) =>

@@ -1,9 +1,10 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "ticketId": "<TICKET-ID>",
   "ticketRevision": 1,
   "round": 1,
-  "implementerRunId": "<fresh implementer run ID>",
+  "implementerRunId": "<TICKET-ID>/implementer/r1/<UUID>",
+  "issuedByControllerRunId": "<TICKET-ID>/orchestrator/r0/<UUID>",
   "inputBaseRevision": "<ticket base for round 1; prior candidate SHA for a later round>",
   "dispatchRef": "dispatch/round-01.md",
   "redRevision": "<40-character test-only RED Git SHA>",

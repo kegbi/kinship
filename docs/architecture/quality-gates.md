@@ -133,6 +133,44 @@ they must call these same commands. There must not be a second, subtly different
 hook-only validation pipeline. Lefthook invokes repository tasks; repository
 tests do not delegate their validation semantics to Lefthook.
 
+### Revision-bound workflow gates
+
+Every new autonomous ticket uses `schemaVersion 2`. Its `controllerRunId` is a
+ticket-namespaced orchestrator identity at round zero; implementer and reviewer
+run IDs are controller-issued, role- and round-bound, fresh at each issuance,
+and echoed by their result or review as `issuedByControllerRunId`. State and
+event records remain schema version 1, but controller-owned events and checks
+must derive their authority from that same controller identity. Only exact,
+content-addressed historical `PILOT-001` and `PILOT-002` packet identities are
+accepted as ticket schema version 1.
+
+The validator compares each required baseline and candidate task definition with
+the exact `deno.json` Git object at the respective revision. An unchanged
+candidate definition declares `guardedBy: null`. A changed definition must name
+a distinct required `guardedBy` task whose definition is unchanged between the
+base and candidate; neither a self-guard nor a trivially successful command is a
+valid gate.
+
+An ordinary execution class cannot write `.codex` or `.agents`. The
+`protected-config-maintenance` class requires an exact controller-issued
+authorization covering every protected allowed-write path. `.git` is forbidden
+as any path segment, case-insensitively, for every execution class.
+
+An integrated v2 state records the durable `integrationRevision` and exact
+passing `integrationChecks`; its `accepted` to `integrated` event uses
+`integration.md` and is bound to that revision. Every required candidate task
+must have a unique `deno task <name>` integration command and a unique
+controller-derived check run ID that was not reused from acceptance. The
+integration revision must exist, descend from the reviewed candidate, preserve
+reviewed allowed-write content, and anchor the later integrated metadata.
+Validation rejects later mutation of that ticket's durable metadata but permits
+unrelated later commits.
+
+<!-- deno-fmt-ignore -->
+A dependent ticket resolves the dependency ticket's base revision.
+That historical state must already be integrated, and the dependent ticket's pin
+must exactly equal its `integrationRevision`.
+
 ## Static Enforcement
 
 Enable strict TypeScript settings, including `strict`,

@@ -9,6 +9,10 @@ product contracts relevant to the ticket, the ticket packet, RED/GREEN evidence,
 and the base-to-candidate diff. Ignore implementer intent that is not captured
 in those artifacts.
 
+Use only the controller-issued reviewer run ID for this ticket and round. Return
+a schema-version-2 review whose issuedByControllerRunId exactly matches the
+ticket controllerRunId; do not invent or reuse review authority.
+
 Reproduce or inspect enough evidence to assess every required lens:
 1. bug and correctness;
 2. security, privacy, authorization, and workspace isolation;

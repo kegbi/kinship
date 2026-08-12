@@ -1,0 +1,49 @@
+AUTONOMY-001 round 01 REFACTOR
+
+Refactor result
+- Added autonomy_v2_coverage_test.ts for defensive structural and Git branches.
+- Removed two redundant, unreachable type-narrowing branches without changing
+  accepted or rejected packet behavior.
+- Kept all frozen RED files byte-identical.
+
+Final focused and compatibility proof
+Command:
+deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/integration_anchor_regression_test.ts tools/workflows/control_guards_regression_test.ts tools/workflows/autonomy_v2_assets_test.ts tools/workflows/autonomy_v2_coverage_test.ts tools/workflows/workflow_assets_test.ts
+Result: exit 0; 51 passed, 0 failed in 44 seconds.
+
+Aggregate workflow characterization
+- 132 passed, 0 failed in the aggregate coverage run. The run excluded the
+  four-test round3_policy_regression_test.ts module because its final assertion
+  intentionally rejects every uncommitted post-RED production diff; its other
+  three assertions passed in the earlier full workflow run.
+- A prior full `deno task test:workflow` run produced 131 passed and 2 failed.
+  One failure was an exact legacy documentation string and was corrected with
+  both legacy and v2 asset suites then green. The remaining failure is the
+  expected pre-candidate dirty-diff assertion described above.
+
+Production coverage proof
+- The 132-test aggregate profile and the 3-test residual characterization
+  profile cover identical production bytes and were combined as raw Deno/V8
+  profiles.
+Command:
+deno coverage --threshold=100 --include="tools/workflows/(ticket_contract|validate_ticket)\.ts$" .coverage/autonomy-combined-001
+Result: exit 0.
+- ticket_contract.ts: 100.0% branch, 100.0% function, 100.0% line.
+- validate_ticket.ts: 100.0% branch, 100.0% function, 100.0% line.
+- Aggregate: 100.0% branch, 100.0% function, 100.0% line.
+
+Repository gates
+- `deno task fmt:check`: exit 0; checked 102 files.
+- `deno task lint`: exit 0; checked 17 files.
+- `deno task check`: exit 0; schema validator and both workflow modules checked.
+- `git diff --check`: exit 0.
+
+Candidate-dependent follow-up
+- The trusted controller must create the candidate commit, then rerun exact
+  `deno task test:workflow` and `deno task test:workflow:coverage`; the frozen
+  dirty-diff invariant cannot truthfully pass before that commit exists.
+- No stage, commit, merge, or other Git metadata mutation was performed by the
+  implementer.
+
+No credentials, personal data, tokens, or connection strings are present in
+this log.
