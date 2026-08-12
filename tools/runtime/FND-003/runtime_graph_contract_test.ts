@@ -745,7 +745,42 @@ function validateOci(
   const images = array(graph.ociImages, "ociImages").map((item, index) =>
     object(item, `ociImages[${index}]`)
   );
-  const ids = images.map((image, index) => {
+  const denoVersion = string(packages.get("deno")?.version, "deno.version");
+  const nodeVersion = string(packages.get("node")?.version, "node.version");
+  const playwrightVersion = string(
+    packages.get("playwright-test")?.version,
+    "playwright-test.version",
+  );
+  const expectedDeclarations: Record<
+    (typeof OCI_IDS)[number],
+    { repository: string; tag: string }
+  > = {
+    deno: {
+      repository: "denoland/deno",
+      tag: `debian-${denoVersion}`,
+    },
+    node: {
+      repository: "node",
+      tag: `${nodeVersion}-bookworm-slim`,
+    },
+    playwright: {
+      repository: "mcr.microsoft.com/playwright",
+      tag: `v${playwrightVersion}-noble`,
+    },
+    postgres18: {
+      repository: "postgres",
+      tag: "18.4-alpine3.23",
+    },
+    postgres17: {
+      repository: "postgres",
+      tag: "17.10-alpine3.23",
+    },
+  };
+  const ids = images.map((image, index) =>
+    string(image.id, `ociImages[${index}].id`)
+  );
+  exactSet(ids, OCI_IDS, "OCI images");
+  images.forEach((image, index) => {
     const label = `ociImages[${index}]`;
     exactKeys(image, [
       "id",
@@ -758,9 +793,18 @@ function validateOci(
       "attestations",
       "evidenceSha256",
     ], label);
-    const id = string(image.id, `${label}.id`);
+    const id = ids[index] as (typeof OCI_IDS)[number];
+    const expected = expectedDeclarations[id];
     const repository = string(image.repository, `${label}.repository`);
-    const tag = exactVersion(image.tag, `${label}.tag`);
+    invariant(
+      repository === expected.repository,
+      `${label}.repository must use the official repository ${expected.repository}`,
+    );
+    const tag = string(image.tag, `${label}.tag`);
+    invariant(
+      tag === expected.tag,
+      `${label}.tag must use the official ${expected.tag} tag template and selected package version`,
+    );
     const indexDigest = assertSha256(image.indexDigest, `${label}.indexDigest`);
     invariant(
       image.reference === `${repository}:${tag}@${indexDigest}`,
@@ -832,18 +876,7 @@ function validateOci(
       );
     }
     assertSha256(image.evidenceSha256, `${label}.evidenceSha256`);
-    return id;
   });
-  exactSet(ids, OCI_IDS, "OCI images");
-  const playwrightImage = images.find((image) => image.id === "playwright");
-  invariant(
-    playwrightImage?.repository === "mcr.microsoft.com/playwright",
-    "Playwright image must use the official repository",
-  );
-  invariant(
-    playwrightImage?.tag === packages.get("playwright-test")?.version,
-    "@playwright/test package and image versions differ",
-  );
 }
 
 function validateProofStatus(
@@ -1018,18 +1051,27 @@ function makeValidGraph(): JsonRecord {
     "tailwind-vite": ["tailwind-vite", "vite"],
     "vite-vitest": ["vite", "vitest"],
   };
+  const ociDeclarations: Record<
+    (typeof OCI_IDS)[number],
+    { repository: string; tag: string }
+  > = {
+    deno: { repository: "denoland/deno", tag: "debian-1.2.3" },
+    node: { repository: "node", tag: "1.2.3-bookworm-slim" },
+    playwright: {
+      repository: "mcr.microsoft.com/playwright",
+      tag: "v1.2.3-noble",
+    },
+    postgres18: { repository: "postgres", tag: "18.4-alpine3.23" },
+    postgres17: { repository: "postgres", tag: "17.10-alpine3.23" },
+  };
   const ociImages = OCI_IDS.map((id, index) => ({
     id,
-    repository: id === "playwright"
-      ? "mcr.microsoft.com/playwright"
-      : `registry.example.invalid/${id}`,
-    tag: "1.2.3",
+    repository: ociDeclarations[id].repository,
+    tag: ociDeclarations[id].tag,
     indexDigest: digest(((index + 1) % 9 + 1).toString()),
-    reference: `${
-      id === "playwright"
-        ? "mcr.microsoft.com/playwright"
-        : `registry.example.invalid/${id}`
-    }:1.2.3@${digest(((index + 1) % 9 + 1).toString())}`,
+    reference: `${ociDeclarations[id].repository}:${ociDeclarations[id].tag}@${
+      digest(((index + 1) % 9 + 1).toString())
+    }`,
     mediaType: OCI_INDEX_MEDIA,
     platforms: [
       {
@@ -1411,9 +1453,12 @@ Deno.test("runtime graph validator controls discriminate every FND-003 policy bo
   );
 
   expectReject(
-    (graph) =>
-      ociAt(graph, "deno").reference = "registry.example.invalid/deno:latest",
-    "exact tag plus index digest",
+    (graph) => {
+      const image = ociAt(graph, "deno");
+      image.tag = "latest";
+      image.reference = `${image.repository}:latest@${image.indexDigest}`;
+    },
+    "official debian-1.2.3 tag template",
   );
   expectReject(
     (graph) => ociAt(graph, "deno").mediaType = OCI_MANIFEST_MEDIA,
@@ -1426,6 +1471,38 @@ Deno.test("runtime graph validator controls discriminate every FND-003 policy bo
       image.reference = `${image.repository}:${image.tag}@${image.indexDigest}`;
     },
     "official repository",
+  );
+  expectReject(
+    (graph) => {
+      const image = ociAt(graph, "playwright");
+      image.tag = "1.2.3";
+      image.reference = `${image.repository}:${image.tag}@${image.indexDigest}`;
+    },
+    "official v1.2.3-noble tag template",
+  );
+  expectReject(
+    (graph) => {
+      const image = ociAt(graph, "postgres18");
+      image.tag = "18.4.0-alpine3.23";
+      image.reference = `${image.repository}:${image.tag}@${image.indexDigest}`;
+    },
+    "official 18.4-alpine3.23 tag template",
+  );
+  expectReject(
+    (graph) => {
+      const image = ociAt(graph, "node");
+      image.tag = "1.2.3-alpine";
+      image.reference = `${image.repository}:${image.tag}@${image.indexDigest}`;
+    },
+    "official 1.2.3-bookworm-slim tag template",
+  );
+  expectReject(
+    (graph) => {
+      const image = ociAt(graph, "postgres17");
+      image.tag = "17.10-alpine3.22";
+      image.reference = `${image.repository}:${image.tag}@${image.indexDigest}`;
+    },
+    "official 17.10-alpine3.23 tag template",
   );
   expectReject(
     (graph) =>
@@ -1456,10 +1533,13 @@ Deno.test("runtime graph validator controls discriminate every FND-003 policy bo
     "masquerades as a runnable platform",
   );
   expectReject((graph) => {
-    const image = ociAt(graph, "playwright");
-    image.tag = "1.2.4";
-    image.reference = `${image.repository}:1.2.4@${image.indexDigest}`;
-  }, "package and image versions differ");
+    packageAt(graph, "playwright-test").version = "1.2.2";
+    object(
+      array(object(graph.repository, "repository").lockMembers, "members")
+        .find((member) => object(member, "member").id === "playwright-test"),
+      "playwright lock member",
+    ).resolution = "@playwright/test@1.2.2";
+  }, "official v1.2.2-noble tag template");
 
   expectReject(
     (graph) =>
