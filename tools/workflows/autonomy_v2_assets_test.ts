@@ -36,7 +36,9 @@ function firstObject(value: unknown, label: string): JsonRecord {
 function assertEqual(actual: unknown, expected: unknown, label: string): void {
   if (actual !== expected) {
     throw new Error(
-      `Expected ${label} to equal ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
+      `Expected ${label} to equal ${JSON.stringify(expected)}, received ${
+        JSON.stringify(actual)
+      }`,
     );
   }
 }
