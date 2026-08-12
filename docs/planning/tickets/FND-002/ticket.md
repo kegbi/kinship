@@ -1,6 +1,6 @@
 # FND-002: Accept DG-06A coordination boundary
 
-Status: review, round 1\
+Status: accepted, round 1\
 Owner: trusted top-level orchestrator\
 Base revision: `603f6621809f61fab70bc29b8b4a9252ebcecb27`\
 Execution class: `ordinary`\
@@ -9,8 +9,9 @@ Maximum rounds: 3
 
 Candidate revision: `820fb4cd5c45e7b4b6a0e748f602c657d4c2cb61`
 
-Review: `reviews/round-01.json` approved the exact candidate with zero findings;
-controller acceptance checks remain pending.
+Review: `reviews/round-01.json` approved the exact candidate with zero findings.
+The trusted controller independently reran the exact-candidate focused check and
+all required tasks; `acceptance.md` records the accepted contract-only result.
 
 ## Outcome
 
