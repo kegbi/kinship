@@ -1,19 +1,8 @@
 {
   "schemaVersion": 1,
   "pnpm": {
-    "nodeVersion": "24.15.0",
-    "requiredNodeVersion": "24.19.0",
-    "corepackVersion": "0.35.0",
-    "pnpmVersion": "11.21.0",
-    "rootCount": 26,
     "lockfileVersion": "9.0",
-    "wholeLockSha256": "385fcd5c1e1ffbe7eebefbf62e3730a1f11773f43d1010f7a3c8a9a4d8f4ecf8",
-    "wholeLockBytes": 274998,
-    "packageCount": 917,
-    "snapshotCount": 918,
     "oneToManyBase": "@napi-rs/wasm-runtime@1.2.2",
-    "executedLifecycle": ["esbuild@0.28.2 postinstall: node install.js"],
-    "deniedLifecycleOwners": ["fsevents@2.3.2", "fsevents@2.3.3"],
     "fixtureFiles": {
       "pnpm-11.21.0/settings.txt": "11650848a3a35331dd3aa7af8005565a7348d912173a4b71c30b0c27c68ae2a8",
       "pnpm-11.21.0/react-types-importer.txt": "4cf7fbfb22e3d06b6ee53a3c1d39e8dcc534ea0feb9d0b271c6c3f384072c2c2",
@@ -21,13 +10,9 @@
     }
   },
   "deno": {
-    "denoVersion": "2.9.5",
-    "typescriptVersion": "6.0.3",
     "lockfileVersion": "5",
     "specifierCount": 7,
     "npmNodeCount": 7,
-    "wholeLockSha256": "8a39257b18ec8ff53acb693efe2969d8136284a0a8293517e43313e1fb7898c8",
-    "wholeLockBytes": 2018,
     "fixtureFiles": {
       "deno-2.9.5/deno.lock": "8a39257b18ec8ff53acb693efe2969d8136284a0a8293517e43313e1fb7898c8"
     }
