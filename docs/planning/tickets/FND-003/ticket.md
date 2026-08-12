@@ -2,7 +2,7 @@
 
 Status: ready, round 0 (fresh RED retry pending)\
 Owner: trusted top-level orchestrator\
-Packet revision: 4\
+Packet revision: 5\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
 Execution class: `ordinary`\
 Depends on: FND-001S at integration revision
@@ -21,9 +21,15 @@ Rejected RED attempts:
   image tags were corrected, but official timestamp precision, transitive hook
   ownership, actual lock filenames, and source-derived Button imports remained
   unrepresentable.
+- `eb64bd55aa86cfbc7237dc7bb5f9b5679d4bd0ee`, validator SHA-256
+  `f435f639c7985b095e02ac9a25111e80bd426e728017f9aae2962b0a8739d9b4`: the
+  representation retry achieved the intended focused failure and mechanical
+  coverage, but independent audit found bypasses in real Deno/pnpm lock parsing,
+  compatibility/provenance, lifecycle ownership, and complete OCI descriptor
+  identity.
 
-Both attempts and all associated evidence remain immutable history and confer no
-production-write authority.
+All three attempts and all associated evidence remain immutable history and
+confer no production-write authority.
 
 ## Outcome
 
@@ -80,8 +86,10 @@ as incidental lock drift.
   `@typescript-eslint/parser`, and the official `eslint-plugin-react-hooks`
   required before FND-003D can wire truthful checks.
 - Resolve and repeat the graph in disposable clean and offline/cached-only
-  environments without changing either lock hash or executing a lifecycle
-  script.
+  environments without changing either lock hash or executing any unreviewed
+  lifecycle script. Deno remains empty; locked fsevents builds are denied; only
+  an exactly inventoried esbuild install hook may be approved when the clean
+  proof demonstrates it is required.
 - Pin and inspect the selected Deno, Node, Playwright, PostgreSQL 18, and
   PostgreSQL 17 OCI indexes with separate runnable amd64/arm64 and attestation
   records.
@@ -141,11 +149,13 @@ as incidental lock drift.
   candidates and the full immutable Button/DOM/browser-test import closure with
   official evidence and newer-version exclusions.
 - AC-03: Corepack integrity/signatures and pnpm/Deno lifecycle allowlists are
-  exact and deny by default; the transitive install-hook inventory justifies any
-  non-empty exception.
+  exact and deny by default; Deno stays empty, fsevents stays denied, and the
+  transitive install-hook inventory may justify only an exact required esbuild
+  exception.
 - AC-04: fresh-cache frozen resolution and cached-only/offline repeat preserve
   both single-root lock hashes over that real import graph, create no nested
-  locks, and execute no lifecycle or startup install; A/B/C reuse those locks
+  locks, and execute no startup install or unreviewed lifecycle command; any
+  required esbuild execution is recorded exactly, and A/B/C reuse those locks
   without mutation.
 - AC-05: all five OCI references are exact indexes with separate required Linux
   amd64/arm64 child and attestation classification, and the official Playwright

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "ticketId": "FND-003",
-  "revision": 4,
+  "revision": 5,
   "title": "Freeze the immutable candidate runtime graph",
   "outcome": "One dependency-free, self-tested runtime-graph validator and its exact machine-readable inputs make the repository's candidate Deno, Node, pnpm, frontend, backend, test, and OCI dependency graph immutable, age-eligible, lifecycle-denied by default, and repeatable from clean and offline caches without claiming the separate executable compatibility proofs assigned to named follow-on tickets.",
   "baseRevision": "895731f27f66d614cb431e9ab6bb570b94d1a476",
@@ -15,7 +15,7 @@
     "Select at one recorded UTC proof timestamp the newest compatible stable releases that satisfy the accepted 72-hour minimum age, and record exact versions, publication times, integrity/provenance evidence, compatibility status, exclusions, and upgrade ownership in one machine-readable graph and one human validation report, including the accepted targeted ESLint plugin closure for Astro templates, accessibility, and React hooks.",
     "Commit exact root Deno and pnpm manifests, workspace metadata, lockfiles, Corepack descriptor integrity, lifecycle-deny policy, and only non-empty tool-owned fixture members needed to resolve and repeat the candidate graph.",
     "Lock the complete nontrivial import closure required by FND-003A, FND-003B, and FND-003C, including the immutable shadcn Button source dependencies, one exact Vitest DOM environment, and @playwright/test, in exactly one root deno.lock and one root pnpm-lock.yaml that those successors must consume byte-for-byte without nested locks.",
-    "Prove in disposable clean directories or pinned containers that exact Deno, Node, Corepack, and pnpm identities restore the committed graph from fresh caches and then repeat with network-disabled or cached-only resolution while lockfile hashes remain unchanged and no lifecycle script runs.",
+    "Prove in disposable clean directories or pinned containers that exact Deno, Node, Corepack, and pnpm identities restore the committed graph from fresh caches and then repeat with network-disabled or cached-only resolution while lockfile hashes remain unchanged and no lifecycle script other than an exactly inventoried, reviewed, and required esbuild install hook runs.",
     "Record and independently inspect immutable multi-architecture OCI indexes for the selected Deno, Node, Playwright, PostgreSQL 18, and PostgreSQL 17 images, distinguishing runnable amd64 and arm64 children from child or attestation manifests.",
     "Keep executable backend/database, frontend/component/test, browser/image, and command/hook behavior explicitly proof-pending under FND-003A, FND-003B, FND-003C, and FND-003D respectively; name FND-003E as the post-integration root-lock amendment prerequisite for a later DG-03 Better Auth probe and FND-003F as the root-lock amendment prerequisite before accessibility E2E work."
   ],
@@ -75,12 +75,12 @@
     },
     {
       "id": "AC-03",
-      "text": "package.json carries an exact pnpm Corepack descriptor with registry integrity and exact engine metadata; proof uses COREPACK_DEFAULT_TO_LATEST=0 with signature verification enabled; pnpm uses exact-save and frozen-lock behavior with an explicit reviewed build-script allowlist and no dangerouslyAllowAllBuilds; Deno allowScripts is exactly the reviewed allowlist; the executable scan records every transitive install hook and the initial allowlists remain empty unless a hook is proven unavoidable by an explicit minimal exception.",
+      "text": "package.json carries an exact pnpm Corepack descriptor with registry integrity and exact engine metadata; proof uses COREPACK_DEFAULT_TO_LATEST=0 with signature verification enabled; pnpm uses exact-save and frozen-lock behavior with an explicit reviewed build-script allowlist and no dangerouslyAllowAllBuilds; Deno allowScripts is empty; the executable scan records every transitive install hook, explicitly denies locked platform-only fsevents builds, and permits only the exact esbuild install hook when the clean executable proof demonstrates that minimal exception is required.",
       "redProof": "The AC-01 command fails because no Corepack descriptor, package-manager integrity, lifecycle policy, transitive hook inventory, Deno allowScripts declaration, or exact pnpm build allowlist exists; negative controls for disabled integrity and permissive lifecycle settings pass."
     },
     {
       "id": "AC-04",
-      "text": "A redacted executable proof in disposable directories or pinned containers records exact Deno, Node, Corepack, and pnpm identity; performs network-enabled clean-cache Deno and pnpm frozen resolution of the real backend, frontend, immutable shadcn Button, DOM-test, and browser-test import closure; repeats Deno cached-only and pnpm offline resolution from those caches; confirms the single root deno.lock and single root pnpm-lock.yaml hashes are byte-identical before and after every step; confirms no nested or successor lock exists or is planned; records that FND-003A/B/C must reuse both locks without mutation; and confirms that no lifecycle or startup install command executed.",
+      "text": "A redacted executable proof in disposable directories or pinned containers records exact Deno, Node, Corepack, and pnpm identity; performs network-enabled clean-cache Deno and pnpm frozen resolution of the real backend, frontend, immutable shadcn Button, DOM-test, and browser-test import closure; repeats Deno cached-only and pnpm offline resolution from those caches; confirms the single root deno.lock and single root pnpm-lock.yaml hashes are byte-identical before and after every step; confirms no nested or successor lock exists or is planned; records that FND-003A/B/C must reuse both locks without mutation; and confirms that no startup install or unreviewed lifecycle command executed, with any required esbuild hook recorded exactly by owner, version, command, run, and exit status.",
       "redProof": "The AC-01 command fails because the manifests and locks required for a frozen clean-cache and offline repeat do not exist; the failure is independent of host network, Docker, and package-manager availability."
     },
     {
