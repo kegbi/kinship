@@ -24,6 +24,12 @@ const NPM_SRI = /^sha512-[A-Za-z0-9+/]{86}==$/;
 const COREPACK_SHA512 = /^[0-9a-f]{128}$/;
 const OCI_INDEX_MEDIA = "application/vnd.oci.image.index.v1+json";
 const OCI_MANIFEST_MEDIA = "application/vnd.oci.image.manifest.v1+json";
+const MAX_COMPRESSED_EVIDENCE_BYTES = 32 * 1024 * 1024;
+const MAX_DECOMPRESSED_EVIDENCE_BYTES = 64 * 1024 * 1024;
+
+type EvidenceReader = (
+  path: string,
+) => Promise<ReadableStream<Uint8Array>>;
 
 const BASE_DENO_CONFIGURATION: JsonRecord = {
   compilerOptions: {
@@ -163,6 +169,7 @@ const PEER_PAIRS: Record<string, [string, string]> = {
   "astro-react-peer-react-dom": ["astro-react", "react-dom"],
   "astro-react-peer-types-react": ["astro-react", "types-react"],
   "astro-react-peer-types-react-dom": ["astro-react", "types-react-dom"],
+  "react-dom-peer-react": ["react-dom", "react"],
   "astro-check-peer-typescript": ["astro-check", "typescript"],
   "validator-peer-hono": ["hono-standard-validator", "hono"],
   "dialect-peer-kysely": ["kysely-postgres-js", "kysely"],
@@ -191,6 +198,7 @@ const MANIFEST_RELATIONS: Record<
   "astro-react-peer-react-dom": "peerDependencies",
   "astro-react-peer-types-react": "peerDependencies",
   "astro-react-peer-types-react-dom": "peerDependencies",
+  "react-dom-peer-react": "peerDependencies",
   "validator-standard-schema": "peerDependencies",
   "dialect-postgres": "peerDependencies",
   "tailwind-vite": "peerDependencies",
@@ -213,6 +221,7 @@ const MANIFEST_RANGES: Record<string, string> = {
   "astro-react-peer-react-dom": "^17.0.2 || ^18.0.0 || ^19.0.0",
   "astro-react-peer-types-react": "^17.0.50 || ^18.0.21 || ^19.0.0",
   "astro-react-peer-types-react-dom": "^17.0.17 || ^18.0.6 || ^19.0.0",
+  "react-dom-peer-react": "^19.2.0",
   "astro-check-typescript": "^5.0.0",
   "validator-peer-hono": ">=3.9.0",
   "validator-standard-schema": "1.0.0",
@@ -389,7 +398,6 @@ function instant(value: unknown, label: string): number {
 }
 
 function parseJsonValue(text: string, label: string): unknown {
-  invariant(text.length <= 2_000_000, `${label} exceeds size limit`);
   const stack: Array<
     { kind: "object"; keys: Set<string> } | { kind: "array" }
   > = [];
@@ -762,28 +770,148 @@ async function gzip(text: string): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-async function gunzip(bytes: Uint8Array): Promise<string> {
+function byteStream(bytes: Uint8Array): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  });
+}
+
+function sizedByteStream(size: number): ReadableStream<Uint8Array> {
+  let remaining = size;
+  return new ReadableStream({
+    pull(controller) {
+      if (remaining === 0) {
+        controller.close();
+        return;
+      }
+      const length = Math.min(1024 * 1024, remaining);
+      controller.enqueue(new Uint8Array(length).fill(120));
+      remaining -= length;
+    },
+  });
+}
+
+async function gzipSizedBody(size: number): Promise<Uint8Array> {
+  const stream = sizedByteStream(size).pipeThrough(
+    new CompressionStream("gzip") as TransformStream<Uint8Array, Uint8Array>,
+  );
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function readBounded(
+  stream: ReadableStream<Uint8Array>,
+  maximum: number,
+  label: string,
+): Promise<Uint8Array> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) break;
+      size += result.value.byteLength;
+      invariant(size <= maximum, `${label} exceeds ${maximum} byte limit`);
+      chunks.push(result.value);
+    }
+  } catch (error) {
+    await reader.cancel(error).catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+async function gunzipBounded(bytes: Uint8Array): Promise<string> {
   const stream = new Blob([new Uint8Array(bytes).buffer]).stream().pipeThrough(
     new DecompressionStream("gzip"),
   );
-  return await new Response(stream).text();
+  const body = await readBounded(
+    stream,
+    MAX_DECOMPRESSED_EVIDENCE_BYTES,
+    "decompressed provenance artifact",
+  );
+  return new TextDecoder("utf-8", { fatal: true }).decode(body);
+}
+
+function safeEvidenceUrl(kind: string, raw: string): URL {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("provenance source URL is invalid");
+  }
+  invariant(
+    url.protocol === "https:" && url.username === "" && url.password === "" &&
+      url.search === "" && url.hash === "",
+    "provenance source URL must be credential-free exact HTTPS",
+  );
+  invariant(
+    !url.pathname.split("/").includes("latest"),
+    "provenance source URL contains a mutable latest path",
+  );
+  const allowed = kind === "npm-packument"
+    ? url.origin === "https://registry.npmjs.org" &&
+      /^\/(?:%40[^/]+%2F[^/]+|@[^/]+%2F[^/]+|[^/]+)$/.test(url.pathname)
+    : kind === "official-release-index"
+    ? (url.href === "https://api.github.com/repos/denoland/deno/releases" ||
+      url.href === "https://api.github.com/repos/nodejs/node/releases" ||
+      url.href === "https://nodejs.org/dist/index.json")
+    : kind === "official-release-detail"
+    ? url.origin === "https://api.github.com" &&
+      /^\/repos\/nodejs\/node\/releases\/tags\/v\d+\.\d+\.\d+$/.test(
+        url.pathname,
+      )
+    : kind === "release-checksum"
+    ? (url.origin === "https://github.com" &&
+      /^\/denoland\/deno\/releases\/download\/v\d+\.\d+\.\d+\/deno-x86_64-pc-windows-msvc\.zip\.sha256sum$/
+        .test(
+          url.pathname,
+        )) ||
+      (url.origin === "https://nodejs.org" &&
+        /^\/dist\/v\d+\.\d+\.\d+\/SHASUMS256\.txt$/.test(url.pathname))
+    : kind === "immutable-source"
+    ? url.origin === "https://raw.githubusercontent.com" &&
+      /^\/shadcn-ui\/ui\/[0-9a-f]{40}\/.+/.test(url.pathname)
+    : kind === "oci-index-response"
+    ? (url.origin === "https://registry-1.docker.io" ||
+      url.origin === "https://mcr.microsoft.com") &&
+      /^\/v2\/.+\/manifests\/[^/]+$/.test(url.pathname)
+    : false;
+  invariant(allowed, "provenance source origin or path is not allowlisted");
+  return url;
 }
 
 interface EvidenceAuthority {
   descriptor(id: string): JsonRecord;
   text(id: string): string;
   json(id: string): unknown;
+  assertAllUsed(): void;
 }
 
 async function loadEvidence(
   graph: JsonRecord,
-  readBytes: (path: string) => Promise<Uint8Array>,
+  readEvidence: EvidenceReader,
+  selectedAt: number,
 ): Promise<EvidenceAuthority> {
   const descriptors = array(graph.provenance, "provenance").map((raw, index) =>
     object(raw, `provenance[${index}]`)
   );
   const byId = new Map<string, JsonRecord>();
   const bodies = new Map<string, string>();
+  const paths = new Set<string>();
+  const used = new Set<string>();
+  let latestRetrieval = -Infinity;
   for (const descriptor of descriptors) {
     exactKeys(descriptor, [
       "id",
@@ -803,22 +931,33 @@ async function loadEvidence(
         !path.includes("\\") && !path.split("/").includes(".."),
       `${id} provenance path is unsafe`,
     );
+    invariant(!paths.has(path), "provenance artifact paths must be unique");
+    paths.add(path);
     invariant(
       descriptor.compression === "gzip",
       `${id} provenance compression is unsupported`,
     );
-    invariant(
-      /^https:\/\//.test(string(descriptor.sourceUrl, `${id}.sourceUrl`)),
-      `${id} provenance source must be HTTPS`,
+    safeEvidenceUrl(
+      string(descriptor.kind, `${id}.kind`),
+      string(descriptor.sourceUrl, `${id}.sourceUrl`),
     );
-    instant(descriptor.retrievedAt, `${id}.retrievedAt`);
-    const bytes = await readBytes(path);
+    const retrievedAt = instant(descriptor.retrievedAt, `${id}.retrievedAt`);
+    invariant(
+      retrievedAt <= selectedAt && retrievedAt >= selectedAt - 30 * 60 * 1000,
+      `${id} retrieval is outside the 30-minute capture window`,
+    );
+    latestRetrieval = Math.max(latestRetrieval, retrievedAt);
+    const bytes = await readBounded(
+      await readEvidence(path),
+      MAX_COMPRESSED_EVIDENCE_BYTES,
+      `${id} compressed provenance artifact`,
+    );
     invariant(
       await sha256Bytes(bytes) ===
         digest(descriptor.artifactSha256, `${id}.artifactSha256`),
       `${id} compressed artifact hash drifted`,
     );
-    const body = await gunzip(bytes);
+    const body = await gunzipBounded(bytes);
     invariant(
       await sha256Text(body) ===
         digest(descriptor.contentSha256, `${id}.contentSha256`),
@@ -827,9 +966,15 @@ async function loadEvidence(
     byId.set(id, descriptor);
     bodies.set(id, body);
   }
+  invariant(
+    latestRetrieval === selectedAt,
+    "selection time must equal the latest provenance retrieval",
+  );
   return {
     descriptor(id: string): JsonRecord {
-      return object(byId.get(id), `provenance ${id}`);
+      const descriptor = object(byId.get(id), `provenance ${id}`);
+      used.add(id);
+      return descriptor;
     },
     text(id: string): string {
       return string(bodies.get(id), `provenance body ${id}`);
@@ -839,6 +984,9 @@ async function loadEvidence(
         string(bodies.get(id), `provenance body ${id}`),
         `provenance body ${id}`,
       );
+    },
+    assertAllUsed(): void {
+      exactSet([...used], [...byId.keys()], "provenance claim membership");
     },
   };
 }
@@ -870,13 +1018,46 @@ function npmManifest(
     `${packageName} packument`,
   );
   invariant(
-    packument.name === packageName,
-    `${packageName} packument name drifted`,
+    packument.name === packageName && packument._id === packageName &&
+      typeof packument._rev === "string" && packument._rev.length > 0,
+    `${packageName} full packument identity drifted`,
   );
-  return object(
+  const times = object(packument.time, `${packageName} publication times`);
+  instant(times.created, `${packageName} packument created`);
+  instant(times.modified, `${packageName} packument modified`);
+  const manifest = object(
     object(packument.versions, `${packageName} versions`)[selectedVersion],
     `${packageName}@${selectedVersion} manifest`,
   );
+  invariant(
+    manifest.name === packageName && manifest.version === selectedVersion,
+    `${packageName}@${selectedVersion} manifest identity drifted`,
+  );
+  const dist = object(manifest.dist, `${packageName} dist`);
+  sri(dist.integrity, `${packageName} integrity`);
+  invariant(
+    /^[0-9a-f]{40}$/.test(string(dist.shasum, `${packageName} shasum`)),
+    `${packageName} shasum is invalid`,
+  );
+  const fileName = `${packageName.split("/").at(-1)}-${selectedVersion}.tgz`;
+  invariant(
+    dist.tarball ===
+      `https://registry.npmjs.org/${packageName}/-/${fileName}`,
+    `${packageName} tarball source is not exact`,
+  );
+  const peerMeta = object(
+    manifest.peerDependenciesMeta ?? {},
+    `${packageName} peer metadata`,
+  );
+  const peers = object(
+    manifest.peerDependencies ?? {},
+    `${packageName} peer dependencies`,
+  );
+  invariant(
+    Object.keys(peerMeta).every((name) => name in peers),
+    `${packageName} peer metadata is not a peer subset`,
+  );
+  return manifest;
 }
 
 function stableVersions(packument: JsonRecord): string[] {
@@ -885,7 +1066,12 @@ function stableVersions(packument: JsonRecord): string[] {
     .sort(compareVersions);
 }
 
-function validateSelection(graph: JsonRecord): number {
+interface SelectionWindow {
+  selectedAt: number;
+  cutoff: number;
+}
+
+function validateSelection(graph: JsonRecord): SelectionWindow {
   const selection = object(graph.selection, "selection");
   exactKeys(
     selection,
@@ -902,7 +1088,7 @@ function validateSelection(graph: JsonRecord): number {
     selected - cutoff === 72 * 60 * 60 * 1000,
     "cutoff must be exactly 72 hours",
   );
-  return cutoff;
+  return { selectedAt: selected, cutoff };
 }
 
 function validateNewerReleases(
@@ -911,6 +1097,7 @@ function validateNewerReleases(
   officialTimes: JsonRecord,
   cutoff: number,
   label: string,
+  expectedFailures: (candidateVersion: string) => JsonRecord[] = () => [],
 ) {
   const selectedVersion = version(item.version, `${label}.version`);
   const latest = version(item.latestStable, `${label}.latestStable`);
@@ -936,11 +1123,13 @@ function validateNewerReleases(
   );
   let previous = selectedVersion;
   for (const release of declared) {
-    exactKeys(
-      release,
-      ["version", "publishedAt", "compatible", "reason"],
-      `${label} newer release`,
-    );
+    exactKeys(release, [
+      "version",
+      "publishedAt",
+      "compatible",
+      "reason",
+      "failingEdges",
+    ], `${label} newer release`);
     const releaseVersion = version(release.version, `${label} newer version`);
     invariant(
       compareVersions(releaseVersion, previous) > 0,
@@ -963,11 +1152,31 @@ function validateNewerReleases(
       typeof release.compatible === "boolean",
       `${label} compatibility result is missing`,
     );
-    invariant(
-      release.compatible === false || published > cutoff,
-      `${label} omitted an eligible compatible release`,
+    const failingEdges = array(
+      release.failingEdges,
+      `${label} newer failingEdges`,
     );
-    string(release.reason, `${label} exclusion reason`);
+    exactValue(
+      failingEdges,
+      expectedFailures(releaseVersion),
+      `${label} machine-derived incompatibility edges`,
+    );
+    invariant(
+      release.compatible === (failingEdges.length === 0),
+      `${label} compatibility result is not machine-derived`,
+    );
+    if (published > cutoff) {
+      invariant(
+        release.reason === "younger-than-cutoff",
+        `${label} age-ineligible release has a non-temporal exclusion`,
+      );
+    } else {
+      invariant(
+        release.compatible === false &&
+          release.reason === "incompatible-retained-manifest",
+        `${label} omitted an eligible compatible release`,
+      );
+    }
   }
   invariant(
     latest === selectedVersion
@@ -977,25 +1186,167 @@ function validateNewerReleases(
   );
 }
 
+function retainedManifestRows(
+  graph: JsonRecord,
+  authority: EvidenceAuthority,
+): JsonRecord[] {
+  const rows: JsonRecord[] = [];
+  for (const raw of array(graph.selectedPackages, "selectedPackages")) {
+    const item = object(raw, "selected package");
+    if (item.id === "deno" || item.id === "node") continue;
+    rows.push({
+      name: item.name,
+      version: item.version,
+      evidenceId: item.artifactEvidenceId,
+      contentSha256: authority.descriptor(
+        string(item.artifactEvidenceId, "artifactEvidenceId"),
+      ).contentSha256,
+      manifest: npmManifest(
+        authority,
+        string(item.artifactEvidenceId, "artifactEvidenceId"),
+        string(item.name, "selected package name"),
+        version(item.version, "selected package version"),
+      ),
+    });
+  }
+  const pnpm = object(
+    object(graph.repository, "repository").pnpm,
+    "repository.pnpm",
+  );
+  for (const raw of array(pnpm.packages, "pnpm packages")) {
+    const item = object(raw, "pnpm package");
+    const name = string(item.name, "pnpm package name");
+    const itemVersion = version(item.version, "pnpm package version");
+    if (rows.some((row) => row.name === name && row.version === itemVersion)) {
+      continue;
+    }
+    rows.push({
+      name,
+      version: itemVersion,
+      evidenceId: item.manifestEvidenceId,
+      contentSha256: item.manifestContentSha256,
+      manifest: npmManifest(
+        authority,
+        string(item.manifestEvidenceId, "manifestEvidenceId"),
+        name,
+        itemVersion,
+      ),
+    });
+  }
+  return rows;
+}
+
+function requiredManifestRanges(
+  manifest: JsonRecord,
+): Array<{ relation: string; name: string; range: string }> {
+  const result: Array<{ relation: string; name: string; range: string }> = [];
+  for (const relation of ["dependencies", "peerDependencies"] as const) {
+    const ranges = object(manifest[relation] ?? {}, relation);
+    const optionalDependencies = object(
+      manifest.optionalDependencies ?? {},
+      "optional dependencies",
+    );
+    const meta = object(manifest.peerDependenciesMeta ?? {}, "peer metadata");
+    for (const [name, rawRange] of Object.entries(ranges)) {
+      const optional = relation === "dependencies"
+        ? name in optionalDependencies
+        : object(meta[name] ?? {}, `${name} peer metadata`).optional === true;
+      if (!optional) {
+        result.push({
+          relation,
+          name,
+          range: string(rawRange, `${name} range`),
+        });
+      }
+    }
+  }
+  return result;
+}
+
+function compatibilityFailures(
+  graph: JsonRecord,
+  authority: EvidenceAuthority,
+  candidateName: string,
+  candidateVersion: string,
+  candidateManifest: JsonRecord,
+  candidateEvidenceId: string,
+): JsonRecord[] {
+  const rows = retainedManifestRows(graph, authority);
+  const selectedByName = new Map<string, string>();
+  for (const row of rows) {
+    if (!selectedByName.has(String(row.name))) {
+      selectedByName.set(String(row.name), String(row.version));
+    }
+  }
+  selectedByName.set(candidateName, candidateVersion);
+  const failures: JsonRecord[] = [];
+  for (const requirement of requiredManifestRanges(candidateManifest)) {
+    const resolution = selectedByName.get(requirement.name);
+    if (!resolution || !satisfiesRange(resolution, requirement.range)) {
+      failures.push({
+        direction: "forward",
+        owner: candidateName,
+        ownerVersion: candidateVersion,
+        kind: requirement.relation,
+        target: requirement.name,
+        range: requirement.range,
+        actualResolution: resolution ?? null,
+        optional: false,
+        manifestEvidenceId: candidateEvidenceId,
+        manifestContentSha256:
+          authority.descriptor(candidateEvidenceId).contentSha256,
+      });
+    }
+  }
+  for (const row of rows) {
+    if (row.name === candidateName) continue;
+    for (
+      const requirement of requiredManifestRanges(
+        object(row.manifest, `${row.name} manifest`),
+      )
+    ) {
+      if (
+        requirement.name === candidateName &&
+        !satisfiesRange(candidateVersion, requirement.range)
+      ) {
+        failures.push({
+          direction: "reverse",
+          owner: row.name,
+          ownerVersion: row.version,
+          kind: requirement.relation,
+          target: candidateName,
+          range: requirement.range,
+          actualResolution: candidateVersion,
+          optional: false,
+          manifestEvidenceId: row.evidenceId,
+          manifestContentSha256: row.contentSha256,
+        });
+      }
+    }
+  }
+  return failures.sort((left, right) =>
+    JSON.stringify(canonical(left)).localeCompare(
+      JSON.stringify(canonical(right)),
+    )
+  );
+}
+
 function runtimeReleaseRows(
   authority: EvidenceAuthority,
   evidenceId: string,
-  runtimeId: "deno" | "node",
 ): JsonRecord[] {
   const descriptor = evidenceKind(
     authority,
     evidenceId,
     "official-release-index",
   );
-  const expectedSource = `https://api.github.com/repos/${
-    runtimeId === "deno" ? "denoland/deno" : "nodejs/node"
-  }/releases`;
+  const expectedSource = "https://api.github.com/repos/denoland/deno/releases";
   invariant(
     descriptor.sourceUrl === expectedSource,
-    `${runtimeId} release source is not exact`,
+    "deno release source is not exact",
   );
-  return array(authority.json(evidenceId), `${runtimeId} releases`).map((raw) =>
-    object(raw, `${runtimeId} release`)
+  return array(authority.json(evidenceId), "deno releases").map((raw) =>
+    object(raw, "deno release")
   );
 }
 
@@ -1009,18 +1360,168 @@ function validateRuntimeSelection(
     item.publicationEvidenceId,
     `${runtimeId}.publicationEvidenceId`,
   );
-  const rows = runtimeReleaseRows(authority, publicationId, runtimeId).filter((
-    release,
-  ) =>
-    release.draft === false && release.prerelease === false &&
-    typeof release.tag_name === "string" &&
-    /^v\d+\.\d+\.\d+$/.test(release.tag_name)
-  );
-  const times = Object.fromEntries(rows.map((release) => [
-    String(release.tag_name).slice(1),
-    string(release.published_at, `${runtimeId} published_at`),
-  ]));
-  const officialVersions = Object.keys(times).sort(compareVersions);
+  let considered: JsonRecord[];
+  let times: JsonRecord;
+  if (runtimeId === "node") {
+    const ltsIndexId = string(
+      item.ltsIndexEvidenceId,
+      "node.ltsIndexEvidenceId",
+    );
+    const indexDescriptor = evidenceKind(
+      authority,
+      ltsIndexId,
+      "official-release-index",
+    );
+    invariant(
+      indexDescriptor.sourceUrl === "https://nodejs.org/dist/index.json",
+      "Node LTS index source is not exact",
+    );
+    const indexRows = array(authority.json(ltsIndexId), "Node LTS index").map((
+      raw,
+    ) => object(raw, "Node LTS index row"));
+    for (const row of indexRows) {
+      exactKeys(row, [
+        "version",
+        "date",
+        "files",
+        "npm",
+        "v8",
+        "uv",
+        "zlib",
+        "openssl",
+        "modules",
+        "lts",
+        "security",
+      ], "Node LTS index row");
+      invariant(
+        /^v\d+\.\d+\.\d+$/.test(string(row.version, "Node index version")) &&
+          /^\d{4}-\d{2}-\d{2}$/.test(string(row.date, "Node index date")) &&
+          (row.lts === false ||
+            (typeof row.lts === "string" && row.lts.length > 0)),
+        "Node LTS index row has an invalid identity",
+      );
+      strings(row.files, "Node index files");
+    }
+    const releaseEvidenceIds = object(
+      item.releaseEvidenceIds,
+      "node.releaseEvidenceIds",
+    );
+    exactSet(
+      Object.keys(releaseEvidenceIds),
+      indexRows.map((row) => string(row.version, "Node index version")),
+      "Node precise release evidence membership",
+    );
+    const releaseByVersion = new Map<string, JsonRecord>();
+    for (const row of indexRows) {
+      const tag = string(row.version, "Node index version");
+      const evidenceId = string(releaseEvidenceIds[tag], `${tag} evidence ID`);
+      const descriptor = evidenceKind(
+        authority,
+        evidenceId,
+        "official-release-detail",
+      );
+      invariant(
+        descriptor.sourceUrl ===
+          `https://api.github.com/repos/nodejs/node/releases/tags/${tag}`,
+        `${tag} precise Node release source is not exact`,
+      );
+      const release = object(authority.json(evidenceId), `${tag} release`);
+      invariant(
+        release.tag_name === tag && release.draft === false &&
+          release.prerelease === false,
+        `${tag} precise Node release identity is invalid`,
+      );
+      const published = instant(release.published_at, `${tag} published_at`);
+      invariant(
+        new Date(published).toISOString().slice(0, 10) === row.date,
+        `${tag} Node index date disagrees with precise release evidence`,
+      );
+      releaseByVersion.set(tag, release);
+    }
+    const selectedAt = cutoff + 72 * 60 * 60 * 1000;
+    const available = indexRows.filter((row) =>
+      instant(
+        object(releaseByVersion.get(String(row.version)), "Node release")
+          .published_at,
+        "Node published_at",
+      ) <= selectedAt
+    );
+    const ltsRows = available.filter((row) =>
+      typeof row.lts === "string" && row.lts.trim().length > 0
+    );
+    invariant(ltsRows.length > 0, "Node release index has no current LTS line");
+    const latestLtsMajor = Math.max(
+      ...ltsRows.map((release) =>
+        Number(String(release.version).slice(1).split(".")[0])
+      ),
+    );
+    const currentLine = ltsRows.filter((release) =>
+      Number(String(release.version).slice(1).split(".")[0]) === latestLtsMajor
+    );
+    invariant(
+      new Set(currentLine.map((release) => String(release.lts))).size === 1,
+      "Node current LTS major has inconsistent codenames",
+    );
+    considered = currentLine.map((row) =>
+      object(releaseByVersion.get(String(row.version)), String(row.version))
+    );
+    const latestLts = currentLine.map((release) =>
+      String(release.version).slice(1)
+    ).sort(compareVersions).at(-1);
+    const eligible = currentLine.filter((row) =>
+      instant(
+        object(releaseByVersion.get(String(row.version)), "Node release")
+          .published_at,
+        "Node published_at",
+      ) <= cutoff
+    ).map((row) => String(row.version).slice(1)).sort(compareVersions);
+    invariant(
+      eligible.length > 0,
+      "Node current LTS line has no age-eligible release",
+    );
+    const selectedVersion = eligible.at(-1);
+    const selectedIndexRow = currentLine.find((release) =>
+      release.version === `v${selectedVersion}`
+    );
+    const globalLatest = available.map((row) => String(row.version).slice(1))
+      .sort(compareVersions).at(-1);
+    invariant(
+      item.version === selectedVersion && selectedIndexRow &&
+        item.lts === selectedIndexRow.lts && item.latestLts === latestLts &&
+        item.latestStable === globalLatest &&
+        publicationId === releaseEvidenceIds[`v${selectedVersion}`],
+      "Node graph drifted from the newest official LTS line",
+    );
+    times = Object.fromEntries(considered.map((release) => [
+      String(release.tag_name).slice(1),
+      string(release.published_at, "node published_at"),
+    ]));
+    validateNewerReleases(
+      { ...item, latestStable: item.latestLts },
+      Object.keys(times).sort(compareVersions),
+      times,
+      cutoff,
+      runtimeId,
+    );
+  } else {
+    considered = runtimeReleaseRows(authority, publicationId)
+      .filter((release) =>
+        release.draft === false && release.prerelease === false &&
+        typeof release.tag_name === "string" &&
+        /^v\d+\.\d+\.\d+$/.test(release.tag_name)
+      );
+    times = Object.fromEntries(considered.map((release) => [
+      String(release.tag_name).slice(1),
+      string(release.published_at, `${runtimeId} published_at`),
+    ]));
+    validateNewerReleases(
+      item,
+      Object.keys(times).sort(compareVersions),
+      times,
+      cutoff,
+      runtimeId,
+    );
+  }
   const selectedVersion = version(item.version, `${runtimeId}.version`);
   invariant(
     item.publishedAt === times[selectedVersion],
@@ -1030,7 +1531,6 @@ function validateRuntimeSelection(
     instant(item.publishedAt, `${runtimeId}.publishedAt`) <= cutoff,
     `${runtimeId} is too young`,
   );
-  validateNewerReleases(item, officialVersions, times, cutoff, runtimeId);
   const artifactId = string(
     item.artifactEvidenceId,
     `${runtimeId}.artifactEvidenceId`,
@@ -1065,6 +1565,7 @@ function validateRuntimeSelection(
 }
 
 function validateNpmSelection(
+  graph: JsonRecord,
   item: JsonRecord,
   authority: EvidenceAuthority,
   cutoff: number,
@@ -1088,6 +1589,7 @@ function validateNpmSelection(
   const packument = object(authority.json(evidenceId), `${label} packument`);
   invariant(packument.name === packageName, `${label} packument name drifted`);
   const tags = object(packument["dist-tags"], `${label} dist-tags`);
+  exactValue(item.distTags, tags, `${label} dist-tags`);
   invariant(
     item.latestStable === tags.latest,
     `${label} latest stable drifted from official bytes`,
@@ -1120,7 +1622,25 @@ function validateNpmSelection(
     item.artifactValue === integrity,
     `${label} integrity drifted from official bytes`,
   );
-  validateNewerReleases(item, stableVersions(packument), times, cutoff, label);
+  validateNewerReleases(
+    item,
+    stableVersions(packument),
+    times,
+    cutoff,
+    label,
+    (candidateVersion) =>
+      compatibilityFailures(
+        graph,
+        authority,
+        packageName,
+        candidateVersion,
+        object(
+          object(packument.versions, `${label} versions`)[candidateVersion],
+          `${label}@${candidateVersion} manifest`,
+        ),
+        evidenceId,
+      ),
+  );
 }
 
 function validateSelected(
@@ -1140,7 +1660,7 @@ function validateSelected(
   );
   const result = new Map<string, JsonRecord>();
   for (const item of items) {
-    exactKeys(item, [
+    const selectedFields = [
       "id",
       "name",
       "version",
@@ -1151,7 +1671,19 @@ function validateSelected(
       "artifactValue",
       "latestStable",
       "newerReleases",
-    ], "selected package");
+    ];
+    if (item.id === "node") {
+      selectedFields.push(
+        "lts",
+        "latestLts",
+        "ltsIndexEvidenceId",
+        "releaseEvidenceIds",
+      );
+    }
+    if (item.id !== "deno" && item.id !== "node") {
+      selectedFields.push("distTags");
+    }
+    exactKeys(item, selectedFields, "selected package");
     const id = string(item.id, "selected id");
     invariant(!result.has(id), "selected package IDs must be unique");
     invariant(item.name === nameOf(id), `${id} name is incorrect`);
@@ -1166,7 +1698,7 @@ function validateSelected(
     );
     if (id === "deno" || id === "node") {
       validateRuntimeSelection(item, authority, cutoff, id);
-    } else validateNpmSelection(item, authority, cutoff, id);
+    } else validateNpmSelection(graph, item, authority, cutoff, id);
     result.set(id, item);
   }
   return result;
@@ -1729,6 +2261,18 @@ function validatePnpmGraph(
       manifest.peerDependencies ?? {},
       `${packageKey}.peerDependencies`,
     );
+    const peerMeta = object(
+      manifest.peerDependenciesMeta ?? {},
+      `${packageKey}.peerDependenciesMeta`,
+    );
+    const requiredPeers = Object.keys(manifestPeers).filter((peerName) =>
+      object(peerMeta[peerName] ?? {}, `${peerName} peer metadata`).optional !==
+        true
+    );
+    invariant(
+      requiredPeers.every((peerName) => peerName in peers),
+      `${key} peer suffix omits a required retained-manifest peer`,
+    );
     for (const [peerName, peerResolution] of Object.entries(peers)) {
       const peerVersion = string(peerResolution, `${key} peer resolution`)
         .split("(")[0]!;
@@ -1739,6 +2283,15 @@ function validatePnpmGraph(
             string(manifestPeers[peerName], `${peerName} range`),
           ),
         `${key} peer suffix is not backed by its retained manifest`,
+      );
+      const peerPackageKey = `${peerName}@${peerVersion}`;
+      invariant(
+        packageKeys.includes(peerPackageKey),
+        `${key} peer suffix lacks a backing package identity`,
+      );
+      invariant(
+        snapshotKeys.includes(`${peerName}@${peerResolution}`),
+        `${key} peer suffix lacks a backing snapshot identity`,
       );
     }
   }
@@ -2489,7 +3042,7 @@ function validateProofStatus(graph: JsonRecord) {
 
 async function validateGraph(
   graph: JsonRecord,
-  readBytes: (path: string) => Promise<Uint8Array>,
+  readEvidence: EvidenceReader,
 ) {
   exactKeys(graph, [
     "schemaVersion",
@@ -2542,8 +3095,13 @@ async function validateGraph(
     exactKeys(artifact, ["path", "sha256"], "repository artifact");
     digest(artifact.sha256, "repository artifact sha256");
   }
-  const authority = await loadEvidence(graph, readBytes);
-  await validateSelected(graph, authority, validateSelection(graph));
+  const selection = validateSelection(graph);
+  const authority = await loadEvidence(
+    graph,
+    readEvidence,
+    selection.selectedAt,
+  );
+  await validateSelected(graph, authority, selection.cutoff);
   validateEdges(graph, authority);
   validateDenoGraph(graph);
   validatePnpmGraph(graph, authority);
@@ -2553,6 +3111,7 @@ async function validateGraph(
   validateShadcn(graph, authority);
   await validateOci(graph, authority);
   validateProofStatus(graph);
+  authority.assertAllUsed();
 }
 
 function clone<T>(value: T): T {
@@ -2576,6 +3135,18 @@ function nextVersion(id: string, increment = 1): string {
   return `${major}.${minor}.${patch! + increment}`;
 }
 
+function fixtureVersions(id: string): string[] {
+  if (id === "pnpm") return [fixtureVersion(id)];
+  if (id === "astro") {
+    return [fixtureVersion(id), nextVersion(id), nextVersion(id, 2)];
+  }
+  if (id === "typescript") return [fixtureVersion(id), "6.0.0"];
+  if (id === "eslint-plugin-react-hooks") {
+    return [fixtureVersion(id), "8.0.0"];
+  }
+  return [fixtureVersion(id), nextVersion(id)];
+}
+
 function rangeMaps(id: string): JsonRecord {
   const result: Record<string, JsonRecord> = {
     dependencies: {},
@@ -2596,6 +3167,12 @@ function rangeMaps(id: string): JsonRecord {
 
 function manifestFor(id: string, itemVersion = fixtureVersion(id)): JsonRecord {
   const ranges = rangeMaps(id);
+  if (
+    id === "eslint-plugin-react-hooks" && itemVersion !== fixtureVersion(id)
+  ) {
+    object(ranges.peerDependencies, "peerDependencies").eslint = "^10.0.0";
+    object(ranges.dependencies, "dependencies")["missing-runtime"] = "^1.0.0";
+  }
   const scripts = id === "esbuild"
     ? { postinstall: "node install.js" }
     : id === "fsevents"
@@ -2604,7 +3181,13 @@ function manifestFor(id: string, itemVersion = fixtureVersion(id)): JsonRecord {
   return {
     name: nameOf(id),
     version: itemVersion,
-    dist: { integrity: id === "pnpm" ? PNPM_SRI : SRI },
+    dist: {
+      integrity: id === "pnpm" ? PNPM_SRI : SRI,
+      shasum: rawDigest(`${id}-shasum`).slice(0, 40),
+      tarball: `https://registry.npmjs.org/${nameOf(id)}/-/${
+        nameOf(id).split("/").at(-1)
+      }-${itemVersion}.tgz`,
+    },
     dependencies: ranges.dependencies,
     optionalDependencies: ranges.optionalDependencies,
     ...(id === "types-react"
@@ -2615,9 +3198,13 @@ function manifestFor(id: string, itemVersion = fixtureVersion(id)): JsonRecord {
     os: id === "fsevents" ? ["darwin"] : [],
     cpu: id === "fsevents" ? ["x64", "arm64"] : [],
     libc: id === "fsevents" ? ["glibc"] : [],
+    ...(id === "astro-react"
+      ? {
+        peerDependenciesMeta: { "@types/react": { optional: true } },
+      }
+      : {}),
     ...(id === "astro"
       ? {
-        peerDependenciesMeta: { react: { optional: true } },
         deprecated: "fixture deprecation",
         bundledDependencies: ["fixture-child"],
       }
@@ -2672,39 +3259,30 @@ async function makeFixture(): Promise<Fixture> {
     ]),
   ];
   for (const id of npmIds) {
-    const selectedVersion = fixtureVersion(id);
-    const versions = id === "pnpm"
-      ? [selectedVersion]
-      : id === "astro"
-      ? [selectedVersion, nextVersion(id), nextVersion(id, 2)]
-      : [selectedVersion, nextVersion(id)];
+    const versions = fixtureVersions(id);
     const time = Object.fromEntries(versions.map((item, index) => [
       item,
       index === 0
         ? "2026-01-01T04:05:06.789Z"
+        : id === "typescript" || id === "eslint-plugin-react-hooks"
+        ? "2026-01-05T04:05:06.790Z"
         : index === 1
         ? "2026-01-08T04:05:06.790Z"
         : "2026-01-09T04:05:06.791Z",
     ]));
     const packument = {
+      _id: nameOf(id),
+      _rev: "1-fixture",
       name: nameOf(id),
       "dist-tags": { latest: versions.at(-1) },
-      time,
+      time: {
+        created: "2025-01-01T00:00:00.000Z",
+        modified: "2026-01-09T04:05:06.999Z",
+        ...time,
+      },
       versions: Object.fromEntries(versions.map((item) => [
         item,
-        item === selectedVersion ? manifestFor(id) : {
-          name: nameOf(id),
-          version: item,
-          dist: { integrity: SRI },
-          dependencies: {},
-          optionalDependencies: {},
-          peerDependencies: {},
-          scripts: {},
-          engines: {},
-          os: [],
-          cpu: [],
-          libc: [],
-        },
+        manifestFor(id, item),
       ])),
     };
     await addEvidence(
@@ -2715,7 +3293,7 @@ async function makeFixture(): Promise<Fixture> {
     );
   }
   for (const id of ["deno", "node"] as const) {
-    const rows = [
+    const rows: JsonRecord[] = [
       {
         tag_name: `v${fixtureVersion(id)}`,
         published_at: "2026-01-01T04:05:06.789Z",
@@ -2728,6 +3306,22 @@ async function makeFixture(): Promise<Fixture> {
         draft: false,
         prerelease: false,
       },
+      ...(id === "node"
+        ? [
+          {
+            tag_name: "v25.1.0",
+            published_at: "2026-01-09T05:05:06.790Z",
+            draft: false,
+            prerelease: false,
+          },
+          {
+            tag_name: "v22.20.0",
+            published_at: "2025-12-01T04:05:06.789Z",
+            draft: false,
+            prerelease: false,
+          },
+        ]
+        : []),
       {
         tag_name: `v${nextVersion(id, 2)}-rc.1`,
         published_at: "2026-01-09T04:05:06.791Z",
@@ -2735,14 +3329,72 @@ async function makeFixture(): Promise<Fixture> {
         prerelease: true,
       },
     ];
-    await addEvidence(
-      `${id}-releases`,
-      "official-release-index",
-      `https://api.github.com/repos/${
-        id === "deno" ? "denoland/deno" : "nodejs/node"
-      }/releases`,
-      JSON.stringify(rows),
-    );
+    if (id === "deno") {
+      await addEvidence(
+        "deno-releases",
+        "official-release-index",
+        "https://api.github.com/repos/denoland/deno/releases",
+        JSON.stringify(rows),
+      );
+    } else {
+      for (
+        const row of rows.filter((candidate) =>
+          typeof candidate.tag_name === "string" &&
+          /^v\d+\.\d+\.\d+$/.test(candidate.tag_name)
+        )
+      ) {
+        const tag = string(row.tag_name, "Node fixture tag");
+        await addEvidence(
+          `node-release-${tag.slice(1)}`,
+          "official-release-detail",
+          `https://api.github.com/repos/nodejs/node/releases/tags/${tag}`,
+          JSON.stringify(row),
+        );
+      }
+    }
+    if (id === "node") {
+      const nodeIndexDefaults = {
+        files: ["win-x64-zip"],
+        npm: "11.6.1",
+        v8: "13.6.233.10",
+        uv: "1.51.0",
+        zlib: "1.3.1",
+        openssl: "3.5.4",
+        modules: "137",
+        security: false,
+      };
+      await addEvidence(
+        "node-lts-index",
+        "official-release-index",
+        "https://nodejs.org/dist/index.json",
+        JSON.stringify([
+          {
+            ...nodeIndexDefaults,
+            version: `v${nextVersion("node")}`,
+            date: "2026-01-09",
+            lts: "Krypton",
+          },
+          {
+            ...nodeIndexDefaults,
+            version: `v${fixtureVersion("node")}`,
+            date: "2026-01-01",
+            lts: "Krypton",
+          },
+          {
+            ...nodeIndexDefaults,
+            version: "v25.1.0",
+            date: "2026-01-09",
+            lts: false,
+          },
+          {
+            ...nodeIndexDefaults,
+            version: "v22.20.0",
+            date: "2025-12-01",
+            lts: "Jod",
+          },
+        ]),
+      );
+    }
     const filename = id === "deno"
       ? "deno-x86_64-pc-windows-msvc.zip"
       : `node-v${fixtureVersion(id)}-win-x64.zip`;
@@ -2774,8 +3426,93 @@ async function makeFixture(): Promise<Fixture> {
     'import { clsx } from "clsx"\nimport { twMerge } from "tailwind-merge"\nexport const cn = (...value: unknown[]) => twMerge(clsx(value))\n',
   );
 
+  const fixtureCompatibilityFailures = (
+    id: string,
+    candidateVersion: string,
+  ): JsonRecord[] => {
+    const candidateName = nameOf(id);
+    const resolutions = new Map(
+      npmIds.map((item) => [nameOf(item), fixtureVersion(item)]),
+    );
+    resolutions.set(candidateName, candidateVersion);
+    const failures: JsonRecord[] = [];
+    for (
+      const requirement of requiredManifestRanges(
+        manifestFor(id, candidateVersion),
+      )
+    ) {
+      const resolution = resolutions.get(requirement.name);
+      if (!resolution || !satisfiesRange(resolution, requirement.range)) {
+        failures.push({
+          direction: "forward",
+          owner: candidateName,
+          ownerVersion: candidateVersion,
+          kind: requirement.relation,
+          target: requirement.name,
+          range: requirement.range,
+          actualResolution: resolution ?? null,
+          optional: false,
+          manifestEvidenceId: `npm-${id}`,
+          manifestContentSha256: provenance.find((item) =>
+            item.id === `npm-${id}`
+          )!.contentSha256,
+        });
+      }
+    }
+    for (const ownerId of npmIds) {
+      if (ownerId === id) continue;
+      for (const requirement of requiredManifestRanges(manifestFor(ownerId))) {
+        if (
+          requirement.name === candidateName &&
+          !satisfiesRange(candidateVersion, requirement.range)
+        ) {
+          failures.push({
+            direction: "reverse",
+            owner: nameOf(ownerId),
+            ownerVersion: fixtureVersion(ownerId),
+            kind: requirement.relation,
+            target: candidateName,
+            range: requirement.range,
+            actualResolution: candidateVersion,
+            optional: false,
+            manifestEvidenceId: `npm-${ownerId}`,
+            manifestContentSha256: provenance.find((item) =>
+              item.id === `npm-${ownerId}`
+            )!.contentSha256,
+          });
+        }
+      }
+    }
+    return failures.sort((left, right) =>
+      JSON.stringify(canonical(left)).localeCompare(
+        JSON.stringify(canonical(right)),
+      )
+    );
+  };
+
   const selectedPackages = selectedIds.map((id) => {
     const runtime = id === "deno" || id === "node";
+    const newerVersions = fixtureVersions(id).slice(1);
+    const newerReleases = newerVersions.map((newerVersion, index) => {
+      const eligible = id === "typescript" ||
+        id === "eslint-plugin-react-hooks";
+      const failingEdges = fixtureCompatibilityFailures(id, newerVersion);
+      return {
+        version: newerVersion,
+        publishedAt: eligible
+          ? "2026-01-05T04:05:06.790Z"
+          : runtime
+          ? "2026-01-09T04:05:06.790Z"
+          : index === 0
+          ? "2026-01-08T04:05:06.790Z"
+          : "2026-01-09T04:05:06.791Z",
+        compatible: failingEdges.length === 0,
+        reason: eligible
+          ? "incompatible-retained-manifest"
+          : "younger-than-cutoff",
+        failingEdges,
+      };
+    });
     return {
       id,
       name: nameOf(id),
@@ -2786,41 +3523,35 @@ async function makeFixture(): Promise<Fixture> {
         : DIRECT.pnpm.includes(id as never)
         ? "pnpm"
         : "runtime",
-      publicationEvidenceId: runtime ? `${id}-releases` : `npm-${id}`,
+      publicationEvidenceId: id === "deno"
+        ? "deno-releases"
+        : id === "node"
+        ? `node-release-${fixtureVersion("node")}`
+        : `npm-${id}`,
       artifactEvidenceId: runtime ? `${id}-checksum` : `npm-${id}`,
       artifactValue: runtime
         ? `sha256:${rawDigest(id)}`
         : id === "pnpm"
         ? PNPM_SRI
         : SRI,
-      latestStable: id === "pnpm"
-        ? fixtureVersion(id)
-        : id === "astro"
-        ? nextVersion(id, 2)
-        : nextVersion(id),
-      newerReleases: id === "pnpm" ? [] : id === "astro"
-        ? [
-          {
-            version: nextVersion(id),
-            publishedAt: "2026-01-08T04:05:06.790Z",
-            compatible: true,
-            reason: "younger-than-cutoff",
+      latestStable: id === "node" ? "25.1.0" : fixtureVersions(id).at(-1),
+      newerReleases,
+      ...(!runtime ? { distTags: { latest: fixtureVersions(id).at(-1) } } : {}),
+      ...(id === "node"
+        ? {
+          lts: "Krypton",
+          latestLts: nextVersion("node"),
+          ltsIndexEvidenceId: "node-lts-index",
+          releaseEvidenceIds: {
+            [`v${nextVersion("node")}`]: `node-release-${nextVersion("node")}`,
+            [`v${fixtureVersion("node")}`]: `node-release-${
+              fixtureVersion("node")
+            }`,
+            "v25.1.0": "node-release-25.1.0",
+            "v22.20.0": "node-release-22.20.0",
           },
-          {
-            version: nextVersion(id, 2),
-            publishedAt: "2026-01-09T04:05:06.791Z",
-            compatible: true,
-            reason: "younger-than-cutoff",
-          },
-        ]
-        : [{
-          version: nextVersion(id),
-          publishedAt: runtime
-            ? "2026-01-09T04:05:06.790Z"
-            : "2026-01-08T04:05:06.790Z",
-          compatible: true,
-          reason: "younger-than-cutoff",
-        }],
+        }
+        : {}),
     };
   });
 
@@ -2834,9 +3565,16 @@ async function makeFixture(): Promise<Fixture> {
       manifest.peerDependencies ?? {},
       `${id} peerDependencies`,
     );
+    const peerDependenciesMeta = object(
+      manifest.peerDependenciesMeta ?? {},
+      `${id} peerDependenciesMeta`,
+    );
     const value: JsonRecord = {
       resolution: { integrity: SRI },
       ...(Object.keys(peerDependencies).length ? { peerDependencies } : {}),
+      ...(Object.keys(peerDependenciesMeta).length
+        ? { peerDependenciesMeta }
+        : {}),
       ...(id === "esbuild" ? { engines: { node: ">=18" }, hasBin: true } : {}),
       ...(id === "fsevents"
         ? {
@@ -2849,7 +3587,6 @@ async function makeFixture(): Promise<Fixture> {
         ? {
           deprecated: "fixture deprecation",
           bundledDependencies: ["fixture-child"],
-          peerDependenciesMeta: { react: { optional: true } },
         }
         : {}),
     };
@@ -2864,7 +3601,14 @@ async function makeFixture(): Promise<Fixture> {
     };
   });
   const primarySnapshotKeys = new Map<string, string>();
-  for (const item of packageRows) {
+  const primarySnapshotKey = (id: string, stack: string[] = []): string => {
+    const cached = primarySnapshotKeys.get(id);
+    if (cached) return cached;
+    invariant(!stack.includes(id), "synthetic peer graph contains a cycle");
+    const item = object(
+      packageRows.find((candidate) => candidate.id === id),
+      `${id} package`,
+    );
     const manifest = manifestFor(String(item.id));
     const peers = Object.keys(
       object(manifest.peerDependencies ?? {}, "peerDependencies"),
@@ -2872,9 +3616,14 @@ async function makeFixture(): Promise<Fixture> {
       .sort();
     const suffix = peers.map((name) => {
       const target = packageRows.find((candidate) => candidate.name === name)!;
-      return `(${name}@${target.version})`;
+      return `(${primarySnapshotKey(String(target.id), [...stack, id])})`;
     }).join("");
-    primarySnapshotKeys.set(String(item.id), `${item.key}${suffix}`);
+    const key = `${item.key}${suffix}`;
+    primarySnapshotKeys.set(id, key);
+    return key;
+  };
+  for (const item of packageRows) {
+    primarySnapshotKey(String(item.id));
   }
   const allPairs = Object.values({ ...IMPORT_PAIRS, ...PEER_PAIRS });
   const snapshotRows = packageRows.map((item) => {
@@ -2930,11 +3679,20 @@ async function makeFixture(): Promise<Fixture> {
   const astroReactPackage = packageRows.find((item) =>
     item.id === "astro-react"
   )!;
+  const astroReactManifest = manifestFor("astro-react");
+  const alternatePeers = Object.keys(
+    object(astroReactManifest.peerDependencies, "astro-react peers"),
+  ).filter((name) => name !== "@types/react").sort();
   snapshotRows.push({
-    id: "alternate:astro-react-react18",
-    key: `${astroReactPackage.key}(astro@${
-      fixtureVersion("astro")
-    })(react@18.3.1)(react-dom@18.3.1(react@18.3.1))(@types/react@18.3.1)(@types/react-dom@18.3.1)`,
+    id: "alternate:astro-react-optional-peer-omitted",
+    key: `${astroReactPackage.key}${
+      alternatePeers.map((name) => {
+        const target = packageRows.find((candidate) =>
+          candidate.name === name
+        )!;
+        return `(${primarySnapshotKeys.get(String(target.id))})`;
+      }).join("")
+    }`,
     packageKey: astroReactPackage.key,
     value: {},
     dependencyIds: {},
@@ -3453,30 +4211,15 @@ function makeRepositoryContents(
 }
 
 async function renderReport(graph: JsonRecord): Promise<string> {
-  const repository = object(graph.repository, "repository");
+  const selection = object(graph.selection, "selection");
+  const selectedAt = instant(selection.selectedAt, "selection.selectedAt");
   const summary = {
     graphSha256: await sha256Text(JSON.stringify(graph)),
-    selection: graph.selection,
-    selected: array(graph.selectedPackages, "selectedPackages").map((raw) => {
-      const item = object(raw, "selected package");
-      return { id: item.id, version: item.version };
-    }),
-    provenance: array(graph.provenance, "provenance").map((raw) => {
-      const item = object(raw, "provenance descriptor");
-      return {
-        id: item.id,
-        sourceUrl: item.sourceUrl,
-        retrievedAt: item.retrievedAt,
-        contentSha256: item.contentSha256,
-        artifactSha256: item.artifactSha256,
-      };
-    }),
-    ociReferences: array(graph.ociImages, "ociImages").map((raw) =>
-      object(raw, "OCI image").reference
-    ),
-    lifecycle: graph.lifecycle,
-    repeatability: repository.repeatability,
-    proofStatus: graph.proofStatus,
+    captureWindow: {
+      startsAt: new Date(selectedAt - 30 * 60 * 1000).toISOString(),
+      endsAt: selection.selectedAt,
+    },
+    canonicalRedactedGraph: canonical(graph),
   };
   return `# FND-003 immutable runtime graph\n\n${
     JSON.stringify(summary, null, 2)
@@ -3507,9 +4250,13 @@ function expectedWorkspace(graph: JsonRecord): JsonRecord {
 async function validateRepositoryContents(
   contents: Map<string, string>,
   graph: JsonRecord,
-  readBytes: (path: string) => Promise<Uint8Array>,
+  readEvidence: EvidenceReader,
 ) {
-  const authority = await loadEvidence(graph, readBytes);
+  const authority = await loadEvidence(
+    graph,
+    readEvidence,
+    validateSelection(graph).selectedAt,
+  );
   const selected = new Map(
     array(graph.selectedPackages, "selectedPackages").map((raw) => {
       const item = object(raw, "selected package");
@@ -3744,13 +4491,11 @@ async function syntheticRepository(
   return contents;
 }
 
-function fixtureReader(
-  fixture: Fixture,
-): (path: string) => Promise<Uint8Array> {
+function fixtureReader(fixture: Fixture): EvidenceReader {
   return (path) => {
     const value = fixture.evidence.get(path);
     invariant(value, `synthetic evidence ${path} is absent`);
-    return Promise.resolve(value);
+    return Promise.resolve(byteStream(value));
   };
 }
 
@@ -3788,6 +4533,26 @@ async function expectReject(
   );
 }
 
+async function expectReaderReject(
+  fixture: Fixture,
+  reader: EvidenceReader,
+  expected: string,
+) {
+  const [result] = await Promise.allSettled([
+    validateGraph(fixture.graph, reader),
+  ]);
+  invariant(
+    result.status === "rejected",
+    "oversized evidence unexpectedly passed",
+  );
+  invariant(
+    (result.reason as Error).message.includes(expected),
+    `oversized evidence expected '${expected}', observed '${
+      (result.reason as Error).message
+    }'`,
+  );
+}
+
 async function expectRepositoryReject(
   mutator: (
     contents: Map<string, string>,
@@ -3816,9 +4581,57 @@ async function expectRepositoryReject(
   );
 }
 
+function retargetSnapshot(
+  graph: JsonRecord,
+  snapshot: JsonRecord,
+  newKey: string,
+) {
+  const pnpm = object(object(graph.repository, "repository").pnpm, "pnpm");
+  const oldKey = string(snapshot.key, "snapshot key");
+  const packageKey = string(snapshot.packageKey, "snapshot package key");
+  const packageName = string(
+    object(
+      array(pnpm.packages, "packages").find((raw) =>
+        object(raw, "package").key === packageKey
+      ),
+      "snapshot package",
+    ).name,
+    "snapshot package name",
+  );
+  const oldResolution = oldKey.slice(packageName.length + 1);
+  const newResolution = newKey.slice(packageName.length + 1);
+  for (const raw of array(pnpm.snapshots, "snapshots")) {
+    const value = object(object(raw, "snapshot").value, "snapshot value");
+    for (const section of ["dependencies", "optionalDependencies"]) {
+      const dependencies = object(value[section] ?? {}, section);
+      if (dependencies[packageName] === oldResolution) {
+        dependencies[packageName] = newResolution;
+      }
+    }
+  }
+  for (const raw of array(pnpm.importers, "importers")) {
+    const value = object(object(raw, "importer").value, "importer value");
+    for (
+      const section of [
+        "dependencies",
+        "devDependencies",
+        "optionalDependencies",
+      ]
+    ) {
+      const dependencies = object(value[section] ?? {}, section);
+      const entry = dependencies[packageName];
+      if (!entry) continue;
+      const importerEntry = object(entry, "importer entry");
+      if (importerEntry.version !== oldResolution) continue;
+      importerEntry.version = newResolution;
+    }
+  }
+  snapshot.key = newKey;
+}
+
 async function validateRepositoryGraph(
   readTextFile: (path: string) => Promise<string>,
-  readFile: (path: string) => Promise<Uint8Array>,
+  readEvidence: EvidenceReader,
 ) {
   const contents = await readRepositoryInputs(readTextFile);
   const graph = parseJson(
@@ -3826,8 +4639,12 @@ async function validateRepositoryGraph(
     GRAPH_PATH,
   );
   contents.set(REPORT_PATH, await readTextFile(REPORT_PATH));
-  await validateGraph(graph, readFile);
-  await validateRepositoryContents(contents, graph, readFile);
+  await validateGraph(graph, readEvidence);
+  await validateRepositoryContents(contents, graph, readEvidence);
+}
+
+async function openEvidence(path: string): Promise<ReadableStream<Uint8Array>> {
+  return (await Deno.open(path, { read: true })).readable;
 }
 
 async function readRepositoryInputs(
@@ -3860,6 +4677,133 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
     contents,
     fixture.graph,
     fixtureReader(fixture),
+  );
+  const repositoryStream = await openEvidence("deno.json");
+  await repositoryStream.cancel();
+  const retargetControl = await makeFixture();
+  const retargetPnpm = object(
+    object(retargetControl.graph.repository, "repository").pnpm,
+    "retarget pnpm",
+  );
+  const retargetSnapshotRow = object(
+    array(retargetPnpm.snapshots, "retarget snapshots")[0],
+    "retarget snapshot",
+  );
+  const retargetImporter = object(
+    object(
+      array(retargetPnpm.importers, "retarget importers")[0],
+      "retarget importer",
+    ).value,
+    "retarget importer value",
+  );
+  object(retargetImporter.dependencies, "retarget dependencies")[
+    nameOf(String(retargetSnapshotRow.id).replace("primary:", ""))
+  ] = { specifier: "1.0.0", version: "not-the-old-resolution" };
+  delete retargetImporter.optionalDependencies;
+  retargetSnapshot(
+    retargetControl.graph,
+    retargetSnapshotRow,
+    string(retargetSnapshotRow.key, "retarget snapshot key"),
+  );
+  exactValue(
+    requiredManifestRanges({
+      dependencies: { optional: "^1.0.0" },
+      optionalDependencies: { optional: "^1.0.0" },
+      peerDependencies: { optionalPeer: "^1.0.0" },
+      peerDependenciesMeta: { optionalPeer: { optional: true } },
+    }),
+    [],
+    "optional manifest relations are not compatibility exclusions",
+  );
+  exactValue(
+    requiredManifestRanges({ peerDependencies: { required: "^1.0.0" } }),
+    [{
+      relation: "peerDependencies",
+      name: "required",
+      range: "^1.0.0",
+    }],
+    "absent peer metadata defaults to required",
+  );
+
+  const largePackument = await makeFixture();
+  const largeDescriptor = object(
+    array(largePackument.graph.provenance, "provenance").find((raw) =>
+      object(raw, "descriptor").id === "npm-astro"
+    ),
+    "large packument descriptor",
+  );
+  const largeBody = parseJson(
+    await gunzipBounded(
+      largePackument.evidence.get(String(largeDescriptor.path))!,
+    ),
+    "large packument",
+  );
+  largeBody.fixturePadding = "x".repeat(2 * 1024 * 1024 + 1);
+  await refreshEvidenceDescriptor(
+    largePackument,
+    "npm-astro",
+    JSON.stringify(largeBody),
+  );
+  const refreshedLargeHash = object(
+    array(largePackument.graph.provenance, "provenance").find((raw) =>
+      object(raw, "descriptor").id === "npm-astro"
+    ),
+    "large packument descriptor",
+  ).contentSha256;
+  object(
+    array(
+      object(object(largePackument.graph.repository, "repository").pnpm, "pnpm")
+        .packages,
+      "pnpm packages",
+    ).find((raw) => object(raw, "package").id === "astro"),
+    "astro package",
+  ).manifestContentSha256 = refreshedLargeHash;
+  await validateGraph(largePackument.graph, fixtureReader(largePackument));
+
+  const compressedOversize = await makeFixture();
+  const compressedPath = string(
+    object(
+      array(compressedOversize.graph.provenance, "provenance")[0],
+      "compressed descriptor",
+    ).path,
+    "compressed descriptor path",
+  );
+  const compressedReader: EvidenceReader = (path) =>
+    path === compressedPath
+      ? Promise.resolve(sizedByteStream(MAX_COMPRESSED_EVIDENCE_BYTES + 1))
+      : fixtureReader(compressedOversize)(path);
+  await compressedReader(
+    string(
+      object(
+        array(compressedOversize.graph.provenance, "provenance")[1],
+        "second descriptor",
+      ).path,
+      "second descriptor path",
+    ),
+  ).then((stream) => stream.cancel());
+  await expectReaderReject(
+    compressedOversize,
+    compressedReader,
+    "compressed provenance artifact exceeds",
+  );
+
+  const decompressedOversize = await makeFixture();
+  const decompressedDescriptor = object(
+    array(decompressedOversize.graph.provenance, "provenance")[0],
+    "decompressed descriptor",
+  );
+  const oversizedGzip = await gzipSizedBody(
+    MAX_DECOMPRESSED_EVIDENCE_BYTES + 1,
+  );
+  decompressedDescriptor.artifactSha256 = await sha256Bytes(oversizedGzip);
+  decompressedOversize.evidence.set(
+    string(decompressedDescriptor.path, "decompressed descriptor path"),
+    oversizedGzip,
+  );
+  await expectReaderReject(
+    decompressedOversize,
+    fixtureReader(decompressedOversize),
+    "decompressed provenance artifact exceeds",
   );
 
   for (
@@ -4064,9 +5008,152 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
       "2026-01-10T04:05:06Z";
   }, "preserve RFC3339");
   await expectReject((candidate) => {
+    object(
+      array(candidate.graph.provenance, "provenance")[0],
+      "descriptor",
+    ).retrievedAt = "2026-01-10T03:35:06.788Z";
+  }, "outside the 30-minute capture window");
+  await expectReject((candidate) => {
+    object(
+      array(candidate.graph.provenance, "provenance")[0],
+      "descriptor",
+    ).retrievedAt = "2026-01-10T04:05:06.790Z";
+  }, "outside the 30-minute capture window");
+  await expectReject((candidate) => {
+    for (const raw of array(candidate.graph.provenance, "provenance")) {
+      object(raw, "descriptor").retrievedAt = "2026-01-10T04:04:06.789Z";
+    }
+  }, "selection time must equal the latest provenance retrieval");
+  await expectReject((candidate) => {
+    const descriptor = clone(
+      object(array(candidate.graph.provenance, "provenance")[0], "descriptor"),
+    );
+    descriptor.id = "unused-descriptor";
+    descriptor.path = `${PROVENANCE_ROOT}unused-descriptor.gz`;
+    array(candidate.graph.provenance, "provenance").push(descriptor);
+    candidate.evidence.set(
+      String(descriptor.path),
+      candidate.evidence.values().next().value!,
+    );
+  }, "provenance claim membership");
+  await expectReject((candidate) => {
+    const descriptors = array(candidate.graph.provenance, "provenance").map((
+      raw,
+    ) => object(raw, "descriptor"));
+    descriptors[1]!.path = descriptors[0]!.path;
+  }, "artifact paths must be unique");
+  for (
+    const [sourceUrl, expected] of [
+      [
+        "https://user:password@registry.npmjs.org/astro",
+        "credential-free exact HTTPS",
+      ],
+      [
+        "https://registry.npmjs.org/astro?token=secret",
+        "credential-free exact HTTPS",
+      ],
+      [
+        "https://registry.npmjs.org/astro#secret",
+        "credential-free exact HTTPS",
+      ],
+      ["https://registry.example/astro", "origin or path is not allowlisted"],
+      ["not a URL", "source URL is invalid"],
+    ] as const
+  ) {
+    await expectReject((candidate) => {
+      object(
+        array(candidate.graph.provenance, "provenance").find((raw) =>
+          object(raw, "descriptor").id === "npm-astro"
+        ),
+        "astro descriptor",
+      ).sourceUrl = sourceUrl;
+    }, expected);
+  }
+  await expectReject((candidate) => {
+    object(
+      array(candidate.graph.provenance, "provenance")[0],
+      "descriptor",
+    ).kind = "unknown-evidence-kind";
+  }, "origin or path is not allowlisted");
+  await expectReject(async (candidate) => {
+    const descriptor = object(
+      array(candidate.graph.provenance, "provenance").find((raw) =>
+        object(raw, "descriptor").id === "npm-astro"
+      ),
+      "astro descriptor",
+    );
+    const body = parseJson(
+      await gunzipBounded(candidate.evidence.get(String(descriptor.path))!),
+      "astro packument",
+    );
+    delete body._rev;
+    await refreshEvidenceDescriptor(
+      candidate,
+      "npm-astro",
+      JSON.stringify(body),
+    );
+  }, "full packument identity drifted");
+  await expectReject(async (candidate) => {
+    const descriptor = object(
+      array(candidate.graph.provenance, "provenance").find((raw) =>
+        object(raw, "descriptor").id === "npm-astro"
+      ),
+      "astro descriptor",
+    );
+    const body = parseJson(
+      await gunzipBounded(candidate.evidence.get(String(descriptor.path))!),
+      "astro packument",
+    );
+    object(
+      object(body.versions, "versions")[fixtureVersion("astro")],
+      "astro manifest",
+    ).dist = {
+      integrity: SRI,
+      shasum: "a".repeat(40),
+      tarball: "https://example.invalid/archive.tgz",
+    };
+    await refreshEvidenceDescriptor(
+      candidate,
+      "npm-astro",
+      JSON.stringify(body),
+    );
+  }, "tarball source is not exact");
+  await expectReject((candidate) => {
     packageAt(candidate.graph, "astro").publishedAt =
       "2026-01-01T04:05:06.000Z";
   }, "publication time drifted");
+  for (const invalidVersion of ["25.1.0", "22.20.0", nextVersion("node")]) {
+    await expectReject((candidate) => {
+      packageAt(candidate.graph, "node").version = invalidVersion;
+    }, "newest official LTS line");
+  }
+  await expectReject((candidate) => {
+    packageAt(candidate.graph, "node").latestLts = fixtureVersion("node");
+  }, "newest official LTS line");
+  await expectReject(async (candidate) => {
+    const descriptor = object(
+      array(candidate.graph.provenance, "provenance").find((raw) =>
+        object(raw, "descriptor").id === "node-lts-index"
+      ),
+      "Node index descriptor",
+    );
+    const rows = array(
+      parseJsonValue(
+        await gunzipBounded(candidate.evidence.get(String(descriptor.path))!),
+        "Node index",
+      ),
+      "Node index",
+    ).map((raw) => object(raw, "Node row"));
+    object(
+      rows.find((row) => row.version === `v${fixtureVersion("node")}`),
+      "Node selected row",
+    ).lts = false;
+    await refreshEvidenceDescriptor(
+      candidate,
+      "node-lts-index",
+      JSON.stringify(rows),
+    );
+  }, "no age-eligible release");
   await expectReject((candidate) => {
     packageAt(candidate.graph, "astro").artifactValue = `sha512-${
       "B".repeat(86)
@@ -4089,7 +5176,7 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
       "npm-astro",
     );
     const body = parseJsonValue(
-      await gunzip(candidate.evidence.get(String(descriptor.path))!),
+      await gunzipBounded(candidate.evidence.get(String(descriptor.path))!),
       "astro packument",
     ) as JsonRecord;
     delete object(body.versions, "versions")[nextVersion("astro")];
@@ -4104,6 +5191,7 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
     item.version = nextVersion("astro");
     item.publishedAt = "2026-01-08T04:05:06.790Z";
     item.latestStable = nextVersion("astro");
+    object(item.distTags, "astro dist-tags").latest = nextVersion("astro");
     item.newerReleases = [];
     const descriptor = object(
       array(candidate.graph.provenance, "provenance").find((raw) =>
@@ -4112,7 +5200,7 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
       "npm-astro",
     );
     const body = parseJsonValue(
-      await gunzip(candidate.evidence.get(String(descriptor.path))!),
+      await gunzipBounded(candidate.evidence.get(String(descriptor.path))!),
       "astro packument",
     ) as JsonRecord;
     object(body["dist-tags"], "dist-tags").latest = nextVersion("astro");
@@ -4130,6 +5218,39 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
       .find((edge) => edge.id === "react-hooks-peer-eslint")!;
     edge.manifestRange = "^9.0.0";
   }, "manifest range drifted from official bytes");
+  await expectReject((candidate) => {
+    const release = object(
+      array(
+        packageAt(candidate.graph, "typescript").newerReleases,
+        "TypeScript newer releases",
+      )[0],
+      "TypeScript newer release",
+    );
+    release.reason = "arbitrary-incompatibility-label";
+  }, "omitted an eligible compatible release");
+  await expectReject((candidate) => {
+    const release = object(
+      array(
+        packageAt(candidate.graph, "typescript").newerReleases,
+        "TypeScript newer releases",
+      )[0],
+      "TypeScript newer release",
+    );
+    release.compatible = true;
+    release.reason = "younger-than-cutoff";
+    release.failingEdges = [];
+  }, "machine-derived incompatibility edges");
+  await expectReject((candidate) => {
+    const release = object(
+      array(
+        packageAt(candidate.graph, "eslint-plugin-react-hooks").newerReleases,
+        "React hooks newer releases",
+      )[0],
+      "React hooks newer release",
+    );
+    object(array(release.failingEdges, "failing edges")[0], "failing edge")
+      .range = "^9.0.0";
+  }, "machine-derived incompatibility edges");
   await expectReject(async (candidate) => {
     const descriptor = object(
       array(candidate.graph.provenance, "provenance").find((raw) =>
@@ -4138,7 +5259,9 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
       "react hooks descriptor",
     );
     const body = parseJson(
-      await gunzip(candidate.evidence.get(string(descriptor.path, "path"))!),
+      await gunzipBounded(
+        candidate.evidence.get(string(descriptor.path, "path"))!,
+      ),
       "react hooks packument",
     );
     const manifest = object(
@@ -4154,6 +5277,28 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
       "npm-eslint-plugin-react-hooks",
       JSON.stringify(body),
     );
+    const refreshedHash = object(
+      array(candidate.graph.provenance, "provenance").find((raw) =>
+        object(raw, "descriptor").id === "npm-eslint-plugin-react-hooks"
+      ),
+      "react hooks descriptor",
+    ).contentSha256;
+    for (
+      const release of array(
+        packageAt(candidate.graph, "eslint-plugin-react-hooks").newerReleases,
+        "newer releases",
+      ).map((raw) => object(raw, "newer release"))
+    ) {
+      for (
+        const edge of array(release.failingEdges, "failing edges").map((raw) =>
+          object(raw, "failing edge")
+        )
+      ) {
+        if (edge.manifestEvidenceId === "npm-eslint-plugin-react-hooks") {
+          edge.manifestContentSha256 = refreshedHash;
+        }
+      }
+    }
   }, "must be a non-empty string");
   await expectReject((candidate) => {
     const edge = array(
@@ -4226,6 +5371,140 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
     const snapshot = object(array(pnpm.snapshots, "snapshots")[0], "snapshot");
     snapshot.key = `${snapshot.key}(@types/react@1.0.0)(@types/react@1.0.0)`;
   }, "duplicate peer");
+  await expectReject((candidate) => {
+    const snapshots = array(
+      object(object(candidate.graph.repository, "repository").pnpm, "pnpm")
+        .snapshots,
+      "snapshots",
+    ).map((raw) => object(raw, "snapshot"));
+    const snapshot = object(
+      snapshots.find((row) => row.id === "primary:astro-react"),
+      "astro-react snapshot",
+    );
+    const root = object(
+      object(
+        array(
+          object(object(candidate.graph.repository, "repository").pnpm, "pnpm")
+            .importers,
+          "importers",
+        )[0],
+        "root importer",
+      ).value,
+      "root importer value",
+    );
+    object(root.dependencies, "root dependencies")[nameOf("astro-react")] = {
+      specifier: fixtureVersion("astro-react"),
+      version: "wrong-resolution",
+    };
+    retargetSnapshot(
+      candidate.graph,
+      snapshot,
+      string(snapshot.key, "snapshot key").replace(
+        `(react@${fixtureVersion("react")})`,
+        "",
+      ),
+    );
+  }, "omits a required retained-manifest peer");
+  await expectReject((candidate) => {
+    const snapshots = array(
+      object(object(candidate.graph.repository, "repository").pnpm, "pnpm")
+        .snapshots,
+      "snapshots",
+    ).map((raw) => object(raw, "snapshot"));
+    const snapshot = object(
+      snapshots.find((row) => row.id === "primary:astro-react"),
+      "astro-react snapshot",
+    );
+    retargetSnapshot(
+      candidate.graph,
+      snapshot,
+      string(snapshot.key, "snapshot key").replace(
+        `react@${fixtureVersion("react")}`,
+        "react@19.2.1",
+      ),
+    );
+  }, "lacks a backing package identity");
+  await expectReject((candidate) => {
+    const snapshots = array(
+      object(object(candidate.graph.repository, "repository").pnpm, "pnpm")
+        .snapshots,
+      "snapshots",
+    ).map((raw) => object(raw, "snapshot"));
+    const snapshot = object(
+      snapshots.find((row) => row.id === "primary:astro-react"),
+      "astro-react snapshot",
+    );
+    retargetSnapshot(
+      candidate.graph,
+      snapshot,
+      `${snapshot.key}(invented-peer@1.0.0)`,
+    );
+  }, "not backed by its retained manifest");
+  await expectReject(async (candidate) => {
+    const descriptor = object(
+      array(candidate.graph.provenance, "provenance").find((raw) =>
+        object(raw, "descriptor").id === "npm-astro-react"
+      ),
+      "astro-react descriptor",
+    );
+    const packument = parseJson(
+      await gunzipBounded(candidate.evidence.get(String(descriptor.path))!),
+      "astro-react packument",
+    );
+    const manifest = object(
+      object(packument.versions, "versions")[fixtureVersion("astro-react")],
+      "astro-react manifest",
+    );
+    object(
+      object(manifest.peerDependenciesMeta, "peer meta")["@types/react"],
+      "types peer meta",
+    ).optional = false;
+    await refreshEvidenceDescriptor(
+      candidate,
+      "npm-astro-react",
+      JSON.stringify(packument),
+    );
+    const refreshed = object(
+      array(candidate.graph.provenance, "provenance").find((raw) =>
+        object(raw, "descriptor").id === "npm-astro-react"
+      ),
+      "astro-react descriptor",
+    ).contentSha256;
+    const packageRecord = object(
+      array(
+        object(object(candidate.graph.repository, "repository").pnpm, "pnpm")
+          .packages,
+        "packages",
+      ).find((raw) => object(raw, "package").id === "astro-react"),
+      "astro-react package",
+    );
+    packageRecord.manifestContentSha256 = refreshed;
+    object(
+      object(packageRecord.value, "package value").peerDependenciesMeta,
+      "peer metadata",
+    )["@types/react"] = { optional: false };
+  }, "omits a required retained-manifest peer");
+  await expectReject((candidate) => {
+    const snapshots = array(
+      object(object(candidate.graph.repository, "repository").pnpm, "pnpm")
+        .snapshots,
+      "snapshots",
+    ).map((raw) => object(raw, "snapshot"));
+    const snapshot = object(
+      snapshots.find((row) => row.id === "primary:astro-react"),
+      "astro-react snapshot",
+    );
+    retargetSnapshot(
+      candidate.graph,
+      snapshot,
+      string(snapshot.key, "snapshot key").replace(
+        `(react-dom@${fixtureVersion("react-dom")}(react@${
+          fixtureVersion("react")
+        }))`,
+        `(react-dom@${fixtureVersion("react-dom")}(react@19.2.1))`,
+      ),
+    );
+  }, "lacks a backing snapshot identity");
   await expectReject((candidate) => {
     const deno = object(
       object(candidate.graph.lifecycle, "lifecycle").deno,
@@ -4310,7 +5589,7 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
     );
     descriptor.sourceUrl =
       "https://raw.githubusercontent.com/shadcn-ui/ui/main/button.tsx";
-  }, "Button source URL is mutable");
+  }, "source origin or path is not allowlisted");
   await expectReject((candidate) => {
     object(candidate.graph.shadcn, "shadcn").buttonDirectImports = [
       "base-ui-react",
@@ -4348,7 +5627,7 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
       "OCI descriptor",
     );
     const index = parseJson(
-      await gunzip(candidate.evidence.get(String(descriptor.path))!),
+      await gunzipBounded(candidate.evidence.get(String(descriptor.path))!),
       "OCI index",
     );
     array(index.manifests, "manifests").pop();
@@ -4484,5 +5763,5 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
 });
 
 Deno.test("repository supplies the immutable FND-003 runtime graph", async () => {
-  await validateRepositoryGraph(Deno.readTextFile, Deno.readFile);
+  await validateRepositoryGraph(Deno.readTextFile, openEvidence);
 });
