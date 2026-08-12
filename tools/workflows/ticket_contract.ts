@@ -15,16 +15,23 @@ const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-const LEGACY_TICKET_IDENTITY_DIGESTS: Readonly<
-  Record<string, ReadonlySet<string>>
-> = {
-  "PILOT-001": new Set([
-    "8f167cc3a211a49862dc23be0d54dba3fb187e119c8e62aa03b24aceeed717d1",
-  ]),
-  "PILOT-002": new Set([
-    "640d43ed67a4bef5597bc2dcf86c735d060e3ea6cbef3893e91fe0ad3aa99b24",
-  ]),
-};
+const LEGACY_TICKET_IDENTITY_DIGESTS: ReadonlyMap<
+  string,
+  ReadonlySet<string>
+> = new Map([
+  [
+    "PILOT-001",
+    new Set([
+      "8f167cc3a211a49862dc23be0d54dba3fb187e119c8e62aa03b24aceeed717d1",
+    ]),
+  ],
+  [
+    "PILOT-002",
+    new Set([
+      "640d43ed67a4bef5597bc2dcf86c735d060e3ea6cbef3893e91fe0ad3aa99b24",
+    ]),
+  ],
+]);
 
 const BUNDLE_FIELDS = new Set([
   "ticket",
@@ -1011,7 +1018,7 @@ function validateTicket(
   );
   if (schemaVersion === 1) {
     const ticketId = typeof ticket.ticketId === "string" ? ticket.ticketId : "";
-    if (!(ticketId in LEGACY_TICKET_IDENTITY_DIGESTS)) {
+    if (!LEGACY_TICKET_IDENTITY_DIGESTS.has(ticketId)) {
       addIssue(
         issues,
         "$.ticket.schemaVersion",
@@ -2748,7 +2755,7 @@ function validateLegacyPacketIdentity(
   issues: ValidationIssue[],
 ): void {
   if (ticket.schemaVersion !== 1 || typeof ticket.ticketId !== "string") return;
-  const allowedDigests = LEGACY_TICKET_IDENTITY_DIGESTS[ticket.ticketId];
+  const allowedDigests = LEGACY_TICKET_IDENTITY_DIGESTS.get(ticket.ticketId);
   if (allowedDigests === undefined) return;
   const identityDigest = sha256Json(ticket);
   if (allowedDigests.has(identityDigest)) return;

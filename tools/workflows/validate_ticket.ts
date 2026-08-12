@@ -220,8 +220,33 @@ async function taskDefinitionsAtRevision(
   return definitions;
 }
 
+function normalizeShellQuotedToken(token: string): string {
+  return token.replace(/["']/g, "");
+}
+
 function isObviousNoopTaskDefinition(definition: string): boolean {
-  return /^deno(?:\.exe)?\s+eval(?:\s|$)/i.test(definition.trim());
+  const tokens = definition.trim().split(/\s+/).map(normalizeShellQuotedToken);
+  const executable = tokens[0]!.toLowerCase();
+  if (executable !== "deno" && executable !== "deno.exe") return false;
+
+  let subcommandIndex = 1;
+  while (subcommandIndex < tokens.length) {
+    const token = tokens[subcommandIndex]!.toLowerCase();
+    if (token === "--config" || token === "--log-level") {
+      subcommandIndex += 2;
+    } else if (
+      token.startsWith("--config=") ||
+      token.startsWith("--log-level=") ||
+      token === "-q" || token === "--quiet" || token === "--no-config" ||
+      token.startsWith("--unstable-")
+    ) {
+      subcommandIndex += 1;
+    } else {
+      break;
+    }
+  }
+
+  return String(tokens[subcommandIndex]).toLowerCase() === "eval";
 }
 
 async function sha256(value: Uint8Array): Promise<string> {
