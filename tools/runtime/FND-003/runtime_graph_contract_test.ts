@@ -132,6 +132,7 @@ const NAMES: Record<string, string> = {
   "types-react": "@types/react",
   "types-react-dom": "@types/react-dom",
   "typescript-eslint-parser": "@typescript-eslint/parser",
+  "scope-runtime": "@scope/runtime",
 };
 const nameOf = (id: string): string => NAMES[id] ?? id;
 
@@ -291,6 +292,8 @@ const FIXTURE_VERSIONS: Record<string, string> = {
   "astro-eslint-parser": "1.3.0",
   esbuild: "0.25.12",
   fsevents: "2.3.3",
+  "scope-runtime": "1.2.3",
+  scheduler: "1.0.0",
 };
 const fixtureVersion = (id: string): string => FIXTURE_VERSIONS[id]!;
 
@@ -386,15 +389,58 @@ function version(value: unknown, label: string): string {
   return result;
 }
 
-function instant(value: unknown, label: string): number {
+interface ExactInstant {
+  canonical: string;
+  epochNanoseconds: bigint;
+}
+
+function instant(value: unknown, label: string): ExactInstant {
   const result = string(value, label);
-  invariant(
-    RFC3339_UTC.test(result),
-    `${label} must preserve RFC3339 UTC precision`,
+  const match = RFC3339_UTC.exec(result);
+  invariant(match, `${label} must preserve RFC3339 UTC precision`);
+  const parts = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{1,9})Z$/
+    .exec(result)!;
+  const [year, month, day, hour, minute, second] = parts.slice(1, 7).map(
+    Number,
   );
-  const parsed = Date.parse(result);
-  invariant(Number.isFinite(parsed), `${label} is not a valid instant`);
-  return parsed;
+  invariant(
+    month! >= 1 && month! <= 12 && day! >= 1 && day! <= 31 && hour! <= 23 &&
+      minute! <= 59 && second! <= 59,
+    `${label} is not a valid instant`,
+  );
+  const epochMilliseconds = Date.UTC(
+    year!,
+    month! - 1,
+    day!,
+    hour!,
+    minute!,
+    second!,
+  );
+  const check = new Date(epochMilliseconds);
+  invariant(
+    check.getUTCFullYear() === year && check.getUTCMonth() === month! - 1 &&
+      check.getUTCDate() === day && check.getUTCHours() === hour &&
+      check.getUTCMinutes() === minute && check.getUTCSeconds() === second,
+    `${label} is not a valid instant`,
+  );
+  const nanoseconds = BigInt(parts[7]!.padEnd(9, "0"));
+  return {
+    canonical: result,
+    epochNanoseconds: BigInt(epochMilliseconds / 1000) * 1_000_000_000n +
+      nanoseconds,
+  };
+}
+
+function compareInstants(left: ExactInstant, right: ExactInstant): number {
+  return left.epochNanoseconds < right.epochNanoseconds
+    ? -1
+    : left.epochNanoseconds > right.epochNanoseconds
+    ? 1
+    : 0;
+}
+
+function instantDate(value: ExactInstant): string {
+  return value.canonical.slice(0, 10);
 }
 
 function parseJsonValue(text: string, label: string): unknown {
@@ -747,9 +793,13 @@ function parseYaml(text: string, label: string): JsonRecord {
 }
 
 async function sha256Bytes(bytes: Uint8Array): Promise<string> {
+  invariant(
+    bytes.buffer instanceof ArrayBuffer,
+    "hash input must be ArrayBuffer-backed",
+  );
   const hash = await crypto.subtle.digest(
     "SHA-256",
-    new Uint8Array(bytes).buffer,
+    bytes as Uint8Array<ArrayBuffer>,
   );
   return `sha256:${
     Array.from(
@@ -805,17 +855,25 @@ async function readBounded(
   stream: ReadableStream<Uint8Array>,
   maximum: number,
   label: string,
+  allocate: (size: number) => Uint8Array = (size) => new Uint8Array(size),
 ): Promise<Uint8Array> {
   const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
+  const bytes = allocate(maximum);
+  invariant(
+    bytes.byteLength === maximum,
+    `${label} allocator returned an invalid backing buffer`,
+  );
   let size = 0;
   try {
     while (true) {
       const result = await reader.read();
       if (result.done) break;
+      invariant(
+        result.value.byteLength <= maximum - size,
+        `${label} exceeds ${maximum} byte limit`,
+      );
+      bytes.set(result.value, size);
       size += result.value.byteLength;
-      invariant(size <= maximum, `${label} exceeds ${maximum} byte limit`);
-      chunks.push(result.value);
     }
   } catch (error) {
     await reader.cancel(error).catch(() => undefined);
@@ -823,24 +881,41 @@ async function readBounded(
   } finally {
     reader.releaseLock();
   }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes;
+  return bytes.subarray(0, size);
 }
 
-async function gunzipBounded(bytes: Uint8Array): Promise<string> {
-  const stream = new Blob([new Uint8Array(bytes).buffer]).stream().pipeThrough(
-    new DecompressionStream("gzip"),
+function sharedViewStream(bytes: Uint8Array): ReadableStream<Uint8Array> {
+  let offset = 0;
+  return new ReadableStream({
+    pull(controller) {
+      if (offset === bytes.byteLength) {
+        controller.close();
+        return;
+      }
+      const end = Math.min(offset + 64 * 1024, bytes.byteLength);
+      controller.enqueue(bytes.subarray(offset, end));
+      offset = end;
+    },
+  });
+}
+
+async function gunzipBoundedBytes(
+  bytes: Uint8Array,
+  allocate?: (size: number) => Uint8Array,
+): Promise<Uint8Array> {
+  const stream = sharedViewStream(bytes).pipeThrough(
+    new DecompressionStream("gzip") as TransformStream<Uint8Array, Uint8Array>,
   );
-  const body = await readBounded(
+  return await readBounded(
     stream,
     MAX_DECOMPRESSED_EVIDENCE_BYTES,
     "decompressed provenance artifact",
+    allocate,
   );
+}
+
+async function gunzipBounded(bytes: Uint8Array): Promise<string> {
+  const body = await gunzipBoundedBytes(bytes);
   return new TextDecoder("utf-8", { fatal: true }).decode(body);
 }
 
@@ -902,7 +977,7 @@ interface EvidenceAuthority {
 async function loadEvidence(
   graph: JsonRecord,
   readEvidence: EvidenceReader,
-  selectedAt: number,
+  selectedAt: ExactInstant,
 ): Promise<EvidenceAuthority> {
   const descriptors = array(graph.provenance, "provenance").map((raw, index) =>
     object(raw, `provenance[${index}]`)
@@ -911,7 +986,7 @@ async function loadEvidence(
   const bodies = new Map<string, string>();
   const paths = new Set<string>();
   const used = new Set<string>();
-  let latestRetrieval = -Infinity;
+  let latestRetrieval: ExactInstant | undefined;
   for (const descriptor of descriptors) {
     exactKeys(descriptor, [
       "id",
@@ -943,10 +1018,14 @@ async function loadEvidence(
     );
     const retrievedAt = instant(descriptor.retrievedAt, `${id}.retrievedAt`);
     invariant(
-      retrievedAt <= selectedAt && retrievedAt >= selectedAt - 30 * 60 * 1000,
+      compareInstants(retrievedAt, selectedAt) <= 0 &&
+        selectedAt.epochNanoseconds - retrievedAt.epochNanoseconds <=
+          30n * 60n * 1_000_000_000n,
       `${id} retrieval is outside the 30-minute capture window`,
     );
-    latestRetrieval = Math.max(latestRetrieval, retrievedAt);
+    if (!latestRetrieval || compareInstants(retrievedAt, latestRetrieval) > 0) {
+      latestRetrieval = retrievedAt;
+    }
     const bytes = await readBounded(
       await readEvidence(path),
       MAX_COMPRESSED_EVIDENCE_BYTES,
@@ -957,17 +1036,18 @@ async function loadEvidence(
         digest(descriptor.artifactSha256, `${id}.artifactSha256`),
       `${id} compressed artifact hash drifted`,
     );
-    const body = await gunzipBounded(bytes);
+    const bodyBytes = await gunzipBoundedBytes(bytes);
     invariant(
-      await sha256Text(body) ===
+      await sha256Bytes(bodyBytes) ===
         digest(descriptor.contentSha256, `${id}.contentSha256`),
       `${id} official response content hash drifted`,
     );
+    const body = new TextDecoder("utf-8", { fatal: true }).decode(bodyBytes);
     byId.set(id, descriptor);
     bodies.set(id, body);
   }
   invariant(
-    latestRetrieval === selectedAt,
+    latestRetrieval?.canonical === selectedAt.canonical,
     "selection time must equal the latest provenance retrieval",
   );
   return {
@@ -1023,8 +1103,17 @@ function npmManifest(
     `${packageName} full packument identity drifted`,
   );
   const times = object(packument.time, `${packageName} publication times`);
-  instant(times.created, `${packageName} packument created`);
-  instant(times.modified, `${packageName} packument modified`);
+  const retrievedAt = instant(
+    descriptor.retrievedAt,
+    `${packageName} retrievedAt`,
+  );
+  for (const [event, rawTime] of Object.entries(times)) {
+    const observed = instant(rawTime, `${packageName} packument ${event}`);
+    invariant(
+      compareInstants(observed, retrievedAt) <= 0,
+      `${packageName} packument event occurs after retrieval`,
+    );
+  }
   const manifest = object(
     object(packument.versions, `${packageName} versions`)[selectedVersion],
     `${packageName}@${selectedVersion} manifest`,
@@ -1067,8 +1156,8 @@ function stableVersions(packument: JsonRecord): string[] {
 }
 
 interface SelectionWindow {
-  selectedAt: number;
-  cutoff: number;
+  selectedAt: ExactInstant;
+  cutoff: ExactInstant;
 }
 
 function validateSelection(graph: JsonRecord): SelectionWindow {
@@ -1085,7 +1174,8 @@ function validateSelection(graph: JsonRecord): SelectionWindow {
   const selected = instant(selection.selectedAt, "selection.selectedAt");
   const cutoff = instant(selection.eligibleBefore, "selection.eligibleBefore");
   invariant(
-    selected - cutoff === 72 * 60 * 60 * 1000,
+    selected.epochNanoseconds - cutoff.epochNanoseconds ===
+      72n * 60n * 60n * 1_000_000_000n,
     "cutoff must be exactly 72 hours",
   );
   return { selectedAt: selected, cutoff };
@@ -1095,7 +1185,7 @@ function validateNewerReleases(
   item: JsonRecord,
   officialVersions: string[],
   officialTimes: JsonRecord,
-  cutoff: number,
+  cutoff: ExactInstant,
   label: string,
   expectedFailures: (candidateVersion: string) => JsonRecord[] = () => [],
 ) {
@@ -1165,7 +1255,7 @@ function validateNewerReleases(
       release.compatible === (failingEdges.length === 0),
       `${label} compatibility result is not machine-derived`,
     );
-    if (published > cutoff) {
+    if (compareInstants(published, cutoff) > 0) {
       invariant(
         release.reason === "younger-than-cutoff",
         `${label} age-ineligible release has a non-temporal exclusion`,
@@ -1353,7 +1443,7 @@ function runtimeReleaseRows(
 function validateRuntimeSelection(
   item: JsonRecord,
   authority: EvidenceAuthority,
-  cutoff: number,
+  cutoff: ExactInstant,
   runtimeId: "deno" | "node",
 ) {
   const publicationId = string(
@@ -1379,41 +1469,86 @@ function validateRuntimeSelection(
     const indexRows = array(authority.json(ltsIndexId), "Node LTS index").map((
       raw,
     ) => object(raw, "Node LTS index row"));
+    const nodeKnownFields = [
+      "version",
+      "date",
+      "files",
+      "npm",
+      "v8",
+      "uv",
+      "zlib",
+      "openssl",
+      "modules",
+      "lts",
+      "security",
+    ];
+    const retrievedAt = instant(
+      indexDescriptor.retrievedAt,
+      "Node LTS index retrievedAt",
+    );
     for (const row of indexRows) {
-      exactKeys(row, [
-        "version",
-        "date",
-        "files",
-        "npm",
-        "v8",
-        "uv",
-        "zlib",
-        "openssl",
-        "modules",
-        "lts",
-        "security",
-      ], "Node LTS index row");
       invariant(
-        /^v\d+\.\d+\.\d+$/.test(string(row.version, "Node index version")) &&
+        Object.keys(row).every((key) => nodeKnownFields.includes(key)) &&
+          ["version", "date", "files", "lts"].every((key) => key in row) &&
+          /^v\d+\.\d+\.\d+$/.test(string(row.version, "Node index version")) &&
           /^\d{4}-\d{2}-\d{2}$/.test(string(row.date, "Node index date")) &&
           (row.lts === false ||
             (typeof row.lts === "string" && row.lts.length > 0)),
         "Node LTS index row has an invalid identity",
       );
       strings(row.files, "Node index files");
+      invariant(
+        String(row.date) <= instantDate(retrievedAt),
+        "Node index row occurs after retrieval",
+      );
+      for (const field of ["npm", "v8", "uv", "zlib", "openssl", "modules"]) {
+        if (row[field] !== undefined) string(row[field], `Node index ${field}`);
+      }
+      if (row.security !== undefined) {
+        invariant(
+          typeof row.security === "boolean",
+          "Node index security must be boolean when present",
+        );
+      }
     }
     const releaseEvidenceIds = object(
       item.releaseEvidenceIds,
       "node.releaseEvidenceIds",
     );
+    const newestLtsMajor = Math.max(
+      ...indexRows.filter((row) =>
+        typeof row.lts === "string" && row.lts.trim().length > 0
+      ).map((row) => Number(String(row.version).slice(1).split(".")[0])),
+    );
+    const currentLine = indexRows.filter((row) =>
+      typeof row.lts === "string" && row.lts.trim().length > 0 &&
+      Number(String(row.version).slice(1).split(".")[0]) === newestLtsMajor
+    );
+    const cutoffDate = instantDate(cutoff);
+    const safelyEligible = currentLine.filter((row) =>
+      String(row.date) < cutoffDate
+    ).sort((left, right) =>
+      compareVersions(
+        String(left.version).slice(1),
+        String(right.version).slice(1),
+      )
+    );
+    invariant(
+      safelyEligible.length > 0,
+      "Node current LTS line has no age-eligible release",
+    );
+    const boundaryTags = currentLine.filter((row) =>
+      String(row.date) >= cutoffDate
+    ).map((row) => String(row.version));
+    const selectedSafeTag = String(safelyEligible.at(-1)!.version);
+    const preciseTags = [...new Set([selectedSafeTag, ...boundaryTags])];
     exactSet(
       Object.keys(releaseEvidenceIds),
-      indexRows.map((row) => string(row.version, "Node index version")),
+      preciseTags,
       "Node precise release evidence membership",
     );
     const releaseByVersion = new Map<string, JsonRecord>();
-    for (const row of indexRows) {
-      const tag = string(row.version, "Node index version");
+    for (const tag of preciseTags) {
       const evidenceId = string(releaseEvidenceIds[tag], `${tag} evidence ID`);
       const descriptor = evidenceKind(
         authority,
@@ -1432,49 +1567,37 @@ function validateRuntimeSelection(
         `${tag} precise Node release identity is invalid`,
       );
       const published = instant(release.published_at, `${tag} published_at`);
+      const releaseRetrievedAt = instant(
+        descriptor.retrievedAt,
+        `${tag} retrievedAt`,
+      );
       invariant(
-        new Date(published).toISOString().slice(0, 10) === row.date,
+        instantDate(published) ===
+            String(indexRows.find((row) => row.version === tag)?.date) &&
+          compareInstants(published, releaseRetrievedAt) <= 0,
         `${tag} Node index date disagrees with precise release evidence`,
       );
       releaseByVersion.set(tag, release);
     }
-    const selectedAt = cutoff + 72 * 60 * 60 * 1000;
-    const available = indexRows.filter((row) =>
-      instant(
-        object(releaseByVersion.get(String(row.version)), "Node release")
-          .published_at,
-        "Node published_at",
-      ) <= selectedAt
-    );
-    const ltsRows = available.filter((row) =>
-      typeof row.lts === "string" && row.lts.trim().length > 0
-    );
-    invariant(ltsRows.length > 0, "Node release index has no current LTS line");
-    const latestLtsMajor = Math.max(
-      ...ltsRows.map((release) =>
-        Number(String(release.version).slice(1).split(".")[0])
-      ),
-    );
-    const currentLine = ltsRows.filter((release) =>
-      Number(String(release.version).slice(1).split(".")[0]) === latestLtsMajor
-    );
     invariant(
       new Set(currentLine.map((release) => String(release.lts))).size === 1,
       "Node current LTS major has inconsistent codenames",
     );
-    considered = currentLine.map((row) =>
-      object(releaseByVersion.get(String(row.version)), String(row.version))
+    considered = preciseTags.map((tag) =>
+      object(releaseByVersion.get(tag), tag)
     );
     const latestLts = currentLine.map((release) =>
       String(release.version).slice(1)
     ).sort(compareVersions).at(-1);
-    const eligible = currentLine.filter((row) =>
-      instant(
-        object(releaseByVersion.get(String(row.version)), "Node release")
-          .published_at,
-        "Node published_at",
-      ) <= cutoff
-    ).map((row) => String(row.version).slice(1)).sort(compareVersions);
+    const eligible = preciseTags.filter((tag) =>
+      compareInstants(
+        instant(
+          object(releaseByVersion.get(tag), "Node release").published_at,
+          "Node published_at",
+        ),
+        cutoff,
+      ) <= 0
+    ).map((tag) => tag.slice(1)).sort(compareVersions);
     invariant(
       eligible.length > 0,
       "Node current LTS line has no age-eligible release",
@@ -1483,7 +1606,7 @@ function validateRuntimeSelection(
     const selectedIndexRow = currentLine.find((release) =>
       release.version === `v${selectedVersion}`
     );
-    const globalLatest = available.map((row) => String(row.version).slice(1))
+    const globalLatest = indexRows.map((row) => String(row.version).slice(1))
       .sort(compareVersions).at(-1);
     invariant(
       item.version === selectedVersion && selectedIndexRow &&
@@ -1504,12 +1627,26 @@ function validateRuntimeSelection(
       runtimeId,
     );
   } else {
+    const publicationDescriptor = authority.descriptor(publicationId);
+    const retrievedAt = instant(
+      publicationDescriptor.retrievedAt,
+      "deno releases retrievedAt",
+    );
     considered = runtimeReleaseRows(authority, publicationId)
       .filter((release) =>
         release.draft === false && release.prerelease === false &&
         typeof release.tag_name === "string" &&
         /^v\d+\.\d+\.\d+$/.test(release.tag_name)
       );
+    for (const release of considered) {
+      invariant(
+        compareInstants(
+          instant(release.published_at, "deno published_at"),
+          retrievedAt,
+        ) <= 0,
+        "deno release occurs after retrieval",
+      );
+    }
     times = Object.fromEntries(considered.map((release) => [
       String(release.tag_name).slice(1),
       string(release.published_at, `${runtimeId} published_at`),
@@ -1528,7 +1665,10 @@ function validateRuntimeSelection(
     `${runtimeId} publication time drifted from official bytes`,
   );
   invariant(
-    instant(item.publishedAt, `${runtimeId}.publishedAt`) <= cutoff,
+    compareInstants(
+      instant(item.publishedAt, `${runtimeId}.publishedAt`),
+      cutoff,
+    ) <= 0,
     `${runtimeId} is too young`,
   );
   const artifactId = string(
@@ -1568,7 +1708,7 @@ function validateNpmSelection(
   graph: JsonRecord,
   item: JsonRecord,
   authority: EvidenceAuthority,
-  cutoff: number,
+  cutoff: ExactInstant,
   label: string,
 ) {
   const evidenceId = string(
@@ -1590,9 +1730,14 @@ function validateNpmSelection(
   invariant(packument.name === packageName, `${label} packument name drifted`);
   const tags = object(packument["dist-tags"], `${label} dist-tags`);
   exactValue(item.distTags, tags, `${label} dist-tags`);
+  const officialStableVersions = stableVersions(packument);
+  const latestStable = officialStableVersions.at(-1);
   invariant(
-    item.latestStable === tags.latest,
-    `${label} latest stable drifted from official bytes`,
+    item.latestStable === latestStable &&
+      typeof tags.latest === "string" &&
+      object(packument.versions, `${label} versions`)[String(tags.latest)] !==
+        undefined,
+    `${label} latest stable was not derived from all captured stable versions`,
   );
   const selectedVersion = version(item.version, `${label}.version`);
   const times = object(packument.time, `${label} publication times`);
@@ -1601,7 +1746,10 @@ function validateNpmSelection(
     `${label} publication time drifted from official bytes`,
   );
   invariant(
-    instant(item.publishedAt, `${label}.publishedAt`) <= cutoff,
+    compareInstants(
+      instant(item.publishedAt, `${label}.publishedAt`),
+      cutoff,
+    ) <= 0,
     `${label} is too young`,
   );
   const manifest = npmManifest(
@@ -1624,7 +1772,7 @@ function validateNpmSelection(
   );
   validateNewerReleases(
     item,
-    stableVersions(packument),
+    officialStableVersions,
     times,
     cutoff,
     label,
@@ -1646,7 +1794,7 @@ function validateNpmSelection(
 function validateSelected(
   graph: JsonRecord,
   authority: EvidenceAuthority,
-  cutoff: number,
+  cutoff: ExactInstant,
 ): Map<string, JsonRecord> {
   const expected = [...RUNTIMES, ...DIRECT.deno, ...DIRECT.pnpm];
   const items = array(graph.selectedPackages, "selectedPackages").map((
@@ -1852,22 +2000,9 @@ function resolveDenoSpecifier(
     "Deno specifier kind is unsupported",
   );
   if (kind === "npm") {
-    const exact = exactNpmTarget(request);
-    if (exact) {
-      const value = string(resolution, `${request} resolution`);
-      invariant(
-        value === exact.slice(4).split("@").at(-1) || value === exact.slice(4),
-        `${request} specifier value drifted`,
-      );
-      invariant(
-        nodeKeys.includes(exact),
-        `${request} specifier target is absent`,
-      );
-      return exact;
-    }
     const name = npmRequestName(request);
     const value = string(resolution, `${request} resolution`);
-    const target = value.includes("@")
+    const target = value.startsWith(`${name}@`)
       ? `npm:${value}`
       : `npm:${name}@${value}`;
     invariant(
@@ -1903,15 +2038,17 @@ function resolveDenoDependency(
     return resolveDenoSpecifier(token, resolution, nodeKeys);
   }
   const request = token.startsWith("npm:") ? token : `npm:${token}`;
-  const exact = exactNpmTarget(request);
-  if (exact && nodeKeys.includes(exact)) return exact;
-  if (request in specifiers) {
-    return resolveDenoSpecifier(request, specifiers[request], nodeKeys);
-  }
   const requestedName = npmRequestName(request);
-  const candidates = Object.entries(specifiers).filter(([key]) =>
-    key.startsWith("npm:") && npmRequestName(key) === requestedName
-  ).map(([key, value]) => resolveDenoSpecifier(key, value, nodeKeys));
+  const alias = request.includes("@npm:");
+  const explicit = exactNpmTarget(request);
+  const candidates = nodeKeys.filter((key) => {
+    if (!key.startsWith("npm:")) return false;
+    const identity = denoNpmIdentity(key);
+    if (identity.name !== requestedName) return false;
+    return explicit === null || key.startsWith(`${explicit}_`) ||
+      key === explicit;
+  });
+  if (alias && candidates.length === 1) return candidates[0]!;
   invariant(
     candidates.length === 1,
     `${token} Deno dependency is ambiguously or incompletely bound`,
@@ -1919,7 +2056,24 @@ function resolveDenoDependency(
   return candidates[0]!;
 }
 
-function validateDenoGraph(graph: JsonRecord) {
+function denoNpmIdentity(key: string): { name: string; version: string } {
+  invariant(key.startsWith("npm:"), `${key} is not an npm lock key`);
+  const raw = key.slice(4);
+  const delimiter = raw.lastIndexOf(
+    "@",
+    raw.indexOf("_") < 0 ? undefined : raw.indexOf("_"),
+  );
+  invariant(delimiter > 0, `${key} npm lock identity is malformed`);
+  const name = raw.slice(0, delimiter);
+  const itemVersion = raw.slice(delimiter + 1).split("_")[0]!;
+  version(itemVersion, `${key} npm lock version`);
+  return { name, version: itemVersion };
+}
+
+function validateDenoGraph(
+  graph: JsonRecord,
+  authority: EvidenceAuthority,
+) {
   const repository = object(graph.repository, "repository");
   const specifiers = object(repository.denoSpecifiers, "denoSpecifiers");
   const nodes = array(repository.denoLockNodes, "denoLockNodes").map((raw) =>
@@ -1949,6 +2103,8 @@ function validateDenoGraph(graph: JsonRecord) {
           "deprecated",
           "scripts",
           "bin",
+          "manifestEvidenceId",
+          "manifestContentSha256",
         ].includes(key)
       ) && ["key", "kind", "integrity"].every((key) => key in node),
       "Deno lock node has missing or unknown fields",
@@ -1977,6 +2133,108 @@ function validateDenoGraph(graph: JsonRecord) {
     for (const dependency of dependencies) {
       resolveDenoDependency(dependency, specifiers, keys);
     }
+    if (node.kind === "npm") {
+      const identity = denoNpmIdentity(key);
+      const packageName = identity.name;
+      const itemVersion = identity.version;
+      const evidenceId = string(
+        node.manifestEvidenceId,
+        `${key}.manifestEvidenceId`,
+      );
+      const manifest = npmManifest(
+        authority,
+        evidenceId,
+        packageName,
+        itemVersion,
+      );
+      invariant(
+        node.manifestContentSha256 ===
+          authority.descriptor(evidenceId).contentSha256,
+        `${key} manifest hash is not bound end to end`,
+      );
+      const required = object(
+        manifest.dependencies ?? {},
+        `${key} dependencies`,
+      );
+      const optional = object(
+        manifest.optionalDependencies ?? {},
+        `${key} optional dependencies`,
+      );
+      const peers = object(manifest.peerDependencies ?? {}, `${key} peers`);
+      const peerMeta = object(
+        manifest.peerDependenciesMeta ?? {},
+        `${key} peer metadata`,
+      );
+      const requiredRanges: JsonRecord = {
+        ...required,
+        ...Object.fromEntries(
+          Object.entries(peers).filter(([name]) =>
+            object(peerMeta[name] ?? {}, `${name} peer metadata`).optional !==
+              true
+          ),
+        ),
+      };
+      for (const name of Object.keys(optional)) delete requiredRanges[name];
+      const optionalPeerRanges = Object.fromEntries(
+        Object.entries(peers).filter(([name]) =>
+          object(peerMeta[name] ?? {}, `${name} peer metadata`).optional ===
+            true
+        ),
+      );
+      const resolvedOptionalPeerNames = strings(
+        node.optionalPeers ?? [],
+        `${key} optionalPeers`,
+      ).map(npmRequestName);
+      invariant(
+        resolvedOptionalPeerNames.every((name) => name in optionalPeerRanges),
+        `${key} optional peer marker is absent from retained manifest`,
+      );
+      for (const name of resolvedOptionalPeerNames) {
+        requiredRanges[name] = optionalPeerRanges[name]!;
+      }
+      const validateManifestTokens = (
+        rawTokens: unknown,
+        ranges: JsonRecord,
+        section: string,
+      ) => {
+        const tokens = strings(rawTokens ?? [], `${key} ${section}`);
+        exactSet(
+          tokens.map(npmRequestName),
+          Object.keys(ranges),
+          `${key} retained-manifest ${section}`,
+        );
+        for (const token of tokens) {
+          const target = resolveDenoDependency(token, specifiers, keys);
+          const targetVersion = target.slice(target.lastIndexOf("@") + 1);
+          invariant(
+            satisfiesRange(
+              targetVersion,
+              string(ranges[npmRequestName(token)], `${token} manifest range`),
+            ),
+            `${key} ${section} resolution violates retained manifest`,
+          );
+        }
+      };
+      validateManifestTokens(node.dependencies, requiredRanges, "dependencies");
+      validateManifestTokens(
+        node.optionalDependencies,
+        optional,
+        "optionalDependencies",
+      );
+      exactSet(
+        resolvedOptionalPeerNames,
+        Object.keys(optionalPeerRanges).filter((name) =>
+          resolvedOptionalPeerNames.includes(name)
+        ),
+        `${key} optional peer markers`,
+      );
+    } else {
+      invariant(
+        node.manifestEvidenceId === undefined &&
+          node.manifestContentSha256 === undefined,
+        `${key} JSR node cannot claim an npm manifest`,
+      );
+    }
     strings(node.os ?? [], `${key} os`);
     strings(node.cpu ?? [], `${key} cpu`);
     if (node.tarball !== undefined) string(node.tarball, `${key} tarball`);
@@ -1989,10 +2247,17 @@ function validateDenoGraph(graph: JsonRecord) {
   }
   for (const id of DIRECT.deno) {
     const selected = packageAt(graph, id);
-    const key = `npm:${selected.name}@${selected.version}`;
+    const request = `npm:${selected.name}@${selected.version}`;
+    const key = resolveDenoSpecifier(
+      request,
+      specifiers[request],
+      keys,
+    );
     const node = object(nodes.find((candidate) => candidate.key === key), id);
     invariant(
-      node.integrity === selected.artifactValue,
+      node.integrity === selected.artifactValue &&
+        denoNpmIdentity(key).name === selected.name &&
+        denoNpmIdentity(key).version === selected.version,
       `${id} selected Deno root is absent or stale`,
     );
   }
@@ -2026,6 +2291,18 @@ function parsePnpmPeerSuffix(suffix: string): Record<string, string> {
 function packageKeyFromSnapshot(snapshotKey: string): string {
   const suffix = snapshotKey.indexOf("(");
   return suffix < 0 ? snapshotKey : snapshotKey.slice(0, suffix);
+}
+
+function snapshotIdentity(
+  snapshotKey: string,
+): { packageKey: string; name: string; version: string } {
+  const packageKey = packageKeyFromSnapshot(snapshotKey);
+  const delimiter = packageKey.lastIndexOf("@");
+  invariant(delimiter > 0, "pnpm snapshot package identity is malformed");
+  const name = packageKey.slice(0, delimiter);
+  const itemVersion = packageKey.slice(delimiter + 1);
+  version(itemVersion, `${snapshotKey} snapshot version`);
+  return { packageKey, name, version: itemVersion };
 }
 
 function keyedCollection(raw: unknown, label: string): JsonRecord[] {
@@ -2095,6 +2372,7 @@ function validatePnpmGraph(
   for (const item of packages) {
     exactKeys(item, [
       "id",
+      "resolutionId",
       "key",
       "name",
       "version",
@@ -2108,6 +2386,10 @@ function validatePnpmGraph(
     invariant(
       item.key === `${name}@${itemVersion}`,
       `${id} package identity drifted`,
+    );
+    invariant(
+      item.resolutionId === `pnpm:${item.key}`,
+      `${id} exact package resolution ID drifted`,
     );
     const evidenceId = string(
       item.manifestEvidenceId,
@@ -2176,6 +2458,9 @@ function validatePnpmGraph(
       "value",
       "dependencyIds",
       "optionalDependencyIds",
+      "peerIds",
+      "transitivePeerIds",
+      "transitivePeerResolutions",
     ], "pnpm snapshot record");
     const key = string(snapshot.key, "pnpm snapshot key");
     const packageKey = string(snapshot.packageKey, "pnpm snapshot packageKey");
@@ -2224,7 +2509,7 @@ function validatePnpmGraph(
       for (const [name, resolution] of Object.entries(dependencies)) {
         const targetId = string(ids[name], `${key} target ID`);
         const targetPackage = object(
-          packages.find((row) => row.id === targetId),
+          packages.find((row) => row.resolutionId === targetId),
           targetId,
         );
         invariant(
@@ -2234,9 +2519,13 @@ function validatePnpmGraph(
         const targetSnapshot = `${name}@${
           string(resolution, `${key} resolution`)
         }`;
+        const targetIdentity = snapshotIdentity(targetSnapshot);
         invariant(
-          snapshotKeys.includes(targetSnapshot),
-          `${key} dependency resolution lacks an exact snapshot`,
+          snapshotKeys.includes(targetSnapshot) &&
+            targetIdentity.packageKey === targetPackage.key &&
+            targetIdentity.name === targetPackage.name &&
+            targetIdentity.version === targetPackage.version,
+          `${key} dependency resolution is not bound to its exact package and snapshot`,
         );
       }
     };
@@ -2244,6 +2533,12 @@ function validatePnpmGraph(
     validateDependencyMap("optionalDependencies", "optionalDependencyIds");
     const suffix = key.slice(packageKey.length);
     const peers = parsePnpmPeerSuffix(suffix);
+    const peerIds = object(snapshot.peerIds, `${key}.peerIds`);
+    exactSet(
+      Object.keys(peerIds),
+      Object.keys(peers),
+      `${key} peer ID binding`,
+    );
     const packageRecord = object(
       packages.find((row) => row.key === packageKey),
       packageKey,
@@ -2285,13 +2580,58 @@ function validatePnpmGraph(
         `${key} peer suffix is not backed by its retained manifest`,
       );
       const peerPackageKey = `${peerName}@${peerVersion}`;
+      const peerPackage = object(
+        packages.find((row) => row.key === peerPackageKey),
+        peerPackageKey,
+      );
       invariant(
-        packageKeys.includes(peerPackageKey),
+        packageKeys.includes(peerPackageKey) &&
+          peerIds[peerName] === peerPackage.resolutionId,
         `${key} peer suffix lacks a backing package identity`,
       );
       invariant(
         snapshotKeys.includes(`${peerName}@${peerResolution}`),
         `${key} peer suffix lacks a backing snapshot identity`,
+      );
+    }
+    const transitivePeerNames = strings(
+      value.transitivePeerDependencies ?? [],
+      `${key}.transitivePeerDependencies`,
+    );
+    const transitivePeerIds = object(
+      snapshot.transitivePeerIds,
+      `${key}.transitivePeerIds`,
+    );
+    const transitivePeerResolutions = object(
+      snapshot.transitivePeerResolutions,
+      `${key}.transitivePeerResolutions`,
+    );
+    exactSet(
+      Object.keys(transitivePeerIds),
+      transitivePeerNames,
+      `${key} transitive peer ID binding`,
+    );
+    exactSet(
+      Object.keys(transitivePeerResolutions),
+      transitivePeerNames,
+      `${key} transitive peer resolution binding`,
+    );
+    for (const peerName of transitivePeerNames) {
+      const resolution = string(
+        transitivePeerResolutions[peerName],
+        `${key} transitive peer resolution`,
+      );
+      const identity = snapshotIdentity(`${peerName}@${resolution}`);
+      const peerPackage = object(
+        packages.find((row) =>
+          row.resolutionId === transitivePeerIds[peerName]
+        ),
+        `${key} transitive peer package`,
+      );
+      invariant(
+        identity.packageKey === peerPackage.key &&
+          snapshotKeys.includes(`${peerName}@${resolution}`),
+        `${key} transitive peer is not bound to an exact package and snapshot`,
       );
     }
   }
@@ -2303,6 +2643,17 @@ function validatePnpmGraph(
     importers.find((item) => item.id === ".")?.value,
     "root importer",
   );
+  const rootRecord = object(
+    importers.find((item) => item.id === "."),
+    "root importer record",
+  );
+  exactKeys(rootRecord, [
+    "id",
+    "value",
+    "dependencyIds",
+    "devDependencyIds",
+    "optionalDependencyIds",
+  ], "root importer record");
   for (
     const section of [
       "dependencies",
@@ -2328,11 +2679,40 @@ function validatePnpmGraph(
       `${id} importer specifier is not exact`,
     );
     const targetSnapshot = `${nameOf(id)}@${entry.version}`;
+    const targetPackage = object(
+      packages.find((row) => row.id === id),
+      `${id} package`,
+    );
     invariant(
-      snapshotKeys.includes(targetSnapshot),
-      `${id} importer resolution lacks an exact snapshot`,
+      snapshotKeys.includes(targetSnapshot) &&
+        snapshotIdentity(targetSnapshot).packageKey === targetPackage.key &&
+        object(
+            rootRecord.devDependencyIds,
+            "root devDependencyIds",
+          )[nameOf(id)] ===
+          targetPackage.resolutionId,
+      `${id} importer resolution is not bound to its exact package and snapshot`,
     );
   }
+  exactSet(
+    Object.keys(object(rootRecord.devDependencyIds, "root devDependencyIds")),
+    DIRECT.pnpm.map(nameOf),
+    "root dev dependency ID binding",
+  );
+  exactSet(
+    Object.keys(object(rootRecord.dependencyIds, "root dependencyIds")),
+    Object.keys(object(root.dependencies ?? {}, "root dependencies")),
+    "root dependency ID binding",
+  );
+  exactSet(
+    Object.keys(
+      object(rootRecord.optionalDependencyIds, "root optionalDependencyIds"),
+    ),
+    Object.keys(
+      object(root.optionalDependencies ?? {}, "root optionalDependencies"),
+    ),
+    "root optional dependency ID binding",
+  );
   invariant(
     !packageKeys.some((key) => key.startsWith("pnpm@")),
     "Corepack pnpm must not be a dependency lock node",
@@ -2451,6 +2831,7 @@ function validateRepeatability(graph: JsonRecord) {
     for (const [key, value] of Object.entries(expectedRun)) {
       exactValue(run[key], value, `${run.id}.${key}`);
     }
+    assertRedactedProjection(run, `${run.id} structured executable proof`);
     invariant(run.exitCode === 0, `${run.id} did not complete safely`);
     invariant(
       /^fnd003-(?:deno|pnpm)-[a-z]+-\d+$/.test(
@@ -2732,10 +3113,22 @@ function validateCorepack(graph: JsonRecord, authority: EvidenceAuthority) {
   exactSet(strings(proof.unsetEnvironment, "Corepack unset environment"), [
     "COREPACK_INTEGRITY_KEYS",
   ], "Corepack unset environment");
-  const expected: Record<string, [string, string]> = {
-    version: ["corepack --version", packageVersion(graph, "corepack")],
-    install: ["corepack install", `Adding pnpm@${pnpmVersion} to the cache`],
-    execute: ["corepack pnpm --version", pnpmVersion],
+  const expected: Record<string, JsonRecord> = {
+    version: {
+      commandIdentity: "corepack-version",
+      toolVersion: packageVersion(graph, "corepack"),
+      statusToken: "exact-version-confirmed",
+    },
+    install: {
+      commandIdentity: "corepack-cache-exact-package-manager",
+      toolVersion: packageVersion(graph, "corepack"),
+      statusToken: "package-manager-cached",
+    },
+    execute: {
+      commandIdentity: "corepack-execute-pnpm-version",
+      toolVersion: pnpmVersion,
+      statusToken: "exact-version-confirmed",
+    },
   };
   const runs = array(proof.runs, "corepack runs").map((raw) =>
     object(raw, "corepack run")
@@ -2748,16 +3141,40 @@ function validateCorepack(graph: JsonRecord, authority: EvidenceAuthority) {
   for (const run of runs) {
     exactKeys(
       run,
-      ["id", "command", "output", "exitCode"],
+      [
+        "id",
+        "commandIdentity",
+        "toolVersion",
+        "statusToken",
+        "exitCode",
+        "runId",
+      ],
       "Corepack proof run",
     );
     const row = expected[String(run.id)]!;
+    assertRedactedProjection(run, `${run.id} Corepack proof`);
     invariant(
-      run.command === row[0] && String(run.output).includes(row[1]) &&
-        run.exitCode === 0,
+      run.commandIdentity === row.commandIdentity &&
+        run.toolVersion === row.toolVersion &&
+        run.statusToken === row.statusToken && run.exitCode === 0 &&
+        /^fnd003-corepack-[a-z-]+-\d+$/.test(
+          string(run.runId, `${run.id}.runId`),
+        ),
       `${run.id} Corepack executable proof did not pass`,
     );
   }
+}
+
+function assertRedactedProjection(value: unknown, label: string) {
+  const encoded = JSON.stringify(value);
+  invariant(
+    !/(?:authorization|bearer|password|passwd|secret|api[-_]?key|token)\s*[:=]/i
+      .test(encoded) &&
+      !/[A-Za-z]:(?:\\\\)+(?:Users|Documents and Settings)(?:\\\\)+/i
+        .test(encoded) &&
+      !/(?:^|["'\s])\/(?:home|Users|root)\//.test(encoded),
+    `${label} contains secret-bearing or physical-path text`,
+  );
 }
 
 function packageImports(source: string): string[] {
@@ -3103,7 +3520,7 @@ async function validateGraph(
   );
   await validateSelected(graph, authority, selection.cutoff);
   validateEdges(graph, authority);
-  validateDenoGraph(graph);
+  validateDenoGraph(graph, authority);
   validatePnpmGraph(graph, authority);
   validateRepeatability(graph);
   validateLifecycle(graph, authority);
@@ -3167,6 +3584,18 @@ function rangeMaps(id: string): JsonRecord {
 
 function manifestFor(id: string, itemVersion = fixtureVersion(id)): JsonRecord {
   const ranges = rangeMaps(id);
+  if (id === "hono") {
+    object(ranges.dependencies, "dependencies").zod = "^4.0.0";
+    object(ranges.optionalDependencies, "optionalDependencies")[
+      "@scope/runtime"
+    ] = "^1.2.0";
+  }
+  if (id === "kysely-postgres-js") {
+    object(ranges.peerDependencies, "peerDependencies").kysely =
+      MANIFEST_RANGES["dialect-peer-kysely"];
+    object(ranges.peerDependencies, "peerDependencies").postgres =
+      MANIFEST_RANGES["dialect-postgres"];
+  }
   if (
     id === "eslint-plugin-react-hooks" && itemVersion !== fixtureVersion(id)
   ) {
@@ -3188,9 +3617,11 @@ function manifestFor(id: string, itemVersion = fixtureVersion(id)): JsonRecord {
         nameOf(id).split("/").at(-1)
       }-${itemVersion}.tgz`,
     },
-    dependencies: ranges.dependencies,
-    optionalDependencies: ranges.optionalDependencies,
-    ...(id === "types-react"
+    ...(id === "standard-schema-spec" ? {} : {
+      dependencies: ranges.dependencies,
+      optionalDependencies: ranges.optionalDependencies,
+    }),
+    ...(id === "types-react" || id === "standard-schema-spec"
       ? {}
       : { peerDependencies: ranges.peerDependencies }),
     ...(id === "types-react" ? {} : { scripts }),
@@ -3202,6 +3633,9 @@ function manifestFor(id: string, itemVersion = fixtureVersion(id)): JsonRecord {
       ? {
         peerDependenciesMeta: { "@types/react": { optional: true } },
       }
+      : {}),
+    ...(id === "kysely-postgres-js"
+      ? { peerDependenciesMeta: { postgres: { optional: true } } }
       : {}),
     ...(id === "astro"
       ? {
@@ -3251,11 +3685,13 @@ async function makeFixture(): Promise<Fixture> {
     "astro-eslint-parser",
     "esbuild",
     "fsevents",
+    "scheduler",
   ];
   const npmIds = [
     ...new Set<string>([
       ...selectedIds.filter((id) => id !== "deno" && id !== "node"),
       ...pnpmPackageIds,
+      "scope-runtime",
     ]),
   ];
   for (const id of npmIds) {
@@ -3285,6 +3721,12 @@ async function makeFixture(): Promise<Fixture> {
         manifestFor(id, item),
       ])),
     };
+    if (id === "astro") {
+      object(packument.versions, "Astro fixture versions")["5.15.8-beta.1"] =
+        manifestFor("astro", "5.15.8-beta.1");
+      object(packument.time, "Astro fixture times")["5.15.8-beta.1"] =
+        "2026-01-09T04:05:06.792Z";
+    }
     await addEvidence(
       `npm-${id}`,
       "npm-packument",
@@ -3340,7 +3782,10 @@ async function makeFixture(): Promise<Fixture> {
       for (
         const row of rows.filter((candidate) =>
           typeof candidate.tag_name === "string" &&
-          /^v\d+\.\d+\.\d+$/.test(candidate.tag_name)
+          [
+            `v${fixtureVersion("node")}`,
+            `v${nextVersion("node")}`,
+          ].includes(candidate.tag_name)
         )
       ) {
         const tag = string(row.tag_name, "Node fixture tag");
@@ -3387,9 +3832,12 @@ async function makeFixture(): Promise<Fixture> {
             lts: false,
           },
           {
-            ...nodeIndexDefaults,
             version: "v22.20.0",
             date: "2025-12-01",
+            files: ["linux-x64"],
+            v8: "12.4.254.21",
+            uv: "1.51.0",
+            modules: "127",
             lts: "Jod",
           },
         ]),
@@ -3547,8 +3995,6 @@ async function makeFixture(): Promise<Fixture> {
             [`v${fixtureVersion("node")}`]: `node-release-${
               fixtureVersion("node")
             }`,
-            "v25.1.0": "node-release-25.1.0",
-            "v22.20.0": "node-release-22.20.0",
           },
         }
         : {}),
@@ -3592,6 +4038,7 @@ async function makeFixture(): Promise<Fixture> {
     };
     return {
       id,
+      resolutionId: `pnpm:${nameOf(id)}@${fixtureVersion(id)}`,
       key: `${nameOf(id)}@${fixtureVersion(id)}`,
       name: nameOf(id),
       version: fixtureVersion(id),
@@ -3669,11 +4116,35 @@ async function makeFixture(): Promise<Fixture> {
           : {}),
       },
       dependencyIds: Object.fromEntries(
-        requiredWithoutOptional.map((id) => [nameOf(id), id]),
+        requiredWithoutOptional.map((id) => [
+          nameOf(id),
+          `pnpm:${nameOf(id)}@${fixtureVersion(id)}`,
+        ]),
       ),
       optionalDependencyIds: Object.fromEntries(
-        optionalIds.map((id) => [nameOf(id), id]),
+        optionalIds.map((id) => [
+          nameOf(id),
+          `pnpm:${nameOf(id)}@${fixtureVersion(id)}`,
+        ]),
       ),
+      peerIds: Object.fromEntries(
+        Object.keys(parsePnpmPeerSuffix(
+          primarySnapshotKeys.get(String(item.id))!.slice(item.key.length),
+        )).map((name) => {
+          const target = packageRows.find((row) => row.name === name)!;
+          return [name, target.resolutionId];
+        }),
+      ),
+      transitivePeerIds: item.id === "astro-react"
+        ? { scheduler: `pnpm:scheduler@${fixtureVersion("scheduler")}` }
+        : {},
+      transitivePeerResolutions: item.id === "astro-react"
+        ? {
+          scheduler: primarySnapshotKeys.get("scheduler")!.slice(
+            "scheduler@".length,
+          ),
+        }
+        : {},
     };
   });
   const astroReactPackage = packageRows.find((item) =>
@@ -3697,6 +4168,12 @@ async function makeFixture(): Promise<Fixture> {
     value: {},
     dependencyIds: {},
     optionalDependencyIds: {},
+    peerIds: Object.fromEntries(alternatePeers.map((name) => {
+      const target = packageRows.find((candidate) => candidate.name === name)!;
+      return [name, target.resolutionId];
+    })),
+    transitivePeerIds: {},
+    transitivePeerResolutions: {},
   });
   const rootImporterValue = {
     dependencies: {},
@@ -3714,14 +4191,28 @@ async function makeFixture(): Promise<Fixture> {
     value: rootImporterValue,
     dependencyIds: {},
     devDependencyIds: Object.fromEntries(
-      DIRECT.pnpm.map((id) => [nameOf(id), id]),
+      DIRECT.pnpm.map((id) => [
+        nameOf(id),
+        `pnpm:${nameOf(id)}@${fixtureVersion(id)}`,
+      ]),
     ),
     optionalDependencyIds: {},
   }];
   const denoSpecifiers: JsonRecord = Object.fromEntries([
     ...DIRECT.deno.map((
       id,
-    ) => [`npm:${nameOf(id)}@${fixtureVersion(id)}`, fixtureVersion(id)]),
+    ) => [
+      `npm:${nameOf(id)}@${fixtureVersion(id)}`,
+      id === "kysely-postgres-js"
+        ? `${fixtureVersion(id)}_kysely@${fixtureVersion("kysely")}_postgres@${
+          fixtureVersion("postgres")
+        }`
+        : id === "hono-standard-validator"
+        ? `${fixtureVersion(id)}_hono@${
+          fixtureVersion("hono")
+        }_@standard-schema+spec@${fixtureVersion("standard-schema-spec")}`
+        : fixtureVersion(id),
+    ]),
     ["npm:legacy-hono@npm:hono@4.10.6", "hono@4.10.6"],
     ["npm:@scope/alias@npm:@scope/runtime@1.2.3", "@scope/runtime@1.2.3"],
     ["npm:zod@^4.0.0", "4.1.12"],
@@ -3729,29 +4220,56 @@ async function makeFixture(): Promise<Fixture> {
     ["jsr:@std/internal@^1.0.10", "1.0.14"],
   ]);
   const denoLockNodes: JsonRecord[] = [
-    ...DIRECT.deno.map((id) => ({
-      key: `npm:${nameOf(id)}@${fixtureVersion(id)}`,
-      kind: "npm",
-      integrity: SRI,
-      ...(id === "hono"
-        ? {
-          dependencies: [
-            "npm:zod@^4.0.0",
-            "legacy-hono@npm:hono@4.10.6",
-          ],
-          optionalPeers: ["@scope/alias@npm:@scope/runtime@1.2.3"],
-        }
-        : id === "kysely-postgres-js"
-        ? {
-          dependencies: ["kysely@0.28.8"],
-          optionalDependencies: ["postgres@3.4.7"],
-        }
-        : {}),
-    })),
+    ...DIRECT.deno.map((id) => {
+      const evidenceId = `npm-${id}`;
+      return {
+        key: `npm:${nameOf(id)}@${fixtureVersion(id)}${
+          id === "kysely-postgres-js"
+            ? `_kysely@${fixtureVersion("kysely")}_postgres@${
+              fixtureVersion("postgres")
+            }`
+            : id === "hono-standard-validator"
+            ? `_hono@${fixtureVersion("hono")}_@standard-schema+spec@${
+              fixtureVersion("standard-schema-spec")
+            }`
+            : ""
+        }`,
+        kind: "npm",
+        integrity: SRI,
+        manifestEvidenceId: evidenceId,
+        manifestContentSha256: provenance.find((item) =>
+          item.id === evidenceId
+        )!.contentSha256,
+        ...(id === "hono"
+          ? {
+            dependencies: ["npm:zod@^4.0.0"],
+            optionalDependencies: [
+              "@scope/alias@npm:@scope/runtime@1.2.3",
+            ],
+          }
+          : id === "hono-standard-validator"
+          ? {
+            dependencies: [
+              `hono@${fixtureVersion("hono")}`,
+              `@standard-schema/spec@${fixtureVersion("standard-schema-spec")}`,
+            ],
+          }
+          : id === "kysely-postgres-js"
+          ? {
+            dependencies: ["kysely", "postgres"],
+            optionalPeers: ["postgres"],
+          }
+          : {}),
+      };
+    }),
     {
       key: "npm:@scope/runtime@1.2.3",
       kind: "npm",
       integrity: SRI,
+      manifestEvidenceId: "npm-scope-runtime",
+      manifestContentSha256:
+        provenance.find((item) => item.id === "npm-scope-runtime")!
+          .contentSha256,
       os: ["linux"],
       cpu: ["x64", "arm64"],
       tarball: "https://registry.npmjs.org/runtime/-/runtime-1.2.3.tgz",
@@ -3941,21 +4459,27 @@ async function makeFixture(): Promise<Fixture> {
         runs: [
           {
             id: "version",
-            command: "corepack --version",
-            output: fixtureVersion("corepack"),
+            commandIdentity: "corepack-version",
+            toolVersion: fixtureVersion("corepack"),
+            statusToken: "exact-version-confirmed",
             exitCode: 0,
+            runId: "fnd003-corepack-version-1",
           },
           {
             id: "install",
-            command: "corepack install",
-            output: "Adding pnpm@11.21.0 to the cache",
+            commandIdentity: "corepack-cache-exact-package-manager",
+            toolVersion: fixtureVersion("corepack"),
+            statusToken: "package-manager-cached",
             exitCode: 0,
+            runId: "fnd003-corepack-install-2",
           },
           {
             id: "execute",
-            command: "corepack pnpm --version",
-            output: "11.21.0",
+            commandIdentity: "corepack-execute-pnpm-version",
+            toolVersion: fixtureVersion("pnpm"),
+            statusToken: "exact-version-confirmed",
             exitCode: 0,
+            runId: "fnd003-corepack-execute-3",
           },
         ],
       },
@@ -4211,18 +4735,70 @@ function makeRepositoryContents(
 }
 
 async function renderReport(graph: JsonRecord): Promise<string> {
-  const selection = object(graph.selection, "selection");
-  const selectedAt = instant(selection.selectedAt, "selection.selectedAt");
-  const summary = {
+  const repository = object(graph.repository, "repository");
+  const provenance = array(graph.provenance, "provenance").map((raw) => {
+    const item = object(raw, "provenance descriptor");
+    return {
+      id: item.id,
+      kind: item.kind,
+      sourceUrl: item.sourceUrl,
+      retrievedAt: item.retrievedAt,
+      contentSha256: item.contentSha256,
+      artifactSha256: item.artifactSha256,
+    };
+  });
+  const retrievals = provenance.map((item) =>
+    string(item.retrievedAt, "report retrieval")
+  ).sort((left, right) =>
+    compareInstants(
+      instant(left, "left retrieval"),
+      instant(right, "right retrieval"),
+    )
+  );
+  const safeProjection = {
     graphSha256: await sha256Text(JSON.stringify(graph)),
     captureWindow: {
-      startsAt: new Date(selectedAt - 30 * 60 * 1000).toISOString(),
-      endsAt: selection.selectedAt,
+      earliestRetrieval: retrievals[0],
+      latestRetrieval: retrievals.at(-1),
+      maximumMinutes: 30,
     },
-    canonicalRedactedGraph: canonical(graph),
+    selection: clone(graph.selection),
+    selectedPackages: clone(graph.selectedPackages),
+    dependencyRelations: {
+      imports: clone(repository.importEdges),
+      peers: clone(repository.peerEdges),
+      denoNodes: array(repository.denoLockNodes, "Deno nodes").map((raw) => {
+        const node = object(raw, "Deno node");
+        return {
+          key: node.key,
+          dependencies: node.dependencies ?? [],
+          optionalDependencies: node.optionalDependencies ?? [],
+          optionalPeers: node.optionalPeers ?? [],
+          manifestEvidenceId: node.manifestEvidenceId ?? null,
+        };
+      }),
+      pnpmPackages: array(
+        object(repository.pnpm, "pnpm").packages,
+        "pnpm packages",
+      ).map((raw) => {
+        const item = object(raw, "pnpm package");
+        return {
+          resolutionId: item.resolutionId,
+          key: item.key,
+          manifestEvidenceId: item.manifestEvidenceId,
+        };
+      }),
+    },
+    lifecycle: clone(graph.lifecycle),
+    repeatability: clone(repository.repeatability),
+    corepackProof: clone(object(graph.corepack, "corepack").proof),
+    ociImages: clone(graph.ociImages),
+    exclusionsAndFollowOns: clone(graph.proofStatus),
+    provenance,
   };
+  assertRedactedProjection(safeProjection, "runtime graph report projection");
   return `# FND-003 immutable runtime graph\n\n${
-    JSON.stringify(summary, null, 2)
+    JSON.stringify(safeProjection, null, 2)
   }\n`;
 }
 
@@ -4805,6 +5381,46 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
     fixtureReader(decompressedOversize),
     "decompressed provenance artifact exceeds",
   );
+  for (
+    const [maximum, label] of [
+      [MAX_COMPRESSED_EVIDENCE_BYTES, "compressed"],
+      [MAX_DECOMPRESSED_EVIDENCE_BYTES, "decompressed"],
+    ] as const
+  ) {
+    const allocations: number[] = [];
+    const body = await readBounded(
+      sizedByteStream(maximum),
+      maximum,
+      `${label} exact-boundary fixture`,
+      (size) => {
+        allocations.push(size);
+        return new Uint8Array(size);
+      },
+    );
+    invariant(
+      body.byteLength === maximum && body.buffer.byteLength === maximum &&
+        JSON.stringify(allocations) === JSON.stringify([maximum]),
+      `${label} evidence did not retain exactly one bounded backing buffer`,
+    );
+  }
+  let cancelledAtNPlusOne = false;
+  const nPlusOne = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array(8));
+      controller.enqueue(new Uint8Array(1));
+    },
+    cancel() {
+      cancelledAtNPlusOne = true;
+    },
+  });
+  const nPlusOneResult = await Promise.allSettled([
+    readBounded(nPlusOne, 8, "N+1 evidence fixture"),
+  ]);
+  invariant(
+    nPlusOneResult[0]?.status === "rejected" && cancelledAtNPlusOne &&
+      (nPlusOneResult[0].reason as Error).message.includes("exceeds 8"),
+    "N+1 evidence must cancel and reject before a second retained buffer",
+  );
 
   for (
     const [candidate, range, expected] of [
@@ -4938,6 +5554,7 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
   );
   delete object(alternateImporter.value, "root importer value")
     .optionalDependencies;
+  delete object(alternateImporter.value, "root importer value").dependencies;
   const alternateContents = await syntheticRepository(alternate, {
     quoteAll: true,
     crlf: true,
@@ -5007,6 +5624,12 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
     object(candidate.graph.selection, "selection").selectedAt =
       "2026-01-10T04:05:06Z";
   }, "preserve RFC3339");
+  await expectReject((candidate) => {
+    object(candidate.graph.selection, "selection").selectedAt =
+      "2026-01-10T04:05:06.789000001Z";
+    object(candidate.graph.selection, "selection").eligibleBefore =
+      "2026-01-07T04:05:06.789000001Z";
+  }, "selection time must equal the latest provenance retrieval");
   await expectReject((candidate) => {
     object(
       array(candidate.graph.provenance, "provenance")[0],
@@ -5104,6 +5727,25 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
       await gunzipBounded(candidate.evidence.get(String(descriptor.path))!),
       "astro packument",
     );
+    object(body.time, "astro times").modified =
+      "2026-01-10T04:05:06.789000001Z";
+    await refreshEvidenceDescriptor(
+      candidate,
+      "npm-astro",
+      JSON.stringify(body),
+    );
+  }, "packument event occurs after retrieval");
+  await expectReject(async (candidate) => {
+    const descriptor = object(
+      array(candidate.graph.provenance, "provenance").find((raw) =>
+        object(raw, "descriptor").id === "npm-astro"
+      ),
+      "astro descriptor",
+    );
+    const body = parseJson(
+      await gunzipBounded(candidate.evidence.get(String(descriptor.path))!),
+      "astro packument",
+    );
     object(
       object(body.versions, "versions")[fixtureVersion("astro")],
       "astro manifest",
@@ -5187,6 +5829,29 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
     );
   }, "complete newer stable interval");
   await expectReject(async (candidate) => {
+    const descriptor = object(
+      array(candidate.graph.provenance, "provenance").find((raw) =>
+        object(raw, "descriptor").id === "npm-astro"
+      ),
+      "astro descriptor",
+    );
+    const body = parseJson(
+      await gunzipBounded(candidate.evidence.get(String(descriptor.path))!),
+      "astro packument",
+    );
+    const hiddenVersion = nextVersion("astro", 3);
+    object(body.versions, "versions")[hiddenVersion] = manifestFor(
+      "astro",
+      hiddenVersion,
+    );
+    object(body.time, "times")[hiddenVersion] = "2026-01-09T04:05:06.792Z";
+    await refreshEvidenceDescriptor(
+      candidate,
+      "npm-astro",
+      JSON.stringify(body),
+    );
+  }, "latest stable was not derived from all captured stable versions");
+  await expectReject(async (candidate) => {
     const item = packageAt(candidate.graph, "astro");
     item.version = nextVersion("astro");
     item.publishedAt = "2026-01-08T04:05:06.790Z";
@@ -5209,7 +5874,7 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
       "npm-astro",
       JSON.stringify(body),
     );
-  }, "is too young");
+  }, "latest stable was not derived from all captured stable versions");
   await expectReject((candidate) => {
     const edge = array(
       object(candidate.graph.repository, "repository").peerEdges,
@@ -5327,12 +5992,84 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
     specifiers["jsr:@std/internal@^1.0.10"] = "1.0.13";
   }, "specifier target is absent");
   await expectReject((candidate) => {
+    const nodes = array(
+      object(candidate.graph.repository, "repository").denoLockNodes,
+      "Deno nodes",
+    ).map((raw) => object(raw, "Deno node"));
+    const hono = object(
+      nodes.find((node) => String(node.key).startsWith("npm:hono@")),
+      "Hono node",
+    );
+    hono.dependencies = [];
+  }, "retained-manifest dependencies membership is not exact");
+  await expectReject((candidate) => {
+    const nodes = array(
+      object(candidate.graph.repository, "repository").denoLockNodes,
+      "Deno nodes",
+    ).map((raw) => object(raw, "Deno node"));
+    const dialect = object(
+      nodes.find((node) =>
+        String(node.key).startsWith("npm:kysely-postgres-js@")
+      ),
+      "dialect node",
+    );
+    dialect.dependencies = ["kysely"];
+    dialect.optionalDependencies = ["postgres"];
+    delete dialect.optionalPeers;
+  }, "retained-manifest optionalDependencies membership is not exact");
+  await expectReject((candidate) => {
     const pnpm = object(
       object(candidate.graph.repository, "repository").pnpm,
       "pnpm",
     );
     array(pnpm.snapshots, "snapshots").pop();
   }, "pnpm graph must retain multiple peer-qualified snapshots");
+  await expectReject((candidate) => {
+    const pnpm = object(
+      object(candidate.graph.repository, "repository").pnpm,
+      "pnpm",
+    );
+    const packages = array(pnpm.packages, "packages").map((raw) =>
+      object(raw, "package")
+    );
+    const snapshots = array(pnpm.snapshots, "snapshots").map((raw) =>
+      object(raw, "snapshot")
+    );
+    const oldPackage = object(
+      packages.find((item) => item.id === "astro"),
+      "Astro package",
+    );
+    const newerPackage = clone(oldPackage);
+    newerPackage.id = "astro-retarget";
+    newerPackage.version = nextVersion("astro");
+    newerPackage.key = `astro@${newerPackage.version}`;
+    newerPackage.resolutionId = `pnpm:${newerPackage.key}`;
+    array(pnpm.packages, "packages").push(newerPackage);
+    const oldSnapshot = object(
+      snapshots.find((item) => item.id === "primary:astro"),
+      "Astro snapshot",
+    );
+    const newerSnapshot = clone(oldSnapshot);
+    newerSnapshot.id = "retarget:astro";
+    newerSnapshot.packageKey = newerPackage.key;
+    newerSnapshot.key = String(oldSnapshot.key).replace(
+      String(oldPackage.key),
+      String(newerPackage.key),
+    );
+    array(pnpm.snapshots, "snapshots").push(newerSnapshot);
+    const rootRecord = object(
+      array(pnpm.importers, "importers")[0],
+      "root importer",
+    );
+    object(
+      object(rootRecord.value, "root value").devDependencies,
+      "devDependencies",
+    )
+      .astro = {
+        specifier: fixtureVersion("astro"),
+        version: String(newerSnapshot.key).slice("astro@".length),
+      };
+  }, "importer resolution is not bound to its exact package and snapshot");
   await expectReject((candidate) => {
     const snapshot = object(
       array(
@@ -5404,6 +6141,7 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
         "",
       ),
     );
+    delete object(snapshot.peerIds, "peer IDs").react;
   }, "omits a required retained-manifest peer");
   await expectReject((candidate) => {
     const snapshots = array(
@@ -5423,7 +6161,7 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
         "react@19.2.1",
       ),
     );
-  }, "lacks a backing package identity");
+  }, "must be an object");
   await expectReject((candidate) => {
     const snapshots = array(
       object(object(candidate.graph.repository, "repository").pnpm, "pnpm")
@@ -5439,6 +6177,8 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
       snapshot,
       `${snapshot.key}(invented-peer@1.0.0)`,
     );
+    object(snapshot.peerIds, "peer IDs")["invented-peer"] =
+      "pnpm:invented-peer@1.0.0";
   }, "not backed by its retained manifest");
   await expectReject(async (candidate) => {
     const descriptor = object(
@@ -5580,6 +6320,25 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
     object(object(candidate.graph.corepack, "corepack").proof, "proof")
       .unsetEnvironment = [];
   }, "Corepack unset environment membership");
+  for (
+    const unsafe of [
+      "token=registry-secret",
+      "C:\\Users\\example\\cache",
+      "/home/example/.cache",
+    ]
+  ) {
+    await expectReject((candidate) => {
+      const run = object(
+        array(
+          object(object(candidate.graph.corepack, "corepack").proof, "proof")
+            .runs,
+          "Corepack runs",
+        )[0],
+        "Corepack run",
+      );
+      run.statusToken = unsafe;
+    }, "contains secret-bearing or physical-path text");
+  }
   await expectReject((candidate) => {
     const descriptor = object(
       array(candidate.graph.provenance, "provenance").find((raw) =>
