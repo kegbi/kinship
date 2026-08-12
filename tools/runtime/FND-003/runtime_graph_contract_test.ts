@@ -40,7 +40,7 @@ const WHOLE_SOURCE_DIGEST_MARKER_END = [
 const WHOLE_SOURCE_DIGEST_SENTINEL = "0".repeat(64);
 /* FND003_WHOLE_SOURCE_DIGEST_START */
 const REVIEWED_WHOLE_SOURCE_SHA256 =
-  "sha256:c8c352824169d172a07e2035c4c1333a585f96609001ec4e152d7af92bb2e2f7";
+  "sha256:2104938194281a8721c6cf9cc8e9fc24edca40fc71ed578307b0f90d86265ed7";
 /* FND003_WHOLE_SOURCE_DIGEST_END */
 
 type EvidenceReader = (
@@ -8993,6 +8993,63 @@ Deno.test("real-tool fixture claims reject independent and paired drift", async 
     failures.length === 0,
     `real-tool fixture bindings accepted drift: ${failures.join(", ")}`,
   );
+});
+
+Deno.test("real pnpm transitive prerelease identities remain valid", async () => {
+  const packageJson = parseJson(
+    await Deno.readTextFile("package.json"),
+    "package.json",
+  );
+  const devDependencies = object(
+    packageJson.devDependencies,
+    "package.json.devDependencies",
+  );
+  for (const [name, itemVersion] of Object.entries(devDependencies)) {
+    version(itemVersion, `${name} package.json devDependency`);
+  }
+
+  let malformedRejected = false;
+  try {
+    snapshotIdentity("bad@1.0");
+  } catch {
+    malformedRejected = true;
+  }
+  invariant(malformedRejected, "malformed transitive version was accepted");
+  let directPrereleaseRejected = false;
+  try {
+    version("1.0.0-rc.1", "package.json direct prerelease");
+  } catch {
+    directPrereleaseRejected = true;
+  }
+  invariant(
+    directPrereleaseRejected,
+    "package.json direct prerelease was accepted",
+  );
+
+  const pnpmLock = parseYaml(
+    await Deno.readTextFile("pnpm-lock.yaml"),
+    "pnpm-lock.yaml",
+  );
+  const packages = object(pnpmLock.packages, "pnpm lock packages");
+  const snapshots = object(pnpmLock.snapshots, "pnpm lock snapshots");
+  for (
+    const key of [
+      "@rolldown/pluginutils@1.0.0-rc.3",
+      "gensync@1.0.0-beta.2",
+      "get-tsconfig@5.0.0-beta.4",
+    ]
+  ) {
+    invariant(
+      key in packages && key in snapshots,
+      `${key} must exist in packages and snapshots`,
+    );
+    const identity = snapshotIdentity(key);
+    invariant(
+      identity.packageKey === key &&
+        `${identity.name}@${identity.version}` === key,
+      `${key} did not round-trip exactly`,
+    );
+  }
 });
 
 Deno.test("repository supplies the immutable FND-003 runtime graph", async () => {

@@ -1,0 +1,78 @@
+FND-003 revision-15 transitive-prerelease inner RED
+
+Controller:
+FND-003/orchestrator/r0/b308fcda-6e91-4fec-8b40-bf19c6e21a16
+
+Controls implementer:
+FND-003/implementer/r1/a71f9122-058d-43c7-8ea7-ebac8e437bf8-retry-fast
+
+Authority commit:
+26c3e6ece3e60ace5c1d2a94ecd0db26c89e9f6e
+
+Scope:
+- changed only tools/runtime/FND-003/runtime_graph_contract_test.ts
+- no validator correction was implemented
+- successful uncommitted GREEN artifacts and retained official responses were
+  not changed
+
+Frozen controls bytes:
+- test SHA-256:
+  88312ee3c84b05beb879a34ffa93c05bf9db6b96f219be774b39d2f04bb32700
+- embedded canonical whole-source digest:
+  2104938194281a8721c6cf9cc8e9fc24edca40fc71ed578307b0f90d86265ed7
+
+Exact focused command:
+$env:DENO_NO_PACKAGE_JSON='1'; deno test --allow-read=package.json,pnpm-lock.yaml,tools/runtime/FND-003 --filter='real pnpm transitive prerelease identities remain valid' tools/runtime/FND-003/runtime_graph_contract_test.ts
+
+Focused result:
+- exit 1
+- 0 passed, 1 failed, 12 filtered out
+- the control first proved every package.json direct dependency remained an
+  exact stable version
+- malformed `bad@1.0` and direct `1.0.0-rc.1` were rejected
+- the real pnpm v9 lock contained each required identity in both packages and
+  snapshots
+- sole assertion:
+  `@rolldown/pluginutils@1.0.0-rc.3 snapshot version must be an exact stable version`
+- stack: version() -> snapshotIdentity() -> the new real-lock control
+
+This is the intended failing-valid boundary. Independent real-lock tracing also
+proved:
+- @astrojs/react@6.0.2 -> @vitejs/plugin-react@5.2.0 -> exact
+  @rolldown/pluginutils@1.0.0-rc.3
+- astro@7.2.0 -> exact get-tsconfig@5.0.0-beta.4
+- retained @babel/core@7.29.7 -> gensync@1.0.0-beta.2
+- no allowed stable-only resolution or workspace override satisfies those
+  retained manifests
+- all three exact pnpm package metadata records agree with their retained
+  packuments; the failure is solely the stable-only transitive predicate
+
+Mechanical checks:
+- deno fmt --check: exit 0
+- deno lint: exit 0
+- deno check: exit 0
+- git diff --check: exit 0
+- whole-source digest control: exit 0, 1 passed
+
+Preserved GREEN artifact hashes:
+- .npmrc:
+  3a951f66e7e0f3e2dd1832473a871357c4a507b51100636b73bcf6ff0dd78b6c
+- deno.json:
+  7d9dfb8ef9d2faffecb6cc72758ecc8406815e2b5eb97bfa4a950afc26eb927c
+- deno.lock:
+  8a39257b18ec8ff53acb693efe2969d8136284a0a8293517e43313e1fb7898c8
+- package.json:
+  fffd7876558d0aece38e864dbcc51af03800384ac95247e747bab6efb895e5bb
+- pnpm-workspace.yaml:
+  fd1d247e8d44d8e0f0d58cf6497c7642561019321c11a79d9b2adcb95fb59851
+- pnpm-lock.yaml:
+  385fcd5c1e1ffbe7eebefbf62e3730a1f11773f43d1010f7a3c8a9a4d8f4ecf8
+- intermediate retained-capture manifest:
+  bb76155f3d2b0b4c0ca970c3458b433b350b8af6d9b6457f5c5ac978a7e5d126
+- retained provenance count/compressed bytes/aggregate hash:
+  853 / 76759449 /
+  2975ef1d751078e081c90799e1f343a672b108ecc7f75958be17b7910c86dc39
+
+Production changes: none during this RED.
+GREEN authority: false until a fresh correction implementer receives the frozen
+test/evidence commit.
