@@ -1,0 +1,15 @@
+ticket=PILOT-006
+round=01
+phase=GREEN
+controllerRunId=PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601
+implementerRunId=PILOT-006/implementer/r1/00000000-0000-4000-8000-000000000602
+inputRedRevision=312c175ee6ed949e17601c7ba4034d8bf2229462
+frozenTest.path=tools/workflows/pilot006/persistent_desktop_provenance_test.ts
+frozenTest.sha256=a1ddf54e3b2ca91ff9925b4fa1c7b95c2d3906e395b92135c87d435185cad8bb
+
+focused.command=deno test --allow-read=deno.json,docs/development/autonomous-delivery.md tools/workflows/pilot006/persistent_desktop_provenance_test.ts
+focused.exitCode=0
+focused.result=2 passed; 0 failed
+
+productionFiles[0]=docs/development/autonomous-delivery.md
+changedTestFiles=[]
