@@ -30,11 +30,17 @@ HTTP responses expose a safe request/trace reference in problem details. Worker
 jobs continue the originating trace when a durable carrier exists or start a
 linked trace when it does not.
 
+<!-- deno-fmt-ignore -->
+Gateway-to-`web`-to-`api` requests preserve one correlation context, and each hop records its own service span.
+
 ## Structured Logs
 
 Production code writes structured events through a telemetry port. `console`
 calls are forbidden outside approved bootstrap/tool paths. Message strings do
 not contain arbitrary user content; variable data uses allowlisted fields.
+
+<!-- deno-fmt-ignore -->
+Renderer telemetry uses safe route templates and redacts token path segments, query values, cookies, authorization data, verification and reset data, invitation data, MFA data, and compliance payloads. Personalized renderer responses use `Cache-Control: private, no-store`; fingerprinted static assets use `Cache-Control: public, max-age=31536000, immutable`.
 
 Minimum event classes:
 

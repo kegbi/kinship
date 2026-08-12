@@ -103,3 +103,6 @@ The Astro build receives only explicitly public values. Private API location,
 provider credentials, session keys, database configuration, and internal
 topology remain server-side. Runtime user/workspace data comes from authorized
 API contracts rather than environment substitution into static files.
+
+<!-- deno-fmt-ignore -->
+The private Astro renderer receives only a private API origin, forwarded request context, generated API contracts, and renderer operations configuration. It receives no database or object-store configuration, provider credentials, identity keys, backend-internal imports, or direct-adapter authority.
