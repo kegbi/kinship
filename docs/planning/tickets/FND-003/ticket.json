@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "ticketId": "FND-003",
-  "revision": 3,
+  "revision": 4,
   "title": "Freeze the immutable candidate runtime graph",
   "outcome": "One dependency-free, self-tested runtime-graph validator and its exact machine-readable inputs make the repository's candidate Deno, Node, pnpm, frontend, backend, test, and OCI dependency graph immutable, age-eligible, lifecycle-denied by default, and repeatable from clean and offline caches without claiming the separate executable compatibility proofs assigned to named follow-on tickets.",
   "baseRevision": "895731f27f66d614cb431e9ab6bb570b94d1a476",
@@ -17,7 +17,7 @@
     "Lock the complete nontrivial import closure required by FND-003A, FND-003B, and FND-003C, including the immutable shadcn Button source dependencies, one exact Vitest DOM environment, and @playwright/test, in exactly one root deno.lock and one root pnpm-lock.yaml that those successors must consume byte-for-byte without nested locks.",
     "Prove in disposable clean directories or pinned containers that exact Deno, Node, Corepack, and pnpm identities restore the committed graph from fresh caches and then repeat with network-disabled or cached-only resolution while lockfile hashes remain unchanged and no lifecycle script runs.",
     "Record and independently inspect immutable multi-architecture OCI indexes for the selected Deno, Node, Playwright, PostgreSQL 18, and PostgreSQL 17 images, distinguishing runnable amd64 and arm64 children from child or attestation manifests.",
-    "Keep executable backend/database, frontend/component/test, browser/image, and command/hook behavior explicitly proof-pending under FND-003A, FND-003B, FND-003C, and FND-003D respectively, and name FND-003E as the post-integration root-lock amendment prerequisite for a later DG-03 Better Auth probe."
+    "Keep executable backend/database, frontend/component/test, browser/image, and command/hook behavior explicitly proof-pending under FND-003A, FND-003B, FND-003C, and FND-003D respectively; name FND-003E as the post-integration root-lock amendment prerequisite for a later DG-03 Better Auth probe and FND-003F as the root-lock amendment prerequisite before accessibility E2E work."
   ],
   "nonGoals": [
     "Claim that package resolution, peer compatibility, import construction, or OCI metadata proves Hono request behavior, Kysely/Postgres.js database behavior, Astro rendering, React hydration, shadcn component generation, Vitest reliability, or Playwright browser behavior.",
@@ -70,7 +70,7 @@
     },
     {
       "id": "AC-02",
-      "text": "The committed machine graph and synchronized validation report record one UTC selection timestamp, its 72-hour cutoff, exact direct versions and integrity/provenance for Deno, Node, Corepack, pnpm, Astro and its selected integrations, React and React DOM, Astro check, compatible TypeScript, Tailwind and Vite integration, Vite, Hono, Zod, the Standard Schema validator/spec, Kysely, kysely-postgres-js, Postgres.js, Vitest and coverage-v8, one exact DOM environment, @playwright/test specifically, shadcn CLI, current compatible ESLint, eslint-plugin-astro with its accessibility preset/parser closure, eslint-plugin-jsx-a11y, and the official eslint-plugin-react-hooks; the locked deterministic shadcn Button import closure is derived from an immutable source identity and includes @base-ui/react plus every class, merge, and icon helper imported by that source; every selected release was the newest compatible age-eligible stable release at that timestamp, and every newer excluded release has an evidence-backed reason.",
+      "text": "The committed machine graph and synchronized validation report record one UTC selection timestamp, its 72-hour cutoff, exact direct versions and integrity/provenance for Deno, Node, Corepack, pnpm, Astro and its selected integrations, React and React DOM, Astro check, compatible TypeScript, Tailwind and Vite integration, Vite, Hono, Zod, the Standard Schema validator/spec, Kysely, kysely-postgres-js, Postgres.js, Vitest and coverage-v8, one exact DOM environment, @playwright/test specifically, shadcn CLI, current compatible ESLint 9, eslint-plugin-astro 1 with its transitive Astro parser and accessibility closure, eslint-plugin-jsx-a11y, @typescript-eslint/parser, and the official eslint-plugin-react-hooks; the locked deterministic shadcn Button import closure is derived from an immutable source identity and includes @base-ui/react plus every class, merge, and icon helper imported by that source; every selected release was the newest compatible age-eligible stable release at that timestamp, and every newer excluded release has an evidence-backed reason.",
       "redProof": "The AC-01 command fails its repository assertion because no timestamped exact graph, official publication/integrity evidence, manifests, or lockfiles exist, while fixture controls prove that ranges, too-young releases, incompatible peers, and missing dialect edges are rejected."
     },
     {
@@ -90,7 +90,7 @@
     },
     {
       "id": "AC-06",
-      "text": "The graph and report label runtime behavior as proof-pending and name FND-003A for Hono/Zod plus Kysely/Postgres.js on both PostgreSQL majors, FND-003B for Astro/static-first React island/immutable shadcn source/Vitest DOM coverage and repeated Windows execution, FND-003C for exact @playwright/test image/browser smoke, FND-003D for truthful root-command and Lefthook wiring, and FND-003E as the post-integration root-lock graph amendment prerequisite for the later DG-03 Better Auth probe; A/B/C are declared consumers of the predecessor's single root locks with no mutation or nested lock, Better Auth/passkey pins remain absent here, and any missing required edge prerequisite-blocks the affected successor rather than being omitted or overclaimed.",
+      "text": "The graph and report label runtime behavior as proof-pending and name FND-003A for Hono/Zod plus Kysely/Postgres.js on both PostgreSQL majors, FND-003B for Astro/static-first React island/immutable shadcn source/Vitest DOM coverage and repeated Windows execution, FND-003C for exact @playwright/test image/browser smoke, FND-003D for truthful root-command and Lefthook wiring, FND-003E as the post-integration root-lock graph amendment prerequisite for the later DG-03 Better Auth probe, and FND-003F as the root-lock amendment prerequisite for @axe-core/playwright before accessibility E2E/FND-11/FND-12; A/B/C are declared consumers of the predecessor's single root locks with no mutation or nested lock, Better Auth/passkey and axe accessibility pins remain absent here, and any missing required edge prerequisite-blocks the affected successor rather than being omitted or overclaimed.",
       "redProof": "The AC-01 command fails because no machine-readable proof-status and follow-on mapping exists; controls reject a graph that marks unresolved runtime behavior proven or includes Lefthook/mutable shadcn payload early."
     }
   ],

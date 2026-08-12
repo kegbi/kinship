@@ -2,7 +2,7 @@
 
 Status: ready, round 0 (fresh RED retry pending)\
 Owner: trusted top-level orchestrator\
-Packet revision: 3\
+Packet revision: 4\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
 Execution class: `ordinary`\
 Depends on: FND-001S at integration revision
@@ -53,6 +53,9 @@ must consume:
   amendment adds one real unpublished Better Auth probe member and its exact
   age-eligible Better Auth/passkey development closure to these same root locks,
   with empty lifecycle approvals and no production entry point.
+- FND-003F: before accessibility E2E/FND-11/FND-12, a strict-TDD root-lock
+  amendment selects `@axe-core/playwright` and `axe-core` from published
+  tarballs without approving or executing the source registry's `prepare` hook.
 
 These are follow-ons, not dependencies or unresolved decisions in this packet.
 FND-003A, FND-003B, and FND-003C must consume the two root locks frozen here
@@ -73,8 +76,9 @@ as incidental lock drift.
   including the immutable shadcn Button source's `@base-ui/react`, class, merge,
   and icon helpers, one exact Vitest DOM environment, and `@playwright/test`
   specifically, plus current compatible ESLint, `eslint-plugin-astro` and its
-  accessibility/parser closure, `eslint-plugin-jsx-a11y`, and the official
-  `eslint-plugin-react-hooks` required before FND-003D can wire truthful checks.
+  transitive Astro parser/accessibility closure, `eslint-plugin-jsx-a11y`,
+  `@typescript-eslint/parser`, and the official `eslint-plugin-react-hooks`
+  required before FND-003D can wire truthful checks.
 - Resolve and repeat the graph in disposable clean and offline/cached-only
   environments without changing either lock hash or executing a lifecycle
   script.
@@ -91,6 +95,8 @@ as incidental lock drift.
 - Better Auth or passkey packages in this graph; their probe-only root-lock
   amendment belongs to FND-003E and the current time-sensitive version snapshot
   is not a pin.
+- `@axe-core/playwright` or `axe-core`; FND-003F selects them before
+  accessibility E2E without retaining a source-only `prepare` hook.
 - Lefthook, new or changed root task definitions, hooks, CI, applications,
   packages, E2E scaffold, production Compose, Dockerfiles, migrations, Atlas or
   another migration runner/comparator, auth, Better Auth, Redis, queues,
