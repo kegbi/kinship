@@ -1,0 +1,123 @@
+FND-003 round-01 OCI-tag RED correction evidence
+schemaVersion: 2
+controllerRunId: FND-003/orchestrator/r0/b308fcda-6e91-4fec-8b40-bf19c6e21a16
+issued implementerRunId: FND-003/implementer/r1/6a8557e3-fbb9-419b-b7de-70f45c4ef79e
+correction input revision from dispatch: e20f922331500488231154dd37f6077ac757d28d
+phase: RED correction only; stopped before GREEN
+
+Changed test/check path:
+- tools/runtime/FND-003/runtime_graph_contract_test.ts
+  sha256: f62c935b9199828899f5bdef7057eb949da5de0524307c1e4197e7a4289bd970
+
+Changed evidence path:
+- docs/planning/tickets/FND-003/evidence/round-01-red-oci-correction.log
+
+Changed production paths: []
+
+Corrected OCI controls:
+- Positive graph exercises every required official declaration:
+  denoland/deno:debian-<Deno version>,
+  node:<Node version>-bookworm-slim,
+  mcr.microsoft.com/playwright:v<@playwright/test version>-noble,
+  postgres:18.4-alpine3.23, and postgres:17.10-alpine3.23.
+- Negative controls reject a floating tag, bare Playwright package version,
+  synthetic PostgreSQL patch version, wrong Node variant, wrong PostgreSQL
+  base suffix, wrong official repository, and Playwright package/image drift.
+- Exact tag@OCI-index-digest references, index media type, distinct runnable
+  linux/amd64 and linux/arm64 child manifests, and separate attestations remain
+  enforced. Package versions remain exact stable x.y.z values.
+- No mutable registry-selected digest or newly selected package version is
+  hardcoded. No coverage-ignore directive is present.
+
+Accepted focused RED proof:
+command: deno test --allow-read=.npmrc,deno.json,deno.lock,package.json,pnpm-workspace.yaml,pnpm-lock.yaml,tools/runtime/FND-003,docs/validation/runtime-graph-fnd003.json tools/runtime/FND-003/runtime_graph_contract_test.ts
+exit: 1
+observed: 1 passed, 1 failed. The complete in-memory policy/control test
+passed. The sole failing test was "repository supplies the immutable FND-003
+runtime graph" because .npmrc, deno.lock, package.json, pnpm-workspace.yaml,
+pnpm-lock.yaml, and docs/validation/runtime-graph-fnd003.json are absent.
+No syntax, setup, permission, timeout, or unrelated failure remained.
+
+Test-authoring diagnostics not accepted as RED evidence:
+- The first focused attempt exited 1 with two failures because the official
+  repository negative control expected a mismatched message substring.
+- The second focused attempt exited 1 with two failures because the package
+  drift control encountered the intentionally unchanged lock member before the
+  OCI assertion.
+- Both control-oracle defects were corrected before the accepted focused proof.
+
+Direct corrected-check gates:
+command: deno fmt --check tools/runtime/FND-003/runtime_graph_contract_test.ts
+exit: 0
+observed: Checked 1 file.
+
+command: deno lint tools/runtime/FND-003/runtime_graph_contract_test.ts
+exit: 0
+observed: Checked 1 file.
+
+command: deno check tools/runtime/FND-003/runtime_graph_contract_test.ts
+exit: 0
+observed: Check tools/runtime/FND-003/runtime_graph_contract_test.ts.
+
+Coverage proof (temporary copy avoids Deno's default exclusion of *_test.ts;
+temporary path redacted):
+command: copy the exact corrected check bytes to
+<TEMP>/runtime_graph_contract_coverage.ts; deno test --coverage=<TEMP>/data
+--allow-read=.npmrc,deno.json,deno.lock,package.json,pnpm-workspace.yaml,pnpm-lock.yaml,tools/runtime/FND-003,docs/validation/runtime-graph-fnd003.json
+<TEMP>/runtime_graph_contract_coverage.ts; require the test exit to equal 1;
+deno coverage --include='^file:.*runtime_graph_contract_coverage.ts$'
+--detailed --threshold=100 <TEMP>/data
+exit: 0 (wrapper required the expected repository-only test exit 1, then the
+coverage threshold command passed)
+observed: 1427/1427 covered lines; subsequent threshold report showed branch
+100.0%, function 100.0%, line 100.0%, all files 100.0%.
+
+command: deno coverage --include='^file:.*runtime_graph_contract_coverage.ts$' --threshold=100 <TEMP>/data
+exit: 0
+observed: branch 100.0%, function 100.0%, line 100.0%.
+
+Coverage diagnostic not accepted as proof:
+- A filtered control-only run passed its one selected test but reported line
+  coverage 99.8% because the deliberately RED repository test was filtered.
+  The full two-test coverage proof above supersedes it.
+
+Unchanged root gates:
+command: deno task fmt:check
+exit: 0
+observed: Checked 155 files.
+
+command: deno task lint
+exit: 0
+observed: Checked 25 files.
+
+command: deno task check
+exit: 0
+observed: checked the unchanged schema and workflow entry points.
+
+command: deno task test:schema:matrix
+exit: 0
+observed: PostgreSQL 18.4 and 17.10 each passed atomic rollback, clean apply,
+catalog/field-catalog assertions, database behavior, teardown, and clean
+reapply.
+
+Ticket validation:
+command: deno task ticket:validate docs/planning/tickets/FND-003
+exit: 1
+observed: exactly one issue, ready_base_scope_violation at
+$.ticket.baseRevision, expected at this pre-candidate checkpoint.
+
+command: deno eval <pure schema-v2 validateTicketBundle invocation using the
+current ticket.json, state.json, events.jsonl, empty results/reviews, and the
+four declared required task names>
+exit: 0
+observed: {"ok":true,"issues":[]}
+
+Prior RED artifacts remain byte-identical during this correction:
+- docs/planning/tickets/FND-003/evidence/round-01-red.log
+  sha256: 21f9453d8dee94c5a9a2bb6796a009bdc60136d6920c2bfb8a6a4bfd8189e0e4
+- docs/planning/tickets/FND-003/evidence/round-01-red-retry.log
+  sha256: 2f7ec4618ae4ee0359f99e8a16ad93804053338a4473d40e9ae68ed56c7f3431
+
+No production file was changed. No ticket authority, state, event, prior RED
+evidence, protected control path, or Git metadata was changed. No commit,
+self-review, GREEN, or REFACTOR action was performed.
