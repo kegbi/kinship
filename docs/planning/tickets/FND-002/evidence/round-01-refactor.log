@@ -1,0 +1,21 @@
+schemaVersion: 2
+ticketId: FND-002
+round: 1
+phase: REFACTOR_PENDING_AUTHORITATIVE_GREEN
+issuedByControllerRunId: FND-002/orchestrator/r0/a16b5b61-a6c8-4366-8752-d530fa3a6d74
+implementerRunId: FND-002/implementer/r1/e2edf3bf-a445-4fc2-8ba4-3fffb9681804
+
+priorAttempt:
+  disposition: controller-rejected pre-candidate attempt
+  behaviorRefactor: none
+  formattingRefactor: line wrapping in two attempted production documents
+  invalidatingGate: repository lint failed on the then-frozen RED check
+  candidateFormed: false
+  productionFormattingRestored: true
+
+authoritativeRefactor:
+  status: PENDING
+  prerequisite: authoritative GREEN must complete from a new controller-frozen RED check
+
+currentChangedProductionFiles: []
+currentArchitectureContractsUnchanged: true

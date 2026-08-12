@@ -1,58 +1,70 @@
 schemaVersion: 2
 ticketId: FND-002
 round: 1
-phase: RED
+phase: RED_PENDING_CONTROLLER_FREEZE
 issuedByControllerRunId: FND-002/orchestrator/r0/a16b5b61-a6c8-4366-8752-d530fa3a6d74
 implementerRunId: FND-002/implementer/r1/e2edf3bf-a445-4fc2-8ba4-3fffb9681804
 inputBaseRevision: 603f6621809f61fab70bc29b8b4a9252ebcecb27
 
-controllerAudit:
-  rejectedPreFreezeRevision: d0ba91da166b6a651cf75fba399bdd39fe5c0fd1
-  disposition: rejected before authoritative RED freeze
-  reason: deno fmt --check tools/architecture/FND-002/coordination_contract_test.ts exited 1
-  correction: semantics-preserving deno fmt of the check file only
+rejectedHistory:
+  - revision: d0ba91da166b6a651cf75fba399bdd39fe5c0fd1
+    disposition: controller-rejected pre-freeze attempt
+    reason: frozen check was not Deno-formatted
+  - revision: 14e717a6fafe2f114806f29f4b728a096fbdccfd
+    disposition: controller-rejected as final RED anchor
+    reason: frozen check contained three no-regex-spaces violations found during the attempted GREEN gates
+  - revision: null
+    disposition: controller-rejected pre-candidate GREEN attempt
+    reason: focused GREEN passed, but repository lint failed on the frozen check; no candidate was formed
 
-formatCommand: deno fmt tools/architecture/FND-002/coordination_contract_test.ts
-formatExitCode: 0
-formatObserved: Checked 1 file
-formatCheckCommand: deno fmt --check tools/architecture/FND-002/coordination_contract_test.ts
-formatCheckExitCode: 0
-formatCheckObserved: Checked 1 file
+recovery:
+  architectureContractsRestored: true
+  checkChange: three regex indentation literals use semantics-equivalent explicit quantifiers
+  expectationsChanged: false
+  acceptedBehaviorChanged: false
+  controllerFrozenCheckSha256: 272038a94de02197e9d2cd830fc31d1943ac67d7fffb46bd7c0069a249f6c9a5
 
-command: deno test --allow-read=docs/architecture tools/architecture/FND-002/coordination_contract_test.ts
-authoritativeExitCode: 1
+controllerReproduction:
+  - command: deno test --allow-read=docs/architecture tools/architecture/FND-002/coordination_contract_test.ts
+    exitCode: 1
+    observed: discriminator passed and only AC-01 through AC-04 mismatches failed
+  - command: deno fmt --check tools/architecture/FND-002/coordination_contract_test.ts
+    exitCode: 0
+  - command: deno lint tools/architecture/FND-002/coordination_contract_test.ts
+    exitCode: 0
+  - command: deno task lint
+    exitCode: 0
 
+focusedCommand: deno test --allow-read=docs/architecture tools/architecture/FND-002/coordination_contract_test.ts
+focusedExitCode: 1
 selfCheck:
   result: PASS
   observed: manifest discriminator accepts DG-06A and rejects competing choreography ... ok
-  discrimination: compliant fixture produced no issues; identity-driven workspace consumption and both missing governance lifecycle edges were rejected
-
 repositoryContractCheck:
   result: EXPECTED_FAIL
-  observedSummary: accepted architecture contracts record the DG-06A boundary ... FAILED; 1 passed, 1 failed
-  intendedFailures:
-    - AC-01 accepted ADR absent and ADR 0004 not indexed as accepted
-    - AC-02 workspaces-owned shared transaction/session, rollback, and pre-commit postcondition contract absent
-    - AC-03 workspaces still consumes identity.user-registered and governance lacks workspace.created and workspace.member-joined consumption
-    - AC-04 proof-pending and synchronous transaction-scoped versus durable asynchronous delivery contract absent
+  observed: 1 passed, 1 failed; only AC-01 through AC-04 architecture mismatches reported
 
-preliminaryRuns:
-  - exitCode: 1
-    acceptedAsRedProof: false
-    observed: strict TypeScript check found possible undefined array access in the new harness; test-only correction followed
-  - exitCode: 1
-    acceptedAsRedProof: false
-    observed: intended contract failure plus false publisher diagnostics from multiline-list parsing; test-only correction followed
-  - exitCode: 1
-    acceptedAsRedProof: false
-    observed: intended contract failure; aggregate diagnostic was tightened to name AC-04 explicitly
-  - exitCode: 1
-    acceptedAsRedProof: true
-    observed: self-check passed and repository assertion failed only for AC-01 through AC-04 contract mismatches
+validationCommands:
+  - command: deno fmt --check tools/architecture/FND-002/coordination_contract_test.ts
+    exitCode: 0
+    observed: Checked 1 file
+  - command: deno lint tools/architecture/FND-002/coordination_contract_test.ts
+    exitCode: 0
+    observed: Checked 1 file
+  - command: deno task lint
+    exitCode: 0
+    observed: Checked 22 files
+
+baselineProof:
+  exitCode: 0
+  observed:
+    - ADR 0004 absent
+    - ADR index entry absent
+    - backend DG-06A specialization absent
+    - workspaces identity.user-registered consumption restored
+    - governance workspace.created and workspace.member-joined consumption absent
 
 changedTestFiles:
   - tools/architecture/FND-002/coordination_contract_test.ts
 changedProductionFiles: []
-changedEvidenceFiles:
-  - docs/planning/tickets/FND-002/evidence/round-01-red.log
-productionContractsUnchanged: true
+architectureContractsUnchangedFromPreGreenBaseline: true
