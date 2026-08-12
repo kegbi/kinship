@@ -2,7 +2,7 @@
 
 Status: ready, round 0 (fresh RED retry pending)\
 Owner: trusted top-level orchestrator\
-Packet revision: 2\
+Packet revision: 3\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
 Execution class: `ordinary`\
 Depends on: FND-001S at integration revision
@@ -49,6 +49,10 @@ must consume:
 - FND-003C: exact Playwright package/image/browser matching and Chromium smoke.
 - FND-003D: truthful root-command expansion and Lefthook wiring after the
   accepted FND-12 prerequisites exist.
+- FND-003E: after FND-003 integration and before DG-03, a tiny strict-TDD graph
+  amendment adds one real unpublished Better Auth probe member and its exact
+  age-eligible Better Auth/passkey development closure to these same root locks,
+  with empty lifecycle approvals and no production entry point.
 
 These are follow-ons, not dependencies or unresolved decisions in this packet.
 FND-003A, FND-003B, and FND-003C must consume the two root locks frozen here
@@ -68,7 +72,9 @@ as incidental lock drift.
 - Lock the nontrivial backend/frontend/test closure required by FND-003A/B/C,
   including the immutable shadcn Button source's `@base-ui/react`, class, merge,
   and icon helpers, one exact Vitest DOM environment, and `@playwright/test`
-  specifically.
+  specifically, plus current compatible ESLint, `eslint-plugin-astro` and its
+  accessibility/parser closure, `eslint-plugin-jsx-a11y`, and the official
+  `eslint-plugin-react-hooks` required before FND-003D can wire truthful checks.
 - Resolve and repeat the graph in disposable clean and offline/cached-only
   environments without changing either lock hash or executing a lifecycle
   script.
@@ -82,9 +88,13 @@ as incidental lock drift.
 
 - Runtime behavior claimed by FND-003A, FND-003B, FND-003C, or FND-003D.
 - Mutable shadcn registry payload or generated component acceptance.
+- Better Auth or passkey packages in this graph; their probe-only root-lock
+  amendment belongs to FND-003E and the current time-sensitive version snapshot
+  is not a pin.
 - Lefthook, new or changed root task definitions, hooks, CI, applications,
-  packages, E2E scaffold, production Compose, Dockerfiles, migrations, auth,
-  Better Auth, Redis, queues, modules, or business behavior.
+  packages, E2E scaffold, production Compose, Dockerfiles, migrations, Atlas or
+  another migration runner/comparator, auth, Better Auth, Redis, queues,
+  modules, or business behavior.
 - Architecture/product/schema/catalog/control-path changes, including the
   synchronized `personal-crm-schema/v1` bundle and accepted ticket packets.
 - FND-002, PRODUCT-001, or WORKFLOW-001 as dependencies.
@@ -142,7 +152,7 @@ The criterion-specific negative cases are authoritative in `ticket.json`. The
 one initial RED command is:
 
 ```text
-deno test --allow-read=.npmrc,deno.json,deno.lock,package.json,pnpm-workspace.yaml,pnpm-lock.yaml,tools/runtime/FND-003,docs/validation/runtime-graph-fnd003.json tools/runtime/FND-003/runtime_graph_contract_test.ts
+deno test --allow-read=.npmrc,deno.json,deno.lock,package.json,pnpm-workspace.yaml,pnpm-lock.yaml,tools/runtime/FND-003,docs/validation/runtime-graph-fnd003.json,docs/validation/runtime-graph-fnd003.md tools/runtime/FND-003/runtime_graph_contract_test.ts
 ```
 
 Every harness control must pass. Against the unchanged input base, only the
