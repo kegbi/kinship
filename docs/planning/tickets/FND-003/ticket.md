@@ -1,12 +1,17 @@
 # FND-003: Freeze the immutable candidate runtime graph
 
-Status: ready, round 0\
+Status: ready, round 0 (RED checkpoint frozen)\
 Owner: trusted top-level orchestrator\
+Packet revision: 2\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
 Execution class: `ordinary`\
 Depends on: FND-001S at integration revision
 `fcc8663751a6b2f1efb62f744655ad68771df4ca`\
 Maximum rounds: 3
+
+Frozen RED revision: `810afc27a0a1d1e6029ec61793ca067f00f6f40b`\
+Frozen validator SHA-256:
+`7515751e75d4c6a7730716c7b3a19e5114b5523026de5d25014aeb3d85bc05d5`
 
 ## Outcome
 
@@ -34,6 +39,10 @@ must consume:
   accepted FND-12 prerequisites exist.
 
 These are follow-ons, not dependencies or unresolved decisions in this packet.
+FND-003A, FND-003B, and FND-003C must consume the two root locks frozen here
+without editing them or creating nested locks. A missing successor import edge
+rejects this graph or prerequisite-blocks that successor; it cannot be deferred
+as incidental lock drift.
 
 ## In scope
 
@@ -44,6 +53,10 @@ These are follow-ons, not dependencies or unresolved decisions in this packet.
   compatibility, exclusion, and upgrade evidence.
 - Commit exact root Deno/pnpm manifests, workspace metadata, locks, Corepack
   descriptor integrity, and explicit deny-by-default lifecycle policies.
+- Lock the nontrivial backend/frontend/test closure required by FND-003A/B/C,
+  including the immutable shadcn Button source's `@base-ui/react`, class, merge,
+  and icon helpers, one exact Vitest DOM environment, and `@playwright/test`
+  specifically.
 - Resolve and repeat the graph in disposable clean and offline/cached-only
   environments without changing either lock hash or executing a lifecycle
   script.
@@ -97,16 +110,21 @@ These are follow-ons, not dependencies or unresolved decisions in this packet.
   graph named in `ticket.json`.
 - AC-02: one timestamped, exact, current, age-eligible graph covers the selected
   runtime, package-manager, backend, frontend, test, browser, and shadcn CLI
-  candidates with official evidence and newer-version exclusions.
+  candidates and the full immutable Button/DOM/browser-test import closure with
+  official evidence and newer-version exclusions.
 - AC-03: Corepack integrity/signatures and pnpm/Deno lifecycle allowlists are
   exact and deny by default; the transitive install-hook inventory justifies any
   non-empty exception.
 - AC-04: fresh-cache frozen resolution and cached-only/offline repeat preserve
-  both lock hashes and execute no lifecycle or startup install.
+  both single-root lock hashes over that real import graph, create no nested
+  locks, and execute no lifecycle or startup install; A/B/C reuse those locks
+  without mutation.
 - AC-05: all five OCI references are exact indexes with separate required Linux
-  amd64/arm64 child and attestation classification.
+  amd64/arm64 child and attestation classification, and the official Playwright
+  image version matches `@playwright/test` exactly.
 - AC-06: the graph keeps all executable behavior proof-pending under the four
-  named follow-ons and excludes early Lefthook or mutable shadcn payloads.
+  named follow-ons, declares no-mutation predecessor-lock reuse, and excludes
+  early Lefthook or mutable shadcn payloads.
 
 The criterion-specific negative cases are authoritative in `ticket.json`. The
 one initial RED command is:
