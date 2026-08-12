@@ -26,8 +26,8 @@ Then require the exact approved contract:
 1. Slice 1 owns complete `AUTH-001` through `AUTH-004`, `WORKSPACE-001`,
    `PEOPLE-001`, and `PEOPLE-002`; it starts only a typed, still-planned
    `PEOPLE-003` shell; it owns workspace/member settings and the cataloged
-   public home/features route, inherited-state, navigation, and accessibility
-   contracts without assigning either page a stable flow ID.
+   public home/features route, current `ready`/`not-found` state, navigation,
+   and accessibility contracts without assigning either page a stable flow ID.
 2. `PEOPLE-004` stays one atomic edit/archive/restore/delete mutation flow and
    is completed only in Slice 2. Slice 1 has no fictional read-only subset.
 3. Complete `PEOPLE-003` is accepted in Slice 6 only after every enabled core
@@ -43,6 +43,10 @@ Then require the exact approved contract:
    flows remain planned and neither public product page gains a flow ID.
 6. The contract explicitly preserves the deferred follow-up gates listed in
    `ticket.json` without choosing any branch or adding a stable ID.
+
+The check must not interpret the current public-state catalog shape as deciding
+the deferred semantics of state inheritance. PRODUCT-001 records the current
+public states only; their inheritance behavior remains a later product gate.
 
 At RED, the catalog extraction/self-checks must pass and the focused command
 must fail only because the unchanged base release/planning prose still presents
