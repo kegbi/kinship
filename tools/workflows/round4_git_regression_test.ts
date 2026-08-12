@@ -9,8 +9,15 @@ const REQUIRED_TASKS = [
   "ticket:validate",
   "test:schema:matrix",
 ] as const;
+const FIXTURE_TASK_DEFINITION = "deno check tools/workflows/production.ts";
 
 const TICKET_ID = "PILOT-001";
+const CONTROLLER_RUN_ID =
+  `${TICKET_ID}/orchestrator/r0/00000000-0000-4000-8000-000000000201`;
+const IMPLEMENTER_RUN_ID =
+  `${TICKET_ID}/implementer/r1/00000000-0000-4000-8000-000000000202`;
+const REVIEWER_RUN_ID =
+  `${TICKET_ID}/reviewer/r1/00000000-0000-4000-8000-000000000203`;
 const TICKET_PATH = `docs/planning/tickets/${TICKET_ID}`;
 const TEST_PATH = "tools/workflows/round4_fixture_test.ts";
 const PRODUCTION_PATH = "tools/workflows/production.ts";
@@ -126,7 +133,7 @@ function lifecycleEvents(
       from: "planned",
       to: "ready",
       round: 0,
-      actorRunId: "orchestrator-ready",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: "ticket.json",
       revision: baseRevision,
     },
@@ -135,7 +142,7 @@ function lifecycleEvents(
       from: "ready",
       to: "red",
       round: 1,
-      actorRunId: "implementer-round-01",
+      actorRunId: IMPLEMENTER_RUN_ID,
       evidenceRef: "evidence/round-01-red.log",
       revision: redRevision,
     },
@@ -144,7 +151,7 @@ function lifecycleEvents(
       from: "red",
       to: "green",
       round: 1,
-      actorRunId: "implementer-round-01",
+      actorRunId: IMPLEMENTER_RUN_ID,
       evidenceRef: "evidence/round-01-green.log",
       revision: candidateRevision,
     },
@@ -153,7 +160,7 @@ function lifecycleEvents(
       from: "green",
       to: "refactor",
       round: 1,
-      actorRunId: "implementer-round-01",
+      actorRunId: IMPLEMENTER_RUN_ID,
       evidenceRef: "evidence/round-01-refactor.log",
       revision: candidateRevision,
     },
@@ -162,7 +169,7 @@ function lifecycleEvents(
       from: "refactor",
       to: "review",
       round: 1,
-      actorRunId: "orchestrator-review",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: "results/round-01.json",
       revision: candidateRevision,
     },
@@ -171,7 +178,7 @@ function lifecycleEvents(
       from: "review",
       to: "accepted",
       round: 1,
-      actorRunId: "orchestrator-accept",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: "acceptance.md",
       revision: candidateRevision,
     },
@@ -191,12 +198,15 @@ function acceptedBundle(
   );
   return {
     ticket: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       ticketId: TICKET_ID,
       revision: 1,
       title: "Retain complete frozen RED blobs",
       outcome: "Permitted RED blobs remain complete and unchanged.",
       baseRevision,
+      controllerRunId: CONTROLLER_RUN_ID,
+      executionClass: "ordinary",
+      protectedWriteAuthorization: null,
       dependencies: [],
       maxRounds: 3,
       scope: ["Workflow validation"],
@@ -211,7 +221,17 @@ function acceptedBundle(
         text: "Validate complete and retained frozen RED test blobs.",
         redProof: "Large or weakened Git evidence is rejected incorrectly.",
       }],
-      requiredTasks: [...REQUIRED_TASKS],
+      requiredTasks: {
+        baseline: REQUIRED_TASKS.map((name) => ({
+          name,
+          definition: FIXTURE_TASK_DEFINITION,
+        })),
+        candidate: REQUIRED_TASKS.map((name) => ({
+          name,
+          definition: FIXTURE_TASK_DEFINITION,
+          guardedBy: null,
+        })),
+      },
       risks: ["Truncation or candidate replacement could forge RED evidence"],
       unresolvedDecisions: [],
     },
@@ -229,7 +249,7 @@ function acceptedBundle(
       dependencyRevisions: {},
       openFindingIds: [],
       orchestratorChecks: REQUIRED_TASKS.map((task, index) => ({
-        runId: `orchestrator-check-${index + 1}`,
+        runId: `${CONTROLLER_RUN_ID}/acceptance-check-${index + 1}`,
         revision: candidateRevision,
         command: `deno task ${task}`,
         exitCode: 0,
@@ -239,11 +259,12 @@ function acceptedBundle(
     },
     events: structuredClone(events),
     results: [{
-      schemaVersion: 1,
+      schemaVersion: 2,
       ticketId: TICKET_ID,
       ticketRevision: 1,
       round: 1,
-      implementerRunId: "implementer-round-01",
+      implementerRunId: IMPLEMENTER_RUN_ID,
+      issuedByControllerRunId: CONTROLLER_RUN_ID,
       inputBaseRevision: baseRevision,
       dispatchRef: "dispatch/round-01.md",
       redRevision,
@@ -271,12 +292,13 @@ function acceptedBundle(
       candidateRevision,
     }],
     reviews: [{
-      schemaVersion: 1,
+      schemaVersion: 2,
       ticketId: TICKET_ID,
       ticketRevision: 1,
       round: 1,
-      implementerRunId: "implementer-round-01",
-      reviewerRunId: "reviewer-round-01",
+      implementerRunId: IMPLEMENTER_RUN_ID,
+      reviewerRunId: REVIEWER_RUN_ID,
+      issuedByControllerRunId: CONTROLLER_RUN_ID,
       baseRevision,
       candidateRevision,
       verdict: "APPROVED",
@@ -376,7 +398,7 @@ async function createFixture(
         JSON.stringify(
           {
             tasks: Object.fromEntries(
-              REQUIRED_TASKS.map((task) => [task, "echo"]),
+              REQUIRED_TASKS.map((task) => [task, FIXTURE_TASK_DEFINITION]),
             ),
           },
           null,

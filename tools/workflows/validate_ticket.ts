@@ -184,6 +184,71 @@ async function changedPaths(
   return paths;
 }
 
+async function readGitJsonRecord(
+  ticketDirectory: string,
+  revision: string,
+  repositoryPath: string,
+): Promise<JsonRecord | undefined> {
+  const result = await runGit(
+    ticketDirectory,
+    ["show", `${revision}:${repositoryPath}`],
+    MAX_FILE_BYTES,
+  );
+  if (!result.success || result.limited) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(result.output));
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function taskDefinitionsAtRevision(
+  ticketDirectory: string,
+  revision: string,
+): Promise<ReadonlyMap<string, string> | undefined> {
+  const config = await readGitJsonRecord(
+    ticketDirectory,
+    revision,
+    "deno.json",
+  );
+  if (config === undefined || !isRecord(config.tasks)) return undefined;
+  const definitions = new Map<string, string>();
+  for (const [name, definition] of Object.entries(config.tasks)) {
+    if (typeof definition === "string") definitions.set(name, definition);
+  }
+  return definitions;
+}
+
+function normalizeShellQuotedToken(token: string): string {
+  return token.replace(/["']/g, "");
+}
+
+function isObviousNoopTaskDefinition(definition: string): boolean {
+  const tokens = definition.trim().split(/\s+/).map(normalizeShellQuotedToken);
+  const executable = tokens[0]!.toLowerCase();
+  if (executable !== "deno" && executable !== "deno.exe") return false;
+
+  let subcommandIndex = 1;
+  while (subcommandIndex < tokens.length) {
+    const token = tokens[subcommandIndex]!.toLowerCase();
+    if (token === "--config" || token === "--log-level") {
+      subcommandIndex += 2;
+    } else if (
+      token.startsWith("--config=") ||
+      token.startsWith("--log-level=") ||
+      token === "-q" || token === "--quiet" || token === "--no-config" ||
+      token.startsWith("--unstable-")
+    ) {
+      subcommandIndex += 1;
+    } else {
+      break;
+    }
+  }
+
+  return String(tokens[subcommandIndex]).toLowerCase() === "eval";
+}
+
 async function sha256(value: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -526,6 +591,7 @@ function validateEvidenceFiles(
 ): readonly ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   // This helper runs only after the structural contract has returned no issues.
+  const ticket = bundle.ticket as JsonRecord;
   const state = bundle.state as JsonRecord;
   const results = bundle.results as unknown[];
   const reviews = bundle.reviews as unknown[];
@@ -654,6 +720,10 @@ function validateEvidenceFiles(
       expectedReference = roundReference(recordDirectory, round, "json");
     } else if (transition.evidence === "acceptance") {
       expectedReference = WORKFLOW_POLICY.evidence.acceptance;
+    } else if (transition.evidence === "integration") {
+      expectedReference = ticket.schemaVersion === 1
+        ? WORKFLOW_POLICY.evidence.acceptance
+        : WORKFLOW_POLICY.evidence.integration;
     }
     if (
       expectedReference !== undefined && event.evidenceRef !== expectedReference
@@ -675,7 +745,284 @@ function validateEvidenceFiles(
   ) {
     requireFile("acceptance.md", "acceptance.md");
   }
+  if (state.phase === "integrated" && ticket.schemaVersion === 2) {
+    requireFile("integration.md", "integration.md");
+  }
   return issues;
+}
+
+async function validateTaskDefinitions(
+  ticketDirectory: string,
+  ticket: JsonRecord,
+  state: JsonRecord,
+  issues: ValidationIssue[],
+): Promise<void> {
+  if (ticket.schemaVersion !== 2 || state.candidateRevision === null) return;
+  const requiredTasks = ticket.requiredTasks as JsonRecord;
+  const baseline = requiredTasks.baseline as JsonRecord[];
+  const candidate = requiredTasks.candidate as JsonRecord[];
+  const baselineDefinitions = await taskDefinitionsAtRevision(
+    ticketDirectory,
+    ticket.baseRevision as string,
+  );
+  const candidateDefinitions = await taskDefinitionsAtRevision(
+    ticketDirectory,
+    state.candidateRevision as string,
+  );
+  if (baselineDefinitions === undefined || candidateDefinitions === undefined) {
+    issues.push(
+      issue(
+        "$.ticket.requiredTasks",
+        "task_definition_mismatch",
+        "Deno task definitions could not be read at the declared revisions",
+      ),
+    );
+    return;
+  }
+  const requiredNames = new Set<string>();
+  baseline.forEach((entry, index) => {
+    const name = entry.name as string;
+    requiredNames.add(name);
+    if (baselineDefinitions.get(name) !== entry.definition) {
+      issues.push(
+        issue(
+          `$.ticket.requiredTasks.baseline[${index}].definition`,
+          "task_definition_mismatch",
+          "Recorded task definition must match the exact base revision",
+        ),
+      );
+    }
+  });
+  candidate.forEach((entry, index) => {
+    const name = entry.name as string;
+    const definition = entry.definition as string;
+    if (candidateDefinitions.get(name) !== definition) {
+      issues.push(
+        issue(
+          `$.ticket.requiredTasks.candidate[${index}].definition`,
+          "task_definition_mismatch",
+          "Recorded task definition must match the exact candidate revision",
+        ),
+      );
+    }
+    if (isObviousNoopTaskDefinition(definition)) {
+      issues.push(
+        issue(
+          `$.ticket.requiredTasks.candidate[${index}].definition`,
+          "task_definition_noop",
+          "A no-op task cannot certify delivery evidence",
+        ),
+      );
+    }
+    if (baselineDefinitions.get(name) === candidateDefinitions.get(name)) {
+      return;
+    }
+    if (entry.guardedBy === null) {
+      issues.push(
+        issue(
+          `$.ticket.requiredTasks.candidate[${index}].guardedBy`,
+          "task_guard_required",
+          "A changed task requires an unchanged independent guard",
+        ),
+      );
+      return;
+    }
+    const guard = entry.guardedBy as string;
+    if (
+      guard === name || !requiredNames.has(guard) ||
+      baselineDefinitions.get(guard) === undefined ||
+      baselineDefinitions.get(guard) !== candidateDefinitions.get(guard)
+    ) {
+      issues.push(
+        issue(
+          `$.ticket.requiredTasks.candidate[${index}].guardedBy`,
+          "task_guard_invalid",
+          "Task guard must name a distinct unchanged required task",
+        ),
+      );
+    }
+  });
+}
+
+async function validateDependenciesAtBase(
+  ticketDirectory: string,
+  ticket: JsonRecord,
+  state: JsonRecord,
+  issues: ValidationIssue[],
+): Promise<void> {
+  const dependencies = ticket.dependencies as string[];
+  const dependencyRevisions = state.dependencyRevisions as JsonRecord;
+  for (const dependency of dependencies) {
+    const path = `$.state.dependencyRevisions.${dependency}`;
+    if (!/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(dependency)) {
+      issues.push(
+        issue(
+          path,
+          "dependency_not_integrated_at_base",
+          "Invalid dependency ID",
+        ),
+      );
+      continue;
+    }
+    const dependencyState = await readGitJsonRecord(
+      ticketDirectory,
+      ticket.baseRevision as string,
+      `docs/planning/tickets/${dependency}/state.json`,
+    );
+    if (
+      dependencyState?.phase !== "integrated" ||
+      typeof dependencyState.integrationRevision !== "string"
+    ) {
+      issues.push(
+        issue(
+          path,
+          "dependency_not_integrated_at_base",
+          "Dependency was not integrated at the dependent ticket base",
+        ),
+      );
+      continue;
+    }
+    if (
+      dependencyRevisions[dependency] !== dependencyState.integrationRevision
+    ) {
+      issues.push(
+        issue(
+          path,
+          "dependency_revision_mismatch",
+          "Dependency pin must match its base-state integration revision",
+        ),
+      );
+    }
+  }
+}
+
+async function validateIntegrationGitEvidence(
+  ticketDirectory: string,
+  ticket: JsonRecord,
+  state: JsonRecord,
+  headRevision: string,
+  ticketEvidencePrefix: string,
+  revisionExists: (revision: string) => Promise<boolean>,
+  issues: ValidationIssue[],
+): Promise<void> {
+  const integrationRevision = state.integrationRevision as string;
+  const candidateRevision = state.candidateRevision as string;
+  const diagnosticPath = "$.state.integrationRevision";
+  if (!await revisionExists(integrationRevision)) {
+    issues.push(
+      issue(
+        diagnosticPath,
+        "revision_not_found",
+        "Git integration revision does not exist",
+      ),
+    );
+    return;
+  }
+  const candidateAncestry = await runGit(ticketDirectory, [
+    "merge-base",
+    "--is-ancestor",
+    candidateRevision,
+    integrationRevision,
+  ]);
+  if (!candidateAncestry.success) {
+    issues.push(
+      issue(
+        diagnosticPath,
+        "integration_ancestry_mismatch",
+        "Integration revision must descend from the reviewed candidate",
+      ),
+    );
+  }
+  const metadataAncestry = await runGit(ticketDirectory, [
+    "merge-base",
+    "--is-ancestor",
+    integrationRevision,
+    headRevision,
+  ]);
+  if (!metadataAncestry.success) {
+    issues.push(
+      issue(
+        diagnosticPath,
+        "integration_metadata_ancestry_mismatch",
+        "Integrated metadata must descend from the integration anchor",
+      ),
+    );
+    return;
+  }
+  const integrationPaths = await changedPaths(
+    ticketDirectory,
+    candidateRevision,
+    integrationRevision,
+    diagnosticPath,
+    issues,
+  );
+  const allowedWrites = ticket.allowedWrites as string[];
+  if (
+    integrationPaths?.some((path) =>
+      !path.startsWith(ticketEvidencePrefix) &&
+      isAllowedWrite(path, allowedWrites)
+    )
+  ) {
+    issues.push(
+      issue(
+        diagnosticPath,
+        "integration_content_mismatch",
+        "Integration changed content from the reviewed candidate",
+      ),
+    );
+  }
+  const metadataCommits = await runGit(ticketDirectory, [
+    "rev-list",
+    "--reverse",
+    "--ancestry-path",
+    `${integrationRevision}..${headRevision}`,
+  ]);
+  let firstMetadataRevision: string | undefined;
+  if (metadataCommits.success) {
+    for (const revision of gitText(metadataCommits).split(/\r?\n/)) {
+      if (revision === "") continue;
+      const snapshot = await readGitJsonRecord(
+        ticketDirectory,
+        revision,
+        `${ticketEvidencePrefix}state.json`,
+      );
+      if (
+        snapshot?.phase === "integrated" &&
+        snapshot.integrationRevision === integrationRevision
+      ) {
+        firstMetadataRevision = revision;
+        break;
+      }
+    }
+  }
+  if (firstMetadataRevision === undefined) {
+    issues.push(
+      issue(
+        diagnosticPath,
+        "integration_metadata_mutated",
+        "Durable integrated ticket metadata is missing",
+      ),
+    );
+    return;
+  }
+  const laterTicketPaths = await changedPaths(
+    ticketDirectory,
+    firstMetadataRevision,
+    headRevision,
+    diagnosticPath,
+    issues,
+  );
+  if (
+    laterTicketPaths?.some((path) => path.startsWith(ticketEvidencePrefix))
+  ) {
+    issues.push(
+      issue(
+        diagnosticPath,
+        "integration_metadata_mutated",
+        "Integrated ticket metadata changed after its durable record",
+      ),
+    );
+  }
 }
 
 async function validateGitEvidence(
@@ -784,6 +1131,15 @@ async function validateGitEvidence(
     );
   }
 
+  if (ticketBaseExists && ticket.schemaVersion === 2) {
+    await validateDependenciesAtBase(
+      ticketDirectory,
+      ticket,
+      state,
+      issues,
+    );
+  }
+
   const head = await runGit(ticketDirectory, ["rev-parse", "HEAD"]);
   if (state.candidateRevision === null) {
     if (ticketBaseExists) {
@@ -830,44 +1186,59 @@ async function validateGitEvidence(
   }
 
   const candidateRevision = state.candidateRevision as string;
-  const metadataAncestry = await runGit(ticketDirectory, [
-    "merge-base",
-    "--is-ancestor",
-    candidateRevision,
-    gitText(head),
-  ]);
-  if (
-    !head.success || head.limited || gitText(head) === "" ||
-    !metadataAncestry.success
-  ) {
-    issues.push(
-      issue(
-        "$.state.candidateRevision",
-        "metadata_ancestry_mismatch",
-        "Committed ticket metadata must descend from the reviewed candidate",
-      ),
-    );
-  } else {
-    const metadataPaths = await changedPaths(
+  const headRevision = gitText(head);
+  if (state.phase === "integrated" && ticket.schemaVersion === 2) {
+    await validateIntegrationGitEvidence(
       ticketDirectory,
-      candidateRevision,
-      gitText(head),
-      "$.state.candidateRevision",
+      ticket,
+      state,
+      headRevision,
+      ticketEvidencePrefix,
+      revisionExists,
       issues,
     );
+  } else {
+    const metadataAncestry = await runGit(ticketDirectory, [
+      "merge-base",
+      "--is-ancestor",
+      candidateRevision,
+      headRevision,
+    ]);
     if (
-      metadataPaths !== undefined &&
-      metadataPaths.some((path) => !path.startsWith(ticketEvidencePrefix))
+      !head.success || head.limited || headRevision === "" ||
+      !metadataAncestry.success
     ) {
       issues.push(
         issue(
           "$.state.candidateRevision",
-          "metadata_scope_violation",
-          "Post-candidate commits may change only canonical ticket metadata",
+          "metadata_ancestry_mismatch",
+          "Committed ticket metadata must descend from the reviewed candidate",
         ),
       );
+    } else {
+      const metadataPaths = await changedPaths(
+        ticketDirectory,
+        candidateRevision,
+        headRevision,
+        "$.state.candidateRevision",
+        issues,
+      );
+      if (
+        metadataPaths !== undefined &&
+        metadataPaths.some((path) => !path.startsWith(ticketEvidencePrefix))
+      ) {
+        issues.push(
+          issue(
+            "$.state.candidateRevision",
+            "metadata_scope_violation",
+            "Post-candidate commits may change only canonical ticket metadata",
+          ),
+        );
+      }
     }
   }
+
+  await validateTaskDefinitions(ticketDirectory, ticket, state, issues);
 
   const finalCandidateRevision = state.candidateRevision as string;
   const gitBlobBudget: GitBlobBudget = { remaining: MAX_GIT_BLOB_BYTES };

@@ -8,6 +8,14 @@ thread. Read only the root AGENTS.md, relevant accepted contracts, the ticket
 packet and state, and the latest dispatch packet when present. Treat anything
 not written there as unknown; do not infer intent from earlier conversations.
 
+Work only under the controller-issued implementer run ID for this ticket, role,
+and round. Return schema-version-2 results with issuedByControllerRunId exactly
+matching the ticket controllerRunId; never invent or reuse role authority.
+Treat `.git` as unconditionally forbidden. An ordinary ticket also cannot write
+`.codex` or `.agents`; protected control-file work requires the packet's exact
+protected-config-maintenance authorization and must be routed through the trusted
+top-level controller.
+
 Before editing production code, add or change the narrowest test or
 deterministic executable check that expresses the requested behavior. Run it
 and capture an expected non-zero RED result. Confirm the failure is caused by

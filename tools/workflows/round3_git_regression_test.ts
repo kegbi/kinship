@@ -9,8 +9,15 @@ const REQUIRED_TASKS = [
   "ticket:validate",
   "test:schema:matrix",
 ] as const;
+const FIXTURE_TASK_DEFINITION = "deno check tools/workflows/production.ts";
 
 const TICKET_ID = "PILOT-001";
+const CONTROLLER_RUN_ID =
+  `${TICKET_ID}/orchestrator/r0/00000000-0000-4000-8000-000000000101`;
+const IMPLEMENTER_RUN_ID =
+  `${TICKET_ID}/implementer/r1/00000000-0000-4000-8000-000000000102`;
+const REVIEWER_RUN_ID =
+  `${TICKET_ID}/reviewer/r1/00000000-0000-4000-8000-000000000103`;
 const CANONICAL_TICKET_PATH = `docs/planning/tickets/${TICKET_ID}`;
 const DEFAULT_TEST_PATH = "tools/workflows/regression_test.ts";
 
@@ -113,7 +120,7 @@ function writeFixtureDenoConfig(root: string): void {
       JSON.stringify(
         {
           tasks: Object.fromEntries(
-            REQUIRED_TASKS.map((task) => [task, "echo"]),
+            REQUIRED_TASKS.map((task) => [task, FIXTURE_TASK_DEFINITION]),
           ),
         },
         null,
@@ -135,7 +142,7 @@ function events(
       from: "planned",
       to: "ready",
       round: 0,
-      actorRunId: "orchestrator-ready",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: "ticket.json",
       revision: baseRevision,
     },
@@ -144,7 +151,7 @@ function events(
       from: "ready",
       to: "red",
       round: 1,
-      actorRunId: "implementer-round-01",
+      actorRunId: IMPLEMENTER_RUN_ID,
       evidenceRef: "evidence/round-01-red.log",
       revision: redRevision,
     },
@@ -153,7 +160,7 @@ function events(
       from: "red",
       to: "green",
       round: 1,
-      actorRunId: "implementer-round-01",
+      actorRunId: IMPLEMENTER_RUN_ID,
       evidenceRef: "evidence/round-01-green.log",
       revision: candidateRevision,
     },
@@ -162,7 +169,7 @@ function events(
       from: "green",
       to: "refactor",
       round: 1,
-      actorRunId: "implementer-round-01",
+      actorRunId: IMPLEMENTER_RUN_ID,
       evidenceRef: "evidence/round-01-refactor.log",
       revision: candidateRevision,
     },
@@ -171,7 +178,7 @@ function events(
       from: "refactor",
       to: "review",
       round: 1,
-      actorRunId: "orchestrator-review",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: transitionMapping === "from-to"
         ? "results/round-01.json"
         : "reviews/round-01.json",
@@ -182,7 +189,7 @@ function events(
       from: "review",
       to: "accepted",
       round: 1,
-      actorRunId: "orchestrator-accept",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: "acceptance.md",
       revision: candidateRevision,
     },
@@ -205,12 +212,15 @@ function acceptedBundle(
   );
   return {
     ticket: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       ticketId: TICKET_ID,
       revision: 1,
       title: "Exercise Git evidence boundaries",
       outcome: "Only immutable, canonical, in-scope ticket evidence passes.",
       baseRevision,
+      controllerRunId: CONTROLLER_RUN_ID,
+      executionClass: "ordinary",
+      protectedWriteAuthorization: null,
       dependencies: [],
       maxRounds: 3,
       scope: ["Workflow validation"],
@@ -225,7 +235,17 @@ function acceptedBundle(
         text: "Validate content-addressed Git and lifecycle evidence.",
         redProof: "A forged Git evidence fixture is rejected.",
       }],
-      requiredTasks: [...REQUIRED_TASKS],
+      requiredTasks: {
+        baseline: REQUIRED_TASKS.map((name) => ({
+          name,
+          definition: FIXTURE_TASK_DEFINITION,
+        })),
+        candidate: REQUIRED_TASKS.map((name) => ({
+          name,
+          definition: FIXTURE_TASK_DEFINITION,
+          guardedBy: null,
+        })),
+      },
       risks: ["Mutable or out-of-scope evidence could be trusted"],
       unresolvedDecisions: [],
     },
@@ -243,7 +263,7 @@ function acceptedBundle(
       dependencyRevisions: {},
       openFindingIds: [],
       orchestratorChecks: REQUIRED_TASKS.map((task, index) => ({
-        runId: `orchestrator-check-${index + 1}`,
+        runId: `${CONTROLLER_RUN_ID}/acceptance-check-${index + 1}`,
         revision: candidateRevision,
         command: `deno task ${task}`,
         exitCode: 0,
@@ -253,11 +273,12 @@ function acceptedBundle(
     },
     events: structuredClone(lifecycle),
     results: [{
-      schemaVersion: 1,
+      schemaVersion: 2,
       ticketId: TICKET_ID,
       ticketRevision: 1,
       round: 1,
-      implementerRunId: "implementer-round-01",
+      implementerRunId: IMPLEMENTER_RUN_ID,
+      issuedByControllerRunId: CONTROLLER_RUN_ID,
       inputBaseRevision: baseRevision,
       dispatchRef: "dispatch/round-01.md",
       redRevision,
@@ -285,12 +306,13 @@ function acceptedBundle(
       candidateRevision,
     }],
     reviews: [{
-      schemaVersion: 1,
+      schemaVersion: 2,
       ticketId: TICKET_ID,
       ticketRevision: 1,
       round: 1,
-      implementerRunId: "implementer-round-01",
-      reviewerRunId: "reviewer-round-01",
+      implementerRunId: IMPLEMENTER_RUN_ID,
+      reviewerRunId: REVIEWER_RUN_ID,
+      issuedByControllerRunId: CONTROLLER_RUN_ID,
       baseRevision,
       candidateRevision,
       verdict: "APPROVED",

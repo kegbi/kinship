@@ -1,0 +1,25 @@
+AUTONOMY-001 round 03 final amended RED evidence
+
+implementerRunId: AUTONOMY-001/implementer/r3/1b889252-9c19-4f70-ae26-7831f17a1b89
+issuedByControllerRunId: AUTONOMY-001/orchestrator/r0/00000000-0000-4000-8000-000000000101
+inputBaseRevision: 38bcb75a32cce962030119834beab990ce034325
+priorAmendedRedRevision: 29027cfe051d7e62f3474347dde70d163d951d38
+
+The candidate 8b7b3a4a7136ba671b5a448fc6c4626c7800f1dc was rejected
+before lifecycle persistence because its detector overmatched eval arguments
+after legitimate Deno subcommands. This final RED amendment defines both sides
+of the bounded static boundary:
+
+- eval as the Deno subcommand after supported global options, including quoted
+  and quote-concatenated tokens, receives task_definition_noop;
+- eval after run/test/check, in a path, filter, or argument, remains legitimate;
+- a separate option value named eval is skipped before locating the subcommand;
+- task text is never executed or generally shell-parsed by production.
+
+focusedCommand: deno test --allow-read --allow-write --allow-run=git tools/workflows/autonomy_final_regression_test.ts
+exitCode: 1
+summary: 2 tests; 0 passed; 2 intended failures in 48 seconds.
+expectedFailure: unchanged production lacks inherited-ID safety and complete
+subcommand-position eval detection.
+frozenTestSha256: d22dadfb540c2c3a0171495acf2c5e0f95825eac12e3ea1686afc26953999c33
+productionFiles: []

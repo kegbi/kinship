@@ -9,7 +9,10 @@ const REQUIRED_TASKS = [
   "ticket:validate",
   "test:schema:matrix",
 ] as const;
+const FIXTURE_TASK_DEFINITION = "deno check tools/workflows/production.ts";
 const TICKET_ID = "PILOT-001";
+const CONTROLLER_RUN_ID =
+  `${TICKET_ID}/orchestrator/r0/00000000-0000-4000-8000-000000000401`;
 const TICKET_PATH = `docs/planning/tickets/${TICKET_ID}`;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -81,7 +84,7 @@ function initializeRepository(prefix: string): string {
       JSON.stringify(
         {
           tasks: Object.fromEntries(
-            REQUIRED_TASKS.map((task) => [task, "echo"]),
+            REQUIRED_TASKS.map((task) => [task, FIXTURE_TASK_DEFINITION]),
           ),
         },
         null,
@@ -95,12 +98,15 @@ function initializeRepository(prefix: string): string {
 
 function ticket(baseRevision: string): Record<string, unknown> {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     ticketId: TICKET_ID,
     revision: 1,
     title: "Bind ready metadata HEAD to its base",
     outcome: "Ready metadata is bound to a clean base descendant.",
     baseRevision,
+    controllerRunId: CONTROLLER_RUN_ID,
+    executionClass: "ordinary",
+    protectedWriteAuthorization: null,
     dependencies: [],
     maxRounds: 6,
     scope: ["Workflow validation"],
@@ -112,7 +118,17 @@ function ticket(baseRevision: string): Record<string, unknown> {
       text: "Bind ready metadata to its declared base.",
       redProof: "Real Git fixtures expose missing ready-base guards.",
     }],
-    requiredTasks: [...REQUIRED_TASKS],
+    requiredTasks: {
+      baseline: REQUIRED_TASKS.map((name) => ({
+        name,
+        definition: FIXTURE_TASK_DEFINITION,
+      })),
+      candidate: REQUIRED_TASKS.map((name) => ({
+        name,
+        definition: FIXTURE_TASK_DEFINITION,
+        guardedBy: null,
+      })),
+    },
     risks: ["Unbound ready metadata could validate."],
     unresolvedDecisions: [],
   };
@@ -125,7 +141,7 @@ function writeReadyPacket(root: string, baseRevision: string): string {
     from: "planned",
     to: "ready",
     round: 0,
-    actorRunId: "orchestrator-ready",
+    actorRunId: CONTROLLER_RUN_ID,
     evidenceRef: "ticket.json",
     revision: baseRevision,
   }];

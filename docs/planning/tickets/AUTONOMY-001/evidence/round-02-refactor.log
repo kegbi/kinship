@@ -1,0 +1,67 @@
+AUTONOMY-001 round 02 REFACTOR
+
+Authority
+- implementerRunId: AUTONOMY-001/implementer/r2/b318daf3-6ea6-4576-9f4f-13000a53f7e9
+- issuedByControllerRunId: AUTONOMY-001/orchestrator/r0/00000000-0000-4000-8000-000000000101
+
+Refactor result
+- Added tools/workflows/autonomy_review_coverage_test.ts to retain coverage of
+  defensive v2 authority, legacy collection, and legacy integration branches
+  after the authorized synthetic-fixture migration.
+- Kept the production implementation bounded to the three dispatched findings.
+
+Affected compatibility suites
+- validate_ticket_test.ts: exit 0; 59 passed, 0 failed.
+- round3_git_regression_test.ts: exit 0; 4 passed, 0 failed.
+- round4_git_regression_test.ts: exit 0; 8 passed, 0 failed.
+- round5_git_regression_test.ts: exit 0; 3 passed, 0 failed.
+- round6_ready_base_regression_test.ts: exit 0; 4 passed, 0 failed.
+- autonomy_review_coverage_test.ts: exit 0; 3 passed, 0 failed.
+
+Full workflow characterization
+Command:
+deno task test:workflow
+Result: exit 1; 179 passed, 1 failed in 3 minutes 51 seconds. The sole failure
+is the frozen round3_policy_regression_test.ts assertion that intentionally
+rejects an uncommitted post-RED production diff. No behavioral test failed.
+
+Coverage-equivalent workflow proof
+- The explicit workflow run excluded only the complete four-test
+  round3_policy_regression_test.ts dirty-tree module and passed 179 tests with
+  0 failures in 3 minutes 50 seconds, writing .coverage/workflows-r2.
+- The three-test non-frozen residual suite passed with 0 failures and wrote
+  .coverage/workflows-r2-addendum.
+Command:
+deno coverage --detailed --threshold=100 --include="tools/workflows/(ticket_contract|validate_ticket)\.ts$" .coverage/workflows-r2 .coverage/workflows-r2-addendum
+Result: exit 0.
+- tools/workflows/ticket_contract.ts: 2477/2477 covered (100.000%).
+- tools/workflows/validate_ticket.ts: 1263/1263 covered (100.000%).
+- The threshold covers the combined raw Deno/V8 profiles and enforces 100
+  percent line, branch, and function coverage for both changed production
+  modules.
+
+Repository gates
+- `deno task test:schema:matrix`: exit 0; PostgreSQL 18.4 and 17.10 clean
+  apply, catalog, behavior, teardown, and reapply phases all passed.
+- `deno task fmt:check`: exit 0; checked 107 files.
+- `deno task lint`: exit 0; checked 19 files.
+- `deno task check`: exit 0.
+- `git diff --check`: exit 0.
+
+Canonical packet staging diagnostic
+Command:
+deno task ticket:validate docs/planning/tickets/AUTONOMY-001
+Result: exit 1. The former authorization_mismatch is resolved. The only current
+issues are reference_mismatch at $.results[0].dispatchRef and
+$.results[0].red.logRef because the controller-owned packet remains at the
+round-1 rework staging state while round-2 dispatch and RED evidence exist.
+
+Candidate-dependent follow-up
+- The trusted controller must create the candidate commit and update the
+  controller-owned result/state/event records, then rerun the exact full
+  workflow and coverage tasks from the clean candidate.
+- No stage, commit, merge, or other Git metadata mutation was performed by the
+  implementer.
+
+No credentials, personal data, tokens, or connection strings are present in
+this log.
