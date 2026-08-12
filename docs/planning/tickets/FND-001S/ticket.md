@@ -13,6 +13,9 @@ Frozen test SHA-256:
 
 Candidate revision: `55ecd0f3a940ab16cb51d2b1987d30779f746d52`
 
+Review: `reviews/round-01.json` approved the exact candidate with zero findings
+across all six mandatory lenses.
+
 ## Outcome
 
 Accepted architecture contracts and one deterministic successor check

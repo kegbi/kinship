@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 2,
+  "ticketId": "FND-001S",
+  "ticketRevision": 1,
+  "round": 1,
+  "implementerRunId": "FND-001S/implementer/r1/c361d6ab-2e58-4434-8d5a-fe9ce1b582b0",
+  "reviewerRunId": "FND-001S/reviewer/r1/41a70e38-5fe9-4706-83db-22d3725dab43",
+  "issuedByControllerRunId": "FND-001S/orchestrator/r0/940c1592-d106-4088-96d8-b500b1f6f2be",
+  "baseRevision": "976e01716145aa29cc8b5ab22c22210689234ecd",
+  "candidateRevision": "55ecd0f3a940ab16cb51d2b1987d30779f746d52",
+  "verdict": "APPROVED",
+  "commands": [
+    {
+      "command": "$ErrorActionPreference='Stop'; if ((git rev-parse HEAD) -ne '117ee56a449d42ea4d9713f1b9d9d0278bbd506f') { throw 'HEAD changed' }; if ((git status --short)) { throw 'dirty' }; git merge-base --is-ancestor 55ecd0f3a940ab16cb51d2b1987d30779f746d52 HEAD; if ($LASTEXITCODE -ne 0) { throw 'candidate not ancestor' }; 'clean exact review state'",
+      "exitCode": 0
+    },
+    {
+      "command": "Get-Content -Raw -LiteralPath 'AGENTS.md'",
+      "exitCode": 0
+    },
+    {
+      "command": "Get-Content -Raw -LiteralPath 'docs/planning/tickets/FND-001S/results/round-01.json'",
+      "exitCode": 0
+    },
+    {
+      "command": "Get-Content -Raw -LiteralPath 'docs/planning/tickets/FND-001S/ticket.json'",
+      "exitCode": 0
+    },
+    {
+      "command": "Get-Content -Raw -LiteralPath 'docs/planning/tickets/FND-001S/dispatch/round-01.md'",
+      "exitCode": 0
+    },
+    {
+      "command": "Get-Content -Raw -LiteralPath 'docs/planning/tickets/FND-001S/ticket.md'",
+      "exitCode": 0
+    },
+    {
+      "command": "Get-Content -Raw -LiteralPath 'docs/planning/tickets/FND-001S/state.json'",
+      "exitCode": 0
+    },
+    {
+      "command": "Get-Content -Raw -LiteralPath 'docs/planning/tickets/FND-001S/evidence/round-01-red.log'",
+      "exitCode": 0
+    },
+    {
+      "command": "Get-Content -Raw -LiteralPath 'docs/planning/tickets/FND-001S/evidence/round-01-green.log'",
+      "exitCode": 0
+    },
+    {
+      "command": "Get-Content -Raw -LiteralPath 'docs/planning/tickets/FND-001S/evidence/round-01-refactor.log'",
+      "exitCode": 0
+    },
+    {
+      "command": "Get-Content -Raw -LiteralPath 'tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts'",
+      "exitCode": 0
+    },
+    {
+      "command": "deno test --allow-read=AGENTS.md,docs/architecture/decisions/0001-astro-personalized-rendering.md,docs/architecture/technology-baseline.md,docs/architecture/compose-contract.md,docs/architecture/configuration-and-secrets.md,docs/architecture/observability.md,docs/product/page-catalog.yaml tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts",
+      "exitCode": 0
+    },
+    {
+      "command": "$ErrorActionPreference='Stop'; $reviewCoverageRoot=Join-Path $env:TEMP ('fnd001s-review-coverage-'+[guid]::NewGuid().ToString('N')); $baselineDir=Join-Path $reviewCoverageRoot 'baseline'; $coverageDir=Join-Path $reviewCoverageRoot 'coverage'; $probePath=Join-Path $reviewCoverageRoot 'astro_rendering_topology_contract.ts'; $archivePath=Join-Path $reviewCoverageRoot 'baseline.tar'; New-Item -ItemType Directory -Path $reviewCoverageRoot,$baselineDir | Out-Null; Copy-Item -LiteralPath 'tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts' -Destination $probePath; $allowRead='--allow-read=AGENTS.md,docs/architecture/decisions/0001-astro-personalized-rendering.md,docs/architecture/technology-baseline.md,docs/architecture/compose-contract.md,docs/architecture/configuration-and-secrets.md,docs/architecture/observability.md,docs/product/page-catalog.yaml'; deno test --quiet --coverage=$coverageDir --clean $allowRead $probePath; if ($LASTEXITCODE -ne 0) { throw 'candidate coverage run failed' }; git archive --format=tar --output=$archivePath 976e01716145aa29cc8b5ab22c22210689234ecd; if ($LASTEXITCODE -ne 0) { throw 'baseline archive failed' }; tar -xf $archivePath -C $baselineDir; if ($LASTEXITCODE -ne 0) { throw 'baseline extraction failed' }; Push-Location $baselineDir; try { deno test --quiet --coverage=$coverageDir $allowRead $probePath; $expectedRedExit=$LASTEXITCODE; if ($expectedRedExit -ne 1) { throw \"baseline coverage run expected exit 1, got $expectedRedExit\" }; deno coverage --detailed --threshold=100 --include='astro_rendering_topology_contract\\.ts$' $coverageDir; if ($LASTEXITCODE -ne 0) { throw 'exact coverage threshold failed' } } finally { Pop-Location }; $probeSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $probePath).Hash.ToLowerInvariant(); if ($probeSha -ne '6cb3610ece718bb420654301cf12cf94a2987385ef99e0a92d295533f0711542') { throw 'coverage probe digest mismatch' }; 'candidate green, baseline RED discriminated, frozen probe preserved, exact coverage 100 percent'",
+      "exitCode": 0
+    },
+    {
+      "command": "deno task fmt:check",
+      "exitCode": 0
+    },
+    {
+      "command": "deno task lint",
+      "exitCode": 0
+    },
+    {
+      "command": "deno task check",
+      "exitCode": 0
+    },
+    {
+      "command": "deno task ticket:validate docs/planning/tickets/FND-001S",
+      "exitCode": 0
+    },
+    {
+      "command": "git diff --check 976e01716145aa29cc8b5ab22c22210689234ecd..55ecd0f3a940ab16cb51d2b1987d30779f746d52",
+      "exitCode": 0
+    },
+    {
+      "command": "$ErrorActionPreference='Stop'; $base='976e01716145aa29cc8b5ab22c22210689234ecd'; $candidate='55ecd0f3a940ab16cb51d2b1987d30779f746d52'; $head='117ee56a449d42ea4d9713f1b9d9d0278bbd506f'; $allowedExact=@('AGENTS.md','docs/architecture/decisions/0001-astro-personalized-rendering.md','docs/architecture/technology-baseline.md','docs/architecture/compose-contract.md','docs/architecture/configuration-and-secrets.md','docs/architecture/observability.md'); $allowedPrefixes=@('tools/architecture/FND-001S/','docs/planning/tickets/FND-001S/'); $changed=@(git diff --name-only \"$base..$candidate\"); if ($LASTEXITCODE -ne 0) { throw 'base-candidate diff failed' }; $unexpected=@($changed | Where-Object { $path=$_; -not ($allowedExact -contains $path) -and -not ($allowedPrefixes | Where-Object { $path.StartsWith($_,[System.StringComparison]::Ordinal) }) }); if ($unexpected.Count -ne 0) { throw \"unexpected allowed-write paths: $($unexpected -join ', ')\" }; $post=@(git diff --name-only \"$candidate..$head\"); if ($LASTEXITCODE -ne 0) { throw 'candidate-head diff failed' }; $badPost=@($post | Where-Object { -not $_.StartsWith('docs/planning/tickets/FND-001S/',[System.StringComparison]::Ordinal) }); if ($badPost.Count -ne 0) { throw \"nonmetadata post-candidate paths: $($badPost -join ', ')\" }; git merge-base --is-ancestor $base $candidate; if ($LASTEXITCODE -ne 0) { throw 'base not ancestor' }; git merge-base --is-ancestor $candidate $head; if ($LASTEXITCODE -ne 0) { throw 'candidate not ancestor of metadata HEAD' }; $merges=@(git rev-list --merges \"$base..$candidate\"); if ($LASTEXITCODE -ne 0 -or $merges.Count -ne 0) { throw 'candidate interval contains merge' }; $lineage=@(git rev-list \"$base..$candidate\"); if ($LASTEXITCODE -ne 0) { throw 'candidate rev-list failed' }; $forbidden=@('4b3fec5fbd36bb2d921c993b61890077301dbccd','8659d26cda5548483e2e8741df3efe2514d17ae1'); if (@($lineage | Where-Object { $forbidden -contains $_ }).Count -ne 0) { throw 'blocked lineage imported' }; 'allowed writes, metadata-only tail, ancestry, no merges, and no blocked lineage verified'",
+      "exitCode": 0
+    },
+    {
+      "command": "git diff --exit-code 2f75cda6b3df374c195740ef89fd2fe218a19b4a..55ecd0f3a940ab16cb51d2b1987d30779f746d52 -- tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts",
+      "exitCode": 0
+    },
+    {
+      "command": "git diff --exit-code 976e01716145aa29cc8b5ab22c22210689234ecd..2f75cda6b3df374c195740ef89fd2fe218a19b4a -- AGENTS.md docs/architecture/decisions/0001-astro-personalized-rendering.md docs/architecture/technology-baseline.md docs/architecture/compose-contract.md docs/architecture/configuration-and-secrets.md docs/architecture/observability.md docs/product/page-catalog.yaml",
+      "exitCode": 0
+    },
+    {
+      "command": "git diff --exit-code 976e01716145aa29cc8b5ab22c22210689234ecd..55ecd0f3a940ab16cb51d2b1987d30779f746d52 -- deno.json docs/product/page-catalog.yaml personal-crm-schema docs/architecture/module-boundaries.yaml docs/architecture/authorization-matrix.yaml",
+      "exitCode": 0
+    }
+  ],
+  "lenses": {
+    "bug_correctness": {
+      "verdict": "pass",
+      "evidence": [
+        "The focused candidate run passed two tests with all 22 named discriminator steps and the authoritative repository assertion.",
+        "Gateway Routing covers canonical, contiguous-extra, separated-extra, later contradictory prose, second table, missing, duplicate, malformed row/table, duplicate section, oversized input, excessive rows, and a correctly bounded following section; Network Exposure covers the canonical allowlist and every dispatched malformed or additional-public shape.",
+        "The check derives the exact on-demand ID/path set from docs/product/page-catalog.yaml."
+      ]
+    },
+    "security_privacy": {
+      "verdict": "pass",
+      "evidence": [
+        "The accepted contracts make gateway the sole public entry point and keep web, API, worker, migrate, PostgreSQL, object store, mail, and the telemetry collector private.",
+        "Renderer authority is limited to generated API contracts, private API origin, forwarded context, and renderer operations configuration; database, object-store, provider credential, identity-key, backend-internal, and direct-adapter authority is forbidden.",
+        "Safe route templates and redaction cover token paths, queries, cookies, authorization, verification/reset, invitation, MFA, and compliance data."
+      ]
+    },
+    "architecture_contracts": {
+      "verdict": "pass",
+      "evidence": [
+        "The exact candidate passes the synchronized AGENTS.md, ADR 0001, technology, Compose, configuration, observability, and unchanged page-catalog DG-01 assertion.",
+        "Allowed-write and ancestry checks found no unexpected paths, no merge, no blocked FND-001 lineage, and only FND-001S ticket metadata after the candidate.",
+        "deno.json, product catalog, schema bundle, module boundaries, and authorization matrix remain unchanged, so DG-12, runtime, catalog, schema, and dependency-selection scope did not expand."
+      ]
+    },
+    "performance_reliability": {
+      "verdict": "pass",
+      "evidence": [
+        "The contract requires bounded unavailable behavior, distinct web liveness/readiness, and private API reachability before renderer readiness.",
+        "The deterministic parser bounds documents at 65,536 characters and renderer rows at 32 with explicit fail-closed tests.",
+        "Personalized responses are private no-store and fingerprinted static assets receive immutable one-year caching."
+      ]
+    },
+    "style_maintainability": {
+      "verdict": "pass",
+      "evidence": [
+        "The enforcement surface is one self-contained built-in-Deno file with bounded helpers and explicit canonical-section constructors.",
+        "The frozen test remained byte-identical from RED revision 2f75cda6b3df374c195740ef89fd2fe218a19b4a through candidate 55ecd0f3a940ab16cb51d2b1987d30779f746d52.",
+        "Formatting, lint, type-check, diff whitespace, packet validation, and clean-state checks all exited zero."
+      ]
+    },
+    "tests_tdd": {
+      "verdict": "pass",
+      "evidence": [
+        "The frozen RED revision left every authorized contract and the page catalog byte-identical to base while all 22 in-memory discriminators passed and only the 19-clause authoritative repository assertion failed.",
+        "The same frozen test bytes passed against the candidate at SHA-256 6cb3610ece718bb420654301cf12cf94a2987385ef99e0a92d295533f0711542.",
+        "The self-contained wrapper preserved its temporary source through reporting and proved exactly 100% line (407/407), branch, and function coverage over candidate GREEN plus baseline RED.",
+        "No test weakening, catalog substitution, predecessor implementation import, or post-RED test mutation occurred."
+      ]
+    }
+  },
+  "findings": [],
+  "notes": [
+    "The exact candidate is an ancestor of the metadata HEAD, whose candidate-to-HEAD changes are confined to docs/planning/tickets/FND-001S/.",
+    "The coverage wrapper handled the expected baseline RED internally and itself exited zero only after the exact threshold and frozen digest passed.",
+    "No waiver or not-applicable agreement was used."
+  ]
+}
