@@ -40,7 +40,7 @@ const WHOLE_SOURCE_DIGEST_MARKER_END = [
 const WHOLE_SOURCE_DIGEST_SENTINEL = "0".repeat(64);
 /* FND003_WHOLE_SOURCE_DIGEST_START */
 const REVIEWED_WHOLE_SOURCE_SHA256 =
-  "sha256:c722266aed23f50d9ac749a71dfe9db7aed39bd0de668ba8d174dc7f96d990c0";
+  "sha256:c8c352824169d172a07e2035c4c1333a585f96609001ec4e152d7af92bb2e2f7";
 /* FND003_WHOLE_SOURCE_DIGEST_END */
 
 type EvidenceReader = (
@@ -8546,6 +8546,16 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
 });
 
 Deno.test("real pnpm and Deno outputs satisfy the bounded repository policy", async () => {
+  const reviewedFixtureHashes: Readonly<Record<string, string>> = {
+    "pnpm-11.21.0/settings.txt":
+      "11650848a3a35331dd3aa7af8005565a7348d912173a4b71c30b0c27c68ae2a8",
+    "pnpm-11.21.0/react-types-importer.txt":
+      "4cf7fbfb22e3d06b6ee53a3c1d39e8dcc534ea0feb9d0b271c6c3f384072c2c2",
+    "pnpm-11.21.0/one-to-many-snapshots.txt":
+      "b0e1fdeb45666ffeabe17212a13d7780138334401847f1d81ee67a5bdb8112bc",
+    "deno-2.9.5/deno.lock":
+      "8a39257b18ec8ff53acb693efe2969d8136284a0a8293517e43313e1fb7898c8",
+  };
   const metadata = parseJson(
     await Deno.readTextFile(`${REAL_TOOL_FIXTURE_ROOT}metadata.json`),
     "real-tool metadata",
@@ -8554,33 +8564,140 @@ Deno.test("real pnpm and Deno outputs satisfy the bounded repository policy", as
   invariant(metadata.schemaVersion === 1, "real-tool metadata version drifted");
   const pnpmObservation = object(metadata.pnpm, "real pnpm observation");
   const denoObservation = object(metadata.deno, "real Deno observation");
+  exactKeys(
+    pnpmObservation,
+    ["lockfileVersion", "oneToManyBase", "fixtureFiles"],
+    "real pnpm observation",
+  );
+  exactKeys(
+    denoObservation,
+    ["lockfileVersion", "specifierCount", "npmNodeCount", "fixtureFiles"],
+    "real Deno observation",
+  );
+  const pnpmFixtureHashes = object(
+    pnpmObservation.fixtureFiles,
+    "real pnpm fixture hashes",
+  );
+  const denoFixtureHashes = object(
+    denoObservation.fixtureFiles,
+    "real Deno fixture hashes",
+  );
+  exactValue(
+    pnpmFixtureHashes,
+    Object.fromEntries(
+      Object.entries(reviewedFixtureHashes).filter(([path]) =>
+        path.startsWith("pnpm-")
+      ),
+    ),
+    "real pnpm fixture hash metadata",
+  );
+  exactValue(
+    denoFixtureHashes,
+    Object.fromEntries(
+      Object.entries(reviewedFixtureHashes).filter(([path]) =>
+        path.startsWith("deno-")
+      ),
+    ),
+    "real Deno fixture hash metadata",
+  );
   const fixtureFiles = new Map<string, string>();
-  for (const observation of [pnpmObservation, denoObservation]) {
-    for (
-      const [path, expectedHash] of Object.entries(
-        object(observation.fixtureFiles, "real fixture hashes"),
-      )
-    ) {
-      const contents = await Deno.readTextFile(
-        `${REAL_TOOL_FIXTURE_ROOT}${path}`,
-      );
-      invariant(
-        await sha256Text(contents) === `sha256:${expectedHash}`,
-        `${path} fixture hash drifted`,
-      );
-      fixtureFiles.set(path, contents);
-    }
+  for (const [path, expectedHash] of Object.entries(reviewedFixtureHashes)) {
+    const contents = await Deno.readTextFile(
+      `${REAL_TOOL_FIXTURE_ROOT}${path}`,
+    );
+    invariant(
+      await sha256Text(contents) === `sha256:${expectedHash}`,
+      `${path} fixture bytes differ from the reviewed identity`,
+    );
+    fixtureFiles.set(path, contents);
   }
   const emittedDenoLock = parseJson(
     string(fixtureFiles.get("deno-2.9.5/deno.lock"), "real Deno lock"),
     "real Deno lock",
   );
+  exactKeys(
+    emittedDenoLock,
+    ["version", "specifiers", "npm", "workspace"],
+    "real Deno lock",
+  );
+  const emittedDenoSpecifiers = object(
+    emittedDenoLock.specifiers,
+    "real Deno specifiers",
+  );
+  const expectedDenoSpecifiers = {
+    "npm:@hono/standard-validator@0.4.0":
+      "0.4.0_@standard-schema+spec@1.1.0_hono@4.13.1",
+    "npm:@standard-schema/spec@1.1.0": "1.1.0",
+    "npm:hono@4.13.1": "4.13.1",
+    "npm:kysely-postgres-js@3.0.0": "3.0.0_kysely@0.29.4_postgres@3.4.9",
+    "npm:kysely@0.29.4": "0.29.4",
+    "npm:postgres@3.4.9": "3.4.9",
+    "npm:zod@4.4.3": "4.4.3",
+  };
+  exactValue(
+    emittedDenoSpecifiers,
+    expectedDenoSpecifiers,
+    "real Deno specifier resolutions",
+  );
+  const emittedDenoNodes = object(emittedDenoLock.npm, "real Deno npm nodes");
+  const expectedDenoNodeEdges: Readonly<
+    Record<
+      string,
+      Readonly<{ dependencies?: string[]; optionalPeers?: string[] }>
+    >
+  > = {
+    "@hono/standard-validator@0.4.0_@standard-schema+spec@1.1.0_hono@4.13.1": {
+      dependencies: ["@standard-schema/spec", "hono"],
+    },
+    "@standard-schema/spec@1.1.0": {},
+    "hono@4.13.1": {},
+    "kysely-postgres-js@3.0.0_kysely@0.29.4_postgres@3.4.9": {
+      dependencies: ["kysely", "postgres"],
+      optionalPeers: ["postgres"],
+    },
+    "kysely@0.29.4": {},
+    "postgres@3.4.9": {},
+    "zod@4.4.3": {},
+  };
+  exactSet(
+    Object.keys(emittedDenoNodes),
+    Object.keys(expectedDenoNodeEdges),
+    "real Deno npm node identities",
+  );
+  for (
+    const [identity, expectedEdges] of Object.entries(
+      expectedDenoNodeEdges,
+    )
+  ) {
+    const node = object(
+      emittedDenoNodes[identity],
+      `${identity} real Deno node`,
+    );
+    exactKeys(
+      node,
+      ["integrity", ...Object.keys(expectedEdges)],
+      `${identity} real Deno node`,
+    );
+    sri(node.integrity, `${identity} real Deno integrity`);
+    for (const [edge, expected] of Object.entries(expectedEdges)) {
+      exactValue(node[edge], expected, `${identity} ${edge}`);
+    }
+  }
+  const emittedDenoWorkspace = object(
+    emittedDenoLock.workspace,
+    "real Deno workspace",
+  );
+  exactKeys(emittedDenoWorkspace, ["dependencies"], "real Deno workspace");
+  exactValue(
+    emittedDenoWorkspace.dependencies,
+    Object.keys(expectedDenoSpecifiers),
+    "real Deno workspace dependencies",
+  );
   invariant(
     emittedDenoLock.version === denoObservation.lockfileVersion &&
-      Object.keys(object(emittedDenoLock.specifiers, "real Deno specifiers"))
-          .length ===
+      Object.keys(emittedDenoSpecifiers).length ===
         denoObservation.specifierCount &&
-      Object.keys(object(emittedDenoLock.npm, "real Deno npm nodes")).length ===
+      Object.keys(emittedDenoNodes).length ===
         denoObservation.npmNodeCount,
     "real Deno v5 closure observation drifted",
   );
@@ -8591,31 +8708,63 @@ Deno.test("real pnpm and Deno outputs satisfy the bounded repository policy", as
     ),
     "real pnpm settings",
   );
-  invariant(
-    emittedSettings.lockfileVersion === pnpmObservation.lockfileVersion &&
-      object(emittedSettings.settings, "real pnpm lock settings")
-          .autoInstallPeers ===
-        false,
-    "real pnpm v9 settings observation drifted",
+  exactValue(
+    emittedSettings,
+    {
+      lockfileVersion: pnpmObservation.lockfileVersion,
+      settings: {
+        autoInstallPeers: false,
+        excludeLinksFromLockfile: false,
+      },
+    },
+    "real pnpm v9 settings",
   );
-  const reactTypesSlice = string(
-    fixtureFiles.get("pnpm-11.21.0/react-types-importer.txt"),
-    "real React types importer slice",
+  const reactTypesImporter = parseYaml(
+    string(
+      fixtureFiles.get("pnpm-11.21.0/react-types-importer.txt"),
+      "real React types importer slice",
+    ),
+    "real React types importer",
   );
-  invariant(
-    reactTypesSlice.includes("'@types/react':") &&
-      reactTypesSlice.includes("'@types/react-dom':"),
-    "real pnpm importer omits explicit React type roots",
+  exactValue(
+    reactTypesImporter,
+    {
+      "@types/react": { specifier: "19.2.18", version: "19.2.18" },
+      "@types/react-dom": {
+        specifier: "19.2.4",
+        version: "19.2.4(@types/react@19.2.18)",
+      },
+    },
+    "real React types importer records",
   );
-  const multiplicityKeys = string(
+  const multiplicityLines = string(
     fixtureFiles.get("pnpm-11.21.0/one-to-many-snapshots.txt"),
     "real one-to-many snapshot slice",
   ).trim().split("\n");
   invariant(
-    multiplicityKeys.length === 2 &&
-      multiplicityKeys.every((key) =>
-        key.includes(String(pnpmObservation.oneToManyBase))
-      ),
+    multiplicityLines.length === 2,
+    "real pnpm 1:N cardinality drifted",
+  );
+  const peerContexts = multiplicityLines.map((line) => {
+    invariant(
+      /^'[^'\r\n]+'$/.test(line),
+      "real pnpm 1:N line is not one quoted snapshot identity",
+    );
+    const key = line.slice(1, -1);
+    const identity = snapshotIdentity(key);
+    invariant(
+      identity.packageKey === pnpmObservation.oneToManyBase,
+      "real pnpm 1:N package base drifted",
+    );
+    const peers = parsePnpmPeerSuffix(key.slice(identity.packageKey.length));
+    invariant(
+      Object.keys(peers).length > 0,
+      "real pnpm 1:N snapshot lacks a peer context",
+    );
+    return JSON.stringify(canonical(peers));
+  });
+  invariant(
+    new Set(peerContexts).size === 2,
     "real pnpm one-to-many snapshot observation drifted",
   );
 
