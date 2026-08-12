@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "ticketId": "PRODUCT-001",
+  "ticketRevision": 1,
+  "phase": "ready",
+  "round": 0,
+  "baseRevision": "603f6621809f61fab70bc29b8b4a9252ebcecb27",
+  "candidateRevision": null,
+  "events": [
+    {
+      "sequence": 1,
+      "from": "planned",
+      "to": "ready",
+      "round": 0,
+      "actorRunId": "PRODUCT-001/orchestrator/r0/68950167-ba0d-4262-bf70-2f962d862fa0",
+      "evidenceRef": "ticket.json",
+      "revision": "603f6621809f61fab70bc29b8b4a9252ebcecb27"
+    }
+  ],
+  "resultRefs": [],
+  "reviewRefs": [],
+  "dependencyRevisions": {},
+  "openFindingIds": [],
+  "orchestratorChecks": [],
+  "acceptedCandidateRevision": null,
+  "blocker": null
+}
