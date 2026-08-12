@@ -2,7 +2,7 @@
 
 Status: ready, round 0 (fresh RED retry pending)\
 Owner: trusted top-level orchestrator\
-Packet revision: 7\
+Packet revision: 8\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
 Execution class: `ordinary`\
 Depends on: FND-001S at integration revision
@@ -41,9 +41,15 @@ Rejected RED attempts:
   incomplete required-peer suffix checks, self-asserted incompatibility
   exclusions, temporally/unidirectionally bound provenance, missing Node LTS
   enforcement, and an under-specified human report.
+- `9d66aa1a2f30186d5f23aaa084c1ac4fc8794725`, validator SHA-256
+  `cd6e256a0c32d8de18fccf01c818c8c94d84d9a44614665369e73198d2a28016`: all
+  mechanical gates passed again, but clean audits found lossy timestamp
+  precision, future/hidden npm releases, unredacted proof output, Deno and pnpm
+  resolution edges not bound to exact manifests/versions, a failing-valid full
+  Node index, and peak buffering above the declared evidence limit.
 
-All five attempts and all associated evidence remain immutable history and
-confer no production-write authority.
+All six attempts and all associated evidence remain immutable history and confer
+no production-write authority.
 
 ## Outcome
 
