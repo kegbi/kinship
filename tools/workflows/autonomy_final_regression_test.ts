@@ -519,6 +519,22 @@ const legitimateDenoControls: readonly {
   { label: "check", definition: BASE_CHECK_DEFINITION },
   { label: "test", definition: "deno test tools/workflows/guard_test.ts" },
   { label: "run", definition: "deno run tools/workflows/production.ts" },
+  {
+    label: "run with eval argument",
+    definition: "deno run tools/workflows/production.ts eval",
+  },
+  {
+    label: "test with eval filter",
+    definition: "deno test --filter eval tools/workflows/guard_test.ts",
+  },
+  {
+    label: "check eval-named source",
+    definition: "deno check tools/workflows/eval.ts",
+  },
+  {
+    label: "config value named eval before check",
+    definition: "deno --config eval check tools/workflows/production.ts",
+  },
 ];
 
 Deno.test(
