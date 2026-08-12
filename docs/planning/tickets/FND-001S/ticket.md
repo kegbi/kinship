@@ -1,6 +1,6 @@
 # FND-001S: Accept and enforce the DG-01 rendering topology
 
-Status: accepted, round 1\
+Status: integrated, round 1\
 Owner: trusted top-level orchestrator\
 Base revision: `976e01716145aa29cc8b5ab22c22210689234ecd`\
 Execution class: `ordinary`\

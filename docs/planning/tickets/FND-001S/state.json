@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "ticketId": "FND-001S",
   "ticketRevision": 1,
-  "phase": "accepted",
+  "phase": "integrated",
   "round": 1,
   "baseRevision": "976e01716145aa29cc8b5ab22c22210689234ecd",
   "candidateRevision": "55ecd0f3a940ab16cb51d2b1987d30779f746d52",
@@ -60,6 +60,15 @@
       "actorRunId": "FND-001S/orchestrator/r0/940c1592-d106-4088-96d8-b500b1f6f2be",
       "evidenceRef": "acceptance.md",
       "revision": "55ecd0f3a940ab16cb51d2b1987d30779f746d52"
+    },
+    {
+      "sequence": 7,
+      "from": "accepted",
+      "to": "integrated",
+      "round": 1,
+      "actorRunId": "FND-001S/orchestrator/r0/940c1592-d106-4088-96d8-b500b1f6f2be",
+      "evidenceRef": "integration.md",
+      "revision": "fcc8663751a6b2f1efb62f744655ad68771df4ca"
     }
   ],
   "resultRefs": [
@@ -103,5 +112,26 @@
     }
   ],
   "acceptedCandidateRevision": "55ecd0f3a940ab16cb51d2b1987d30779f746d52",
+  "integrationRevision": "fcc8663751a6b2f1efb62f744655ad68771df4ca",
+  "integrationChecks": [
+    {
+      "runId": "FND-001S/orchestrator/r0/940c1592-d106-4088-96d8-b500b1f6f2be/integration-fmt",
+      "revision": "fcc8663751a6b2f1efb62f744655ad68771df4ca",
+      "command": "deno task fmt:check",
+      "exitCode": 0
+    },
+    {
+      "runId": "FND-001S/orchestrator/r0/940c1592-d106-4088-96d8-b500b1f6f2be/integration-lint",
+      "revision": "fcc8663751a6b2f1efb62f744655ad68771df4ca",
+      "command": "deno task lint",
+      "exitCode": 0
+    },
+    {
+      "runId": "FND-001S/orchestrator/r0/940c1592-d106-4088-96d8-b500b1f6f2be/integration-check",
+      "revision": "fcc8663751a6b2f1efb62f744655ad68771df4ca",
+      "command": "deno task check",
+      "exitCode": 0
+    }
+  ],
   "blocker": null
 }
