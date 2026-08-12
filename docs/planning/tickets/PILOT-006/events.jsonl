@@ -4,3 +4,4 @@
 {"sequence":4,"from":"green","to":"refactor","round":1,"actorRunId":"PILOT-006/implementer/r1/00000000-0000-4000-8000-000000000602","evidenceRef":"evidence/round-01-refactor.log","revision":"cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d"}
 {"sequence":5,"from":"refactor","to":"review","round":1,"actorRunId":"PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601","evidenceRef":"results/round-01.json","revision":"cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d"}
 {"sequence":6,"from":"review","to":"accepted","round":1,"actorRunId":"PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601","evidenceRef":"acceptance.md","revision":"cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d"}
+{"sequence":7,"from":"accepted","to":"integrated","round":1,"actorRunId":"PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601","evidenceRef":"integration.md","revision":"43d2bf55ba9b09093ef2feaba7cec9c0de02f99b"}
