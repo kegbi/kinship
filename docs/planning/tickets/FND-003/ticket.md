@@ -2,7 +2,7 @@
 
 Status: ready, round 0 (fresh RED retry pending)\
 Owner: trusted top-level orchestrator\
-Packet revision: 5\
+Packet revision: 6\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
 Execution class: `ordinary`\
 Depends on: FND-001S at integration revision
@@ -27,8 +27,15 @@ Rejected RED attempts:
   coverage, but independent audit found bypasses in real Deno/pnpm lock parsing,
   compatibility/provenance, lifecycle ownership, and complete OCI descriptor
   identity.
+- `8c919812c54a402388bcc8e117d0fd9dac91ddf4`, validator SHA-256
+  `cedecbc36562390bb467d2ec6cd82d3f671b7fe99a6e3a4919e25fc1d50117f1`: direct and
+  root gates, exact coverage, and the intended RED shape passed, but two
+  independent audits proved that official evidence and OCI completeness remained
+  self-asserted, pnpm packages and peer-qualified snapshots were conflated, real
+  semver and Deno alias/specifier forms could fail or drift, and lifecycle
+  executions were not fully bound to exact manifests and runs.
 
-All three attempts and all associated evidence remain immutable history and
+All four attempts and all associated evidence remain immutable history and
 confer no production-write authority.
 
 ## Outcome
@@ -75,7 +82,9 @@ as incidental lock drift.
   committed negative fixtures.
 - Select exact versions at one freshly verified UTC proof timestamp under the
   accepted 72-hour policy; record publication, integrity, provenance,
-  compatibility, exclusion, and upgrade evidence.
+  compatibility, exclusion, and upgrade evidence, and retain compressed lossless
+  official response bytes under `tools/runtime/FND-003/provenance/` so the
+  validator recomputes every claim rather than trusting graph-authored hashes.
 - Commit exact root Deno/pnpm manifests, workspace metadata, locks, Corepack
   descriptor integrity, and explicit deny-by-default lifecycle policies.
 - Lock the nontrivial backend/frontend/test closure required by FND-003A/B/C,
@@ -147,7 +156,8 @@ as incidental lock drift.
 - AC-02: one timestamped, exact, current, age-eligible graph covers the selected
   runtime, package-manager, backend, frontend, test, browser, and shadcn CLI
   candidates and the full immutable Button/DOM/browser-test import closure with
-  official evidence and newer-version exclusions.
+  official evidence and newer-version exclusions recomputed from retained exact
+  official response bytes.
 - AC-03: Corepack integrity/signatures and pnpm/Deno lifecycle allowlists are
   exact and deny by default; Deno stays empty, fsevents stays denied, and the
   transitive install-hook inventory may justify only an exact required esbuild
@@ -157,9 +167,10 @@ as incidental lock drift.
   locks, and execute no startup install or unreviewed lifecycle command; any
   required esbuild execution is recorded exactly, and A/B/C reuse those locks
   without mutation.
-- AC-05: all five OCI references are exact indexes with separate required Linux
-  amd64/arm64 child and attestation classification, and the official Playwright
-  image version matches `@playwright/test` exactly.
+- AC-05: all five OCI references are exact indexes whose committed raw response
+  bytes recompute the index digest and full descriptor set, with separate
+  required Linux amd64/arm64 child and attestation classification, and the
+  official Playwright image version matches `@playwright/test` exactly.
 - AC-06: the graph keeps all executable behavior proof-pending under the four
   named follow-ons, declares no-mutation predecessor-lock reuse, and excludes
   early Lefthook or mutable shadcn payloads.
