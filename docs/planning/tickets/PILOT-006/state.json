@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "ticketId": "PILOT-006",
   "ticketRevision": 1,
-  "phase": "accepted",
+  "phase": "integrated",
   "round": 1,
   "baseRevision": "6c6ea8313f0472c315079a605c50cd2548d2835b",
   "candidateRevision": "cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d",
@@ -60,6 +60,15 @@
       "actorRunId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601",
       "evidenceRef": "acceptance.md",
       "revision": "cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d"
+    },
+    {
+      "sequence": 7,
+      "from": "accepted",
+      "to": "integrated",
+      "round": 1,
+      "actorRunId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601",
+      "evidenceRef": "integration.md",
+      "revision": "43d2bf55ba9b09093ef2feaba7cec9c0de02f99b"
     }
   ],
   "resultRefs": [
@@ -103,5 +112,38 @@
     }
   ],
   "acceptedCandidateRevision": "cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d",
+  "integrationRevision": "43d2bf55ba9b09093ef2feaba7cec9c0de02f99b",
+  "integrationChecks": [
+    {
+      "runId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601/integration-fmt",
+      "revision": "43d2bf55ba9b09093ef2feaba7cec9c0de02f99b",
+      "command": "deno task fmt:check",
+      "exitCode": 0
+    },
+    {
+      "runId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601/integration-lint",
+      "revision": "43d2bf55ba9b09093ef2feaba7cec9c0de02f99b",
+      "command": "deno task lint",
+      "exitCode": 0
+    },
+    {
+      "runId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601/integration-check",
+      "revision": "43d2bf55ba9b09093ef2feaba7cec9c0de02f99b",
+      "command": "deno task check",
+      "exitCode": 0
+    },
+    {
+      "runId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601/integration-workflow",
+      "revision": "43d2bf55ba9b09093ef2feaba7cec9c0de02f99b",
+      "command": "deno task test:workflow",
+      "exitCode": 0
+    },
+    {
+      "runId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601/integration-coverage",
+      "revision": "43d2bf55ba9b09093ef2feaba7cec9c0de02f99b",
+      "command": "deno task test:workflow:coverage",
+      "exitCode": 0
+    }
+  ],
   "blocker": null
 }
