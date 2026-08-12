@@ -9,8 +9,19 @@ const REQUIRED_TASKS = [
   "ticket:validate",
   "test:schema:matrix",
 ] as const;
+const FIXTURE_TASK_DEFINITION = "deno check tools/workflows/production.ts";
 
 const TICKET_ID = "PILOT-001";
+const CONTROLLER_RUN_ID =
+  `${TICKET_ID}/orchestrator/r0/00000000-0000-4000-8000-000000000301`;
+const IMPLEMENTER_RUN_IDS = [
+  `${TICKET_ID}/implementer/r1/00000000-0000-4000-8000-000000000302`,
+  `${TICKET_ID}/implementer/r2/00000000-0000-4000-8000-000000000304`,
+] as const;
+const REVIEWER_RUN_IDS = [
+  `${TICKET_ID}/reviewer/r1/00000000-0000-4000-8000-000000000303`,
+  `${TICKET_ID}/reviewer/r2/00000000-0000-4000-8000-000000000305`,
+] as const;
 const TICKET_PATH = `docs/planning/tickets/${TICKET_ID}`;
 const PRODUCTION_PATH = "tools/workflows/production.ts";
 const ROUND_ONE_TEST_PATH = "tools/workflows/round5_one_test.ts";
@@ -140,7 +151,7 @@ function initializeRepository(prefix: string): string {
       JSON.stringify(
         {
           tasks: Object.fromEntries(
-            REQUIRED_TASKS.map((task) => [task, "echo"]),
+            REQUIRED_TASKS.map((task) => [task, FIXTURE_TASK_DEFINITION]),
           ),
         },
         null,
@@ -154,12 +165,15 @@ function initializeRepository(prefix: string): string {
 
 function ticket(baseRevision: string): Record<string, unknown> {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     ticketId: TICKET_ID,
     revision: 1,
     title: "Bound and retain autonomous workflow evidence",
     outcome: "Workflow evidence is immutable and bounded across all rounds.",
     baseRevision,
+    controllerRunId: CONTROLLER_RUN_ID,
+    executionClass: "ordinary",
+    protectedWriteAuthorization: null,
     dependencies: [],
     maxRounds: 3,
     scope: ["Workflow validation"],
@@ -175,7 +189,17 @@ function ticket(baseRevision: string): Record<string, unknown> {
       text: "Validate immutable, bounded, phase-aware Git evidence.",
       redProof: "A focused real-Git regression exposes the missing guard.",
     }],
-    requiredTasks: [...REQUIRED_TASKS],
+    requiredTasks: {
+      baseline: REQUIRED_TASKS.map((name) => ({
+        name,
+        definition: FIXTURE_TASK_DEFINITION,
+      })),
+      candidate: REQUIRED_TASKS.map((name) => ({
+        name,
+        definition: FIXTURE_TASK_DEFINITION,
+        guardedBy: null,
+      })),
+    },
     risks: ["Unbounded or mutable evidence could be accepted"],
     unresolvedDecisions: [],
   };
@@ -190,11 +214,12 @@ function result(
 ): Record<string, unknown> {
   const roundName = String(round).padStart(2, "0");
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     ticketId: TICKET_ID,
     ticketRevision: 1,
     round,
-    implementerRunId: `implementer-round-${roundName}`,
+    implementerRunId: IMPLEMENTER_RUN_IDS[round - 1],
+    issuedByControllerRunId: CONTROLLER_RUN_ID,
     inputBaseRevision,
     dispatchRef: `dispatch/round-${roundName}.md`,
     redRevision,
@@ -258,14 +283,14 @@ function review(
   candidateRevision: string,
   verdict: "APPROVED" | "CHANGES_REQUESTED",
 ): Record<string, unknown> {
-  const roundName = String(round).padStart(2, "0");
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     ticketId: TICKET_ID,
     ticketRevision: 1,
     round,
-    implementerRunId: `implementer-round-${roundName}`,
-    reviewerRunId: `reviewer-round-${roundName}`,
+    implementerRunId: IMPLEMENTER_RUN_IDS[round - 1],
+    reviewerRunId: REVIEWER_RUN_IDS[round - 1],
+    issuedByControllerRunId: CONTROLLER_RUN_ID,
     baseRevision,
     candidateRevision,
     verdict,
@@ -318,7 +343,7 @@ function acceptedState(
     dependencyRevisions: {},
     openFindingIds: [],
     orchestratorChecks: REQUIRED_TASKS.map((task, index) => ({
-      runId: `orchestrator-check-${index + 1}`,
+      runId: `${CONTROLLER_RUN_ID}/acceptance-check-${index + 1}`,
       revision: candidateRevision,
       command: `deno task ${task}`,
       exitCode: 0,
@@ -339,7 +364,7 @@ function oneRoundEvents(
       from: "planned",
       to: "ready",
       round: 0,
-      actorRunId: "orchestrator-ready",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: "ticket.json",
       revision: baseRevision,
     },
@@ -348,7 +373,7 @@ function oneRoundEvents(
       from: "ready",
       to: "red",
       round: 1,
-      actorRunId: "implementer-round-01",
+      actorRunId: IMPLEMENTER_RUN_IDS[0],
       evidenceRef: "evidence/round-01-red.log",
       revision: redRevision,
     },
@@ -357,7 +382,7 @@ function oneRoundEvents(
       from: "red",
       to: "green",
       round: 1,
-      actorRunId: "implementer-round-01",
+      actorRunId: IMPLEMENTER_RUN_IDS[0],
       evidenceRef: "evidence/round-01-green.log",
       revision: candidateRevision,
     },
@@ -366,7 +391,7 @@ function oneRoundEvents(
       from: "green",
       to: "refactor",
       round: 1,
-      actorRunId: "implementer-round-01",
+      actorRunId: IMPLEMENTER_RUN_IDS[0],
       evidenceRef: "evidence/round-01-refactor.log",
       revision: candidateRevision,
     },
@@ -375,7 +400,7 @@ function oneRoundEvents(
       from: "refactor",
       to: "review",
       round: 1,
-      actorRunId: "orchestrator-review",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: "results/round-01.json",
       revision: candidateRevision,
     },
@@ -384,7 +409,7 @@ function oneRoundEvents(
       from: "review",
       to: "accepted",
       round: 1,
-      actorRunId: "orchestrator-accept",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: "acceptance.md",
       revision: candidateRevision,
     },
@@ -409,7 +434,7 @@ function twoRoundEvents(
       from: "review",
       to: "rework",
       round: 1,
-      actorRunId: "reviewer-round-01",
+      actorRunId: REVIEWER_RUN_IDS[0],
       evidenceRef: "reviews/round-01.json",
       revision: firstCandidateRevision,
     },
@@ -418,7 +443,7 @@ function twoRoundEvents(
       from: "rework",
       to: "red",
       round: 2,
-      actorRunId: "implementer-round-02",
+      actorRunId: IMPLEMENTER_RUN_IDS[1],
       evidenceRef: "evidence/round-02-red.log",
       revision: secondRedRevision,
     },
@@ -427,7 +452,7 @@ function twoRoundEvents(
       from: "red",
       to: "green",
       round: 2,
-      actorRunId: "implementer-round-02",
+      actorRunId: IMPLEMENTER_RUN_IDS[1],
       evidenceRef: "evidence/round-02-green.log",
       revision: finalCandidateRevision,
     },
@@ -436,7 +461,7 @@ function twoRoundEvents(
       from: "green",
       to: "refactor",
       round: 2,
-      actorRunId: "implementer-round-02",
+      actorRunId: IMPLEMENTER_RUN_IDS[1],
       evidenceRef: "evidence/round-02-refactor.log",
       revision: finalCandidateRevision,
     },
@@ -445,7 +470,7 @@ function twoRoundEvents(
       from: "refactor",
       to: "review",
       round: 2,
-      actorRunId: "orchestrator-review-round-02",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: "results/round-02.json",
       revision: finalCandidateRevision,
     },
@@ -454,7 +479,7 @@ function twoRoundEvents(
       from: "review",
       to: "accepted",
       round: 2,
-      actorRunId: "orchestrator-accept-round-02",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: "acceptance.md",
       revision: finalCandidateRevision,
     },
@@ -765,7 +790,7 @@ function createReadyFixture(): GitFixture {
       from: "planned",
       to: "ready",
       round: 0,
-      actorRunId: "orchestrator-ready",
+      actorRunId: CONTROLLER_RUN_ID,
       evidenceRef: "ticket.json",
       revision: baseRevision,
     }];

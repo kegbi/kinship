@@ -221,7 +221,7 @@ async function taskDefinitionsAtRevision(
 }
 
 function isObviousNoopTaskDefinition(definition: string): boolean {
-  return /^deno\s+eval\s+(?:["']?true["']?);?$/i.test(definition.trim());
+  return /^deno(?:\.exe)?\s+eval(?:\s|$)/i.test(definition.trim());
 }
 
 async function sha256(value: Uint8Array): Promise<string> {
