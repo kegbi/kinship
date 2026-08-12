@@ -6,6 +6,19 @@ issuedByControllerRunId: FND-002/orchestrator/r0/a16b5b61-a6c8-4366-8752-d530fa3
 implementerRunId: FND-002/implementer/r1/e2edf3bf-a445-4fc2-8ba4-3fffb9681804
 inputBaseRevision: 603f6621809f61fab70bc29b8b4a9252ebcecb27
 
+controllerAudit:
+  rejectedPreFreezeRevision: d0ba91da166b6a651cf75fba399bdd39fe5c0fd1
+  disposition: rejected before authoritative RED freeze
+  reason: deno fmt --check tools/architecture/FND-002/coordination_contract_test.ts exited 1
+  correction: semantics-preserving deno fmt of the check file only
+
+formatCommand: deno fmt tools/architecture/FND-002/coordination_contract_test.ts
+formatExitCode: 0
+formatObserved: Checked 1 file
+formatCheckCommand: deno fmt --check tools/architecture/FND-002/coordination_contract_test.ts
+formatCheckExitCode: 0
+formatCheckObserved: Checked 1 file
+
 command: deno test --allow-read=docs/architecture tools/architecture/FND-002/coordination_contract_test.ts
 authoritativeExitCode: 1
 

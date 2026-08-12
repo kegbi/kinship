@@ -38,9 +38,10 @@ function listProperty(block: string, property: string): string[] {
   ).trim();
   if (initial.startsWith("[")) {
     if (initial.endsWith("]")) {
-      return initial.slice(1, -1).split(",").map((value) => value.trim()).filter(
-        Boolean,
-      );
+      return initial.slice(1, -1).split(",").map((value) => value.trim())
+        .filter(
+          Boolean,
+        );
     }
     const values: string[] = [];
     for (let index = propertyIndex + 1; index < lines.length; index++) {
@@ -79,7 +80,9 @@ function manifestCoordinationIssues(yaml: string): string[] {
   const governance = parseModule(yaml, "governance");
 
   if (!identity || !workspaces || !governance) {
-    return ["identity, workspaces, and governance module declarations are required"];
+    return [
+      "identity, workspaces, and governance module declarations are required",
+    ];
   }
 
   if (!workspaces.allowedModuleDependencies.includes("identity")) {
@@ -104,7 +107,9 @@ function manifestCoordinationIssues(yaml: string): string[] {
   }
 
   if (!identity.publishes.includes("identity.user-registered")) {
-    issues.push("identity must remain the publisher of identity.user-registered");
+    issues.push(
+      "identity must remain the publisher of identity.user-registered",
+    );
   }
   for (const event of ["workspace.created", "workspace.member-joined"]) {
     if (!workspaces.publishes.includes(event)) {
@@ -158,7 +163,10 @@ Deno.test("manifest discriminator accepts DG-06A and rejects competing choreogra
 readModels:
 `;
   const competing = compliant
-    .replace("    consumes: []\n  - id: governance", "    consumes: [identity.user-registered]\n  - id: governance")
+    .replace(
+      "    consumes: []\n  - id: governance",
+      "    consumes: [identity.user-registered]\n  - id: governance",
+    )
     .replace(
       "    consumes: [identity.user-registered, workspace.created, workspace.member-joined]",
       "    consumes: [identity.user-registered]",
@@ -172,23 +180,28 @@ readModels:
 
   const competingIssues = manifestCoordinationIssues(competing);
   assert(
-    competingIssues.includes("workspaces must not consume identity.user-registered"),
+    competingIssues.includes(
+      "workspaces must not consume identity.user-registered",
+    ),
     "discriminator did not reject identity-driven workspace choreography",
   );
   assert(
     competingIssues.includes("governance must consume workspace.created") &&
-      competingIssues.includes("governance must consume workspace.member-joined"),
+      competingIssues.includes(
+        "governance must consume workspace.member-joined",
+      ),
     "discriminator did not reject missing governance lifecycle edges",
   );
 });
 
 Deno.test("accepted architecture contracts record the DG-06A boundary", async () => {
-  const [adrSource, indexSource, backendSource, manifestSource] = await Promise.all([
-    readArchitectureFile(ADR_PATH),
-    readArchitectureFile(ADR_INDEX_PATH),
-    readArchitectureFile(BACKEND_PATH),
-    readArchitectureFile(MANIFEST_PATH),
-  ]);
+  const [adrSource, indexSource, backendSource, manifestSource] = await Promise
+    .all([
+      readArchitectureFile(ADR_PATH),
+      readArchitectureFile(ADR_INDEX_PATH),
+      readArchitectureFile(BACKEND_PATH),
+      readArchitectureFile(MANIFEST_PATH),
+    ]);
   const issues: string[] = [];
 
   if (!adrSource) {
@@ -198,19 +211,91 @@ Deno.test("accepted architecture contracts record the DG-06A boundary", async ()
     );
   } else {
     const adr = normalized(adrSource);
-    requirePattern(issues, "AC-01", adr, /status.{0,40}accepted/, "ADR must be accepted");
-    requirePattern(issues, "AC-01", adr, /workspaces-owned/, "coordinator must be workspaces-owned");
-    requirePattern(issues, "AC-01", adr, /use-case-specific/, "coordinator must be use-case-specific");
-    requirePattern(issues, "AC-01", adr, /identity.{0,100}public (application )?facade/, "identity calls must use its public facade");
-    requirePattern(issues, "AC-01", adr, /composition root.{0,140}(register|registration).{0,140}governance.{0,80}(audit )?handler/, "composition root must register governance audit handlers");
-    requirePattern(issues, "AC-01", adr, /generic horizontal (service|coordinator)/, "generic horizontal coordination must be forbidden");
-    requirePattern(issues, "AC-01", adr, /private adapter import/, "private adapter imports must be forbidden");
-    requirePattern(issues, "AC-01", adr, /direct cross-module table write/, "direct cross-module table writes must be forbidden");
+    requirePattern(
+      issues,
+      "AC-01",
+      adr,
+      /status.{0,40}accepted/,
+      "ADR must be accepted",
+    );
+    requirePattern(
+      issues,
+      "AC-01",
+      adr,
+      /workspaces-owned/,
+      "coordinator must be workspaces-owned",
+    );
+    requirePattern(
+      issues,
+      "AC-01",
+      adr,
+      /use-case-specific/,
+      "coordinator must be use-case-specific",
+    );
+    requirePattern(
+      issues,
+      "AC-01",
+      adr,
+      /identity.{0,100}public (application )?facade/,
+      "identity calls must use its public facade",
+    );
+    requirePattern(
+      issues,
+      "AC-01",
+      adr,
+      /composition root.{0,140}(register|registration).{0,140}governance.{0,80}(audit )?handler/,
+      "composition root must register governance audit handlers",
+    );
+    requirePattern(
+      issues,
+      "AC-01",
+      adr,
+      /generic horizontal (service|coordinator)/,
+      "generic horizontal coordination must be forbidden",
+    );
+    requirePattern(
+      issues,
+      "AC-01",
+      adr,
+      /private adapter import/,
+      "private adapter imports must be forbidden",
+    );
+    requirePattern(
+      issues,
+      "AC-01",
+      adr,
+      /direct cross-module table write/,
+      "direct cross-module table writes must be forbidden",
+    );
 
-    requirePattern(issues, "AC-04", adr, /synchronous.{0,100}transaction-scoped/, "coordination must be synchronous and transaction-scoped");
-    requirePattern(issues, "AC-04", adr, /durable asynchronous delivery/, "durable asynchronous delivery must be distinguished");
-    requirePattern(issues, "AC-04", adr, /fnd-002.{0,140}(does not|has not|not).{0,100}(implement|prove)/, "FND-002 must disclaim application implementation and proof");
-    requirePattern(issues, "AC-04", adr, /protected walking skeleton.{0,120}slice 1.{0,120}(executable )?proof/, "walking-skeleton and Slice 1 executable proof must remain required");
+    requirePattern(
+      issues,
+      "AC-04",
+      adr,
+      /synchronous.{0,100}transaction-scoped/,
+      "coordination must be synchronous and transaction-scoped",
+    );
+    requirePattern(
+      issues,
+      "AC-04",
+      adr,
+      /durable asynchronous delivery/,
+      "durable asynchronous delivery must be distinguished",
+    );
+    requirePattern(
+      issues,
+      "AC-04",
+      adr,
+      /fnd-002.{0,140}(does not|has not|not).{0,100}(implement|prove)/,
+      "FND-002 must disclaim application implementation and proof",
+    );
+    requirePattern(
+      issues,
+      "AC-04",
+      adr,
+      /protected walking skeleton.{0,120}slice 1.{0,120}(executable )?proof/,
+      "walking-skeleton and Slice 1 executable proof must remain required",
+    );
   }
 
   const index = normalized(indexSource ?? "");
@@ -223,18 +308,64 @@ Deno.test("accepted architecture contracts record the DG-06A boundary", async ()
   );
 
   const backend = normalized(backendSource ?? "");
-  requirePattern(issues, "AC-02", backend, /workspaces-owned.{0,100}(application service|use case)/, "workspaces must own the coordinating application service");
-  requirePattern(issues, "AC-02", backend, /first-user.{0,80}workspace creation/, "first-user/workspace creation must be covered");
-  requirePattern(issues, "AC-02", backend, /invitation acceptance/, "invitation acceptance must be covered");
-  requirePattern(issues, "AC-02", backend, /one (transaction\/session|transaction or session|shared transaction)/, "one transaction/session boundary must be explicit");
-  requirePattern(issues, "AC-02", backend, /identity.{0,120}(workspace membership|membership).{0,120}(required )?governance audit/, "identity, membership, and required governance audit effects must share the boundary");
-  requirePattern(issues, "AC-02", backend, /all-or-nothing rollback/, "all-or-nothing rollback must be required");
-  requirePattern(issues, "AC-02", backend, /postconditions?.{0,100}before commit/, "success postconditions must be checked before commit");
+  requirePattern(
+    issues,
+    "AC-02",
+    backend,
+    /workspaces-owned.{0,100}(application service|use case)/,
+    "workspaces must own the coordinating application service",
+  );
+  requirePattern(
+    issues,
+    "AC-02",
+    backend,
+    /first-user.{0,80}workspace creation/,
+    "first-user/workspace creation must be covered",
+  );
+  requirePattern(
+    issues,
+    "AC-02",
+    backend,
+    /invitation acceptance/,
+    "invitation acceptance must be covered",
+  );
+  requirePattern(
+    issues,
+    "AC-02",
+    backend,
+    /one (transaction\/session|transaction or session|shared transaction)/,
+    "one transaction/session boundary must be explicit",
+  );
+  requirePattern(
+    issues,
+    "AC-02",
+    backend,
+    /identity.{0,120}(workspace membership|membership).{0,120}(required )?governance audit/,
+    "identity, membership, and required governance audit effects must share the boundary",
+  );
+  requirePattern(
+    issues,
+    "AC-02",
+    backend,
+    /all-or-nothing rollback/,
+    "all-or-nothing rollback must be required",
+  );
+  requirePattern(
+    issues,
+    "AC-02",
+    backend,
+    /postconditions?.{0,100}before commit/,
+    "success postconditions must be checked before commit",
+  );
 
   if (!manifestSource) {
     issues.push(`AC-03: manifest is absent at ${MANIFEST_PATH}`);
   } else {
-    issues.push(...manifestCoordinationIssues(manifestSource).map((issue) => `AC-03: ${issue}`));
+    issues.push(
+      ...manifestCoordinationIssues(manifestSource).map((issue) =>
+        `AC-03: ${issue}`
+      ),
+    );
   }
 
   assert(
