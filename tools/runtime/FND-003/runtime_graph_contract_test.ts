@@ -20,6 +20,8 @@ const REPOSITORY_FILES = [
 ] as const;
 const LOCK_ROOTS = ["deno.lock", "pnpm-lock.yaml"] as const;
 const EXACT_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const EXACT_LOCK_VERSION =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?$/;
 const RFC3339_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{1,9}Z$/;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
 const RAW_SHA256 = /^[0-9a-f]{64}$/;
@@ -40,7 +42,7 @@ const WHOLE_SOURCE_DIGEST_MARKER_END = [
 const WHOLE_SOURCE_DIGEST_SENTINEL = "0".repeat(64);
 /* FND003_WHOLE_SOURCE_DIGEST_START */
 const REVIEWED_WHOLE_SOURCE_SHA256 =
-  "sha256:2104938194281a8721c6cf9cc8e9fc24edca40fc71ed578307b0f90d86265ed7";
+  "sha256:16b6513ad04cc01312b1310c3ffd6b202a5ef462f9f72325c309b52fa5218e42";
 /* FND003_WHOLE_SOURCE_DIGEST_END */
 
 type EvidenceReader = (
@@ -406,6 +408,15 @@ function version(value: unknown, label: string): string {
   invariant(
     EXACT_VERSION.test(result),
     `${label} must be an exact stable version`,
+  );
+  return result;
+}
+
+function lockVersion(value: unknown, label: string): string {
+  const result = string(value, label);
+  invariant(
+    EXACT_LOCK_VERSION.test(result),
+    `${label} must be an exact lock version`,
   );
   return result;
 }
@@ -1957,7 +1968,7 @@ function retainedManifestRows(
   for (const raw of array(pnpm.packages, "pnpm packages")) {
     const item = object(raw, "pnpm package");
     const name = string(item.name, "pnpm package name");
-    const itemVersion = version(item.version, "pnpm package version");
+    const itemVersion = lockVersion(item.version, "pnpm package version");
     if (rows.some((row) => row.name === name && row.version === itemVersion)) {
       continue;
     }
@@ -2956,7 +2967,7 @@ function snapshotIdentity(
   invariant(delimiter > 0, "pnpm snapshot package identity is malformed");
   const name = packageKey.slice(0, delimiter);
   const itemVersion = packageKey.slice(delimiter + 1);
-  version(itemVersion, `${snapshotKey} snapshot version`);
+  lockVersion(itemVersion, `${snapshotKey} snapshot version`);
   return { packageKey, name, version: itemVersion };
 }
 
@@ -3037,7 +3048,7 @@ function validatePnpmGraph(
     ], "pnpm package record");
     const id = string(item.id, "pnpm package id");
     const name = string(item.name, `${id}.name`);
-    const itemVersion = version(item.version, `${id}.version`);
+    const itemVersion = lockVersion(item.version, `${id}.version`);
     invariant(
       item.key === `${name}@${itemVersion}`,
       `${id} package identity drifted`,
@@ -3556,7 +3567,7 @@ function validateLifecycle(graph: JsonRecord, authority: EvidenceAuthority) {
       authority,
       evidenceId,
       string(item.name, `${id}.name`),
-      version(item.version, `${id}.version`),
+      lockVersion(item.version, `${id}.version`),
     );
     const scripts = object(manifest.scripts ?? {}, `${id}.scripts`);
     for (const hookName of ["preinstall", "install", "postinstall"] as const) {
@@ -9008,13 +9019,27 @@ Deno.test("real pnpm transitive prerelease identities remain valid", async () =>
     version(itemVersion, `${name} package.json devDependency`);
   }
 
-  let malformedRejected = false;
-  try {
-    snapshotIdentity("bad@1.0");
-  } catch {
-    malformedRejected = true;
+  for (
+    const malformedVersion of [
+      "1.0",
+      "1.0.0-01",
+      "1.0.0-rc..1",
+      "1.0.0-rc.1+build.1",
+      "^1.0.0",
+      "latest",
+    ]
+  ) {
+    let malformedRejected = false;
+    try {
+      snapshotIdentity(`bad@${malformedVersion}`);
+    } catch {
+      malformedRejected = true;
+    }
+    invariant(
+      malformedRejected,
+      `${malformedVersion} malformed transitive version was accepted`,
+    );
   }
-  invariant(malformedRejected, "malformed transitive version was accepted");
   let directPrereleaseRejected = false;
   try {
     version("1.0.0-rc.1", "package.json direct prerelease");
