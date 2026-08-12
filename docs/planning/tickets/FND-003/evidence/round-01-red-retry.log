@@ -1,0 +1,84 @@
+schemaVersion=2
+ticketId=FND-003
+round=1
+phase=RED
+implementerRunId=FND-003/implementer/r1/f04996a4-92e8-48b8-94af-e0f2b5f854ac
+issuedByControllerRunId=FND-003/orchestrator/r0/b308fcda-6e91-4fec-8b40-bf19c6e21a16
+inputBaseRevision=895731f27f66d614cb431e9ab6bb570b94d1a476
+retryReadyRevision=162bdf2275ac657ab43f20b2f95bd056b32eb643
+worktreeRef=worktree:FND-003:1
+
+[focused-red]
+command=deno test --allow-read=.npmrc,deno.json,deno.lock,package.json,pnpm-workspace.yaml,pnpm-lock.yaml,tools/runtime/FND-003,docs/validation/runtime-graph-fnd003.json tools/runtime/FND-003/runtime_graph_contract_test.ts
+exit=1
+observed=1 control test passed; the sole failing test was the authoritative repository assertion.
+intendedAssertion=FND-003 repository graph is absent: missing .npmrc, deno.lock, package.json, pnpm-workspace.yaml, pnpm-lock.yaml, docs/validation/runtime-graph-fnd003.json; exact manifests, locks, pin record, and hashed provenance evidence are required.
+independence=No network, Docker, Node, Corepack, pnpm, registry, cache, environment-secret, wall-clock, or subprocess call was made by the focused check.
+
+[controls]
+status=PASS
+summary=All original strict JSON, version/age, manifest/lock, Corepack, lifecycle, compatibility, shadcn immutability, OCI, and proof-pending controls remain passing. Added controls require an exact locked shadcn Button closure derived from an immutable source (@base-ui/react, class-variance-authority, clsx, tailwind-merge, and lucide-react), one locked happy-dom Vitest environment, exact @playwright/test identity and version equality with the official Playwright tag@index image and required amd64/arm64 children, the complete FND-003A/B/C import-edge closure, exactly the root deno.lock and pnpm-lock.yaml, no nested/successor lock plan, and explicit no-mutation reuse of both predecessor locks by FND-003A/B/C.
+negativeSummary=The check rejects a generic playwright identity, missing or redirected import edges, mutable or incomplete Button source closure, non-official Playwright image repository, extra nested lock roots, successor lock plans, and follow-on lock mutation.
+fixtures=[]
+
+[direct-static]
+command=deno fmt --check tools/runtime/FND-003/runtime_graph_contract_test.ts
+exit=0
+observed=Checked 1 file.
+command=deno lint tools/runtime/FND-003/runtime_graph_contract_test.ts
+exit=0
+observed=Checked 1 file.
+command=deno check tools/runtime/FND-003/runtime_graph_contract_test.ts
+exit=0
+observed=Check completed.
+
+[coverage]
+sourceSha256=7515751e75d4c6a7730716c7b3a19e5114b5523026de5d25014aeb3d85bc05d5
+sourceBinding=The exact check bytes were copied to a disposable OS temporary directory as runtime_graph_contract.ts and hash equality was required before execution.
+command=deno test --coverage=<disposable-controls-profile> --filter='runtime graph validator controls discriminate every FND-003 policy boundary' <byte-identical-disposable-source>
+exit=0
+observed=1 control test passed; 1 repository test filtered out for this profile.
+command=deno test --coverage=<disposable-wrapper-profile> --allow-read=.npmrc,deno.json,deno.lock,package.json,pnpm-workspace.yaml,pnpm-lock.yaml,tools/runtime/FND-003,docs/validation/runtime-graph-fnd003.json --filter='repository supplies the immutable FND-003 runtime graph' <same-byte-identical-disposable-source>
+exit=1
+observed=The real repository wrapper executed and failed only with the intended absent-graph assertion; 1 control test was filtered out for this profile.
+command=deno coverage <disposable-controls-profile> <disposable-wrapper-profile> --include='runtime_graph_contract\.ts' --threshold=100
+exit=0
+observed=All files: 100.0% branches, 100.0% functions, 100.0% lines.
+ignoreDirectives=none
+
+[mandated-controls]
+command=deno task fmt:check
+exit=0
+observed=Checked 152 files.
+command=deno task lint
+exit=0
+observed=Checked 25 files.
+command=deno task check
+exit=0
+observed=Existing schema and workflow tools checked successfully.
+command=deno task test:schema:matrix
+exit=0
+observed=PostgreSQL 18.4 and 17.10 schema matrices passed all apply, rollback, catalog, behavior, teardown, and reapply assertions.
+command=deno task ticket:validate docs/planning/tickets/FND-003
+exit=0
+observed={"ok":true,"issues":[]}
+validationScope=The two uncommitted RED evidence logs were held in a disposable OS temporary directory for this committed-ticket-packet validation and restored byte-for-byte afterward; otherwise the validator correctly reports metadata_dirty until the controller freezes the RED evidence.
+
+[changed-paths]
+checks=["tools/runtime/FND-003/runtime_graph_contract_test.ts"]
+fixtures=[]
+evidence=["docs/planning/tickets/FND-003/evidence/round-01-red-retry.log"]
+production=[]
+
+[preserved-failed-attempt]
+path=docs/planning/tickets/FND-003/evidence/round-01-red.log
+sha256=21f9453d8dee94c5a9a2bb6796a009bdc60136d6920c2bfb8a6a4bfd8189e0e4
+statement=The failed-attempt evidence log was preserved byte-for-byte.
+
+[unchanged-boundaries]
+statement=No manifest, lock, .npmrc, runtime pin/report, accepted contract, ticket authority/state/event file, schema, application/product catalog, protected control path, or production file was written. Git metadata was neither inspected nor mutated.
+
+[handoff]
+status=STOPPED_AFTER_RED
+greenAuthority=false
+productionPaths=[]
