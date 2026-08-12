@@ -1,5 +1,7 @@
 // FND-003 freezes this dependency-free contract test before repository inputs exist.
 
+import { createHash } from "node:crypto";
+
 type JsonRecord = Record<string, unknown>;
 type YamlValue = string | number | boolean | null | YamlValue[] | YamlRecord;
 type YamlRecord = { [key: string]: YamlValue };
@@ -844,13 +846,6 @@ function sizedByteStream(size: number): ReadableStream<Uint8Array> {
   });
 }
 
-async function gzipSizedBody(size: number): Promise<Uint8Array> {
-  const stream = sizedByteStream(size).pipeThrough(
-    new CompressionStream("gzip") as TransformStream<Uint8Array, Uint8Array>,
-  );
-  return new Uint8Array(await new Response(stream).arrayBuffer());
-}
-
 async function readBounded(
   stream: ReadableStream<Uint8Array>,
   maximum: number,
@@ -969,24 +964,238 @@ function safeEvidenceUrl(kind: string, raw: string): URL {
 
 interface EvidenceAuthority {
   descriptor(id: string): JsonRecord;
-  text(id: string): string;
-  json(id: string): unknown;
+  npmPackument(id: string): JsonRecord;
+  releaseIndex(id: string): JsonRecord[];
+  releaseDetail(id: string): JsonRecord;
+  checksumRows(id: string): string[][];
+  sourceImports(id: string): string[];
+  ociIndex(id: string): JsonRecord;
   assertAllUsed(): void;
+}
+
+interface EvidenceIngestionEvent {
+  descriptorId: string;
+  action: "acquire" | "retain" | "release" | "cancel";
+  representation: "decoded" | "normalized";
+  bytes: number;
+}
+
+interface EvidenceLoadOptions {
+  observe?: (event: EvidenceIngestionEvent) => void;
+  compressedLimit?: number;
+  decompressedLimit?: number;
+}
+
+interface NormalizedEvidence {
+  kind: string;
+  value: unknown;
+}
+
+function assertNormalizedEvidenceValue(value: unknown, label: string): void {
+  invariant(
+    value === null || ["string", "number", "boolean"].includes(typeof value) ||
+      Array.isArray(value) ||
+      (typeof value === "object" &&
+        Object.getPrototypeOf(value) === Object.prototype),
+    `${label} retained a raw or executable evidence holder`,
+  );
+  if (Array.isArray(value)) {
+    value.forEach((item, index) =>
+      assertNormalizedEvidenceValue(item, `${label}[${index}]`)
+    );
+  } else if (value !== null && typeof value === "object") {
+    for (const [key, item] of Object.entries(value)) {
+      assertNormalizedEvidenceValue(item, `${label}.${key}`);
+    }
+  }
+}
+
+function presentFields(
+  value: JsonRecord,
+  fields: readonly string[],
+): JsonRecord {
+  return Object.fromEntries(
+    fields.filter((field) => Object.hasOwn(value, field)).map((field) => [
+      field,
+      clone(value[field]),
+    ]),
+  );
+}
+
+function normalizeNpmPackument(value: unknown): JsonRecord {
+  const packument = object(value, "npm packument");
+  const versions = object(packument.versions, "npm packument versions");
+  return {
+    ...presentFields(packument, ["_id", "_rev", "name", "dist-tags", "time"]),
+    versions: Object.fromEntries(
+      Object.entries(versions).map(([itemVersion, raw]) => [
+        itemVersion,
+        presentFields(object(raw, `${itemVersion} manifest`), [
+          "name",
+          "version",
+          "dist",
+          "dependencies",
+          "optionalDependencies",
+          "peerDependencies",
+          "peerDependenciesMeta",
+          "scripts",
+          "engines",
+          "os",
+          "cpu",
+          "libc",
+          "deprecated",
+          "bundledDependencies",
+          "bin",
+        ]),
+      ]),
+    ),
+  };
+}
+
+function normalizedJsonRows(
+  value: unknown,
+  fields: readonly string[],
+  label: string,
+): JsonRecord[] {
+  return array(value, label).map((raw, index) =>
+    presentFields(object(raw, `${label}[${index}]`), fields)
+  );
+}
+
+function normalizeOciIndex(value: unknown): JsonRecord {
+  const index = object(value, "OCI index response");
+  return {
+    ...presentFields(index, ["schemaVersion", "mediaType"]),
+    manifests: array(index.manifests, "OCI index manifests").map(
+      (raw, descriptorIndex) =>
+        presentFields(
+          object(raw, `OCI index manifests[${descriptorIndex}]`),
+          ["mediaType", "digest", "size", "platform", "annotations"],
+        ),
+    ),
+  };
+}
+
+function normalizeEvidenceBody(
+  descriptor: JsonRecord,
+  body: string,
+): NormalizedEvidence {
+  const kind = string(descriptor.kind, "provenance kind");
+  if (kind === "npm-packument") {
+    return {
+      kind,
+      value: normalizeNpmPackument(
+        parseJsonValue(body, "npm packument response"),
+      ),
+    };
+  }
+  if (kind === "official-release-index") {
+    const source = string(descriptor.sourceUrl, "release index source");
+    const fields = source === "https://nodejs.org/dist/index.json"
+      ? [
+        "version",
+        "date",
+        "files",
+        "npm",
+        "v8",
+        "uv",
+        "zlib",
+        "openssl",
+        "modules",
+        "lts",
+        "security",
+      ]
+      : ["tag_name", "published_at", "draft", "prerelease"];
+    return {
+      kind,
+      value: normalizedJsonRows(
+        parseJsonValue(body, "official release index"),
+        fields,
+        "official release index",
+      ),
+    };
+  }
+  if (kind === "official-release-detail") {
+    return {
+      kind,
+      value: presentFields(
+        parseJson(body, "official release detail"),
+        ["tag_name", "published_at", "draft", "prerelease"],
+      ),
+    };
+  }
+  if (kind === "release-checksum") {
+    return {
+      kind,
+      value: body.trim().split(/\r?\n/).map((line) => line.trim().split(/\s+/)),
+    };
+  }
+  if (kind === "immutable-source") {
+    return { kind, value: packageImports(body) };
+  }
+  if (kind === "oci-index-response") {
+    return {
+      kind,
+      value: normalizeOciIndex(parseJson(body, "OCI index response")),
+    };
+  }
+  throw new Error(`${kind} evidence kind has no normalizer`);
+}
+
+function incrementalSha256() {
+  const hash = createHash("sha256");
+  return {
+    update(bytes: Uint8Array): void {
+      hash.update(bytes);
+    },
+    digest(): string {
+      return `sha256:${hash.digest("hex")}`;
+    },
+  };
+}
+
+function countedHashingStream(
+  maximum: number,
+  label: string,
+  hash: ReturnType<typeof incrementalSha256>,
+  count: { value: number },
+): TransformStream<Uint8Array, Uint8Array> {
+  return new TransformStream({
+    transform(chunk, controller) {
+      invariant(
+        chunk.byteLength <= maximum - count.value,
+        `${label} exceeds ${maximum} byte limit`,
+      );
+      hash.update(chunk);
+      count.value += chunk.byteLength;
+      controller.enqueue(chunk);
+    },
+  });
 }
 
 async function loadEvidence(
   graph: JsonRecord,
   readEvidence: EvidenceReader,
   selectedAt: ExactInstant,
+  options: EvidenceLoadOptions = {},
 ): Promise<EvidenceAuthority> {
   const descriptors = array(graph.provenance, "provenance").map((raw, index) =>
     object(raw, `provenance[${index}]`)
   );
   const byId = new Map<string, JsonRecord>();
-  const bodies = new Map<string, string>();
+  const claims = new Map<string, NormalizedEvidence>();
   const paths = new Set<string>();
   const used = new Set<string>();
+  const compressedLimit = options.compressedLimit ??
+    MAX_COMPRESSED_EVIDENCE_BYTES;
+  const decompressedLimit = options.decompressedLimit ??
+    MAX_DECOMPRESSED_EVIDENCE_BYTES;
+  invariant(
+    compressedLimit > 0 && decompressedLimit > 0,
+    "evidence limits must be positive",
+  );
   let latestRetrieval: ExactInstant | undefined;
+  let activeDescriptor: string | undefined;
   for (const descriptor of descriptors) {
     exactKeys(descriptor, [
       "id",
@@ -1026,25 +1235,97 @@ async function loadEvidence(
     if (!latestRetrieval || compareInstants(retrievedAt, latestRetrieval) > 0) {
       latestRetrieval = retrievedAt;
     }
-    const bytes = await readBounded(
-      await readEvidence(path),
-      MAX_COMPRESSED_EVIDENCE_BYTES,
-      `${id} compressed provenance artifact`,
-    );
     invariant(
-      await sha256Bytes(bytes) ===
-        digest(descriptor.artifactSha256, `${id}.artifactSha256`),
-      `${id} compressed artifact hash drifted`,
+      activeDescriptor === undefined,
+      "multiple provenance descriptors retained active raw ownership",
     );
-    const bodyBytes = await gunzipBoundedBytes(bytes);
-    invariant(
-      await sha256Bytes(bodyBytes) ===
-        digest(descriptor.contentSha256, `${id}.contentSha256`),
-      `${id} official response content hash drifted`,
-    );
-    const body = new TextDecoder("utf-8", { fatal: true }).decode(bodyBytes);
-    byId.set(id, descriptor);
-    bodies.set(id, body);
+    activeDescriptor = id;
+    let body = "";
+    let decodedBytes = 0;
+    const compressedCount = { value: 0 };
+    const decompressedCount = { value: 0 };
+    options.observe?.({
+      descriptorId: id,
+      action: "acquire",
+      representation: "decoded",
+      bytes: 0,
+    });
+    try {
+      const compressedHash = incrementalSha256();
+      const contentHash = incrementalSha256();
+      const decoded = (await readEvidence(path)).pipeThrough(
+        countedHashingStream(
+          compressedLimit,
+          `${id} compressed provenance artifact`,
+          compressedHash,
+          compressedCount,
+        ),
+      ).pipeThrough(
+        new DecompressionStream("gzip") as TransformStream<
+          Uint8Array,
+          Uint8Array
+        >,
+      ).pipeThrough(
+        countedHashingStream(
+          decompressedLimit,
+          `${id} decompressed provenance artifact`,
+          contentHash,
+          decompressedCount,
+        ),
+      ).pipeThrough(new TextDecoderStream("utf-8", { fatal: true }));
+      const reader = decoded.getReader();
+      try {
+        while (true) {
+          const result = await reader.read();
+          if (result.done) break;
+          body += result.value;
+          decodedBytes = decompressedCount.value;
+        }
+      } catch (error) {
+        await reader.cancel(error).catch(() => undefined);
+        throw error;
+      } finally {
+        reader.releaseLock();
+      }
+      invariant(
+        compressedHash.digest() ===
+          digest(descriptor.artifactSha256, `${id}.artifactSha256`),
+        `${id} compressed artifact hash drifted`,
+      );
+      invariant(
+        contentHash.digest() ===
+          digest(descriptor.contentSha256, `${id}.contentSha256`),
+        `${id} official response content hash drifted`,
+      );
+      const normalized = normalizeEvidenceBody(descriptor, body);
+      assertNormalizedEvidenceValue(normalized.value, `${id} normalized claim`);
+      claims.set(id, normalized);
+      options.observe?.({
+        descriptorId: id,
+        action: "retain",
+        representation: "normalized",
+        bytes: 0,
+      });
+      byId.set(id, clone(descriptor));
+    } catch (error) {
+      decodedBytes = decompressedCount.value;
+      options.observe?.({
+        descriptorId: id,
+        action: "cancel",
+        representation: "decoded",
+        bytes: decodedBytes,
+      });
+      throw error;
+    } finally {
+      body = "";
+      options.observe?.({
+        descriptorId: id,
+        action: "release",
+        representation: "decoded",
+        bytes: decodedBytes,
+      });
+      activeDescriptor = undefined;
+    }
   }
   invariant(
     latestRetrieval?.canonical === selectedAt.canonical,
@@ -1056,19 +1337,54 @@ async function loadEvidence(
       used.add(id);
       return descriptor;
     },
-    text(id: string): string {
-      return string(bodies.get(id), `provenance body ${id}`);
+    npmPackument(id: string): JsonRecord {
+      return object(normalizedClaim(claims, id, "npm-packument"), id);
     },
-    json(id: string): unknown {
-      return parseJsonValue(
-        string(bodies.get(id), `provenance body ${id}`),
-        `provenance body ${id}`,
+    releaseIndex(id: string): JsonRecord[] {
+      return array(
+        normalizedClaim(claims, id, "official-release-index"),
+        id,
+      ).map((raw) => object(raw, `${id} row`));
+    },
+    releaseDetail(id: string): JsonRecord {
+      return object(
+        normalizedClaim(claims, id, "official-release-detail"),
+        id,
+      );
+    },
+    checksumRows(id: string): string[][] {
+      return array(
+        normalizedClaim(claims, id, "release-checksum"),
+        id,
+      ).map((raw, index) => strings(raw, `${id}[${index}]`));
+    },
+    sourceImports(id: string): string[] {
+      return strings(
+        normalizedClaim(claims, id, "immutable-source"),
+        id,
+      );
+    },
+    ociIndex(id: string): JsonRecord {
+      return object(
+        normalizedClaim(claims, id, "oci-index-response"),
+        id,
       );
     },
     assertAllUsed(): void {
       exactSet([...used], [...byId.keys()], "provenance claim membership");
     },
   };
+}
+
+function normalizedClaim(
+  claims: Map<string, NormalizedEvidence>,
+  id: string,
+  kind: string,
+): unknown {
+  const claim = claims.get(id);
+  invariant(claim, `normalized provenance claim ${id} is absent`);
+  invariant(claim.kind === kind, `${id} normalized evidence kind is incorrect`);
+  return claim.value;
 }
 
 function evidenceKind(
@@ -1094,7 +1410,7 @@ function npmManifest(
     `${packageName} packument source is not exact`,
   );
   const packument = object(
-    authority.json(evidenceId),
+    authority.npmPackument(evidenceId),
     `${packageName} packument`,
   );
   invariant(
@@ -1435,7 +1751,7 @@ function runtimeReleaseRows(
     descriptor.sourceUrl === expectedSource,
     "deno release source is not exact",
   );
-  return array(authority.json(evidenceId), "deno releases").map((raw) =>
+  return authority.releaseIndex(evidenceId).map((raw) =>
     object(raw, "deno release")
   );
 }
@@ -1466,9 +1782,9 @@ function validateRuntimeSelection(
       indexDescriptor.sourceUrl === "https://nodejs.org/dist/index.json",
       "Node LTS index source is not exact",
     );
-    const indexRows = array(authority.json(ltsIndexId), "Node LTS index").map((
-      raw,
-    ) => object(raw, "Node LTS index row"));
+    const indexRows = authority.releaseIndex(ltsIndexId).map((raw) =>
+      object(raw, "Node LTS index row")
+    );
     const nodeKnownFields = [
       "version",
       "date",
@@ -1560,7 +1876,10 @@ function validateRuntimeSelection(
           `https://api.github.com/repos/nodejs/node/releases/tags/${tag}`,
         `${tag} precise Node release source is not exact`,
       );
-      const release = object(authority.json(evidenceId), `${tag} release`);
+      const release = object(
+        authority.releaseDetail(evidenceId),
+        `${tag} release`,
+      );
       invariant(
         release.tag_name === tag && release.draft === false &&
           release.prerelease === false,
@@ -1690,9 +2009,7 @@ function validateRuntimeSelection(
   const filename = runtimeId === "deno"
     ? `deno-x86_64-pc-windows-msvc.zip`
     : `node-v${selectedVersion}-win-x64.zip`;
-  const checksumRows = authority.text(artifactId).trim().split(/\r?\n/).map((
-    line,
-  ) => line.trim().split(/\s+/));
+  const checksumRows = authority.checksumRows(artifactId);
   const matching = checksumRows.filter((row) => row.at(-1) === filename);
   invariant(
     matching.length === 1 && RAW_SHA256.test(matching[0]![0]!),
@@ -1726,7 +2043,10 @@ function validateNpmSelection(
       `https://registry.npmjs.org/${encodeURIComponent(packageName)}`,
     `${label} packument source is not exact`,
   );
-  const packument = object(authority.json(evidenceId), `${label} packument`);
+  const packument = object(
+    authority.npmPackument(evidenceId),
+    `${label} packument`,
+  );
   invariant(packument.name === packageName, `${label} packument name drifted`);
   const tags = object(packument["dist-tags"], `${label} dist-tags`);
   exactValue(item.distTags, tags, `${label} dist-tags`);
@@ -3225,7 +3545,7 @@ function validateShadcn(graph: JsonRecord, authority: EvidenceAuthority) {
     "cn-helper",
   ];
   exactSet(
-    packageImports(authority.text(buttonId)),
+    authority.sourceImports(buttonId),
     expectedButton,
     "Button retained source imports",
   );
@@ -3244,7 +3564,7 @@ function validateShadcn(graph: JsonRecord, authority: EvidenceAuthority) {
       `https://raw.githubusercontent.com/shadcn-ui/ui/${commit}/${cnPath}`,
     "cn helper source URL is mutable or misbound",
   );
-  const cnImports = packageImports(authority.text(cnId));
+  const cnImports = authority.sourceImports(cnId);
   exactSet(cnImports, ["clsx", "tailwind-merge"], "cn retained source imports");
   exactSet(
     strings(shadcn.cnHelperImports, "cnHelperImports"),
@@ -3252,7 +3572,7 @@ function validateShadcn(graph: JsonRecord, authority: EvidenceAuthority) {
     "cn graph imports",
   );
   invariant(
-    !packageImports(authority.text(buttonId)).includes("lucide-react"),
+    !authority.sourceImports(buttonId).includes("lucide-react"),
     "Button source invents lucide-react",
   );
   invariant(
@@ -3301,7 +3621,7 @@ function normalizeOciDescriptor(raw: unknown): JsonRecord {
   };
 }
 
-async function validateOci(graph: JsonRecord, authority: EvidenceAuthority) {
+function validateOci(graph: JsonRecord, authority: EvidenceAuthority) {
   const expected: Record<string, [string, string]> = {
     deno: ["denoland/deno", `debian-${packageVersion(graph, "deno")}`],
     node: ["library/node", `${packageVersion(graph, "node")}-bookworm-slim`],
@@ -3353,8 +3673,10 @@ async function validateOci(graph: JsonRecord, authority: EvidenceAuthority) {
       descriptor.sourceUrl === expectedSource,
       `${id} OCI evidence source is not exact`,
     );
-    const rawBytes = new TextEncoder().encode(authority.text(evidenceId));
-    const rawDigest = await sha256Bytes(rawBytes);
+    const rawDigest = string(
+      descriptor.contentSha256,
+      `${id} OCI response digest`,
+    );
     invariant(
       image.indexDigest === rawDigest && descriptor.contentSha256 === rawDigest,
       `${id} index digest drifted from raw response bytes`,
@@ -3363,7 +3685,10 @@ async function validateOci(graph: JsonRecord, authority: EvidenceAuthority) {
       image.reference === `${image.repository}:${image.tag}@${rawDigest}`,
       `${id} reference is not tag plus raw index digest`,
     );
-    const index = object(authority.json(evidenceId), `${id} index response`);
+    const index = object(
+      authority.ociIndex(evidenceId),
+      `${id} index response`,
+    );
     invariant(
       index.schemaVersion === 2 && index.mediaType === OCI_INDEX_MEDIA &&
         image.mediaType === index.mediaType,
@@ -3460,7 +3785,8 @@ function validateProofStatus(graph: JsonRecord) {
 async function validateGraph(
   graph: JsonRecord,
   readEvidence: EvidenceReader,
-) {
+  evidenceOptions: EvidenceLoadOptions = {},
+): Promise<EvidenceAuthority> {
   exactKeys(graph, [
     "schemaVersion",
     "selection",
@@ -3517,6 +3843,7 @@ async function validateGraph(
     graph,
     readEvidence,
     selection.selectedAt,
+    evidenceOptions,
   );
   await validateSelected(graph, authority, selection.cutoff);
   validateEdges(graph, authority);
@@ -3526,9 +3853,10 @@ async function validateGraph(
   validateLifecycle(graph, authority);
   validateCorepack(graph, authority);
   validateShadcn(graph, authority);
-  await validateOci(graph, authority);
+  validateOci(graph, authority);
   validateProofStatus(graph);
   authority.assertAllUsed();
+  return authority;
 }
 
 function clone<T>(value: T): T {
@@ -4827,8 +5155,9 @@ async function validateRepositoryContents(
   contents: Map<string, string>,
   graph: JsonRecord,
   readEvidence: EvidenceReader,
+  loadedAuthority?: EvidenceAuthority,
 ) {
-  const authority = await loadEvidence(
+  const authority = loadedAuthority ?? await loadEvidence(
     graph,
     readEvidence,
     validateSelection(graph).selectedAt,
@@ -5113,9 +5442,10 @@ async function expectReaderReject(
   fixture: Fixture,
   reader: EvidenceReader,
   expected: string,
+  options: EvidenceLoadOptions = {},
 ) {
   const [result] = await Promise.allSettled([
-    validateGraph(fixture.graph, reader),
+    validateGraph(fixture.graph, reader, options),
   ]);
   invariant(
     result.status === "rejected",
@@ -5215,8 +5545,8 @@ async function validateRepositoryGraph(
     GRAPH_PATH,
   );
   contents.set(REPORT_PATH, await readTextFile(REPORT_PATH));
-  await validateGraph(graph, readEvidence);
-  await validateRepositoryContents(contents, graph, readEvidence);
+  const authority = await validateGraph(graph, readEvidence);
+  await validateRepositoryContents(contents, graph, readEvidence, authority);
 }
 
 async function openEvidence(path: string): Promise<ReadableStream<Uint8Array>> {
@@ -5245,14 +5575,357 @@ async function readRepositoryInputs(
   return contents;
 }
 
+Deno.test("aggregate evidence ingestion releases raw ownership per descriptor", async () => {
+  const selectedAt = instant(
+    "2026-01-10T04:05:06.789Z",
+    "aggregate fixture selection",
+  );
+  const bodies = new Map([
+    ["first", '{"claim":"first"}'],
+    ["second", '{"claim":"later"}'],
+  ]);
+  const evidence = new Map<string, Uint8Array>();
+  const provenance: JsonRecord[] = [];
+  for (const [index, [id, body]] of [...bodies].entries()) {
+    const bytes = await gzip(body);
+    const path = `${PROVENANCE_ROOT}aggregate-${id}.gz`;
+    evidence.set(path, bytes);
+    provenance.push({
+      id,
+      kind: "release-checksum",
+      path,
+      compression: "gzip",
+      sourceUrl: index === 0
+        ? "https://github.com/denoland/deno/releases/download/v2.5.6/deno-x86_64-pc-windows-msvc.zip.sha256sum"
+        : "https://nodejs.org/dist/v24.11.0/SHASUMS256.txt",
+      retrievedAt: "2026-01-10T04:05:06.789Z",
+      contentSha256: await sha256Text(body),
+      artifactSha256: await sha256Bytes(bytes),
+    });
+  }
+  const observed: string[] = [];
+  let activeDescriptor: string | undefined;
+  const observe = (event: EvidenceIngestionEvent) => {
+    observed.push(
+      `${event.descriptorId}:${event.action}:${event.representation}`,
+    );
+    if (event.action === "acquire") {
+      invariant(
+        activeDescriptor === undefined && event.bytes === 0,
+        "aggregate evidence acquired overlapping raw ownership",
+      );
+      activeDescriptor = event.descriptorId;
+    } else if (event.action === "retain") {
+      invariant(
+        activeDescriptor === event.descriptorId && event.bytes === 0,
+        "aggregate evidence normalized outside its descriptor lease",
+      );
+    } else if (event.action === "release") {
+      invariant(
+        activeDescriptor === event.descriptorId && event.bytes > 0,
+        "aggregate evidence released the wrong descriptor lease",
+      );
+      activeDescriptor = undefined;
+    }
+  };
+  const firstBytes = evidence.get(`${PROVENANCE_ROOT}aggregate-first.gz`)!;
+  const bodyLimit = new TextEncoder().encode(bodies.get("first")!).byteLength;
+  invariant(
+    firstBytes.byteLength ===
+        evidence.get(`${PROVENANCE_ROOT}aggregate-second.gz`)!.byteLength &&
+      bodyLimit === new TextEncoder().encode(bodies.get("second")!).byteLength,
+    "aggregate fixtures must share exact byte boundaries",
+  );
+  const authority = await loadEvidence(
+    { provenance },
+    (path) => Promise.resolve(byteStream(evidence.get(path)!)),
+    selectedAt,
+    {
+      observe,
+      compressedLimit: firstBytes.byteLength,
+      decompressedLimit: bodyLimit,
+    },
+  );
+  invariant(
+    JSON.stringify(observed) === JSON.stringify([
+          "first:acquire:decoded",
+          "first:retain:normalized",
+          "first:release:decoded",
+          "second:acquire:decoded",
+          "second:retain:normalized",
+          "second:release:decoded",
+        ]) &&
+      activeDescriptor === undefined && !("text" in authority) &&
+      !("json" in authority),
+    "aggregate evidence ingestion retained overlapping or accumulating raw representations",
+  );
+  exactValue(
+    authority.checksumRows("second"),
+    [[bodies.get("second")]],
+    "later normalized claim after raw release",
+  );
+  let normalizedAccessMarkedUsed = "";
+  try {
+    authority.assertAllUsed();
+  } catch (error) {
+    normalizedAccessMarkedUsed = (error as Error).message;
+  }
+  invariant(
+    normalizedAccessMarkedUsed.includes("provenance claim membership"),
+    "normalization or normalized access incorrectly marked evidence used",
+  );
+  authority.descriptor("first");
+  authority.descriptor("second");
+  authority.assertAllUsed();
+
+  for (
+    const [limit, expected] of [
+      [
+        { compressedLimit: firstBytes.byteLength - 1 },
+        "compressed provenance artifact exceeds",
+      ],
+      [
+        { decompressedLimit: bodyLimit - 1 },
+        "decompressed provenance artifact exceeds",
+      ],
+    ] as const
+  ) {
+    const lifecycle: EvidenceIngestionEvent[] = [];
+    const sourceCancellations: string[] = [];
+    const firstPath = `${PROVENANCE_ROOT}aggregate-first.gz`;
+    const boundedReader: EvidenceReader = (path) => {
+      const bytes = evidence.get(path)!;
+      if (path !== firstPath || limit.compressedLimit === undefined) {
+        return Promise.resolve(byteStream(bytes));
+      }
+      const boundary = limit.compressedLimit;
+      return Promise.resolve(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(bytes.subarray(0, boundary));
+            controller.enqueue(bytes.subarray(boundary));
+          },
+          cancel() {
+            sourceCancellations.push(path);
+          },
+        }),
+      );
+    };
+    const [result] = await Promise.allSettled([
+      loadEvidence(
+        { provenance },
+        boundedReader,
+        selectedAt,
+        {
+          ...limit,
+          observe(event) {
+            lifecycle.push(event);
+          },
+        },
+      ),
+    ]);
+    invariant(
+      result?.status === "rejected" &&
+        (result.reason as Error).message.includes(expected) &&
+        lifecycle.filter((event) => event.action === "cancel").length === 1 &&
+        !lifecycle.some((event) => event.action === "retain") &&
+        !lifecycle.some((event) => event.descriptorId === "second") &&
+        (limit.compressedLimit === undefined ||
+          sourceCancellations[0] === firstPath),
+      `${expected} N+1 path did not cancel through aggregate ingestion`,
+    );
+  }
+
+  const expandedBody = "x".repeat(1024 * 1024);
+  const expandedBytes = await gzip(expandedBody);
+  const expandedPath = `${PROVENANCE_ROOT}aggregate-expanded.gz`;
+  const expandedDescriptor: JsonRecord = {
+    id: "expanded",
+    kind: "release-checksum",
+    path: expandedPath,
+    compression: "gzip",
+    sourceUrl:
+      "https://github.com/denoland/deno/releases/download/v2.5.6/deno-x86_64-pc-windows-msvc.zip.sha256sum",
+    retrievedAt: "2026-01-10T04:05:06.789Z",
+    contentSha256: await sha256Text(expandedBody),
+    artifactSha256: await sha256Bytes(expandedBytes),
+  };
+  const decompressedLifecycle: EvidenceIngestionEvent[] = [];
+  let decompressedSourceCancelled = false;
+  const [decompressedResult] = await Promise.allSettled([
+    loadEvidence(
+      { provenance: [expandedDescriptor, provenance[1]] },
+      (path) => {
+        invariant(
+          path === expandedPath,
+          "decompressed N+1 started the next descriptor",
+        );
+        return Promise.resolve(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(
+                expandedBytes.subarray(0, expandedBytes.byteLength - 8),
+              );
+            },
+            cancel() {
+              decompressedSourceCancelled = true;
+            },
+          }),
+        );
+      },
+      selectedAt,
+      {
+        compressedLimit: expandedBytes.byteLength,
+        decompressedLimit: 1,
+        observe(event) {
+          decompressedLifecycle.push(event);
+        },
+      },
+    ),
+  ]);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  invariant(
+    decompressedResult?.status === "rejected" &&
+      (decompressedResult.reason as Error).message.includes(
+        "decompressed provenance artifact exceeds 1 byte limit",
+      ) && decompressedSourceCancelled &&
+      !decompressedLifecycle.some((event) => event.descriptorId === "second") &&
+      decompressedLifecycle.some((event) => event.action === "cancel") &&
+      !decompressedLifecycle.some((event) => event.action === "retain"),
+    "decompressed N+1 did not cancel upstream before claim commit",
+  );
+
+  const missingLaterClaim = clone(provenance);
+  const laterDescriptor = object(missingLaterClaim[1], "later descriptor");
+  const invalidLaterBody = "{}";
+  const invalidLaterBytes = await gzip(invalidLaterBody);
+  laterDescriptor.kind = "npm-packument";
+  laterDescriptor.sourceUrl = "https://registry.npmjs.org/later";
+  laterDescriptor.contentSha256 = await sha256Text(invalidLaterBody);
+  laterDescriptor.artifactSha256 = await sha256Bytes(invalidLaterBytes);
+  const missingLaterEvidence = new Map(evidence);
+  missingLaterEvidence.set(String(laterDescriptor.path), invalidLaterBytes);
+  const laterEvents: string[] = [];
+  const [missingResult] = await Promise.allSettled([
+    loadEvidence(
+      { provenance: missingLaterClaim },
+      (path) => Promise.resolve(byteStream(missingLaterEvidence.get(path)!)),
+      selectedAt,
+      {
+        observe(event) {
+          laterEvents.push(
+            `${event.descriptorId}:${event.action}:${event.representation}`,
+          );
+        },
+      },
+    ),
+  ]);
+  invariant(
+    missingResult?.status === "rejected" &&
+      (missingResult.reason as Error).message.includes(
+        "npm packument versions must be an object",
+      ) && laterEvents.indexOf("first:release:decoded") <
+        laterEvents.indexOf("second:acquire:decoded") &&
+      laterEvents.includes("second:cancel:decoded") &&
+      laterEvents.includes("second:release:decoded"),
+    "discarding one raw body silently discarded a later required claim",
+  );
+  const wrongHashProvenance = clone(provenance);
+  object(wrongHashProvenance[0], "wrong-hash descriptor").contentSha256 =
+    `sha256:${rawDigest("wrong-content")}`;
+  const wrongHashEvents: string[] = [];
+  const [wrongHashResult] = await Promise.allSettled([
+    loadEvidence(
+      { provenance: wrongHashProvenance },
+      (path) => Promise.resolve(byteStream(evidence.get(path)!)),
+      selectedAt,
+      {
+        observe(event) {
+          wrongHashEvents.push(
+            `${event.descriptorId}:${event.action}:${event.representation}`,
+          );
+        },
+      },
+    ),
+  ]);
+  invariant(
+    wrongHashResult?.status === "rejected" &&
+      (wrongHashResult.reason as Error).message.includes(
+        "official response content hash drifted",
+      ) && wrongHashEvents.includes("first:cancel:decoded") &&
+      wrongHashEvents.includes("first:release:decoded") &&
+      !wrongHashEvents.some((event) => event.startsWith("second:")),
+    "hash failure did not release the descriptor before stopping ingestion",
+  );
+  let unknownNormalizer = "";
+  try {
+    normalizeEvidenceBody({ kind: "unknown-evidence-kind" }, "body");
+  } catch (error) {
+    unknownNormalizer = (error as Error).message;
+  }
+  invariant(
+    unknownNormalizer ===
+      "unknown-evidence-kind evidence kind has no normalizer",
+    "unknown evidence kind must fail before normalized retention",
+  );
+  let rawHolder = "";
+  try {
+    assertNormalizedEvidenceValue(new Uint8Array(1), "raw holder fixture");
+  } catch (error) {
+    rawHolder = (error as Error).message;
+  }
+  invariant(
+    rawHolder.includes("retained a raw or executable evidence holder"),
+    "normalized authority must reject raw byte, stream, or reader holders",
+  );
+  const sourcePackument: JsonRecord = {
+    _id: "detached",
+    _rev: "1-fixture",
+    name: "detached",
+    "dist-tags": { latest: "1.0.0" },
+    time: { "1.0.0": "2026-01-01T00:00:00.000Z" },
+    versions: {
+      "1.0.0": {
+        name: "detached",
+        version: "1.0.0",
+        scripts: { install: "node install.js" },
+      },
+    },
+  };
+  const detachedPackument = normalizeNpmPackument(sourcePackument);
+  object(sourcePackument.time, "source time")["1.0.0"] =
+    "2026-01-02T00:00:00.000Z";
+  object(
+    object(sourcePackument.versions, "source versions")["1.0.0"],
+    "source manifest",
+  ).scripts = {};
+  invariant(
+    object(detachedPackument.time, "detached time")["1.0.0"] ===
+        "2026-01-01T00:00:00.000Z" &&
+      object(
+          object(detachedPackument.versions, "detached versions")["1.0.0"],
+          "detached manifest",
+        ).scripts !==
+        object(
+          object(sourcePackument.versions, "source versions")["1.0.0"],
+          "source manifest",
+        ).scripts,
+    "normalized authority retained its parsed source root",
+  );
+});
+
 Deno.test("captured runtime graph controls discriminate official bytes", async () => {
   const fixture = await makeFixture();
-  await validateGraph(fixture.graph, fixtureReader(fixture));
+  const authority = await validateGraph(
+    fixture.graph,
+    fixtureReader(fixture),
+  );
   const contents = await syntheticRepository(fixture);
   await validateRepositoryContents(
     contents,
     fixture.graph,
     fixtureReader(fixture),
+    authority,
   );
   const repositoryStream = await openEvidence("deno.json");
   await repositoryStream.cancel();
@@ -5344,23 +6017,12 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
     ).path,
     "compressed descriptor path",
   );
-  const compressedReader: EvidenceReader = (path) =>
-    path === compressedPath
-      ? Promise.resolve(sizedByteStream(MAX_COMPRESSED_EVIDENCE_BYTES + 1))
-      : fixtureReader(compressedOversize)(path);
-  await compressedReader(
-    string(
-      object(
-        array(compressedOversize.graph.provenance, "provenance")[1],
-        "second descriptor",
-      ).path,
-      "second descriptor path",
-    ),
-  ).then((stream) => stream.cancel());
+  const compressedBytes = compressedOversize.evidence.get(compressedPath)!;
   await expectReaderReject(
     compressedOversize,
-    compressedReader,
+    fixtureReader(compressedOversize),
     "compressed provenance artifact exceeds",
+    { compressedLimit: compressedBytes.byteLength - 1 },
   );
 
   const decompressedOversize = await makeFixture();
@@ -5368,18 +6030,19 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
     array(decompressedOversize.graph.provenance, "provenance")[0],
     "decompressed descriptor",
   );
-  const oversizedGzip = await gzipSizedBody(
-    MAX_DECOMPRESSED_EVIDENCE_BYTES + 1,
-  );
-  decompressedDescriptor.artifactSha256 = await sha256Bytes(oversizedGzip);
-  decompressedOversize.evidence.set(
-    string(decompressedDescriptor.path, "decompressed descriptor path"),
-    oversizedGzip,
+  const decompressedBody = await gunzipBounded(
+    decompressedOversize.evidence.get(
+      string(decompressedDescriptor.path, "decompressed descriptor path"),
+    )!,
   );
   await expectReaderReject(
     decompressedOversize,
     fixtureReader(decompressedOversize),
     "decompressed provenance artifact exceeds",
+    {
+      decompressedLimit: new TextEncoder().encode(decompressedBody).byteLength -
+        1,
+    },
   );
   for (
     const [maximum, label] of [
