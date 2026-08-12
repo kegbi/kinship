@@ -2,7 +2,7 @@
 
 Status: ready, round 0\
 Owner: trusted top-level orchestrator\
-Ticket revision: 2\
+Ticket revision: 3\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
 Execution class: `ordinary`\
 Depends on: none\
@@ -23,9 +23,10 @@ and the complete workflow suite is green at 100% validator coverage.
 - Preserve capped exact RED/candidate evidence enumeration and all existing
   diagnostics for output truncation, dirty metadata, ancestry/content mismatch,
   accepted-phase policy, rename/copy boundaries, and later integrated mutation.
-- Freeze one dedicated real-Git regression file covering more than 100 unrelated
-  paths, more than 100 relevant evidence paths, real streamed-output truncation,
-  ticket-to-outside renames, and deterministic broken-object/error mapping.
+- Freeze one dedicated real-Git regression file covering exactly 101 unrelated
+  paths, exactly 101 relevant evidence paths, fewer than 100 records producing
+  more than 10,000 streamed bytes, ticket-to-outside renames, ordinary later
+  ticket mutation, and intrinsic missing-root-tree Git-error mapping.
 - Restore the complete workflow task on current growing history and retain exact
   100% branch, function, and line coverage for `ticket_contract.ts` and
   `validate_ticket.ts`.
@@ -52,14 +53,16 @@ and the complete workflow suite is green at 100% validator coverage.
 
 ## Acceptance criteria and RED proof
 
-- AC-01: more than 100 unrelated ready-scope paths reach intended validation; a
+- AC-01: 101 unrelated ready-scope paths reach intended validation; a
   ticket-to-outside ready rename remains rejected.
-- AC-02: more than 100 unrelated later paths reach exact accepted/integrated
-  mutation validation; an integrated ticket-to-outside rename remains detected.
-- AC-03: more than 100 relevant exact-evidence paths and actual streamed output
-  beyond the byte budget remain strictly rejected.
-- AC-04: a self-verifying fixture-local broken Git relation deterministically
-  maps to the existing Git-error diagnostic without assuming object looseness.
+- AC-02: 101 unrelated later paths reach exact post-candidate and integrated
+  mutation validation; ordinary later ticket mutation and an integrated
+  ticket-to-outside rename remain detected.
+- AC-03: 101 relevant exact-evidence paths and fewer than 100 records producing
+  more than 10,000 actual streamed bytes remain strictly rejected.
+- AC-04: a syntactically valid bogus commit names a proven-absent root tree; the
+  fixture proves the exact scoped Git predicate exits greater than 1 and maps to
+  the strict Git-error diagnostic without deleting any object file.
 - AC-05: all named policy and integrity boundaries remain strict; the exact
   candidate workflow test count is recorded with zero failures and exact 100%
   branch/function/line coverage for both validator production files.

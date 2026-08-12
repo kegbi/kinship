@@ -1,18 +1,20 @@
 # WORKFLOW-002 implementation dispatch, round 1
 
 Input base: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
-Ticket revision: 2\
+Ticket revision: 3\
 Required next state: RED, then stop\
 Controller run ID:
 `WORKFLOW-002/orchestrator/r0/df585d88-eade-43bb-8845-7a7d6a3c3e17`\
 Implementer run ID:
-`WORKFLOW-002/implementer/r1/a96228ab-f2ca-4200-bc68-18bc97d6e83d`\
+`WORKFLOW-002/implementer/r1/986e94e3-88ed-48a8-908f-19fcbb00a6ab`\
 Execution class: `ordinary`
 
-Controller preflight superseded the revision-1 dispatch before any RED write or
-freeze because `ticket:validate` requires a directory argument and therefore is
-not a valid no-argument required task. The interrupted revision-1 execution ID
-`WORKFLOW-002/implementer/r1/919d709d-0d0b-4ac2-8b0f-626e961bb4ff` is not
+Controller preflights superseded revision-1 and revision-2 dispatches before any
+RED write or freeze. Revision 1 incorrectly required the argument-bearing
+`ticket:validate` task. Revision 2 still specified loose-object deletion, which
+is vulnerable to explicit/concurrent packing or alternates. The interrupted IDs
+`WORKFLOW-002/implementer/r1/919d709d-0d0b-4ac2-8b0f-626e961bb4ff` and
+`WORKFLOW-002/implementer/r1/a96228ab-f2ca-4200-bc68-18bc97d6e83d` are not
 authorized to resume. This fresh execution owns round 1.
 
 Before any production edit, add the narrowest dedicated real-Git regression file
@@ -22,24 +24,30 @@ redacted `evidence/round-01-red.log`.
 ## RED-only assignment
 
 - Build every fixture repository from scratch with explicit local identity. For
-  the broken-object/error fixture, set automatic Git maintenance controls only
-  in that fixture repository before creating the target object, prove the object
-  is loose and readable, deliberately corrupt/remove it, then prove the intended
-  Git relation is unreadable before invoking validator behavior. Never alter
+  broken relation handling, derive a proven-absent OID using
+  `git hash-object --stdin` without `-w`; assert `git cat-file -e` fails; create
+  a syntactically valid bogus commit whose root `tree` header names that OID via
+  `git hash-object -t commit -w --stdin --literally`; build the valid metadata
+  HEAD using `git commit-tree` and `git update-ref`; assert the bogus commit
+  exists, its named root tree remains absent, and the exact scoped
+  `git diff --quiet ...` predicate exits greater than 1 before invoking the
+  validator. Do not delete or modify any `.git/objects` path. Never alter
   global, user, or system Git configuration.
-- Add more than 100 unrelated changed paths to ready-scope and later
-  accepted/integrated-history fixtures. Assert that validation reaches the
-  intended relation/path diagnostic or valid result instead of
+- Add exactly 101 unrelated changed paths separately to ready-scope,
+  post-candidate, and integrated-history fixtures. Assert each reaches its
+  intended semantic valid result or scoped diagnostic instead of
   `git_output_limit`.
-- Add a more-than-100 relevant exact RED/candidate evidence fixture and assert
-  the capped `git_output_limit` rejection remains.
-- Produce actual streamed Git output beyond the byte budget in a real fixture
-  and assert truncation remains a strict `git_output_limit` failure.
+- Add exactly 101 relevant exact RED/candidate evidence paths and assert the
+  capped `git_output_limit` rejection remains.
+- Produce actual streamed Git output above 10,000 bytes using fewer than 100
+  records in a real fixture and assert truncation remains a strict
+  `git_output_limit` failure.
 - Add ticket-to-outside rename controls for ready-scope rejection and integrated
-  later-mutation detection. Retain copy-boundary, dirty metadata,
-  ancestry/content, accepted-policy, and later-mutation controls when they are
-  already covered by the existing workflow suite; add a focused control only
-  where the new implementation could otherwise weaken the behavior.
+  later-mutation detection, plus ordinary later ticket mutation. Retain
+  copy-boundary, dirty metadata, ancestry/content, accepted-policy, and
+  later-mutation controls when already covered by the existing workflow suite;
+  add a focused control only where the new implementation could otherwise weaken
+  the behavior.
 - Run exactly:
 
   ```text
