@@ -2,7 +2,7 @@
 
 Status: ready, round 0 (fresh RED retry pending)\
 Owner: trusted top-level orchestrator\
-Packet revision: 13\
+Packet revision: 14\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
 Execution class: `ordinary`\
 Depends on: FND-001S at integration revision
@@ -83,8 +83,16 @@ Rejected RED attempts:
   `transform` property placed after the locked method that overrode the
   effective callback, copied the chunk before its guard, and left every existing
   control green.
+- `92b453cad1abfe322d0e0ed0a5dc5eb30bb3cca2`, validator SHA-256
+  `9cee53dabfac2d9d6ebeef25ea33e9582b68689222000199d08fbef073576f33`: the
+  canonical whole-source digest closed the callback, override, decoy, and
+  call-site escapes with exact focused RED and 100 percent coverage, but
+  exact-tool feasibility proved four failing-valid pnpm rules before freeze:
+  workspace/lock peer-policy drift, missing required React type roots, a
+  graph-dependent snapshot-multiplicity mandate, and an unisolated pnpm metadata
+  cache.
 
-All eleven attempts and all associated evidence remain immutable history and
+All twelve attempts and all associated evidence remain immutable history and
 confer no production-write authority.
 
 ## Outcome
