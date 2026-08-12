@@ -154,3 +154,35 @@ restored, the existing check, and the three FND-002 phase logs. The controller
 will verify the architecture baseline, reproduce RED and lint, then freeze a new
 test/check-only revision and digest before issuing a second GREEN continuation
 for this same round.
+
+## Final GREEN continuation
+
+The controller verified the recovery and authorizes the same round to continue:
+
+- authoritative RED revision: `d7924f77019cbf77a4e8fedc6d7bc82afa70c78f`;
+- authoritative frozen check SHA-256:
+  `272038a94de02197e9d2cd830fc31d1943ac67d7fffb46bd7c0069a249f6c9a5`;
+- architecture contracts were unchanged at the RED revision;
+- the in-memory discriminator passed and the repository check failed only for
+  AC-01 through AC-04;
+- focused formatting, focused lint, and full `deno task lint` all exited 0.
+
+The implementer must verify the check digest without Git and preserve its exact
+bytes. The trusted controller attests that this continuation descends from the
+authoritative RED revision and that any intervening change is confined to
+FND-002 ticket evidence or this dispatch.
+
+Perform the smallest GREEN contract edits already specified above, then replace
+the rejected-attempt placeholders in the GREEN and REFACTOR logs with the
+authoritative results while retaining concise rejected-attempt history. Run:
+
+```text
+deno test --allow-read=docs/architecture tools/architecture/FND-002/coordination_contract_test.ts
+deno task fmt:check
+deno task lint
+deno task check
+```
+
+Every command must exit 0. Confirm the frozen digest after all edits. Stop
+without committing and return the exact results and changed paths. No task,
+planning, application, schema, dependency, or ticket-state edit is authorized.
