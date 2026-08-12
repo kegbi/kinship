@@ -1,0 +1,61 @@
+schemaVersion=2
+ticketId=FND-003
+round=1
+phase=RED_BLOCKED
+implementerRunId=FND-003/implementer/r1/a5eca5bd-4ec8-4aad-be03-e683b901d72d
+issuedByControllerRunId=FND-003/orchestrator/r0/b308fcda-6e91-4fec-8b40-bf19c6e21a16
+inputBaseRevision=895731f27f66d614cb431e9ab6bb570b94d1a476
+worktreeRef=worktree:FND-003:1
+
+[focused-red]
+command=deno test --allow-read=.npmrc,deno.json,deno.lock,package.json,pnpm-workspace.yaml,pnpm-lock.yaml,tools/runtime/FND-003,docs/validation/runtime-graph-fnd003.json tools/runtime/FND-003/runtime_graph_contract_test.ts
+exit=1
+observed=1 control test passed; sole repository assertion failed.
+intendedAssertion=FND-003 repository graph is absent: missing .npmrc, deno.lock, package.json, pnpm-workspace.yaml, pnpm-lock.yaml, docs/validation/runtime-graph-fnd003.json; exact manifests, locks, pin record, and hashed provenance evidence are required.
+independence=No network, Docker, Node, Corepack, pnpm, registry, cache, environment-secret, wall-clock, or subprocess call was made by the focused check.
+
+[controls]
+status=PASS
+summary=Strict JSON shape/size/duplicate-key handling; exact stable versions; 72-hour cutoff and newest-eligible selection; manifest and lock membership/resolution/integrity/hash invariants; Corepack integrity/default/signature/update-path policy; exact lifecycle allowlists and hook inventory; Playwright package/image equality; Astro/TypeScript, Vite/Vitest, Hono/Standard Schema, Kysely/dialect/Postgres.js compatibility; immutable shadcn provenance with no mutable registry/generated payload; OCI tag-plus-index digest, media type, amd64/arm64, child/attestation and duplicate/missing-platform discrimination; proof-pending follow-on mapping and early exclusions.
+fixtures=[]
+
+[direct-static]
+command=deno fmt --check tools/runtime/FND-003/runtime_graph_contract_test.ts
+exit=0
+observed=Checked 1 file.
+command=deno lint tools/runtime/FND-003/runtime_graph_contract_test.ts
+exit=0
+observed=Checked 1 file.
+command=deno check tools/runtime/FND-003/runtime_graph_contract_test.ts
+exit=0
+observed=Check completed.
+
+[coverage]
+command=copy the exact check to a disposable OS temporary directory as runtime_graph_contract.ts; deno test --coverage=<disposable-profile> --filter='runtime graph validator controls discriminate every FND-003 policy boundary' <disposable-source>; deno coverage <disposable-profile> --include='runtime_graph_contract\.ts' --threshold=100
+exit=1
+observed=Control test passed. Coverage was 99.73% lines, 98.21% branches, 100.00% functions; threshold failed.
+uncovered=The three intentionally filtered repository-test wrapper lines (1354-1356), plus V8 branch records at injected rejected-reader calls on lines 1276 and 1291. Both rejection behaviors executed and their assertions passed; V8 still reported one untaken synthetic callback branch for each call.
+blocker=Exact 100% line/branch/function coverage required by dispatch is not achieved. Focused RED is truthful, but the overall RED handoff is blocked and must not advance to GREEN.
+
+[mandated-controls]
+command=deno task fmt:check
+exit=0
+command=deno task lint
+exit=0
+command=deno task check
+exit=0
+command=deno task test:schema:matrix
+exit=0
+observed=PostgreSQL 18.4 and 17.10 schema matrices passed.
+command=deno task ticket:validate docs/planning/tickets/FND-003
+exit=0
+observed={"ok":true,"issues":[]}
+
+[changed-paths]
+checks=["tools/runtime/FND-003/runtime_graph_contract_test.ts"]
+fixtures=[]
+evidence=["docs/planning/tickets/FND-003/evidence/round-01-red.log"]
+production=[]
+
+[unchanged-boundaries]
+statement=No manifest, lock, .npmrc, runtime pin/report, accepted contract, schema, application/product catalog, protected control path, or other production file was written. Git metadata was neither inspected nor mutated.
