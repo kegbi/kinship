@@ -2,7 +2,7 @@
 
 Status: ready, round 0 (fresh RED retry pending)\
 Owner: trusted top-level orchestrator\
-Packet revision: 12\
+Packet revision: 13\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
 Execution class: `ordinary`\
 Depends on: FND-001S at integration revision
@@ -76,9 +76,16 @@ Rejected RED attempts:
   findings; however, the independent mutation audit proved that a discarded
   direct typed-array copy inserted before the size guard would evade the
   acquisition counter while preserving every existing control result.
+- `78a2e77168c58325280970c755b904ba46955943`, validator SHA-256
+  `729119d6bd38aa9408eb30f3747f5714a07207da4f975d23ee8e05f7356f9a27`: nine
+  controls, exact coverage, root gates, both schema majors, and the intended
+  sole-six repository RED passed, but both clean audits reproduced a computed
+  `transform` property placed after the locked method that overrode the
+  effective callback, copied the chunk before its guard, and left every existing
+  control green.
 
-All ten attempts and all associated evidence remain immutable history and confer
-no production-write authority.
+All eleven attempts and all associated evidence remain immutable history and
+confer no production-write authority.
 
 ## Outcome
 
