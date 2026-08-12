@@ -3,3 +3,4 @@
 {"sequence":3,"from":"red","to":"green","round":1,"actorRunId":"PRODUCT-001/implementer/r1/22c02056-b1f4-45fc-ac07-95dc89cfd5ba","evidenceRef":"evidence/round-01-green.log","revision":"decd502fec714371c9bd07097d7835faef0c1ccf"}
 {"sequence":4,"from":"green","to":"refactor","round":1,"actorRunId":"PRODUCT-001/implementer/r1/22c02056-b1f4-45fc-ac07-95dc89cfd5ba","evidenceRef":"evidence/round-01-refactor.log","revision":"decd502fec714371c9bd07097d7835faef0c1ccf"}
 {"sequence":5,"from":"refactor","to":"review","round":1,"actorRunId":"PRODUCT-001/orchestrator/r0/68950167-ba0d-4262-bf70-2f962d862fa0","evidenceRef":"results/round-01.json","revision":"decd502fec714371c9bd07097d7835faef0c1ccf"}
+{"sequence":6,"from":"review","to":"accepted","round":1,"actorRunId":"PRODUCT-001/orchestrator/r0/68950167-ba0d-4262-bf70-2f962d862fa0","evidenceRef":"acceptance.md","revision":"decd502fec714371c9bd07097d7835faef0c1ccf"}
