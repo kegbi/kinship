@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 2,
+  "ticketId": "WORKFLOW-002",
+  "ticketRevision": 3,
+  "round": 1,
+  "implementerRunId": "WORKFLOW-002/implementer/r1/986e94e3-88ed-48a8-908f-19fcbb00a6ab",
+  "reviewerRunId": "WORKFLOW-002/reviewer/r1/c83cb88c-e5a1-432f-a7d4-6e69ba3a2483",
+  "issuedByControllerRunId": "WORKFLOW-002/orchestrator/r0/df585d88-eade-43bb-8845-7a7d6a3c3e17",
+  "baseRevision": "895731f27f66d614cb431e9ab6bb570b94d1a476",
+  "candidateRevision": "d04b88851d202facafe4fcba495cdae24462cc92",
+  "verdict": "APPROVED",
+  "commands": [
+    {
+      "command": "git status --short; git rev-parse HEAD; git rev-parse 895731f27f66d614cb431e9ab6bb570b94d1a476; git rev-parse d04b88851d202facafe4fcba495cdae24462cc92; git rev-parse d7a187ae1c2a311be265916121676914388d733e",
+      "exitCode": 0
+    },
+    {
+      "command": "git diff --find-renames --find-copies 895731f27f66d614cb431e9ab6bb570b94d1a476 d04b88851d202facafe4fcba495cdae24462cc92 --",
+      "exitCode": 0
+    },
+    {
+      "command": "git diff --name-status --find-renames --find-copies 895731f27f66d614cb431e9ab6bb570b94d1a476 d04b88851d202facafe4fcba495cdae24462cc92 --; git diff --stat 895731f27f66d614cb431e9ab6bb570b94d1a476 d04b88851d202facafe4fcba495cdae24462cc92 --",
+      "exitCode": 0
+    },
+    {
+      "command": "git diff --find-renames --find-copies d04b88851d202facafe4fcba495cdae24462cc92 04d5ddf984b671361ef2d8fdd5a3bee78991f22c --; git diff --name-status d7a187ae1c2a311be265916121676914388d733e d04b88851d202facafe4fcba495cdae24462cc92 --; git diff --exit-code d7a187ae1c2a311be265916121676914388d733e d04b88851d202facafe4fcba495cdae24462cc92 -- tools/workflows/scalable_git_evidence_regression_test.ts; git merge-base --is-ancestor 895731f27f66d614cb431e9ab6bb570b94d1a476 d7a187ae1c2a311be265916121676914388d733e; git merge-base --is-ancestor d7a187ae1c2a311be265916121676914388d733e d04b88851d202facafe4fcba495cdae24462cc92; git merge-base --is-ancestor d04b88851d202facafe4fcba495cdae24462cc92 04d5ddf984b671361ef2d8fdd5a3bee78991f22c",
+      "exitCode": 0
+    },
+    {
+      "command": "deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/scalable_git_evidence_regression_test.ts",
+      "exitCode": 0
+    },
+    {
+      "command": "deno eval 'const p=\"tools/workflows/scalable_git_evidence_regression_test.ts\"; async function bytes(rev){const r=await new Deno.Command(\"git\",{args:[\"show\",`${rev}:${p}`]}).output(); if(!r.success) throw new Error(new TextDecoder().decode(r.stderr)); return r.stdout;} async function hex(v){return [...new Uint8Array(await crypto.subtle.digest(\"SHA-256\",v))].map(x=>x.toString(16).padStart(2,\"0\")).join(\"\");} const red=await bytes(\"d7a187ae1c2a311be265916121676914388d733e\"); const candidate=await bytes(\"d04b88851d202facafe4fcba495cdae24462cc92\"); console.log(JSON.stringify({redSha256:await hex(red),candidateSha256:await hex(candidate),bytesEqual:red.length===candidate.length&&red.every((v,i)=>v===candidate[i])}));'",
+      "exitCode": 0
+    },
+    {
+      "command": "git log --reverse --format=\"commit %H parents %P subject %s\" --name-status 895731f27f66d614cb431e9ab6bb570b94d1a476..d04b88851d202facafe4fcba495cdae24462cc92 --",
+      "exitCode": 0
+    },
+    {
+      "command": "deno task fmt:check",
+      "exitCode": 0
+    },
+    {
+      "command": "deno task lint",
+      "exitCode": 0
+    },
+    {
+      "command": "deno task check",
+      "exitCode": 0
+    },
+    {
+      "command": "deno task test:workflow",
+      "exitCode": 0
+    },
+    {
+      "command": "deno task ticket:validate docs/planning/tickets/WORKFLOW-002; git status --short; git rev-parse HEAD; git diff --exit-code; git diff --cached --exit-code",
+      "exitCode": 0
+    }
+  ],
+  "lenses": {
+    "bug_correctness": {
+      "verdict": "pass",
+      "evidence": [
+        "The candidate replaces only the three boolean global enumerations with hasChangedPaths and maps Git diff exit 0 to no relevant change, exit 1 to relevant change, and exit greater than 1 to the existing strict git_output_limit diagnostic.",
+        "The independently executed seven-case real-Git regression passed, including 101 unrelated ready, post-candidate, and integrated histories; ready and integrated ticket-to-outside renames; ordinary later packet mutation; and intrinsic missing-root-tree error mapping.",
+        "The scoped predicates use top-anchored literal Git pathspecs. Exclusion predicates preserve both sides of cross-boundary renames as semantic differences, while the integrated include predicate detects ticket-source deletion on a ticket-to-outside rename.",
+        "Contract references: AGENTS.md#mandatory-change-method and docs/development/autonomous-delivery.md#non-negotiable-invariants."
+      ]
+    },
+    "security_privacy": {
+      "verdict": "pass",
+      "evidence": [
+        "The change does not alter authentication, authorization, workspace data, schema, network access, or secret handling.",
+        "Ticket-derived path input is passed as an argument array and constrained with :(top,literal) pathspec magic, preventing wildcard/pathspec interpretation of the ticket evidence prefix.",
+        "Git stderr remains suppressed and the new no-output predicates expose no repository path evidence; reviewed ticket logs contain no credentials, personal data, connection strings, or filesystem topology.",
+        "Contract reference: docs/development/autonomous-delivery.md#ticket-files."
+      ]
+    },
+    "architecture_contracts": {
+      "verdict": "pass",
+      "evidence": [
+        "The only production change is tools/workflows/validate_ticket.ts; deno.json, ticket_contract.ts, architecture, product, schema, protected configuration, and task definitions are unchanged.",
+        "All base-to-candidate paths are within the declared allowedWrites, and post-candidate changes through 04d5ddf984b671361ef2d8fdd5a3bee78991f22c are confined to docs/planning/tickets/WORKFLOW-002.",
+        "The canonical ticket validator independently returned {\"ok\":true,\"issues\":[]}. Candidate lineage is contiguous base -> frozen RED -> candidate -> metadata HEAD.",
+        "No WORKFLOW-001 path appears in the base-to-candidate diff or candidate commit sequence; its packet, result, review, evidence, run IDs, and commits contributed no WORKFLOW-002 handoff evidence.",
+        "Contract references: .agents/skills/run-tdd-ticket-loop/SKILL.md#enforce-the-loop, docs/development/autonomous-delivery.md#ticket-files, and docs/development/autonomous-delivery.md#command-truth."
+      ]
+    },
+    "performance_reliability": {
+      "verdict": "pass",
+      "evidence": [
+        "Boolean ready-scope, post-candidate, and later-integrated-mutation decisions now execute git diff --quiet predicates, eliminating changed-path output accumulation for those decisions.",
+        "Exact RED/candidate enumeration remains in changedPaths with the unchanged 10,000-byte stream cap and 100-path cap.",
+        "Independent regression evidence proves exactly 101 relevant paths and 99 records exceeding 10,000 streamed bytes still fail closed, while 101 unrelated paths no longer exhaust enumeration limits.",
+        "The intrinsic corruption fixture proves the exact predicate exits greater than 1 for a missing root tree and that validation fails closed without deleting Git objects.",
+        "Contract references: docs/development/autonomous-delivery.md#orchestrator-acceptance-guard and docs/development/autonomous-delivery.md#command-truth."
+      ]
+    },
+    "style_maintainability": {
+      "verdict": "pass",
+      "evidence": [
+        "The new hasChangedPaths helper centralizes the repeated no-output Git decision and diagnostic mapping without changing exact-enumeration responsibilities.",
+        "Names and return type distinguish a semantic difference, no difference, and an indeterminate Git failure; call sites retain their existing domain-specific diagnostics.",
+        "Independent deno task fmt:check, deno task lint, deno task check, and git diff --check evidence passed.",
+        "Contract reference: AGENTS.md#mandatory-change-method."
+      ]
+    },
+    "tests_tdd": {
+      "verdict": "pass",
+      "evidence": [
+        "The frozen RED revision d7a187ae1c2a311be265916121676914388d733e changes only the dedicated regression, RED log, and ticket metadata relative to the ticket base; no production file changed during RED.",
+        "The frozen regression SHA-256 is 8a433e183b9091994a747cf4d3dd0fd69152c21f34258a59180e5dfb91e4e71e at both RED and candidate, and the byte comparison returned true.",
+        "Recorded RED has exactly seven tests, four passing controls, and only the intended three scale failures. Independent GREEN execution passed all seven tests.",
+        "The implementer did not weaken the pre-candidate dirty-tree policy test: its dirty working-tree failure is recorded, and the trusted controller reran the unchanged suite after committing the candidate.",
+        "Independent deno task test:workflow completed with exactly 194 passed and zero failed. Controller candidate evidence records exact 100% branch, function, and line coverage for ticket_contract.ts and validate_ticket.ts.",
+        "Contract references: AGENTS.md#mandatory-change-method, .agents/skills/run-tdd-ticket-loop/SKILL.md#enforce-the-loop, and docs/development/autonomous-delivery.md#orchestrator-acceptance-guard."
+      ]
+    }
+  },
+  "findings": [],
+  "notes": [
+    "The reviewer did not rerun test:workflow:coverage because that task persistently writes .coverage/workflows, which was outside this read-only review authorization; the exact controller candidate coverage record was inspected, while the unchanged 194-test workflow suite was independently rerun."
+  ]
+}
