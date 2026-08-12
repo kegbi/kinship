@@ -109,23 +109,26 @@ The initial topology uses a base `compose.yaml`, a development override, and an
 isolated test override. The accepted lifecycle, readiness, isolation, storage,
 and reset behavior is defined in [`compose-contract.md`](compose-contract.md).
 
-| Service          | Responsibility                                                   | Lifecycle                                               |
-| ---------------- | ---------------------------------------------------------------- | ------------------------------------------------------- |
-| `gateway`        | TLS/reverse proxy and production Astro static assets             | Long-running                                            |
-| `api`            | Deno/Hono HTTP adapter and application composition root          | Long-running                                            |
-| `worker`         | Reminder, notification, import/export, and maintenance use cases | Long-running; same backend image, different command     |
-| `migrate`        | Apply and verify immutable SQL migrations before rollout         | One-shot                                                |
-| `postgres`       | Canonical durable store                                          | Long-running                                            |
-| `web`            | Astro development server only                                    | Development profile                                     |
-| `object-store`   | S3-compatible attachment storage such as MinIO                   | Development/test profile or separate production service |
-| `mail`           | Captured development/test mail such as Mailpit                   | Development/test profile                                |
-| `otel-collector` | Optional OTLP destination and local observability stack          | Observability profile                                   |
+| Service          | Responsibility                                                   | Lifecycle                                                   |
+| ---------------- | ---------------------------------------------------------------- | ----------------------------------------------------------- |
+| `gateway`        | TLS/reverse proxy and production Astro static assets             | Long-running                                                |
+| `api`            | Deno/Hono HTTP adapter and application composition root          | Long-running                                                |
+| `worker`         | Reminder, notification, import/export, and maintenance use cases | Long-running; same backend image, different command         |
+| `migrate`        | Apply and verify immutable SQL migrations before rollout         | One-shot                                                    |
+| `postgres`       | Canonical durable store                                          | Long-running                                                |
+| `web`            | Private Astro renderer                                           | Long-running in production/test; `astro dev` in development |
+| `object-store`   | S3-compatible attachment storage such as MinIO                   | Development/test profile or separate production service     |
+| `mail`           | Captured development/test mail such as Mailpit                   | Development/test profile                                    |
+| `otel-collector` | Optional OTLP destination and local observability stack          | Observability profile                                       |
 
 The frontend image should use a Node LTS/pnpm build stage, then copy static
 artifacts into the gateway image. The API and worker use one pinned Deno image.
 Health checks distinguish liveness from readiness; API readiness includes
 database connectivity, while liveness does not fail merely because PostgreSQL is
 briefly unavailable.
+
+<!-- deno-fmt-ignore -->
+`web` is a long-running private Astro renderer in production and test and an `astro dev` server only in development. `web` may consume only generated API contracts, a private API origin, forwarded request context, and renderer operations configuration. It receives no database, object-store, provider credential, identity key, backend-internal import, or direct-adapter authority.
 
 Do not add Redis initially. PostgreSQL is the source of truth and is sufficient
 for the first modular monolith. Add a cache or broker only after a measured
