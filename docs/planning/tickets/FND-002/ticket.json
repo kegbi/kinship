@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 2,
+  "ticketId": "FND-002",
+  "revision": 1,
+  "title": "Accept DG-06A coordination boundary",
+  "outcome": "The authoritative architecture contracts accept DG-06A as a workspaces-owned, use-case-specific onboarding and invitation coordination boundary with public-facade-only identity calls, composition-root governance handler registration, and explicitly owned atomic rollback and postcondition semantics, without claiming that application behavior has been implemented or proven.",
+  "baseRevision": "603f6621809f61fab70bc29b8b4a9252ebcecb27",
+  "controllerRunId": "FND-002/orchestrator/r0/a16b5b61-a6c8-4366-8752-d530fa3a6d74",
+  "executionClass": "ordinary",
+  "protectedWriteAuthorization": null,
+  "dependencies": [],
+  "maxRounds": 3,
+  "scope": [
+    "Record the explicitly approved DG-06A direction as an accepted architecture decision and index it among authoritative ADRs.",
+    "Specify that a workspaces-owned, use-case-specific application service coordinates first-user/workspace creation and invitation acceptance through identity's public facade.",
+    "Specify composition-root registration of governance audit handlers and one explicitly owned transaction/session covering identity, workspace, invitation or membership, and required governance audit effects with all-or-nothing rollback and postcondition semantics.",
+    "Align only the existing module manifest dependency and event-consumer edges needed to make the accepted coordination direction unambiguous.",
+    "Add one built-in-Deno deterministic architecture contract check with a passing harness self-check and a focused accepted-contract assertion."
+  ],
+  "nonGoals": [
+    "Implement or claim executable onboarding, invitation, identity, membership, transaction, rollback, postcondition, or governance audit behavior.",
+    "Close or relabel a planning gate merely by editing planning proposals; executable application proof remains a dependency of the protected walking skeleton and Slice 1.",
+    "Choose an authentication implementation, migration runner, database ledger, queue, gateway, provider, dependency, or version.",
+    "Introduce a generic horizontal coordinator, direct cross-module table write, private adapter import, new schema source, or durable event infrastructure.",
+    "Modify AGENTS.md, FND-001 paths, planning proposals, product catalogs, the canonical schema bundle, .codex, .agents, or .git content.",
+    "Push, deploy, merge into main, or record the ticket as integrated."
+  ],
+  "allowedWrites": [
+    "docs/architecture/decisions/0004-onboarding-invitation-and-atomic-audit-coordination.md",
+    "docs/architecture/decisions/README.md",
+    "docs/architecture/backend-architecture.md",
+    "docs/architecture/module-boundaries.yaml",
+    "tools/architecture/FND-002/",
+    "docs/planning/tickets/FND-002/"
+  ],
+  "contractRefs": [
+    "AGENTS.md#mandatory-change-method",
+    "docs/development/autonomous-delivery.md#red-green-and-refactor-rules",
+    "docs/architecture/backend-architecture.md#dependency-rules",
+    "docs/architecture/backend-architecture.md#data-access-and-transactions",
+    "docs/architecture/repository-layout.md#layer-contents",
+    "docs/architecture/module-boundaries.yaml",
+    "docs/planning/roadmap.md#decision-gates"
+  ],
+  "acceptanceCriteria": [
+    {
+      "id": "AC-01",
+      "text": "An indexed accepted ADR assigns onboarding and invitation coordination to a workspaces-owned, use-case-specific application service, permits identity calls only through identity's public facade, assigns governance audit handler registration to the composition root, and forbids a generic horizontal coordinator, private adapter imports, and direct cross-module table writes.",
+      "redProof": "deno test --allow-read=docs/architecture tools/architecture/FND-002/coordination_contract_test.ts fails because the accepted ADR and its index entry are absent while the check's in-memory discrimination self-test passes."
+    },
+    {
+      "id": "AC-02",
+      "text": "The backend contract assigns one workspaces-owned transaction/session boundary to first-user/workspace creation and invitation acceptance, including identity, membership, and required governance audit effects, and requires all-or-nothing rollback plus explicit success postconditions before commit.",
+      "redProof": "The same focused Deno command fails against the unchanged backend contract because the use-case-specific shared transaction ownership, rollback trigger, and postcondition requirements are absent."
+    },
+    {
+      "id": "AC-03",
+      "text": "The machine manifest retains only the public workspaces-to-identity dependency direction for this coordinator, removes identity-driven workspace onboarding consumption, and declares governance consumption of identity.user-registered, workspace.created, and workspace.member-joined from their existing publishers without adding a coordination module or workspaces-to-governance dependency.",
+      "redProof": "The same focused Deno command fails against the unchanged manifest because workspaces still consumes identity.user-registered and governance does not consume workspace.created or workspace.member-joined."
+    },
+    {
+      "id": "AC-04",
+      "text": "The accepted contracts explicitly distinguish this synchronous transaction-scoped coordination from durable asynchronous delivery and state that application rollback/postcondition behavior is not implemented or proven by FND-002; protected walking-skeleton and Slice 1 executable proof remains required.",
+      "redProof": "The same focused Deno command fails because the unchanged architecture contracts do not contain the bounded proof-pending disclaimer, while its harness self-check remains green."
+    }
+  ],
+  "requiredTasks": {
+    "baseline": [
+      {
+        "name": "fmt:check",
+        "definition": "deno fmt --check"
+      },
+      {
+        "name": "lint",
+        "definition": "deno lint"
+      },
+      {
+        "name": "check",
+        "definition": "deno check tools/schema/validate_postgres.ts tools/workflows/ticket_contract.ts tools/workflows/validate_ticket.ts"
+      }
+    ],
+    "candidate": [
+      {
+        "name": "fmt:check",
+        "definition": "deno fmt --check",
+        "guardedBy": null
+      },
+      {
+        "name": "lint",
+        "definition": "deno lint",
+        "guardedBy": null
+      },
+      {
+        "name": "check",
+        "definition": "deno check tools/schema/validate_postgres.ts tools/workflows/ticket_contract.ts tools/workflows/validate_ticket.ts",
+        "guardedBy": null
+      }
+    ]
+  },
+  "risks": [
+    "Ambiguous event edges could retain competing identity-driven workspace choreography or omit required governance audit participation.",
+    "A documentation-only ticket could overstate atomic rollback or postcondition behavior that has not yet been implemented against PostgreSQL.",
+    "Shared transaction/session wording could be misread as permission to bypass module-owned public facades or write another module's tables directly.",
+    "Treating transaction-scoped governance handlers as durable asynchronous delivery could weaken required audit atomicity or conflict with the background-work contract.",
+    "Broadening the ticket into auth, migration, queue, provider, schema, or dependency selection would resolve choices outside the approved boundary."
+  ],
+  "unresolvedDecisions": []
+}
