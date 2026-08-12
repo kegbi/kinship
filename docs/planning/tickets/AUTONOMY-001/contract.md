@@ -23,6 +23,11 @@ The accepted behavior is:
   certify itself.
 
 The machine-readable ticket is authoritative for the exact field names, allowed
-paths, checks, risks, and acceptance criteria. Existing historical RED tests
-remain immutable; the two AUTONOMY-001 RED suites become authoritative only at
-the amended RED revision created after this contract.
+paths, checks, risks, and acceptance criteria. Existing historical RED Git blobs
+remain immutable. After the round-one review proved that synthetic schema-v1
+fixtures could not bind an exact base revision, the controller authorized a
+fixture-only migration of those current test sources to schema version 2. That
+migration must preserve every behavioral assertion and may not add a test-only
+legacy-identity bypass. The exact historical on-disk PILOT-001 and PILOT-002
+packets remain the only schema-v1 identities accepted by production validation.
+The AUTONOMY-001 RED suites are authoritative at their recorded RED revisions.

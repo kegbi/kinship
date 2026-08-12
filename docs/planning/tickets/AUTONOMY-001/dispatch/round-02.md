@@ -69,5 +69,9 @@ revision and the SHA-256 of every changed test file.
 - RED changes contain only a new regression test and ticket evidence.
 - Round 2 starts from candidate `228b86898bc379e6e5615e79d17f425d93f3dd6c`.
 - Existing frozen RED files remain byte-identical.
+- Historical frozen RED Git blobs remain byte-identical. The controller permits
+  the current synthetic schema-v1 fixture sources to migrate to schema version 2
+  only where exact base binding makes dynamic v1 fixtures impossible; preserve
+  every assertion and do not add a test-only legacy bypass.
 - No production/configuration/documentation edit occurs before the controller
   freezes the round-2 RED revision.
