@@ -1,6 +1,6 @@
 # FND-003: Freeze the immutable candidate runtime graph
 
-Status: ready, round 0 (RED checkpoint frozen)\
+Status: ready, round 0 (fresh RED retry pending)\
 Owner: trusted top-level orchestrator\
 Packet revision: 2\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
@@ -9,13 +9,21 @@ Depends on: FND-001S at integration revision
 `fcc8663751a6b2f1efb62f744655ad68771df4ca`\
 Maximum rounds: 3
 
-Frozen RED revision: `44c71432344a0e9fca0093e7d37a8a52f8fa4fe0`\
-Frozen validator SHA-256:
-`f62c935b9199828899f5bdef7057eb949da5de0524307c1e4197e7a4289bd970`
+Current GREEN authority: none pending a truthful round-1 RED retry.
 
-Rejected RED attempt: `810afc27a0a1d1e6029ec61793ca067f00f6f40b`. Its check and
-evidence remain immutable history, but its package-only OCI tag grammar is not
-GREEN authority.
+Rejected RED attempts:
+
+- `810afc27a0a1d1e6029ec61793ca067f00f6f40b`, validator SHA-256
+  `7515751e75d4c6a7730716c7b3a19e5114b5523026de5d25014aeb3d85bc05d5`:
+  package-only OCI tag grammar rejected official image tags.
+- `44c71432344a0e9fca0093e7d37a8a52f8fa4fe0`, validator SHA-256
+  `f62c935b9199828899f5bdef7057eb949da5de0524307c1e4197e7a4289bd970`: official
+  image tags were corrected, but official timestamp precision, transitive hook
+  ownership, actual lock filenames, and source-derived Button imports remained
+  unrepresentable.
+
+Both attempts and all associated evidence remain immutable history and confer no
+production-write authority.
 
 ## Outcome
 
