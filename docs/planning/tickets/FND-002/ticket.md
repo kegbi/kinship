@@ -9,6 +9,9 @@ Maximum rounds: 3
 
 Candidate revision: `820fb4cd5c45e7b4b6a0e748f602c657d4c2cb61`
 
+Review: `reviews/round-01.json` approved the exact candidate with zero findings;
+controller acceptance checks remain pending.
+
 ## Outcome
 
 The authoritative architecture contracts accept DG-06A as a workspaces-owned,
