@@ -2,7 +2,7 @@
 
 Status: ready, round 0 (fresh RED retry pending)\
 Owner: trusted top-level orchestrator\
-Packet revision: 10\
+Packet revision: 11\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
 Execution class: `ordinary`\
 Depends on: FND-001S at integration revision
@@ -61,8 +61,16 @@ Rejected RED attempts:
   assertion, loader-authored lifetime events that could not detect a hidden raw
   accumulator, and Node/OCI normalization that erased unknown source fields
   before the claimed fail-closed shape check.
+- `113ab729802d72c3a28ac6f358a0ba53f0e16cf1`, validator SHA-256
+  `d8df10815975497ec6165f42a3e06a769c84dcae20937b6ffef1a8b06a52ef45`: five
+  control suites, exact coverage, root gates, and raw source-shape checks
+  passed, but review proved that the loader copied N+1 before rejecting it and
+  released successful chunk leases while the same copy remained queued
+  downstream; the adversarial audit also showed that descriptor metadata alone
+  could satisfy unused-evidence accounting without consuming the normalized
+  official claim.
 
-All eight attempts and all associated evidence remain immutable history and
+All nine attempts and all associated evidence remain immutable history and
 confer no production-write authority.
 
 ## Outcome
