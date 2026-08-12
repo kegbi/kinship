@@ -111,3 +111,46 @@ Write the affected-gate summary to `evidence/round-01-refactor.log`, then stop
 without committing. Return all changed paths, commands/exits, the unchanged
 check SHA-256, GREEN production paths, and refactor summary using the same
 controller and implementer run IDs.
+
+## Controller rejection and RED recovery
+
+The attempted GREEN reached the focused passing state, but `deno task lint`
+found three `no-regex-spaces` violations in the frozen check. No candidate was
+formed. The controller therefore rejects
+`14e717a6fafe2f114806f29f4b728a096fbdccfd` as the ticket's final RED anchor; the
+failed attempt remains historical evidence and must not appear as `redRevision`
+in the round result.
+
+Restore RED before changing the check:
+
+1. Remove only the uncommitted ADR 0004 and restore the other three architecture
+   contract files to their pre-GREEN content. Do not use Git or touch any other
+   path.
+2. Verify the focused test is RED again for AC-01 through AC-04 and that the
+   architecture changes are absent.
+3. Make only the semantics-preserving lint correction in the check: replace the
+   three regex literal runs rejected by `no-regex-spaces` with equivalent
+   explicit quantifiers. Do not change expectations or accepted behavior.
+4. Run the focused test again and observe the same intended RED with the
+   in-memory discriminator passing.
+5. Run formatting plus both focused and repository lint checks and require all
+   of them to pass:
+
+   ```text
+   deno fmt --check tools/architecture/FND-002/coordination_contract_test.ts
+   deno lint tools/architecture/FND-002/coordination_contract_test.ts
+   deno task lint
+   ```
+
+6. Rewrite `evidence/round-01-red.log` as the authoritative pre-freeze RED log,
+   retaining concise records of both rejected revisions/attempts and the failed
+   GREEN gate. Mark the new check digest as pending controller calculation.
+7. Rewrite the GREEN and REFACTOR logs to say that their prior contents were a
+   controller-rejected, pre-candidate attempt and that authoritative GREEN and
+   REFACTOR results are pending. Stop without committing.
+
+RED-recovery writes are limited to the four uncommitted architecture files being
+restored, the existing check, and the three FND-002 phase logs. The controller
+will verify the architecture baseline, reproduce RED and lint, then freeze a new
+test/check-only revision and digest before issuing a second GREEN continuation
+for this same round.
