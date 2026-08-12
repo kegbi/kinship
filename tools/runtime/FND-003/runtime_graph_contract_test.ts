@@ -973,6 +973,11 @@ interface EvidenceAuthority {
   assertAllUsed(): void;
 }
 
+interface EvidenceUseSets {
+  metadata: Set<string>;
+  claims: Set<string>;
+}
+
 interface EvidenceIngestionEvent {
   descriptorId: string;
   action: "acquire" | "retain" | "release" | "cancel";
@@ -1001,6 +1006,13 @@ interface RawLease<T> {
   release(): void;
 }
 
+interface RawLeaseProbe {
+  readonly kind: RawRepresentation;
+  readonly identity: symbol;
+  retain(): RawLeaseProbe;
+  release(): void;
+}
+
 interface RawLeaseScope {
   acquire<T>(kind: RawRepresentation, value: T): RawLease<T>;
 }
@@ -1023,7 +1035,7 @@ interface RawLeaseFactoryOptions {
   onAcquire?: (
     descriptorId: string,
     kind: RawRepresentation,
-    lease: RawLease<unknown>,
+    lease: RawLeaseProbe,
   ) => void;
 }
 
@@ -1034,6 +1046,7 @@ function createTrackedRawLeaseFactory(
 ): TrackedRawLeaseFactory {
   interface Cell {
     kind: RawRepresentation;
+    identity: symbol;
     value: unknown | typeof RAW_RELEASED;
     references: number;
   }
@@ -1065,47 +1078,75 @@ function createTrackedRawLeaseFactory(
     active = group;
     started.push(descriptorId);
 
-    const makeLease = <T>(cell: Cell): RawLease<T> => {
+    const makeToken = (cell: Cell): Token => {
       const token: Token = { active: true, cell };
       cell.references += 1;
       group.tokens.add(token);
-      const liveValue = (): T => {
-        invariant(
-          token.active && cell.value !== RAW_RELEASED,
-          "raw lease is no longer active",
-        );
-        return cell.value as T;
-      };
+      return token;
+    };
+    const liveValue = <T>(token: Token): T => {
+      invariant(
+        token.active && token.cell.value !== RAW_RELEASED,
+        "raw lease is no longer active",
+      );
+      return token.cell.value as T;
+    };
+    const releaseToken = (token: Token): void => {
+      liveValue(token);
+      token.active = false;
+      group.tokens.delete(token);
+      token.cell.references -= 1;
+      if (token.cell.references === 0) token.cell.value = RAW_RELEASED;
+    };
+    const makeProbe = (
+      cell: Cell,
+      token: Token = makeToken(cell),
+    ): RawLeaseProbe => ({
+      kind: cell.kind,
+      identity: cell.identity,
+      retain(): RawLeaseProbe {
+        liveValue(token);
+        return makeProbe(cell);
+      },
+      release(): void {
+        releaseToken(token);
+      },
+    });
+    const makeLease = <T>(cell: Cell): RawLease<T> => {
+      const token = makeToken(cell);
       return {
         withValue<R>(use: (value: T) => R): R {
-          return use(liveValue());
+          return use(liveValue(token));
         },
         update(change: (value: T) => T): void {
-          cell.value = change(liveValue());
+          cell.value = change(liveValue(token));
         },
         retain(): RawLease<T> {
-          liveValue();
+          liveValue(token);
           return makeLease<T>(cell);
         },
         release(): void {
-          liveValue();
-          token.active = false;
-          group.tokens.delete(token);
-          cell.references -= 1;
-          if (cell.references === 0) cell.value = RAW_RELEASED;
+          releaseToken(token);
         },
       };
     };
     const scope: RawLeaseScope = {
       acquire<T>(kind: RawRepresentation, value: T): RawLease<T> {
-        const cell: Cell = { kind, value, references: 0 };
+        const cell: Cell = {
+          kind,
+          identity: Symbol(`${descriptorId}:${kind}`),
+          value,
+          references: 0,
+        };
         group.cells.add(cell);
         const lease = makeLease<T>(cell);
-        options.onAcquire?.(
-          descriptorId,
-          kind,
-          lease as RawLease<unknown>,
-        );
+        const probeToken = makeToken(cell);
+        const probe = makeProbe(cell, probeToken);
+        try {
+          options.onAcquire?.(descriptorId, kind, probe);
+        } finally {
+          if (probeToken.active) releaseToken(probeToken);
+        }
         return lease;
       },
     };
@@ -1368,25 +1409,16 @@ function countedHashingStream(
   label: string,
   hash: ReturnType<typeof incrementalSha256>,
   count: { value: number },
-  scope: RawLeaseScope,
-  representation: Exclude<RawRepresentation, "decoded">,
 ): TransformStream<Uint8Array, Uint8Array> {
   return new TransformStream({
     transform(chunk, controller) {
-      const lease = scope.acquire(representation, chunk.slice());
-      try {
-        lease.withValue((ownedChunk) => {
-          invariant(
-            ownedChunk.byteLength <= maximum - count.value,
-            `${label} exceeds ${maximum} byte limit`,
-          );
-          hash.update(ownedChunk);
-          count.value += ownedChunk.byteLength;
-          controller.enqueue(ownedChunk);
-        });
-      } finally {
-        lease.release();
-      }
+      invariant(
+        chunk.byteLength <= maximum - count.value,
+        `${label} exceeds ${maximum} byte limit`,
+      );
+      hash.update(chunk);
+      count.value += chunk.byteLength;
+      controller.enqueue(chunk);
     },
   });
 }
@@ -1403,7 +1435,10 @@ async function loadEvidence(
   const byId = new Map<string, JsonRecord>();
   const claims = new Map<string, NormalizedEvidence>();
   const paths = new Set<string>();
-  const used = new Set<string>();
+  const used: EvidenceUseSets = {
+    metadata: new Set<string>(),
+    claims: new Set<string>(),
+  };
   const compressedLimit = options.compressedLimit ??
     MAX_COMPRESSED_EVIDENCE_BYTES;
   const decompressedLimit = options.decompressedLimit ??
@@ -1474,8 +1509,6 @@ async function loadEvidence(
             `${id} compressed provenance artifact`,
             compressedHash,
             compressedCount,
-            scope,
-            "compressed",
           ),
         ).pipeThrough(
           new DecompressionStream("gzip") as TransformStream<
@@ -1488,8 +1521,6 @@ async function loadEvidence(
             `${id} decompressed provenance artifact`,
             contentHash,
             decompressedCount,
-            scope,
-            "decompressed",
           ),
         ).pipeThrough(new TextDecoderStream("utf-8", { fatal: true }));
         const reader = decoded.getReader();
@@ -1558,56 +1589,70 @@ async function loadEvidence(
   return {
     descriptor(id: string): JsonRecord {
       const descriptor = object(byId.get(id), `provenance ${id}`);
-      used.add(id);
+      used.metadata.add(id);
       return descriptor;
     },
     npmPackument(id: string): JsonRecord {
-      return object(normalizedClaim(claims, id, "npm-packument"), id);
+      return object(
+        normalizedClaim(claims, used.claims, id, "npm-packument"),
+        id,
+      );
     },
     releaseIndex(id: string): JsonRecord[] {
       return array(
-        normalizedClaim(claims, id, "official-release-index"),
+        normalizedClaim(claims, used.claims, id, "official-release-index"),
         id,
       ).map((raw) => object(raw, `${id} row`));
     },
     releaseDetail(id: string): JsonRecord {
       return object(
-        normalizedClaim(claims, id, "official-release-detail"),
+        normalizedClaim(claims, used.claims, id, "official-release-detail"),
         id,
       );
     },
     checksumRows(id: string): string[][] {
       return array(
-        normalizedClaim(claims, id, "release-checksum"),
+        normalizedClaim(claims, used.claims, id, "release-checksum"),
         id,
       ).map((raw, index) => strings(raw, `${id}[${index}]`));
     },
     sourceImports(id: string): string[] {
       return strings(
-        normalizedClaim(claims, id, "immutable-source"),
+        normalizedClaim(claims, used.claims, id, "immutable-source"),
         id,
       );
     },
     ociIndex(id: string): JsonRecord {
       return object(
-        normalizedClaim(claims, id, "oci-index-response"),
+        normalizedClaim(claims, used.claims, id, "oci-index-response"),
         id,
       );
     },
     assertAllUsed(): void {
-      exactSet([...used], [...byId.keys()], "provenance claim membership");
+      exactSet(
+        [...used.metadata],
+        [...byId.keys()],
+        "provenance metadata membership",
+      );
+      exactSet(
+        [...used.claims],
+        [...byId.keys()],
+        "provenance claim membership",
+      );
     },
   };
 }
 
 function normalizedClaim(
   claims: Map<string, NormalizedEvidence>,
+  used: Set<string>,
   id: string,
   kind: string,
 ): unknown {
   const claim = claims.get(id);
   invariant(claim, `normalized provenance claim ${id} is absent`);
   invariant(claim.kind === kind, `${id} normalized evidence kind is incorrect`);
+  used.add(id);
   return claim.value;
 }
 
@@ -5865,6 +5910,207 @@ Deno.test("evidence ingestion rejects wall-clock scheduling and requires an inde
         "independent raw lease factory reached",
     "evidence ingestion bypassed the independent raw lease factory",
   );
+
+  const retainedValueFactory = createTrackedRawLeaseFactory();
+  await retainedValueFactory.run("retained-value", async (scope) => {
+    const lease = scope.acquire("decoded", "retained value");
+    const child = lease.retain();
+    invariant(
+      child.withValue((value) => value) === "retained value",
+      "scoped retained value changed identity",
+    );
+    child.release();
+    lease.release();
+    await Promise.resolve();
+  });
+  retainedValueFactory.assertIdle();
+});
+
+Deno.test("bounded transforms preflight without queued owned copies", async () => {
+  const sourceChunk = new Uint8Array([1, 2, 3, 4]);
+  let downstreamChunk: Uint8Array | undefined;
+  let enteredDownstream!: () => void;
+  const downstreamEntered = new Promise<void>((resolve) => {
+    enteredDownstream = resolve;
+  });
+  let releaseDownstream!: () => void;
+  const downstreamReleased = new Promise<void>((resolve) => {
+    releaseDownstream = resolve;
+  });
+  const stalledPipe = byteStream(sourceChunk).pipeThrough(
+    countedHashingStream(
+      sourceChunk.byteLength,
+      "stalled transform",
+      incrementalSha256(),
+      { value: 0 },
+    ),
+  ).pipeTo(
+    new WritableStream({
+      write(chunk) {
+        downstreamChunk = chunk;
+        enteredDownstream();
+        return downstreamReleased;
+      },
+    }),
+  );
+  await downstreamEntered;
+  const stalledState = {
+    sameChunk: downstreamChunk === sourceChunk,
+  };
+  releaseDownstream();
+  await stalledPipe;
+
+  let acknowledgeCancellation!: () => void;
+  const cancellation = new Promise<void>((resolve) => {
+    acknowledgeCancellation = resolve;
+  });
+  const oversized = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array([1, 2]));
+    },
+    cancel() {
+      acknowledgeCancellation();
+    },
+  });
+  const oversizedReader = oversized.pipeThrough(
+    countedHashingStream(
+      1,
+      "preflight transform",
+      incrementalSha256(),
+      { value: 0 },
+    ),
+  ).getReader();
+  const [oversizedResult] = await Promise.all([
+    Promise.allSettled([oversizedReader.read()]),
+    cancellation,
+  ]);
+  oversizedReader.releaseLock();
+  invariant(
+    stalledState.sameChunk && oversizedResult[0]?.status === "rejected" &&
+      (oversizedResult[0].reason as Error).message.includes(
+        "preflight transform exceeds 1 byte limit",
+      ),
+    `bounded transform copied/acquired before its bound or released a queued copy: ${
+      JSON.stringify(stalledState)
+    }`,
+  );
+});
+
+Deno.test("raw lease observers receive only opaque revocable probes", async () => {
+  interface ObserverProbe {
+    kind: RawRepresentation;
+    identity: symbol;
+    retain(): ObserverProbe;
+    release(): void;
+  }
+  let child: ObserverProbe | undefined;
+  let observedSurface: string[] = [];
+  let parentReleaseResult = "";
+  const factory = createTrackedRawLeaseFactory({
+    onAcquire(_descriptorId, _kind, lease) {
+      const observer = lease as unknown as ObserverProbe;
+      observedSurface = Object.keys(observer).sort();
+      child = observer.retain();
+      observer.release();
+      try {
+        observer.release();
+      } catch (error) {
+        parentReleaseResult = (error as Error).message;
+      }
+    },
+  });
+  const [result] = await Promise.allSettled([
+    factory.run("opaque", async (scope) => {
+      const lease = scope.acquire("decoded", "secret decoded fixture");
+      lease.update((value) => `${value}!`);
+      lease.release();
+      await Promise.resolve();
+    }),
+  ]);
+  factory.assertIdle();
+  invariant(child, "opaque observer did not retain its child probe");
+  let revokedMessage = "";
+  try {
+    child.retain();
+  } catch (error) {
+    revokedMessage = (error as Error).message;
+  }
+  invariant(
+    result?.status === "rejected" &&
+      (result.reason as Error).message.includes(
+        "opaque retained raw lease(s): decoded",
+      ) && JSON.stringify(observedSurface) ===
+        JSON.stringify(["identity", "kind", "release", "retain"]) &&
+      parentReleaseResult === "raw lease is no longer active" &&
+      revokedMessage === "raw lease is no longer active",
+    `raw lease observer exposed value/mutation authority or failed revocation: ${
+      JSON.stringify({
+        observedSurface,
+        result: result?.status,
+        parentReleaseResult,
+        revokedMessage,
+      })
+    }`,
+  );
+});
+
+Deno.test("provenance metadata and normalized claim use are independent", async () => {
+  const selectedAt = instant(
+    "2026-01-10T04:05:06.789Z",
+    "provenance-use fixture selection",
+  );
+  const body = "fixture checksum row";
+  const bytes = await gzip(body);
+  const path = `${PROVENANCE_ROOT}provenance-use.gz`;
+  const descriptor = {
+    id: "provenance-use",
+    kind: "release-checksum",
+    path,
+    compression: "gzip",
+    sourceUrl: "https://nodejs.org/dist/v24.11.0/SHASUMS256.txt",
+    retrievedAt: selectedAt.canonical,
+    contentSha256: await sha256Text(body),
+    artifactSha256: await sha256Bytes(bytes),
+  };
+  const createAuthority = () =>
+    loadEvidence(
+      { provenance: [descriptor] },
+      () => Promise.resolve(byteStream(bytes)),
+      selectedAt,
+    );
+
+  const metadataOnly = await createAuthority();
+  metadataOnly.descriptor("provenance-use");
+  let metadataOnlyMessage = "accepted";
+  try {
+    metadataOnly.assertAllUsed();
+  } catch (error) {
+    metadataOnlyMessage = (error as Error).message;
+  }
+
+  const claimOnly = await createAuthority();
+  claimOnly.checksumRows("provenance-use");
+  let claimOnlyMessage = "accepted";
+  try {
+    claimOnly.assertAllUsed();
+  } catch (error) {
+    claimOnlyMessage = (error as Error).message;
+  }
+
+  const complete = await createAuthority();
+  complete.descriptor("provenance-use");
+  complete.checksumRows("provenance-use");
+  complete.assertAllUsed();
+  const fixture = await makeFixture();
+  await validateGraph(fixture.graph, fixtureReader(fixture));
+
+  invariant(
+    metadataOnlyMessage.includes("provenance claim membership") &&
+      claimOnlyMessage.includes("provenance metadata membership"),
+    `provenance use was not independently bound: ${
+      JSON.stringify({ metadataOnlyMessage, claimOnlyMessage })
+    }`,
+  );
 });
 
 Deno.test("official Node rows reject unknown raw fields before projection", async () => {
@@ -6029,23 +6275,23 @@ Deno.test("aggregate evidence ingestion releases raw ownership per descriptor", 
   };
   const firstBytes = evidence.get(`${PROVENANCE_ROOT}aggregate-first.gz`)!;
   const bodyLimit = new TextEncoder().encode(bodies.get("first")!).byteLength;
-  const sourceIdentities = new Set(evidence.values());
   const sourceHashes = new Map<string, string>();
   for (const [path, value] of evidence) {
     sourceHashes.set(path, await sha256Bytes(value));
   }
   const rawAcquisitions: string[] = [];
+  const rawProbeIdentities = new Set<symbol>();
   const rawLeaseFactory = createTrackedRawLeaseFactory({
     onAcquire(descriptorId, kind, lease) {
       rawAcquisitions.push(`${descriptorId}:${kind}`);
-      lease.withValue((value) => {
-        if (value instanceof Uint8Array) {
-          invariant(
-            !sourceIdentities.has(value),
-            "ingestion leased its immutable reader-owned source fixture",
-          );
-        }
-      });
+      invariant(
+        lease.kind === kind && !rawProbeIdentities.has(lease.identity) &&
+          !Object.hasOwn(lease, "value") &&
+          !Object.hasOwn(lease, "withValue") &&
+          !Object.hasOwn(lease, "update"),
+        "raw lease observer exposed its decoded value",
+      );
+      rawProbeIdentities.add(lease.identity);
     },
   });
   invariant(
@@ -6079,9 +6325,8 @@ Deno.test("aggregate evidence ingestion releases raw ownership per descriptor", 
       !("json" in authority) &&
       JSON.stringify(rawLeaseFactory.startedDescriptorIds()) ===
         JSON.stringify(["first", "second"]) &&
-      ["compressed", "decompressed", "decoded"].every((kind) =>
-        rawAcquisitions.some((entry) => entry.endsWith(`:${kind}`))
-      ),
+      rawAcquisitions.every((entry) => entry.endsWith(":decoded")) &&
+      rawAcquisitions.length === 2 && rawProbeIdentities.size === 2,
     "aggregate evidence ingestion retained overlapping or accumulating raw representations",
   );
   for (const [path, value] of evidence) {
@@ -6102,18 +6347,33 @@ Deno.test("aggregate evidence ingestion releases raw ownership per descriptor", 
     normalizedAccessMarkedUsed = (error as Error).message;
   }
   invariant(
-    normalizedAccessMarkedUsed.includes("provenance claim membership"),
+    normalizedAccessMarkedUsed.includes("provenance metadata membership"),
     "normalization or normalized access incorrectly marked evidence used",
   );
   authority.descriptor("first");
   authority.descriptor("second");
+  let incompleteClaimUse = "";
+  try {
+    authority.assertAllUsed();
+  } catch (error) {
+    incompleteClaimUse = (error as Error).message;
+  }
+  invariant(
+    incompleteClaimUse.includes("provenance claim membership"),
+    "descriptor use incorrectly substituted for normalized claim use",
+  );
+  authority.checksumRows("first");
   authority.assertAllUsed();
 
-  let heldRawLease: RawLease<unknown> | undefined;
+  let heldRawLease: RawLeaseProbe | undefined;
   const mutantEvents: string[] = [];
   const mutantFactory = createTrackedRawLeaseFactory({
     onAcquire(descriptorId, kind, lease) {
-      if (descriptorId !== "first" || kind !== "decoded") return;
+      invariant(kind === "decoded", "mutant observed a non-decoded raw lease");
+      invariant(
+        descriptorId === "first",
+        "mutant started after its retained child should have stopped ingestion",
+      );
       heldRawLease = lease.retain();
     },
   });
@@ -6150,7 +6410,7 @@ Deno.test("aggregate evidence ingestion releases raw ownership per descriptor", 
   invariant(heldRawLease, "raw accumulator mutant did not retain a lease");
   let revokedLeaseMessage = "";
   try {
-    heldRawLease.withValue(() => undefined);
+    heldRawLease.retain();
   } catch (error) {
     revokedLeaseMessage = (error as Error).message;
   }
@@ -6188,7 +6448,7 @@ Deno.test("aggregate evidence ingestion releases raw ownership per descriptor", 
   await activeDescriptorRun;
   overlapFactory.assertIdle();
 
-  let failureChild: RawLease<unknown> | undefined;
+  let failureChild: RawLeaseProbe | undefined;
   const combinedFailureFactory = createTrackedRawLeaseFactory({
     onAcquire(_descriptorId, _kind, lease) {
       failureChild = lease.retain();
@@ -6883,7 +7143,7 @@ Deno.test("captured runtime graph controls discriminate official bytes", async (
       String(descriptor.path),
       candidate.evidence.values().next().value!,
     );
-  }, "provenance claim membership");
+  }, "provenance metadata membership");
   await expectReject((candidate) => {
     const descriptors = array(candidate.graph.provenance, "provenance").map((
       raw,
