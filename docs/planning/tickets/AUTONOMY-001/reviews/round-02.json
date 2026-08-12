@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 2,
+  "ticketId": "AUTONOMY-001",
+  "ticketRevision": 1,
+  "round": 2,
+  "implementerRunId": "AUTONOMY-001/implementer/r2/b318daf3-6ea6-4576-9f4f-13000a53f7e9",
+  "reviewerRunId": "AUTONOMY-001/reviewer/r2/ff0a488f-d3da-4c07-a65b-0b92dc1e8340",
+  "issuedByControllerRunId": "AUTONOMY-001/orchestrator/r0/00000000-0000-4000-8000-000000000101",
+  "baseRevision": "e55f935db7825543757ca7083308ba3126195543",
+  "candidateRevision": "38bcb75a32cce962030119834beab990ce034325",
+  "verdict": "CHANGES_REQUESTED",
+  "commands": [
+    {
+      "command": "deno test --allow-read --allow-write --allow-run=git tools/workflows/autonomy_review_regression_test.ts",
+      "exitCode": 0
+    },
+    { "command": "deno --quiet eval false", "exitCode": 0 },
+    {
+      "command": "deno eval <read-only inherited legacy ticket ID probe>",
+      "exitCode": 7
+    },
+    {
+      "command": "git diff --check 228b86898bc379e6e5615e79d17f425d93f3dd6c..38bcb75a32cce962030119834beab990ce034325",
+      "exitCode": 0
+    },
+    { "command": "git status --short", "exitCode": 0 }
+  ],
+  "lenses": {
+    "bug_correctness": {
+      "verdict": "fail",
+      "evidence": [
+        "An inherited schema-v1 ticket ID reaches an inherited record property and throws instead of returning a stable validation issue."
+      ]
+    },
+    "security_privacy": {
+      "verdict": "pass",
+      "evidence": [
+        "The complete legacy identity now includes baseRevision and both alternate-base probes are rejected."
+      ]
+    },
+    "architecture_contracts": {
+      "verdict": "pass",
+      "evidence": [
+        "Mixed protected and ordinary write scope now validates against exactly the protected authorization subset."
+      ]
+    },
+    "performance_reliability": {
+      "verdict": "pass",
+      "evidence": [
+        "The correction uses bounded string and hash checks and does not add subprocess or blob consumption."
+      ]
+    },
+    "style_maintainability": {
+      "verdict": "pass",
+      "evidence": [
+        "The fixes and v2 fixture migration remain localized and the clean diff passes whitespace checks."
+      ]
+    },
+    "tests_tdd": {
+      "verdict": "fail",
+      "evidence": [
+        "The frozen 44-case regression passes, but a valid Deno global option before eval remains an uncovered trivial-success bypass."
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "AUTONOMY-001-R1-TDD-003",
+      "lens": "tests_tdd",
+      "severity": "P1",
+      "location": "tools/workflows/validate_ticket.ts:223-225, isObviousNoopTaskDefinition",
+      "expectedBehavior": "All Deno eval task forms, including forms with executable-global options before eval, are rejected as trivial ticket gates.",
+      "observedBehavior": "The predicate requires eval immediately after deno; deno --quiet eval false exits zero and validates without task_definition_noop.",
+      "reproduction": "Run deno --quiet eval false and a revision-bound task fixture using the same definition; both exit zero and the validator returns no issue.",
+      "impact": "A required task can still be changed into a trivial-success gate while appearing independently guarded.",
+      "affectedCriterion": "AC-04",
+      "contractRef": "docs/development/autonomous-delivery.md",
+      "requiredRemediation": "Parse the bounded Deno command prefix sufficiently to detect eval after supported global options, or positively restrict accepted task command shapes.",
+      "verification": "Add regressions for --quiet, --config, and combined global options before eval while retaining legitimate deno check/test/run tasks.",
+      "status": "open"
+    },
+    {
+      "id": "AUTONOMY-001-R2-BUG-004",
+      "lens": "bug_correctness",
+      "severity": "P2",
+      "location": "tools/workflows/ticket_contract.ts:1014 and 2751-2754, legacy identity lookup",
+      "expectedBehavior": "Every string ticket ID is handled as data and returns structured validation issues without throwing.",
+      "observedBehavior": "Inherited names such as toString pass the inherited-property check and then throw because the inherited value is not a digest set.",
+      "reproduction": "Validate a schema-v1 bundle whose ticketId is toString; direct validation throws TypeError and the directory validator collapses it to io_error.",
+      "impact": "Malformed untrusted ticket metadata can crash the structural API and obscure the real diagnostic.",
+      "affectedCriterion": "AC-03",
+      "contractRef": "docs/planning/tickets/AUTONOMY-001/contract.md",
+      "requiredRemediation": "Use an own-property-safe lookup, Map, or null-prototype record for legacy digest admission.",
+      "verification": "Add inherited-name cases such as toString, constructor, and __proto__; each must return a stable schema/legacy diagnostic without throwing.",
+      "status": "open"
+    }
+  ],
+  "notes": [
+    "AUTONOMY-001-R1-ARCH-001 and AUTONOMY-001-R1-SEC-002 are resolved by this candidate.",
+    "The clean candidate passed the controller's 183-test exact-coverage and PostgreSQL 18.4/17.10 gates."
+  ]
+}

@@ -3,9 +3,9 @@
   "ticketId": "AUTONOMY-001",
   "ticketRevision": 1,
   "phase": "rework",
-  "round": 1,
+  "round": 2,
   "baseRevision": "e55f935db7825543757ca7083308ba3126195543",
-  "candidateRevision": "228b86898bc379e6e5615e79d17f425d93f3dd6c",
+  "candidateRevision": "38bcb75a32cce962030119834beab990ce034325",
   "events": [
     {
       "sequence": 1,
@@ -60,15 +60,59 @@
       "actorRunId": "AUTONOMY-001/reviewer/r1/eb1e7f75-0e40-4f6a-bff2-6cd224351515",
       "evidenceRef": "reviews/round-01.json",
       "revision": "228b86898bc379e6e5615e79d17f425d93f3dd6c"
+    },
+    {
+      "sequence": 7,
+      "from": "rework",
+      "to": "red",
+      "round": 2,
+      "actorRunId": "AUTONOMY-001/implementer/r2/b318daf3-6ea6-4576-9f4f-13000a53f7e9",
+      "evidenceRef": "evidence/round-02-red.log",
+      "revision": "2ca02d7de0cfcec3b7a923f059e24d14eb857c88"
+    },
+    {
+      "sequence": 8,
+      "from": "red",
+      "to": "green",
+      "round": 2,
+      "actorRunId": "AUTONOMY-001/implementer/r2/b318daf3-6ea6-4576-9f4f-13000a53f7e9",
+      "evidenceRef": "evidence/round-02-green.log",
+      "revision": "38bcb75a32cce962030119834beab990ce034325"
+    },
+    {
+      "sequence": 9,
+      "from": "green",
+      "to": "refactor",
+      "round": 2,
+      "actorRunId": "AUTONOMY-001/implementer/r2/b318daf3-6ea6-4576-9f4f-13000a53f7e9",
+      "evidenceRef": "evidence/round-02-refactor.log",
+      "revision": "38bcb75a32cce962030119834beab990ce034325"
+    },
+    {
+      "sequence": 10,
+      "from": "refactor",
+      "to": "review",
+      "round": 2,
+      "actorRunId": "AUTONOMY-001/orchestrator/r0/00000000-0000-4000-8000-000000000101",
+      "evidenceRef": "results/round-02.json",
+      "revision": "38bcb75a32cce962030119834beab990ce034325"
+    },
+    {
+      "sequence": 11,
+      "from": "review",
+      "to": "rework",
+      "round": 2,
+      "actorRunId": "AUTONOMY-001/reviewer/r2/ff0a488f-d3da-4c07-a65b-0b92dc1e8340",
+      "evidenceRef": "reviews/round-02.json",
+      "revision": "38bcb75a32cce962030119834beab990ce034325"
     }
   ],
-  "resultRefs": ["results/round-01.json"],
-  "reviewRefs": ["reviews/round-01.json"],
+  "resultRefs": ["results/round-01.json", "results/round-02.json"],
+  "reviewRefs": ["reviews/round-01.json", "reviews/round-02.json"],
   "dependencyRevisions": {},
   "openFindingIds": [
-    "AUTONOMY-001-R1-ARCH-001",
-    "AUTONOMY-001-R1-SEC-002",
-    "AUTONOMY-001-R1-TDD-003"
+    "AUTONOMY-001-R1-TDD-003",
+    "AUTONOMY-001-R2-BUG-004"
   ],
   "orchestratorChecks": [],
   "acceptedCandidateRevision": null,
