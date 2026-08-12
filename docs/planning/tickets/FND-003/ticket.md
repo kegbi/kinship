@@ -2,7 +2,7 @@
 
 Status: ready, round 0 (fresh RED retry pending)\
 Owner: trusted top-level orchestrator\
-Packet revision: 8\
+Packet revision: 9\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
 Execution class: `ordinary`\
 Depends on: FND-001S at integration revision
@@ -47,9 +47,16 @@ Rejected RED attempts:
   precision, future/hidden npm releases, unredacted proof output, Deno and pnpm
   resolution edges not bound to exact manifests/versions, a failing-valid full
   Node index, and peak buffering above the declared evidence limit.
+- `91c4cd0528cc29f70461c0283ec55fbfac9c8c10`, validator SHA-256
+  `e7d9dd57f7d5f24aa3d9be1f35afb0b9802d29f455388a0027fcd40a719814af`: exact
+  timestamps, release completeness, manifest/lock resolution identity,
+  historical Node rows, focused RED, and 100 percent coverage passed, but fresh
+  review proved that the end-to-end loader still overlapped complete compressed,
+  decompressed, and decoded representations and retained every decoded official
+  response while its memory controls exercised only an isolated helper.
 
-All six attempts and all associated evidence remain immutable history and confer
-no production-write authority.
+All seven attempts and all associated evidence remain immutable history and
+confer no production-write authority.
 
 ## Outcome
 
