@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "ticketId": "FND-003",
-  "revision": 14,
+  "revision": 15,
   "title": "Freeze the immutable candidate runtime graph",
   "outcome": "One dependency-free, self-tested runtime-graph validator and its exact machine-readable inputs make the repository's candidate Deno, Node, pnpm, frontend, backend, test, and OCI dependency graph immutable, age-eligible, lifecycle-denied by default, and repeatable from clean and offline caches without claiming the separate executable compatibility proofs assigned to named follow-on tickets.",
   "baseRevision": "895731f27f66d614cb431e9ab6bb570b94d1a476",
@@ -150,6 +150,7 @@
     "JavaScript cannot observe an arbitrary discarded typed-array copy after it happens; the complete validator-authored compressed/decompressed transform callback must therefore be an exact source-locked region whose mutation controls reject every direct copy/allocation escape before the guard, while independent runtime spies prove exact-N source identity and N+1 zero hash, write, and owned-acquisition behavior. Any region change requires a fresh RED and review.",
     "Locking only one transform method is insufficient when a later computed or spread property can override the effective callback; the reviewed bytes must include the complete transformer construction, its closing object/call boundary, and the real compressed/decompressed selection sites, with mutations proving no post-method override, alternate factory, helper retarget, or decoy region can execute outside the lock.",
     "The frozen policy must accept exact pnpm 11.21 and Deno 2.9 emitted positive fixtures: pnpm workspace and lock autoInstallPeers values must agree, required React type peers must be explicit roots when automatic peer installation is disabled, peer-snapshot multiplicity must be supported but not required, and both the pnpm store and metadata cache must be disposable and shared only between the clean and offline proof runs.",
+    "A fixture hash stored beside self-authored metadata does not prove that the fixture is structurally authentic or that every retained claim was consumed; the RED oracle must parse retained pnpm snapshot identities and Deno lock structure, reject drift-together mutations, and remove rather than preserve observations that the committed bytes cannot independently substantiate.",
     "Root manifest and lock changes overlap future scaffold, CI, and hook tickets; no concurrent writer may own those paths.",
     "Dependency and registry diagnostics can expose local filesystem topology, tokens, cookies, or credentials unless evidence is deliberately concise and redacted."
   ],
