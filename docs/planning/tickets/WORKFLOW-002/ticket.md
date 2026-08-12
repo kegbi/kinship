@@ -1,6 +1,6 @@
 # WORKFLOW-002: Scale Git evidence validation on growing history
 
-Status: accepted, round 1\
+Status: integrated, round 1\
 Owner: trusted top-level orchestrator\
 Ticket revision: 3\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\

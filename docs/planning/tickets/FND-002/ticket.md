@@ -1,6 +1,6 @@
 # FND-002: Accept DG-06A coordination boundary
 
-Status: accepted, round 1\
+Status: integrated, round 1\
 Owner: trusted top-level orchestrator\
 Base revision: `603f6621809f61fab70bc29b8b4a9252ebcecb27`\
 Execution class: `ordinary`\
