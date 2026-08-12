@@ -12,8 +12,13 @@ Intended failures:
 - the skill, dispatch, and role prompts omit enforced v2 controls; and
 - delivery and quality contracts omit durable integration and task guards.
 
-Frozen test SHA-256:
-6571fcb3964282f54b4b0d2cf32e473a77735efef413b3bbb07874a5b186afb9
+Authoritative formatted test SHA-256:
+15d0e0f426ecc8ac1446e90e8cd25c5725838e00637a45c669dbdcc6ec8a3b75
+
+The earlier `effe7ee` test blob is superseded because the controller froze it
+before applying repository formatting. The amended RED commit contains only
+this formatting change and evidence; its clean tree still has the unchanged v1
+assets, so the same four intended assertions remain RED.
 
 No template, skill, agent prompt, or delivery-document change preceded this
 RED. The uncommitted validator GREEN is a separate AC-01 through AC-04 slice.
