@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 2,
+  "ticketId": "AUTONOMY-001",
+  "ticketRevision": 1,
+  "round": 1,
+  "implementerRunId": "AUTONOMY-001/implementer/r1/00000000-0000-4000-8000-000000000102",
+  "issuedByControllerRunId": "AUTONOMY-001/orchestrator/r0/00000000-0000-4000-8000-000000000101",
+  "inputBaseRevision": "e55f935db7825543757ca7083308ba3126195543",
+  "dispatchRef": "dispatch/round-01-amended.md",
+  "redRevision": "71b4d224ab019a6729fc3fe316326c869681eafa",
+  "red": {
+    "command": "deno test --allow-read --allow-write --allow-run=git tools/workflows/integration_anchor_regression_test.ts tools/workflows/control_guards_regression_test.ts",
+    "exitCode": 1,
+    "expectedFailure": "The amended v2 integration and control regressions fail only on the missing delivery controls.",
+    "output": "One legacy baseline passed and 37 new contract cases failed before production implementation.",
+    "logRef": "evidence/integration-red.log",
+    "testFiles": [
+      {
+        "path": "tools/workflows/integration_anchor_regression_test.ts",
+        "sha256": "821466ff9c5e69e9575caf77d7404c17b974010a07825b4e90ba502894166ee0"
+      },
+      {
+        "path": "tools/workflows/control_guards_regression_test.ts",
+        "sha256": "4835f0185f10c3fd83c28e5b5e431fc533a48abe08ef54c790b12d6fc0082cdf"
+      }
+    ],
+    "productionFiles": []
+  },
+  "green": {
+    "command": "deno test --allow-read --allow-write --allow-run=git tools/workflows/integration_anchor_regression_test.ts tools/workflows/control_guards_regression_test.ts",
+    "exitCode": 0,
+    "logRef": "evidence/round-01-green.log",
+    "productionFiles": [
+      ".agents/skills/run-tdd-ticket-loop/SKILL.md",
+      ".agents/skills/run-tdd-ticket-loop/assets/dispatch.template.md",
+      ".agents/skills/run-tdd-ticket-loop/assets/result.template.json",
+      ".agents/skills/run-tdd-ticket-loop/assets/review.template.json",
+      ".agents/skills/run-tdd-ticket-loop/assets/state.template.json",
+      ".agents/skills/run-tdd-ticket-loop/assets/ticket.template.json",
+      ".codex/agents/feature-implementer.toml",
+      ".codex/agents/orchestrator.toml",
+      ".codex/agents/reviewer.toml",
+      "docs/architecture/quality-gates.md",
+      "docs/development/autonomous-delivery.md",
+      "tools/workflows/ticket_contract.ts",
+      "tools/workflows/validate_ticket.ts"
+    ]
+  },
+  "refactor": {
+    "summary": "Added defensive coverage cases and removed two unreachable narrowings without changing accepted or rejected packet behavior.",
+    "command": "deno task test:workflow:coverage",
+    "exitCode": 0,
+    "logRef": "evidence/round-01-refactor.log"
+  },
+  "candidateRevision": "228b86898bc379e6e5615e79d17f425d93f3dd6c"
+}

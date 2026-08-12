@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "ticketId": "AUTONOMY-001",
   "ticketRevision": 1,
-  "phase": "red",
+  "phase": "rework",
   "round": 1,
   "baseRevision": "e55f935db7825543757ca7083308ba3126195543",
-  "candidateRevision": null,
+  "candidateRevision": "228b86898bc379e6e5615e79d17f425d93f3dd6c",
   "events": [
     {
       "sequence": 1,
@@ -24,15 +24,53 @@
       "actorRunId": "AUTONOMY-001/implementer/r1/00000000-0000-4000-8000-000000000102",
       "evidenceRef": "evidence/integration-red.log",
       "revision": "71b4d224ab019a6729fc3fe316326c869681eafa"
+    },
+    {
+      "sequence": 3,
+      "from": "red",
+      "to": "green",
+      "round": 1,
+      "actorRunId": "AUTONOMY-001/implementer/r1/00000000-0000-4000-8000-000000000102",
+      "evidenceRef": "evidence/round-01-green.log",
+      "revision": "228b86898bc379e6e5615e79d17f425d93f3dd6c"
+    },
+    {
+      "sequence": 4,
+      "from": "green",
+      "to": "refactor",
+      "round": 1,
+      "actorRunId": "AUTONOMY-001/implementer/r1/00000000-0000-4000-8000-000000000102",
+      "evidenceRef": "evidence/round-01-refactor.log",
+      "revision": "228b86898bc379e6e5615e79d17f425d93f3dd6c"
+    },
+    {
+      "sequence": 5,
+      "from": "refactor",
+      "to": "review",
+      "round": 1,
+      "actorRunId": "AUTONOMY-001/orchestrator/r0/00000000-0000-4000-8000-000000000101",
+      "evidenceRef": "results/round-01.json",
+      "revision": "228b86898bc379e6e5615e79d17f425d93f3dd6c"
+    },
+    {
+      "sequence": 6,
+      "from": "review",
+      "to": "rework",
+      "round": 1,
+      "actorRunId": "AUTONOMY-001/reviewer/r1/eb1e7f75-0e40-4f6a-bff2-6cd224351515",
+      "evidenceRef": "reviews/round-01.json",
+      "revision": "228b86898bc379e6e5615e79d17f425d93f3dd6c"
     }
   ],
-  "resultRefs": [],
-  "reviewRefs": [],
+  "resultRefs": ["results/round-01.json"],
+  "reviewRefs": ["reviews/round-01.json"],
   "dependencyRevisions": {},
-  "openFindingIds": [],
+  "openFindingIds": [
+    "AUTONOMY-001-R1-ARCH-001",
+    "AUTONOMY-001-R1-SEC-002",
+    "AUTONOMY-001-R1-TDD-003"
+  ],
   "orchestratorChecks": [],
   "acceptedCandidateRevision": null,
-  "integrationRevision": null,
-  "integrationChecks": [],
   "blocker": null
 }
