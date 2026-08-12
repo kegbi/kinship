@@ -35,6 +35,7 @@ function issue(path: string, code: string, message: string): ValidationIssue {
 
 interface GitResult {
   readonly success: boolean;
+  readonly exitCode: number;
   readonly output: Uint8Array;
   readonly limited: boolean;
 }
@@ -87,6 +88,7 @@ async function runGit(
   }
   return {
     success: status.success && !limited,
+    exitCode: status.code,
     output,
     limited,
   };
@@ -182,6 +184,38 @@ async function changedPaths(
     return undefined;
   }
   return paths;
+}
+
+async function hasChangedPaths(
+  ticketDirectory: string,
+  fromRevision: string,
+  toRevision: string,
+  pathspecs: readonly string[],
+  diagnosticPath: string,
+  issues: ValidationIssue[],
+): Promise<boolean | undefined> {
+  const result = await runGit(ticketDirectory, [
+    "diff",
+    "--quiet",
+    "--exit-code",
+    "--find-renames",
+    "--diff-filter=ACDMRTUXB",
+    fromRevision,
+    toRevision,
+    "--",
+    ...pathspecs,
+  ]);
+  if (result.limited || result.exitCode > 1) {
+    issues.push(
+      issue(
+        diagnosticPath,
+        "git_output_limit",
+        "Git path evidence could not be read within limits",
+      ),
+    );
+    return undefined;
+  }
+  return result.exitCode === 1;
 }
 
 async function readGitJsonRecord(
@@ -1005,16 +1039,15 @@ async function validateIntegrationGitEvidence(
     );
     return;
   }
-  const laterTicketPaths = await changedPaths(
+  const laterTicketPaths = await hasChangedPaths(
     ticketDirectory,
     firstMetadataRevision,
     headRevision,
+    [`:(top,literal)${ticketEvidencePrefix}`],
     diagnosticPath,
     issues,
   );
-  if (
-    laterTicketPaths?.some((path) => path.startsWith(ticketEvidencePrefix))
-  ) {
+  if (laterTicketPaths) {
     issues.push(
       issue(
         diagnosticPath,
@@ -1161,17 +1194,15 @@ async function validateGitEvidence(
           ),
         );
       } else {
-        const readyPaths = await changedPaths(
+        const readyPaths = await hasChangedPaths(
           ticketDirectory,
           ticketBaseRevision,
           gitText(head),
+          [`:(top,exclude,literal)${ticketEvidencePrefix}`],
           "$.ticket.baseRevision",
           issues,
         );
-        if (
-          readyPaths !== undefined &&
-          readyPaths.some((path) => !path.startsWith(ticketEvidencePrefix))
-        ) {
+        if (readyPaths) {
           issues.push(
             issue(
               "$.ticket.baseRevision",
@@ -1216,17 +1247,15 @@ async function validateGitEvidence(
         ),
       );
     } else {
-      const metadataPaths = await changedPaths(
+      const metadataPaths = await hasChangedPaths(
         ticketDirectory,
         candidateRevision,
         headRevision,
+        [`:(top,exclude,literal)${ticketEvidencePrefix}`],
         "$.state.candidateRevision",
         issues,
       );
-      if (
-        metadataPaths !== undefined &&
-        metadataPaths.some((path) => !path.startsWith(ticketEvidencePrefix))
-      ) {
+      if (metadataPaths) {
         issues.push(
           issue(
             "$.state.candidateRevision",
