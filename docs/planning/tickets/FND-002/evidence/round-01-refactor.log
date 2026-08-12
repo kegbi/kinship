@@ -1,0 +1,59 @@
+schemaVersion: 2
+ticketId: FND-002
+round: 1
+phase: REFACTOR
+issuedByControllerRunId: FND-002/orchestrator/r0/a16b5b61-a6c8-4366-8752-d530fa3a6d74
+implementerRunId: FND-002/implementer/r1/e2edf3bf-a445-4fc2-8ba4-3fffb9681804
+
+priorAttempt:
+  disposition: controller-rejected pre-candidate attempt
+  behaviorRefactor: none
+  formattingRefactor: line wrapping in two attempted production documents
+  invalidatingGate: repository lint failed on the then-frozen RED check
+  candidateFormed: false
+  productionFormattingRestored: true
+
+authoritativeRefactor:
+  status: PASS
+  summary: no behavior refactor was needed; contract wording remained focused and Deno-formatted
+  commands:
+    - command: deno test --allow-read=docs/architecture tools/architecture/FND-002/coordination_contract_test.ts
+      exitCode: 0
+      observed: 2 passed, 0 failed
+    - command: deno task fmt:check
+      exitCode: 0
+      observed: Checked 126 files
+    - command: deno task lint
+      exitCode: 0
+      observed: Checked 22 files
+    - command: deno task check
+      exitCode: 0
+      observed: configured TypeScript entry points checked successfully
+  frozenCheckSha256AfterGates: 272038a94de02197e9d2cd830fc31d1943ac67d7fffb46bd7c0069a249f6c9a5
+  frozenCheckBytesChanged: false
+
+controllerDiffRefactor:
+  behaviorChanged: false
+  changes:
+    - aligned ADR 0004 status and date metadata with the existing ADR convention
+    - linked the backend DG-06A specialization directly to authoritative ADR 0004
+  commands:
+    - command: deno test --allow-read=docs/architecture tools/architecture/FND-002/coordination_contract_test.ts
+      exitCode: 0
+      observed: 2 passed, 0 failed
+    - command: deno task fmt:check
+      exitCode: 0
+      observed: Checked 126 files
+    - command: deno task lint
+      exitCode: 0
+      observed: Checked 22 files
+    - command: deno task check
+      exitCode: 0
+      observed: configured TypeScript entry points checked successfully
+
+changedProductionFiles:
+  - docs/architecture/decisions/0004-onboarding-invitation-and-atomic-audit-coordination.md
+  - docs/architecture/decisions/README.md
+  - docs/architecture/backend-architecture.md
+  - docs/architecture/module-boundaries.yaml
+changedTestFiles: []

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "ticketId": "FND-002",
+  "ticketRevision": 1,
+  "round": 1,
+  "implementerRunId": "FND-002/implementer/r1/e2edf3bf-a445-4fc2-8ba4-3fffb9681804",
+  "issuedByControllerRunId": "FND-002/orchestrator/r0/a16b5b61-a6c8-4366-8752-d530fa3a6d74",
+  "inputBaseRevision": "603f6621809f61fab70bc29b8b4a9252ebcecb27",
+  "dispatchRef": "dispatch/round-01.md",
+  "redRevision": "d7924f77019cbf77a4e8fedc6d7bc82afa70c78f",
+  "red": {
+    "command": "deno test --allow-read=docs/architecture tools/architecture/FND-002/coordination_contract_test.ts",
+    "exitCode": 1,
+    "expectedFailure": "The in-memory manifest discriminator passes, while the repository assertion fails only because AC-01 through AC-04 are absent or contradictory in the unchanged architecture contracts.",
+    "output": "1 passed, 1 failed: ADR 0004 and its accepted index entry are absent; the backend transaction, rollback, and postcondition specialization is absent; workspaces consumes identity.user-registered; and governance lacks workspace.created and workspace.member-joined consumption.",
+    "logRef": "evidence/round-01-red.log",
+    "testFiles": [
+      {
+        "path": "tools/architecture/FND-002/coordination_contract_test.ts",
+        "sha256": "272038a94de02197e9d2cd830fc31d1943ac67d7fffb46bd7c0069a249f6c9a5"
+      }
+    ],
+    "productionFiles": []
+  },
+  "green": {
+    "command": "deno test --allow-read=docs/architecture tools/architecture/FND-002/coordination_contract_test.ts",
+    "exitCode": 0,
+    "logRef": "evidence/round-01-green.log",
+    "productionFiles": [
+      "docs/architecture/decisions/0004-onboarding-invitation-and-atomic-audit-coordination.md",
+      "docs/architecture/decisions/README.md",
+      "docs/architecture/backend-architecture.md",
+      "docs/architecture/module-boundaries.yaml"
+    ]
+  },
+  "refactor": {
+    "summary": "Aligned ADR metadata with repository convention, linked the backend specialization to ADR 0004, and otherwise retained the smallest Deno-formatted contract wording; the frozen check bytes did not change.",
+    "command": "deno task fmt:check",
+    "exitCode": 0,
+    "logRef": "evidence/round-01-refactor.log"
+  },
+  "candidateRevision": "820fb4cd5c45e7b4b6a0e748f602c657d4c2cb61"
+}
