@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "ticketId": "PILOT-006",
+  "ticketRevision": 1,
+  "phase": "accepted",
+  "round": 1,
+  "baseRevision": "6c6ea8313f0472c315079a605c50cd2548d2835b",
+  "candidateRevision": "cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d",
+  "events": [
+    {
+      "sequence": 1,
+      "from": "planned",
+      "to": "ready",
+      "round": 0,
+      "actorRunId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601",
+      "evidenceRef": "ticket.json",
+      "revision": "6c6ea8313f0472c315079a605c50cd2548d2835b"
+    },
+    {
+      "sequence": 2,
+      "from": "ready",
+      "to": "red",
+      "round": 1,
+      "actorRunId": "PILOT-006/implementer/r1/00000000-0000-4000-8000-000000000602",
+      "evidenceRef": "evidence/round-01-red.log",
+      "revision": "312c175ee6ed949e17601c7ba4034d8bf2229462"
+    },
+    {
+      "sequence": 3,
+      "from": "red",
+      "to": "green",
+      "round": 1,
+      "actorRunId": "PILOT-006/implementer/r1/00000000-0000-4000-8000-000000000602",
+      "evidenceRef": "evidence/round-01-green.log",
+      "revision": "cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d"
+    },
+    {
+      "sequence": 4,
+      "from": "green",
+      "to": "refactor",
+      "round": 1,
+      "actorRunId": "PILOT-006/implementer/r1/00000000-0000-4000-8000-000000000602",
+      "evidenceRef": "evidence/round-01-refactor.log",
+      "revision": "cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d"
+    },
+    {
+      "sequence": 5,
+      "from": "refactor",
+      "to": "review",
+      "round": 1,
+      "actorRunId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601",
+      "evidenceRef": "results/round-01.json",
+      "revision": "cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d"
+    },
+    {
+      "sequence": 6,
+      "from": "review",
+      "to": "accepted",
+      "round": 1,
+      "actorRunId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601",
+      "evidenceRef": "acceptance.md",
+      "revision": "cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d"
+    }
+  ],
+  "resultRefs": [
+    "results/round-01.json"
+  ],
+  "reviewRefs": [
+    "reviews/round-01.json"
+  ],
+  "dependencyRevisions": {},
+  "openFindingIds": [],
+  "orchestratorChecks": [
+    {
+      "runId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601/acceptance-fmt",
+      "revision": "cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d",
+      "command": "deno task fmt:check",
+      "exitCode": 0
+    },
+    {
+      "runId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601/acceptance-lint",
+      "revision": "cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d",
+      "command": "deno task lint",
+      "exitCode": 0
+    },
+    {
+      "runId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601/acceptance-check",
+      "revision": "cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d",
+      "command": "deno task check",
+      "exitCode": 0
+    },
+    {
+      "runId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601/acceptance-workflow",
+      "revision": "cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d",
+      "command": "deno task test:workflow",
+      "exitCode": 0
+    },
+    {
+      "runId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601/acceptance-coverage",
+      "revision": "cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d",
+      "command": "deno task test:workflow:coverage",
+      "exitCode": 0
+    }
+  ],
+  "acceptedCandidateRevision": "cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d",
+  "blocker": null
+}
