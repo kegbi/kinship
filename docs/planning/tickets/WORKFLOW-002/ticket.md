@@ -1,6 +1,6 @@
 # WORKFLOW-002: Scale Git evidence validation on growing history
 
-Status: review, round 1\
+Status: accepted, round 1\
 Owner: trusted top-level orchestrator\
 Ticket revision: 3\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
@@ -14,10 +14,12 @@ Frozen regression SHA-256:
 
 Candidate revision: `d04b88851d202facafe4fcba495cdae24462cc92`
 
-The trusted controller independently verified the focused regression, all
-required candidate tasks, an exact workflow total of 194 tests with zero
-failures, and exact 100% branch/function/line coverage for both validator
-production files before dispatching independent review.
+Review: `reviews/round-01.json` approved the exact candidate with zero findings.
+The trusted controller independently reran the focused regression, all required
+candidate tasks, an exact workflow total of 194 tests with zero failures, and
+exact 100% branch/function/line coverage for both validator production files
+before and after the independent review. `acceptance.md` records the accepted
+result.
 
 ## Outcome
 
