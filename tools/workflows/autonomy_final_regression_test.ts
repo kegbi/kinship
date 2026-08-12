@@ -491,6 +491,25 @@ const evalAfterGlobalOptions: readonly {
     definition:
       "deno --quiet --config deno.json --unstable-kv --no-config eval false",
   },
+  { label: "short quiet", definition: "deno -q eval false" },
+  {
+    label: "separate log-level value",
+    definition: "deno --log-level debug eval false",
+  },
+  {
+    label: "equals log-level value",
+    definition: "deno --log-level=debug eval false",
+  },
+  { label: "double-quoted eval", definition: 'deno "eval" false' },
+  { label: "single-quoted eval", definition: "deno 'eval' false" },
+  {
+    label: "quoted eval after combined options",
+    definition: 'deno --quiet --log-level debug "eval" false',
+  },
+  {
+    label: "deno.exe quoted eval",
+    definition: 'deno.exe --config=deno.json "eval" false',
+  },
 ];
 
 const legitimateDenoControls: readonly {
