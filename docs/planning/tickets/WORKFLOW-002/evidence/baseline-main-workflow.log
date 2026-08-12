@@ -1,0 +1,19 @@
+WORKFLOW-002 trusted-controller baseline proof
+Revision: 895731f27f66d614cb431e9ab6bb570b94d1a476
+Worktree status before run: clean
+
+Command: deno task test:workflow
+Exit: 1
+Observed result: the workflow task reached the existing test named
+"AUTONOMY-001 coverage preserves legacy integration evidence mapping" and
+failed before its intended Git metadata check with:
+{"ok":false,"issues":[{"path":"$.state.candidateRevision","code":"git_output_limit","message":"Git path evidence contains too many changed paths"}]}
+
+Focused reproduction command:
+deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/autonomy_review_coverage_test.ts --filter "AUTONOMY-001 coverage preserves legacy integration evidence mapping"
+Focused exit: 1
+Focused summary: 0 passed, 1 failed, 2 filtered out. The failure was the same
+git_output_limit diagnostic above, proving current repository history exceeds
+the validator's global MAX_CHANGED_PATHS cap.
+
+No repository file was changed by either command.

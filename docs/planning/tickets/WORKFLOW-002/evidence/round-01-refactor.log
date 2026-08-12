@@ -1,0 +1,72 @@
+WORKFLOW-002 round 1 REFACTOR and gate evidence
+controllerRunId: WORKFLOW-002/orchestrator/r0/df585d88-eade-43bb-8845-7a7d6a3c3e17
+implementerRunId: WORKFLOW-002/implementer/r1/986e94e3-88ed-48a8-908f-19fcbb00a6ab
+frozenRedRevision: d7a187ae1c2a311be265916121676914388d733e
+
+refactorSummary: No structural refactor was necessary after the minimal GREEN implementation.
+
+commands:
+- command: deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/scalable_git_evidence_regression_test.ts
+  exitCode: 0
+  output: ok | 7 passed | 0 failed (34s)
+- command: deno task fmt:check
+  exitCode: 0
+  output: Checked 151 files
+- command: deno task lint
+  exitCode: 0
+  output: Checked 25 files
+- command: deno task check
+  exitCode: 0
+  output: Checked validate_postgres.ts, ticket_contract.ts, and validate_ticket.ts
+- command: deno task test:workflow
+  exitCode: 124
+  output: Initial command-runner attempt timed out after 304 seconds without a reported test failure.
+- command: deno task test:workflow
+  exitCode: 1
+  output: FAILED | 193 passed | 1 failed (8m34s)
+  failure: PILOT-001-R2-004 current RED diff contains tests and evidence only
+  observed: Existing round3_policy_regression_test.ts inspects the current uncommitted Git diff and classified the authorized GREEN paths docs/planning/tickets/WORKFLOW-002/evidence/round-01-green.log and tools/workflows/validate_ticket.ts as invalid RED-snapshot production paths.
+  disposition: Clean-controller execution is pending. The implementer did not mutate Git, weaken or skip the policy test, or conceal the dirty-tree-only failure.
+- command: deno task test:workflow:coverage
+  status: not run by controller direction; pending the clean provisional GREEN-tree commit and successful full workflow suite.
+
+workflowTestCountObserved: 194
+workflowTestResultObserved: 193 passed, 1 dirty-tree policy failure
+coverage: pending clean-controller execution
+
+frozenTestSha256AfterGates: 8a433e183b9091994a747cf4d3dd0fd69152c21f34258a59180e5dfb91e4e71e
+frozenTestDigestMatch: true
+
+productionFiles:
+- tools/workflows/validate_ticket.ts
+commit: none
+
+trusted-controller clean candidate gates:
+- revision: d04b88851d202facafe4fcba495cdae24462cc92
+- command: deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/scalable_git_evidence_regression_test.ts
+  exitCode: 0
+  output: ok | 7 passed | 0 failed (34s)
+- command: deno task fmt:check
+  exitCode: 0
+  output: Checked 151 files
+- command: deno task lint
+  exitCode: 0
+  output: Checked 25 files
+- command: deno task check
+  exitCode: 0
+  output: Checked validate_postgres.ts, ticket_contract.ts, and validate_ticket.ts
+- command: deno task test:workflow
+  exitCode: 0
+  output: ok | 194 passed | 0 failed (7m48s)
+- command: deno task test:workflow:coverage
+  exitCode: 0
+  output: ok | 194 passed | 0 failed (6m37s); detailed 100% threshold passed
+
+coverage at candidate:
+- ticket_contract.ts: branch 100.0%, function 100.0%, line 100.0% (2482/2482)
+- validate_ticket.ts: branch 100.0%, function 100.0%, line 100.0% (1309/1309)
+- all included files: branch 100.0%, function 100.0%, line 100.0%
+
+workflowTestCountAtCandidate: 194
+workflowTestResultAtCandidate: 194 passed, 0 failed
+candidateRevision: d04b88851d202facafe4fcba495cdae24462cc92
