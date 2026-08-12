@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 2,
+  "ticketId": "PILOT-006",
+  "ticketRevision": 1,
+  "round": 1,
+  "implementerRunId": "PILOT-006/implementer/r1/00000000-0000-4000-8000-000000000602",
+  "reviewerRunId": "PILOT-006/reviewer/r1/00000000-0000-4000-8000-000000000604",
+  "issuedByControllerRunId": "PILOT-006/orchestrator/r0/00000000-0000-4000-8000-000000000601",
+  "baseRevision": "6c6ea8313f0472c315079a605c50cd2548d2835b",
+  "candidateRevision": "cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d",
+  "verdict": "APPROVED",
+  "commands": [
+    {
+      "command": "deno task ticket:validate docs/planning/tickets/PILOT-006",
+      "exitCode": 0
+    },
+    {
+      "command": "deno test --allow-read=deno.json,docs/development/autonomous-delivery.md tools/workflows/pilot006/persistent_desktop_provenance_test.ts",
+      "exitCode": 0
+    },
+    {
+      "command": "deno fmt --check docs/development/autonomous-delivery.md tools/workflows/pilot006/persistent_desktop_provenance_test.ts docs/planning/tickets/PILOT-006",
+      "exitCode": 0
+    },
+    {
+      "command": "deno lint tools/workflows/pilot006/persistent_desktop_provenance_test.ts",
+      "exitCode": 0
+    },
+    {
+      "command": "deno check tools/workflows/pilot006/persistent_desktop_provenance_test.ts",
+      "exitCode": 0
+    },
+    {
+      "command": "git merge-base --is-ancestor 6c6ea8313f0472c315079a605c50cd2548d2835b cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d",
+      "exitCode": 0
+    },
+    {
+      "command": "git diff --exit-code 312c175ee6ed949e17601c7ba4034d8bf2229462 cca71c2a9b466b6dbde9f9eae760e3ccb98bc23d -- tools/workflows/pilot006/persistent_desktop_provenance_test.ts",
+      "exitCode": 0
+    }
+  ],
+  "lenses": {
+    "bug_correctness": {
+      "verdict": "pass",
+      "evidence": [
+        "The focused test passed 2/0 and enforces every AC-01 identity, alias, privacy, uniqueness, sharing, and task-discovery invariant exactly once in the required contract section."
+      ]
+    },
+    "security_privacy": {
+      "verdict": "pass",
+      "evidence": [
+        "The contract excludes filesystem paths, traversal, personal or client identifiers, credentials, secrets, and sensitive topology; minimum read permissions were sufficient and no protected path changed."
+      ]
+    },
+    "architecture_contracts": {
+      "verdict": "pass",
+      "evidence": [
+        "Ticket validation passed; candidate changes stayed within declared writes, post-candidate changes were ticket-only, task definitions were unchanged, and the full ancestry is valid."
+      ]
+    },
+    "performance_reliability": {
+      "verdict": "pass",
+      "evidence": [
+        "The deterministic test performs bounded local reads and string scans, adds no runtime dependency, and explicitly requires concurrent-writer isolation and alias non-rebinding."
+      ]
+    },
+    "style_maintainability": {
+      "verdict": "pass",
+      "evidence": [
+        "Targeted formatting, lint, and type-check passed; the bounded test uses clear helpers and deterministic diagnostics."
+      ]
+    },
+    "tests_tdd": {
+      "verdict": "pass",
+      "evidence": [
+        "RED changed no production file and failed only on the absent policy; the frozen test is byte-identical at RED and candidate with SHA-256 a1ddf54e3b2ca91ff9925b4fa1c7b95c2d3906e395b92135c87d435185cad8bb.",
+        "RED and GREEN ran in the same persistent implementer task and worktree context; candidate-bound coverage records 187 passed, 0 failed, and exact 100% branch, function, and line coverage."
+      ]
+    }
+  },
+  "findings": [],
+  "notes": []
+}
