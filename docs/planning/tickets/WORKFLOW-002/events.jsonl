@@ -3,3 +3,4 @@
 {"sequence":3,"from":"red","to":"green","round":1,"actorRunId":"WORKFLOW-002/implementer/r1/986e94e3-88ed-48a8-908f-19fcbb00a6ab","evidenceRef":"evidence/round-01-green.log","revision":"d04b88851d202facafe4fcba495cdae24462cc92"}
 {"sequence":4,"from":"green","to":"refactor","round":1,"actorRunId":"WORKFLOW-002/implementer/r1/986e94e3-88ed-48a8-908f-19fcbb00a6ab","evidenceRef":"evidence/round-01-refactor.log","revision":"d04b88851d202facafe4fcba495cdae24462cc92"}
 {"sequence":5,"from":"refactor","to":"review","round":1,"actorRunId":"WORKFLOW-002/orchestrator/r0/df585d88-eade-43bb-8845-7a7d6a3c3e17","evidenceRef":"results/round-01.json","revision":"d04b88851d202facafe4fcba495cdae24462cc92"}
+{"sequence":6,"from":"review","to":"accepted","round":1,"actorRunId":"WORKFLOW-002/orchestrator/r0/df585d88-eade-43bb-8845-7a7d6a3c3e17","evidenceRef":"acceptance.md","revision":"d04b88851d202facafe4fcba495cdae24462cc92"}
