@@ -2,6 +2,7 @@
 
 Status: ready, round 0\
 Owner: trusted top-level orchestrator\
+Ticket revision: 2\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
 Execution class: `ordinary`\
 Depends on: none\
@@ -90,7 +91,8 @@ the global `MAX_CHANGED_PATHS` cap. See `evidence/baseline-main-workflow.log`.
   failures recorded at the candidate.
 - `deno task test:workflow:coverage` with exact 100% branch, function, and line
   coverage for `ticket_contract.ts` and `validate_ticket.ts`.
-- `deno task ticket:validate docs/planning/tickets/WORKFLOW-002` from the
+- Additional controller evidence, not a no-argument required task:
+  `deno task ticket:validate docs/planning/tickets/WORKFLOW-002` from the
   canonical Git root after each controller metadata commit.
 
 ## Risks

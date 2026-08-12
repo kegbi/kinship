@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "ticketId": "WORKFLOW-002",
-  "revision": 1,
+  "revision": 2,
   "title": "Scale Git evidence validation on growing history",
   "outcome": "The workflow validator remains resource-bounded and reaches the intended scope and mutation decisions as unrelated repository history grows, while exact evidence enumeration and every existing workflow-integrity failure remain strict and the complete workflow suite is green at 100% validator coverage.",
   "baseRevision": "895731f27f66d614cb431e9ab6bb570b94d1a476",
@@ -77,10 +77,6 @@
         "definition": "deno check tools/schema/validate_postgres.ts tools/workflows/ticket_contract.ts tools/workflows/validate_ticket.ts"
       },
       {
-        "name": "ticket:validate",
-        "definition": "deno run --allow-read --allow-run=git tools/workflows/validate_ticket.ts"
-      },
-      {
         "name": "test:workflow",
         "definition": "deno test --allow-read --allow-write --allow-run=deno,git tools/workflows"
       },
@@ -103,11 +99,6 @@
       {
         "name": "check",
         "definition": "deno check tools/schema/validate_postgres.ts tools/workflows/ticket_contract.ts tools/workflows/validate_ticket.ts",
-        "guardedBy": null
-      },
-      {
-        "name": "ticket:validate",
-        "definition": "deno run --allow-read --allow-run=git tools/workflows/validate_ticket.ts",
         "guardedBy": null
       },
       {

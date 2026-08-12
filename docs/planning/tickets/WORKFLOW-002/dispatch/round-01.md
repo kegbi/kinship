@@ -1,12 +1,19 @@
 # WORKFLOW-002 implementation dispatch, round 1
 
 Input base: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
+Ticket revision: 2\
 Required next state: RED, then stop\
 Controller run ID:
 `WORKFLOW-002/orchestrator/r0/df585d88-eade-43bb-8845-7a7d6a3c3e17`\
 Implementer run ID:
-`WORKFLOW-002/implementer/r1/919d709d-0d0b-4ac2-8b0f-626e961bb4ff`\
+`WORKFLOW-002/implementer/r1/a96228ab-f2ca-4200-bc68-18bc97d6e83d`\
 Execution class: `ordinary`
+
+Controller preflight superseded the revision-1 dispatch before any RED write or
+freeze because `ticket:validate` requires a directory argument and therefore is
+not a valid no-argument required task. The interrupted revision-1 execution ID
+`WORKFLOW-002/implementer/r1/919d709d-0d0b-4ac2-8b0f-626e961bb4ff` is not
+authorized to resume. This fresh execution owns round 1.
 
 Before any production edit, add the narrowest dedicated real-Git regression file
 at `tools/workflows/scalable_git_evidence_regression_test.ts` and a concise
