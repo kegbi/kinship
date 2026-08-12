@@ -2,7 +2,7 @@
 
 Status: ready, round 0 (fresh RED retry pending)\
 Owner: trusted top-level orchestrator\
-Packet revision: 9\
+Packet revision: 10\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
 Execution class: `ordinary`\
 Depends on: FND-001S at integration revision
@@ -54,8 +54,15 @@ Rejected RED attempts:
   review proved that the end-to-end loader still overlapped complete compressed,
   decompressed, and decoded representations and retained every decoded official
   response while its memory controls exercised only an isolated helper.
+- `53e9a1a61bb3cb8afbe1f750e89f1ed80dfbc40e`, validator SHA-256
+  `be2a4d8a1e7da528db1e32a86342561c871791a80348d465a4b0412e9b1f4ab0`: the
+  complete loader streamed hashes and retained normalized claims with exact RED,
+  coverage, and gates, but review found a forbidden timer-based cancellation
+  assertion, loader-authored lifetime events that could not detect a hidden raw
+  accumulator, and Node/OCI normalization that erased unknown source fields
+  before the claimed fail-closed shape check.
 
-All seven attempts and all associated evidence remain immutable history and
+All eight attempts and all associated evidence remain immutable history and
 confer no production-write authority.
 
 ## Outcome
