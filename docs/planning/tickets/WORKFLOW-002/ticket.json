@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 2,
+  "ticketId": "WORKFLOW-002",
+  "revision": 1,
+  "title": "Scale Git evidence validation on growing history",
+  "outcome": "The workflow validator remains resource-bounded and reaches the intended scope and mutation decisions as unrelated repository history grows, while exact evidence enumeration and every existing workflow-integrity failure remain strict and the complete workflow suite is green at 100% validator coverage.",
+  "baseRevision": "895731f27f66d614cb431e9ab6bb570b94d1a476",
+  "controllerRunId": "WORKFLOW-002/orchestrator/r0/df585d88-eade-43bb-8845-7a7d6a3c3e17",
+  "executionClass": "ordinary",
+  "protectedWriteAuthorization": null,
+  "dependencies": [],
+  "maxRounds": 3,
+  "scope": [
+    "Use bounded, no-output Git predicates scoped to the exact relevant revision relation and path set for boolean ready-scope and post-integration packet-mutation decisions instead of globally enumerating every changed path.",
+    "Keep exact RED/candidate evidence path enumeration capped and preserve strict diagnostics for oversized relevant evidence, streamed Git-output truncation, dirty metadata, ancestry or content mismatches, accepted-phase policy, rename or copy boundaries, and later integrated packet mutation.",
+    "Add one dedicated deterministic real-Git regression file that disables automatic maintenance only inside each fixture repository before object creation, proves its corruption setup before validation, and covers more than 100 unrelated paths, more than 100 relevant evidence paths, actual streamed output truncation, ticket-to-outside renames, and broken-Git-object error mapping.",
+    "Restore the complete workflow test task to an exact zero-failure result on the growing current history and retain exact 100% branch, function, and line coverage for ticket_contract.ts and validate_ticket.ts."
+  ],
+  "nonGoals": [
+    "Change tools/workflows/ticket_contract.ts, deno.json, task definitions, coverage thresholds, or test discovery semantics.",
+    "Copy, merge, cherry-pick, rebase, or otherwise inherit commits, packet state, results, reviews, run IDs, or evidence from blocked WORKFLOW-001; its candidate diff may be consulted only as historical design input after the fresh RED is frozen.",
+    "Change any prior ticket packet, application, product, architecture, schema, .agents, .codex, or .git content, or any global, user, or system Git configuration.",
+    "Merge or integrate main, create integration.md, push, deploy, or claim broader application or production readiness."
+  ],
+  "allowedWrites": [
+    "tools/workflows/validate_ticket.ts",
+    "tools/workflows/scalable_git_evidence_regression_test.ts",
+    "docs/planning/tickets/WORKFLOW-002/"
+  ],
+  "contractRefs": [
+    "AGENTS.md#mandatory-change-method",
+    ".agents/skills/run-tdd-ticket-loop/SKILL.md#enforce-the-loop",
+    "docs/development/autonomous-delivery.md#non-negotiable-invariants",
+    "docs/development/autonomous-delivery.md#ticket-files",
+    "docs/development/autonomous-delivery.md#orchestrator-acceptance-guard",
+    "docs/development/autonomous-delivery.md#command-truth"
+  ],
+  "acceptanceCriteria": [
+    {
+      "id": "AC-01",
+      "text": "A ready packet with more than 100 unrelated changed paths reaches its intended allowed-write validation without a global changed-path output-limit failure, while a ticket-to-outside rename is still rejected as an out-of-scope ready change.",
+      "redProof": "deno test --allow-read --allow-write --allow-run=deno,git tools/workflows/scalable_git_evidence_regression_test.ts fails on unchanged production only because the more-than-100-unrelated-path ready fixture receives git_output_limit; its rename control and fixture setup succeed."
+    },
+    {
+      "id": "AC-02",
+      "text": "An accepted or integrated packet with more than 100 unrelated later paths reaches the exact post-candidate or post-integration mutation decision, while a ticket-to-outside rename from the integrated packet is detected as later ticket mutation.",
+      "redProof": "The same focused command fails on unchanged production only where global later-path enumeration reaches git_output_limit before the intended relation/path decision; the integrated rename control remains strict."
+    },
+    {
+      "id": "AC-03",
+      "text": "Exact evidence enumeration remains capped: more than 100 relevant RED or candidate paths is rejected, and actual streamed Git output beyond the byte budget maps to git_output_limit without weakening evidence comparisons.",
+      "redProof": "The same focused command contains passing unchanged-main controls that create real repositories with oversized relevant evidence and streamed output, and asserts the existing strict git_output_limit diagnostics."
+    },
+    {
+      "id": "AC-04",
+      "text": "Broken or unreadable Git relation evidence maps deterministically to the existing Git-error diagnostic, using a self-contained repository that disables only local automatic maintenance before object creation and first proves that its deliberate corruption succeeded.",
+      "redProof": "The same focused command contains a passing unchanged-main control whose real-Git fixture verifies the target object exists loose, deliberately corrupts the relation, proves Git can no longer read it, and then asserts validator error mapping without relying on commit-time loose-object retention."
+    },
+    {
+      "id": "AC-05",
+      "text": "Dirty metadata, ancestry and content mismatches, accepted-phase policy, rename and copy boundaries, later integrated packet mutation, and exact workflow task discovery remain strict; the candidate records the exact workflow test count with zero failures and 100% branch, function, and line coverage for both validator production files.",
+      "redProof": "The focused regression preserves explicit controls for each named boundary, while deno task test:workflow remains the independently reproduced baseline failure caused by the global MAX_CHANGED_PATHS cap until the bounded-query implementation is added."
+    }
+  ],
+  "requiredTasks": {
+    "baseline": [
+      {
+        "name": "fmt:check",
+        "definition": "deno fmt --check"
+      },
+      {
+        "name": "lint",
+        "definition": "deno lint"
+      },
+      {
+        "name": "check",
+        "definition": "deno check tools/schema/validate_postgres.ts tools/workflows/ticket_contract.ts tools/workflows/validate_ticket.ts"
+      },
+      {
+        "name": "ticket:validate",
+        "definition": "deno run --allow-read --allow-run=git tools/workflows/validate_ticket.ts"
+      },
+      {
+        "name": "test:workflow",
+        "definition": "deno test --allow-read --allow-write --allow-run=deno,git tools/workflows"
+      },
+      {
+        "name": "test:workflow:coverage",
+        "definition": "deno test --allow-read --allow-write --allow-run=deno,git --coverage=.coverage/workflows --clean tools/workflows && deno coverage --detailed --threshold=100 --include=\"tools/workflows/(ticket_contract|validate_ticket)\\.ts$\" .coverage/workflows"
+      }
+    ],
+    "candidate": [
+      {
+        "name": "fmt:check",
+        "definition": "deno fmt --check",
+        "guardedBy": null
+      },
+      {
+        "name": "lint",
+        "definition": "deno lint",
+        "guardedBy": null
+      },
+      {
+        "name": "check",
+        "definition": "deno check tools/schema/validate_postgres.ts tools/workflows/ticket_contract.ts tools/workflows/validate_ticket.ts",
+        "guardedBy": null
+      },
+      {
+        "name": "ticket:validate",
+        "definition": "deno run --allow-read --allow-run=git tools/workflows/validate_ticket.ts",
+        "guardedBy": null
+      },
+      {
+        "name": "test:workflow",
+        "definition": "deno test --allow-read --allow-write --allow-run=deno,git tools/workflows",
+        "guardedBy": null
+      },
+      {
+        "name": "test:workflow:coverage",
+        "definition": "deno test --allow-read --allow-write --allow-run=deno,git --coverage=.coverage/workflows --clean tools/workflows && deno coverage --detailed --threshold=100 --include=\"tools/workflows/(ticket_contract|validate_ticket)\\.ts$\" .coverage/workflows",
+        "guardedBy": null
+      }
+    ]
+  },
+  "risks": [
+    "Treating Git diff exit 1 as an execution error, or an exit greater than 1 as a boolean difference, could accept invalid metadata or hide repository corruption.",
+    "A broad pathspec or relation could miss rename and copy boundaries, allow out-of-scope ready changes, or fail to detect later mutation of an integrated packet.",
+    "Removing caps from exact RED or candidate evidence enumeration could reintroduce unbounded memory and output use under adversarial history.",
+    "A fixture that depends on a loose object remaining loose across commit-time maintenance can be nondeterministic; fixture-local maintenance controls and explicit setup assertions are mandatory.",
+    "Changing task discovery, coverage scope, contracts, or earlier packet metadata would conceal rather than fix the current scalability defect."
+  ],
+  "unresolvedDecisions": []
+}
