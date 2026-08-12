@@ -21,6 +21,55 @@ const NPM_SRI = /^sha512-[A-Za-z0-9+/]{86}==$/;
 const COREPACK_SHA512 = /^[0-9a-f]{128}$/;
 const OCI_INDEX_MEDIA = "application/vnd.oci.image.index.v1+json";
 const OCI_MANIFEST_MEDIA = "application/vnd.oci.image.manifest.v1+json";
+const BASE_DENO_CONFIGURATION: JsonRecord = {
+  compilerOptions: {
+    strict: true,
+    noUncheckedIndexedAccess: true,
+    exactOptionalPropertyTypes: true,
+    noImplicitOverride: true,
+    noImplicitReturns: true,
+    noFallthroughCasesInSwitch: true,
+    noUnusedLocals: true,
+    noUnusedParameters: true,
+    useUnknownInCatchVariables: true,
+    verbatimModuleSyntax: true,
+  },
+  fmt: {
+    lineWidth: 80,
+    include: [
+      "AGENTS.md",
+      "compose.schema-test.yaml",
+      "deno.json",
+      ".agents/skills/run-tdd-ticket-loop/",
+      ".codex/agents/",
+      "docs/",
+      "tools/",
+    ],
+  },
+  lint: {
+    include: ["tools/"],
+    rules: { tags: ["recommended"], include: ["eqeqeq"] },
+  },
+  tasks: {
+    fmt: "deno fmt",
+    "fmt:check": "deno fmt --check",
+    lint: "deno lint",
+    check:
+      "deno check tools/schema/validate_postgres.ts tools/workflows/ticket_contract.ts tools/workflows/validate_ticket.ts",
+    "ticket:validate":
+      "deno run --allow-read --allow-run=git tools/workflows/validate_ticket.ts",
+    "test:workflow":
+      "deno test --allow-read --allow-write --allow-run=deno,git tools/workflows",
+    "test:workflow:coverage":
+      'deno test --allow-read --allow-write --allow-run=deno,git --coverage=.coverage/workflows --clean tools/workflows && deno coverage --detailed --threshold=100 --include="tools/workflows/(ticket_contract|validate_ticket)\\.ts$" .coverage/workflows',
+    "test:schema":
+      "deno run --allow-read=personal-crm-schema/v1 --allow-run=docker tools/schema/validate_postgres.ts",
+    "test:schema:compat":
+      "deno task test:schema --postgres-image postgres:17.10-alpine3.23",
+    "test:schema:matrix":
+      "deno task test:schema && deno task test:schema:compat",
+  },
+};
 
 const DIRECT: { deno: readonly string[]; pnpm: readonly string[] } = {
   deno: [
@@ -178,7 +227,7 @@ const FIXTURE_VERSIONS: Record<string, string> = {
   "eslint-plugin-jsx-a11y": "6.10.2",
   "typescript-eslint-parser": "8.66.0",
   "eslint-plugin-react-hooks": "7.1.1",
-  "astro-eslint-parser": "1.2.2",
+  "astro-eslint-parser": "1.3.0",
   esbuild: "0.25.12",
   fsevents: "2.3.3",
 };
@@ -263,6 +312,119 @@ function version(value: unknown, label: string): string {
     `${label} must be an exact stable version`,
   );
   return result;
+}
+
+function compareVersions(left: string, right: string): number {
+  const a = version(left, "left version").split(".").map(Number);
+  const b = version(right, "right version").split(".").map(Number);
+  for (let index = 0; index < 3; index++) {
+    const difference = a[index]! - b[index]!;
+    if (difference !== 0) return Math.sign(difference);
+  }
+  return 0;
+}
+
+function satisfiesComparator(candidate: string, raw: string): boolean {
+  const comparator = raw.trim();
+  if (
+    comparator === "" || comparator === "*" || comparator.toLowerCase() === "x"
+  ) {
+    return true;
+  }
+  const wildcard = /^(\d+)(?:\.(\d+|x|\*))?(?:\.(\d+|x|\*))?$/i.exec(
+    comparator,
+  );
+  if (
+    wildcard && (wildcard[2] === undefined || /^(x|\*)$/i.test(wildcard[2]) ||
+      wildcard[3] === undefined || /^(x|\*)$/i.test(wildcard[3]))
+  ) {
+    const [major, minor, patch] = candidate.split(".").map(Number);
+    return major === Number(wildcard[1]) &&
+      (wildcard[2] === undefined || /^(x|\*)$/i.test(wildcard[2]) ||
+        minor === Number(wildcard[2])) &&
+      (wildcard[3] === undefined || /^(x|\*)$/i.test(wildcard[3]) ||
+        patch === Number(wildcard[3]));
+  }
+  const match = /^(\^|~|>=|<=|>|<|=)?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/.exec(
+    comparator,
+  );
+  invariant(
+    match !== null,
+    `unsupported manifest range comparator ${comparator}`,
+  );
+  const operator = match[1] ?? "=";
+  const boundary = `${match[2]}.${match[3] ?? 0}.${match[4] ?? 0}`;
+  const comparison = compareVersions(candidate, boundary);
+  if (operator === "=") return comparison === 0;
+  if (operator === ">") return comparison > 0;
+  if (operator === ">=") return comparison >= 0;
+  if (operator === "<") return comparison < 0;
+  if (operator === "<=") return comparison <= 0;
+  const [major, minor] = boundary.split(".").map(Number);
+  const upper = operator === "~"
+    ? `${major}.${minor! + 1}.0`
+    : major! > 0
+    ? `${major! + 1}.0.0`
+    : minor! > 0
+    ? `0.${minor! + 1}.0`
+    : `0.0.${Number(boundary.split(".")[2]) + 1}`;
+  return comparison >= 0 && compareVersions(candidate, upper) < 0;
+}
+
+function satisfiesRange(candidate: string, range: string): boolean {
+  string(range, "manifest range");
+  return range.split("||").some((alternative) => {
+    const trimmed = alternative.trim().replace(/(>=|<=|>|<|=)\s+/g, "$1");
+    const hyphen = /^(\d+\.\d+\.\d+)\s+-\s+(\d+\.\d+\.\d+)$/.exec(trimmed);
+    if (hyphen) {
+      return compareVersions(candidate, hyphen[1]!) >= 0 &&
+        compareVersions(candidate, hyphen[2]!) <= 0;
+    }
+    return trimmed.split(/\s+/).every((part) =>
+      satisfiesComparator(candidate, part)
+    );
+  });
+}
+
+function validateObservation(raw: unknown, label: string, kind: string) {
+  const observation = object(raw, label);
+  exactKeys(
+    observation,
+    ["kind", "source", "contentSha256", "observedAt"],
+    label,
+  );
+  invariant(observation.kind === kind, `${label} kind is incorrect`);
+  invariant(
+    /^https:\/\//.test(string(observation.source, `${label}.source`)),
+    `${label} source must be official HTTPS`,
+  );
+  digest(observation.contentSha256, `${label}.contentSha256`);
+  instant(observation.observedAt, `${label}.observedAt`);
+}
+
+function parsePnpmPeerSuffix(suffix: string): Record<string, string> {
+  const peers: Record<string, string> = {};
+  let index = 0;
+  while (index < suffix.length) {
+    invariant(suffix[index] === "(", "pnpm peer suffix is malformed");
+    let depth = 1;
+    const start = ++index;
+    while (index < suffix.length && depth > 0) {
+      if (suffix[index] === "(") depth++;
+      else if (suffix[index] === ")") depth--;
+      index++;
+    }
+    invariant(depth === 0, "pnpm peer suffix is unbalanced");
+    const token = suffix.slice(start, index - 1);
+    const delimiter = token.startsWith("@")
+      ? token.indexOf("@", 1)
+      : token.indexOf("@");
+    invariant(delimiter > 0, "pnpm peer suffix token is malformed");
+    const name = token.slice(0, delimiter);
+    invariant(!(name in peers), "pnpm peer suffix contains duplicate peer");
+    peers[name] = token.slice(delimiter + 1);
+  }
+  return peers;
 }
 
 function instant(value: unknown, label: string): number {
@@ -361,7 +523,9 @@ function validateSelected(
       "version",
       "publishedAt",
       "manifest",
-      "evidence",
+      "publicationEvidence",
+      "artifactEvidence",
+      "latestStable",
       "newerReleases",
     ], label);
     const id = string(item.id, `${label}.id`);
@@ -380,40 +544,78 @@ function validateSelected(
           : "runtime"),
       `${id} manifest ownership is incorrect`,
     );
-    const evidence = object(item.evidence, `${label}.evidence`);
-    exactKeys(evidence, [
+    validateObservation(
+      item.publicationEvidence,
+      `${label}.publicationEvidence`,
+      id === "deno" || id === "node"
+        ? "official-release-metadata"
+        : "npm-packument",
+    );
+    const artifact = object(item.artifactEvidence, `${label}.artifactEvidence`);
+    exactKeys(artifact, [
       "kind",
       "value",
       "source",
+      "contentSha256",
       "observedAt",
-      "sourceSha256",
-    ], `${label}.evidence`);
+    ], `${label}.artifactEvidence`);
     invariant(
-      evidence.source ===
-        (id === "deno"
-          ? `https://github.com/denoland/deno/releases/tag/v${item.version}`
-          : id === "node"
-          ? `https://nodejs.org/dist/v${item.version}/SHASUMS256.txt`
-          : `https://registry.npmjs.org/${
-            encodeURIComponent(String(item.name))
-          }/${item.version}`),
-      `${id} evidence source must be immutable and official`,
+      /^https:\/\//.test(
+        string(artifact.source, `${label}.artifactEvidence.source`),
+      ),
+      `${id} artifact source must be official HTTPS`,
     );
-    instant(evidence.observedAt, `${label}.evidence.observedAt`);
-    digest(evidence.sourceSha256, `${label}.evidence.sourceSha256`);
+    digest(artifact.contentSha256, `${label}.artifactEvidence.contentSha256`);
+    instant(artifact.observedAt, `${label}.artifactEvidence.observedAt`);
     if (id === "deno" || id === "node") {
       invariant(
-        evidence.kind === "release-checksum",
+        artifact.kind === "release-checksum",
         `${id} must use runtime release checksum evidence`,
       );
-      digest(evidence.value, `${label}.evidence.value`);
+      digest(artifact.value, `${label}.artifactEvidence.value`);
+      invariant(
+        artifact.source ===
+          (id === "deno"
+            ? `https://github.com/denoland/deno/releases/download/v${item.version}/deno-x86_64-pc-windows-msvc.zip.sha256sum`
+            : `https://nodejs.org/dist/v${item.version}/SHASUMS256.txt`),
+        `${id} checksum source is not exact`,
+      );
     } else {
       invariant(
-        evidence.kind === "npm-sri",
+        artifact.kind === "npm-manifest-sri",
         `${id} must use npm registry SRI evidence`,
       );
-      sri(evidence.value, `${label}.evidence.value`);
+      sri(artifact.value, `${label}.artifactEvidence.value`);
+      invariant(
+        artifact.source ===
+          `https://registry.npmjs.org/${
+            encodeURIComponent(String(item.name))
+          }/${item.version}`,
+        `${id} selected manifest source is not exact`,
+      );
     }
+    const latest = object(item.latestStable, `${label}.latestStable`);
+    exactKeys(
+      latest,
+      ["version", "source", "contentSha256", "observedAt"],
+      `${label}.latestStable`,
+    );
+    const latestVersion = version(
+      latest.version,
+      `${label}.latestStable.version`,
+    );
+    invariant(
+      compareVersions(latestVersion, String(item.version)) >= 0,
+      `${id} latest stable predates selection`,
+    );
+    invariant(
+      /^https:\/\//.test(string(latest.source, `${label}.latestStable.source`)),
+      `${id} latest stable source is not official`,
+    );
+    digest(latest.contentSha256, `${label}.latestStable.contentSha256`);
+    instant(latest.observedAt, `${label}.latestStable.observedAt`);
+    const newerVersions: string[] = [];
+    let previous = String(item.version);
     for (const release of array(item.newerReleases, `${label}.newerReleases`)) {
       const newer = object(release, `${label}.newerRelease`);
       exactKeys(newer, [
@@ -421,11 +623,19 @@ function validateSelected(
         "publishedAt",
         "compatible",
         "reason",
-        "source",
-        "observedAt",
-        "evidenceSha256",
+        "publicationEvidence",
+        "compatibilityEvidence",
       ], `${label}.newerRelease`);
-      version(newer.version, `${label}.newerRelease.version`);
+      const newerVersion = version(
+        newer.version,
+        `${label}.newerRelease.version`,
+      );
+      invariant(
+        compareVersions(newerVersion, previous) > 0,
+        `${id} newer releases must be strictly ordered`,
+      );
+      previous = newerVersion;
+      newerVersions.push(newerVersion);
       instant(newer.publishedAt, `${label}.newerRelease.publishedAt`);
       invariant(
         newer.compatible === false ||
@@ -433,20 +643,25 @@ function validateSelected(
         `${id} omitted eligible compatible release`,
       );
       string(newer.reason, `${label}.newerRelease.reason`);
-      invariant(
-        newer.source ===
-          (id === "deno"
-            ? `https://github.com/denoland/deno/releases/tag/v${newer.version}`
-            : id === "node"
-            ? `https://nodejs.org/dist/v${newer.version}/SHASUMS256.txt`
-            : `https://registry.npmjs.org/${
-              encodeURIComponent(String(item.name))
-            }/${newer.version}`),
-        `${id} newer release source must be official`,
+      validateObservation(
+        newer.publicationEvidence,
+        `${label}.newerRelease.publicationEvidence`,
+        id === "deno" || id === "node"
+          ? "official-release-metadata"
+          : "npm-packument",
       );
-      instant(newer.observedAt, `${label}.newerRelease.observedAt`);
-      digest(newer.evidenceSha256, `${label}.newerRelease.evidenceSha256`);
+      validateObservation(
+        newer.compatibilityEvidence,
+        `${label}.newerRelease.compatibilityEvidence`,
+        "compatibility-evaluation",
+      );
     }
+    invariant(
+      latestVersion === item.version
+        ? newerVersions.length === 0
+        : newerVersions.length > 0 && newerVersions.at(-1) === latestVersion,
+      `${id} newer release evidence is incomplete or vacuous`,
+    );
     invariant(!result.has(id), "selected package IDs must be unique");
     result.set(id, item);
   }
@@ -478,6 +693,7 @@ function validateEdges(graph: JsonRecord, packages: Map<string, JsonRecord>) {
     "directDependencyIds",
     "importEdges",
     "peerEdges",
+    "denoSpecifiers",
     "denoLockNodes",
     "pnpmLockNodes",
     "lockRoots",
@@ -514,7 +730,14 @@ function validateEdges(graph: JsonRecord, packages: Map<string, JsonRecord>) {
       label,
     );
     for (const edge of edges) {
-      exactKeys(edge, ["id", "from", "to"], `${label} edge`);
+      exactKeys(edge, [
+        "id",
+        "from",
+        "to",
+        "manifestRange",
+        "selectedResolution",
+        "manifestEvidence",
+      ], `${label} edge`);
       const id = string(edge.id, `${label}.id`);
       const pair = expected[id];
       invariant(pair !== undefined, `${id} edge has no contract`);
@@ -531,11 +754,34 @@ function validateEdges(graph: JsonRecord, packages: Map<string, JsonRecord>) {
             )),
         `${id} edge is not selected`,
       );
+      const selectedResolution = version(
+        edge.selectedResolution,
+        `${id}.selectedResolution`,
+      );
+      invariant(
+        satisfiesRange(
+          selectedResolution,
+          string(edge.manifestRange, `${id}.manifestRange`),
+        ),
+        `${id} selected resolution violates manifest range`,
+      );
+      validateObservation(
+        edge.manifestEvidence,
+        `${id}.manifestEvidence`,
+        "npm-manifest",
+      );
+      const selectedTarget = packages.get(String(edge.to))?.version ??
+        FIXTURE_VERSIONS[String(edge.to)];
+      invariant(
+        selectedTarget === selectedResolution,
+        `${id} selected resolution disagrees with graph`,
+      );
     }
   };
   validatePairs(repository.importEdges, IMPORT_PAIRS, "import edges");
   validatePairs(repository.peerEdges, PEER_PAIRS, "peer edges");
 
+  const denoSpecifiers = object(repository.denoSpecifiers, "denoSpecifiers");
   const denoNodes = array(repository.denoLockNodes, "denoLockNodes").map((
     item,
     i,
@@ -553,7 +799,8 @@ function validateEdges(graph: JsonRecord, packages: Map<string, JsonRecord>) {
       id,
     );
     invariant(
-      node.integrity === object(selected.evidence, "selected evidence").value,
+      node.integrity ===
+        object(selected.artifactEvidence, "selected evidence").value,
       `${id} selected Deno root is absent from lock nodes`,
     );
   }
@@ -566,28 +813,74 @@ function validateEdges(graph: JsonRecord, packages: Map<string, JsonRecord>) {
           "integrity",
           "dependencies",
           "optionalDependencies",
+          "optionalPeers",
           "os",
           "cpu",
+          "tarball",
+          "deprecated",
+          "scripts",
+          "bin",
         ].includes(key)
-      ) && ["key", "kind", "integrity", "dependencies"].every((key) =>
-        key in node
-      ),
+      ) && ["key", "kind", "integrity"].every((key) => key in node),
       "Deno lock node has missing or unknown fields",
     );
-    const dependencies = strings(node.dependencies, "Deno node dependencies");
+    const dependencies = strings(
+      node.dependencies ?? [],
+      "Deno node dependencies",
+    );
     const optionalDependencies = strings(
       node.optionalDependencies ?? [],
       "Deno optional dependencies",
     );
+    const optionalPeers = strings(
+      node.optionalPeers ?? [],
+      "Deno optional peers",
+    );
     strings(node.os ?? [], "Deno node os");
     strings(node.cpu ?? [], "Deno node cpu");
-    for (const dependency of [...dependencies, ...optionalDependencies]) {
+    if (node.tarball !== undefined) string(node.tarball, "Deno node tarball");
+    for (const flag of ["deprecated", "scripts", "bin"] as const) {
       invariant(
-        denoKeys.some((key) =>
-          key.startsWith(
-            `${node.kind === "jsr" ? "jsr:" : "npm:"}${dependency}@`,
-          )
-        ),
+        node[flag] === undefined || typeof node[flag] === "boolean",
+        `Deno node ${flag} must be boolean`,
+      );
+    }
+    for (
+      const dependency of [
+        ...dependencies,
+        ...optionalDependencies,
+        ...optionalPeers,
+      ]
+    ) {
+      invariant(
+        node.kind !== "jsr" ||
+          dependency.startsWith("jsr:") || dependency.startsWith("npm:"),
+        "JSR dependency tokens must retain their jsr: or npm: kind",
+      );
+      const request =
+        dependency.startsWith("jsr:") || dependency.startsWith("npm:")
+          ? dependency
+          : `npm:${dependency}`;
+      const aliasNpm = /^(?:npm:)?[^@]+@npm:(.+@\d+\.\d+\.\d+)$/.exec(request);
+      const exactRequest = aliasNpm ? `npm:${aliasNpm[1]}` : request;
+      const resolved = denoSpecifiers[exactRequest] ?? denoSpecifiers[request];
+      const targetPrefix = exactRequest.startsWith("jsr:") ? "jsr:" : "npm:";
+      const bare = exactRequest.slice(4);
+      const hasExactVersion = /@\d+\.\d+\.\d+$/.test(bare);
+      const directTarget = `${targetPrefix}${bare}`;
+      const requestDelimiter = bare.lastIndexOf("@");
+      const requestedName = requestDelimiter > 0
+        ? bare.slice(0, requestDelimiter)
+        : bare;
+      const target = hasExactVersion && denoKeys.includes(directTarget)
+        ? `${targetPrefix}${bare}`
+        : typeof resolved === "string"
+        ? `${targetPrefix}${requestedName}@${resolved}`
+        : denoKeys.find((key) =>
+          key.startsWith(`${targetPrefix}${requestedName}@`)
+        );
+      invariant(
+        typeof target === "string" && denoKeys.includes(target),
         `${node.key} Deno dependency is absent from complete lock nodes`,
       );
     }
@@ -628,6 +921,10 @@ function validateEdges(graph: JsonRecord, packages: Map<string, JsonRecord>) {
       "optionalDependencies",
       "os",
       "cpu",
+      "libc",
+      "optional",
+      "peerResolutions",
+      "transitivePeerDependencies",
       "dependencyResolutions",
       "hooks",
     ], "pnpm lock node");
@@ -645,7 +942,7 @@ function validateEdges(graph: JsonRecord, packages: Map<string, JsonRecord>) {
       invariant(
         node.name === selected.name && node.version === selected.version &&
           node.integrity ===
-            object(selected.evidence, "selected evidence").value,
+            object(selected.artifactEvidence, "selected evidence").value,
         `${node.id} pnpm node disagrees with selected package evidence`,
       );
     }
@@ -670,6 +967,32 @@ function validateEdges(graph: JsonRecord, packages: Map<string, JsonRecord>) {
     }
     strings(node.os, "pnpm node os");
     strings(node.cpu, "pnpm node cpu");
+    strings(node.libc, "pnpm node libc");
+    invariant(
+      typeof node.optional === "boolean",
+      "pnpm node optional flag is invalid",
+    );
+    strings(
+      node.transitivePeerDependencies,
+      "pnpm transitive peer dependencies",
+    );
+    const peerResolutions = object(
+      node.peerResolutions,
+      "pnpm peer resolutions",
+    );
+    const suffix = snapshotKey.slice(packageKey.length);
+    const parsedPeers = parsePnpmPeerSuffix(suffix);
+    exactSet(
+      Object.keys(parsedPeers),
+      Object.keys(peerResolutions),
+      `${node.id} peer suffix names`,
+    );
+    for (const [peerName, resolution] of Object.entries(peerResolutions)) {
+      invariant(
+        parsedPeers[peerName] === resolution,
+        `${node.id} peer suffix resolution drifted`,
+      );
+    }
     exactKeys(
       object(node.dependencyResolutions, "pnpm dependency resolutions"),
       [
@@ -703,7 +1026,7 @@ function validateEdges(graph: JsonRecord, packages: Map<string, JsonRecord>) {
         `${node.id} dependency resolution disagrees with target snapshot`,
       );
     }
-    strings(node.hooks, "pnpm node hooks");
+    array(node.hooks, "pnpm node hooks");
   }
   const lockedEdges = new Set(
     pnpmNodes.flatMap((node) =>
@@ -873,10 +1196,28 @@ function validateRepeatability(
         run.nodeModulesState === nodeModulesState,
       `${id} environment or isolation proof is incomplete`,
     );
-    invariant(
-      run.exitCode === 0 && run.lifecycleExecutions === 0,
-      `${id} did not complete safely`,
-    );
+    invariant(run.exitCode === 0, `${id} did not complete safely`);
+    const executions = array(
+      run.lifecycleExecutions,
+      `${id}.lifecycleExecutions`,
+    ).map((raw) => object(raw, `${id} lifecycle execution`));
+    for (const execution of executions) {
+      exactKeys(execution, [
+        "packageName",
+        "version",
+        "hook",
+        "command",
+        "run",
+        "exitCode",
+      ], `${id} lifecycle execution`);
+      invariant(
+        execution.packageName === "esbuild" &&
+          execution.hook === "postinstall" &&
+          execution.command === "node install.js" &&
+          execution.run === id && execution.exitCode === 0,
+        `${id} recorded an unreviewed lifecycle execution`,
+      );
+    }
     digest(run.denoLockSha256, `${id}.denoLockSha256`);
     digest(run.pnpmLockSha256, `${id}.pnpmLockSha256`);
   }
@@ -887,9 +1228,20 @@ function validateRepeatability(
     new Set(hashes).size === 1,
     "lock hashes changed between repeat runs",
   );
-  invariant(
-    repeatability.lifecycleExecutions === 0,
-    "repeatability executed lifecycle scripts",
+  const allExecutions = array(
+    repeatability.lifecycleExecutions,
+    "repeatability.lifecycleExecutions",
+  );
+  exactSet(
+    allExecutions.map((raw) =>
+      JSON.stringify(object(raw, "lifecycle execution"))
+    ),
+    runs.flatMap((run) =>
+      array(run.lifecycleExecutions, "run lifecycle executions").map((raw) =>
+        JSON.stringify(raw)
+      )
+    ),
+    "repeatability lifecycle executions",
   );
 }
 
@@ -922,35 +1274,70 @@ function validateLifecycle(graph: JsonRecord) {
     "pnpm nodes",
   ).map((item) => object(item, "pnpm node"));
   const expectedHooks = nodes.flatMap((node) =>
-    strings(node.hooks, "node hooks").map((hook) => `${node.id}:${hook}`)
+    array(node.hooks, "node hooks").map((raw) => {
+      const hook = object(raw, "node hook");
+      exactKeys(hook, ["name", "command", "manifestEvidence"], "node hook");
+      validateObservation(
+        hook.manifestEvidence,
+        "node hook manifestEvidence",
+        "npm-manifest",
+      );
+      return `${node.name}@${node.version}:${hook.name}:${hook.command}`;
+    })
   );
   exactSet(
-    hooks.map((hook) => `${hook.packageId}:${hook.hook}`),
+    hooks.map((hook) =>
+      `${hook.packageName}@${hook.version}:${hook.hook}:${hook.command}`
+    ),
     expectedHooks,
     "transitive hook inventory",
   );
-  exactKeys(
-    allowBuilds,
-    [
-      ...new Set(
-        expectedHooks.map((entry) => string(entry.split(":")[0], "hook owner")),
-      ),
-    ],
-    "lifecycle.pnpm.allowBuilds",
+  const allowedMatchers = new Set(
+    hooks.flatMap((hook) => [
+      String(hook.packageName),
+      `${hook.packageName}@${hook.version}`,
+    ]),
+  );
+  invariant(
+    Object.keys(allowBuilds).every((matcher) => allowedMatchers.has(matcher)),
+    "lifecycle.pnpm.allowBuilds contains unknown package matcher",
   );
   for (const hook of hooks) {
     exactKeys(
       hook,
-      ["ecosystem", "packageId", "hook", "reviewed", "allowed"],
+      [
+        "ecosystem",
+        "packageName",
+        "version",
+        "hook",
+        "command",
+        "manifestEvidence",
+        "reviewed",
+        "allowed",
+      ],
       "hook inventory item",
+    );
+    validateObservation(
+      hook.manifestEvidence,
+      "hook manifestEvidence",
+      "npm-manifest",
     );
     invariant(
       hook.ecosystem === "pnpm" && hook.reviewed === true,
       "hook owner is misattributed or unreviewed",
     );
     invariant(
-      allowBuilds[String(hook.packageId)] === hook.allowed,
+      allowBuilds[`${hook.packageName}@${hook.version}`] === hook.allowed ||
+        allowBuilds[String(hook.packageName)] === hook.allowed,
       "hook policy and inventory disagree",
+    );
+    invariant(
+      hook.packageName !== "fsevents" || hook.allowed === false,
+      "fsevents build must remain denied",
+    );
+    invariant(
+      hook.packageName === "esbuild" || hook.allowed === false,
+      "only esbuild may be build-approved",
     );
   }
   invariant(
@@ -979,7 +1366,7 @@ function validateCorepack(
   sri(corepack.registryIntegrity, "corepack.registryIntegrity");
   invariant(
     corepack.registryIntegrity ===
-      object(packages.get("pnpm")?.evidence, "pnpm evidence").value,
+      object(packages.get("pnpm")?.artifactEvidence, "pnpm evidence").value,
     "Corepack registry integrity disagrees with selected pnpm evidence",
   );
   const registryBytes = Uint8Array.from(
@@ -998,8 +1385,7 @@ function validateCorepack(
   exactKeys(proof, [
     "setEnvironment",
     "unsetEnvironment",
-    "command",
-    "exitCode",
+    "runs",
   ], "corepack.proof");
   const environment = object(
     proof.setEnvironment,
@@ -1017,10 +1403,42 @@ function validateCorepack(
   exactSet(strings(proof.unsetEnvironment, "corepack.proof.unsetEnvironment"), [
     "COREPACK_INTEGRITY_KEYS",
   ], "Corepack unset environment");
-  invariant(
-    proof.command === "corepack install" && proof.exitCode === 0,
-    "Corepack executable proof did not pass",
+  const expectedRuns: Record<string, { command: string; output: string }> = {
+    version: {
+      command: "corepack --version",
+      output: String(packages.get("corepack")?.version),
+    },
+    use: { command: `corepack use pnpm@${pnpmVersion}`, output: descriptor },
+    install: {
+      command: "corepack install",
+      output: `Adding pnpm@${pnpmVersion} to the cache`,
+    },
+    execute: {
+      command: "corepack pnpm --version",
+      output: String(pnpmVersion),
+    },
+  };
+  const proofRuns = array(proof.runs, "corepack.proof.runs").map((raw) =>
+    object(raw, "corepack proof run")
   );
+  exactSet(
+    proofRuns.map((run) => string(run.id, "corepack run id")),
+    Object.keys(expectedRuns),
+    "Corepack proof runs",
+  );
+  for (const run of proofRuns) {
+    exactKeys(
+      run,
+      ["id", "command", "output", "exitCode"],
+      "Corepack proof run",
+    );
+    const expected = expectedRuns[String(run.id)]!;
+    invariant(
+      run.command === expected.command &&
+        String(run.output).includes(expected.output) && run.exitCode === 0,
+      `${run.id} Corepack executable proof did not pass`,
+    );
+  }
 }
 
 function validateShadcn(graph: JsonRecord) {
@@ -1068,13 +1486,13 @@ function validateShadcn(graph: JsonRecord) {
 function validateOci(graph: JsonRecord, packages: Map<string, JsonRecord>) {
   const expected: Record<string, [string, string]> = {
     deno: ["denoland/deno", `debian-${packages.get("deno")?.version}`],
-    node: ["node", `${packages.get("node")?.version}-bookworm-slim`],
+    node: ["library/node", `${packages.get("node")?.version}-bookworm-slim`],
     playwright: [
       "mcr.microsoft.com/playwright",
       `v${packages.get("playwright-test")?.version}-noble`,
     ],
-    postgres18: ["postgres", "18.4-alpine3.23"],
-    postgres17: ["postgres", "17.10-alpine3.23"],
+    postgres18: ["library/postgres", "18.4-alpine3.23"],
+    postgres17: ["library/postgres", "17.10-alpine3.23"],
   };
   const images = array(graph.ociImages, "ociImages").map((item, i) =>
     object(item, `ociImages[${i}]`)
@@ -1092,8 +1510,8 @@ function validateOci(graph: JsonRecord, packages: Map<string, JsonRecord>) {
       "indexDigest",
       "reference",
       "mediaType",
-      "platforms",
-      "attestations",
+      "descriptors",
+      "descriptorIdentity",
       "source",
       "observedAt",
       "evidenceSha256",
@@ -1111,53 +1529,75 @@ function validateOci(graph: JsonRecord, packages: Map<string, JsonRecord>) {
       `${id} reference is not tag plus index digest`,
     );
     invariant(image.mediaType === OCI_INDEX_MEDIA, `${id} is not an OCI index`);
-    const platforms = array(image.platforms, `${id}.platforms`).map((item, i) =>
-      object(item, `${id}.platforms[${i}]`)
+    const descriptors = array(image.descriptors, `${id}.descriptors`).map((
+      item,
+      i,
+    ) => object(item, `${id}.descriptors[${i}]`));
+    invariant(
+      image.descriptorIdentity === JSON.stringify(descriptors),
+      `${id} descriptor set disagrees with captured response identity`,
+    );
+    invariant(descriptors.length > 0, `${id} descriptor set is empty`);
+    const descriptorKeys = descriptors.map((descriptor) =>
+      `${descriptor.mediaType}:${descriptor.digest}:${descriptor.size}`
+    );
+    invariant(
+      new Set(descriptorKeys).size === descriptorKeys.length,
+      `${id} descriptor set contains duplicates`,
+    );
+    const platforms = descriptors.filter((descriptor) =>
+      descriptor.kind === "runnable"
     );
     const platformIds = platforms.map((platform) =>
-      `${platform.os}/${platform.architecture}`
+      `${platform.os}/${platform.architecture}/${platform.variant ?? ""}`
     );
     invariant(
       new Set(platformIds).size === platformIds.length &&
-        ["linux/amd64", "linux/arm64"].every((item) =>
-          platformIds.includes(item)
-        ),
+        platformIds.some((item) => item.startsWith("linux/amd64/")) &&
+        platformIds.some((item) => item.startsWith("linux/arm64/")),
       `${id} required platforms are absent or duplicated`,
     );
-    for (const platform of platforms) {
-      exactKeys(
-        platform,
-        ["os", "architecture", "digest", "mediaType"],
-        `${id} platform`,
+    for (const descriptor of descriptors) {
+      exactKeys(descriptor, [
+        "kind",
+        "os",
+        "architecture",
+        "variant",
+        "digest",
+        "mediaType",
+        "size",
+        "annotations",
+      ], `${id} descriptor`);
+      invariant(
+        Number.isSafeInteger(descriptor.size) && Number(descriptor.size) > 0,
+        `${id} descriptor size is invalid`,
       );
       invariant(
-        digest(platform.digest, `${id} platform digest`) !== indexDigest &&
-          platform.mediaType === OCI_MANIFEST_MEDIA,
-        `${id} platform is not a child manifest`,
+        digest(descriptor.digest, `${id} descriptor digest`) !== indexDigest &&
+          descriptor.mediaType === OCI_MANIFEST_MEDIA,
+        `${id} descriptor is not a child manifest`,
       );
-    }
-    const attestations = array(image.attestations, `${id}.attestations`);
-    invariant(attestations.length > 0, `${id} attestation evidence is absent`);
-    for (const raw of attestations) {
-      const attestation = object(raw, `${id} attestation`);
-      exactKeys(
-        attestation,
-        ["digest", "mediaType", "classification"],
-        `${id} attestation`,
+      const annotations = object(
+        descriptor.annotations,
+        `${id} descriptor annotations`,
       );
-      const attestationDigest = digest(
-        attestation.digest,
-        `${id} attestation digest`,
-      );
-      invariant(
-        attestation.mediaType === OCI_MANIFEST_MEDIA &&
-          attestation.classification === "attestation",
-        `${id} attestation is not classified`,
-      );
-      invariant(
-        !platforms.some((platform) => platform.digest === attestationDigest),
-        `${id} attestation masquerades as platform`,
-      );
+      if (descriptor.kind === "runnable") {
+        invariant(
+          descriptor.os !== "unknown" && descriptor.architecture !== "unknown",
+          `${id} runnable descriptor has unknown platform`,
+        );
+      } else {
+        invariant(
+          descriptor.kind === "attestation" && descriptor.os === "unknown" &&
+            descriptor.architecture === "unknown",
+          `${id} attachment classification is invalid`,
+        );
+        invariant(
+          annotations["vnd.docker.reference.type"] === "attestation-manifest" &&
+            typeof annotations["vnd.docker.reference.digest"] === "string",
+          `${id} attestation annotations are invalid`,
+        );
+      }
     }
     invariant(
       image.source ===
@@ -1261,41 +1701,66 @@ function makeGraph(): JsonRecord {
         version: fixtureVersion(id),
         publishedAt: "2026-01-01T04:05:06.789Z",
         manifest,
-        evidence: {
-          kind: id === "deno" || id === "node" ? "release-checksum" : "npm-sri",
-          value: id === "deno" || id === "node"
-            ? sha(String((index % 9) + 1))
-            : SRI,
+        publicationEvidence: {
+          kind: id === "deno" || id === "node"
+            ? "official-release-metadata"
+            : "npm-packument",
           source: id === "deno"
             ? `https://github.com/denoland/deno/releases/tag/v${
               fixtureVersion(id)
             }`
+            : id === "node"
+            ? `https://nodejs.org/dist/index.json`
+            : `https://registry.npmjs.org/${encodeURIComponent(nameOf(id))}`,
+          observedAt: "2026-01-10T04:05:06.789Z",
+          contentSha256: sha("9"),
+        },
+        artifactEvidence: {
+          kind: id === "deno" || id === "node"
+            ? "release-checksum"
+            : "npm-manifest-sri",
+          value: id === "deno" || id === "node"
+            ? sha(String((index % 9) + 1))
+            : SRI,
+          source: id === "deno"
+            ? `https://github.com/denoland/deno/releases/download/v${
+              fixtureVersion(id)
+            }/deno-x86_64-pc-windows-msvc.zip.sha256sum`
             : id === "node"
             ? `https://nodejs.org/dist/v${fixtureVersion(id)}/SHASUMS256.txt`
             : `https://registry.npmjs.org/${encodeURIComponent(nameOf(id))}/${
               fixtureVersion(id)
             }`,
           observedAt: "2026-01-10T04:05:06.789Z",
-          sourceSha256: sha("a"),
+          contentSha256: sha("a"),
+        },
+        latestStable: {
+          version: nextFixtureVersion(id),
+          source: id === "deno" || id === "node"
+            ? "https://example.invalid/official-release-index"
+            : `https://registry.npmjs.org/${encodeURIComponent(nameOf(id))}`,
+          contentSha256: sha("8"),
+          observedAt: "2026-01-10T04:05:06.789Z",
         },
         newerReleases: [{
           version: nextFixtureVersion(id),
           publishedAt: "2026-01-09T04:05:06.789Z",
           compatible: true,
           reason: "younger-than-cutoff",
-          source: id === "deno"
-            ? `https://github.com/denoland/deno/releases/tag/v${
-              nextFixtureVersion(id)
-            }`
-            : id === "node"
-            ? `https://nodejs.org/dist/v${
-              nextFixtureVersion(id)
-            }/SHASUMS256.txt`
-            : `https://registry.npmjs.org/${encodeURIComponent(nameOf(id))}/${
-              nextFixtureVersion(id)
-            }`,
-          observedAt: "2026-01-10T04:05:06.789Z",
-          evidenceSha256: sha("b"),
+          publicationEvidence: {
+            kind: id === "deno" || id === "node"
+              ? "official-release-metadata"
+              : "npm-packument",
+            source: "https://example.invalid/publication",
+            contentSha256: sha("b"),
+            observedAt: "2026-01-10T04:05:06.789Z",
+          },
+          compatibilityEvidence: {
+            kind: "compatibility-evaluation",
+            source: "https://example.invalid/manifest",
+            contentSha256: sha("c"),
+            observedAt: "2026-01-10T04:05:06.789Z",
+          },
         }],
       };
     },
@@ -1336,12 +1801,40 @@ function makeGraph(): JsonRecord {
       optionalDependencies: id === "vite" ? ["fsevents"] : [],
       os: id === "fsevents" ? ["darwin"] : [],
       cpu: [],
+      libc: [],
+      optional: id === "fsevents",
+      peerResolutions: id === "astro-react"
+        ? { react: fixtureVersion("react") }
+        : {},
+      transitivePeerDependencies: [],
       dependencyResolutions: Object.fromEntries(
         [...dependencies, ...(id === "vite" ? ["fsevents"] : [])].map((
           dependencyId,
         ) => [dependencyId, fixtureVersion(dependencyId)]),
       ),
-      hooks: id === "esbuild" || id === "fsevents" ? ["postinstall"] : [],
+      hooks: id === "esbuild"
+        ? [{
+          name: "postinstall",
+          command: "node install.js",
+          manifestEvidence: {
+            kind: "npm-manifest",
+            source: `https://registry.npmjs.org/esbuild/${fixtureVersion(id)}`,
+            contentSha256: sha("d"),
+            observedAt: "2026-01-10T04:05:06.789Z",
+          },
+        }]
+        : id === "fsevents"
+        ? [{
+          name: "install",
+          command: "node-gyp rebuild",
+          manifestEvidence: {
+            kind: "npm-manifest",
+            source: `https://registry.npmjs.org/fsevents/${fixtureVersion(id)}`,
+            contentSha256: sha("e"),
+            observedAt: "2026-01-10T04:05:06.789Z",
+          },
+        }]
+        : [],
     };
   });
   for (const node of pnpmNodes) {
@@ -1420,17 +1913,27 @@ function makeGraph(): JsonRecord {
     ...run,
     exitCode: 0,
     ...runHashes,
-    lifecycleExecutions: 0,
+    lifecycleExecutions: run.id === "pnpm-clean"
+      ? [{
+        packageName: "esbuild",
+        version: fixtureVersion("esbuild"),
+        hook: "postinstall",
+        command: "node install.js",
+        run: "pnpm-clean",
+        exitCode: 0,
+      }]
+      : [],
   }));
+  const lifecycleExecutions = runs.flatMap((run) => run.lifecycleExecutions);
   const oci = {
     deno: ["denoland/deno", `debian-${fixtureVersion("deno")}`],
-    node: ["node", `${fixtureVersion("node")}-bookworm-slim`],
+    node: ["library/node", `${fixtureVersion("node")}-bookworm-slim`],
     playwright: [
       "mcr.microsoft.com/playwright",
       `v${fixtureVersion("playwright-test")}-noble`,
     ],
-    postgres18: ["postgres", "18.4-alpine3.23"],
-    postgres17: ["postgres", "17.10-alpine3.23"],
+    postgres18: ["library/postgres", "18.4-alpine3.23"],
+    postgres17: ["library/postgres", "17.10-alpine3.23"],
   } as Record<string, [string, string]>;
   return {
     schemaVersion: 2,
@@ -1450,22 +1953,61 @@ function makeGraph(): JsonRecord {
         id,
         from,
         to,
+        manifestRange: `^${fixtureVersion(to)}`,
+        selectedResolution: fixtureVersion(to),
+        manifestEvidence: {
+          kind: "npm-manifest",
+          source: `https://registry.npmjs.org/${
+            encodeURIComponent(nameOf(from))
+          }/${fixtureVersion(from)}`,
+          contentSha256: sha("6"),
+          observedAt: "2026-01-10T04:05:06.789Z",
+        },
       })),
       peerEdges: Object.entries(PEER_PAIRS).map(([id, [from, to]]) => ({
         id,
         from,
         to,
+        manifestRange: `^${fixtureVersion(to)}`,
+        selectedResolution: fixtureVersion(to),
+        manifestEvidence: {
+          kind: "npm-manifest",
+          source: `https://registry.npmjs.org/${
+            encodeURIComponent(nameOf(from))
+          }/${fixtureVersion(from)}`,
+          contentSha256: sha("7"),
+          observedAt: "2026-01-10T04:05:06.789Z",
+        },
       })),
+      denoSpecifiers: Object.fromEntries([
+        ...DIRECT.deno.map((
+          id,
+        ) => [`npm:${nameOf(id)}@${fixtureVersion(id)}`, fixtureVersion(id)]),
+        ["jsr:@std/assert@1.0.14", "1.0.14"],
+        ["jsr:@std/internal@^1.0.10", "1.0.14"],
+      ]),
       denoLockNodes: [
         ...DIRECT.deno.map((id) => ({
           key: `npm:${nameOf(id)}@${fixtureVersion(id)}`,
           kind: "npm",
           integrity: SRI,
-          dependencies: id === "kysely-postgres-js"
-            ? ["kysely", "postgres"]
+          ...(id === "kysely-postgres-js"
+            ? {
+              dependencies: [
+                `kysely@${fixtureVersion("kysely")}`,
+                `postgres@${fixtureVersion("postgres")}`,
+              ],
+            }
             : id === "hono-standard-validator"
-            ? ["hono", "@standard-schema/spec"]
-            : [],
+            ? {
+              dependencies: [
+                `hono@${fixtureVersion("hono")}`,
+                `@standard-schema/spec@${
+                  fixtureVersion("standard-schema-spec")
+                }`,
+              ],
+            }
+            : {}),
           ...(id === "hono"
             ? {}
             : { optionalDependencies: [], os: [], cpu: [] }),
@@ -1474,13 +2016,12 @@ function makeGraph(): JsonRecord {
           key: "jsr:@std/assert@1.0.14",
           kind: "jsr",
           integrity: "a".repeat(64),
-          dependencies: ["@std/internal"],
+          dependencies: ["jsr:@std/internal@^1.0.10"],
         },
         {
-          key: "jsr:@std/internal@1.0.9",
+          key: "jsr:@std/internal@1.0.14",
           kind: "jsr",
           integrity: "b".repeat(64),
-          dependencies: [],
         },
       ],
       pnpmLockNodes: pnpmNodes,
@@ -1494,7 +2035,7 @@ function makeGraph(): JsonRecord {
           pnpm: fixtureVersion("pnpm"),
         },
         runs,
-        lifecycleExecutions: 0,
+        lifecycleExecutions,
       },
     },
     corepack: {
@@ -1503,8 +2044,32 @@ function makeGraph(): JsonRecord {
       proof: {
         setEnvironment: { COREPACK_DEFAULT_TO_LATEST: "0" },
         unsetEnvironment: ["COREPACK_INTEGRITY_KEYS"],
-        command: "corepack install",
-        exitCode: 0,
+        runs: [
+          {
+            id: "version",
+            command: "corepack --version",
+            output: fixtureVersion("corepack"),
+            exitCode: 0,
+          },
+          {
+            id: "use",
+            command: `corepack use pnpm@${fixtureVersion("pnpm")}`,
+            output: `pnpm@${fixtureVersion("pnpm")}+sha512.${"00".repeat(64)}`,
+            exitCode: 0,
+          },
+          {
+            id: "install",
+            command: "corepack install",
+            output: `Adding pnpm@${fixtureVersion("pnpm")} to the cache`,
+            exitCode: 0,
+          },
+          {
+            id: "execute",
+            command: "corepack pnpm --version",
+            output: fixtureVersion("pnpm"),
+            exitCode: 0,
+          },
+        ],
       },
     },
     lifecycle: {
@@ -1512,18 +2077,41 @@ function makeGraph(): JsonRecord {
       pnpm: {
         strictDepBuilds: true,
         dangerouslyAllowAllBuilds: false,
-        allowBuilds: { esbuild: false, fsevents: false },
+        allowBuilds: {
+          [`esbuild@${fixtureVersion("esbuild")}`]: true,
+          fsevents: false,
+        },
       },
       hookInventory: [{
         ecosystem: "pnpm",
-        packageId: "esbuild",
+        packageName: "esbuild",
+        version: fixtureVersion("esbuild"),
         hook: "postinstall",
+        command: "node install.js",
+        manifestEvidence: {
+          kind: "npm-manifest",
+          source: `https://registry.npmjs.org/esbuild/${
+            fixtureVersion("esbuild")
+          }`,
+          contentSha256: sha("d"),
+          observedAt: "2026-01-10T04:05:06.789Z",
+        },
         reviewed: true,
-        allowed: false,
+        allowed: true,
       }, {
         ecosystem: "pnpm",
-        packageId: "fsevents",
-        hook: "postinstall",
+        packageName: "fsevents",
+        version: fixtureVersion("fsevents"),
+        hook: "install",
+        command: "node-gyp rebuild",
+        manifestEvidence: {
+          kind: "npm-manifest",
+          source: `https://registry.npmjs.org/fsevents/${
+            fixtureVersion("fsevents")
+          }`,
+          contentSha256: sha("e"),
+          observedAt: "2026-01-10T04:05:06.789Z",
+        },
         reviewed: true,
         allowed: false,
       }],
@@ -1544,6 +2132,62 @@ function makeGraph(): JsonRecord {
     },
     ociImages: Object.entries(oci).map(([id, [repository, tag]], index) => {
       const indexDigest = sha(String(index + 2));
+      const descriptors = [
+        {
+          kind: "runnable",
+          os: "linux",
+          architecture: "amd64",
+          variant: null,
+          digest: sha("f"),
+          mediaType: OCI_MANIFEST_MEDIA,
+          size: 1644,
+          annotations: {},
+        },
+        {
+          kind: "runnable",
+          os: "linux",
+          architecture: "arm64",
+          variant: "v8",
+          digest: sha("1"),
+          mediaType: OCI_MANIFEST_MEDIA,
+          size: 1644,
+          annotations: {},
+        },
+        ...(id === "postgres18" || id === "postgres17"
+          ? [{
+            kind: "runnable",
+            os: "linux",
+            architecture: "arm",
+            variant: "v6",
+            digest: sha("b"),
+            mediaType: OCI_MANIFEST_MEDIA,
+            size: 1500,
+            annotations: {},
+          }, {
+            kind: "runnable",
+            os: "linux",
+            architecture: "arm",
+            variant: "v7",
+            digest: sha("a"),
+            mediaType: OCI_MANIFEST_MEDIA,
+            size: 1501,
+            annotations: {},
+          }]
+          : []),
+        ...(id === "playwright" ? [] : [{
+          kind: "attestation",
+          os: "unknown",
+          architecture: "unknown",
+          variant: null,
+          digest: sha("9"),
+          mediaType: OCI_MANIFEST_MEDIA,
+          size: 900,
+          annotations: {
+            "vnd.docker.reference.type": "attestation-manifest",
+            "vnd.docker.reference.digest": sha("f"),
+          },
+        }]),
+      ];
       return {
         id,
         repository,
@@ -1551,33 +2195,8 @@ function makeGraph(): JsonRecord {
         indexDigest,
         reference: `${repository}:${tag}@${indexDigest}`,
         mediaType: OCI_INDEX_MEDIA,
-        platforms: [
-          {
-            os: "linux",
-            architecture: "amd64",
-            digest: sha("f"),
-            mediaType: OCI_MANIFEST_MEDIA,
-          },
-          {
-            os: "linux",
-            architecture: "arm64",
-            digest: sha("1"),
-            mediaType: OCI_MANIFEST_MEDIA,
-          },
-          ...(id === "node"
-            ? [{
-              os: "linux",
-              architecture: "ppc64le",
-              digest: sha("4"),
-              mediaType: OCI_MANIFEST_MEDIA,
-            }]
-            : []),
-        ],
-        attestations: [{
-          digest: sha("2"),
-          mediaType: OCI_MANIFEST_MEDIA,
-          classification: "attestation",
-        }],
+        descriptors,
+        descriptorIdentity: JSON.stringify(descriptors),
         source: repository.startsWith("mcr.microsoft.com")
           ? `https://mcr.microsoft.com/v2/playwright/manifests/${tag}`
           : `https://registry-1.docker.io/v2/${repository}/manifests/${tag}`,
@@ -1652,25 +2271,28 @@ function makeRepositoryContents(graph: JsonRecord): Map<string, string> {
   ).map((item) => object(item, "Deno node"));
   const denoLock = {
     version: "5",
-    specifiers: Object.fromEntries(
-      DIRECT.deno.map((
-        id,
-      ) => {
-        const item = object(selected.get(id), id);
-        return [`npm:${item.name}@${item.version}`, item.version];
-      }),
+    specifiers: object(
+      object(graph.repository, "repository").denoSpecifiers,
+      "Deno specifiers",
     ),
     npm: Object.fromEntries(
       denoNodes.filter((node) => node.kind === "npm").map((node) => [
         String(node.key).slice(4),
         {
           integrity: node.integrity,
-          dependencies: strings(node.dependencies, "Deno dependencies"),
+          ...(node.dependencies
+            ? { dependencies: strings(node.dependencies, "Deno dependencies") }
+            : {}),
           ...(node.optionalDependencies
             ? { optionalDependencies: node.optionalDependencies }
             : {}),
           ...(node.os ? { os: node.os } : {}),
           ...(node.cpu ? { cpu: node.cpu } : {}),
+          ...(node.optionalPeers ? { optionalPeers: node.optionalPeers } : {}),
+          ...(node.tarball ? { tarball: node.tarball } : {}),
+          ...(node.deprecated ? { deprecated: node.deprecated } : {}),
+          ...(node.scripts ? { scripts: node.scripts } : {}),
+          ...(node.bin ? { bin: node.bin } : {}),
         },
       ]),
     ),
@@ -1679,7 +2301,7 @@ function makeRepositoryContents(graph: JsonRecord): Map<string, string> {
         String(node.key).slice(4),
         {
           integrity: node.integrity,
-          dependencies: node.dependencies,
+          ...(node.dependencies ? { dependencies: node.dependencies } : {}),
         },
       ]),
     ),
@@ -1699,6 +2321,10 @@ function makeRepositoryContents(graph: JsonRecord): Map<string, string> {
       }),
     ),
   };
+  const graphAllowBuilds = object(
+    object(object(graph.lifecycle, "lifecycle").pnpm, "pnpm").allowBuilds,
+    "graph allowBuilds",
+  );
   const workspace = [
     "packages: []",
     "saveExact: true",
@@ -1709,8 +2335,9 @@ function makeRepositoryContents(graph: JsonRecord): Map<string, string> {
     "strictDepBuilds: true",
     "dangerouslyAllowAllBuilds: false",
     "allowBuilds:",
-    "  esbuild: false",
-    "  fsevents: false",
+    ...Object.entries(graphAllowBuilds).map(([name, allowed]) =>
+      `  ${name}: ${allowed}`
+    ),
     "supportedArchitectures:",
     "  os:",
     "    - current",
@@ -1742,12 +2369,24 @@ function makeRepositoryContents(graph: JsonRecord): Map<string, string> {
       ];
     }),
     "packages:",
-    ...pnpmLockNodes.flatMap((
-      node,
-    ) => [
-      `  ${yamlKey(String(node.packageKey))}:`,
-      `    resolution: {integrity: ${node.integrity}}`,
-    ]),
+    ...pnpmLockNodes.flatMap((node) => {
+      const lines = [
+        `  ${yamlKey(String(node.packageKey))}:`,
+        `    resolution: {integrity: ${node.integrity}}`,
+      ];
+      for (const field of ["os", "cpu", "libc"] as const) {
+        const values = strings(node[field], `pnpm ${field}`);
+        if (values.length) lines.push(`    ${field}: [${values.join(", ")}]`);
+      }
+      const peers = object(node.peerResolutions, "peer resolutions");
+      if (Object.keys(peers).length) {
+        lines.push("    peerDependencies:");
+        for (const name of Object.keys(peers)) {
+          lines.push(`      ${yamlKey(name)}: '*'`);
+        }
+      }
+      return lines;
+    }),
     "snapshots:",
     ...pnpmLockNodes.flatMap((node) => {
       const deps = strings(node.dependencies, "dependencies");
@@ -1778,6 +2417,17 @@ function makeRepositoryContents(graph: JsonRecord): Map<string, string> {
           ),
         );
       }
+      if (node.optional === true) lines.push("    optional: true");
+      const transitive = strings(
+        node.transitivePeerDependencies,
+        "transitive peers",
+      );
+      if (transitive.length) {
+        lines.push(
+          "    transitivePeerDependencies:",
+          ...transitive.map((name) => `      - ${name}`),
+        );
+      }
       return lines;
     }),
     "",
@@ -1787,6 +2437,7 @@ function makeRepositoryContents(graph: JsonRecord): Map<string, string> {
     [
       "deno.json",
       JSON.stringify({
+        ...clone(BASE_DENO_CONFIGURATION),
         imports,
         lock: { path: "./deno.lock", frozen: true },
         minimumDependencyAge: "PT72H",
@@ -1863,11 +2514,22 @@ async function validateRepositoryContents(
     "deno.json",
   );
   exactKeys(denoJson, [
+    "compilerOptions",
+    "fmt",
+    "lint",
+    "tasks",
     "imports",
     "lock",
     "minimumDependencyAge",
     "allowScripts",
   ], "deno.json");
+  for (const key of ["compilerOptions", "fmt", "lint", "tasks"]) {
+    invariant(
+      JSON.stringify(denoJson[key]) ===
+        JSON.stringify(BASE_DENO_CONFIGURATION[key]),
+      `deno.json base ${key} configuration drifted`,
+    );
+  }
   invariant(
     denoJson.minimumDependencyAge === "PT72H",
     "deno minimum age is incorrect",
@@ -1926,10 +2588,12 @@ async function validateRepositoryContents(
   ).map((item) => object(item, "graph Deno node"));
   exactSet(
     Object.keys(specifiers),
-    DIRECT.deno.map((id) => {
-      const item = object(selected.get(id), id);
-      return `npm:${item.name}@${item.version}`;
-    }),
+    Object.keys(
+      object(
+        object(graph.repository, "repository").denoSpecifiers,
+        "graph Deno specifiers",
+      ),
+    ),
     "Deno lock specifiers",
   );
   exactSet(
@@ -1975,12 +2639,20 @@ async function validateRepositoryContents(
       fileNode.integrity === graphNode.integrity,
       `${key} Deno integrity disagrees with graph`,
     );
+    const fileDependencies = strings(
+      fileNode.dependencies ?? [],
+      "Deno file dependencies",
+    );
+    const graphDependencies = strings(
+      graphNode.dependencies ?? [],
+      "graph Deno dependencies",
+    );
+    exactSet(
+      fileDependencies,
+      graphDependencies,
+      `${key} Deno dependency edges`,
+    );
     if (key.startsWith("npm:")) {
-      exactSet(
-        strings(fileNode.dependencies, "Deno file dependencies"),
-        strings(graphNode.dependencies, "graph Deno dependencies"),
-        `${key} Deno dependency edges`,
-      );
       exactSet(
         strings(
           fileNode.optionalDependencies ?? [],
@@ -2002,6 +2674,17 @@ async function validateRepositoryContents(
         strings(graphNode.cpu ?? [], "graph Deno cpu"),
         `${key} Deno cpu`,
       );
+      exactSet(
+        strings(fileNode.optionalPeers ?? [], "Deno file optional peers"),
+        strings(graphNode.optionalPeers ?? [], "graph Deno optional peers"),
+        `${key} Deno optional peers`,
+      );
+      for (const property of ["tarball", "deprecated", "scripts", "bin"]) {
+        invariant(
+          fileNode[property] === graphNode[property],
+          `${key} Deno ${property} drifted`,
+        );
+      }
     }
   }
 
@@ -2090,11 +2773,6 @@ async function validateRepositoryContents(
     /^dangerouslyAllowAllBuilds: false$/m,
     "pnpm deny-all override",
   );
-  oneMatch(
-    workspace,
-    /^allowBuilds:\n[ ][ ]esbuild: false\n[ ][ ]fsevents: false$/m,
-    "pnpm workspace top-level keys membership",
-  );
   const graphAllowBuilds = object(
     object(object(graph.lifecycle, "lifecycle").pnpm, "pnpm").allowBuilds,
     "graph allowBuilds",
@@ -2147,6 +2825,41 @@ async function validateRepositoryContents(
       `pnpm ${section} section`,
     );
   }
+  const importerText = pnpmLock.slice(
+    pnpmLock.indexOf("\nimporters:\n") + "\nimporters:\n".length,
+    pnpmLock.indexOf("\npackages:\n"),
+  );
+  exactSet(
+    importerText.split("\n").filter((line) =>
+      /^ {2}\S.*:(?: \{\})?$/.test(line)
+    )
+      .map((
+        line,
+      ) =>
+        line.trim().replace(/:(?: \{\})?$/, "").replace(/^['\"]|['\"]$/g, "")
+      ),
+    ["."],
+    "pnpm importer roots",
+  );
+  const rootImporter = importerText;
+  const importerSectionNames = [
+    ...rootImporter.matchAll(/^ {4}([A-Za-z]+):$/gm),
+  ].map((match) => String(match[1]));
+  exactSet(
+    importerSectionNames,
+    ["devDependencies"],
+    "pnpm root importer dependency sections",
+  );
+  const importerNames = [
+    ...rootImporter.matchAll(/^ {6}['\"]?(.+?)['\"]?:$/gm),
+  ].map((
+    match,
+  ) => String(match[1]));
+  exactSet(
+    importerNames,
+    DIRECT.pnpm.map(nameOf),
+    "pnpm root importer membership",
+  );
   for (const id of DIRECT.pnpm) {
     const selectedVersion = string(selected.get(id)?.version, `${id} version`);
     const graphNode = object(
@@ -2161,7 +2874,7 @@ async function validateRepositoryContents(
     oneMatch(
       pnpmLock,
       new RegExp(
-        `^      '?${escaped}'?:\\n        specifier: ${
+        `^      ['\"]?${escaped}['\"]?:\\n        specifier: ${
           selectedVersion.replaceAll(".", "\\.")
         }\\n        version: ${
           importerResolution.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -2186,7 +2899,7 @@ async function validateRepositoryContents(
     text.split("\n").filter((line) =>
       /^[ ][ ]\S.*:(?: \{\})?$/.test(line) && !line.startsWith("    ")
     ).map((line) =>
-      line.trim().replace(/:(?: \{\})?$/, "").replace(/^'|'$/g, "")
+      line.trim().replace(/:(?: \{\})?$/, "").replace(/^['\"]|['\"]$/g, "")
     );
   exactSet(
     blockKeys(packageText),
@@ -2198,58 +2911,104 @@ async function validateRepositoryContents(
     nodes.map((node) => string(node.snapshotKey, "snapshotKey")),
     "pnpm file and graph snapshot nodes",
   );
+  const yamlBlock = (text: string, rawKey: string): string => {
+    const candidates = [`  ${rawKey}:`, `  '${rawKey}':`, `  "${rawKey}":`];
+    const starts = candidates.map((candidate) => text.indexOf(candidate))
+      .filter((value) => value >= 0);
+    invariant(
+      starts.length === 1,
+      `${rawKey} YAML block must occur exactly once`,
+    );
+    const start = starts[0]!;
+    const remainder = text.slice(start + 3);
+    const next = /\n[ ][ ]\S[^\n]*:/.exec(remainder);
+    return text.slice(start, next ? start + 3 + next.index : undefined);
+  };
   for (const node of nodes) {
     const nodeIntegrity = string(node.integrity, "pnpm node integrity");
-    const escapedPackageKey = string(node.packageKey, "pnpm package key")
-      .replace(
-        /[.*+?^${}()|[\]\\]/g,
-        "\\$&",
-      );
+    const packageKey = string(node.packageKey, "pnpm package key");
+    const packageBlock = yamlBlock(packageText, packageKey);
     oneMatch(
-      packageText,
+      packageBlock,
       new RegExp(
-        `^  '?${escapedPackageKey}'?:\\n    resolution: \\{integrity: ${
+        `^    resolution: \\{integrity: ${
           nodeIntegrity.replace(/[+]/g, "\\+")
         }\\}$`,
         "m",
       ),
       `${node.id} pnpm package node`,
     );
+    for (const field of ["os", "cpu", "libc"] as const) {
+      const values = strings(node[field], `pnpm node ${field}`);
+      const match = new RegExp(`^    ${field}: \\[([^\\]]*)\\]$`, "m").exec(
+        packageBlock,
+      );
+      exactSet(
+        match
+          ? match[1]!.split(",").map((value) => value.trim()).filter(Boolean)
+          : [],
+        values,
+        `${node.id} package ${field}`,
+      );
+    }
+    const peerSection = packageBlock.indexOf("\n    peerDependencies:\n");
+    const filePeerNames = peerSection < 0 ? [] : [
+      ...packageBlock.slice(peerSection).matchAll(
+        /^ {6}['\"]?(.+?)['\"]?: /gm,
+      ),
+    ]
+      .map((match) => String(match[1]));
+    exactSet(
+      filePeerNames,
+      Object.keys(object(node.peerResolutions, "peer resolutions")),
+      `${node.id} package peers`,
+    );
     const snapshotKey = string(node.snapshotKey, "pnpm snapshot key");
-    const renderedSnapshotKey =
-      snapshotKey.startsWith("@") || snapshotKey.includes("(")
-        ? `'${snapshotKey}'`
-        : snapshotKey;
-    const start = snapshotText.indexOf(`  ${renderedSnapshotKey}:`);
-    const nextMatch = /\n[ ][ ]\S[^\n]*:/.exec(
-      snapshotText.slice(start + 3),
-    );
-    const next = nextMatch?.index === undefined
-      ? -1
-      : start + 3 + nextMatch.index;
-    const snapshotBlock = snapshotText.slice(
-      start,
-      next < 0 ? undefined : next,
-    );
-    invariant(start >= 0, `${node.id} pnpm snapshot node is absent`);
+    const snapshotBlock = yamlBlock(snapshotText, snapshotKey);
     const expectedResolutions = object(
       node.dependencyResolutions,
       "dependency resolutions",
     );
+    const sectionEntries = (
+      section: "dependencies" | "optionalDependencies",
+    ) => {
+      const start = snapshotBlock.indexOf(`\n    ${section}:\n`);
+      if (start < 0) return [];
+      const rest = snapshotBlock.slice(start + section.length + 7);
+      const next = /\n[ ][ ][ ][ ]\S[^\n]*:/.exec(rest);
+      const body = next ? rest.slice(0, next.index) : rest;
+      return [...body.matchAll(/^[ ][ ][ ][ ][ ][ ]['\"]?(.+?)['\"]?: (.+)$/gm)]
+        .map((match) => `${match[1]}:${match[2]}`);
+    };
+    for (const section of ["dependencies", "optionalDependencies"] as const) {
+      exactSet(
+        sectionEntries(section),
+        strings(node[section], `pnpm ${section}`).map((dependencyId) => {
+          const dependency = object(
+            nodes.find((candidate) => candidate.id === dependencyId),
+            dependencyId,
+          );
+          return `${dependency.name}:${expectedResolutions[dependencyId]}`;
+        }),
+        `${node.id} snapshot ${section} edges`,
+      );
+    }
+    invariant(
+      snapshotBlock.includes("\n    optional: true") ===
+        (node.optional === true),
+      `${node.id} snapshot optional flag drifted`,
+    );
+    const transitiveStart = snapshotBlock.indexOf(
+      "\n    transitivePeerDependencies:\n",
+    );
+    const fileTransitivePeers = transitiveStart < 0
+      ? []
+      : [...snapshotBlock.slice(transitiveStart).matchAll(/^ {6}- (.+)$/gm)]
+        .map((match) => String(match[1]));
     exactSet(
-      [...snapshotBlock.matchAll(/^[ ][ ][ ][ ][ ][ ]'?([^'\n:]+)'?: (.+)$/gm)]
-        .map((match) => `${match[1]}:${match[2]}`),
-      [
-        ...strings(node.dependencies, "pnpm dependencies"),
-        ...strings(node.optionalDependencies, "pnpm optional dependencies"),
-      ].map((dependencyId) => {
-        const dependency = object(
-          nodes.find((candidate) => candidate.id === dependencyId),
-          dependencyId,
-        );
-        return `${dependency.name}:${expectedResolutions[dependencyId]}`;
-      }),
-      `${node.id} snapshot dependency edges`,
+      fileTransitivePeers,
+      strings(node.transitivePeerDependencies, "transitive peer dependencies"),
+      `${node.id} transitive peer dependencies`,
     );
     for (
       const dependencyId of [
@@ -2270,7 +3029,7 @@ async function validateRepositoryContents(
       oneMatch(
         snapshotBlock,
         new RegExp(
-          `^      '?${dependencyName}'?: ${
+          `^      ['\"]?${dependencyName}['\"]?: ${
             dependencyResolution.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
           }$`,
           "m",
@@ -2380,6 +3139,50 @@ async function expectRepositoryReject(
 
 Deno.test("realistic runtime graph controls discriminate official representations", async () => {
   validateGraph(makeGraph());
+  for (
+    const [candidate, range, expected] of [
+      ["1.2.3", "*", true],
+      ["1.2.3", "1.x", true],
+      ["1.2.3", "1.2.x", true],
+      ["1.2.3", "1.2", true],
+      ["1.2.3", "2.x", false],
+      ["1.2.3", "1.3.x", false],
+      ["1.2.3", "1.x.3", true],
+      ["1.2.3", "1.x.4", false],
+      ["1.2.3", "1.2.3", true],
+      ["1.2.3", "=1.2.3", true],
+      ["1.2.3", ">1.2.2", true],
+      ["1.2.3", ">=1.2.3", true],
+      ["1.2.3", "<2", true],
+      ["1.2.3", "<=1.2.3", true],
+      ["1.2.3", "~1.2.0", true],
+      ["1.2.3", "^1.0.0", true],
+      ["0.2.3", "^0.2.0", true],
+      ["0.0.3", "^0.0.3", true],
+      ["1.2.3", "1.0.0 - 1.2.3", true],
+      ["1.2.3", "<1 || >=1.2.3", true],
+    ] as const
+  ) {
+    invariant(
+      satisfiesRange(candidate, range) === expected,
+      `semver fixture ${candidate} / ${range} was evaluated incorrectly`,
+    );
+  }
+  exactSet(
+    Object.keys(
+      parsePnpmPeerSuffix(
+        "(react-dom@19.2.0(react@19.2.0))(@types/react@19.2.7)",
+      ),
+    ),
+    ["react-dom", "@types/react"],
+    "nested pnpm peer suffix",
+  );
+  const selectedLatestGraph = makeGraph();
+  const selectedLatest = packageAt(selectedLatestGraph, "clsx");
+  object(selectedLatest.latestStable, "latest").version =
+    selectedLatest.version;
+  selectedLatest.newerReleases = [];
+  validateGraph(selectedLatestGraph);
   expectReject(
     (graph) =>
       object(graph.selection, "selection").selectedAt = "2026-01-10T04:05:06Z",
@@ -2389,6 +3192,31 @@ Deno.test("realistic runtime graph controls discriminate official representation
     (graph) => packageAt(graph, "astro").version = "latest",
     "exact stable",
   );
+  expectReject((graph) => {
+    const astro = packageAt(graph, "astro");
+    astro.newerReleases = [];
+  }, "incomplete or vacuous");
+  expectReject((graph) => {
+    const newer = array(packageAt(graph, "astro").newerReleases, "newer");
+    newer.push(clone(newer[0]));
+  }, "strictly ordered");
+  expectReject((graph) => {
+    const edge = object(
+      array(object(graph.repository, "repository").peerEdges, "peers")[0],
+      "peer",
+    );
+    edge.manifestRange = "<1.0.0";
+  }, "violates manifest range");
+  expectReject((graph) => {
+    const jsrNode = array(
+      object(graph.repository, "repository").denoLockNodes,
+      "Deno nodes",
+    ).map((item) => object(item, "Deno node")).find((node) =>
+      node.kind === "jsr" && Array.isArray(node.dependencies)
+    );
+    invariant(jsrNode, "JSR dependency fixture is absent");
+    jsrNode.dependencies = ["@std/internal"];
+  }, "JSR dependency tokens must retain");
   for (
     const forbidden of [
       "atlas",
@@ -2413,7 +3241,9 @@ Deno.test("realistic runtime graph controls discriminate official representation
     (graph) => {
       const item = packageAt(graph, "typescript");
       item.version = "7.0.0";
-      object(item.evidence, "evidence").source =
+      object(item.latestStable, "latest").version = "7.0.1";
+      object(array(item.newerReleases, "newer")[0], "newer").version = "7.0.1";
+      object(item.artifactEvidence, "evidence").source =
         "https://registry.npmjs.org/typescript/7.0.0";
     },
     "TypeScript 7",
@@ -2421,7 +3251,9 @@ Deno.test("realistic runtime graph controls discriminate official representation
   expectReject((graph) => {
     const item = packageAt(graph, "eslint-plugin-astro");
     item.version = "3.1.0";
-    object(item.evidence, "evidence").source =
+    object(item.latestStable, "latest").version = "3.1.1";
+    object(array(item.newerReleases, "newer")[0], "newer").version = "3.1.1";
+    object(item.artifactEvidence, "evidence").source =
       "https://registry.npmjs.org/eslint-plugin-astro/3.1.0";
   }, "ESLint plugin peer ranges are incompatible");
   expectReject(
@@ -2434,14 +3266,15 @@ Deno.test("realistic runtime graph controls discriminate official representation
   );
   expectReject(
     (graph) =>
-      object(packageAt(graph, "deno").evidence, "evidence").kind = "npm-sri",
+      object(packageAt(graph, "deno").artifactEvidence, "evidence").kind =
+        "npm-sri",
     "runtime release checksum",
   );
   expectReject(
     (graph) =>
-      object(packageAt(graph, "astro").evidence, "evidence").source =
+      object(packageAt(graph, "astro").artifactEvidence, "evidence").source =
         "https://registry.npmjs.org/react/1.2.3",
-    "evidence source must be immutable and official",
+    "selected manifest source is not exact",
   );
   expectReject(
     (graph) =>
@@ -2504,7 +3337,7 @@ Deno.test("realistic runtime graph controls discriminate official representation
     (graph) =>
       object(object(graph.lifecycle, "lifecycle").pnpm, "pnpm").allowBuilds =
         {},
-    "missing or unknown fields",
+    "hook policy and inventory disagree",
   );
   expectReject(
     (graph) =>
@@ -2520,6 +3353,16 @@ Deno.test("realistic runtime graph controls discriminate official representation
       ).reviewed = false,
     "unreviewed",
   );
+  expectReject((graph) => {
+    object(object(graph.lifecycle, "lifecycle").pnpm, "pnpm").allowBuilds = {
+      [`esbuild@${fixtureVersion("esbuild")}`]: true,
+      fsevents: true,
+    };
+    object(
+      array(object(graph.lifecycle, "lifecycle").hookInventory, "hooks")[1],
+      "fsevents",
+    ).allowed = true;
+  }, "fsevents build must remain denied");
   expectReject(
     (graph) =>
       object(object(graph.lifecycle, "lifecycle").deno, "deno").allowScripts = [
@@ -2529,9 +3372,10 @@ Deno.test("realistic runtime graph controls discriminate official representation
   );
   expectReject(
     (graph) =>
-      object(packageAt(graph, "astro-react").evidence, "evidence").value = sha(
-        "a",
-      ),
+      object(packageAt(graph, "astro-react").artifactEvidence, "evidence")
+        .value = sha(
+          "a",
+        ),
     "npm sha512 SRI",
   );
   expectReject(
@@ -2558,7 +3402,7 @@ Deno.test("realistic runtime graph controls discriminate official representation
       object(
         array(object(graph.lifecycle, "lifecycle").hookInventory, "hooks")[0],
         "hook",
-      ).packageId = "astro",
+      ).packageName = "astro",
     "transitive hook inventory membership",
   );
   expectReject(
@@ -2566,7 +3410,7 @@ Deno.test("realistic runtime graph controls discriminate official representation
       object(
         array(object(graph.lifecycle, "lifecycle").hookInventory, "hooks")[0],
         "hook",
-      ).packageId = "fsevents",
+      ).packageName = "fsevents",
     "transitive hook inventory membership",
   );
   expectReject(
@@ -2586,6 +3430,17 @@ Deno.test("realistic runtime graph controls discriminate official representation
   expectReject(
     (graph) => object(graph.shadcn, "shadcn").sourceCommit = "main",
     "source commit must be immutable",
+  );
+  expectReject(
+    (graph) =>
+      object(graph.shadcn, "shadcn").registryInvocation =
+        "pnpm dlx shadcn@latest add button",
+    "mutable shadcn payload",
+  );
+  expectReject(
+    (graph) =>
+      object(graph.shadcn, "shadcn").generatedPayloads = ["button.tsx"],
+    "mutable shadcn payload",
   );
   expectReject(
     (graph) =>
@@ -2712,13 +3567,35 @@ Deno.test("realistic runtime graph controls discriminate official representation
     "not an OCI index",
   );
   expectReject(
-    (graph) =>
-      array(
-        object(array(graph.ociImages, "images")[0], "image").platforms,
-        "platforms",
-      ).pop(),
+    (graph) => {
+      const image = object(array(graph.ociImages, "images")[0], "image");
+      array(image.descriptors, "platforms").splice(1, 1);
+      image.descriptorIdentity = JSON.stringify(image.descriptors);
+    },
     "required platforms",
   );
+  expectReject((graph) => {
+    const image = object(array(graph.ociImages, "images")[3], "postgres");
+    object(array(image.descriptors, "descriptors")[2], "arm").variant = "v7";
+    image.descriptorIdentity = JSON.stringify(image.descriptors);
+  }, "required platforms are absent or duplicated");
+  expectReject((graph) => {
+    const image = object(array(graph.ociImages, "images")[1], "node");
+    image.repository = "node";
+  }, "official repository or tag");
+  expectReject((graph) => {
+    const image = object(array(graph.ociImages, "images")[2], "playwright");
+    array(image.descriptors, "descriptors").push({
+      kind: "runnable",
+      os: "linux",
+      architecture: "s390x",
+      variant: null,
+      digest: sha("8"),
+      mediaType: OCI_MANIFEST_MEDIA,
+      size: 1200,
+      annotations: {},
+    });
+  }, "descriptor set disagrees");
   expectReject(
     (graph) => object(graph.proofStatus, "proof").runtimeBehavior = "proven",
     "cannot be marked proven",
@@ -2739,6 +3616,39 @@ Deno.test("realistic runtime graph controls discriminate official representation
   const contents = await syntheticRepository(graph);
   validateGraph(graph);
   await validateRepositoryContents(contents, graph);
+  const optionalDenoGraph = makeGraph();
+  const optionalDenoNode = array(
+    object(optionalDenoGraph.repository, "repository").denoLockNodes,
+    "Deno nodes",
+  ).map((item) => object(item, "Deno node")).find((node) =>
+    node.key === `npm:hono@${fixtureVersion("hono")}`
+  );
+  invariant(optionalDenoNode, "hono Deno fixture is absent");
+  optionalDenoNode.optionalPeers = [
+    "hono",
+    `legacy-hono@npm:hono@${fixtureVersion("hono")}`,
+    `hono@${fixtureVersion("hono")}`,
+  ];
+  optionalDenoNode.tarball =
+    "https://registry.npmjs.org/hono/-/hono-4.10.6.tgz";
+  optionalDenoNode.deprecated = true;
+  optionalDenoNode.scripts = true;
+  optionalDenoNode.bin = true;
+  validateGraph(optionalDenoGraph);
+  const optionalDenoContents = await syntheticRepository(optionalDenoGraph);
+  await validateRepositoryContents(optionalDenoContents, optionalDenoGraph);
+  const transitivePeerGraph = makeGraph();
+  const transitivePeerNode = array(
+    object(transitivePeerGraph.repository, "repository").pnpmLockNodes,
+    "pnpm nodes",
+  ).map((item) => object(item, "pnpm node")).find((node) =>
+    Object.keys(object(node.peerResolutions, "peer resolutions")).length > 0
+  );
+  invariant(transitivePeerNode, "peer-qualified pnpm fixture is absent");
+  transitivePeerNode.transitivePeerDependencies = ["@types/react"];
+  validateGraph(transitivePeerGraph);
+  const transitivePeerContents = await syntheticRepository(transitivePeerGraph);
+  await validateRepositoryContents(transitivePeerContents, transitivePeerGraph);
   oneMatch("covered", /covered/g, "global match fixture");
   await validateRepositoryGraph((path) =>
     Promise.resolve(string(contents.get(path), path))
@@ -2830,6 +3740,11 @@ Deno.test("realistic runtime graph controls discriminate official representation
     packageJson.devDependencies.astro = "^5.15.5";
     files.set("package.json", JSON.stringify(packageJson));
   }, "package dependency is not exact");
+  await expectRepositoryReject((files) => {
+    const denoJson = JSON.parse(string(files.get("deno.json"), "deno.json"));
+    denoJson.compilerOptions.strict = false;
+    files.set("deno.json", JSON.stringify(denoJson));
+  }, "base compilerOptions configuration drifted");
   await expectRepositoryReject(
     (files) =>
       files.set(
@@ -2846,8 +3761,8 @@ Deno.test("realistic runtime graph controls discriminate official representation
       files.set(
         "deno.lock",
         string(files.get("deno.lock"), "deno.lock").replace(
-          '"dependencies":["kysely","postgres"]',
-          '"dependencies":["kysely"]',
+          '"dependencies":["kysely@0.28.8","postgres@3.4.7"]',
+          '"dependencies":["kysely@0.28.8"]',
         ),
       ),
     "Deno dependency edges membership",
@@ -2857,8 +3772,8 @@ Deno.test("realistic runtime graph controls discriminate official representation
       files.set(
         "deno.lock",
         string(files.get("deno.lock"), "deno.lock").replace(
-          '"dependencies":["kysely","postgres"]',
-          '"dependencies":["kysely","postgres","extra"]',
+          '"dependencies":["kysely@0.28.8","postgres@3.4.7"]',
+          '"dependencies":["kysely@0.28.8","postgres@3.4.7","extra"]',
         ),
       ),
     "Deno dependency edges membership",
@@ -2879,7 +3794,9 @@ Deno.test("realistic runtime graph controls discriminate official representation
       files.set(
         "pnpm-workspace.yaml",
         string(files.get("pnpm-workspace.yaml"), "workspace").replace(
-          "allowBuilds:\n  esbuild: false\n  fsevents: false",
+          `allowBuilds:\n  esbuild@${
+            fixtureVersion("esbuild")
+          }: true\n  fsevents: false`,
           "onlyBuiltDependencies:\n  - esbuild",
         ),
       ),
@@ -2949,11 +3866,44 @@ Deno.test("realistic runtime graph controls discriminate official representation
       files.set(
         "pnpm-lock.yaml",
         string(files.get("pnpm-lock.yaml"), "lock").replace(
+          "importers:\n  '.':",
+          "importers:\n  extra: {}\n  '.':",
+        ),
+      ),
+    "pnpm importer roots membership",
+  );
+  await expectRepositoryReject(
+    (files) =>
+      files.set(
+        "pnpm-lock.yaml",
+        string(files.get("pnpm-lock.yaml"), "lock").replace(
+          "    optionalDependencies:\n      fsevents: 2.3.3",
+          "    dependencies:\n      fsevents: 2.3.3",
+        ),
+      ),
+    "snapshot optionalDependencies edges membership",
+  );
+  await expectRepositoryReject(
+    (files) =>
+      files.set(
+        "pnpm-lock.yaml",
+        string(files.get("pnpm-lock.yaml"), "lock").replace(
+          "    os: [darwin]",
+          "    os: [linux]",
+        ),
+      ),
+    "package os membership",
+  );
+  await expectRepositoryReject(
+    (files) =>
+      files.set(
+        "pnpm-lock.yaml",
+        string(files.get("pnpm-lock.yaml"), "lock").replace(
           "      esbuild: 0.25.12",
           "      esbuild: 0.25.11",
         ),
       ),
-    "snapshot dependency edges membership",
+    "snapshot dependencies edges membership",
   );
   await expectRepositoryReject(
     (files) =>
@@ -2997,7 +3947,7 @@ Deno.test("realistic runtime graph controls discriminate official representation
           "      esbuild: 0.25.12\n      unmirrored: 9.9.9",
         ),
       ),
-    "snapshot dependency edges membership",
+    "snapshot dependencies edges membership",
   );
   await expectRepositoryReject(
     (files) =>
