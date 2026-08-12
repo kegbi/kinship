@@ -9,9 +9,13 @@ Depends on: FND-001S at integration revision
 `fcc8663751a6b2f1efb62f744655ad68771df4ca`\
 Maximum rounds: 3
 
-Frozen RED revision: `810afc27a0a1d1e6029ec61793ca067f00f6f40b`\
+Frozen RED revision: `44c71432344a0e9fca0093e7d37a8a52f8fa4fe0`\
 Frozen validator SHA-256:
-`7515751e75d4c6a7730716c7b3a19e5114b5523026de5d25014aeb3d85bc05d5`
+`f62c935b9199828899f5bdef7057eb949da5de0524307c1e4197e7a4289bd970`
+
+Rejected RED attempt: `810afc27a0a1d1e6029ec61793ca067f00f6f40b`. Its check and
+evidence remain immutable history, but its package-only OCI tag grammar is not
+GREEN authority.
 
 ## Outcome
 
