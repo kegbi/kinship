@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "ticketId": "FND-001S",
   "ticketRevision": 1,
-  "phase": "review",
+  "phase": "accepted",
   "round": 1,
   "baseRevision": "976e01716145aa29cc8b5ab22c22210689234ecd",
   "candidateRevision": "55ecd0f3a940ab16cb51d2b1987d30779f746d52",
@@ -51,6 +51,15 @@
       "actorRunId": "FND-001S/orchestrator/r0/940c1592-d106-4088-96d8-b500b1f6f2be",
       "evidenceRef": "results/round-01.json",
       "revision": "55ecd0f3a940ab16cb51d2b1987d30779f746d52"
+    },
+    {
+      "sequence": 6,
+      "from": "review",
+      "to": "accepted",
+      "round": 1,
+      "actorRunId": "FND-001S/orchestrator/r0/940c1592-d106-4088-96d8-b500b1f6f2be",
+      "evidenceRef": "acceptance.md",
+      "revision": "55ecd0f3a940ab16cb51d2b1987d30779f746d52"
     }
   ],
   "resultRefs": [
@@ -61,7 +70,38 @@
   ],
   "dependencyRevisions": {},
   "openFindingIds": [],
-  "orchestratorChecks": [],
-  "acceptedCandidateRevision": null,
+  "orchestratorChecks": [
+    {
+      "runId": "FND-001S/orchestrator/r0/940c1592-d106-4088-96d8-b500b1f6f2be/acceptance-focused",
+      "revision": "55ecd0f3a940ab16cb51d2b1987d30779f746d52",
+      "command": "deno test --allow-read=AGENTS.md,docs/architecture/decisions/0001-astro-personalized-rendering.md,docs/architecture/technology-baseline.md,docs/architecture/compose-contract.md,docs/architecture/configuration-and-secrets.md,docs/architecture/observability.md,docs/product/page-catalog.yaml tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts",
+      "exitCode": 0
+    },
+    {
+      "runId": "FND-001S/orchestrator/r0/940c1592-d106-4088-96d8-b500b1f6f2be/acceptance-coverage",
+      "revision": "55ecd0f3a940ab16cb51d2b1987d30779f746d52",
+      "command": "$ErrorActionPreference='Stop'; $acceptanceCoverageRoot=Join-Path $env:TEMP ('fnd001s-acceptance-coverage-'+[guid]::NewGuid().ToString('N')); $baselineDir=Join-Path $acceptanceCoverageRoot 'baseline'; $coverageDir=Join-Path $acceptanceCoverageRoot 'coverage'; $probePath=Join-Path $acceptanceCoverageRoot 'astro_rendering_topology_contract.ts'; $archivePath=Join-Path $acceptanceCoverageRoot 'baseline.tar'; New-Item -ItemType Directory -Path $acceptanceCoverageRoot,$baselineDir | Out-Null; Copy-Item -LiteralPath 'tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts' -Destination $probePath; $allowRead='--allow-read=AGENTS.md,docs/architecture/decisions/0001-astro-personalized-rendering.md,docs/architecture/technology-baseline.md,docs/architecture/compose-contract.md,docs/architecture/configuration-and-secrets.md,docs/architecture/observability.md,docs/product/page-catalog.yaml'; deno test --quiet --coverage=$coverageDir --clean $allowRead $probePath; if ($LASTEXITCODE -ne 0) { throw 'candidate coverage run failed' }; git archive --format=tar --output=$archivePath 976e01716145aa29cc8b5ab22c22210689234ecd; if ($LASTEXITCODE -ne 0) { throw 'baseline archive failed' }; tar -xf $archivePath -C $baselineDir; if ($LASTEXITCODE -ne 0) { throw 'baseline extraction failed' }; Push-Location $baselineDir; try { deno test --quiet --coverage=$coverageDir $allowRead $probePath; $expectedRedExit=$LASTEXITCODE; if ($expectedRedExit -ne 1) { throw \"baseline coverage run expected exit 1, got $expectedRedExit\" }; deno coverage --detailed --threshold=100 --include='astro_rendering_topology_contract\\.ts$' $coverageDir; if ($LASTEXITCODE -ne 0) { throw 'exact coverage threshold failed' } } finally { Pop-Location }; $probeSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $probePath).Hash.ToLowerInvariant(); if ($probeSha -ne '6cb3610ece718bb420654301cf12cf94a2987385ef99e0a92d295533f0711542') { throw 'coverage probe digest mismatch' }; Write-Output 'candidate green, baseline RED discriminated, frozen probe preserved, exact coverage 100 percent'",
+      "exitCode": 0
+    },
+    {
+      "runId": "FND-001S/orchestrator/r0/940c1592-d106-4088-96d8-b500b1f6f2be/acceptance-fmt",
+      "revision": "55ecd0f3a940ab16cb51d2b1987d30779f746d52",
+      "command": "deno task fmt:check",
+      "exitCode": 0
+    },
+    {
+      "runId": "FND-001S/orchestrator/r0/940c1592-d106-4088-96d8-b500b1f6f2be/acceptance-lint",
+      "revision": "55ecd0f3a940ab16cb51d2b1987d30779f746d52",
+      "command": "deno task lint",
+      "exitCode": 0
+    },
+    {
+      "runId": "FND-001S/orchestrator/r0/940c1592-d106-4088-96d8-b500b1f6f2be/acceptance-check",
+      "revision": "55ecd0f3a940ab16cb51d2b1987d30779f746d52",
+      "command": "deno task check",
+      "exitCode": 0
+    }
+  ],
+  "acceptedCandidateRevision": "55ecd0f3a940ab16cb51d2b1987d30779f746d52",
   "blocker": null
 }

@@ -1,6 +1,6 @@
 # FND-001S: Accept and enforce the DG-01 rendering topology
 
-Status: review, round 1\
+Status: accepted, round 1\
 Owner: trusted top-level orchestrator\
 Base revision: `976e01716145aa29cc8b5ab22c22210689234ecd`\
 Execution class: `ordinary`\
@@ -15,6 +15,9 @@ Candidate revision: `55ecd0f3a940ab16cb51d2b1987d30779f746d52`
 
 Review: `reviews/round-01.json` approved the exact candidate with zero findings
 across all six mandatory lenses.
+
+Acceptance: `acceptance.md` records the trusted controller's independent exact-
+candidate gates and bounded acceptance result. The ticket is not integrated.
 
 ## Outcome
 
