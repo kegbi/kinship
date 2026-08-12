@@ -28,6 +28,16 @@ const OCI_INDEX_MEDIA = "application/vnd.oci.image.index.v1+json";
 const OCI_MANIFEST_MEDIA = "application/vnd.oci.image.manifest.v1+json";
 const MAX_COMPRESSED_EVIDENCE_BYTES = 32 * 1024 * 1024;
 const MAX_DECOMPRESSED_EVIDENCE_BYTES = 64 * 1024 * 1024;
+const COUNTED_TRANSFORM_REGION_START = [
+  "// FND003_COUNTED_TRANSFORM_",
+  "REGION_START",
+].join("");
+const COUNTED_TRANSFORM_REGION_END = [
+  "// FND003_COUNTED_TRANSFORM_",
+  "REGION_END",
+].join("");
+const REVIEWED_COUNTED_TRANSFORM_REGION_SHA256 =
+  "sha256:4aee33efba89f9e962759fecc52fcf1919db5d35d22f5960ce84102007a66b3f";
 
 type EvidenceReader = (
   path: string,
@@ -990,6 +1000,11 @@ interface EvidenceLoadOptions {
   compressedLimit?: number;
   decompressedLimit?: number;
   rawLeaseFactory?: RawLeaseFactory;
+  ownedAcquire?: OwnedChunkAcquire;
+}
+
+interface OwnedChunkAcquire {
+  acquire(source: Uint8Array): Uint8Array;
 }
 
 interface NormalizedEvidence {
@@ -1404,13 +1419,45 @@ function incrementalSha256() {
   };
 }
 
+function countedTransformRegion(source: string): string {
+  const starts = source.split(COUNTED_TRANSFORM_REGION_START).length - 1;
+  const ends = source.split(COUNTED_TRANSFORM_REGION_END).length - 1;
+  invariant(
+    starts === 1,
+    "counted transform source start marker is not unique",
+  );
+  invariant(ends === 1, "counted transform source end marker is not unique");
+  const start = source.indexOf(COUNTED_TRANSFORM_REGION_START) +
+    COUNTED_TRANSFORM_REGION_START.length;
+  const end = source.indexOf(COUNTED_TRANSFORM_REGION_END);
+  invariant(start < end, "counted transform source markers are reordered");
+  const region = source.slice(start, end);
+  invariant(region.length > 0, "counted transform source region is empty");
+  return region;
+}
+
+async function assertReviewedCountedTransformRegion(
+  region: string,
+): Promise<void> {
+  invariant(
+    await sha256Text(region) === REVIEWED_COUNTED_TRANSFORM_REGION_SHA256,
+    "counted transform source region hash drifted",
+  );
+}
+
 function countedHashingStream(
   maximum: number,
   label: string,
   hash: ReturnType<typeof incrementalSha256>,
   count: { value: number },
+  ownedAcquire?: OwnedChunkAcquire,
 ): TransformStream<Uint8Array, Uint8Array> {
+  invariant(
+    ownedAcquire === undefined || typeof ownedAcquire.acquire === "function",
+    "counted transform owned-acquire capability is invalid",
+  );
   return new TransformStream({
+    // FND003_COUNTED_TRANSFORM_REGION_START
     transform(chunk, controller) {
       invariant(
         chunk.byteLength <= maximum - count.value,
@@ -1420,6 +1467,7 @@ function countedHashingStream(
       count.value += chunk.byteLength;
       controller.enqueue(chunk);
     },
+    // FND003_COUNTED_TRANSFORM_REGION_END
   });
 }
 
@@ -1509,6 +1557,7 @@ async function loadEvidence(
             `${id} compressed provenance artifact`,
             compressedHash,
             compressedCount,
+            options.ownedAcquire,
           ),
         ).pipeThrough(
           new DecompressionStream("gzip") as TransformStream<
@@ -1521,6 +1570,7 @@ async function loadEvidence(
             `${id} decompressed provenance artifact`,
             contentHash,
             decompressedCount,
+            options.ownedAcquire,
           ),
         ).pipeThrough(new TextDecoderStream("utf-8", { fatal: true }));
         const reader = decoded.getReader();
@@ -5924,11 +5974,168 @@ Deno.test("evidence ingestion rejects wall-clock scheduling and requires an inde
     await Promise.resolve();
   });
   retainedValueFactory.assertIdle();
+
+  let capabilityReads = 0;
+  const ownedAcquisitions: Uint8Array[] = [];
+  const acquire = ownedAcquisitions.push.bind(
+    ownedAcquisitions,
+  ) as unknown as (source: Uint8Array) => Uint8Array;
+  const authority = await loadEvidence(
+    { provenance: [descriptor] },
+    independentReader,
+    selectedAt,
+    {
+      ownedAcquire: {
+        get acquire() {
+          capabilityReads += 1;
+          return acquire;
+        },
+      },
+    },
+  );
+  authority.descriptor("independent-lease");
+  authority.checksumRows("independent-lease");
+  authority.assertAllUsed();
+  invariant(
+    capabilityReads === 2 && ownedAcquisitions.length === 0,
+    "evidence ingestion did not wire both counted transform capabilities",
+  );
+});
+
+Deno.test("counted transform callback is exact-source locked against copy escapes", async () => {
+  const source = await Deno.readTextFile(new URL(import.meta.url));
+  const region = countedTransformRegion(source);
+  await assertReviewedCountedTransformRegion(region);
+
+  const synthetic =
+    `${COUNTED_TRANSFORM_REGION_START}${region}${COUNTED_TRANSFORM_REGION_END}`;
+  invariant(
+    countedTransformRegion(synthetic) === region,
+    "counted transform synthetic source changed its reviewed region",
+  );
+  const markerMutations = [
+    {
+      source: synthetic.replace(COUNTED_TRANSFORM_REGION_START, ""),
+      message: "counted transform source start marker is not unique",
+    },
+    {
+      source: synthetic.replace(
+        COUNTED_TRANSFORM_REGION_START,
+        COUNTED_TRANSFORM_REGION_START + COUNTED_TRANSFORM_REGION_START,
+      ),
+      message: "counted transform source start marker is not unique",
+    },
+    {
+      source: synthetic.replace(COUNTED_TRANSFORM_REGION_END, ""),
+      message: "counted transform source end marker is not unique",
+    },
+    {
+      source: synthetic.replace(
+        COUNTED_TRANSFORM_REGION_END,
+        COUNTED_TRANSFORM_REGION_END + COUNTED_TRANSFORM_REGION_END,
+      ),
+      message: "counted transform source end marker is not unique",
+    },
+    {
+      source:
+        `${COUNTED_TRANSFORM_REGION_END}${region}${COUNTED_TRANSFORM_REGION_START}`,
+      message: "counted transform source markers are reordered",
+    },
+  ];
+  for (const mutation of markerMutations) {
+    let message = "accepted";
+    try {
+      countedTransformRegion(mutation.source);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    invariant(
+      message === mutation.message,
+      `counted transform marker mutation was not rejected exactly: ${message}`,
+    );
+  }
+
+  const preflight = "      invariant(\n";
+  invariant(
+    region.split(preflight).length === 2,
+    "counted transform reviewed region has an ambiguous preflight invariant",
+  );
+  const copyEscapes = [
+    "      chunk.slice();\n",
+    "      new Uint8Array(chunk);\n",
+    "      Uint8Array.from(chunk);\n",
+    "      [...chunk];\n",
+    "      structuredClone(chunk);\n",
+    "      const copied = chunk.slice();\n      void copied;\n",
+    "      const alias = chunk;\n      alias.slice();\n",
+    '      chunk["slice"]();\n',
+    "      ownedAcquire?.acquire(chunk);\n",
+  ];
+  for (const copyEscape of copyEscapes) {
+    const mutation = region.replace(preflight, `${copyEscape}${preflight}`);
+    const [result] = await Promise.allSettled([
+      assertReviewedCountedTransformRegion(mutation),
+    ]);
+    invariant(
+      result?.status === "rejected" &&
+        (result.reason as Error).message ===
+          "counted transform source region hash drifted",
+      `counted transform copy escape was not hash-rejected: ${copyEscape.trim()}`,
+    );
+  }
+  for (
+    const mutation of [
+      region.replaceAll("\n", "\r\n"),
+      region.replace("    transform", "     transform"),
+    ]
+  ) {
+    const [result] = await Promise.allSettled([
+      assertReviewedCountedTransformRegion(mutation),
+    ]);
+    invariant(
+      result?.status === "rejected" &&
+        (result.reason as Error).message ===
+          "counted transform source region hash drifted",
+      "counted transform byte-only mutation was not hash-rejected",
+    );
+  }
 });
 
 Deno.test("bounded transforms preflight without queued owned copies", async () => {
+  let invalidCapabilityMessage = "accepted";
+  try {
+    countedHashingStream(
+      1,
+      "invalid capability",
+      incrementalSha256(),
+      { value: 0 },
+      { acquire: undefined } as unknown as {
+        acquire(source: Uint8Array): Uint8Array;
+      },
+    );
+  } catch (error) {
+    invalidCapabilityMessage = (error as Error).message;
+  }
+  invariant(
+    invalidCapabilityMessage ===
+      "counted transform owned-acquire capability is invalid",
+    "counted transform did not bind its owned-acquire capability",
+  );
+  const recordingHash = (calls: Uint8Array[]) => {
+    const hash = incrementalSha256();
+    hash.update = calls.push.bind(calls);
+    return hash;
+  };
+  const countedAcquire = (calls: Uint8Array[]) => ({
+    acquire: calls.push.bind(calls) as unknown as (
+      source: Uint8Array,
+    ) => Uint8Array,
+  });
   const sourceChunk = new Uint8Array([1, 2, 3, 4]);
   let downstreamChunk: Uint8Array | undefined;
+  const exactHashCalls: Uint8Array[] = [];
+  let exactWrites = 0;
+  const exactOwnedAcquisitions: Uint8Array[] = [];
   let enteredDownstream!: () => void;
   const downstreamEntered = new Promise<void>((resolve) => {
     enteredDownstream = resolve;
@@ -5941,12 +6148,14 @@ Deno.test("bounded transforms preflight without queued owned copies", async () =
     countedHashingStream(
       sourceChunk.byteLength,
       "stalled transform",
-      incrementalSha256(),
+      recordingHash(exactHashCalls),
       { value: 0 },
+      countedAcquire(exactOwnedAcquisitions),
     ),
   ).pipeTo(
     new WritableStream({
       write(chunk) {
+        exactWrites += 1;
         downstreamChunk = chunk;
         enteredDownstream();
         return downstreamReleased;
@@ -5956,6 +6165,10 @@ Deno.test("bounded transforms preflight without queued owned copies", async () =
   await downstreamEntered;
   const stalledState = {
     sameChunk: downstreamChunk === sourceChunk,
+    exactHashCalls: exactHashCalls.length,
+    exactHashSource: exactHashCalls[0] === sourceChunk,
+    exactWrites,
+    exactOwnedAcquisitions: exactOwnedAcquisitions.length,
   };
   releaseDownstream();
   await stalledPipe;
@@ -5964,6 +6177,9 @@ Deno.test("bounded transforms preflight without queued owned copies", async () =
   const cancellation = new Promise<void>((resolve) => {
     acknowledgeCancellation = resolve;
   });
+  const oversizedHashCalls: Uint8Array[] = [];
+  const oversizedWrites = new Set<Uint8Array>();
+  const oversizedOwnedAcquisitions: Uint8Array[] = [];
   const oversized = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(new Uint8Array([1, 2]));
@@ -5972,23 +6188,78 @@ Deno.test("bounded transforms preflight without queued owned copies", async () =
       acknowledgeCancellation();
     },
   });
-  const oversizedReader = oversized.pipeThrough(
+  const oversizedPipe = oversized.pipeThrough(
     countedHashingStream(
       1,
       "preflight transform",
-      incrementalSha256(),
+      recordingHash(oversizedHashCalls),
       { value: 0 },
+      countedAcquire(oversizedOwnedAcquisitions),
     ),
-  ).getReader();
+  ).pipeTo(
+    new WritableStream({
+      write: oversizedWrites.add.bind(oversizedWrites) as unknown as (
+        chunk: Uint8Array,
+      ) => void,
+    }),
+  );
   const [oversizedResult] = await Promise.all([
-    Promise.allSettled([oversizedReader.read()]),
+    Promise.allSettled([oversizedPipe]),
     cancellation,
   ]);
-  oversizedReader.releaseLock();
+
+  const cumulativeFirst = new Uint8Array([1, 2]);
+  const cumulativeRejected = new Uint8Array([3]);
+  let acknowledgeCumulativeCancellation!: () => void;
+  const cumulativeCancellation = new Promise<void>((resolve) => {
+    acknowledgeCumulativeCancellation = resolve;
+  });
+  const cumulativeHashed: Uint8Array[] = [];
+  const cumulativeWritten = new Set<Uint8Array>();
+  const cumulativeOwnedAcquisitions: Uint8Array[] = [];
+  const cumulativePipe = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(cumulativeFirst);
+      controller.enqueue(cumulativeRejected);
+    },
+    cancel() {
+      acknowledgeCumulativeCancellation();
+    },
+  }).pipeThrough(
+    countedHashingStream(
+      cumulativeFirst.byteLength,
+      "cumulative preflight transform",
+      recordingHash(cumulativeHashed),
+      { value: 0 },
+      countedAcquire(cumulativeOwnedAcquisitions),
+    ),
+  ).pipeTo(
+    new WritableStream({
+      write: cumulativeWritten.add.bind(cumulativeWritten) as unknown as (
+        chunk: Uint8Array,
+      ) => void,
+    }),
+  );
+  const [cumulativeResult] = await Promise.all([
+    Promise.allSettled([cumulativePipe]),
+    cumulativeCancellation,
+  ]);
   invariant(
-    stalledState.sameChunk && oversizedResult[0]?.status === "rejected" &&
+    stalledState.sameChunk && stalledState.exactHashCalls === 1 &&
+      stalledState.exactHashSource && stalledState.exactWrites === 1 &&
+      stalledState.exactOwnedAcquisitions === 0 &&
+      oversizedHashCalls.length === 0 && oversizedWrites.size === 0 &&
+      oversizedOwnedAcquisitions.length === 0 &&
+      oversizedResult[0]?.status === "rejected" &&
       (oversizedResult[0].reason as Error).message.includes(
         "preflight transform exceeds 1 byte limit",
+      ) && cumulativeHashed.length === 1 &&
+      cumulativeHashed[0] === cumulativeFirst &&
+      cumulativeWritten.size === 1 && cumulativeWritten.has(cumulativeFirst) &&
+      cumulativeOwnedAcquisitions.length === 0 &&
+      cumulativeResult[0]?.status === "rejected" &&
+      (cumulativeResult[0].reason as Error).message.includes(
+        "cumulative preflight transform exceeds 2 byte limit",
       ),
     `bounded transform copied/acquired before its bound or released a queued copy: ${
       JSON.stringify(stalledState)
