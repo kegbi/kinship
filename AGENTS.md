@@ -94,6 +94,9 @@ shadcn/ui or an interactive Astro island requires it. Do not turn the
 application into an always-server-rendered SPA without an explicit architecture
 decision.
 
+<!-- deno-fmt-ignore -->
+The production-like frontend topology keeps `web` as a private Astro renderer for exactly the page catalog's `on-demand` routes. The gateway serves static, prerendered, and fingerprinted output, forwards `/api/v1/*` to the private `api`, and is the only public entry point. Development alone may override `web` to run `astro dev`.
+
 Start as a modular monolith with a separately runnable API and worker built from
 the same backend codebase. Domain and application code must not depend on Hono,
 Astro, database drivers, or other delivery and infrastructure frameworks.

@@ -21,6 +21,9 @@ Use page-level hybrid rendering:
   rendering;
 - any other on-demand page requires a page-catalog update and measured reason.
 
+<!-- deno-fmt-ignore -->
+Production and test run a private Astro `web` renderer for exactly the page catalog's five `on-demand` ID/path pairs. The gateway serves static and prerendered output, routes `/api/v1/*` to private `api`, routes only those five on-demand patterns to private `web`, and is the sole public entry point. Development alone replaces the private renderer command with `astro dev`.
+
 The person workspace remains one canonical page even when its independent
 sections load through separate islands or API queries.
 

@@ -1,3 +1,4 @@
+<!-- deno-fmt-ignore-file -->
 # Docker Compose Contract
 
 ## Status
@@ -14,7 +15,7 @@ are created during the executable scaffold, then pinned for reproducibility.
 | `worker`         | Reminder, import/export, synchronization, and maintenance commands           | default, dev, test | Long-running |
 | `migrate`        | Applies and verifies immutable SQL before API/worker readiness               | default, test      | One-shot     |
 | `postgres`       | Canonical durable database                                                   | default, dev, test | Long-running |
-| `web`            | Astro development server with hot reload                                     | dev                | Long-running |
+| `web`            | Private Astro renderer; hot reload in development                            | default, dev, test | Long-running |
 | `object-store`   | S3-compatible development/test attachment storage                            | dev, test          | Long-running |
 | `mail`           | Captured development/test email                                              | dev, test          | Long-running |
 | `otel-collector` | Optional OTLP receiver and local telemetry routing                           | observability      | Long-running |
@@ -48,15 +49,35 @@ liveness must not restart the process merely because PostgreSQL is briefly
 unavailable. Worker readiness reports whether it can claim work, separately from
 whether an external mail or object provider is degraded.
 
+The gateway waits only for `web` readiness before forwarding an on-demand request and returns a bounded unavailable response when that dependency is not ready. `web` liveness reports whether its renderer process is alive; readiness additionally requires the renderer to accept requests and its private `api` origin to be reachable. Development alone overrides the `web` command to `astro dev`; production-like and test profiles use the private production renderer.
+
+## Gateway Routing
+
+The gateway serves static, prerendered, and fingerprinted Astro output directly. It routes `/api/v1/*` to the private `api` service and routes only the following cataloged on-demand pages to the private `web` renderer:
+
+| Page catalog ID | Path pattern | Destination |
+| --- | --- | --- |
+| `auth.verify-email` | `/auth/verify-email` | private `web` |
+| `auth.reset` | `/auth/reset-password` | private `web` |
+| `auth.mfa` | `/auth/mfa` | private `web` |
+| `invitation.accept` | `/invite/:token` | private `web` |
+| `compliance.accept` | `/app/compliance` | private `web` |
+
+No other page or request path may be routed to `web`. Production and test keep both `web` and `api` private; development alone overrides `web` to run `astro dev`.
+
 ## Network Exposure
 
-- Only `gateway` is exposed in a production-like profile.
-- `web`, PostgreSQL, mail UI, object-store UI, and observability UIs may expose
-  loopback ports only in explicit local profiles.
-- API, worker, migration, and data services communicate on private Compose
-  networks.
-- Test ports are dynamically assigned or project-scoped to allow concurrent
-  worktrees and CI jobs.
+Public reachability is restricted to this complete allowlist:
+
+| Service or service class | Production-like and test reachability |
+| --- | --- |
+| `gateway` | Sole public entry point |
+| `web` | Private |
+| `api` | Private |
+| `worker`, `migrate`, `postgres`, `object-store`, `mail`, and `otel-collector` | Private |
+
+Development-only loopback exposure does not make a service public.
+Test ports are dynamically assigned or project-scoped for concurrent worktrees and CI jobs.
 
 ## Data And Volumes
 
