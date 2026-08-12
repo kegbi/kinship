@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "ticketId": "FND-003",
-  "revision": 8,
+  "revision": 9,
   "title": "Freeze the immutable candidate runtime graph",
   "outcome": "One dependency-free, self-tested runtime-graph validator and its exact machine-readable inputs make the repository's candidate Deno, Node, pnpm, frontend, backend, test, and OCI dependency graph immutable, age-eligible, lifecycle-denied by default, and repeatable from clean and offline caches without claiming the separate executable compatibility proofs assigned to named follow-on tickets.",
   "baseRevision": "895731f27f66d614cb431e9ab6bb570b94d1a476",
@@ -144,6 +144,7 @@
     "A mutable shadcn registry response can change generated source independently of the pinned CLI and must not enter this ticket's acceptance evidence.",
     "A superficially complete direct-dependency list can omit the immutable Button source, DOM-test, browser-test, or accepted targeted ESLint import/peer closure and force a successor to mutate a supposedly frozen lock; any such missing edge rejects this graph.",
     "Clean-cache checks can accidentally rely on global caches or dirty the worktree; all restore proofs must use disposable explicit cache roots and finish with a clean allowed-write audit.",
+    "Per-helper byte limits can still permit the validator to overlap full compressed, decompressed, and decoded representations or retain every official response for the full run; the complete evidence-ingestion path must enforce one aggregate active-artifact budget, release raw representations before advancing, and retain only normalized claim data needed by later checks.",
     "Root manifest and lock changes overlap future scaffold, CI, and hook tickets; no concurrent writer may own those paths.",
     "Dependency and registry diagnostics can expose local filesystem topology, tokens, cookies, or credentials unless evidence is deliberately concise and redacted."
   ],
