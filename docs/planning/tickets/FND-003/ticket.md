@@ -2,7 +2,7 @@
 
 Status: ready, round 0 (fresh RED retry pending)\
 Owner: trusted top-level orchestrator\
-Packet revision: 14\
+Packet revision: 15\
 Base revision: `895731f27f66d614cb431e9ab6bb570b94d1a476`\
 Execution class: `ordinary`\
 Depends on: FND-001S at integration revision
@@ -91,8 +91,18 @@ Rejected RED attempts:
   workspace/lock peer-policy drift, missing required React type roots, a
   graph-dependent snapshot-multiplicity mandate, and an unisolated pnpm metadata
   cache.
+- `faa77465828ebfc1451013e42010e8d4c8ac3a32`, validator SHA-256
+  `77e681e048802f792e2ee0b32bb81f667cec8ee367c3c6e3c3615855785aec5c`: exact pnpm
+  11.21.0 and Deno 2.9.5 fixtures made the four real-tool policies executable,
+  all ten controls and exact coverage passed, and the repository retained its
+  intended sole-six RED; review nevertheless proved that self-authored metadata
+  fields were not all consumed and that arbitrary malformed 1:N snapshot lines
+  could pass after their adjacent hash was changed. The live controls-only inner
+  RED was observed but its complete source and metadata hash set was not
+  captured, so this attempt cannot supply the required versioned test-first
+  checkpoint.
 
-All twelve attempts and all associated evidence remain immutable history and
+All thirteen attempts and all associated evidence remain immutable history and
 confer no production-write authority.
 
 ## Outcome
