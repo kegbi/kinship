@@ -68,6 +68,14 @@ ticket's RED revision.
 Resume this same round and verify the frozen revision, path, and digest before
 editing a contract. Do not change the frozen check bytes.
 
+Trusted-controller Git attestation: the controller verified that
+`14e717a6fafe2f114806f29f4b728a096fbdccfd` exists as the corrected RED revision,
+that continuation revision `f05f22c444e9e48d6877318e43dbe454afc65b81` descends
+from it, and that the checkout was clean at that continuation revision. The only
+path changed between those revisions was this ticket's `dispatch/round-01.md`.
+The implementer must not inspect or mutate `.git`; matching the frozen file
+digest above plus this controller attestation satisfies its GREEN prerequisite.
+
 ### GREEN
 
 Make the smallest contract-only change that satisfies the frozen check:
