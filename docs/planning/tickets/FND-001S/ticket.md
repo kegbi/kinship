@@ -1,6 +1,6 @@
 # FND-001S: Accept and enforce the DG-01 rendering topology
 
-Status: RED frozen, round 1\
+Status: review, round 1\
 Owner: trusted top-level orchestrator\
 Base revision: `976e01716145aa29cc8b5ab22c22210689234ecd`\
 Execution class: `ordinary`\
@@ -10,6 +10,8 @@ Maximum rounds: 3
 Frozen RED revision: `2f75cda6b3df374c195740ef89fd2fe218a19b4a`\
 Frozen test SHA-256:
 `6cb3610ece718bb420654301cf12cf94a2987385ef99e0a92d295533f0711542`
+
+Candidate revision: `55ecd0f3a940ab16cb51d2b1987d30779f746d52`
 
 ## Outcome
 
