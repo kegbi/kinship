@@ -40,6 +40,8 @@ const SUPERSEDED_COVERAGE =
   /(?:production TypeScript[^\n]*100%|100%[^\n]*(?:line|branch|function)|100 percent[^\n]*(?:line|branch|function))/i;
 const OBSOLETE_DELIVERY =
   /controllerRunId|issuedByControllerRunId|actorRunId|events\.jsonl|state\.json|schemaVersion|UUID|ticket-metadata-only/i;
+const WORKFLOW_COVERAGE_COMMAND =
+  "DENO_NO_PACKAGE_JSON=1 deno test --allow-read --coverage=.coverage/workflows --clean tools/workflows/foundation_recovery_policy_test.ts && deno coverage --include=tools/workflows/foundation_recovery_policy\\.ts$ --detailed --threshold=80 .coverage/workflows";
 
 const REQUIRED_TEST_POLICY: Readonly<
   Record<string, ReadonlyArray<readonly [code: string, requirement: RegExp]>>
@@ -113,32 +115,7 @@ function issueWhen(
 }
 
 function isWorkflowCoverageCommand(command: string | undefined): boolean {
-  if (command === undefined) return false;
-  const stages = command.split(/\s*&&\s*/);
-  if (stages.length !== 2) return false;
-
-  const [testStage = "", reportStage = ""] = stages;
-  const coverageDirectory = testStage.match(
-    /(?:^|\s)--coverage(?:=|\s+)([^\s]+)/,
-  )?.[1];
-  const productionInclude = reportStage.match(
-    /(?:^|\s)--include(?:=|\s+)([^\s]+)/,
-  )?.[1];
-  return /^DENO_NO_PACKAGE_JSON=1 deno test\b/.test(testStage) &&
-    coverageDirectory !== undefined &&
-    /(?:^|\s)tools\/workflows\/foundation_recovery_policy_test\.ts(?:\s|$)/
-      .test(testStage) &&
-    /^deno coverage\b/.test(reportStage) &&
-    productionInclude ===
-      String.raw`tools/workflows/foundation_recovery_policy\.ts$` &&
-    /(?:^|\s)--threshold(?:=|\s+)80(?:\s|$)/.test(reportStage) &&
-    new RegExp(`(?:^|\\s)${escapeRegExp(coverageDirectory)}(?:\\s|$)`).test(
-      reportStage,
-    );
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return command === WORKFLOW_COVERAGE_COMMAND;
 }
 
 export function validateFoundationRecovery(
