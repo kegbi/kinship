@@ -41,12 +41,9 @@ export const OBSOLETE_WORKFLOW_PATHS = [
 
 const COVERAGE_MINIMUM =
   /80%[^\n]*(?:line|lines)[^\n]*(?:branch|branches)[^\n]*(?:function|functions)/i;
-const SUPERSEDED_COVERAGE =
-  /(?:production TypeScript[^\n]*100%|100%[^\n]*(?:line|branch|function)|100 percent[^\n]*(?:line|branch|function))/i;
 const OBSOLETE_DELIVERY =
   /controllerRunId|issuedByControllerRunId|actorRunId|events\.jsonl|state\.json|schemaVersion|UUID|ticket-metadata-only/i;
-const UNSUPPORTED_AGENT_DIRECTION =
-  /(?:use|invoke|dispatch(?:\s+with|\s+through)?)[^\n]*(?:\.codex\/agents|project custom agents)/i;
+const UNSUPPORTED_AGENT_DIRECTION = /\.codex\/agents|project custom agents/i;
 const WORKFLOW_COVERAGE_COMMAND =
   "DENO_NO_PACKAGE_JSON=1 deno test --allow-read --coverage=.coverage/workflows --clean tools/workflows/foundation_recovery_policy_test.ts && deno coverage --include=tools/workflows/foundation_recovery_policy\\.ts$ --detailed --threshold=80 .coverage/workflows";
 
@@ -125,6 +122,38 @@ function isWorkflowCoverageCommand(command: string | undefined): boolean {
   return command === WORKFLOW_COVERAGE_COMMAND;
 }
 
+function hasConflictingProductionCoverageThreshold(policy: string): boolean {
+  const percentages = policy.matchAll(
+    /\b(\d+(?:\.\d+)?)\s*(?:%|percent(?:age)?\b)/gi,
+  );
+  for (const percentage of percentages) {
+    const index = percentage.index ?? 0;
+    const before = policy.slice(0, index);
+    const after = policy.slice(index + percentage[0].length);
+    const statementStart = Math.max(
+      before.lastIndexOf("."),
+      before.lastIndexOf("!"),
+      before.lastIndexOf("?"),
+      before.lastIndexOf("|"),
+    ) + 1;
+    const followingBoundaries = [".", "!", "?", "|"]
+      .map((boundary) => after.indexOf(boundary))
+      .filter((boundary) => boundary >= 0);
+    const statementEnd = followingBoundaries.length === 0
+      ? policy.length
+      : index + percentage[0].length + Math.min(...followingBoundaries);
+    const statement = policy.slice(statementStart, statementEnd);
+    const describesProductionCoverage = /\bproduction\b/i.test(statement) &&
+      /\blines?\b/i.test(statement) &&
+      /\bbranch(?:es)?\b/i.test(statement) &&
+      /\bfunctions?\b/i.test(statement);
+    if (describesProductionCoverage && Number(percentage[1]) !== 80) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function validateFoundationRecovery(
   snapshot: RecoverySnapshot,
 ): PolicyIssue[] {
@@ -135,7 +164,7 @@ export function validateFoundationRecovery(
     issueWhen(issues, !COVERAGE_MINIMUM.test(policy), "coverage.minimum", path);
     issueWhen(
       issues,
-      SUPERSEDED_COVERAGE.test(policy),
+      hasConflictingProductionCoverageThreshold(policy),
       "coverage.superseded",
       path,
     );
