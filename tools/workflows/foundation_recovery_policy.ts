@@ -41,6 +41,62 @@ const SUPERSEDED_COVERAGE =
 const OBSOLETE_DELIVERY =
   /controllerRunId|issuedByControllerRunId|actorRunId|events\.jsonl|state\.json|schemaVersion|UUID|ticket-metadata-only/i;
 
+const REQUIRED_TEST_POLICY: Readonly<
+  Record<string, ReadonlyArray<readonly [code: string, requirement: RegExp]>>
+> = {
+  "AGENTS.md": [
+    ["tests.changed-behavior", /changed behavior/i],
+    [
+      "tests.required-e2e",
+      /Required user flows still need end-to-end coverage/i,
+    ],
+    ["tests.security-tenant", /security\/tenant boundaries/i],
+    ["tests.schema", /schema behavior always need focused tests/i],
+  ],
+  "docs/architecture/quality-gates.md": [
+    [
+      "tests.changed-behavior",
+      /Every new or changed production behavior uses a recorded RED/i,
+    ],
+    [
+      "tests.required-e2e",
+      /Every defined user-facing workflow[\s\S]{0,120}have end-to-end coverage/i,
+    ],
+    [
+      "tests.security-tenant",
+      /rejection of every cross-workspace relationship path/i,
+    ],
+    ["tests.schema", /## Required Schema Tests/i],
+  ],
+  "docs/development/autonomous-delivery.md": [
+    [
+      "tests.changed-behavior",
+      /a regression or changed-behavior test for every production change/i,
+    ],
+    [
+      "tests.required-e2e",
+      /all required cataloged Playwright flows before a flow is delivered/i,
+    ],
+    [
+      "tests.security-tenant",
+      /authorization, workspace-isolation, and other security boundary tests/i,
+    ],
+    [
+      "tests.schema",
+      /the PostgreSQL schema matrix for schema or harness changes/i,
+    ],
+  ],
+  ".agents/skills/run-tdd-ticket-loop/SKILL.md": [
+    ["tests.changed-behavior", /Changed-behavior tests/i],
+    ["tests.required-e2e", /required E2E flows/i],
+    [
+      "tests.security-tenant",
+      /security and tenant-isolation tests/i,
+    ],
+    ["tests.schema", /schema tests remain mandatory/i],
+  ],
+};
+
 function file(snapshot: RecoverySnapshot, path: string): string {
   const contents = snapshot.files[path];
   if (contents === undefined) throw new Error(`missing policy input: ${path}`);
@@ -54,6 +110,35 @@ function issueWhen(
   path: string,
 ): void {
   if (condition) issues.push({ code, path });
+}
+
+function isWorkflowCoverageCommand(command: string | undefined): boolean {
+  if (command === undefined) return false;
+  const stages = command.split(/\s*&&\s*/);
+  if (stages.length !== 2) return false;
+
+  const [testStage = "", reportStage = ""] = stages;
+  const coverageDirectory = testStage.match(
+    /(?:^|\s)--coverage(?:=|\s+)([^\s]+)/,
+  )?.[1];
+  const productionInclude = reportStage.match(
+    /(?:^|\s)--include(?:=|\s+)([^\s]+)/,
+  )?.[1];
+  return /^DENO_NO_PACKAGE_JSON=1 deno test\b/.test(testStage) &&
+    coverageDirectory !== undefined &&
+    /(?:^|\s)tools\/workflows\/foundation_recovery_policy_test\.ts(?:\s|$)/
+      .test(testStage) &&
+    /^deno coverage\b/.test(reportStage) &&
+    productionInclude ===
+      String.raw`tools/workflows/foundation_recovery_policy\.ts$` &&
+    /(?:^|\s)--threshold(?:=|\s+)80(?:\s|$)/.test(reportStage) &&
+    new RegExp(`(?:^|\\s)${escapeRegExp(coverageDirectory)}(?:\\s|$)`).test(
+      reportStage,
+    );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export function validateFoundationRecovery(
@@ -96,6 +181,13 @@ export function validateFoundationRecovery(
     );
   }
 
+  for (const [path, requirements] of Object.entries(REQUIRED_TEST_POLICY)) {
+    const policy = file(snapshot, path);
+    for (const [code, requirement] of requirements) {
+      issueWhen(issues, !requirement.test(policy), code, path);
+    }
+  }
+
   const denoConfig = JSON.parse(file(snapshot, "deno.json")) as {
     tasks: Record<string, string>;
   };
@@ -106,7 +198,7 @@ export function validateFoundationRecovery(
       !tasks.check?.startsWith("DENO_NO_PACKAGE_JSON=1 deno check ") ||
       tasks["test:workflow"] !==
         "DENO_NO_PACKAGE_JSON=1 deno test --allow-read tools/workflows/foundation_recovery_policy_test.ts" ||
-      !tasks["test:workflow:coverage"]?.includes("--threshold=80") ||
+      !isWorkflowCoverageCommand(tasks["test:workflow:coverage"]) ||
       /--allow-(?:write|run)/.test(tasks["test:workflow"] ?? ""),
     "toolchain.deno",
     "deno.json",

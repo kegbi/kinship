@@ -36,7 +36,7 @@
     "lint": "deno lint",
     "check": "DENO_NO_PACKAGE_JSON=1 deno check tools/schema/validate_postgres.ts tools/workflows/foundation_recovery_policy_test.ts tools/runtime/FND-003/runtime_graph_contract_test.ts",
     "test:workflow": "DENO_NO_PACKAGE_JSON=1 deno test --allow-read tools/workflows/foundation_recovery_policy_test.ts",
-    "test:workflow:coverage": "DENO_NO_PACKAGE_JSON=1 deno test --allow-read --coverage=.coverage/workflows --clean tools/workflows/foundation_recovery_policy_test.ts && deno coverage --detailed --threshold=80 .coverage/workflows",
+    "test:workflow:coverage": "DENO_NO_PACKAGE_JSON=1 deno test --allow-read --coverage=.coverage/workflows --clean tools/workflows/foundation_recovery_policy_test.ts && deno coverage --include=tools/workflows/foundation_recovery_policy\\.ts$ --detailed --threshold=80 .coverage/workflows",
     "deps:deno": "DENO_NO_PACKAGE_JSON=1 deno install --frozen --node-modules-dir=none",
     "deps:deno:offline": "DENO_NO_PACKAGE_JSON=1 deno install --frozen --cached-only --node-modules-dir=none",
     "deps:node": "pnpm install --frozen-lockfile",
