@@ -7,6 +7,17 @@ import {
   validateFoundationRecovery,
 } from "./foundation_recovery_policy.ts";
 
+const AUTHORITATIVE_POLICY_FILES = [
+  "AGENTS.md",
+  "docs/architecture/quality-gates.md",
+  "docs/architecture/technology-baseline.md",
+  "docs/planning/README.md",
+  "docs/planning/roadmap.md",
+  "docs/planning/quality-and-operations.md",
+  "docs/development/autonomous-delivery.md",
+  ".agents/skills/run-tdd-ticket-loop/SKILL.md",
+] as const;
+
 const INPUT_PATHS = [
   ...new Set([
     ...COVERAGE_POLICY_FILES,
@@ -91,6 +102,24 @@ Deno.test("validator rejects coverage and delivery policy regression", () => {
   ]);
 });
 
+Deno.test("coverage policy inventory includes every authoritative policy", () => {
+  assertEquals(COVERAGE_POLICY_FILES, AUTHORITATIVE_POLICY_FILES);
+});
+
+Deno.test("validator rejects production branch coverage regression in every policy input", () => {
+  for (const path of AUTHORITATIVE_POLICY_FILES) {
+    const snapshot = mutate(
+      repositorySnapshot(),
+      path,
+      (contents) =>
+        `${contents}\nProduction branch coverage may fall to 70%.\n`,
+    );
+    assertEquals(validateFoundationRecovery(snapshot), [
+      { code: "coverage.superseded", path },
+    ]);
+  }
+});
+
 Deno.test("validator rejects split production coverage thresholds in every policy input", () => {
   const conflictingClaims = [
     [
@@ -150,7 +179,7 @@ Deno.test("validator rejects unsupported protected-agent workflow directions", (
     "Use project custom agents for role dispatch.",
   ];
 
-  for (const path of DELIVERY_POLICY_FILES) {
+  for (const path of AUTHORITATIVE_POLICY_FILES) {
     for (const direction of directions) {
       const snapshot = mutate(
         repositorySnapshot(),
