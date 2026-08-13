@@ -90,8 +90,43 @@ Deno.test("validator rejects coverage and delivery policy regression", () => {
   ]);
 });
 
+Deno.test("validator rejects conflicting production coverage thresholds despite decoys", () => {
+  const conflictingStatements = [
+    "70% line, branch, and function coverage for production code.",
+    "Production code has 79 percent lines, branches, and functions coverage.",
+    "Production line, branch, and function coverage is 100%.",
+  ];
+
+  for (const statement of conflictingStatements) {
+    const snapshot = mutate(
+      repositorySnapshot(),
+      "AGENTS.md",
+      (contents) =>
+        contents.replace(
+          "80% line, branch, and function coverage for production code.",
+          `${statement}\n- Maintain at least 80% line, branch, and function`,
+        ),
+    );
+    assertEquals(validateFoundationRecovery(snapshot), [
+      { code: "coverage.superseded", path: "AGENTS.md" },
+    ]);
+  }
+});
+
+Deno.test("validator ignores percentages unrelated to production coverage", () => {
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "AGENTS.md",
+    (contents) =>
+      `${contents}\nImport fixtures may contain 70% known records.\n`,
+  );
+  assertEquals(validateFoundationRecovery(snapshot), []);
+});
+
 Deno.test("validator rejects unsupported protected-agent workflow directions", () => {
   const directions = [
+    "Follow .codex/agents/orchestrator.toml for role dispatch.",
+    "Role dispatch may reference project custom agents.",
     "Use .codex/agents for role dispatch.",
     "Use project custom agents for role dispatch.",
   ];

@@ -59,9 +59,9 @@ in
 [docs/development/autonomous-delivery.md](docs/development/autonomous-delivery.md).
 Invoke the repo-local run-tdd-ticket-loop skill for autonomous implementation
 runs. Clean implementation and review contexts may be generic subagents or
-contexts that follow the repo skill. Legacy `.codex/agents` prompts and project
-custom agents are not part of the supported simplified path unless separately
-authorized and updated.
+contexts that follow the repo skill. Legacy repository role prompts and
+project-specific role definitions are not part of the supported simplified path
+unless separately authorized and updated.
 
 ## Technology and Architecture Baseline
 
