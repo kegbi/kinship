@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "ticketId": "FND-003",
+  "ticketRevision": 15,
+  "phase": "ready",
+  "round": 0,
+  "baseRevision": "895731f27f66d614cb431e9ab6bb570b94d1a476",
+  "candidateRevision": null,
+  "events": [
+    {
+      "sequence": 1,
+      "from": "planned",
+      "to": "ready",
+      "round": 0,
+      "actorRunId": "FND-003/orchestrator/r0/b308fcda-6e91-4fec-8b40-bf19c6e21a16",
+      "evidenceRef": "ticket.json",
+      "revision": "895731f27f66d614cb431e9ab6bb570b94d1a476"
+    }
+  ],
+  "resultRefs": [],
+  "reviewRefs": [],
+  "dependencyRevisions": {
+    "FND-001S": "fcc8663751a6b2f1efb62f744655ad68771df4ca"
+  },
+  "openFindingIds": [],
+  "orchestratorChecks": [],
+  "acceptedCandidateRevision": null,
+  "blocker": null
+}
