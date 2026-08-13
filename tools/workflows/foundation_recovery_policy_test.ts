@@ -131,6 +131,12 @@ Deno.test("validator rejects non-executable workflow coverage tasks", () => {
       "--include=tools/workflows/other\\.ts$",
     ),
     validCommand.replace("--threshold=80", "--threshold=79"),
+    `${validCommand} || DENO_NO_PACKAGE_JSON=1 deno eval \"Deno.exit(0)\"`,
+    validCommand.replace("deno test", "deno test --filter=no-tests"),
+    validCommand.replace("deno test", "deno test --quiet"),
+    `${validCommand} > /dev/null`,
+    `${validCommand} ; DENO_NO_PACKAGE_JSON=1 deno eval \"Deno.exit(0)\"`,
+    `${validCommand} | DENO_NO_PACKAGE_JSON=1 deno eval \"Deno.exit(0)\"`,
   ];
 
   for (const command of invalidCommands) {
