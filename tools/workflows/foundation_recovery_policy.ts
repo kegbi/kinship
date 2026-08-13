@@ -43,7 +43,8 @@ const COVERAGE_MINIMUM =
   /80%[^\n]*(?:line|lines)[^\n]*(?:branch|branches)[^\n]*(?:function|functions)/i;
 const OBSOLETE_DELIVERY =
   /controllerRunId|issuedByControllerRunId|actorRunId|events\.jsonl|state\.json|schemaVersion|UUID|ticket-metadata-only/i;
-const UNSUPPORTED_AGENT_DIRECTION = /\.codex\/agents|project custom agents/i;
+const UNSUPPORTED_AGENT_DIRECTION =
+  /\.codex["'`]?\s*(?:[\\/]\s*)+["'`]?\s*agents\b|project\s+custom\s+agents/i;
 const WORKFLOW_COVERAGE_COMMAND =
   "DENO_NO_PACKAGE_JSON=1 deno test --allow-read --coverage=.coverage/workflows --clean tools/workflows/foundation_recovery_policy_test.ts && deno coverage --include=tools/workflows/foundation_recovery_policy\\.ts$ --detailed --threshold=80 .coverage/workflows";
 
@@ -123,32 +124,21 @@ function isWorkflowCoverageCommand(command: string | undefined): boolean {
 }
 
 function hasConflictingProductionCoverageThreshold(policy: string): boolean {
-  const percentages = policy.matchAll(
-    /\b(\d+(?:\.\d+)?)\s*(?:%|percent(?:age)?\b)/gi,
+  const claims = policy.split(
+    /[!?;|]+|\.(?!\d)|(?:^|\r?\n)\s*(?:[-*+]|\d+[.)])\s+/gm,
   );
-  for (const percentage of percentages) {
-    const index = percentage.index ?? 0;
-    const before = policy.slice(0, index);
-    const after = policy.slice(index + percentage[0].length);
-    const statementStart = Math.max(
-      before.lastIndexOf("."),
-      before.lastIndexOf("!"),
-      before.lastIndexOf("?"),
-      before.lastIndexOf("|"),
-    ) + 1;
-    const followingBoundaries = [".", "!", "?", "|"]
-      .map((boundary) => after.indexOf(boundary))
-      .filter((boundary) => boundary >= 0);
-    const statementEnd = followingBoundaries.length === 0
-      ? policy.length
-      : index + percentage[0].length + Math.min(...followingBoundaries);
-    const statement = policy.slice(statementStart, statementEnd);
-    const describesProductionCoverage = /\bproduction\b/i.test(statement) &&
-      /\blines?\b/i.test(statement) &&
-      /\bbranch(?:es)?\b/i.test(statement) &&
-      /\bfunctions?\b/i.test(statement);
-    if (describesProductionCoverage && Number(percentage[1]) !== 80) {
-      return true;
+  for (const claim of claims) {
+    const describesProductionCoverage = /\bproduction\b/i.test(claim) &&
+      /\bcoverage\b/i.test(claim) &&
+      /\b(?:lines?|branch(?:es)?|functions?)\b/i.test(claim);
+    if (!describesProductionCoverage) continue;
+
+    for (
+      const percentage of claim.matchAll(
+        /\b(\d+(?:\.\d+)?)\s*(?:%|percent(?:age)?\b)/gi,
+      )
+    ) {
+      if (Number(percentage[1]) !== 80) return true;
     }
   }
   return false;

@@ -86,46 +86,65 @@ Deno.test("validator rejects coverage and delivery policy regression", () => {
   );
   assertEquals(issueCodes(validateFoundationRecovery(snapshot)), [
     "coverage.minimum",
+    "coverage.superseded",
     "delivery.obsolete",
   ]);
 });
 
-Deno.test("validator rejects conflicting production coverage thresholds despite decoys", () => {
-  const conflictingStatements = [
-    "70% line, branch, and function coverage for production code.",
-    "Production code has 79 percent lines, branches, and functions coverage.",
-    "Production line, branch, and function coverage is 100%.",
+Deno.test("validator rejects split production coverage thresholds in every policy input", () => {
+  const conflictingClaims = [
+    [
+      "Production line coverage may fall to 70%.",
+      "Production branch coverage may fall to 70%.",
+      "Production function coverage may fall to 70%.",
+    ].join("\n"),
+    [
+      "- 79 percent may be accepted for production branch coverage.",
+      "- Function coverage in production may be 70%.",
+      "- Production coverage at 100 percentage for lines is accepted.",
+    ].join("\n"),
+    "| Production line coverage may fall to 70% |",
   ];
 
-  for (const statement of conflictingStatements) {
-    const snapshot = mutate(
-      repositorySnapshot(),
-      "AGENTS.md",
-      (contents) =>
-        contents.replace(
-          "80% line, branch, and function coverage for production code.",
-          `${statement}\n- Maintain at least 80% line, branch, and function`,
-        ),
-    );
-    assertEquals(validateFoundationRecovery(snapshot), [
-      { code: "coverage.superseded", path: "AGENTS.md" },
-    ]);
+  for (const path of COVERAGE_POLICY_FILES) {
+    for (const claims of conflictingClaims) {
+      const snapshot = mutate(
+        repositorySnapshot(),
+        path,
+        (contents) => `${contents}\n${claims}\n`,
+      );
+      assertEquals(validateFoundationRecovery(snapshot), [
+        { code: "coverage.superseded", path },
+      ]);
+    }
   }
 });
 
-Deno.test("validator ignores percentages unrelated to production coverage", () => {
-  const snapshot = mutate(
-    repositorySnapshot(),
-    "AGENTS.md",
-    (contents) =>
-      `${contents}\nImport fixtures may contain 70% known records.\n`,
-  );
-  assertEquals(validateFoundationRecovery(snapshot), []);
+Deno.test("validator allows percentages outside production coverage claims", () => {
+  const allowedClaims = [
+    "Production imports may contain 70% known records.",
+    "Line coverage may fall to 70% in a local fixture.",
+    "Branches may be sampled at 70 percent outside production.",
+    "Function coverage may be 70 percentage in examples.",
+  ].join("\n");
+
+  for (const path of COVERAGE_POLICY_FILES) {
+    const snapshot = mutate(
+      repositorySnapshot(),
+      path,
+      (contents) => `${contents}\n${allowedClaims}\n`,
+    );
+    assertEquals(validateFoundationRecovery(snapshot), []);
+  }
 });
 
 Deno.test("validator rejects unsupported protected-agent workflow directions", () => {
   const directions = [
     "Follow .codex/agents/orchestrator.toml for role dispatch.",
+    "Follow .codex\\agents\\orchestrator.toml for role dispatch.",
+    "Follow .CODEX \\\\ agents\\orchestrator.toml for role dispatch.",
+    "Follow `.codex\\agents\\orchestrator.toml` for role dispatch.",
+    'Follow ".codex" / "agents" / "orchestrator.toml" for role dispatch.',
     "Role dispatch may reference project custom agents.",
     "Use .codex/agents for role dispatch.",
     "Use project custom agents for role dispatch.",
