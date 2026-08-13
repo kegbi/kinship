@@ -237,7 +237,11 @@ function isDependencyBootstrapTruthful(
 }
 
 function hasDirectTestTarget(command: string | undefined): boolean {
-  return /(?:_test|\.test)\.ts(?=$|[\s"'`;>|&])/i.test(command ?? "");
+  return /(?:_test|\.test)\.tsx?(?=$|[\s"'`;>|&])/i.test(command ?? "");
+}
+
+function hasDirectTsxTestTarget(command: string | undefined): boolean {
+  return /(?:_test|\.test)\.tsx(?=$|[\s"'`;>|&])/i.test(command ?? "");
 }
 
 function hasCanonicalPnpmLockConfiguration(config: string): boolean {
@@ -270,10 +274,14 @@ function controlledCoverageAssertions(policy: string): string[] {
       NON_GOVERNING_EXAMPLE.test(claim)
     ) return false;
 
-    const hasAllMetrics = /\blines?\b/i.test(claim) &&
-      /\bbranch(?:es)?\b/i.test(claim) && /\bfunctions?\b/i.test(claim);
+    const hasLineMetric = /\blines?\b/i.test(claim);
+    const hasBranchMetric = /\bbranch(?:es)?\b/i.test(claim);
+    const hasFunctionMetric = /\bfunctions?\b/i.test(claim);
+    const hasAllMetrics = hasLineMetric && hasBranchMetric &&
+      hasFunctionMetric;
     const hasGovernedCoverage = GOVERNED_COVERAGE_SCOPE.test(claim) &&
-      (/\bcoverage\b/i.test(claim) || /\bgates?\b/i.test(claim));
+      (hasLineMetric || hasBranchMetric || hasFunctionMetric ||
+        /\bcoverage\b/i.test(claim) || /\bgates?\b/i.test(claim));
     return hasAllMetrics || hasGovernedCoverage;
   }).map(normalizeCoverageAssertion);
 }
@@ -347,6 +355,7 @@ export function validateFoundationRecovery(
   };
   const tasks = denoConfig.tasks;
   const checkHasTestTarget = hasDirectTestTarget(tasks.check);
+  const checkHasTsxTestTarget = hasDirectTsxTestTarget(tasks.check);
   const checkHasShellControl = /[;|>&]/.test(tasks.check ?? "");
   issueWhen(
     issues,
@@ -380,7 +389,8 @@ export function validateFoundationRecovery(
     issues,
     tasks["ticket:validate"] !== undefined ||
       (tasks.check !== ROOT_CHECK_COMMAND &&
-        (!checkHasTestTarget || checkHasShellControl)) ||
+        (!checkHasTestTarget || checkHasTsxTestTarget ||
+          checkHasShellControl)) ||
       tasks["test:workflow"] !==
         "DENO_NO_PACKAGE_JSON=1 deno test --allow-read tools/workflows/foundation_recovery_policy_test.ts" ||
       !isWorkflowCoverageCommand(tasks["test:workflow:coverage"]) ||
