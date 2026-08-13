@@ -256,6 +256,49 @@ Deno.test("validator rejects controlled coverage assertion bypasses in every pol
   }
 });
 
+Deno.test("validator fails closed for unapproved governed coverage assertions", () => {
+  const conflictingClaims = [
+    "The backend coverage minimum is seventy percent.",
+    "Client-side line, branch, and function coverage must be .79.",
+    "Frontend line, branch, and function coverage is limited to 80%.",
+    "Production coverage cannot exceed 80%.",
+  ];
+  const acceptedClaims: string[] = [];
+
+  for (const path of AUTHORITATIVE_POLICY_FILES) {
+    for (const claim of conflictingClaims) {
+      const snapshot = mutate(
+        repositorySnapshot(),
+        path,
+        (contents) => `${contents}\n${claim}\n`,
+      );
+      if (validateFoundationRecovery(snapshot).length === 0) {
+        acceptedClaims.push(`${path}: ${claim}`);
+      }
+    }
+  }
+
+  assertEquals(acceptedClaims, []);
+});
+
+Deno.test("validator allows canonical coverage policy and unrelated quantities", () => {
+  const allowedClaims = [
+    "Production TypeScript must reach at least 80% line, branch, and function coverage.",
+    "Release 1.80.0 was validated on 2026-08-13.",
+    "Production imports may contain 70% known records.",
+    "An example fixture may demonstrate 79% line coverage outside production.",
+  ].join("\n");
+
+  for (const path of AUTHORITATIVE_POLICY_FILES) {
+    const snapshot = mutate(
+      repositorySnapshot(),
+      path,
+      (contents) => `${contents}\n${allowedClaims}\n`,
+    );
+    assertEquals(validateFoundationRecovery(snapshot), []);
+  }
+});
+
 Deno.test("validator allows percentages outside production coverage claims", () => {
   const allowedClaims = [
     "Production imports may contain 70% known records.",
@@ -370,6 +413,56 @@ Deno.test("validator rejects quoted and standard test targets in the root check 
       { code: "toolchain.hidden-test", path: "deno.json" },
     ]);
   }
+});
+
+Deno.test("validator rejects every noncanonical root check command", () => {
+  const canonicalCheck =
+    "DENO_NO_PACKAGE_JSON=1 deno check tools/schema/validate_postgres.ts tools/workflows/foundation_recovery_policy.ts";
+  const mutations: ReadonlyArray<
+    readonly [command: string, expectedCodes: readonly string[]]
+  > = [
+    [
+      `${canonicalCheck} tools/runtime/example_test.ts>NUL`,
+      ["toolchain.deno", "toolchain.hidden-test"],
+    ],
+    [
+      `${canonicalCheck} \"tools/runtime/example.test.ts\">NUL`,
+      ["toolchain.deno", "toolchain.hidden-test"],
+    ],
+    [
+      `${canonicalCheck} tools/runtime/example_test.ts; deno eval \"Deno.exit(0)\"`,
+      ["toolchain.deno", "toolchain.hidden-test"],
+    ],
+    [
+      `${canonicalCheck} || deno eval \"Deno.exit(0)\"`,
+      ["toolchain.deno"],
+    ],
+  ];
+  const acceptedCommands: string[] = [];
+
+  for (const [command, expectedCodes] of mutations) {
+    const snapshot = withDenoConfig(repositorySnapshot(), (config) => {
+      (config.tasks as Record<string, string>).check = command;
+    });
+    const actualCodes = issueCodes(validateFoundationRecovery(snapshot));
+    if (JSON.stringify(actualCodes) !== JSON.stringify(expectedCodes)) {
+      acceptedCommands.push(
+        `${command} => ${JSON.stringify(actualCodes)}`,
+      );
+    }
+  }
+
+  assertEquals(acceptedCommands, []);
+});
+
+Deno.test("validator treats a non-test contract target as noncanonical, not hidden", () => {
+  const snapshot = withDenoConfig(repositorySnapshot(), (config) => {
+    const tasks = config.tasks as Record<string, string>;
+    tasks.check += " tools/runtime/example_contract.ts";
+  });
+  assertEquals(validateFoundationRecovery(snapshot), [
+    { code: "toolchain.deno", path: "deno.json" },
+  ]);
 });
 
 Deno.test("validator rejects missing and no-op dependency bootstrap tasks", () => {
