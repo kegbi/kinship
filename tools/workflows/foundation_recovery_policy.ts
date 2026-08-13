@@ -41,6 +41,12 @@ export const OBSOLETE_WORKFLOW_PATHS = [
   ".agents/skills/run-tdd-ticket-loop/assets/ticket.template.md",
 ] as const;
 
+export const RETIRED_RUNTIME_GRAPH_PATHS = [
+  "tools/runtime/FND-003",
+  "docs/validation/runtime-graph-fnd003.json",
+  "docs/validation/runtime-graph-fnd003.md",
+] as const;
+
 const COVERAGE_MINIMUM =
   /80%[^\n]*(?:line|lines)[^\n]*(?:branch|branches)[^\n]*(?:function|functions)/i;
 const OBSOLETE_DELIVERY =
@@ -125,14 +131,84 @@ function isWorkflowCoverageCommand(command: string | undefined): boolean {
   return command === WORKFLOW_COVERAGE_COMMAND;
 }
 
+function commandTokens(command: string | undefined): string[] {
+  return command?.trim().split(/\s+/).filter(Boolean) ?? [];
+}
+
+function isExactCommand(
+  command: string | undefined,
+  prefix: readonly string[],
+  options: readonly string[],
+): boolean {
+  const tokens = commandTokens(command);
+  if (
+    tokens.length !== prefix.length + options.length ||
+    prefix.some((token, index) => tokens[index] !== token)
+  ) return false;
+  return JSON.stringify(tokens.slice(prefix.length).sort()) ===
+    JSON.stringify([...options].sort());
+}
+
+function isDependencyBootstrapTruthful(
+  tasks: Readonly<Record<string, string>>,
+): boolean {
+  const aggregate = tasks.deps?.split(/\s*&&\s*/).map((step) =>
+    commandTokens(step).join(" ")
+  );
+  return isExactCommand(
+    tasks["deps:deno"],
+    ["DENO_NO_PACKAGE_JSON=1", "deno", "install"],
+    ["--frozen", "--node-modules-dir=none"],
+  ) && isExactCommand(
+    tasks["deps:deno:offline"],
+    ["DENO_NO_PACKAGE_JSON=1", "deno", "install"],
+    ["--cached-only", "--frozen", "--node-modules-dir=none"],
+  ) && isExactCommand(
+    tasks["deps:node"],
+    ["pnpm", "install"],
+    ["--frozen-lockfile"],
+  ) && isExactCommand(
+    tasks["deps:node:offline"],
+    ["pnpm", "install"],
+    ["--frozen-lockfile", "--offline"],
+  ) && JSON.stringify(aggregate) === JSON.stringify([
+        "deno task deps:deno",
+        "deno task deps:node",
+      ]);
+}
+
+function referencedTestPaths(command: string | undefined): string[] {
+  return commandTokens(command).filter((token) => /_test\.ts$/.test(token));
+}
+
+function hasCheckOnlyTest(tasks: Readonly<Record<string, string>>): boolean {
+  const executedTests = new Set(
+    Object.entries(tasks).flatMap(([name, command]) =>
+      name.startsWith("test:") && /(?:^|\s)deno\s+test(?:\s|$)/.test(command)
+        ? referencedTestPaths(command)
+        : []
+    ),
+  );
+  return referencedTestPaths(tasks.check).some((path) =>
+    !executedTests.has(path)
+  );
+}
+
 function hasConflictingProductionCoverageThreshold(policy: string): boolean {
   const claims = policy.split(
     /[!?;|]+|\.(?!\d)|(?:^|\r?\n)\s*(?:[-*+]|\d+[.)])\s+/gm,
   );
   for (const claim of claims) {
-    const describesProductionCoverage = /\bproduction\b/i.test(claim) &&
-      /\bcoverage\b/i.test(claim) &&
-      /\b(?:lines?|branch(?:es)?|functions?)\b/i.test(claim);
+    const hasCoverageScope = /\b(?:production|back[ -]?end|front[ -]?end)\b/i
+      .test(claim);
+    const hasCoverageMetric = /\b(?:lines?|branch(?:es)?|functions?)\b/i.test(
+      claim,
+    );
+    const hasCoverageMeaning = /\b(?:coverage|gate)\b/i.test(claim) ||
+      /\blines?\b/i.test(claim) && /\bbranch(?:es)?\b/i.test(claim) &&
+        /\bfunctions?\b/i.test(claim);
+    const describesProductionCoverage = hasCoverageScope &&
+      hasCoverageMetric && hasCoverageMeaning;
     if (!describesProductionCoverage) continue;
 
     if (
@@ -207,14 +283,28 @@ export function validateFoundationRecovery(
   const denoConfig = JSON.parse(file(snapshot, "deno.json")) as {
     fmt: { exclude?: string[] };
     tasks: Record<string, string>;
+    lock?: { frozen?: boolean };
   };
+  const tasks = denoConfig.tasks;
   issueWhen(
     issues,
     !denoConfig.fmt.exclude?.includes("docs/planning/tickets/"),
     "toolchain.formatter-history",
     "deno.json",
   );
-  const tasks = denoConfig.tasks;
+  issueWhen(
+    issues,
+    hasCheckOnlyTest(tasks),
+    "toolchain.hidden-test",
+    "deno.json",
+  );
+  issueWhen(
+    issues,
+    denoConfig.lock?.frozen !== true ||
+      !isDependencyBootstrapTruthful(tasks),
+    "toolchain.dependencies",
+    "deno.json",
+  );
   issueWhen(
     issues,
     tasks["ticket:validate"] !== undefined ||
@@ -251,6 +341,15 @@ export function validateFoundationRecovery(
       issues,
       snapshot.existingPaths.has(path),
       "workflow.obsolete-path",
+      path,
+    );
+  }
+
+  for (const path of RETIRED_RUNTIME_GRAPH_PATHS) {
+    issueWhen(
+      issues,
+      snapshot.existingPaths.has(path),
+      "runtime.retired-artifact",
       path,
     );
   }

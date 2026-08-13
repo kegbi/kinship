@@ -64,6 +64,11 @@ passing evidence. Introduce each missing command only after a RED self-test or
 bounded probe demonstrates the absent behavior, then make the command execute a
 real suite before any hook or CI provider calls it.
 
+No FND-003 runtime-graph gate is active. Its unaccepted partial snapshot was
+retired because the root only type-checked its test while the assertion itself
+failed. A future runtime-graph gate must arrive with a real root test task and
+passing repository artifacts in the same test-first change.
+
 ## Planned Canonical Command Contract
 
 The root `deno task` interface remains the one supported entry point even when a
