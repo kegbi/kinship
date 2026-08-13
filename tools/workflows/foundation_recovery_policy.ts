@@ -135,6 +135,11 @@ function hasConflictingProductionCoverageThreshold(policy: string): boolean {
       /\b(?:lines?|branch(?:es)?|functions?)\b/i.test(claim);
     if (!describesProductionCoverage) continue;
 
+    if (
+      /\b(?:at\s+most|up\s+to|maximum(?:\s+of)?|no\s+more\s+than)\s+80\s*(?:%|percent(?:age)?\b)/i
+        .test(claim)
+    ) return true;
+
     for (
       const percentage of claim.matchAll(
         /\b(\d+(?:\.\d+)?)\s*(?:%|percent(?:age)?\b)/gi,
