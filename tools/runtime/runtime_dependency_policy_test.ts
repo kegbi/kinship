@@ -419,3 +419,35 @@ Deno.test("validator rejects pin, lock, lifecycle, task, note, and image drift",
     "runtime.pin",
   ]);
 });
+
+Deno.test("schema runner primary default matches the immutable Compose image", () => {
+  const runner = readOptional("tools/schema/validate_postgres.ts");
+  assert(runner !== undefined, "schema runner source must exist");
+  assert(
+    runner.includes("let image = DEFAULT_POSTGRES_IMAGE;"),
+    "schema runner must initialize its primary image from the declared default",
+  );
+  assert(
+    runner.includes("env: { POSTGRES_IMAGE: postgresImage }"),
+    "schema runner must pass its selected image to Compose",
+  );
+
+  const runnerDefault = runner.match(
+    /^const DEFAULT_POSTGRES_IMAGE = "([^"]+)";$/m,
+  )?.[1];
+  assert(
+    runnerDefault !== undefined,
+    "schema runner must declare an inspectable primary image default",
+  );
+
+  const composeDefault = requireText(
+    repositorySnapshot(),
+    "compose.schema-test.yaml",
+  ).match(/\$\{POSTGRES_IMAGE:-([^}]+)\}/)?.[1];
+  assert(
+    composeDefault !== undefined,
+    "schema Compose must declare a POSTGRES_IMAGE fallback",
+  );
+  assertEquals(composeDefault, EXPECTED_IMAGES.primary);
+  assertEquals(runnerDefault, composeDefault);
+});
