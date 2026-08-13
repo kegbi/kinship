@@ -93,7 +93,7 @@ the canonical database harness.
 The root type-check task is intentionally exact and production-only:
 
 ```text
-DENO_NO_PACKAGE_JSON=1 deno check tools/schema/validate_postgres.ts tools/workflows/foundation_recovery_policy.ts
+DENO_NO_PACKAGE_JSON=1 deno check tools/schema/validate_postgres.ts tools/workflows/foundation_recovery_policy.ts tools/runtime/runtime_dependency_policy.ts
 ```
 
 Tests run through test tasks, never by appending targets, redirections, shell
@@ -102,6 +102,8 @@ separators, or fallback commands to this check.
 ```text
 deno task test:workflow
 deno task test:workflow:coverage
+deno task test:runtime
+deno task test:runtime:coverage
 deno task deps:deno
 deno task deps:node
 ```
