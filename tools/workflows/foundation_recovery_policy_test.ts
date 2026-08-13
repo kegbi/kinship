@@ -476,7 +476,9 @@ Deno.test("validator rejects the exact round-3 root check reviewer mutations", (
       !codes.includes("toolchain.deno")
     ) {
       throw new Error(
-        `expected a stable toolchain issue for ${JSON.stringify(check)}, got ${JSON.stringify(codes)}`,
+        `expected a stable toolchain issue for ${JSON.stringify(check)}, got ${
+          JSON.stringify(codes)
+        }`,
       );
     }
   }
