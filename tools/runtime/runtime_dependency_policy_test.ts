@@ -587,6 +587,51 @@ Deno.test("workspace lifecycle policy fails closed on duplicate keys", () => {
   );
 });
 
+Deno.test("workspace rejects a mapping key without YAML colon separation", () => {
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "pnpm-workspace.yaml",
+    (contents) =>
+      replaceExactlyOnce(contents, "lockfile: true", "lockfile:true"),
+  );
+
+  assertEquals(
+    issueCodes(requirePolicyModule().validateRuntimeDependencyPolicy(snapshot)),
+    ["dependency.lifecycle"],
+  );
+});
+
+Deno.test("workspace rejects a root sequence mixed with its mapping", () => {
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "pnpm-workspace.yaml",
+    (contents) => `- unexpected\n${contents}`,
+  );
+
+  assertEquals(
+    issueCodes(requirePolicyModule().validateRuntimeDependencyPolicy(snapshot)),
+    ["dependency.lifecycle"],
+  );
+});
+
+Deno.test("workspace rejects a sequence item mixed into allowBuilds", () => {
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "pnpm-workspace.yaml",
+    (contents) =>
+      replaceExactlyOnce(
+        contents,
+        "allowBuilds:\n",
+        "allowBuilds:\n  - unexpected\n",
+      ),
+  );
+
+  assertEquals(
+    issueCodes(requirePolicyModule().validateRuntimeDependencyPolicy(snapshot)),
+    ["dependency.lifecycle"],
+  );
+});
+
 Deno.test("validator rejects Deno lock integrity drift outside direct specifiers", () => {
   const snapshot = mutate(
     repositorySnapshot(),
@@ -634,6 +679,34 @@ Deno.test("Compose policy uses the executable image instead of a pinned comment"
         `    image: ${pinned}`,
         `    # image: ${pinned}\n    image: postgres:18.4-alpine3.23`,
       ),
+  );
+
+  assertEquals(
+    issueCodes(requirePolicyModule().validateRuntimeDependencyPolicy(snapshot)),
+    ["container.pin"],
+  );
+});
+
+Deno.test("Compose rejects a root sequence mixed with its mapping", () => {
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "compose.schema-test.yaml",
+    (contents) => `- unexpected\n${contents}`,
+  );
+
+  assertEquals(
+    issueCodes(requirePolicyModule().validateRuntimeDependencyPolicy(snapshot)),
+    ["container.pin"],
+  );
+});
+
+Deno.test("Compose rejects an image key without YAML colon separation", () => {
+  const pinned = `\${POSTGRES_IMAGE:-${EXPECTED_IMAGES.primary}}`;
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "compose.schema-test.yaml",
+    (contents) =>
+      replaceExactlyOnce(contents, `image: ${pinned}`, `image:${pinned}`),
   );
 
   assertEquals(
