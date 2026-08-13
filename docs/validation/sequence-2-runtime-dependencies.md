@@ -69,3 +69,35 @@ columns observed in each live database.
 
 The earlier clean online/offline Deno and pnpm bootstrap proofs were not
 repeated in round 2 because no dependency input or lockfile changed.
+
+## Round-3 review-rework verification
+
+The frozen review regression suite at `aeeb59fa49010242e6b7807ca03565750d554ff9`
+first reproduced 11 passing and 9 intentionally failing tests. The runtime
+policy now reads effective mapping values from `pnpm-workspace.yaml` and
+`compose.schema-test.yaml`: comments do not satisfy controls, `allowBuilds` must
+be the exact reviewed map at its proper key, and malformed or duplicate mappings
+fail closed. Complete approved lock bytes are protected by SHA-256
+`8A39257B18EC8FF53ACB693EFE2969D8136284A0A8293517E43313E1FB7898C8` for
+`deno.lock` and
+`385FCD5C1E1FFBE7EEBEFBF62E3730A1F11773F43D1010F7A3C8A9A4D8F4ECF8` for
+`pnpm-lock.yaml`.
+
+Verification on 2026-08-14 completed with this round-3 matrix:
+
+| Check                              | Result                                      |
+| ---------------------------------- | ------------------------------------------- |
+| `deno task test:runtime`           | 20 passed, 0 failed                         |
+| `deno task test:runtime:coverage`  | 80.6% branches; 100% functions; 97.1% lines |
+| `deno task fmt`                    | 54 files checked                            |
+| `deno task lint`                   | 8 files checked                             |
+| `deno task check`                  | All three production tools checked          |
+| `deno task test:workflow`          | 35 passed, 0 failed                         |
+| `deno task test:workflow:coverage` | 94.5% branches; 100% functions and lines    |
+| `git diff --check`                 | Passed                                      |
+
+Dependency installs and the live PostgreSQL matrix were not repeated in round 3.
+This rework changes only the runtime policy validator and this evidence;
+dependency inputs, both approved lockfiles, package manifests, Compose values,
+and the schema runner remain byte-for-byte unchanged from their prior clean
+online/offline install and PostgreSQL 18.4/17.10 matrix proofs.
