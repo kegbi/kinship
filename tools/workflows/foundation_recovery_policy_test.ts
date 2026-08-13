@@ -18,6 +18,12 @@ const AUTHORITATIVE_POLICY_FILES = [
   ".agents/skills/run-tdd-ticket-loop/SKILL.md",
 ] as const;
 
+const RETIRED_RUNTIME_GRAPH_PATHS = [
+  "tools/runtime/FND-003",
+  "docs/validation/runtime-graph-fnd003.json",
+  "docs/validation/runtime-graph-fnd003.md",
+] as const;
+
 const INPUT_PATHS = [
   ...new Set([
     ...COVERAGE_POLICY_FILES,
@@ -33,7 +39,9 @@ function repositorySnapshot(): RecoverySnapshot {
     INPUT_PATHS.map((path) => [path, Deno.readTextFileSync(path)]),
   );
   const existingPaths = new Set<string>();
-  for (const path of OBSOLETE_WORKFLOW_PATHS) {
+  for (
+    const path of [...OBSOLETE_WORKFLOW_PATHS, ...RETIRED_RUNTIME_GRAPH_PATHS]
+  ) {
     try {
       Deno.statSync(path);
       existingPaths.add(path);
@@ -74,6 +82,17 @@ function withWorkflowCoverageTask(
   return mutate(snapshot, "deno.json", (contents) => {
     const config = JSON.parse(contents) as { tasks: Record<string, string> };
     config.tasks["test:workflow:coverage"] = command;
+    return JSON.stringify(config);
+  });
+}
+
+function withDenoConfig(
+  snapshot: RecoverySnapshot,
+  transform: (config: Record<string, unknown>) => void,
+): RecoverySnapshot {
+  return mutate(snapshot, "deno.json", (contents) => {
+    const config = JSON.parse(contents) as Record<string, unknown>;
+    transform(config);
     return JSON.stringify(config);
   });
 }
@@ -138,6 +157,26 @@ Deno.test("validator rejects production branch coverage regression in every poli
     assertEquals(validateFoundationRecovery(snapshot), [
       { code: "coverage.superseded", path },
     ]);
+  }
+});
+
+Deno.test("validator rejects backend and frontend coverage regressions in every policy input", () => {
+  const conflictingClaims = [
+    "The backend TypeScript gate is 70% for lines, branches, and functions.",
+    "The frontend TypeScript gate is 70% for lines, branches, and functions.",
+  ];
+
+  for (const path of AUTHORITATIVE_POLICY_FILES) {
+    for (const claim of conflictingClaims) {
+      const snapshot = mutate(
+        repositorySnapshot(),
+        path,
+        (contents) => `${contents}\n${claim}\n`,
+      );
+      assertEquals(validateFoundationRecovery(snapshot), [
+        { code: "coverage.superseded", path },
+      ]);
+    }
   }
 });
 
@@ -267,6 +306,106 @@ Deno.test("validator rejects toolchain drift and obsolete workflow paths", () =>
     "toolchain.node",
     "workflow.obsolete-path",
   ]);
+});
+
+Deno.test("validator rejects check-only tests and retired runtime graph artifacts", () => {
+  const hiddenTest = withDenoConfig(repositorySnapshot(), (config) => {
+    const tasks = config.tasks as Record<string, string>;
+    tasks.check += " tools/runtime/example_contract_test.ts";
+  });
+  assertEquals(validateFoundationRecovery(hiddenTest), [
+    { code: "toolchain.hidden-test", path: "deno.json" },
+  ]);
+
+  for (const path of RETIRED_RUNTIME_GRAPH_PATHS) {
+    const snapshot = repositorySnapshot();
+    assertEquals(
+      validateFoundationRecovery({
+        ...snapshot,
+        existingPaths: new Set([...snapshot.existingPaths, path]),
+      }),
+      [{ code: "runtime.retired-artifact", path }],
+    );
+  }
+});
+
+Deno.test("validator rejects missing and no-op dependency bootstrap tasks", () => {
+  const taskNames = [
+    "deps:deno",
+    "deps:deno:offline",
+    "deps:node",
+    "deps:node:offline",
+    "deps",
+  ];
+
+  for (const taskName of taskNames) {
+    const missing = withDenoConfig(repositorySnapshot(), (config) => {
+      delete (config.tasks as Record<string, string>)[taskName];
+    });
+    assertEquals(validateFoundationRecovery(missing), [
+      { code: "toolchain.dependencies", path: "deno.json" },
+    ]);
+
+    const noOp = withDenoConfig(repositorySnapshot(), (config) => {
+      (config.tasks as Record<string, string>)[taskName] =
+        "deno eval \"console.log('done')\"";
+    });
+    assertEquals(validateFoundationRecovery(noOp), [
+      { code: "toolchain.dependencies", path: "deno.json" },
+    ]);
+  }
+});
+
+Deno.test("validator rejects unfrozen, unpaired, and lock-mutating dependency bootstrap", () => {
+  const mutations: Array<(config: Record<string, unknown>) => void> = [
+    (config) => {
+      (config.lock as Record<string, unknown>).frozen = false;
+    },
+    (config) => {
+      delete (config.lock as Record<string, unknown>).frozen;
+    },
+    (config) => {
+      const tasks = config.tasks as Record<string, string>;
+      tasks["deps:deno:offline"] = tasks["deps:deno"]!;
+    },
+    (config) => {
+      const tasks = config.tasks as Record<string, string>;
+      tasks["deps:node:offline"] = tasks["deps:node"]!;
+    },
+    (config) => {
+      const tasks = config.tasks as Record<string, string>;
+      tasks.deps = "deno task deps:deno";
+    },
+    (config) => {
+      const tasks = config.tasks as Record<string, string>;
+      tasks["deps:deno"] += " --lock-write";
+    },
+    (config) => {
+      const tasks = config.tasks as Record<string, string>;
+      tasks["deps:node"] = "pnpm install --no-frozen-lockfile";
+    },
+  ];
+
+  for (const mutation of mutations) {
+    const snapshot = withDenoConfig(repositorySnapshot(), mutation);
+    assertEquals(validateFoundationRecovery(snapshot), [
+      { code: "toolchain.dependencies", path: "deno.json" },
+    ]);
+  }
+});
+
+Deno.test("validator allows immaterial dependency command formatting", () => {
+  const snapshot = withDenoConfig(repositorySnapshot(), (config) => {
+    const tasks = config.tasks as Record<string, string>;
+    tasks["deps:deno"] =
+      "DENO_NO_PACKAGE_JSON=1   deno install --node-modules-dir=none --frozen";
+    tasks["deps:deno:offline"] =
+      "DENO_NO_PACKAGE_JSON=1 deno   install --cached-only --node-modules-dir=none --frozen";
+    tasks["deps:node"] = "pnpm   install --frozen-lockfile";
+    tasks["deps:node:offline"] = "pnpm install --frozen-lockfile --offline";
+    tasks.deps = "deno task deps:deno   &&   deno task deps:node";
+  });
+  assertEquals(validateFoundationRecovery(snapshot), []);
 });
 
 Deno.test("validator enumerates every removed workflow asset", () => {
