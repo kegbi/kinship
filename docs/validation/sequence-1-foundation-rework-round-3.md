@@ -44,11 +44,11 @@ The exact root check command and its production-only purpose are documented in
 
 | Command                                                            | Exit | Observed result                                         |
 | ------------------------------------------------------------------ | ---: | ------------------------------------------------------- |
-| `deno task fmt:check`                                              |    0 | 49 files checked                                        |
+| `deno task fmt:check`                                              |    0 | 50 files checked                                        |
 | `deno task lint`                                                   |    0 | 6 files checked                                         |
 | `deno task check`                                                  |    0 | schema and workflow policy entry points checked         |
 | `deno task test:workflow`                                          |    0 | 33 passed, 0 failed                                     |
-| `deno task test:workflow:coverage`                                 |    0 | 96.7% branches, 100% functions, 100% lines              |
+| `deno task test:workflow:coverage`                                 |    0 | 95.3% branches, 100% functions, 100% lines              |
 | `deno task deps:deno` with a fresh explicit `DENO_DIR`             |    0 | frozen online cache population passed                   |
 | `deno task deps:deno:offline` with the same `DENO_DIR`             |    0 | cached-only frozen install passed                       |
 | clean `pnpm install --frozen-lockfile` with a fresh explicit store |    0 | 841 packages downloaded into the isolated store         |
@@ -56,8 +56,16 @@ The exact root check command and its production-only purpose are documented in
 | `deno task test:schema:matrix`                                     |    0 | PostgreSQL 18.4 and 17.10 passed every schema assertion |
 | `git diff --check`                                                 |    0 | no whitespace errors                                    |
 
-Dependency proof root:
-`C:\Users\User\AppData\Local\Temp\relationships-seq1-r3-5122ccde9f054ae79a72c921c85e63bd`.
+Dependency proof locations:
+
+- Deno cache:
+  `C:\Users\User\AppData\Local\Temp\relationships-seq1-r3-deno-2febbc08c4144627b477b4a618c661e4`
+- pnpm store:
+  `C:\Users\User\AppData\Local\Temp\relationships-seq1-r3-pnpm-815e0353249548ab93776c46bb3d29e5`
+
+The pnpm online proof started without `node_modules`. After it populated the
+store, the verified workspace-local `node_modules` path was removed and the
+offline proof restored all 841 packages with zero downloads.
 
 Lockfiles are byte-unchanged from the candidate and have these SHA-256 values:
 
@@ -78,3 +86,5 @@ The controlled coverage vocabulary deliberately fails closed. A future
 intentional rewording of governed coverage policy must update the allowlist and
 its tests together. No application runtime, database schema, user flow, or
 FND-003 artifact was changed or restored.
+
+Blockers: none.
