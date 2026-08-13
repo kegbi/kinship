@@ -278,6 +278,34 @@ Deno.test("validator rejects the exact round-3 coverage reviewer mutations", () 
   }
 });
 
+Deno.test("validator rejects the exact round-4 single-metric coverage mutations", () => {
+  const reviewerMutations = [
+    "Backend: 70% lines.",
+    "Production functions: .79.",
+    "Server-side: seventy percent branches.",
+    "Client-side: functions are limited to 80%.",
+    "Frontend branch threshold: 70%.",
+  ];
+  const mismatches: string[] = [];
+
+  for (const path of COVERAGE_POLICY_FILES) {
+    for (const mutation of reviewerMutations) {
+      const snapshot = mutate(
+        repositorySnapshot(),
+        path,
+        (contents) => `${contents}\n${mutation}\n`,
+      );
+      const actual = validateFoundationRecovery(snapshot);
+      const expected = [{ code: "coverage.superseded", path }];
+      if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        mismatches.push(`${path}: ${mutation} => ${JSON.stringify(actual)}`);
+      }
+    }
+  }
+
+  assertEquals(mismatches, []);
+});
+
 Deno.test("validator preserves approved coverage wording and unrelated quantitative prose", () => {
   const controls = [
     "Production code must maintain at least 80% line, branch, and function coverage.",
@@ -542,6 +570,39 @@ Deno.test("validator treats a non-test contract target as noncanonical, not hidd
   assertEquals(validateFoundationRecovery(snapshot), [
     { code: "toolchain.deno", path: "deno.json" },
   ]);
+});
+
+Deno.test("validator classifies appended TSX test targets and contract controls", () => {
+  const canonicalCheck =
+    "DENO_NO_PACKAGE_JSON=1 deno check tools/schema/validate_postgres.ts tools/workflows/foundation_recovery_policy.ts";
+  const targets: ReadonlyArray<
+    readonly [target: string, expectedCodes: readonly string[]]
+  > = [
+    [
+      "tools/runtime/example_contract_test.tsx",
+      ["toolchain.deno", "toolchain.hidden-test"],
+    ],
+    [
+      "tools/runtime/example-contract.test.tsx",
+      ["toolchain.deno", "toolchain.hidden-test"],
+    ],
+    ["tools/runtime/example_contract.ts", ["toolchain.deno"]],
+    ["tools/runtime/example_contract.tsx", ["toolchain.deno"]],
+  ];
+  const mismatches: string[] = [];
+
+  for (const [target, expectedCodes] of targets) {
+    const snapshot = withDenoConfig(repositorySnapshot(), (config) => {
+      (config.tasks as Record<string, string>).check =
+        `${canonicalCheck} ${target}`;
+    });
+    const actualCodes = issueCodes(validateFoundationRecovery(snapshot));
+    if (JSON.stringify(actualCodes) !== JSON.stringify(expectedCodes)) {
+      mismatches.push(`${target} => ${JSON.stringify(actualCodes)}`);
+    }
+  }
+
+  assertEquals(mismatches, []);
 });
 
 Deno.test("validator rejects missing and no-op dependency bootstrap tasks", () => {
