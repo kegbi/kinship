@@ -1,4 +1,7 @@
 packages: []
+lockfile: true
+sharedWorkspaceLockfile: true
+gitBranchLockfile: false
 saveExact: true
 minimumReleaseAge: 4320
 minimumReleaseAgeStrict: true

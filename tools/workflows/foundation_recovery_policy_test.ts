@@ -29,6 +29,7 @@ const INPUT_PATHS = [
     ...COVERAGE_POLICY_FILES,
     ...DELIVERY_POLICY_FILES,
     "deno.json",
+    "pnpm-workspace.yaml",
     "package.json",
     ".gitignore",
   ]),
@@ -231,6 +232,30 @@ Deno.test("validator rejects production coverage caps in every policy input", ()
   }
 });
 
+Deno.test("validator rejects controlled coverage assertion bypasses in every policy input", () => {
+  const conflictingClaims = [
+    "Production test coverage has a 70% floor.",
+    "The backend coverage minimum is 70%.",
+    "Server-side line, branch, and function coverage may be 70%.",
+    "Frontend lines, branches, and functions are capped at 80%.",
+    "Production line, branch, and function coverage must be at least seventy-nine percent.",
+    "The backend line, branch, and function coverage rate must be 0.79.",
+  ];
+
+  for (const path of AUTHORITATIVE_POLICY_FILES) {
+    for (const claim of conflictingClaims) {
+      const snapshot = mutate(
+        repositorySnapshot(),
+        path,
+        (contents) => `${contents}\n${claim}\n`,
+      );
+      assertEquals(validateFoundationRecovery(snapshot), [
+        { code: "coverage.superseded", path },
+      ]);
+    }
+  }
+});
+
 Deno.test("validator allows percentages outside production coverage claims", () => {
   const allowedClaims = [
     "Production imports may contain 70% known records.",
@@ -329,6 +354,24 @@ Deno.test("validator rejects check-only tests and retired runtime graph artifact
   }
 });
 
+Deno.test("validator rejects quoted and standard test targets in the root check task", () => {
+  const testTargets = [
+    '"tools/runtime/quoted_contract_test.ts"',
+    "'tools/runtime/quoted-contract.test.ts'",
+    "tools/runtime/unquoted-contract.test.ts",
+  ];
+
+  for (const testTarget of testTargets) {
+    const snapshot = withDenoConfig(repositorySnapshot(), (config) => {
+      const tasks = config.tasks as Record<string, string>;
+      tasks.check += ` ${testTarget}`;
+    });
+    assertEquals(validateFoundationRecovery(snapshot), [
+      { code: "toolchain.hidden-test", path: "deno.json" },
+    ]);
+  }
+});
+
 Deno.test("validator rejects missing and no-op dependency bootstrap tasks", () => {
   const taskNames = [
     "deps:deno",
@@ -383,6 +426,89 @@ Deno.test("validator rejects unfrozen, unpaired, and lock-mutating dependency bo
     (config) => {
       const tasks = config.tasks as Record<string, string>;
       tasks["deps:node"] = "pnpm install --no-frozen-lockfile";
+    },
+  ];
+
+  for (const mutation of mutations) {
+    const snapshot = withDenoConfig(repositorySnapshot(), mutation);
+    assertEquals(validateFoundationRecovery(snapshot), [
+      { code: "toolchain.dependencies", path: "deno.json" },
+    ]);
+  }
+});
+
+Deno.test("validator requires canonical Deno and root pnpm lock configuration", () => {
+  const denoLockMutations: Array<(config: Record<string, unknown>) => void> = [
+    (config) => {
+      (config.lock as Record<string, unknown>).path = "./other.lock";
+    },
+    (config) => {
+      delete (config.lock as Record<string, unknown>).path;
+    },
+  ];
+
+  for (const mutation of denoLockMutations) {
+    const snapshot = withDenoConfig(repositorySnapshot(), mutation);
+    assertEquals(validateFoundationRecovery(snapshot), [
+      { code: "toolchain.dependencies", path: "deno.json" },
+    ]);
+  }
+
+  const pnpmLockMutations = [
+    (contents: string) => contents.replace(/^lockfile: true\r?\n/m, ""),
+    (contents: string) =>
+      contents.replace(
+        /^sharedWorkspaceLockfile: true\r?\n/m,
+        "",
+      ),
+    (contents: string) =>
+      contents.replace(
+        /^gitBranchLockfile: false\r?\n/m,
+        "",
+      ),
+    (contents: string) =>
+      contents.replace(/^lockfile: true$/m, "lockfile: false"),
+    (contents: string) =>
+      contents.replace(
+        /^sharedWorkspaceLockfile: true$/m,
+        "sharedWorkspaceLockfile: false",
+      ),
+    (contents: string) =>
+      contents.replace(
+        /^gitBranchLockfile: false$/m,
+        "gitBranchLockfile: true",
+      ),
+    (contents: string) => `${contents}\nlockfileDir: ./other\n`,
+  ];
+
+  for (const mutation of pnpmLockMutations) {
+    const snapshot = mutate(
+      repositorySnapshot(),
+      "pnpm-workspace.yaml",
+      mutation,
+    );
+    assertEquals(validateFoundationRecovery(snapshot), [
+      { code: "toolchain.dependencies", path: "pnpm-workspace.yaml" },
+    ]);
+  }
+});
+
+Deno.test("validator enforces the documented exact frozen-install syntax", () => {
+  const mutations: Array<(config: Record<string, unknown>) => void> = [
+    (config) => {
+      const tasks = config.tasks as Record<string, string>;
+      tasks["deps:deno"] = tasks["deps:deno"]!.replace(
+        "--frozen",
+        "--frozen=true",
+      );
+    },
+    (config) => {
+      const tasks = config.tasks as Record<string, string>;
+      tasks["deps:node"] = "pnpm i --frozen-lockfile";
+    },
+    (config) => {
+      const tasks = config.tasks as Record<string, string>;
+      tasks["deps:node"] += " --lockfile-dir=other";
     },
   ];
 
@@ -476,6 +602,44 @@ Deno.test("validator rejects non-executable workflow coverage tasks", () => {
 
   for (const command of invalidCommands) {
     const snapshot = withWorkflowCoverageTask(repositorySnapshot(), command);
+    assertEquals(issueCodes(validateFoundationRecovery(snapshot)), [
+      "toolchain.deno",
+    ]);
+  }
+});
+
+Deno.test("validator rejects filtered, redirected, and masked canonical workflow tests", () => {
+  const validWorkflowCommand =
+    "DENO_NO_PACKAGE_JSON=1 deno test --allow-read tools/workflows/foundation_recovery_policy_test.ts";
+  const validCoverageCommand =
+    "DENO_NO_PACKAGE_JSON=1 deno test --allow-read --coverage=.coverage/workflows --clean tools/workflows/foundation_recovery_policy_test.ts && deno coverage --include=tools/workflows/foundation_recovery_policy\\.ts$ --detailed --threshold=80 .coverage/workflows";
+  const mutations: ReadonlyArray<readonly [taskName: string, command: string]> =
+    [
+      [
+        "test:workflow",
+        validWorkflowCommand.replace("deno test", "deno test --filter=never"),
+      ],
+      [
+        "test:workflow",
+        `${validWorkflowCommand} || deno eval "Deno.exit(0)"`,
+      ],
+      ["test:workflow", `${validWorkflowCommand} > NUL`],
+      [
+        "test:workflow:coverage",
+        validCoverageCommand.replace("deno test", "deno test --filter=never"),
+      ],
+      [
+        "test:workflow:coverage",
+        `${validCoverageCommand} || deno eval "Deno.exit(0)"`,
+      ],
+      ["test:workflow:coverage", `${validCoverageCommand} > NUL`],
+    ];
+
+  for (const [taskName, command] of mutations) {
+    const snapshot = withDenoConfig(repositorySnapshot(), (config) => {
+      const tasks = config.tasks as Record<string, string>;
+      tasks[taskName] = command;
+    });
     assertEquals(issueCodes(validateFoundationRecovery(snapshot)), [
       "toolchain.deno",
     ]);
