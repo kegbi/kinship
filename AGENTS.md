@@ -52,8 +52,8 @@ candidate.
 The orchestrator alone accepts and integrates a ticket after independently
 rerunning applicable repository gates. Implementer self-review, hook success, or
 CI success does not replace independent review. Full role boundaries, worktree
-isolation, ticket artifacts, state transitions, and escalation rules are defined
-in
+isolation, clean-context handoffs, exact-candidate review, and escalation rules
+are defined in
 [docs/development/autonomous-delivery.md](docs/development/autonomous-delivery.md).
 Invoke the repo-local run-tdd-ticket-loop skill for autonomous implementation
 runs. Clean implementation and review contexts may be generic subagents or

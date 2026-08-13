@@ -44,7 +44,7 @@ export const OBSOLETE_WORKFLOW_PATHS = [
 const COVERAGE_MINIMUM =
   /80%[^\n]*(?:line|lines)[^\n]*(?:branch|branches)[^\n]*(?:function|functions)/i;
 const OBSOLETE_DELIVERY =
-  /controllerRunId|issuedByControllerRunId|actorRunId|events\.jsonl|state\.json|schemaVersion|UUID|ticket-metadata-only/i;
+  /controllerRunId|issuedByControllerRunId|actorRunId|events\.jsonl|state\.json|schemaVersion|UUID|ticket-metadata-only|ticket artifacts|state transitions?|state machine/i;
 const UNSUPPORTED_AGENT_DIRECTION =
   /\.codex["'`]?\s*(?:[\\/]\s*)+["'`]?\s*agents\b|project\s+custom\s+agents/i;
 const WORKFLOW_COVERAGE_COMMAND =
