@@ -15,6 +15,8 @@ export const COVERAGE_POLICY_FILES = [
   "docs/planning/README.md",
   "docs/planning/roadmap.md",
   "docs/planning/quality-and-operations.md",
+  "docs/development/autonomous-delivery.md",
+  ".agents/skills/run-tdd-ticket-loop/SKILL.md",
 ] as const;
 
 export const DELIVERY_POLICY_FILES = [
@@ -158,6 +160,12 @@ export function validateFoundationRecovery(
       "coverage.superseded",
       path,
     );
+    issueWhen(
+      issues,
+      UNSUPPORTED_AGENT_DIRECTION.test(policy),
+      "delivery.unsupported-agent-path",
+      path,
+    );
   }
 
   for (const path of DELIVERY_POLICY_FILES) {
@@ -180,12 +188,6 @@ export function validateFoundationRecovery(
       issues,
       OBSOLETE_DELIVERY.test(policy),
       "delivery.obsolete",
-      path,
-    );
-    issueWhen(
-      issues,
-      UNSUPPORTED_AGENT_DIRECTION.test(policy),
-      "delivery.unsupported-agent-path",
       path,
     );
   }
