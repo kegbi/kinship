@@ -66,6 +66,11 @@ const EXPECTED_IMAGES = {
     "postgres:17.10-alpine3.23@sha256:8189a1f6e40904781fc9e2612687877791d21679866db58b1de996b31fc312e4",
 } as const;
 
+const EXPECTED_LOCK_SHA256 = {
+  deno: "8A39257B18EC8FF53ACB693EFE2969D8136284A0A8293517E43313E1FB7898C8",
+  pnpm: "385FCD5C1E1FFBE7EEBEFBF62E3730A1F11773F43D1010F7A3C8A9A4D8F4ECF8",
+} as const;
+
 const SNAPSHOT_PATHS = [
   ".tool-versions",
   "compose.schema-test.yaml",
@@ -163,6 +168,32 @@ function mutate(
   };
 }
 
+function replaceExactlyOnce(
+  contents: string,
+  expected: string,
+  replacement: string,
+): string {
+  const first = contents.indexOf(expected);
+  assert(first >= 0, `mutation source is missing: ${expected}`);
+  assert(
+    contents.indexOf(expected, first + expected.length) === -1,
+    `mutation source is not unique: ${expected}`,
+  );
+  return contents.slice(0, first) + replacement +
+    contents.slice(first + expected.length);
+}
+
+async function sha256(contents: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(contents),
+  );
+  return Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("").toUpperCase();
+}
+
 function issueCodes(issues: RuntimePolicyIssue[]): string[] {
   return [...new Set(issues.map((issue) => issue.code))].sort();
 }
@@ -171,6 +202,18 @@ Deno.test("repository satisfies the executable runtime dependency policy", () =>
   assertEquals(
     requirePolicyModule().validateRuntimeDependencyPolicy(repositorySnapshot()),
     [],
+  );
+});
+
+Deno.test("approved lock snapshots retain their exact full-file digests", async () => {
+  const snapshot = repositorySnapshot();
+  assertEquals(
+    await sha256(requireText(snapshot, "deno.lock")),
+    EXPECTED_LOCK_SHA256.deno,
+  );
+  assertEquals(
+    await sha256(requireText(snapshot, "pnpm-lock.yaml")),
+    EXPECTED_LOCK_SHA256.pnpm,
   );
 });
 
@@ -418,6 +461,185 @@ Deno.test("validator rejects pin, lock, lifecycle, task, note, and image drift",
     "documentation.selection",
     "runtime.pin",
   ]);
+});
+
+Deno.test("workspace policy uses executable values instead of safe values in comments", () => {
+  const controls = [
+    ["lockfile: true", "lockfile: false"],
+    ["sharedWorkspaceLockfile: true", "sharedWorkspaceLockfile: false"],
+    ["gitBranchLockfile: false", "gitBranchLockfile: true"],
+    ["saveExact: true", "saveExact: false"],
+    ["minimumReleaseAge: 4320", "minimumReleaseAge: 60"],
+    ["minimumReleaseAgeStrict: true", "minimumReleaseAgeStrict: false"],
+    [
+      "minimumReleaseAgeIgnoreMissingTime: false",
+      "minimumReleaseAgeIgnoreMissingTime: true",
+    ],
+    ["strictDepBuilds: true", "strictDepBuilds: false"],
+  ] as const;
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "pnpm-workspace.yaml",
+    (contents) =>
+      controls.reduce(
+        (value, [safe, unsafe]) =>
+          replaceExactlyOnce(value, safe, `# ${safe}\n${unsafe}`),
+        contents,
+      ),
+  );
+
+  assertEquals(
+    issueCodes(requirePolicyModule().validateRuntimeDependencyPolicy(snapshot)),
+    ["dependency.lifecycle"],
+  );
+});
+
+Deno.test("workspace rejects executable allow-all builds when false survives only in a comment", () => {
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "pnpm-workspace.yaml",
+    (contents) =>
+      replaceExactlyOnce(
+        contents,
+        "dangerouslyAllowAllBuilds: false",
+        "# dangerouslyAllowAllBuilds: false\ndangerouslyAllowAllBuilds: true",
+      ),
+  );
+
+  assertEquals(
+    issueCodes(requirePolicyModule().validateRuntimeDependencyPolicy(snapshot)),
+    ["dependency.lifecycle"],
+  );
+});
+
+Deno.test("workspace accepts comments without changing the exact allowBuilds map", () => {
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "pnpm-workspace.yaml",
+    (contents) => {
+      let result = contents;
+      for (
+        const entry of [
+          "  esbuild@0.28.2: true",
+          "  fsevents@2.3.2: false",
+          "  fsevents@2.3.3: false",
+        ]
+      ) {
+        result = replaceExactlyOnce(result, entry, `${entry} # reviewed`);
+      }
+      return result;
+    },
+  );
+
+  assertEquals(
+    requirePolicyModule().validateRuntimeDependencyPolicy(snapshot),
+    [],
+  );
+});
+
+Deno.test("workspace requires the exact allowBuilds map at its executable key", () => {
+  const expectedEntries = [
+    "  esbuild@0.28.2: true",
+    "  fsevents@2.3.2: false",
+    "  fsevents@2.3.3: false",
+  ].join("\n");
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "pnpm-workspace.yaml",
+    (contents) =>
+      replaceExactlyOnce(
+        contents,
+        `allowBuilds:\n${expectedEntries}`,
+        `allowBuilds: {}\nreviewedBuilds:\n${expectedEntries}`,
+      ),
+  );
+
+  assertEquals(
+    issueCodes(requirePolicyModule().validateRuntimeDependencyPolicy(snapshot)),
+    ["dependency.lifecycle"],
+  );
+});
+
+Deno.test("workspace lifecycle policy fails closed on malformed YAML", () => {
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "pnpm-workspace.yaml",
+    (contents) =>
+      replaceExactlyOnce(contents, "allowBuilds:", "allowBuilds: ["),
+  );
+
+  assertEquals(
+    issueCodes(requirePolicyModule().validateRuntimeDependencyPolicy(snapshot)),
+    ["dependency.lifecycle"],
+  );
+});
+
+Deno.test("workspace lifecycle policy fails closed on duplicate keys", () => {
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "pnpm-workspace.yaml",
+    (contents) => `${contents}\nallowBuilds: {}\n`,
+  );
+
+  assertEquals(
+    issueCodes(requirePolicyModule().validateRuntimeDependencyPolicy(snapshot)),
+    ["dependency.lifecycle"],
+  );
+});
+
+Deno.test("validator rejects Deno lock integrity drift outside direct specifiers", () => {
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "deno.lock",
+    (contents) =>
+      replaceExactlyOnce(
+        contents,
+        "sha512-MxOm1asDh9j7c1D0KiWwppSbFgAQxTRO4YEhjMrJn3lF1BIcXenPdgjSGKDRfQmZdaTaMA8slQLETgVOKyJxFw==",
+        "sha512-AxOm1asDh9j7c1D0KiWwppSbFgAQxTRO4YEhjMrJn3lF1BIcXenPdgjSGKDRfQmZdaTaMA8slQLETgVOKyJxFw==",
+      ),
+  );
+
+  assertEquals(
+    issueCodes(requirePolicyModule().validateRuntimeDependencyPolicy(snapshot)),
+    ["dependency.lock"],
+  );
+});
+
+Deno.test("validator rejects pnpm transitive resolution drift outside direct specifiers", () => {
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "pnpm-lock.yaml",
+    (contents) =>
+      replaceExactlyOnce(
+        contents,
+        "sha512-MM8tn8CSimcfytaOla4b6acN8mKWiL/rlAA1fpT3/Wl7dNGSE4y8FjTN/zJVNnb63CsLWG5zZwCt01TXtDKh9g==",
+        "sha512-AM8tn8CSimcfytaOla4b6acN8mKWiL/rlAA1fpT3/Wl7dNGSE4y8FjTN/zJVNnb63CsLWG5zZwCt01TXtDKh9g==",
+      ),
+  );
+
+  assertEquals(
+    issueCodes(requirePolicyModule().validateRuntimeDependencyPolicy(snapshot)),
+    ["dependency.lock"],
+  );
+});
+
+Deno.test("Compose policy uses the executable image instead of a pinned comment", () => {
+  const pinned = `\${POSTGRES_IMAGE:-${EXPECTED_IMAGES.primary}}`;
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "compose.schema-test.yaml",
+    (contents) =>
+      replaceExactlyOnce(
+        contents,
+        `    image: ${pinned}`,
+        `    # image: ${pinned}\n    image: postgres:18.4-alpine3.23`,
+      ),
+  );
+
+  assertEquals(
+    issueCodes(requirePolicyModule().validateRuntimeDependencyPolicy(snapshot)),
+    ["container.pin"],
+  );
 });
 
 Deno.test("schema runner primary default matches the immutable Compose image", () => {
