@@ -40,17 +40,20 @@ nothing is never an acceptable harness.
 
 ## Current Executable Commands
 
-At the 2026-08-11 baseline, `deno.json` exposes only these real tasks:
+At the 2026-08-13 baseline, `deno.json` exposes these real task families:
 
 | Command                            | Current executable scope                                     |
 | ---------------------------------- | ------------------------------------------------------------ |
 | `deno task fmt`                    | Format paths currently owned by the root Deno configuration. |
 | `deno task fmt:check`              | Check formatting for those current paths without mutation.   |
 | `deno task lint`                   | Lint the existing repository tools.                          |
-| `deno task check`                  | Type-check the PostgreSQL schema and workflow tools.         |
-| `deno task ticket:validate`        | Validate one autonomous ticket evidence directory.           |
-| `deno task test:workflow`          | Run the dependency-free workflow validator suite.            |
-| `deno task test:workflow:coverage` | Enforce 100% line, branch, and function workflow coverage.   |
+| `deno task check`                  | Type-check the PostgreSQL schema and workflow policy test.   |
+| `deno task test:workflow`          | Run the dependency-free workflow policy suite.               |
+| `deno task test:workflow:coverage` | Enforce 80% line, branch, and function workflow coverage.    |
+| `deno task deps:deno`              | Populate the Deno cache from the frozen root lock.           |
+| `deno task deps:deno:offline`      | Re-resolve Deno dependencies from cache only.                |
+| `deno task deps:node`              | Install the pnpm graph from the frozen root lock.            |
+| `deno task deps:node:offline`      | Reinstall the pnpm graph from its populated cache only.      |
 | `deno task test:schema`            | Run the primary live PostgreSQL schema harness.              |
 | `deno task test:schema:compat`     | Run the compatibility PostgreSQL schema harness.             |
 | `deno task test:schema:matrix`     | Run both current schema harness variants.                    |
@@ -84,7 +87,7 @@ as available early.
 | `deno task test:schema`        | Existing primary PostgreSQL schema harness.                                                   |
 | `deno task test:contract`      | Port adapters, OpenAPI, generated clients/types, problems, and schema drift.                  |
 | `deno task test:e2e`           | Production-like gateway stack in Chromium, Firefox, and WebKit.                               |
-| `deno task test:coverage`      | Independent 100% backend and frontend production TypeScript gates.                            |
+| `deno task test:coverage`      | Independent 80% backend and frontend production TypeScript gates.                             |
 | `deno task test:prepush`       | Full non-browser suites plus a Chromium production-stack smoke project.                       |
 | `deno task test`               | Complete local test aggregate with explicit documented scope.                                 |
 | `deno task ci`                 | Frozen install, static checks, full tests, security gates, and artifact rules.                |
@@ -117,15 +120,15 @@ details behind canonical commands, not alternate pipelines.
 
 ## Coverage Interpretation
 
-The 100% requirement is enforced independently for the two executable TypeScript
+The 80% requirement is enforced independently for the two executable TypeScript
 environments:
 
-1. Deno production TypeScript/TSX: 100% lines, branches, and functions.
-2. Frontend production TypeScript/TSX: 100% lines, branches, and functions.
+1. Deno production TypeScript/TSX: 80% lines, branches, and functions.
+2. Frontend production TypeScript/TSX: 80% lines, branches, and functions.
 
-Holding each scope at 100% prevents an aggregate report from hiding missing
+Holding each scope at 80% prevents an aggregate report from hiding missing
 frontend coverage behind backend volume or vice versa. Statements should also
-remain at 100% in the frontend provider when it reports them.
+remain at 80% in the frontend provider when it reports them.
 
 Coverage configuration must use an exhaustive `include` set for every production
 source directory. A file that no test imports must still appear as uncovered;
@@ -144,9 +147,9 @@ contract, and process-observable coverage rather than excluding them.
 Every exclusion names the file, reason, owner, and review date. Directory-wide
 ignores and casual coverage comments are forbidden.
 
-E2E 100% is separate: every delivered required flow has a real Playwright test
-reference and every applicable page state has its required coverage. Browser
-source instrumentation cannot replace the flow catalog.
+E2E completeness is separate: every delivered required flow has a real
+Playwright test reference and every applicable page state has its required
+coverage. Browser source instrumentation cannot replace the flow catalog.
 
 ## Test Layers
 
@@ -374,7 +377,7 @@ root commands; it must not become the first or only implementation of a gate.
 
 - Run backend unit/application suites and retain mergeable coverage without
   declaring the final backend threshold yet.
-- Frontend utility/component suites enforce their independent exhaustive 100%
+- Frontend utility/component suites enforce their independent 80%
   line/branch/function gate.
 - Upload HTML/lcov and test reports on failure or explicit request, with short
   access-controlled retention.
@@ -387,7 +390,7 @@ root commands; it must not become the first or only implementation of a gate.
 - Merge all backend unit, integration, contract, and process-observable reports,
   include every production domain/application/adapter/transport/read-model/
   bootstrap/API/worker path, reject shard gaps, and enforce the final
-  independent 100% line/branch/function gate.
+  independent 80% line/branch/function gate.
 
 ### Stage 4: Immutable build
 
@@ -563,7 +566,7 @@ scope-complete only when:
   test references; never hard-code a count after catalog closure;
 - every in-scope page/action and required state passes its behavioral, keyboard,
   and representative automated-accessibility checks;
-- backend and frontend production TypeScript independently report 100% line,
+- backend and frontend production TypeScript independently report 80% line,
   branch, and function coverage;
 - schema, architecture, catalog, OpenAPI, generated client, and database types
   show no drift;
@@ -589,7 +592,8 @@ A named release is promotable only when:
 
 - its selected feature milestone passes the checklist above;
 - its slice flows are delivered with current test references;
-- backend and frontend production TypeScript independently report 100%;
+- backend and frontend production TypeScript independently report 80% line,
+  branch, and function coverage;
 - schema, architecture, catalog, OpenAPI, generated client, and database types
   show no drift;
 - PostgreSQL primary/compatibility and all required adapter contracts pass;

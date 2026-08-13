@@ -1,7 +1,7 @@
 interface:
-  display_name: "Autonomous TDD Ticket Loop"
-  short_description: "Run clean-context red-green ticket delivery"
-  default_prompt: "Use $run-tdd-ticket-loop to implement the next accepted ticket through independent review and integration."
+  display_name: "TDD Delivery Loop"
+  short_description: "Run test-first delivery with clean review"
+  default_prompt: "Use $run-tdd-ticket-loop to implement one bounded change through RED, GREEN, REFACTOR, and independent review."
 
 policy:
   allow_implicit_invocation: false

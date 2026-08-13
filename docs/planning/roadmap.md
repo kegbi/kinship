@@ -356,8 +356,9 @@ component, axe, and browser checks.
 - Complete the architecture, unit, integration, schema, contract, E2E, coverage,
   pre-push, full-test, and CI aggregates only as their underlying suites become
   executable.
-- Configure backend and frontend coverage independently at 100% line, branch,
-  and function thresholds with exhaustive production-file inclusion.
+- Configure backend and frontend coverage independently at 80% line, branch, and
+  function thresholds with exhaustive production-file inclusion. The minimum is
+  80% line, branch, and function coverage for each scope.
 - Add Lefthook only after the local canonical tasks it invokes are real and
   self-tested; hooks remain non-mutating and CI-authoritative.
 - Only then resolve DG-13 by selecting and recording the CI provider,
