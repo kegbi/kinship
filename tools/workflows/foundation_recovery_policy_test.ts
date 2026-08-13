@@ -170,12 +170,38 @@ Deno.test("validator rejects split production coverage thresholds in every polic
   }
 });
 
+Deno.test("validator rejects production coverage caps in every policy input", () => {
+  const cappedClaims = [
+    "Production line, branch, and function coverage may be at most 80%.",
+    "Production line, branch, and function coverage may be up to 80%.",
+    "Production line, branch, and function coverage has a maximum 80%.",
+    "Production line, branch, and function coverage may be no more than 80%.",
+  ];
+
+  for (const path of COVERAGE_POLICY_FILES) {
+    for (const claim of cappedClaims) {
+      const snapshot = mutate(
+        repositorySnapshot(),
+        path,
+        (contents) => `${contents}\n${claim}\n`,
+      );
+      assertEquals(validateFoundationRecovery(snapshot), [
+        { code: "coverage.superseded", path },
+      ]);
+    }
+  }
+});
+
 Deno.test("validator allows percentages outside production coverage claims", () => {
   const allowedClaims = [
     "Production imports may contain 70% known records.",
     "Line coverage may fall to 70% in a local fixture.",
     "Branches may be sampled at 70 percent outside production.",
     "Function coverage may be 70 percentage in examples.",
+    "Production imports may contain at most 80% known records.",
+    "Local fixture line coverage may be up to 80%.",
+    "Branch selection has a maximum 80% sampling cap.",
+    "Example function coverage may be no more than 80%.",
   ].join("\n");
 
   for (const path of COVERAGE_POLICY_FILES) {
