@@ -102,6 +102,27 @@ Deno.test("validator rejects coverage and delivery policy regression", () => {
   ]);
 });
 
+Deno.test("validator rejects retired concepts in supported delivery policy", () => {
+  const retiredDirections = [
+    "Persist ticket artifacts for every delivery.",
+    "Record state transitions in the delivery workflow.",
+    "Use a state machine as the current supported workflow.",
+  ];
+
+  for (const path of DELIVERY_POLICY_FILES) {
+    for (const direction of retiredDirections) {
+      const snapshot = mutate(
+        repositorySnapshot(),
+        path,
+        (contents) => `${contents}\n${direction}\n`,
+      );
+      assertEquals(validateFoundationRecovery(snapshot), [
+        { code: "delivery.obsolete", path },
+      ]);
+    }
+  }
+});
+
 Deno.test("coverage policy inventory includes every authoritative policy", () => {
   assertEquals(COVERAGE_POLICY_FILES, AUTHORITATIVE_POLICY_FILES);
 });
