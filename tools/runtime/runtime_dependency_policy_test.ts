@@ -255,8 +255,9 @@ Deno.test("locks, package age, and lifecycle allowlists remain narrow", () => {
   ) {
     assert(workspace.includes(setting), `pnpm policy is missing ${setting}`);
   }
-  const allowBuildLines = workspace.match(/^  \S+@\S+: (?:true|false)$/gm) ??
-    [];
+  const allowBuildLines =
+    workspace.match(/^[ ]{2}\S+@\S+: (?:true|false)$/gm) ??
+      [];
   assertEquals(allowBuildLines, [
     "  esbuild@0.28.2: true",
     "  fsevents@2.3.2: false",
