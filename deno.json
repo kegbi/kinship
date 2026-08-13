@@ -13,6 +13,7 @@
   },
   "fmt": {
     "lineWidth": 80,
+    "exclude": ["docs/planning/tickets/"],
     "include": [
       "AGENTS.md",
       "compose.schema-test.yaml",

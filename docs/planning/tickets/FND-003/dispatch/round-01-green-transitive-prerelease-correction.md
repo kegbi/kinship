@@ -34,8 +34,8 @@ manifest, lock, provenance, cache, or Git write is authorized.
 Make the smallest correction that distinguishes the two already-proven version
 classes:
 
-1. selected packages and root/direct manifest/importer versions must continue to
-   use the existing exact stable `X.Y.Z` validator;
+1. selected packages and root/direct manifest/importer versions must continue
+   to use the existing exact stable `X.Y.Z` validator;
 2. pnpm package and snapshot identities that are transitive lock records may use
    exact valid SemVer prerelease identifiers, including precisely the real
    `1.0.0-rc.3`, `1.0.0-beta.2`, and `5.0.0-beta.4` identities;
@@ -47,9 +47,9 @@ classes:
 
 Do not special-case package names or the three literal versions. Use a narrow
 exact SemVer-with-optional-prerelease parser only at transitive pnpm package and
-snapshot identity boundaries. Do not permit prerelease selected/direct versions.
-Do not address scalar `bin`, other metadata projections, or any other oracle
-observation in this correction.
+snapshot identity boundaries. Do not permit prerelease selected/direct
+versions. Do not address scalar `bin`, other metadata projections, or any other
+oracle observation in this correction.
 
 Run the new focused control and the pre-existing control suite excluding only
 the incomplete repository GREEN assertion. Direct fmt/lint/check and the

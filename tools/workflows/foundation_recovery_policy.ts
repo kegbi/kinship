@@ -27,11 +27,16 @@ export const OBSOLETE_WORKFLOW_PATHS = [
   "tools/workflows/ticket_contract.ts",
   "tools/workflows/validate_ticket.ts",
   "tools/workflows/validate_ticket_test.ts",
-  ".agents/skills/run-tdd-ticket-loop/assets/state.template.json",
+  ".agents/skills/run-tdd-ticket-loop/assets/acceptance.template.md",
+  ".agents/skills/run-tdd-ticket-loop/assets/dispatch.template.md",
   ".agents/skills/run-tdd-ticket-loop/assets/events.template.jsonl",
-  ".agents/skills/run-tdd-ticket-loop/assets/ticket.template.json",
+  ".agents/skills/run-tdd-ticket-loop/assets/finding-waiver.template.json",
+  ".agents/skills/run-tdd-ticket-loop/assets/not-applicable-lens.template.json",
   ".agents/skills/run-tdd-ticket-loop/assets/result.template.json",
   ".agents/skills/run-tdd-ticket-loop/assets/review.template.json",
+  ".agents/skills/run-tdd-ticket-loop/assets/state.template.json",
+  ".agents/skills/run-tdd-ticket-loop/assets/ticket.template.json",
+  ".agents/skills/run-tdd-ticket-loop/assets/ticket.template.md",
 ] as const;
 
 const COVERAGE_MINIMUM =
@@ -40,6 +45,8 @@ const SUPERSEDED_COVERAGE =
   /(?:production TypeScript[^\n]*100%|100%[^\n]*(?:line|branch|function)|100 percent[^\n]*(?:line|branch|function))/i;
 const OBSOLETE_DELIVERY =
   /controllerRunId|issuedByControllerRunId|actorRunId|events\.jsonl|state\.json|schemaVersion|UUID|ticket-metadata-only/i;
+const UNSUPPORTED_AGENT_DIRECTION =
+  /(?:use|invoke|dispatch(?:\s+with|\s+through)?)[^\n]*(?:\.codex\/agents|project custom agents)/i;
 const WORKFLOW_COVERAGE_COMMAND =
   "DENO_NO_PACKAGE_JSON=1 deno test --allow-read --coverage=.coverage/workflows --clean tools/workflows/foundation_recovery_policy_test.ts && deno coverage --include=tools/workflows/foundation_recovery_policy\\.ts$ --detailed --threshold=80 .coverage/workflows";
 
@@ -156,6 +163,12 @@ export function validateFoundationRecovery(
       "delivery.obsolete",
       path,
     );
+    issueWhen(
+      issues,
+      UNSUPPORTED_AGENT_DIRECTION.test(policy),
+      "delivery.unsupported-agent-path",
+      path,
+    );
   }
 
   for (const [path, requirements] of Object.entries(REQUIRED_TEST_POLICY)) {
@@ -166,8 +179,15 @@ export function validateFoundationRecovery(
   }
 
   const denoConfig = JSON.parse(file(snapshot, "deno.json")) as {
+    fmt: { exclude?: string[] };
     tasks: Record<string, string>;
   };
+  issueWhen(
+    issues,
+    !denoConfig.fmt.exclude?.includes("docs/planning/tickets/"),
+    "toolchain.formatter-history",
+    "deno.json",
+  );
   const tasks = denoConfig.tasks;
   issueWhen(
     issues,

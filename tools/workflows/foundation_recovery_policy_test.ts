@@ -90,6 +90,26 @@ Deno.test("validator rejects coverage and delivery policy regression", () => {
   ]);
 });
 
+Deno.test("validator rejects unsupported protected-agent workflow directions", () => {
+  const directions = [
+    "Use .codex/agents for role dispatch.",
+    "Use project custom agents for role dispatch.",
+  ];
+
+  for (const path of DELIVERY_POLICY_FILES) {
+    for (const direction of directions) {
+      const snapshot = mutate(
+        repositorySnapshot(),
+        path,
+        (contents) => `${contents}\n${direction}\n`,
+      );
+      assertEquals(validateFoundationRecovery(snapshot), [
+        { code: "delivery.unsupported-agent-path", path },
+      ]);
+    }
+  }
+});
+
 Deno.test("validator rejects toolchain drift and obsolete workflow paths", () => {
   let snapshot = repositorySnapshot();
   snapshot = mutate(
@@ -116,6 +136,52 @@ Deno.test("validator rejects toolchain drift and obsolete workflow paths", () =>
     "toolchain.ignore",
     "toolchain.node",
     "workflow.obsolete-path",
+  ]);
+});
+
+Deno.test("validator enumerates every removed workflow asset", () => {
+  const expectedPaths = [
+    "tools/workflows/ticket_contract.ts",
+    "tools/workflows/validate_ticket.ts",
+    "tools/workflows/validate_ticket_test.ts",
+    ".agents/skills/run-tdd-ticket-loop/assets/acceptance.template.md",
+    ".agents/skills/run-tdd-ticket-loop/assets/dispatch.template.md",
+    ".agents/skills/run-tdd-ticket-loop/assets/events.template.jsonl",
+    ".agents/skills/run-tdd-ticket-loop/assets/finding-waiver.template.json",
+    ".agents/skills/run-tdd-ticket-loop/assets/not-applicable-lens.template.json",
+    ".agents/skills/run-tdd-ticket-loop/assets/result.template.json",
+    ".agents/skills/run-tdd-ticket-loop/assets/review.template.json",
+    ".agents/skills/run-tdd-ticket-loop/assets/state.template.json",
+    ".agents/skills/run-tdd-ticket-loop/assets/ticket.template.json",
+    ".agents/skills/run-tdd-ticket-loop/assets/ticket.template.md",
+  ];
+  assertEquals(OBSOLETE_WORKFLOW_PATHS, expectedPaths);
+
+  for (const path of expectedPaths) {
+    const snapshot = {
+      ...repositorySnapshot(),
+      existingPaths: new Set([path]),
+    };
+    assertEquals(validateFoundationRecovery(snapshot), [
+      { code: "workflow.obsolete-path", path },
+    ]);
+  }
+});
+
+Deno.test("validator keeps ticket history out of formatter scope", () => {
+  const missingHistoryExclusion = mutate(
+    repositorySnapshot(),
+    "deno.json",
+    (contents) => {
+      const config = JSON.parse(contents) as {
+        fmt: { exclude?: string[] };
+      };
+      delete config.fmt.exclude;
+      return JSON.stringify(config);
+    },
+  );
+  assertEquals(validateFoundationRecovery(missingHistoryExclusion), [
+    { code: "toolchain.formatter-history", path: "deno.json" },
   ]);
 });
 

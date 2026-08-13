@@ -56,7 +56,10 @@ isolation, ticket artifacts, state transitions, and escalation rules are defined
 in
 [docs/development/autonomous-delivery.md](docs/development/autonomous-delivery.md).
 Invoke the repo-local run-tdd-ticket-loop skill for autonomous implementation
-runs; use the project custom agents under .codex/agents for clean role contexts.
+runs. Clean implementation and review contexts may be generic subagents or
+contexts that follow the repo skill. Legacy `.codex/agents` prompts and project
+custom agents are not part of the supported simplified path unless separately
+authorized and updated.
 
 ## Technology and Architecture Baseline
 
