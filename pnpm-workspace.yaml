@@ -1,0 +1,20 @@
+packages: []
+saveExact: true
+minimumReleaseAge: 4320
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
+trustLockfile: false
+autoInstallPeers: false
+strictDepBuilds: true
+dangerouslyAllowAllBuilds: false
+allowBuilds:
+  esbuild@0.28.2: true
+  fsevents@2.3.2: false
+  fsevents@2.3.3: false
+supportedArchitectures:
+  os:
+    - current
+    - linux
+  cpu:
+    - x64
+    - arm64
