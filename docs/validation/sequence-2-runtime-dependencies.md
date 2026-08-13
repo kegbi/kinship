@@ -101,3 +101,33 @@ This rework changes only the runtime policy validator and this evidence;
 dependency inputs, both approved lockfiles, package manifests, Compose values,
 and the schema runner remain byte-for-byte unchanged from their prior clean
 online/offline install and PostgreSQL 18.4/17.10 matrix proofs.
+
+## Round-4 review-rework verification
+
+The frozen review regression suite at
+`76a0a4ecc78661ed22379c334b993319f8e6a47a`, with SHA-256
+`320B94AFC0F5109D32661DA689AF508C2C48C9E380986491D31520C9D4D9B9BB`, first
+reproduced 20 passing and 5 intentionally failing tests. The bounded YAML reader
+now requires block mapping colons to have YAML separation and rejects sequences
+at the root or within the consumer-required `allowBuilds`, `services`, and
+`postgres` mappings. Canonical inline comments and unrelated sequence-valued
+configuration remain accepted.
+
+Verification on 2026-08-14 completed with this round-4 matrix:
+
+| Check                              | Result                                      |
+| ---------------------------------- | ------------------------------------------- |
+| `deno task test:runtime`           | 25 passed, 0 failed                         |
+| `deno task test:runtime:coverage`  | 84.3% branches; 100% functions; 97.2% lines |
+| `deno task fmt`                    | 54 files checked                            |
+| `deno task lint`                   | 8 files checked                             |
+| `deno task check`                  | All three production tools checked          |
+| `deno task test:workflow`          | 35 passed, 0 failed                         |
+| `deno task test:workflow:coverage` | 94.5% branches; 100% functions and lines    |
+| `git diff --check`                 | Passed                                      |
+
+Dependency installs and the live PostgreSQL matrix were not repeated in round 4.
+This rework changes only the runtime policy validator and this evidence;
+dependency inputs, both approved lockfiles, package manifests, Compose values,
+and the schema runner remain byte-for-byte unchanged from their prior clean
+online/offline install and PostgreSQL 18.4/17.10 matrix proofs.

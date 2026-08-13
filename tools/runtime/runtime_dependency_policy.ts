@@ -311,10 +311,15 @@ function parseYamlScalar(source: string): unknown {
 
 function parseYamlMappings(
   source: string,
+  requiredMappingPaths: readonly (readonly string[])[],
 ): Record<string, unknown> | undefined {
   const root = Object.create(null) as Record<string, unknown>;
-  const stack: Array<{ indent: number; value: Record<string, unknown> }> = [
-    { indent: -1, value: root },
+  const stack: Array<{
+    indent: number;
+    path: readonly string[];
+    value: Record<string, unknown>;
+  }> = [
+    { indent: -1, path: [], value: root },
   ];
   try {
     for (const originalLine of source.split(/\r?\n/)) {
@@ -328,10 +333,21 @@ function parseYamlMappings(
       while ((stack.at(-1)?.indent ?? -1) >= indent) stack.pop();
       const parent = stack.at(-1);
       if (parent === undefined || indent <= parent.indent) throw new Error();
-      if (entry.startsWith("- ")) continue;
+      if (entry.startsWith("- ")) {
+        const mappingRequired = requiredMappingPaths.some((path) =>
+          path.length === parent.path.length &&
+          path.every((key, index) => key === parent.path[index])
+        );
+        if (mappingRequired) throw new Error();
+        continue;
+      }
 
       const separator = entry.indexOf(":");
       if (separator <= 0) throw new Error();
+      const separatorFollower = entry[separator + 1];
+      if (separatorFollower !== undefined && !/\s/.test(separatorFollower)) {
+        throw new Error();
+      }
       const key = entry.slice(0, separator).trim();
       if (!/^[A-Za-z0-9_.@/-]+$/.test(key)) throw new Error();
       if (Object.hasOwn(parent.value, key)) throw new Error();
@@ -339,7 +355,7 @@ function parseYamlMappings(
       if (scalar === "") {
         const child = Object.create(null) as Record<string, unknown>;
         parent.value[key] = child;
-        stack.push({ indent, value: child });
+        stack.push({ indent, path: [...parent.path, key], value: child });
       } else {
         parent.value[key] = parseYamlScalar(scalar);
       }
@@ -421,7 +437,7 @@ export function validateRuntimeDependencyPolicy(
     pnpmLockSha256: LOCK_SHA256.pnpm,
   };
 
-  const workspaceConfig = parseYamlMappings(workspace);
+  const workspaceConfig = parseYamlMappings(workspace, [[], ["allowBuilds"]]);
   const expectedAllowBuilds =
     RUNTIME_DEPENDENCY_POLICY.lifecycle.pnpmAllowBuilds;
   const workspaceControls = workspaceConfig !== undefined &&
@@ -472,7 +488,11 @@ export function validateRuntimeDependencyPolicy(
     "Foundation",
     "FND-10",
   ];
-  const composeConfig = parseYamlMappings(compose);
+  const composeConfig = parseYamlMappings(compose, [
+    [],
+    ["services"],
+    ["services", "postgres"],
+  ]);
   const composeServices = record(composeConfig?.services);
   const composePostgres = record(composeServices?.postgres);
   const containerActual = {
