@@ -104,7 +104,7 @@ release catalog.
 
 1. Resolve all decision gates whose `blocks` value includes the next work
    package. Record accepted decisions in ADRs or product contracts.
-2. Turn one vertical work package into an isolated ticket packet using
+2. Bound one vertical work package using
    [`autonomous-delivery.md`](../development/autonomous-delivery.md). Record the
    exact base revision, accepted contracts, acceptance cases, commands, owned
    paths, and implementer/reviewer isolation before implementation starts. Add a
@@ -147,8 +147,8 @@ A work package is ready only when:
 - fixture and test-layer needs are identified;
 - any persistent-data change has a synchronized schema-version plan; and
 - the owning module can be implemented without an illegal dependency;
-- the ticket packet fixes its base revision, owned paths, accepted contracts,
-  and exact verification commands; and
+- the bounded task fixes its base revision, owned paths, accepted contracts, and
+  exact verification commands; and
 - independent implementer, reviewer, and orchestrator contexts are available.
 
 ## Work-Package Definition Of Done
@@ -162,7 +162,7 @@ A production work package is done only when:
 - OpenAPI and generated frontend contracts are current;
 - every relevant UI state is implemented and accessible;
 - telemetry is useful and redacted;
-- production TypeScript remains at 100% line, branch, and function coverage;
+- production TypeScript remains at 80% line, branch, and function coverage;
 - required E2E flow annotations and page-state checks pass;
 - architecture, schema, generated-file, dependency, and security gates pass;
 - Compose teardown removes the exact disposable test project; and

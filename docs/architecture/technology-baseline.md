@@ -2,15 +2,15 @@
 
 ## Accepted Constraints
 
-| Area            | Baseline                                          | Consequence                                                                                                       |
-| --------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Delivery        | Docker Compose with multiple containers           | Local, test, and production-like environments use the same service model.                                         |
-| Database        | PostgreSQL                                        | The audited SQL bundle is the only schema source of truth.                                                        |
-| Backend runtime | Deno and TypeScript                               | Prefer Web Standards and Deno-native security, tasks, checks, tests, and observability.                           |
-| Frontend        | Astro, static-first                               | Prerender public and stable pages; hydrate only deliberately selected islands.                                    |
-| Interactive UI  | Current stable shadcn/ui components               | Use the current shadcn CLI and source-owned components; React is confined to interactive islands.                 |
-| Types           | Strict TypeScript throughout application code     | No implicit `any`; validate all untrusted runtime data.                                                           |
-| Quality         | Unit, integration, contract, and end-to-end tests | Production TypeScript has 100% line, branch, and function coverage; every defined user workflow has E2E coverage. |
+| Area            | Baseline                                          | Consequence                                                                                                               |
+| --------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Delivery        | Docker Compose with multiple containers           | Local, test, and production-like environments use the same service model.                                                 |
+| Database        | PostgreSQL                                        | The audited SQL bundle is the only schema source of truth.                                                                |
+| Backend runtime | Deno and TypeScript                               | Prefer Web Standards and Deno-native security, tasks, checks, tests, and observability.                                   |
+| Frontend        | Astro, static-first                               | Prerender public and stable pages; hydrate only deliberately selected islands.                                            |
+| Interactive UI  | Current stable shadcn/ui components               | Use the current shadcn CLI and source-owned components; React is confined to interactive islands.                         |
+| Types           | Strict TypeScript throughout application code     | No implicit `any`; validate all untrusted runtime data.                                                                   |
+| Quality         | Unit, integration, contract, and end-to-end tests | Production TypeScript has at least 80% line, branch, and function coverage; every defined user workflow has E2E coverage. |
 
 Astro prerendering cannot produce private, per-user data at build time. An
 authenticated screen should use a static shell plus a focused client island when

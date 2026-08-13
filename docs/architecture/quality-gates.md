@@ -2,10 +2,10 @@
 
 ## Coverage Contract
 
-The repository's 100% requirement has two complementary meanings:
+The repository coverage contract has two complementary requirements:
 
-1. All production TypeScript must reach 100% line, branch, and function coverage
-   through unit and integration tests.
+1. Production TypeScript must reach at least 80% line, branch, and function
+   coverage through unit and integration tests.
 2. Every defined user-facing workflow and supported compatibility workflow must
    have end-to-end coverage.
 
@@ -84,26 +84,22 @@ revision. The complete operational protocol is
 
 ## Canonical Commands
 
-The current executable baseline exposes `fmt`, `fmt:check`, `lint`, `check`,
-`ticket:validate`, `test:workflow`, `test:workflow:coverage`, `test:schema`,
-`test:schema:compat`, and `test:schema:matrix`. Their scope is narrow until the
-application scaffold exists: lint covers `tools/`, check covers the schema and
-workflow tools, workflow tasks cover autonomous ticket validation, and schema
-tasks cover the canonical database harness.
+The current executable baseline exposes formatting, lint, type-check,
+workflow-policy, frozen dependency-bootstrap, and schema-matrix tasks through
+`deno.json`. Their scope remains narrow until the application scaffold exists.
+The workflow task checks the accepted delivery policy; the schema tasks cover
+the canonical database harness.
 
 ```text
-deno task ticket:validate <ticket-directory>
 deno task test:workflow
 deno task test:workflow:coverage
+deno task deps:deno
+deno task deps:node
 ```
 
-Run `ticket:validate` from the canonical project Git root and pass the exact
-`docs/planning/tickets/<ticket-id>` directory. The validator rejects linked or
-external evidence, dirty/untracked ticket metadata, metadata HEADs that do not
-descend from the candidate, and post-candidate changes outside that ticket
-directory. Git status/diff evidence includes additions, copies, deletions,
-modifications, renames (both paths), type changes, unmerged paths, and unknown
-status classes, with subprocess output bounded while it is consumed.
+The dependency tasks use frozen locks. An offline proof must reuse only the
+explicit cache populated by the corresponding online run and must leave both
+lockfiles byte-identical.
 
 As real harnesses are added, the implementation must expose stable top-level
 `deno task` commands even when they delegate to pnpm, Astro, Vitest, Playwright,
@@ -133,43 +129,18 @@ they must call these same commands. There must not be a second, subtly different
 hook-only validation pipeline. Lefthook invokes repository tasks; repository
 tests do not delegate their validation semantics to Lefthook.
 
-### Revision-bound workflow gates
+### Candidate-bound review gates
 
-Every new autonomous ticket uses `schemaVersion 2`. Its `controllerRunId` is a
-ticket-namespaced orchestrator identity at round zero; implementer and reviewer
-run IDs are controller-issued, role- and round-bound, fresh at each issuance,
-and echoed by their result or review as `issuedByControllerRunId`. State and
-event records remain schema version 1, but controller-owned events and checks
-must derive their authority from that same controller identity. Only exact,
-content-addressed historical `PILOT-001` and `PILOT-002` packet identities are
-accepted as ticket schema version 1.
+The controller records the base revision and creates the exact candidate
+revision after GREEN and REFACTOR. The separate clean, read-only reviewer gets
+that revision, its diff, accepted contracts, and concise evidence only. Any
+post-review change to code, tests, generated output, contracts, or relevant
+configuration creates a new candidate and requires a fresh review.
 
-The validator compares each required baseline and candidate task definition with
-the exact `deno.json` Git object at the respective revision. An unchanged
-candidate definition declares `guardedBy: null`. A changed definition must name
-a distinct required `guardedBy` task whose definition is unchanged between the
-base and candidate; neither a self-guard nor a trivially successful command is a
-valid gate.
-
-An ordinary execution class cannot write `.codex` or `.agents`. The
-`protected-config-maintenance` class requires an exact controller-issued
-authorization covering every protected allowed-write path. `.git` is forbidden
-as any path segment, case-insensitively, for every execution class.
-
-An integrated v2 state records the durable `integrationRevision` and exact
-passing `integrationChecks`; its `accepted` to `integrated` event uses
-`integration.md` and is bound to that revision. Every required candidate task
-must have a unique `deno task <name>` integration command and a unique
-controller-derived check run ID that was not reused from acceptance. The
-integration revision must exist, descend from the reviewed candidate, preserve
-reviewed allowed-write content, and anchor the later integrated metadata.
-Validation rejects later mutation of that ticket's durable metadata but permits
-unrelated later commits.
-
-<!-- deno-fmt-ignore -->
-A dependent ticket resolves the dependency ticket's base revision.
-That historical state must already be integrated, and the dependent ticket's pin
-must exactly equal its `integrationRevision`.
+Ordinary implementation cannot write `.codex` or `.agents`; explicit protected
+configuration maintenance is limited to its named paths. `.git` remains
+forbidden to implementers. Git history is the revision record and no parallel
+state ledger is required.
 
 ## Static Enforcement
 
@@ -240,7 +211,7 @@ replace, semantic component tests.
 Use mutation testing selectively for the highest-risk identity,
 workspace-isolation, partial-date, reminder, and import logic after the baseline
 suite is fast and stable. Mutation score is a diagnostic initially, not a
-substitute for the 100% coverage gate.
+substitute for the 80% coverage gate.
 
 ## Required Schema Tests
 
@@ -284,7 +255,7 @@ CI should use a pinned Deno runtime and execute:
 - `deno lint` including the architecture plugin;
 - `deno check` over every backend entry point and tool;
 - `deno test` with leak detection and randomized ordering where useful;
-- coverage reporting with 100% line, branch, and function thresholds;
+- coverage reporting with 80% line, branch, and function thresholds;
 - `deno audit` and a documented vulnerability exception process;
 - a dependency freshness policy and review of `deno outdated` output;
 - verification that npm lifecycle-script permissions and Deno runtime

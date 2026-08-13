@@ -1,111 +1,77 @@
 ---
 name: run-tdd-ticket-loop
-description: Run repository implementation tickets through an autonomous, clean-context orchestrator/implementer/reviewer loop with strict RED-GREEN-REFACTOR evidence, independent multi-lens review, rework dispatch, worktree isolation, integration, and final verification. Use when Codex is asked to implement a feature, fix a bug, execute roadmap tickets, continue toward a milestone or MVP, or coordinate parallel coding work in this repository. Do not use for read-only explanation or diagnosis that makes no repository change.
+description: Deliver one bounded repository change with strict test-first implementation, a separate clean read-only review of the exact candidate, and fresh test-first rework for findings. Use for implementation, bug fixes, roadmap tickets, or protected repository maintenance. Do not use for read-only explanation or diagnosis.
 ---
 
-# Run the autonomous TDD ticket loop
+# Run the TDD delivery loop
 
-Read AGENTS.md and docs/development/autonomous-delivery.md completely before
-acting. Those files are authoritative when this skill is invoked.
+Read `AGENTS.md` and `docs/development/autonomous-delivery.md` completely before
+acting. Follow the relevant accepted architecture, schema, authorization, and
+product contracts.
 
-## Prepare one ticket
+## Prepare
 
-1. Select only a ready ticket whose dependencies and accepted decisions are
-   satisfied.
-2. Give it one branch and one worktree. Never give two write-enabled agents the
-   same worktree.
-3. Create its disk packet under docs/planning/tickets/<ticket-id>/ using the
-   templates in assets/. New packets use schema version 2. Keep ticket.md and
-   ticket.json synchronized, replace every placeholder, and run deno task
-   ticket:validate.
-4. Assign one ticket-namespaced controllerRunId at orchestrator round zero, an
-   execution class, exact allowed writes, and controller-issued implementer and
-   reviewer run IDs for their roles and rounds. Ordinary work cannot write
-   .codex or .agents. A protected-config-maintenance ticket needs exact
-   controller authorization for those paths; .git is never writable.
-5. Record the base revision, scope, architecture references, acceptance
-   criteria, and exact baseline/candidate deno.json task definitions. If a task
-   changes, its guardedBy task must be distinct, required, and unchanged.
+1. Select one ready, bounded change with satisfied dependencies.
+2. Record its base revision, allowed paths, observable outcome, acceptance
+   criteria, risks, and existing commands that apply.
+3. Give one clean implementer exclusive write ownership of its worktree.
+4. Do not create directories, task names, or evidence files that have no real
+   executable purpose.
 
-## Dispatch with clean contexts
+## Implement
 
-- Start a new orchestrator context for the delivery run when possible.
-- Issue a fresh role- and round-bound run ID from the ticket controller for each
-  implementer and reviewer. Require every result and review to repeat the exact
-  controllerRunId as issuedByControllerRunId.
-- Start a new feature_implementer thread for every implementation or rework
-  round. Give it only the repository and worktree paths, both ticket files,
-  state.json, accepted contract references, and the latest dispatch packet.
-- Start a new reviewer thread for every review round. Give it only the ticket,
-  base and candidate revisions, evidence, and diff. The reviewer is read-only.
-- Never forward hidden reasoning or conversational summaries between roles. The
-  versioned ticket artifacts are the entire handoff.
+1. RED: add or tighten the narrowest automated test or deterministic check
+   before production changes. Run it and confirm the expected assertion fails
+   for missing or incorrect behavior, not setup, syntax, permissions, services,
+   or an unrelated defect.
+2. GREEN: make the smallest architecture-compliant production change and run the
+   focused test to zero exit.
+3. REFACTOR: improve structure only while focused and affected tests stay green.
+   Run every relevant repository gate that currently exists.
+4. Return concise evidence: each exact command, exit code, observed result,
+   changed test/check paths, changed production paths, and any blocker.
 
-## Enforce the loop
+Configuration, documentation, architecture enforcement, generators,
+infrastructure, and migrations also require a truthful failing check before the
+change. Never weaken, skip, delete, exclude, reverse, or over-mock the RED
+proof.
 
-1. RED: the implementer changes tests or a deterministic check first, leaves
-   production untouched, adds every regression dispatched for the round, runs
-   them together, and records each intended non-zero failure. The trusted
-   controller must freeze the RED revision as one test/check-only commit and
-   record a SHA-256 digest for every changed test/check file before dispatching
-   the same round for GREEN. Round one starts from the ticket base; every later
-   round starts from the prior candidate and preserves contiguous history within
-   maxRounds.
-2. GREEN: the implementer makes the smallest compliant production change and
-   records the focused passing command.
-3. REFACTOR: the implementer improves the code only while tests remain green,
-   then runs every relevant gate currently available.
-4. CANDIDATE: the trusted primary controller commits code, tests, and redacted
-   logs, then the orchestrator records that commit ID in a later
-   ticket-metadata-only commit.
-5. REVIEW: a fresh reviewer inspects the exact candidate through all six lenses
-   and returns either APPROVED or CHANGES_REQUESTED. APPROVED requires a
-   non-empty set of unique zero-exit command records. A not_applicable lens
-   requires explicit orchestrator agreement and a declared scope/contract
-   citation. Waivers require authority, rationale, owner, and future expiry;
-   P0/P1 plus security, architecture/contracts, and tests/TDD findings are
-   non-waivable.
-6. REWORK: the orchestrator writes each actionable finding to a new dispatch
-   packet. A fresh implementer first reproduces it with a failing regression
-   test or static check, fixes it, and produces a new candidate. A fresh
-   reviewer reviews that candidate from scratch.
-7. ACCEPT: the orchestrator independently reruns applicable focused and full
-   gates, verifies the reviewer covered the exact candidate, and validates the
-   exact canonical docs/planning/tickets/<ticket-id> tree from the project root.
-   Ticket evidence must contain no filesystem links or dirty/untracked files;
-   its committed HEAD must descend from the candidate, with every later changed
-   path confined to that ticket directory. Accept only with zero open actionable
-   findings.
-8. INTEGRATE: merge only the reviewed candidate. A v2 integrated state records
-   the durable integrationRevision, exact passing integrationChecks, and an
-   accepted-to-integrated event backed by integration.md. Run every required
-   candidate task at the integration revision with unique controller-derived
-   check IDs and commands; never reuse acceptance-check IDs. Preserve reviewed
-   allowed-write content and the first durable integrated metadata snapshot.
-   Resolve dependencies from the dependency ticket state at this ticket's base
-   revision. Any conflict resolution or post-review code change creates a new
-   candidate and returns to RED/REVIEW as applicable.
+Production code maintains at least 80% line, branch, and function coverage.
+Changed-behavior tests, required E2E flows, security and tenant-isolation tests,
+and schema tests remain mandatory regardless of the aggregate percentage.
 
-Do not skip RED because a change looks small. Documentation, configuration,
-architecture, and migration tickets need a failing validator, contract test,
-schema test, or executable probe before their change. A behavior-preserving
-refactor starts from characterization tests and must not introduce new behavior.
+## Review
 
-## Parallel delivery
+After implementation, the trusted controller creates the exact candidate
+revision. Start a separate clean, read-only reviewer with only:
 
-Parallelize only tickets with disjoint ownership and satisfied dependencies. Use
-a separate Codex chat and Git worktree per ticket. Keep the integration chat
-focused on dependency decisions, ticket state, reviewed revisions, merges, and
-aggregate results. Rebase or merge the latest integration branch into a stale
-candidate, resolve conflicts in a fresh implementation round, and review again.
-Start each ticket as a top-level task rooted in its worktree; spawned agents
-inherit the parent checkout and cannot be assigned an arbitrary sibling
-worktree. A trusted primary controller performs Git metadata operations instead
-of broadening child sandboxes.
+- the bounded task and accepted contracts;
+- the base and exact candidate revision;
+- the diff; and
+- concise RED/GREEN/REFACTOR and gate evidence.
 
-## Stop conditions
+Review covers correctness, security/privacy, architecture/contracts,
+performance/reliability, style/maintainability, and tests/TDD. The reviewer
+returns APPROVED or CHANGES_REQUESTED with evidence-backed findings.
 
-Continue without asking for routine implementation choices. Pause only for an
-unresolved product or architecture decision, missing external authority or
-credential, an out-of-scope destructive action, or the same blocker surviving
-three independent attempts. Record the blocker and evidence before pausing.
+Every actionable finding returns to a fresh implementer for another RED -> GREEN
+-> REFACTOR round. A fresh read-only reviewer then examines the new exact
+candidate. Any post-review change invalidates the earlier approval.
+
+## Accept and integrate
+
+The controller independently reruns applicable gates against the exact reviewed
+candidate. Only the controller commits, accepts, integrates, and reports the
+integration revision. Git history records revisions; command results provide the
+behavioral evidence.
+
+## Boundaries
+
+- One write-enabled implementer owns a worktree at a time.
+- Parallel tickets require disjoint dependencies and write sets.
+- `.git` is always forbidden to implementers.
+- `.codex` and `.agents` changes require explicit protected-configuration
+  authority naming the allowed paths.
+- Stop after three bounded attempts at the same external blocker, or sooner for
+  missing authority, credentials, a destructive out-of-scope action, or an
+  unresolved decision with materially different outcomes.

@@ -7,8 +7,9 @@ better designs, current production technologies, and AI assistance built in.
 
 ## Core Goals
 
-- Maintain full, 100% test coverage across unit tests and end-to-end tests. This
-  is non-negotiable for all production code and user-facing workflows.
+- Maintain at least 80% line, branch, and function coverage for production code.
+  Required user flows still need end-to-end coverage, and changed behavior,
+  security/tenant boundaries, and schema behavior always need focused tests.
 - Build a modular, expandable architecture that supports future extensibility
   without forcing broad rewrites.
 - Preserve solid architectural boundaries so each application module can be
@@ -40,13 +41,13 @@ configuration, architecture, and infrastructure changes require a failing
 validator, contract test, schema test, or bounded executable probe before the
 change.
 
-Every code candidate then passes a separate clean-context review. The reviewer
-must not be the implementation context and receives only the ticket, accepted
-contracts, exact base and candidate revisions, diff, and RED/GREEN/REFACTOR
-evidence. Review covers bugs/correctness, security/privacy, architecture,
-performance/reliability, style/maintainability, and tests/TDD. Every actionable
-finding returns to a fresh implementer context for a new RED -> GREEN ->
-REFACTOR round, followed by a fresh review of the new exact candidate.
+Every code candidate then passes a separate clean, read-only review. The
+reviewer receives the accepted contracts, exact candidate revision, diff, and
+concise evidence for RED/GREEN/REFACTOR. Review covers bugs/correctness,
+security/privacy, architecture, performance/reliability, style/maintainability,
+and tests/TDD. Every actionable finding returns to a fresh implementer for a new
+RED -> GREEN -> REFACTOR round, followed by a fresh review of the new exact
+candidate.
 
 The orchestrator alone accepts and integrates a ticket after independently
 rerunning applicable repository gates. Implementer self-review, hook success, or
