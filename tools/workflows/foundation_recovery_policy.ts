@@ -53,6 +53,12 @@ const OBSOLETE_DELIVERY =
   /controllerRunId|issuedByControllerRunId|actorRunId|events\.jsonl|state\.json|schemaVersion|UUID|ticket-metadata-only|ticket artifacts|state transitions?|state machine/i;
 const UNSUPPORTED_AGENT_DIRECTION =
   /\.codex["'`]?\s*(?:[\\/]\s*)+["'`]?\s*agents\b|project\s+custom\s+agents/i;
+const GOVERNED_COVERAGE_SCOPE =
+  /\b(?:production|back[ -]?end|front[ -]?end|server[ -]?side|client[ -]?side)\b/i;
+const COVERAGE_ASSERTION =
+  /\b(?:floor|minimum|threshold|gate|rate|at\s+least|at\s+most|up\s+to|maximum|no\s+more\s+than|cap(?:ped)?|ceiling|may|must|required|accepted|maintain)\b/i;
+const COVERAGE_CAP =
+  /\b(?:at\s+most|up\s+to|maximum(?:\s+of)?|no\s+more\s+than|cap(?:ped)?|ceiling)\b/i;
 const WORKFLOW_COVERAGE_COMMAND =
   "DENO_NO_PACKAGE_JSON=1 deno test --allow-read --coverage=.coverage/workflows --clean tools/workflows/foundation_recovery_policy_test.ts && deno coverage --include=tools/workflows/foundation_recovery_policy\\.ts$ --detailed --threshold=80 .coverage/workflows";
 
@@ -135,6 +141,13 @@ function commandTokens(command: string | undefined): string[] {
   return command?.trim().split(/\s+/).filter(Boolean) ?? [];
 }
 
+function unquoteCommandToken(token: string): string {
+  const quote = token[0];
+  return quote !== undefined && /["'`]/.test(quote) && token.at(-1) === quote
+    ? token.slice(1, -1)
+    : token;
+}
+
 function isExactCommand(
   command: string | undefined,
   prefix: readonly string[],
@@ -177,21 +190,55 @@ function isDependencyBootstrapTruthful(
       ]);
 }
 
-function referencedTestPaths(command: string | undefined): string[] {
-  return commandTokens(command).filter((token) => /_test\.ts$/.test(token));
+function hasDirectTestTarget(command: string | undefined): boolean {
+  return commandTokens(command).map(unquoteCommandToken).some((token) =>
+    /(?:_test|\.test)\.ts$/i.test(token)
+  );
 }
 
-function hasCheckOnlyTest(tasks: Readonly<Record<string, string>>): boolean {
-  const executedTests = new Set(
-    Object.entries(tasks).flatMap(([name, command]) =>
-      name.startsWith("test:") && /(?:^|\s)deno\s+test(?:\s|$)/.test(command)
-        ? referencedTestPaths(command)
-        : []
-    ),
-  );
-  return referencedTestPaths(tasks.check).some((path) =>
-    !executedTests.has(path)
-  );
+function hasCanonicalPnpmLockConfiguration(config: string): boolean {
+  const lines = config.split(/\r?\n/);
+  const hasExactSetting = (name: string, value: boolean): boolean => {
+    const declarations = lines.filter((line) =>
+      new RegExp(`^${name}\\s*:`).test(line)
+    );
+    return declarations.length === 1 &&
+      declarations[0] === `${name}: ${value}`;
+  };
+
+  return hasExactSetting("lockfile", true) &&
+    hasExactSetting("sharedWorkspaceLockfile", true) &&
+    hasExactSetting("gitBranchLockfile", false) &&
+    !lines.some((line) => /^lockfileDir\s*:/.test(line));
+}
+
+function coverageThresholds(claim: string): number[] {
+  const thresholds = [...claim.matchAll(
+    /\b(\d+(?:\.\d+)?)\s*(?:%|percent(?:age)?\b)/gi,
+  )].map((match) => Number(match[1]));
+
+  const wordThresholds: Readonly<Record<string, number>> = {
+    "seventy-nine": 79,
+    "seventy nine": 79,
+    eighty: 80,
+  };
+  for (
+    const match of claim.matchAll(
+      /\b(seventy(?:[- ]nine)|eighty)\s+percent(?:age)?\b/gi,
+    )
+  ) {
+    const threshold = wordThresholds[match[1]?.toLowerCase() ?? ""];
+    if (threshold !== undefined) thresholds.push(threshold);
+  }
+
+  for (
+    const match of claim.matchAll(
+      /\b(?:rate(?:\s+must\s+be)?|must\s+be)\s+(0\.\d+)\b/gi,
+    )
+  ) {
+    thresholds.push(Number(match[1]) * 100);
+  }
+  return thresholds;
 }
 
 function hasConflictingProductionCoverageThreshold(policy: string): boolean {
@@ -199,30 +246,16 @@ function hasConflictingProductionCoverageThreshold(policy: string): boolean {
     /[!?;|]+|\.(?!\d)|(?:^|\r?\n)\s*(?:[-*+]|\d+[.)])\s+/gm,
   );
   for (const claim of claims) {
-    const hasCoverageScope = /\b(?:production|back[ -]?end|front[ -]?end)\b/i
-      .test(claim);
-    const hasCoverageMetric = /\b(?:lines?|branch(?:es)?|functions?)\b/i.test(
-      claim,
-    );
-    const hasCoverageMeaning = /\b(?:coverage|gate)\b/i.test(claim) ||
-      /\blines?\b/i.test(claim) && /\bbranch(?:es)?\b/i.test(claim) &&
-        /\bfunctions?\b/i.test(claim);
-    const describesProductionCoverage = hasCoverageScope &&
-      hasCoverageMetric && hasCoverageMeaning;
+    const hasAllMetrics = /\blines?\b/i.test(claim) &&
+      /\bbranch(?:es)?\b/i.test(claim) && /\bfunctions?\b/i.test(claim);
+    const describesProductionCoverage = GOVERNED_COVERAGE_SCOPE.test(claim) &&
+      (/\bcoverage\b/i.test(claim) || hasAllMetrics) &&
+      COVERAGE_ASSERTION.test(claim);
     if (!describesProductionCoverage) continue;
 
-    if (
-      /\b(?:at\s+most|up\s+to|maximum(?:\s+of)?|no\s+more\s+than)\s+80\s*(?:%|percent(?:age)?\b)/i
-        .test(claim)
-    ) return true;
-
-    for (
-      const percentage of claim.matchAll(
-        /\b(\d+(?:\.\d+)?)\s*(?:%|percent(?:age)?\b)/gi,
-      )
-    ) {
-      if (Number(percentage[1]) !== 80) return true;
-    }
+    const thresholds = coverageThresholds(claim);
+    if (thresholds.length > 0 && COVERAGE_CAP.test(claim)) return true;
+    if (thresholds.some((threshold) => threshold !== 80)) return true;
   }
   return false;
 }
@@ -283,7 +316,7 @@ export function validateFoundationRecovery(
   const denoConfig = JSON.parse(file(snapshot, "deno.json")) as {
     fmt: { exclude?: string[] };
     tasks: Record<string, string>;
-    lock?: { frozen?: boolean };
+    lock?: { frozen?: boolean; path?: string };
   };
   const tasks = denoConfig.tasks;
   issueWhen(
@@ -294,16 +327,25 @@ export function validateFoundationRecovery(
   );
   issueWhen(
     issues,
-    hasCheckOnlyTest(tasks),
+    hasDirectTestTarget(tasks.check),
     "toolchain.hidden-test",
     "deno.json",
   );
   issueWhen(
     issues,
     denoConfig.lock?.frozen !== true ||
+      denoConfig.lock.path !== "./deno.lock" ||
       !isDependencyBootstrapTruthful(tasks),
     "toolchain.dependencies",
     "deno.json",
+  );
+  issueWhen(
+    issues,
+    !hasCanonicalPnpmLockConfiguration(
+      file(snapshot, "pnpm-workspace.yaml"),
+    ),
+    "toolchain.dependencies",
+    "pnpm-workspace.yaml",
   );
   issueWhen(
     issues,

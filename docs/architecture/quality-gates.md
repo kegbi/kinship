@@ -101,6 +101,13 @@ The dependency tasks use frozen locks. An offline proof must reuse only the
 explicit cache populated by the corresponding online run and must leave both
 lockfiles byte-identical.
 
+The root dependency contract intentionally accepts only the canonical task
+spellings in `deno.json`: Deno uses `deno install --frozen`, and pnpm uses
+`pnpm install --frozen-lockfile`. Equivalent aliases such as `--frozen=true` or
+`pnpm i` are rejected until the repository adopts them explicitly. Deno must use
+`./deno.lock`; pnpm must keep one enabled, non-branch lockfile at the workspace
+root.
+
 As real harnesses are added, the implementation must expose stable top-level
 `deno task` commands even when they delegate to pnpm, Astro, Vitest, Playwright,
 Docker Compose, or a helper binary:
