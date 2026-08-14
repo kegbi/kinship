@@ -1,0 +1,110 @@
+---
+import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
+export const prerender = true;
+
+const categories = [
+  {
+    title: "Personal",
+    description: "Your identity, preferences, and security.",
+    items: [
+      ["Profile", "Name, email, and personal account context", "profile name email account"],
+      ["Preferences", "Locale, time zone, formats, and display", "preferences locale time zone display density"],
+      ["Security & sessions", "Password, MFA, passkeys, recovery, and sessions", "security password mfa passkeys recovery sessions"],
+    ],
+  },
+  {
+    title: "Workspace",
+    description: "Shared workspace settings, clearly separate from personal choices.",
+    items: [
+      ["General", "Workspace identity and shared defaults", "workspace general identity defaults"],
+      ["Members", "Roles, active members, and invitations", "members roles invitations"],
+      ["Personalization", "Profile modules and controlled vocabularies", "personalization vocabularies tags relationship activity"],
+    ],
+  },
+  {
+    title: "Data",
+    description: "Operational data tools remain standalone and resumable.",
+    items: [
+      ["Storage", "Usage, limits, and object status", "storage files usage limits"],
+      ["Import", "Import history and resumable import work", "import upload history report"],
+      ["Export", "Authorized exports and downloads", "export download data"],
+      ["Audit history", "Filterable workspace history", "audit history governance"],
+    ],
+  },
+  {
+    title: "Developer",
+    description: "Optional connections and programmatic access.",
+    items: [
+      ["Integrations", "External adapters and connection health", "developer integrations adapters"],
+      ["API access", "Tokens, clients, scopes, and revocation", "developer api tokens oauth scopes"],
+    ],
+  },
+] as const;
+---
+
+<ApplicationLayout
+  current="settings"
+  description="Search and browse your protected Kinship settings."
+  pageId="settings.index"
+  title="Settings — Kinship"
+>
+  <main id="main-content" class="page-frame settings-page" tabindex="-1">
+    <header class="settings-heading">
+      <div>
+        <p class="eyebrow">Workspace settings</p>
+        <h1>Settings</h1>
+        <p>Browse personal and workspace-owned configuration without mixing their scopes.</p>
+      </div>
+      <div class="settings-search">
+        <label for="settings-search">Search settings</label>
+        <input id="settings-search" type="search" autocomplete="off" placeholder="Try “security” or “import”" />
+      </div>
+    </header>
+
+    <div class="settings-layout">
+      <nav class="settings-local-nav" aria-label="Settings categories">
+        <p>Categories</p>
+        {categories.map((category) => <a href={`#${category.title.toLowerCase()}`}>{category.title}</a>)}
+        <a href="#billing">Billing <small>Optional</small></a>
+      </nav>
+
+      <div class="settings-groups">
+        {categories.map((category) => (
+          <section id={category.title.toLowerCase()} class="settings-group" aria-labelledby={`${category.title.toLowerCase()}-heading`}>
+            <header>
+              <p class="scope-label">{category.title === "Personal" ? "Personal scope" : "Workspace scope"}</p>
+              <h2 id={`${category.title.toLowerCase()}-heading`}>{category.title}</h2>
+              <p>{category.description}</p>
+            </header>
+            <div class="settings-card-grid">
+              {category.items.map(([title, description, search]) => (
+                <article class="settings-card" data-settings-item data-search={`${category.title} ${title} ${search}`}>
+                  <div><h3>{title}</h3><p>{description}</p></div>
+                  <span class="planned-label">Planned</span>
+                </article>
+              ))}
+            </div>
+          </section>
+        ))}
+
+        <section id="billing" class="settings-group optional-group" aria-labelledby="billing-heading">
+          <header>
+            <p class="scope-label">Optional workspace scope</p>
+            <h2 id="billing-heading">Billing</h2>
+            <p>Billing navigation appears only when a billing module is enabled. It is not enabled for this workspace.</p>
+          </header>
+          <article class="settings-card" data-settings-item data-search="billing invoices subscription optional">
+            <div><h3>Billing &amp; invoices</h3><p>No billing provider or entitlement is enabled.</p></div>
+            <span class="planned-label">Not enabled</span>
+          </article>
+        </section>
+        <p id="settings-no-results" class="empty-search" role="status" hidden>No settings match that search.</p>
+      </div>
+    </div>
+  </main>
+</ApplicationLayout>
+
+<script>
+  import { mountSettingsSearch } from "../../../lib/app-shell.ts";
+  mountSettingsSearch();
+</script>

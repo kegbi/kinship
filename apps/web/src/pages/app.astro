@@ -1,19 +1,64 @@
 ---
-import AuthLayout from "../layouts/AuthLayout.astro";
+import ApplicationLayout from "../layouts/ApplicationLayout.astro";
 export const prerender = true;
 ---
 
-<AuthLayout description="Enter your protected Kinship workspace." pageId="app.today" title="Your workspace — Kinship">
-  <main id="main-content" class="transition-main" tabindex="-1">
-    <section class="transition-card" aria-labelledby="entry-heading">
-      <p class="eyebrow">First workspace</p>
-      <h1 id="entry-heading">Preparing your workspace…</h1>
-      <div id="entry-status" role="status" aria-live="polite" tabindex="-1"><p>Resolving your protected session and active workspace.</p></div>
+<ApplicationLayout
+  current="today"
+  description="Your protected Kinship Today workspace."
+  pageId="app.today"
+  title="Today — Kinship"
+>
+  <main id="main-content" class="page-frame" tabindex="-1">
+    <header class="page-heading">
+      <div>
+        <p class="eyebrow">Today · <span data-workspace-name></span></p>
+        <h1 id="today-heading">Opening your workspace…</h1>
+        <time data-today-date></time>
+      </div>
+      <p class="honesty-note">Your action-oriented Today view is being built. This first shell helps you get started without claiming due-work coverage.</p>
+    </header>
+
+    <section class="today-section attention-section" aria-labelledby="attention-heading">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">First success</p>
+          <h2 id="attention-heading">Needs attention</h2>
+        </div>
+        <span class="state-badge">Getting started</span>
+      </div>
+      <p>Build the context that will make Kinship useful. Complete these three steps in order:</p>
+      <ol class="success-loop">
+        <li><strong>Add a person or start an import.</strong><span>People creation and import arrive in their cataloged delivery slices.</span></li>
+        <li><strong>Record the first interaction or note.</strong><span>Keep the context you want to remember.</span></li>
+        <li><strong>Create a task, reminder, or stay-in-touch cadence.</strong><span>That work will later appear in the complete Today queue.</span></li>
+      </ol>
+      <p class="projection-note">No due-work projection is shown yet. <code>TODAY-001</code> remains planned for Slice 4.</p>
+    </section>
+
+    <section class="today-section" aria-labelledby="reconnect-heading">
+      <div class="section-heading"><h2 id="reconnect-heading">People to reconnect</h2><span class="state-badge calm">Not available yet</span></div>
+      <p>Cadence-aware suggestions will appear after People and stay-in-touch behavior are delivered.</p>
+    </section>
+
+    <section class="today-section" aria-labelledby="upcoming-heading">
+      <div class="section-heading"><h2 id="upcoming-heading">Upcoming</h2><span class="state-badge calm">Not available yet</span></div>
+      <p>The bounded 30-day preview will arrive with the real planning projection.</p>
+    </section>
+
+    <section class="today-section" aria-labelledby="recent-people-heading">
+      <div class="section-heading"><h2 id="recent-people-heading">Recently viewed people</h2><span class="state-badge calm">No people yet</span></div>
+      <p>Recently opened people will appear here once the People workspace is available.</p>
+    </section>
+
+    <section class="today-section" aria-labelledby="favorite-notes-heading">
+      <div class="section-heading"><h2 id="favorite-notes-heading">Favorite notes</h2><span class="state-badge calm">No notes yet</span></div>
+      <p>Favorite reference notes stay secondary and will disappear cleanly when empty.</p>
+    </section>
+
+    <section class="today-section" aria-labelledby="activity-heading">
+      <div class="section-heading"><h2 id="activity-heading">Recent activity</h2><span class="state-badge calm">No activity yet</span></div>
+      <p>Your chronological activity projection will appear here without mixing unrelated datasets into tabs.</p>
     </section>
   </main>
-</AuthLayout>
-
-<script>
-  import { mountProtectedEntry } from "../lib/auth-forms.ts";
-  void mountProtectedEntry();
-</script>
+</ApplicationLayout>

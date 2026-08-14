@@ -1,0 +1,405 @@
+// @vitest-environment happy-dom
+
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mountApplicationShell, mountSettingsSearch } from "./app-shell.ts";
+
+function response(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function shellMarkup(): void {
+  document.body.innerHTML = `
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <section id="access-state" role="status">Checking</section>
+    <div id="protected-shell" hidden>
+      <h1 id="today-heading">Opening</h1>
+      <time data-today-date></time>
+      <span data-workspace-name></span>
+      <div id="workspace-switcher-container" hidden>
+        <label for="workspace-switcher">Active workspace</label>
+        <select id="workspace-switcher"></select>
+      </div>
+      <button id="member-menu-toggle" type="button" aria-expanded="false">Member menu</button>
+      <div id="member-popover" hidden>Menu contents</div>
+      <button id="member-sign-out" type="button">Sign out</button>
+      <p id="shell-status" role="status" tabindex="-1"></p>
+    </div>`;
+}
+
+function session(
+  activeId = "00000000-0000-4000-8000-000000000001",
+  workspaces = [
+    {
+      id: "00000000-0000-4000-8000-000000000001",
+      name: "Family circle",
+    },
+  ],
+): unknown {
+  return {
+    status: "authenticated",
+    principal: { userId: "00000000-0000-4000-8000-000000000010" },
+    workspace: workspaces.find((workspace) => workspace.id === activeId),
+    member: {
+      id: "00000000-0000-4000-8000-000000000020",
+      role: "owner",
+    },
+    workspaces,
+  };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  document.body.innerHTML = "";
+  localStorage.clear();
+  sessionStorage.clear();
+});
+
+describe("APP-002C protected application shell", () => {
+  it("reveals one active workspace and signs out without browser token storage", async () => {
+    shellMarkup();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(session()))
+      .mockResolvedValueOnce(response({
+        status: "signed-out",
+        next: "/auth/sign-in",
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    const navigate = vi.fn();
+    const skipLink = document.querySelector<HTMLAnchorElement>(".skip-link")!;
+    skipLink.focus();
+
+    await mountApplicationShell(navigate);
+
+    expect(document.activeElement).toBe(skipLink);
+    expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
+      .toBe(false);
+    expect(document.querySelector("[data-workspace-name]")?.textContent).toBe(
+      "Family circle",
+    );
+    expect(document.querySelector("#shell-status")?.textContent).toMatch(
+      /protected session/i,
+    );
+    expect(document.querySelector("#today-heading")?.textContent).toBe(
+      "Welcome back.",
+    );
+    expect(document.querySelector("time")?.getAttribute("datetime")).toMatch(
+      /^\d{4}-\d{2}-\d{2}$/,
+    );
+    document.querySelector<HTMLButtonElement>("#member-menu-toggle")?.click();
+    expect(document.querySelector("#member-popover")?.hasAttribute("hidden"))
+      .toBe(false);
+    expect(
+      document.querySelector("#workspace-switcher-container")?.hasAttribute(
+        "hidden",
+      ),
+    ).toBe(true);
+    expect(localStorage.length).toBe(0);
+
+    document.querySelector<HTMLButtonElement>("#member-sign-out")?.click();
+    await vi.waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith("/auth/sign-in")
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/v1/sign-out");
+    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe("POST");
+  });
+
+  it("shows and changes the switcher only for multiple accessible workspaces", async () => {
+    shellMarkup();
+    const workspaces = [
+      {
+        id: "00000000-0000-4000-8000-000000000001",
+        name: "Family circle",
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000002",
+        name: "Community circle",
+      },
+    ];
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(session(workspaces[0]!.id, workspaces)))
+      .mockResolvedValueOnce(response(session(workspaces[1]!.id, workspaces)))
+      .mockRejectedValueOnce(new Error("workspace unavailable"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountApplicationShell(vi.fn());
+    const container = document.querySelector<HTMLElement>(
+      "#workspace-switcher-container",
+    );
+    const select = document.querySelector<HTMLSelectElement>(
+      "#workspace-switcher",
+    )!;
+    expect(container?.hasAttribute("hidden")).toBe(false);
+    expect(select.options).toHaveLength(2);
+    select.focus();
+    select.value = workspaces[1]!.id;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+
+    await vi.waitFor(() =>
+      expect(document.querySelector("[data-workspace-name]")?.textContent)
+        .toBe("Community circle")
+    );
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toEqual({
+      "X-Workspace-Id": workspaces[1]!.id,
+      "content-type": "application/json",
+    });
+    expect(sessionStorage.getItem("kinship.active-workspace")).toBe(
+      workspaces[1]!.id,
+    );
+    expect(document.activeElement).toBe(select);
+    select.value = workspaces[0]!.id;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() =>
+      expect(document.querySelector("#shell-status")?.textContent).toMatch(
+        /no longer available/i,
+      )
+    );
+    expect(select.value).toBe(workspaces[1]!.id);
+    expect(document.activeElement).toBe(select);
+  });
+
+  it("retains a saved workspace when its session request is offline", async () => {
+    shellMarkup();
+    const savedWorkspaceId = "00000000-0000-4000-8000-000000000099";
+    sessionStorage.setItem(
+      "kinship.active-workspace",
+      savedWorkspaceId,
+    );
+    const fetchMock = vi.fn().mockRejectedValue(new Error("offline"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountApplicationShell(vi.fn());
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
+      "X-Workspace-Id": savedWorkspaceId,
+      "content-type": "application/json",
+    });
+    expect(sessionStorage.getItem("kinship.active-workspace")).toBe(
+      savedWorkspaceId,
+    );
+    expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
+      .toBe(true);
+    expect(document.querySelector("#access-state")?.textContent).toMatch(
+      /temporarily unavailable/i,
+    );
+    expect(
+      document.querySelector<HTMLButtonElement>("#access-state button")
+        ?.textContent,
+    ).toMatch(/try again/i);
+  });
+
+  it("retains a saved workspace when its session request returns 503", async () => {
+    shellMarkup();
+    const savedWorkspaceId = "00000000-0000-4000-8000-000000000099";
+    sessionStorage.setItem("kinship.active-workspace", savedWorkspaceId);
+    const fetchMock = vi.fn().mockResolvedValue(
+      response({ code: "session_unavailable", status: 503 }, 503),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountApplicationShell(vi.fn());
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem("kinship.active-workspace")).toBe(
+      savedWorkspaceId,
+    );
+    expect(document.querySelector("#access-state")?.textContent).toMatch(
+      /temporarily unavailable/i,
+    );
+  });
+
+  it("clears a definitively stale workspace only after resolving a valid default", async () => {
+    shellMarkup();
+    const savedWorkspaceId = "00000000-0000-4000-8000-000000000099";
+    sessionStorage.setItem("kinship.active-workspace", savedWorkspaceId);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        response({ code: "session_invalid", status: 401 }, 401),
+      )
+      .mockResolvedValueOnce(response(session()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountApplicationShell(vi.fn());
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
+      "X-Workspace-Id": savedWorkspaceId,
+      "content-type": "application/json",
+    });
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toEqual({
+      "content-type": "application/json",
+    });
+    expect(sessionStorage.getItem("kinship.active-workspace")).toBeNull();
+    expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
+      .toBe(false);
+    expect(document.querySelector("[data-workspace-name]")?.textContent).toBe(
+      "Family circle",
+    );
+  });
+
+  it("shows sign-in after definitive session and entry access loss", async () => {
+    shellMarkup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(
+          response({ code: "session_invalid", status: 401 }, 401),
+        )
+        .mockResolvedValueOnce(
+          response({ code: "entry_handoff_invalid", status: 409 }, 409),
+        ),
+    );
+
+    await mountApplicationShell(vi.fn());
+
+    expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
+      .toBe(true);
+    expect(document.querySelector("#access-state")?.textContent).toMatch(
+      /missing, expired, revoked, or no longer active/i,
+    );
+    expect(document.querySelector<HTMLAnchorElement>("#access-state a")?.href)
+      .toContain("/auth/sign-in");
+  });
+
+  it("exchanges a first-workspace entry before revealing the shell", async () => {
+    shellMarkup();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        response({ code: "session_invalid", status: 401 }, 401),
+      )
+      .mockResolvedValueOnce(response({
+        status: "ready",
+        workspace: {
+          id: "00000000-0000-4000-8000-000000000001",
+          name: "Family circle",
+        },
+        member: {
+          id: "00000000-0000-4000-8000-000000000020",
+          firstName: "Avery",
+        },
+      }))
+      .mockResolvedValueOnce(response(session()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountApplicationShell(vi.fn());
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/v1/session",
+      "/api/v1/application-entry",
+      "/api/v1/session",
+    ]);
+    expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
+      .toBe(false);
+    expect(document.querySelector("#shell-status")?.textContent).toMatch(
+      /verified owner/i,
+    );
+    expect(document.querySelector("#shell-status")?.textContent).toContain(
+      "Family circle is ready",
+    );
+    expect(document.querySelector("#today-heading")?.textContent).toBe(
+      "Welcome, Avery.",
+    );
+  });
+
+  it("keeps a failed sign-out retryable and does not navigate", async () => {
+    shellMarkup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(session()))
+        .mockRejectedValueOnce(new Error("offline")),
+    );
+    const navigate = vi.fn();
+
+    await mountApplicationShell(navigate);
+    const signOutButton = document.querySelector<HTMLButtonElement>(
+      "#member-sign-out",
+    )!;
+    signOutButton.focus();
+    signOutButton.click();
+
+    await vi.waitFor(() =>
+      expect(document.querySelector("#shell-status")?.textContent).toMatch(
+        /could not be revoked/i,
+      )
+    );
+    expect(navigate).not.toHaveBeenCalled();
+    expect(
+      document.querySelector<HTMLButtonElement>("#member-sign-out")?.disabled,
+    )
+      .toBe(false);
+    expect(document.activeElement).toBe(signOutButton);
+  });
+
+  it("does not mount without the required shell or settings elements", async () => {
+    document.body.innerHTML = "<main></main>";
+    await mountApplicationShell(vi.fn());
+    mountSettingsSearch();
+    expect(document.body.innerHTML).toBe("<main></main>");
+  });
+
+  it("does not consume application entry when session resolution is offline", async () => {
+    shellMarkup();
+    const fetchMock = vi.fn().mockRejectedValue(new Error("offline"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountApplicationShell(vi.fn());
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(document.querySelector("#access-state")?.textContent).toMatch(
+      /temporarily unavailable/i,
+    );
+  });
+
+  it("fails closed when an exchanged entry cannot resolve its session", async () => {
+    shellMarkup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(
+          response({ code: "session_invalid", status: 401 }, 401),
+        )
+        .mockResolvedValueOnce(response({
+          status: "ready",
+          workspace: { id: "workspace", name: "Circle" },
+          member: { id: "member", firstName: "Avery" },
+        }))
+        .mockRejectedValueOnce(new Error("offline")),
+    );
+
+    await mountApplicationShell(vi.fn());
+
+    expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
+      .toBe(true);
+  });
+
+  it("filters the grouped settings overview without mutating settings", () => {
+    document.body.innerHTML = `
+      <label for="settings-search">Search settings</label>
+      <input id="settings-search" type="search">
+      <article data-settings-item data-search="profile name email">Profile</article>
+      <article data-settings-item data-search="security sessions password">Security</article>
+      <p id="settings-no-results" hidden>No settings match.</p>`;
+
+    mountSettingsSearch();
+    const input = document.querySelector<HTMLInputElement>("#settings-search")!;
+    input.value = "password";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const items = document.querySelectorAll<HTMLElement>(
+      "[data-settings-item]",
+    );
+    expect(items[0]?.hidden).toBe(true);
+    expect(items[1]?.hidden).toBe(false);
+    input.value = "unknown";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(
+      document.querySelector("#settings-no-results")?.hasAttribute(
+        "hidden",
+      ),
+    ).toBe(false);
+  });
+});

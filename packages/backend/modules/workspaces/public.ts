@@ -39,5 +39,6 @@ export type {
   ProtectedSessionResult,
   ProtectedSessionTransaction,
   ProtectedSessionTransactionRunner,
+  ResolvedSessionContext,
   SignInCommand,
 } from "./application/protected_session.ts";

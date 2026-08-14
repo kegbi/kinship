@@ -564,6 +564,7 @@ Deno.test({
         run: (work) => work({ opaque: "failed-establishment" }),
       },
       workspace: {
+        listActiveContexts: () => Promise.resolve([context]),
         resolveAuditContext: () => Promise.resolve(context),
         resolveActiveContext: () => Promise.resolve(context),
         assertActiveContextPostcondition: () => Promise.resolve(),
@@ -737,6 +738,7 @@ Deno.test({
           responseEqualizer: immediateResponseEqualizer,
           transaction,
           workspace: {
+            listActiveContexts: () => Promise.resolve([]),
             resolveAuditContext: () => Promise.resolve(undefined),
             resolveActiveContext: () => Promise.resolve(undefined),
             assertActiveContextPostcondition: () => Promise.resolve(),
@@ -1401,6 +1403,18 @@ Deno.test({
         ${userId}::uuid, 'member', 'active', now()
       )
     `;
+    const switcherContext = await configured.app.request(
+      "http://localhost/api/v1/session",
+      { headers: { cookie: `kinship_session=${rotatedToken}` } },
+    );
+    const switcherBody = await switcherContext.json() as {
+      readonly workspaces?: readonly { readonly id?: string }[];
+    };
+    assert(
+      switcherBody.workspaces?.map((workspace) => workspace.id).join(",") ===
+        `${firstMembership.workspace_id},${secondWorkspaceId}`,
+      "session lists active memberships and excludes a workspace without membership",
+    );
     const selected = await signIn(email, undefined, {
       workspaceId: secondWorkspaceId,
     });

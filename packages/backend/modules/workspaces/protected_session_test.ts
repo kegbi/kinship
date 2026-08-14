@@ -158,6 +158,11 @@ function dependencies(
         },
       },
       workspace: {
+        listActiveContexts() {
+          return Promise.resolve(
+            membership === "active" ? [context] : [],
+          );
+        },
         resolveAuditContext(command) {
           effects.push("workspace.audit.resolve");
           if (command.userId === "00000000-0000-0000-0000-000000000000") {
@@ -180,6 +185,47 @@ function dependencies(
     },
   };
 }
+
+Deno.test("protected session resolution lists only accessible workspaces", async () => {
+  const fixture = dependencies();
+  const active = {
+    memberId: "00000000-0000-4000-8000-000000000002",
+    role: "owner" as const,
+    userId: "00000000-0000-4000-8000-000000000001",
+    workspaceId: "00000000-0000-4000-8000-000000000003",
+    workspaceName: "Ada's circle",
+  };
+  const second = {
+    ...active,
+    memberId: "00000000-0000-4000-8000-000000000004",
+    role: "member" as const,
+    workspaceId: "00000000-0000-4000-8000-000000000005",
+    workspaceName: "Community circle",
+  };
+  const coordinator = createProtectedSessionCoordinator({
+    ...fixture.deps,
+    identity: {
+      ...fixture.deps.identity,
+      resolveSession: () => Promise.resolve({ userId: active.userId }),
+    },
+    workspace: {
+      ...fixture.deps.workspace,
+      resolveActiveContext: () => Promise.resolve(active),
+      listActiveContexts: () => Promise.resolve([active, second]),
+    },
+  });
+
+  const resolved = await coordinator.resolve({
+    sessionToken: "active-session-token",
+  });
+
+  assert(resolved?.workspaceId === active.workspaceId, "active workspace kept");
+  assert(
+    resolved.accessibleWorkspaces.map((workspace) => workspace.workspaceId)
+      .join(",") === `${active.workspaceId},${second.workspaceId}`,
+    "only the resolver's ordered active memberships are exposed",
+  );
+});
 
 function responseBarrier(expected: number): {
   readonly allWaiting: Promise<void>;

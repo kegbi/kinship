@@ -1084,7 +1084,8 @@
           "status",
           "principal",
           "workspace",
-          "member"
+          "member",
+          "workspaces"
         ],
         "properties": {
           "status": {
@@ -1108,6 +1109,13 @@
           },
           "member": {
             "$ref": "#/components/schemas/Authenticated/properties/member"
+          },
+          "workspaces": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/Authenticated/properties/workspace"
+            }
           }
         },
         "additionalProperties": false

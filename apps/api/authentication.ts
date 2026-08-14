@@ -434,6 +434,10 @@ export function createAuthenticationRoutes(
       principal: { userId: resolved.userId },
       member: { id: resolved.memberId, role: resolved.role },
       workspace: { id: resolved.workspaceId, name: resolved.workspaceName },
+      workspaces: resolved.accessibleWorkspaces.map((workspace) => ({
+        id: workspace.workspaceId,
+        name: workspace.workspaceName,
+      })),
     });
   });
 

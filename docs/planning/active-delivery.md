@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 2 — Identity And Protected Workspace**
-- Current leaf: **APP-002C — Protected application shell**
+- Current leaf: **APP-002D / `AUTH-002` — Invite and add a workspace member**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -63,7 +63,7 @@ These are cross-cutting acceptance items, not separately scheduled tickets.
 - [x] Deterministic OpenAPI 3.1 and a frontend client boundary arrive with the
       first business API contract that benefits from generation; frontend code
       never imports backend internals.
-- [ ] Production-like gateway, secure-cookie, origin, CSRF, and test-TLS
+- [x] Production-like gateway, secure-cookie, origin, CSRF, and test-TLS
       behavior arrive with the first protected browser flow that consumes them.
 - [ ] Durable worker guarantees arrive with the first reminder, import, export,
       or synchronization behavior that needs them.
@@ -117,11 +117,11 @@ runnable behavior cannot work without them.
         rotation, sign-out, and protected-route rejection.
   - [x] Resolve active member and workspace context and prove a second-workspace
         isolation negative.
-- [ ] **APP-002C — Protected application shell.**
-  - [ ] Deliver the accepted authenticated navigation, first-workspace
+- [x] **APP-002C — Protected application shell.**
+  - [x] Deliver the accepted authenticated navigation, first-workspace
         onboarding state, settings shell, and an honest initial Today shell at
         `/app`.
-  - [ ] Add the minimum gateway/CSRF/origin/secure-cookie behavior consumed by
+  - [x] Add the minimum gateway/CSRF/origin/secure-cookie behavior consumed by
         the protected Chromium path.
 - [ ] **APP-002D / `AUTH-002` — Invite and add a workspace member.**
   - [ ] Deliver invitation creation, acceptance, expiry/replay handling, role
