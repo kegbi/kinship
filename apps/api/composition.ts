@@ -9,6 +9,7 @@ import {
   PostgresEmailVerification,
   PostgresIdentityAuthentication,
   PostgresIdentityRegistration,
+  PostgresInvitationIdentity,
   PostgresPasswordRecoveryRepository,
   SecureTokenService,
   WebCryptoRandomSource,
@@ -20,6 +21,7 @@ import {
   createVerificationDeliveryRetry,
   PostgresActiveWorkspaceResolver,
   PostgresRegistrationTransaction,
+  PostgresWorkspaceInvitations,
   PostgresWorkspaceRegistration,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import {
@@ -29,8 +31,10 @@ import {
 import { SmtpVerificationMail } from "../../packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail.ts";
 import {
   PostgresAuthenticationAudit,
+  PostgresInvitationAudit,
   PostgresRegistrationAudit,
 } from "../../packages/backend/modules/governance/public.ts";
+import { createWorkspaceInvitationCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import {
   AuthenticationSubjectDigester,
   type AuthenticationSubjectKeyset,
@@ -45,6 +49,10 @@ import {
   createAuthenticationRoutes,
 } from "./authentication.ts";
 import {
+  createInvitationRoutes,
+  type InvitationHttpServices,
+} from "./invitations.ts";
+import {
   type BrowserSecurityPolicy,
   browserSecurityPolicy,
 } from "./security_config.ts";
@@ -54,6 +62,7 @@ import {
 } from "./authentication_response.ts";
 
 export interface ApiServices extends RegistrationHttpServices {
+  readonly invitations?: InvitationHttpServices["invitations"];
   readonly passwordRecovery?: AuthenticationHttpServices["passwordRecovery"];
   readonly protectedSessions?: AuthenticationHttpServices["protectedSessions"];
   readonly readiness?: () => Promise<boolean>;
@@ -62,6 +71,7 @@ export interface ApiServices extends RegistrationHttpServices {
 export class CapturedVerificationMail implements VerificationMail {
   readonly #messages = new Map<string, string[]>();
   readonly #passwordResets = new Map<string, string[]>();
+  readonly #invitations = new Map<string, string[]>();
 
   sendVerification(
     message: { readonly email: string; readonly token: string },
@@ -96,6 +106,21 @@ export class CapturedVerificationMail implements VerificationMail {
   latestPasswordResetToken(email: string): string | undefined {
     return this.#passwordResets.get(email.toLowerCase())?.at(-1);
   }
+
+  sendInvitation(
+    message: { readonly email: string; readonly token: string },
+  ): Promise<void> {
+    const key = message.email.toLowerCase();
+    this.#invitations.set(key, [
+      ...(this.#invitations.get(key) ?? []),
+      message.token,
+    ]);
+    return Promise.resolve();
+  }
+
+  latestInvitationToken(email: string): string | undefined {
+    return this.#invitations.get(email.toLowerCase())?.at(-1);
+  }
 }
 
 export function createApiApp(services?: ApiServices): Hono {
@@ -120,6 +145,17 @@ export function createApiApp(services?: ApiServices): Hono {
           protectedSessions: services.protectedSessions,
         }),
       );
+      if (services.invitations) {
+        api.route(
+          "/",
+          createInvitationRoutes({
+            browserSecurity: services.browserSecurity,
+            hasher: services.hasher,
+            invitations: services.invitations,
+            protectedSessions: services.protectedSessions,
+          }),
+        );
+      }
     }
   }
 
@@ -204,6 +240,7 @@ export function createConfiguredApiApp(
     audit: new PostgresAuthenticationAudit(),
     clock,
     identity: authentication,
+    identityEntry: verification,
     responseEqualizer: responseEqualizerOverride ??
       createAuthenticationResponseEqualizer(
         DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
@@ -227,9 +264,51 @@ export function createConfiguredApiApp(
     tokens,
     transaction,
   });
+  const invitationIdentity = new PostgresInvitationIdentity();
+  const invitations = createWorkspaceInvitationCoordinator({
+    audit: new PostgresInvitationAudit(),
+    clock,
+    ids,
+    identity: {
+      assertPendingUserPostconditions: (command) =>
+        registrationDependencies.identity.assertPendingUserPostconditions(
+          command,
+        ),
+      assertSessionPostcondition: (command) =>
+        authentication.assertSessionPostcondition(command),
+      consumeVerifiedIdentityEntry: (command) =>
+        verification.consumeVerifiedIdentityEntry(command),
+      createPendingUser: (command) =>
+        registrationDependencies.identity.createPendingUser(command),
+      createRetryVerificationToken: (command) =>
+        registrationDependencies.identity.createRetryVerificationToken(
+          command,
+        ),
+      findIdentityIdByEmail: (command) =>
+        invitationIdentity.findIdentityIdByEmail(command),
+      isVerifiedInvitationIdentity: (command) =>
+        invitationIdentity.isVerifiedInvitationIdentity(command),
+      issueSession: (command) => authentication.issueSession(command),
+      listIdentityDisplaySummaries: (command) =>
+        invitationIdentity.listIdentityDisplaySummaries(command),
+    },
+    mail: {
+      sendInvitation: (message) => {
+        if (!mail.sendInvitation) {
+          return Promise.reject(new Error("Invitation mail unavailable."));
+        }
+        return mail.sendInvitation(message);
+      },
+      sendVerification: (message) => mail.sendVerification(message),
+    },
+    repository: new PostgresWorkspaceInvitations(),
+    tokens,
+    transaction,
+  });
   const app = createApiApp({
     browserSecurity: policy,
     hasher,
+    invitations,
     passwordRecovery,
     protectedSessions,
     register: registration,

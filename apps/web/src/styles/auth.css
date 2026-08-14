@@ -227,6 +227,22 @@ button:disabled {
   font-size: 1.05rem;
   line-height: 1.65;
 }
+
+.invitation-actions {
+  display: grid;
+  gap: .6rem;
+  margin-top: 1rem;
+}
+
+.invitation-actions > * {
+  min-height: 44px;
+}
+
+.invitation-actions .secondary-link {
+  border: 1px solid #aeb7ae;
+  color: #21332c;
+  background: #fffdf8;
+}
 @media (max-width: 760px) {
   .auth-main {
     grid-template-columns: 1fr;

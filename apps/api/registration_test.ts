@@ -178,6 +178,38 @@ Deno.test("application entry requires POST and exact browser origin before consu
   assert(consumed === 0, "invalid origins must not consume or revoke entry");
 });
 
+Deno.test("invited verification continues without returning invitation bearer material", async () => {
+  const app = createApiApp(services());
+  const response = await app.request(
+    "http://localhost/api/v1/email-verifications",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: "kinship_invitation_pending=1",
+      },
+      body: JSON.stringify({
+        token: "a-valid-private-verification-token-0000000000",
+      }),
+    },
+  );
+  const body = await response.text();
+  assert(
+    response.status === 200 && body.includes('"next":"/invite/continue"'),
+    "invited verification returns the scrubbed continuation",
+  );
+  assert(
+    !body.includes("a-valid-private"),
+    "verification never reflects bearer material",
+  );
+  assert(
+    response.headers.get("set-cookie")?.includes(
+      "Path=/api/v1/workspace-invitations",
+    ),
+    "invited entry authority is scoped to invitation acceptance",
+  );
+});
+
 Deno.test("verification and entry dependency failures map to safe 503 problems", async () => {
   const app = createApiApp(services({
     verification: {

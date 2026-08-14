@@ -80,6 +80,26 @@ function renderSessionUnavailable(elements: ShellElements): void {
   elements.access.focus();
 }
 
+function renderRouteForbidden(elements: ShellElements): void {
+  elements.root.querySelectorAll("[data-requires-workspace-admin]").forEach(
+    (node) => node.remove(),
+  );
+  elements.root.hidden = true;
+  elements.access.hidden = false;
+  elements.access.replaceChildren();
+  const heading = document.createElement("h1");
+  heading.textContent = "You don’t have access to Members";
+  const copy = document.createElement("p");
+  copy.textContent =
+    "Only workspace owners and admins can view members and invitations.";
+  const link = document.createElement("a");
+  link.className = "button-link";
+  link.href = "/app/settings";
+  link.textContent = "Return to settings";
+  elements.access.append(heading, copy, link);
+  elements.access.focus();
+}
+
 function renderSession(
   elements: ShellElements,
   session: SessionContext,
@@ -174,6 +194,19 @@ export async function mountApplicationShell(
     renderAccessFailure(elements);
     return;
   }
+  const isWorkspaceAdmin = resolved.session.member.role === "owner" ||
+    resolved.session.member.role === "admin";
+  if (!isWorkspaceAdmin) {
+    document.querySelectorAll("[data-requires-workspace-admin]").forEach(
+      (node) => node.remove(),
+    );
+  }
+  if (
+    document.body.dataset.pageId === "settings.members" && !isWorkspaceAdmin
+  ) {
+    renderRouteForbidden(elements);
+    return;
+  }
   renderSession(elements, resolved.session, resolved.firstName);
   let activeWorkspaceId = resolved.session.workspace.id;
 
@@ -200,9 +233,9 @@ export async function mountApplicationShell(
         ACTIVE_WORKSPACE_KEY,
         activeWorkspaceId,
       );
-      renderSession(elements, selected.value);
-      elements.status.textContent =
-        `${selected.value.workspace.name} is now active.`;
+      elements.select.disabled = false;
+      navigate(`${globalThis.location.pathname}${globalThis.location.search}`);
+      return;
     } else {
       elements.status.textContent =
         "That workspace is no longer available. Your current workspace was not changed.";

@@ -1,5 +1,7 @@
 import {
+  authenticateWorkspaceInvitation,
   completeMfa,
+  completeWorkspaceInvitationMfa,
   consumeApplicationEntry,
   getSession,
   requestPasswordReset,
@@ -33,23 +35,50 @@ type Navigate = (path: string) => void;
 
 const browserNavigate: Navigate = (path) => globalThis.location.assign(path);
 
+function captureInvitationHandoff(): {
+  readonly active: boolean;
+  readonly token?: string;
+} {
+  const token = new URLSearchParams(globalThis.location.hash.slice(1)).get(
+    "invite",
+  );
+  const marker = globalThis.location.hash === "#invitation";
+  if (token || marker) {
+    history.replaceState({}, "", globalThis.location.pathname);
+  }
+  return { active: Boolean(token) || marker, ...(token ? { token } : {}) };
+}
+
 export function mountSignIn(
   form: HTMLFormElement,
   navigate: Navigate = browserNavigate,
 ): void {
   const ui = formUi(form);
   if (!ui) return;
+  let invitation = captureInvitationHandoff();
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     begin(ui, "Checking your credentials securely…");
     const data = new FormData(form);
     try {
-      const result = await signIn({
+      const credentials = {
         email: String(data.get("email") ?? "").trim().toLowerCase(),
         password: String(data.get("password") ?? ""),
-      });
+      };
+      const result = invitation.active
+        ? await authenticateWorkspaceInvitation({
+          ...credentials,
+          ...(invitation.token ? { token: invitation.token } : {}),
+        })
+        : await signIn(credentials);
       if (result.ok) {
-        navigate(result.value.next);
+        const next = invitation.active
+          ? result.value.status === "mfa-required"
+            ? "/auth/mfa#invitation"
+            : "/invite/continue"
+          : result.value.next;
+        invitation = { active: false };
+        navigate(next);
         return;
       }
       ui.output.dataset.state = "error";
@@ -76,14 +105,19 @@ export function mountMfa(
 ): void {
   const ui = formUi(form);
   if (!ui) return;
+  let invitation = captureInvitationHandoff();
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     begin(ui, "Checking your second factor…");
     const factor = String(new FormData(form).get("factor") ?? "").trim();
     try {
-      const result = await completeMfa(factor);
+      const result = invitation.active
+        ? await completeWorkspaceInvitationMfa(factor)
+        : await completeMfa(factor);
       if (result.ok) {
-        navigate(result.value.next);
+        const next = invitation.active ? "/invite/continue" : result.value.next;
+        invitation = { active: false };
+        navigate(next);
         return;
       }
       ui.output.dataset.state = "error";

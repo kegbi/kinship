@@ -37,6 +37,7 @@ flows:
 
   - id: AUTH-002
     title: Invite and add a workspace member
+    deliveryStatus: delivered
     priority: P0
     actor: workspace-admin
     trigger: An owner or admin invites another person.
@@ -58,7 +59,7 @@ flows:
     moduleIds: [identity, workspaces]
     permissions: [workspace.members.invite]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/auth-002.spec.ts] }
 
   - id: AUTH-003
     title: Sign in through password and MFA challenges

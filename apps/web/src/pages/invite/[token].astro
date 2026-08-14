@@ -1,0 +1,28 @@
+---
+import AuthLayout from "../../layouts/AuthLayout.astro";
+export const prerender = false;
+Astro.response.headers.set("Cache-Control", "private, no-store");
+Astro.response.headers.set("Referrer-Policy", "no-referrer");
+---
+
+<AuthLayout description="Review and accept a single-use Kinship workspace invitation." pageId="invitation.accept" title="Workspace invitation — Kinship">
+  <main id="main-content" class="transition-main" tabindex="-1">
+    <section class="transition-card invitation-card" aria-labelledby="invitation-heading">
+      <p class="eyebrow">Workspace invitation</p>
+      <h1 id="invitation-heading">Checking your invitation…</h1>
+      <div id="invitation-detail" role="status" aria-live="polite">
+        <p>Confirming that this single-use link is still available.</p>
+      </div>
+      <div id="invitation-actions" class="invitation-actions" hidden>
+        <button id="accept-invitation" type="button">Accept invitation</button>
+        <a id="invitation-sign-in" class="button-link secondary-link" href="/auth/sign-in">Sign in as the invited person</a>
+        <a id="invitation-register" href="/auth/sign-up">Create an account, then return to this link</a>
+      </div>
+    </section>
+  </main>
+</AuthLayout>
+
+<script>
+  import { mountInvitationAcceptance } from "../../lib/invitation.ts";
+  void mountInvitationAcceptance();
+</script>

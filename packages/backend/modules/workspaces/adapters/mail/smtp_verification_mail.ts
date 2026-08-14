@@ -142,6 +142,34 @@ export function buildPasswordResetMessage(
   ].join("\r\n");
 }
 
+export function buildInvitationMessage(
+  options: Pick<SmtpVerificationMailOptions, "from" | "webOrigin">,
+  message: {
+    readonly email: string;
+    readonly expiresAt: Date;
+    readonly token: string;
+    readonly workspaceName: string;
+  },
+): string {
+  const invitationUrl = new URL(
+    `/invite/${encodeURIComponent(message.token)}`,
+    options.webOrigin,
+  );
+  return [
+    `From: Kinship <${safeHeader(options.from)}>`,
+    `To: ${safeHeader(message.email)}`,
+    `Subject: Join ${safeHeader(message.workspaceName)} on Kinship`,
+    "Content-Type: text/plain; charset=utf-8",
+    "MIME-Version: 1.0",
+    "",
+    `You were invited to join ${message.workspaceName} on Kinship:`,
+    invitationUrl.toString(),
+    "",
+    `This single-use link expires at ${message.expiresAt.toISOString()}.`,
+    "If you did not expect this invitation, you can ignore this email.",
+  ].join("\r\n");
+}
+
 async function readReply(
   connection: Deno.TcpConn,
   timeoutMs: number,
@@ -213,6 +241,18 @@ export class SmtpVerificationMail implements VerificationMail {
     await this.#send(
       message.email,
       buildPasswordResetMessage(this.options, message),
+    );
+  }
+
+  async sendInvitation(message: {
+    readonly email: string;
+    readonly expiresAt: Date;
+    readonly token: string;
+    readonly workspaceName: string;
+  }): Promise<void> {
+    await this.#send(
+      message.email,
+      buildInvitationMessage(this.options, message),
     );
   }
 

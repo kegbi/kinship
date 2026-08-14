@@ -109,11 +109,13 @@ function dependencies(
               status: "mfa-required",
               challengeToken: "challenge-token",
               credentialVersion: new Date("2026-08-01T00:00:00.000Z"),
+              entryCredentialVersion: "1785542400.000001",
               userId: context.userId,
             });
           }
           return Promise.resolve({
             credentialVersion: new Date("2026-08-01T00:00:00.000Z"),
+            entryCredentialVersion: "1785542400.000001",
             status: "verified",
             userId: context.userId,
           });
@@ -122,6 +124,7 @@ function dependencies(
           effects.push("identity.mfa");
           return Promise.resolve({
             credentialVersion: new Date("2026-08-01T00:00:00.000Z"),
+            entryCredentialVersion: "1785542400.000001",
             status: "verified",
             userId: context.userId,
           });
@@ -147,6 +150,15 @@ function dependencies(
         },
         revokeSession() {
           return Promise.resolve();
+        },
+      },
+      identityEntry: {
+        issueVerifiedIdentityEntry() {
+          effects.push("identity.entry");
+          return Promise.resolve({
+            expiresAt: new Date("2026-08-14T12:10:00.000Z"),
+            token: "one-use-entry",
+          });
         },
       },
       transaction: {
@@ -320,6 +332,85 @@ Deno.test("MFA and suspended membership never issue a session prematurely", asyn
   assert(
     suspended.effects.includes("budget.password-reservation.finalize.403"),
     "inactive membership finalizes the request as HTTP 403",
+  );
+});
+
+Deno.test("invitation-scoped authentication issues only a bounded one-use identity entry", async () => {
+  const fixture = dependencies("verified", "suspended");
+  let issuance: Record<string, unknown> | undefined;
+  const identityEntry = {
+    issueVerifiedIdentityEntry(command: Record<string, unknown>) {
+      issuance = command;
+      return Promise.resolve({
+        expiresAt: new Date("2026-08-14T12:10:00.000Z"),
+        token: "one-use-entry",
+      });
+    },
+  };
+  const coordinator = createProtectedSessionCoordinator({
+    ...fixture.deps,
+    identity: {
+      ...fixture.deps.identity,
+      issueSession() {
+        throw new Error("normal session issuance must remain domain separated");
+      },
+    },
+    identityEntry,
+  });
+  const result = await coordinator.signIn({
+    email: "invitee@example.test",
+    expectedEmail: "invitee@example.test",
+    identityOnly: true,
+    ipAddress: "127.0.0.1",
+    password: "correct horse battery staple",
+  });
+  assert(result.status === "identity-authenticated", "identity entry succeeds");
+  assert(
+    issuance?.expectedEmail === "invitee@example.test" &&
+      issuance?.credentialVersion === "1785542400.000001",
+    "dedicated entry issuance is bound to invited email and credential version",
+  );
+  assert(
+    !fixture.effects.includes("workspace.resolve") &&
+      !fixture.effects.includes("audit.succeeded") &&
+      !fixture.effects.includes("identity.session"),
+    "identity entry neither broadens membership nor claims a workspace audit",
+  );
+});
+
+Deno.test("invitation-scoped MFA preserves the same identity-only boundary", async () => {
+  const fixture = dependencies("mfa", "suspended");
+  const coordinator = createProtectedSessionCoordinator(fixture.deps);
+  const challenge = await coordinator.signIn({
+    email: "invitee@example.test",
+    expectedEmail: "invitee@example.test",
+    identityOnly: true,
+    ipAddress: "127.0.0.1",
+    password: "correct horse battery staple",
+  });
+  assert(challenge.status === "mfa-required", "MFA cannot be skipped");
+  assert(
+    !fixture.effects.includes("workspace.resolve"),
+    "no membership is required for the scoped challenge",
+  );
+  assert(challenge.status === "mfa-required", "challenge token is available");
+  const accepted = await coordinator.completeMfa({
+    challengeToken: challenge.status === "mfa-required"
+      ? challenge.challengeToken
+      : "",
+    expectedEmail: "invitee@example.test",
+    factor: "123456",
+    identityOnly: true,
+    ipAddress: "127.0.0.1",
+  });
+  assert(
+    accepted.status === "identity-authenticated",
+    "MFA yields only entry authority",
+  );
+  assert(
+    fixture.effects.includes("identity.entry") &&
+      !fixture.effects.includes("identity.session"),
+    "MFA preserves entry/session token domain separation",
   );
 });
 

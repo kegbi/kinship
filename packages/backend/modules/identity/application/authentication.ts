@@ -5,6 +5,8 @@ export interface AuthenticationClient {
   readonly userAgent?: string;
 }
 
+export type ExactCredentialVersion = string;
+
 export type PasswordAuthenticationResult =
   | { readonly auditUserId?: string; readonly status: "invalid" }
   | {
@@ -15,11 +17,13 @@ export type PasswordAuthenticationResult =
   | {
     readonly challengeToken: string;
     readonly credentialVersion: Date | null;
+    readonly entryCredentialVersion: ExactCredentialVersion;
     readonly status: "mfa-required";
     readonly userId: string;
   }
   | {
     readonly credentialVersion: Date | null;
+    readonly entryCredentialVersion: ExactCredentialVersion;
     readonly status: "verified";
     readonly userId: string;
   };
@@ -34,6 +38,7 @@ export type MfaAuthenticationResult =
   }
   | {
     readonly credentialVersion: Date | null;
+    readonly entryCredentialVersion: ExactCredentialVersion;
     readonly status: "verified";
     readonly userId: string;
   };

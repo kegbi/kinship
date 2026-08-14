@@ -26,6 +26,22 @@ export {
   createProtectedSessionCoordinator,
   protectedSessionHttpStatus,
 } from "./application/protected_session.ts";
+export { createWorkspaceInvitationCoordinator } from "./application/invite_member.ts";
+export type {
+  InvitationAcceptance,
+  InvitationActor,
+  InvitationAudit,
+  InvitationInspection,
+  InvitationMail,
+  InvitationRole,
+  InvitationSummary,
+  InvitationTokens,
+  WorkspaceInvitationDependencies,
+  WorkspaceInvitationRepository,
+  WorkspaceMemberSummary,
+  WorkspaceRole,
+} from "./application/invite_member.ts";
+export { PostgresWorkspaceInvitations } from "./adapters/postgres/workspace_invitations.ts";
 export type {
   ActiveWorkspaceContext,
   ActiveWorkspaceResolver,

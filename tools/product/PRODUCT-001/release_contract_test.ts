@@ -319,6 +319,7 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
   );
   const deliveredFlows = new Map([
     ["AUTH-001", "tests/e2e/auth-001.spec.ts"],
+    ["AUTH-002", "tests/e2e/auth-002.spec.ts"],
     ["AUTH-003", "tests/e2e/auth-003.spec.ts"],
   ]);
   for (const flow of flows) {

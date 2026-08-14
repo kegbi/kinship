@@ -113,6 +113,16 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
       gateway.includes("error_page 404 /404.html"),
     "gateway directly serves extensionless prerendered and fingerprinted assets",
   );
+  const invitationLocation = gateway.match(
+    /location ~ \^\/invite\/\[\^\/\]\+\$ \{[\s\S]*?\n {4}\}/,
+  )?.[0] ?? "";
+  assert(
+    invitationLocation.includes("proxy_hide_header Cache-Control;") &&
+      invitationLocation.includes(
+        'add_header Cache-Control "private, no-store" always;',
+      ),
+    "invitation responses expose one private no-store policy through the gateway",
+  );
   assert(
     web.includes("pnpm install --frozen-lockfile") &&
       web.includes("server/entry.mjs"),

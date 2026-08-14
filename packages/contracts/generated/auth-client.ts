@@ -54,7 +54,7 @@ export function retryVerificationDelivery(email: string): Promise<ApiResult<{ re
   return request("/api/v1/email-verification-deliveries", { method: "POST", body: JSON.stringify({ email }) });
 }
 
-export function verifyEmail(token: string): Promise<ApiResult<{ readonly status: "verified"; readonly next: "/app" }>> {
+export function verifyEmail(token: string): Promise<ApiResult<{ readonly status: "verified"; readonly next: "/app" | "/invite/continue" }>> {
   return request("/api/v1/email-verifications", { method: "POST", body: JSON.stringify({ token }) });
 }
 
@@ -84,4 +84,49 @@ export function getSession(workspaceId?: string): Promise<ApiResult<SessionConte
 
 export function signOut(): Promise<ApiResult<{ readonly status: "signed-out"; readonly next: "/auth/sign-in" }>> {
   return request("/api/v1/sign-out", { method: "POST" });
+}
+
+export interface WorkspaceMembers {
+  readonly status: "ready";
+  readonly members: readonly { readonly id: string; readonly email: string; readonly name: string; readonly role: "owner" | "admin" | "member"; readonly status: "active" }[];
+  readonly invitations: readonly { readonly id: string; readonly email: string; readonly role: "admin" | "member"; readonly status: "pending"; readonly createdAt: string; readonly expiresAt: string }[];
+}
+
+export interface InvitationInspection {
+  readonly status: "pending";
+  readonly email: string;
+  readonly role: "admin" | "member";
+  readonly workspaceName: string;
+}
+
+export function getWorkspaceMembers(workspaceId?: string): Promise<ApiResult<WorkspaceMembers>> {
+  return request("/api/v1/workspace-members", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function createWorkspaceInvitation(input: { readonly email: string; readonly role: "admin" | "member" }, workspaceId?: string): Promise<ApiResult<{ readonly status: "invited" }>> {
+  return request("/api/v1/workspace-invitations", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function registerInvitedIdentity(input: { readonly email: string; readonly firstName: string; readonly lastName: string; readonly password: string; readonly token: string }): Promise<ApiResult<{ readonly status: "verification-required" }>> {
+  return request("/api/v1/workspace-invitations/register", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function retryInvitedVerificationDelivery(): Promise<ApiResult<{ readonly status: "accepted" }>> {
+  return request("/api/v1/workspace-invitations/verification-delivery", { method: "POST", body: "{}" });
+}
+
+export function authenticateWorkspaceInvitation(input: { readonly email: string; readonly password: string; readonly token?: string }): Promise<ApiResult<{ readonly status: "authenticated"; readonly next: "/invite/continue" } | { readonly status: "mfa-required"; readonly next: "/auth/mfa" }>> {
+  return request("/api/v1/workspace-invitations/authenticate", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function completeWorkspaceInvitationMfa(factor: string): Promise<ApiResult<{ readonly status: "authenticated"; readonly next: "/invite/continue" }>> {
+  return request("/api/v1/workspace-invitations/mfa", { method: "POST", body: JSON.stringify({ factor }) });
+}
+
+export function inspectWorkspaceInvitation(token?: string): Promise<ApiResult<InvitationInspection>> {
+  return request("/api/v1/workspace-invitations/inspect", { method: "POST", body: JSON.stringify(token ? { token } : {}) });
+}
+
+export function acceptWorkspaceInvitation(token?: string): Promise<ApiResult<{ readonly status: "accepted"; readonly next: "/app"; readonly workspace: Authenticated["workspace"] }>> {
+  return request("/api/v1/workspace-invitations/accept", { method: "POST", body: JSON.stringify(token ? { token } : {}) });
 }
