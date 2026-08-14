@@ -2,6 +2,14 @@
 
 ## Delivery Assumption
 
+### Execution reset (2026-08-14)
+
+Task order comes from [`active-delivery.md`](active-delivery.md). Application
+delivery starts now. The detailed Foundation packages below are reference
+backlog, not a blocking wave, and are pulled into a vertical ticket only when
+that ticket consumes them. Do not complete all spikes, enforcement, CI,
+telemetry, gateway, or design-system work before building the runnable app.
+
 The existing P0/P1/P2 priorities and the PRODUCT-001 release subset are
 authoritative. The catalog-derived Proposed MVP and Core feature complete cuts
 currently coincide after Slice 7. An earlier release is Core alpha after Slice
@@ -75,8 +83,10 @@ later enablement.
 
 ## Decision Gates
 
-Open gates are work. They must be resolved before the milestone in `Blocks`;
-implementation must not select an answer implicitly.
+Decision gates are resolved just in time before the affected behavior ships.
+They do not collectively block APP-001 or unrelated vertical work. A ticket may
+make the smallest explicit decision it needs without completing every future
+gate.
 
 | ID     | Decision                                                   | Blocks                                                                                          | Recommended direction and required evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ------ | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -174,7 +184,7 @@ home, or a named decision gate and owner.
 Exit proof: clean frozen installs work on a fresh machine/container and no
 unreviewed install script runs.
 
-### Foundation Wave B: Run The Blocking Spikes In Parallel
+### Deferred Foundation Reference: Pull Spikes Into Active Features
 
 #### FND-03: Migration runner spike
 
@@ -263,7 +273,7 @@ code depending on missing persistence.
 Exit proof: compiled production images, not dev servers, successfully execute a
 protected on-demand transition and a static-shell authenticated page.
 
-### Foundation Wave C: Build The Executable Skeleton
+### Deferred Foundation Reference: Grow The Skeleton Just In Time
 
 #### FND-08: Repository boundary enforcement
 
@@ -349,18 +359,17 @@ component, axe, and browser checks.
 
 #### FND-12: Canonical commands, hooks, and CI
 
-- For each missing root task in the planned quality contract, first add and run
-  a failing self-test or bounded executable probe, then implement a real local
-  harness. Never create a no-op placeholder and never cite a planned command as
-  passing evidence.
+- Introduce each missing root task with the first real application suite that
+  consumes it. Never create a no-op placeholder, require a separate permanent
+  command-self-test, or cite a planned command as passing evidence.
 - Complete the architecture, unit, integration, schema, contract, E2E, coverage,
   pre-push, full-test, and CI aggregates only as their underlying suites become
   executable.
 - Configure backend and frontend coverage independently at 80% line, branch, and
   function thresholds with exhaustive production-file inclusion. The minimum is
   80% line, branch, and function coverage for each scope.
-- Add Lefthook only after the local canonical tasks it invokes are real and
-  self-tested; hooks remain non-mutating and CI-authoritative.
+- Add Lefthook only after the local canonical tasks it invokes execute real
+  suites; hooks remain non-mutating and CI-authoritative.
 - Only then resolve DG-13 by selecting and recording the CI provider,
   trigger/fork trust model, minimum token permissions, secret boundary, artifact
   retention, and required checks. Pin third-party reusable steps to immutable

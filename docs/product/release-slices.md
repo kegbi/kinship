@@ -17,6 +17,10 @@ choices remain proposals until their own decision gates close.
 
 ## Slice 0: Prove The Foundation
 
+Slice 0 is delivered incrementally through the first runnable vertical paths. It
+is not a sequential prerequisite wave. Pull each item below into the first
+feature that consumes it, and do not finish all spikes before application work.
+
 Deliverables:
 
 - repository workspace and canonical top-level tasks;
@@ -35,12 +39,10 @@ Exit conditions:
 - frontend code cannot import backend internals;
 - no provisional library is adopted without its spike criteria passing.
 
-> **Proposed Slice 0 amendment:** schedule all eight bounded Foundation spikes,
-> including SP-07 durable reminder/import/export/DAV job claims and recovery.
-> Introduce each missing root command with a failing executable proof, make the
-> real local harness pass, then configure Lefthook to invoke it. Select and
-> configure a CI provider only after those provider-neutral command contracts
-> exist; no hook or workflow may call a no-op task.
+The active order is maintained in
+[`docs/planning/active-delivery.md`](../planning/active-delivery.md). Spikes are
+time-boxed decisions inside the first affected feature; rejected alternatives
+are not hardened. Root commands arrive with the first real suite that uses them.
 
 ## Slice 1: Identity, Workspace, And People Core
 

@@ -18,8 +18,8 @@ delivered.
 
 ## Test-First Delivery And Independent Review
 
-Every behavior and every enforcement mechanism follows the repository's strict
-delivery loop:
+Production behavior and machine-consumed enforcement follow the repository's
+focused delivery loop:
 
 1. **RED** adds the narrowest truthful test, validator, or bounded executable
    probe before production changes and records the intended failure.
@@ -28,41 +28,44 @@ delivery loop:
 3. **REFACTOR** improves structure while the focused and affected checks remain
    green; newly discovered behavior returns to RED.
 4. A fresh clean-context reviewer inspects the exact candidate revision and its
-   evidence. Every actionable finding returns to a fresh implementer for a new
-   RED -> GREEN -> REFACTOR cycle and then a new review.
+   evidence. Findings return to the implementer with focused regressions; use a
+   fresh implementer for high-risk redesign or a repeated failed approach.
 5. The orchestrator independently reruns the applicable gates before accepting
    or integrating the reviewed revision.
 
-This ordering applies to application code, UI, migrations, containers, CI,
-hooks, documentation, schemas, catalogs, configuration, and repository tooling.
-Coverage added after implementation is not RED evidence, and a command that does
+Documentation-only planning edits use review and existing validation rather than
+new permanent tests. Migrations, containers, CI, schemas, configuration, and
+repository tooling use a focused executable consumer check. A command that does
 nothing is never an acceptable harness.
 
 ## Current Executable Commands
 
 At the 2026-08-13 baseline, `deno.json` exposes these real task families:
 
-| Command                            | Current executable scope                                     |
-| ---------------------------------- | ------------------------------------------------------------ |
-| `deno task fmt`                    | Format paths currently owned by the root Deno configuration. |
-| `deno task fmt:check`              | Check formatting for those current paths without mutation.   |
-| `deno task lint`                   | Lint the existing repository tools.                          |
-| `deno task check`                  | Type-check the PostgreSQL schema and workflow policy test.   |
-| `deno task test:workflow`          | Run the dependency-free workflow policy suite.               |
-| `deno task test:workflow:coverage` | Enforce 80% line, branch, and function workflow coverage.    |
-| `deno task deps:deno`              | Populate the Deno cache from the frozen root lock.           |
-| `deno task deps:deno:offline`      | Re-resolve Deno dependencies from cache only.                |
-| `deno task deps:node`              | Install the pnpm graph from the frozen root lock.            |
-| `deno task deps:node:offline`      | Reinstall the pnpm graph from its populated cache only.      |
-| `deno task test:schema`            | Run the primary live PostgreSQL schema harness.              |
-| `deno task test:schema:compat`     | Run the compatibility PostgreSQL schema harness.             |
-| `deno task test:schema:matrix`     | Run both current schema harness variants.                    |
+| Command                        | Current executable scope                                     |
+| ------------------------------ | ------------------------------------------------------------ |
+| `deno task fmt`                | Format paths currently owned by the root Deno configuration. |
+| `deno task fmt:check`          | Check formatting for those current paths without mutation.   |
+| `deno task lint`               | Lint the existing repository tools.                          |
+| `deno task check`              | Type-check the current PostgreSQL schema tool.               |
+| `deno task deps:deno`          | Populate the Deno cache from the frozen root lock.           |
+| `deno task deps:deno:offline`  | Re-resolve Deno dependencies from cache only.                |
+| `deno task deps:node`          | Install the pnpm graph from the frozen root lock.            |
+| `deno task deps:node:offline`  | Reinstall the pnpm graph from its populated cache only.      |
+| `deno task test:schema`        | Run the primary live PostgreSQL schema harness.              |
+| `deno task test:schema:compat` | Run the compatibility PostgreSQL schema harness.             |
+| `deno task test:schema:matrix` | Run both current schema harness variants.                    |
 
 No application unit, integration, contract, coverage, browser, hook, main
 Compose, or CI aggregate command exists yet. Do not cite a future command as
-passing evidence. Introduce each missing command only after a RED self-test or
-bounded probe demonstrates the absent behavior, then make the command execute a
-real suite before any hook or CI provider calls it.
+passing evidence. Introduce a missing command with the first real application
+harness that uses it. It must execute real behavior before any hook or CI
+provider calls it; a separate permanent command-self-test is not required.
+
+The retired workflow-prose and runtime-policy suites are historical validation,
+not active application gates. Frozen lockfiles and dependency tasks remain; add
+future supply-chain checks at the aggregate/CI boundary rather than blocking
+every feature with prose enforcement.
 
 No FND-003 runtime-graph gate is active. Its unaccepted partial snapshot was
 retired because the root only type-checked its test while the assertion itself
@@ -364,7 +367,7 @@ and all diagnostics before artifact upload.
 ## CI Pipeline
 
 These stages describe the provider-neutral target, not a currently installed CI
-workflow. First make each root command truthful and self-tested locally. Then
+workflow. First make each root command execute its real local harness. Then
 select the CI provider and record its permissions, event/fork policy, secret
 boundary, immutable third-party pins, artifact retention, and required-check
 mapping before adding provider-specific configuration. CI aggregates the same
