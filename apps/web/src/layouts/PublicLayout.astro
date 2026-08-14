@@ -1,0 +1,68 @@
+---
+import "../styles/public.css";
+
+interface Props {
+  readonly currentPath?: "/" | "/features";
+  readonly description: string;
+  readonly noIndex?: boolean;
+  readonly pageId?: "public.home" | "public.features";
+  readonly title: string;
+}
+
+const {
+  currentPath,
+  description,
+  noIndex = false,
+  pageId,
+  title,
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#f6f2e9" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Kinship" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    {noIndex && <meta name="robots" content="noindex" />}
+    <title>{title}</title>
+  </head>
+  <body data-page-id={pageId}>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="/" aria-label="Kinship home">
+          <span class="brand-mark" aria-hidden="true">K</span>
+          <span>Kinship</span>
+        </a>
+
+        <nav aria-label="Public">
+          <a href="/" aria-current={currentPath === "/" ? "page" : undefined}>
+            Home
+          </a>
+          <a
+            href="/features"
+            aria-current={currentPath === "/features" ? "page" : undefined}
+          >
+            Features
+          </a>
+        </nav>
+
+        <p class="header-note">Personal CRM, thoughtfully made</p>
+      </header>
+
+      <slot />
+
+      <footer>
+        <p>Built to help you show up for people.</p>
+        <p>Private by design.</p>
+      </footer>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+---
+import PublicLayout from "../layouts/PublicLayout.astro";
+---
+
+<PublicLayout
+  description="The requested page could not be found in Kinship."
+  noIndex={true}
+  title="Page not found — Kinship"
+>
+  <main id="main-content" class="not-found" tabindex="-1">
+    <p class="eyebrow">404 · Page not found</p>
+    <h1>This path doesn’t lead anywhere yet.</h1>
+    <p class="lede">
+      The page may have moved, or the address may be incomplete. You can return
+      to Kinship’s public home or read about what we are building.
+    </p>
+    <div class="not-found-actions">
+      <a class="button-link button-link-primary" href="/">Go home</a>
+      <a class="button-link" href="/features">Explore features</a>
+    </div>
+  </main>
+</PublicLayout>

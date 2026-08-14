@@ -10,8 +10,8 @@ prerequisite queues.
 
 ## Cursor
 
-- Current phase: **Phase 1 — Runnable product surface**
-- Current leaf: **APP-001B — Complete the static public product surface**
+- Current phase: **Phase 2 — Identity And Protected Workspace**
+- Current leaf: **APP-002A / `AUTH-001` — Create the first workspace**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -94,11 +94,11 @@ These are cross-cutting acceptance items, not separately scheduled tickets.
         commands.
   - [x] Add focused API/contract/UI tests and one Chromium smoke path.
   - [x] Document the one root command that starts both applications locally.
-- [ ] **APP-001B — Complete the static public product surface.**
-  - [ ] Deliver the accepted `public.features` route and public navigation.
-  - [ ] Preserve accepted ready and not-found states, responsive layout,
+- [x] **APP-001B — Complete the static public product surface.**
+  - [x] Deliver the accepted `public.features` route and public navigation.
+  - [x] Preserve accepted ready and not-found states, responsive layout,
         metadata, keyboard behavior, and representative accessibility coverage.
-- [ ] **Phase 1 accepted:** a developer can start both real applications and use
+- [x] **Phase 1 accepted:** a developer can start both real applications and use
       the complete accepted public surface against a live versioned API.
 
 Do not add authentication, persistence, broad component libraries, all-browser
