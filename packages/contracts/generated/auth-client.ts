@@ -35,6 +35,7 @@ export interface SessionContext {
   readonly principal: { readonly userId: string };
   readonly workspace: Authenticated["workspace"];
   readonly member: Authenticated["member"];
+  readonly workspaces: readonly Authenticated["workspace"][];
 }
 
 export type ApiResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly problem: ProblemDetails };

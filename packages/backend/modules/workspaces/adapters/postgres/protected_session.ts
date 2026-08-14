@@ -7,6 +7,28 @@ import type {
 
 export class PostgresActiveWorkspaceResolver
   implements ActiveWorkspaceResolver {
+  async listActiveContexts(command: {
+    readonly transaction: Parameters<
+      ActiveWorkspaceResolver["listActiveContexts"]
+    >[0]["transaction"];
+    readonly userId: string;
+  }): Promise<readonly ActiveWorkspaceContext[]> {
+    const result = await sql<ActiveWorkspaceContext>`
+      select wm.id::text as "memberId", wm.role, u.id::text as "userId",
+        w.id::text as "workspaceId", w.name as "workspaceName"
+      from crm.users u
+      join crm.workspace_members wm on wm.user_id = u.id
+      join crm.workspaces w on w.id = wm.workspace_id
+      where u.id = ${command.userId}::uuid and u.status = 'active'
+        and u.email_verified_at is not null
+        and wm.status = 'active' and wm.left_at is null
+        and w.status = 'active' and w.deleted_at is null
+      order by wm.joined_at asc nulls last, wm.id asc
+      for share of u, wm, w
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows;
+  }
+
   async resolveAuditContext(command: {
     readonly transaction: Parameters<
       ActiveWorkspaceResolver["resolveAuditContext"]

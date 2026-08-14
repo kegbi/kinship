@@ -21,7 +21,15 @@ export interface ActiveWorkspaceContext {
   readonly workspaceName: string;
 }
 
+export interface ResolvedSessionContext extends ActiveWorkspaceContext {
+  readonly accessibleWorkspaces: readonly ActiveWorkspaceContext[];
+}
+
 export interface ActiveWorkspaceResolver {
+  listActiveContexts(command: {
+    readonly transaction: ProtectedSessionTransaction;
+    readonly userId: string;
+  }): Promise<readonly ActiveWorkspaceContext[]>;
   resolveAuditContext(command: {
     readonly transaction: ProtectedSessionTransaction;
     readonly userId: string;
@@ -201,7 +209,7 @@ export function createProtectedSessionCoordinator(
   resolve(command: {
     readonly requestedWorkspaceId?: string;
     readonly sessionToken: string;
-  }): Promise<ActiveWorkspaceContext | undefined>;
+  }): Promise<ResolvedSessionContext | undefined>;
   signOut(sessionToken: string): Promise<void>;
   signIn(command: SignInCommand): Promise<ProtectedSessionResult>;
 } {
@@ -481,13 +489,17 @@ export function createProtectedSessionCoordinator(
         command.sessionToken,
       );
       if (!principal) return undefined;
-      return await dependencies.transaction.run((transaction) =>
-        dependencies.workspace.resolveActiveContext({
+      return await dependencies.transaction.run(async (transaction) => {
+        const active = await dependencies.workspace.resolveActiveContext({
           ...requested(command),
           transaction,
           userId: principal.userId,
-        })
-      );
+        });
+        if (!active) return undefined;
+        const accessibleWorkspaces = await dependencies.workspace
+          .listActiveContexts({ transaction, userId: principal.userId });
+        return { ...active, accessibleWorkspaces };
+      });
     },
     async signOut(sessionToken) {
       await dependencies.transaction.run((transaction) =>

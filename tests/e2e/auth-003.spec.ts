@@ -245,9 +245,25 @@ async function keyboardReset(page: Page, password: string): Promise<void> {
 }
 
 async function keyboardSignOut(page: Page): Promise<void> {
-  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  const skipLink = page.getByRole("link", { name: "Skip to main content" });
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("button", { name: "Sign out" })).toBeFocused();
+  await expect(skipLink).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Kinship Today" }))
+    .toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Today", exact: true }))
+    .toBeFocused();
+  await page.keyboard.press("Tab");
+  const menuToggle = page.getByRole("button", { name: "Open member menu" });
+  await expect(menuToggle).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(menuToggle).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Settings" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  const signOutButton = page.getByRole("button", { name: "Sign out" });
+  await expect(signOutButton).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/auth\/sign-in$/);
 }

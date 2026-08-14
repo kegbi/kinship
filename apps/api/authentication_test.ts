@@ -166,3 +166,60 @@ Deno.test("rate-limit completion and required-work failure map to their exact pu
     }
   }
 });
+
+Deno.test("session context exposes the active workspace and accessible switcher choices", async () => {
+  const base = services(() => Promise.resolve());
+  const workspace = {
+    id: "00000000-0000-4000-8000-000000000003",
+    name: "Ada's circle",
+  };
+  const second = {
+    id: "00000000-0000-4000-8000-000000000005",
+    name: "Community circle",
+  };
+  const app = createAuthenticationRoutes({
+    ...base,
+    protectedSessions: {
+      ...base.protectedSessions,
+      resolve: () =>
+        Promise.resolve({
+          accessibleWorkspaces: [
+            {
+              memberId: "00000000-0000-4000-8000-000000000002",
+              role: "owner" as const,
+              userId: "00000000-0000-4000-8000-000000000001",
+              workspaceId: workspace.id,
+              workspaceName: workspace.name,
+            },
+            {
+              memberId: "00000000-0000-4000-8000-000000000004",
+              role: "member" as const,
+              userId: "00000000-0000-4000-8000-000000000001",
+              workspaceId: second.id,
+              workspaceName: second.name,
+            },
+          ],
+          memberId: "00000000-0000-4000-8000-000000000002",
+          role: "owner" as const,
+          userId: "00000000-0000-4000-8000-000000000001",
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+        }),
+    },
+  });
+
+  const response = await app.request("http://localhost/api/v1/session", {
+    headers: { cookie: "kinship_session=active-session-token" },
+  });
+  const body = await response.json() as {
+    readonly workspace?: { readonly id?: string };
+    readonly workspaces?: readonly { readonly id?: string }[];
+  };
+  assert(response.status === 200, "active session resolves");
+  assert(body.workspace?.id === workspace.id, "active workspace is explicit");
+  assert(
+    body.workspaces?.map((item) => item.id).join(",") ===
+      `${workspace.id},${second.id}`,
+    "accessible workspace choices are ordered and explicit",
+  );
+});

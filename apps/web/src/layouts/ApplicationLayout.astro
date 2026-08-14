@@ -1,0 +1,84 @@
+---
+import "../styles/application.css";
+
+interface Props {
+  readonly current: "settings" | "today";
+  readonly description: string;
+  readonly pageId: "app.today" | "settings.index";
+  readonly title: string;
+}
+
+const { current, description, pageId, title } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="robots" content="noindex" />
+    <meta name="theme-color" content="#f4f0e7" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>{title}</title>
+  </head>
+  <body data-page-id={pageId}>
+    <a class="skip-link" href="#main-content" tabindex="0">Skip to main content</a>
+    <section id="access-state" class="access-state" role="status" tabindex="-1" aria-live="polite">
+      <div class="access-card">
+        <p class="eyebrow">Protected workspace</p>
+        <h1>Opening Kinship…</h1>
+        <p>Resolving your secure session and active workspace.</p>
+      </div>
+    </section>
+
+    <div id="protected-shell" class="application" hidden>
+      <header class="app-header">
+        <div class="header-row">
+          <a class="brand" href="/app" aria-label="Kinship Today" tabindex="0">
+            <span class="brand-mark" aria-hidden="true">K</span>
+            <span>Kinship</span>
+          </a>
+
+          <nav class="primary-nav" aria-label="Primary navigation">
+            <a href="/app" tabindex="0" aria-current={current === "today" ? "page" : undefined}>Today</a>
+            <span class="future-nav" aria-disabled="true">People <small>Coming next</small></span>
+            <span class="future-nav" aria-disabled="true">Tasks <small>Planned</small></span>
+            <span class="future-nav" aria-disabled="true">Journal <small>Planned</small></span>
+          </nav>
+
+          <div class="global-actions" aria-label="Workspace actions">
+            <button class="quiet-action" type="button" disabled aria-describedby="people-search-note">
+              Search people
+            </button>
+            <span id="people-search-note" class="sr-only">People search becomes available with the People directory.</span>
+            <button class="add-action" type="button" disabled aria-describedby="quick-capture-note">Add</button>
+            <span id="quick-capture-note" class="sr-only">Quick capture becomes available when its owning features ship.</span>
+            <div class="member-menu" role="group" aria-label="Member menu">
+              <button id="member-menu-toggle" type="button" aria-label="Open member menu" aria-expanded="false" aria-controls="member-popover">Member menu</button>
+              <div id="member-popover" class="member-popover" hidden>
+                <p class="menu-workspace"><span>Active workspace</span><strong data-workspace-name></strong></p>
+                <span class="menu-item unavailable" aria-disabled="true">Profile <small>Coming next</small></span>
+                <a class="menu-item" href="/app/settings" tabindex="0" aria-current={current === "settings" ? "page" : undefined}>Settings</a>
+                <span class="menu-item unavailable" aria-disabled="true">Help &amp; what's new <small>Support is being prepared</small></span>
+              </div>
+              <p id="shell-status" class="sr-status" role="status" tabindex="-1" aria-live="polite"></p>
+              <button id="member-sign-out" class="direct-sign-out" type="button">Sign out</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="workspace-switcher-container" class="workspace-switcher" hidden>
+          <label for="workspace-switcher">Active workspace</label>
+          <select id="workspace-switcher"></select>
+        </div>
+      </header>
+      <slot />
+    </div>
+  </body>
+</html>
+
+<script>
+  import { mountApplicationShell } from "../lib/app-shell.ts";
+  void mountApplicationShell();
+</script>
