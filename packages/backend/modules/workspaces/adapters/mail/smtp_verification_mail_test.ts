@@ -1,4 +1,5 @@
 import {
+  buildInvitationMessage,
   buildVerificationMessage,
   plainSmtpPolicy,
   smtpTimeouts,
@@ -26,6 +27,27 @@ Deno.test("verification email contains only a safe single-use browser URL", () =
     "token exists only in an encoded browser URL",
   );
   assert(!mail.includes("password"), "mail must not contain password material");
+});
+
+Deno.test("invitation email carries one encoded path token and an expiry", () => {
+  const mail = buildInvitationMessage(
+    { from: "hello@kinship.test", webOrigin: "https://kinship.test" },
+    {
+      email: "invitee@example.test",
+      expiresAt: new Date("2026-08-22T12:00:00Z"),
+      token: "raw/private token",
+      workspaceName: "Family circle",
+    },
+  );
+  assert(
+    mail.includes("https://kinship.test/invite/raw%2Fprivate%20token"),
+    "token is encoded into the cataloged route",
+  );
+  assert(mail.includes("2026-08-22T12:00:00.000Z"), "expiry is explicit");
+  assert(
+    !mail.includes("token_hash"),
+    "storage material never enters delivery",
+  );
 });
 
 Deno.test("SMTP read timeout closes a stalled connection promptly", async () => {

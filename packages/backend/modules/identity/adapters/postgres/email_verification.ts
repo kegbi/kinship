@@ -1,9 +1,17 @@
 import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import type { IdentityTransaction } from "../../application/contracts.ts";
+import type {
+  ExactCredentialVersion,
+} from "../../application/authentication.ts";
 import type {
   ApplicationEntryContext,
   EmailVerificationFacade,
   VerificationResult,
+  VerifiedIdentityEntry,
+  VerifiedIdentityEntryAuthority,
+  VerifiedIdentityEntryFacade,
 } from "../../application/email_verification.ts";
 import { SecureTokenService } from "../crypto/secure_tokens.ts";
 
@@ -25,7 +33,8 @@ export interface VerificationIds {
   create(): string;
 }
 
-export class PostgresEmailVerification implements EmailVerificationFacade {
+export class PostgresEmailVerification
+  implements EmailVerificationFacade, VerifiedIdentityEntryFacade {
   constructor(
     private readonly database: Kysely<ApplicationDatabase>,
     private readonly tokens: SecureTokenService,
@@ -130,5 +139,103 @@ export class PostgresEmailVerification implements EmailVerificationFacade {
       `.execute(transaction);
       return context;
     });
+  }
+
+  async issueVerifiedIdentityEntry(command: {
+    readonly credentialVersion: ExactCredentialVersion;
+    readonly expectedEmail: string;
+    readonly ipAddress?: string;
+    readonly transaction: IdentityTransaction;
+    readonly userAgent?: string;
+    readonly userId: string;
+  }): Promise<VerifiedIdentityEntryAuthority> {
+    const database = databaseFromSession(command.transaction);
+    const now = this.clock.now();
+    const expiresAt = new Date(now.getTime() + 10 * 60_000);
+    const entry = await this.tokens.create();
+    const credential = await sql<{
+      readonly credential_version: string;
+    }>`
+      select coalesce(extract(epoch from password_changed_at)::text, 'none')
+        credential_version
+      from crm.users
+      where id = ${command.userId}::uuid and status = 'active'
+        and email = ${command.expectedEmail}
+        and email_verified_at is not null
+        and exists (
+          select 1 from crm.email_verification_tokens evt
+          where evt.user_id = crm.users.id and evt.used_at is not null
+        )
+      for share
+    `.execute(database);
+    if (
+      !credential.rows[0] ||
+      credential.rows[0].credential_version !== command.credentialVersion
+    ) {
+      throw new Error("Verified identity credential changed.");
+    }
+    const inserted = await sql<{ readonly id: string }>`
+      insert into crm.user_sessions (
+        id, user_id, session_hash, ip_address, user_agent,
+        created_at, last_seen_at, expires_at, revoked_at
+      )
+      select ${this.ids.create()}::uuid, u.id, ${entry.hash},
+        ${command.ipAddress ?? null}::inet, ${command.userAgent ?? null},
+        ${now}, ${now}, ${expiresAt}, null
+      from crm.users u
+      where u.id = ${command.userId}::uuid and u.status = 'active'
+        and u.email = ${command.expectedEmail}
+        and u.email_verified_at is not null
+        and exists (
+          select 1 from crm.email_verification_tokens evt
+          where evt.user_id = u.id and evt.used_at is not null
+        )
+      returning id::text
+    `.execute(database);
+    const entryId = inserted.rows[0]?.id;
+    if (!entryId) throw new Error("Verified identity entry is unavailable.");
+    const postcondition = await sql<{ readonly valid: boolean }>`
+      select count(*) = 1 valid from crm.user_sessions
+      where id = ${entryId}::uuid and user_id = ${command.userId}::uuid
+        and session_hash = ${entry.hash} and expires_at = ${expiresAt}
+        and revoked_at is null
+    `.execute(database);
+    if (postcondition.rows[0]?.valid !== true) {
+      throw new Error("Verified identity entry postcondition failed.");
+    }
+    return { expiresAt, token: entry.raw };
+  }
+
+  async consumeVerifiedIdentityEntry(command: {
+    readonly expectedEmail: string;
+    readonly rawToken: string;
+    readonly transaction: IdentityTransaction;
+  }): Promise<VerifiedIdentityEntry | undefined> {
+    const sessionHash = await this.tokens.hash(command.rawToken);
+    const now = this.clock.now();
+    const database = databaseFromSession(command.transaction);
+    const result = await sql<
+      { readonly firstName: string; readonly userId: string }
+    >`
+      select u.id::text as "userId", u.first_name as "firstName"
+      from crm.user_sessions s
+      join crm.users u on u.id = s.user_id
+      where s.session_hash = ${sessionHash}
+        and s.revoked_at is null and s.expires_at > ${now}
+        and u.email = ${command.expectedEmail}
+        and u.email_verified_at is not null and u.status = 'active'
+        and exists (
+          select 1 from crm.email_verification_tokens evt
+          where evt.user_id = u.id and evt.used_at is not null
+        )
+      for update of s, u
+    `.execute(database);
+    const identity = result.rows[0];
+    if (!identity) return undefined;
+    await sql`
+      update crm.user_sessions set revoked_at = ${now}, last_seen_at = ${now}
+      where session_hash = ${sessionHash} and revoked_at is null
+    `.execute(database);
+    return identity;
   }
 }

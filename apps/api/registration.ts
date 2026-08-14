@@ -82,6 +82,7 @@ function entryCookie(
   value: string,
   policy: BrowserSecurityPolicy,
   maxAge: number,
+  path = "/api/v1/application-entry",
 ): string {
   return [
     `kinship_entry=${value}`,
@@ -89,7 +90,7 @@ function entryCookie(
     "SameSite=Strict",
     policy.secureCookie ? "Secure" : undefined,
     `Max-Age=${maxAge}`,
-    "Path=/api/v1/application-entry",
+    `Path=${path}`,
   ].filter(Boolean).join("; ");
 }
 
@@ -211,12 +212,40 @@ export function createRegistrationRoutes(
         "This verification link cannot be used.",
       );
     }
+    const hasInvitation = cookieValue(
+      context.req.header("Cookie"),
+      "kinship_invitation_pending",
+    ) !== undefined;
     context.header(
       "Set-Cookie",
-      entryCookie(result.entryToken, services.browserSecurity, 600),
+      entryCookie(
+        result.entryToken,
+        services.browserSecurity,
+        600,
+        hasInvitation
+          ? "/api/v1/workspace-invitations"
+          : "/api/v1/application-entry",
+      ),
     );
     context.header("Cache-Control", "no-store");
-    return context.json({ status: "verified", next: "/app" });
+    if (hasInvitation) {
+      context.header(
+        "Set-Cookie",
+        [
+          "kinship_invitation_pending=",
+          "HttpOnly",
+          "SameSite=Strict",
+          services.browserSecurity.secureCookie ? "Secure" : undefined,
+          "Max-Age=0",
+          "Path=/api/v1/email-verifications",
+        ].filter(Boolean).join("; "),
+        { append: true },
+      );
+    }
+    return context.json({
+      status: "verified",
+      next: hasInvitation ? "/invite/continue" : "/app",
+    });
   });
 
   routes.post("/api/v1/application-entry", async (context) => {

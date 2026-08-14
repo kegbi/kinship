@@ -40,6 +40,58 @@ afterEach(() => {
 });
 
 describe("AUTH-003 forms", () => {
+  it("captures and scrubs an invitation handoff before sign-in", async () => {
+    history.replaceState(
+      {},
+      "",
+      "/auth/sign-in#invite=private-token-abcdefghijklmnopqrstuvwxyz",
+    );
+    const target = form(`
+      <form><input name="email" value="invitee@example.test">
+      <input name="password" value="secret"><button type="submit">Sign in</button></form>`);
+    const navigate = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        status: "authenticated",
+        next: "/app",
+        workspace: { id: "own", name: "Own" },
+        member: { id: "member", role: "owner" },
+      })),
+    );
+    mountSignIn(target, navigate);
+    expect(location.pathname).toBe("/auth/sign-in");
+    expect(location.hash).toBe("");
+    expect(document.documentElement.innerHTML).not.toContain("private-token");
+    await submit(target);
+    expect(navigate).toHaveBeenCalledWith("/invite/continue");
+  });
+
+  it("preserves a scrubbed invitation handoff through MFA", async () => {
+    history.replaceState(
+      {},
+      "",
+      "/auth/mfa#invite=private-token-abcdefghijklmnopqrstuvwxyz",
+    );
+    const target = form(`
+      <form><input name="factor" value="123456"><button type="submit">Continue</button></form>`);
+    const navigate = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        status: "authenticated",
+        next: "/app",
+        workspace: { id: "own", name: "Own" },
+        member: { id: "member", role: "owner" },
+      })),
+    );
+    mountMfa(target, navigate);
+    expect(location.pathname).toBe("/auth/mfa");
+    expect(location.hash).toBe("");
+    await submit(target);
+    expect(navigate).toHaveBeenCalledWith("/invite/continue");
+  });
+
   it("uses the generated sign-in call and follows an MFA transition", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       response({ status: "mfa-required", next: "/auth/mfa" }, 202),

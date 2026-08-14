@@ -1,6 +1,7 @@
 import type {
   IdentityAuthenticationFacade,
   IdentityTransaction,
+  VerifiedIdentityEntryFacade,
 } from "../../identity/public.ts";
 
 export interface ProtectedSessionTransaction extends IdentityTransaction {
@@ -118,6 +119,10 @@ export interface ProtectedSessionDependencies {
   readonly audit: AuthenticationAudit;
   readonly clock: { now(): Date };
   readonly identity: IdentityAuthenticationFacade;
+  readonly identityEntry?: Pick<
+    VerifiedIdentityEntryFacade,
+    "issueVerifiedIdentityEntry"
+  >;
   readonly responseEqualizer: AuthenticationResponseEqualizer;
   readonly transaction: ProtectedSessionTransactionRunner;
   readonly workspace: ActiveWorkspaceResolver;
@@ -125,6 +130,8 @@ export interface ProtectedSessionDependencies {
 
 export interface SignInCommand {
   readonly email: string;
+  readonly expectedEmail?: string;
+  readonly identityOnly?: boolean;
   readonly ipAddress: string;
   readonly password: string;
   readonly previousSessionToken?: string;
@@ -134,8 +141,10 @@ export interface SignInCommand {
 
 export interface CompleteMfaCommand {
   readonly challengeToken: string;
+  readonly expectedEmail?: string;
   readonly factor: string;
   readonly ipAddress: string;
+  readonly identityOnly?: boolean;
   readonly previousSessionToken?: string;
   readonly requestedWorkspaceId?: string;
   readonly userAgent?: string;
@@ -146,6 +155,11 @@ export type ProtectedSessionResult =
   | { readonly status: "challenge-expired" | "membership-inactive" }
   | { readonly retryAfterSeconds: number; readonly status: "rate-limited" }
   | { readonly challengeToken: string; readonly status: "mfa-required" }
+  | {
+    readonly entryToken: string;
+    readonly expiresAt: Date;
+    readonly status: "identity-authenticated";
+  }
   | {
     readonly expiresAt: Date;
     readonly member: {
@@ -163,6 +177,7 @@ export function protectedSessionHttpStatus(
 ): Exclude<AuthenticationRequestStatusCode, 503> {
   switch (result.status) {
     case "authenticated":
+    case "identity-authenticated":
       return 200;
     case "mfa-required":
       return 202;
@@ -265,7 +280,10 @@ export function createProtectedSessionCoordinator(
   ): Promise<ProtectedSessionResult> => {
     try {
       const result = await work(reservationId);
-      if (result.status !== "authenticated") {
+      if (
+        result.status !== "authenticated" &&
+        result.status !== "identity-authenticated"
+      ) {
         await dependencies.attemptBudget.finalize({
           reservationId,
           statusCode: protectedSessionHttpStatus(result),
@@ -351,6 +369,39 @@ export function createProtectedSessionCoordinator(
       };
     });
 
+  const establishIdentityEntry = async (command: {
+    readonly entryCredentialVersion: string;
+    readonly expectedEmail: string;
+    readonly ipAddress?: string;
+    readonly reservationId: string;
+    readonly userAgent?: string;
+    readonly userId: string;
+  }): Promise<ProtectedSessionResult> =>
+    await dependencies.transaction.run(async (transaction) => {
+      if (!dependencies.identityEntry) {
+        throw new Error("Verified identity entry issuance is unavailable.");
+      }
+      const entry = await dependencies.identityEntry
+        .issueVerifiedIdentityEntry({
+          ...client(command),
+          credentialVersion: command.entryCredentialVersion,
+          expectedEmail: command.expectedEmail,
+          transaction,
+          userId: command.userId,
+        });
+      await dependencies.attemptBudget.finalize({
+        reservationId: command.reservationId,
+        statusCode: 200,
+        transaction,
+        userId: command.userId,
+      });
+      return {
+        entryToken: entry.token,
+        expiresAt: entry.expiresAt,
+        status: "identity-authenticated",
+      };
+    });
+
   return {
     async signIn(command) {
       return await dependencies.responseEqualizer.run(async () => {
@@ -388,6 +439,12 @@ export function createProtectedSessionCoordinator(
             };
           }
           if (primary.status === "mfa-required") {
+            if (command.identityOnly && command.expectedEmail) {
+              return {
+                challengeToken: primary.challengeToken,
+                status: "mfa-required",
+              };
+            }
             const hasContext = await dependencies.transaction.run(
               (transaction) =>
                 dependencies.workspace.resolveActiveContext({
@@ -404,6 +461,15 @@ export function createProtectedSessionCoordinator(
             }
             await recordFailure(primary.userId);
             return { status: "membership-inactive" };
+          }
+          if (command.identityOnly && command.expectedEmail) {
+            return await establishIdentityEntry({
+              ...client(command),
+              entryCredentialVersion: primary.entryCredentialVersion,
+              expectedEmail: command.expectedEmail,
+              reservationId,
+              userId: primary.userId,
+            });
           }
           const established = await establish({
             ...client(command),
@@ -465,6 +531,15 @@ export function createProtectedSessionCoordinator(
               retryAfterSeconds: factor.retryAfterSeconds,
               status: "rate-limited",
             };
+          }
+          if (command.identityOnly && command.expectedEmail) {
+            return await establishIdentityEntry({
+              ...client(command),
+              entryCredentialVersion: factor.entryCredentialVersion,
+              expectedEmail: command.expectedEmail,
+              reservationId,
+              userId: factor.userId,
+            });
           }
           const established = await establish({
             ...client(command),

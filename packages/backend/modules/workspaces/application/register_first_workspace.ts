@@ -84,6 +84,12 @@ export interface VerificationMail {
     readonly expiresAt: Date;
     readonly token: string;
   }): Promise<void>;
+  sendInvitation?(message: {
+    readonly email: string;
+    readonly expiresAt: Date;
+    readonly token: string;
+    readonly workspaceName: string;
+  }): Promise<void>;
 }
 
 export interface RegistrationDependencies {

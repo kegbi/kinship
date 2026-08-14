@@ -58,6 +58,28 @@ afterEach(() => {
 });
 
 describe("APP-002C protected application shell", () => {
+  it("hides admin navigation and renders a whole-route forbidden state for members", async () => {
+    shellMarkup();
+    document.body.dataset.pageId = "settings.members";
+    document.querySelector("#protected-shell")?.insertAdjacentHTML(
+      "beforeend",
+      "<article data-requires-workspace-admin>Privileged members UI</article>",
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        ...(session() as Record<string, unknown>),
+        member: { id: "member", role: "member" },
+      })),
+    );
+    await mountApplicationShell();
+    expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
+      .toBe(true);
+    expect(document.querySelector("#access-state")?.textContent).toContain(
+      "You don’t have access to Members",
+    );
+    expect(document.body.textContent).not.toContain("Privileged members UI");
+  });
   it("reveals one active workspace and signs out without browser token storage", async () => {
     shellMarkup();
     const fetchMock = vi.fn()
@@ -108,6 +130,8 @@ describe("APP-002C protected application shell", () => {
 
   it("shows and changes the switcher only for multiple accessible workspaces", async () => {
     shellMarkup();
+    history.replaceState({}, "", "/app/settings/members");
+    document.body.dataset.pageId = "settings.members";
     const workspaces = [
       {
         id: "00000000-0000-4000-8000-000000000001",
@@ -120,11 +144,12 @@ describe("APP-002C protected application shell", () => {
     ];
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response(session(workspaces[0]!.id, workspaces)))
-      .mockResolvedValueOnce(response(session(workspaces[1]!.id, workspaces)))
-      .mockRejectedValueOnce(new Error("workspace unavailable"));
+      .mockRejectedValueOnce(new Error("workspace unavailable"))
+      .mockResolvedValueOnce(response(session(workspaces[1]!.id, workspaces)));
     vi.stubGlobal("fetch", fetchMock);
 
-    await mountApplicationShell(vi.fn());
+    const navigate = vi.fn();
+    await mountApplicationShell(navigate);
     const container = document.querySelector<HTMLElement>(
       "#workspace-switcher-container",
     );
@@ -138,8 +163,18 @@ describe("APP-002C protected application shell", () => {
     select.dispatchEvent(new Event("change", { bubbles: true }));
 
     await vi.waitFor(() =>
-      expect(document.querySelector("[data-workspace-name]")?.textContent)
-        .toBe("Community circle")
+      expect(document.querySelector("#shell-status")?.textContent).toMatch(
+        /no longer available/i,
+      )
+    );
+    expect(select.value).toBe(workspaces[0]!.id);
+    expect(document.activeElement).toBe(select);
+    expect(navigate).not.toHaveBeenCalled();
+
+    select.value = workspaces[1]!.id;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith("/app/settings/members")
     );
     expect(fetchMock.mock.calls[1]?.[1]?.headers).toEqual({
       "X-Workspace-Id": workspaces[1]!.id,
@@ -148,16 +183,10 @@ describe("APP-002C protected application shell", () => {
     expect(sessionStorage.getItem("kinship.active-workspace")).toBe(
       workspaces[1]!.id,
     );
-    expect(document.activeElement).toBe(select);
-    select.value = workspaces[0]!.id;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-    await vi.waitFor(() =>
-      expect(document.querySelector("#shell-status")?.textContent).toMatch(
-        /no longer available/i,
-      )
-    );
-    expect(select.value).toBe(workspaces[1]!.id);
-    expect(document.activeElement).toBe(select);
+    expect(fetchMock.mock.calls[2]?.[1]?.headers).toEqual({
+      "X-Workspace-Id": workspaces[1]!.id,
+      "content-type": "application/json",
+    });
   });
 
   it("retains a saved workspace when its session request is offline", async () => {

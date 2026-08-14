@@ -572,6 +572,116 @@ summary:focus-visible,
   border-style: dashed;
 }
 
+.secondary-link {
+  justify-self: end;
+  border: 1px solid #aeb7ae;
+  color: #20352d;
+  background: #fffdf8;
+}
+
+.settings-card-link {
+  min-height: 44px;
+  align-items: center;
+  text-decoration: none;
+}
+
+.members-page {
+  max-width: 72rem;
+}
+
+.member-section {
+  padding: clamp(1.2rem, 3vw, 2rem);
+  border: 1px solid rgb(32 53 45 / 13%);
+  border-radius: 1rem;
+  background: #fffdf8;
+}
+
+.member-section h2 {
+  margin: 0;
+  font-family: Georgia, serif;
+  font-size: clamp(1.5rem, 4vw, 2.15rem);
+  font-weight: 500;
+}
+
+.invitation-form {
+  display: grid;
+  grid-template-columns: minmax(14rem, 1fr) minmax(9rem, .35fr) auto;
+  gap: .75rem;
+  align-items: end;
+}
+
+.invitation-form label {
+  display: grid;
+  gap: .4rem;
+  font-size: .82rem;
+  font-weight: 750;
+}
+
+.invitation-form input,
+.invitation-form select,
+.invitation-form button {
+  min-height: 48px;
+  padding: .7rem .85rem;
+  border: 1px solid #aeb7ae;
+  border-radius: .7rem;
+  background: white;
+}
+
+.invitation-form button {
+  border-color: #20352d;
+  color: white;
+  background: #20352d;
+  cursor: pointer;
+}
+
+.invitation-form button:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+
+.inline-status,
+.list-state {
+  color: #5e6b64;
+  line-height: 1.55;
+}
+
+.member-list {
+  display: grid;
+  gap: .5rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.member-list li {
+  display: flex;
+  min-height: 56px;
+  padding: .75rem;
+  border: 1px solid #deded7;
+  border-radius: .75rem;
+  align-items: center;
+  justify-content: space-between;
+  background: #faf8f2;
+}
+
+.member-list li > span:first-child {
+  display: grid;
+  gap: .2rem;
+}
+
+.member-list small {
+  color: #65716b;
+}
+
+.role-badge {
+  padding: .35rem .65rem;
+  border-radius: 999px;
+  background: #e8eee8;
+  font-size: .75rem;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
 .empty-search {
   padding: 2rem;
   border: 1px dashed #aeb7ae;
@@ -687,6 +797,17 @@ summary:focus-visible,
 
   .settings-card-grid {
     grid-template-columns: 1fr;
+  }
+
+  .invitation-form {
+    grid-template-columns: 1fr;
+  }
+
+  .invitation-form button,
+  .secondary-link {
+    width: 100%;
+    min-height: 44px;
+    justify-self: stretch;
   }
 
   .section-heading {

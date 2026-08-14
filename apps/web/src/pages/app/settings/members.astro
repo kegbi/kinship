@@ -1,0 +1,52 @@
+---
+import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
+export const prerender = true;
+---
+
+<ApplicationLayout
+  current="settings"
+  description="Invite people and review active members in your Kinship workspace."
+  pageId="settings.members"
+  title="Members — Kinship"
+>
+  <main id="main-content" class="page-frame settings-page members-page" tabindex="-1" data-requires-workspace-admin>
+    <header class="settings-heading">
+      <div>
+        <p class="eyebrow">Workspace settings</p>
+        <h1>Members</h1>
+        <p>Invite people into this workspace and review who currently has access.</p>
+      </div>
+      <a class="button-link secondary-link" href="/app/settings">All settings</a>
+    </header>
+
+    <section class="member-section invite-panel" aria-labelledby="invite-heading">
+      <div class="section-heading">
+        <div><p class="section-kicker">Single-use access</p><h2 id="invite-heading">Invite a member</h2></div>
+      </div>
+      <p>The invitation is valid for seven days and can be accepted only by the invited email address.</p>
+      <form id="invitation-form" class="invitation-form" novalidate>
+        <label>Email address<input name="email" type="email" autocomplete="email" maxlength="254" required /></label>
+        <label>Role<select name="role"><option value="member">Member</option><option value="admin">Admin</option></select></label>
+        <button type="submit">Send invitation</button>
+      </form>
+      <p id="invitation-status" class="inline-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="member-section" aria-labelledby="active-members-heading">
+      <div class="section-heading"><h2 id="active-members-heading">Active members</h2><span id="member-count" class="state-badge calm">Loading…</span></div>
+      <div id="members-state" class="list-state" role="status" aria-live="polite">Loading active members securely…</div>
+      <ul id="member-list" class="member-list" hidden></ul>
+    </section>
+
+    <section class="member-section" aria-labelledby="pending-invitations-heading">
+      <div class="section-heading"><h2 id="pending-invitations-heading">Pending invitations</h2><span id="invitation-count" class="state-badge calm">Loading…</span></div>
+      <div id="pending-state" class="list-state" role="status" aria-live="polite">Loading pending invitations…</div>
+      <ul id="pending-list" class="member-list" hidden></ul>
+    </section>
+  </main>
+</ApplicationLayout>
+
+<script>
+  import { mountMembersPage } from "../../../lib/members.ts";
+  void mountMembersPage();
+</script>

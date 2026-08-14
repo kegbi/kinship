@@ -260,9 +260,9 @@ test(
     await expect(switcher).toBeFocused();
     await switcher.selectOption(secondWorkspaceId);
     await expect(page.getByRole("status")).toContainText(
-      "Community circle is now active",
+      "Community circle is ready",
     );
-    await expect(switcher).toBeFocused();
+    await expect(switcher).toHaveValue(secondWorkspaceId);
     const originalWorkspaceId = await switcher.locator("option").first()
       .getAttribute("value");
     expect(originalWorkspaceId).toBeTruthy();
@@ -275,6 +275,8 @@ test(
       }
       return route.continue();
     });
+    await switcher.focus();
+    await expect(switcher).toBeFocused();
     await switcher.selectOption(originalWorkspaceId!);
     await expect(page.getByRole("status")).toContainText(
       "current workspace was not changed",

@@ -15,6 +15,7 @@ import { AesGcmMfaSecretBox, verifyTotp } from "../crypto/totp.ts";
 
 interface CredentialRow {
   readonly app_credential: boolean;
+  readonly credential_version: string;
   readonly has_mfa: boolean;
   readonly password_hash: string | null;
   readonly password_changed_at: Date | null;
@@ -24,6 +25,7 @@ interface CredentialRow {
 
 interface Challenge {
   readonly credentialVersion: Date | null;
+  readonly entryCredentialVersion: string;
   readonly expiresAt: number;
   failures: number;
   readonly userId: string;
@@ -131,6 +133,8 @@ export class PostgresIdentityAuthentication
     }\n${command.email.toLowerCase()}`;
     const result = await sql<CredentialRow>`
       select u.id::text user_id, u.password_hash, u.password_changed_at,
+        coalesce(extract(epoch from u.password_changed_at)::text, 'none')
+          credential_version,
         u.status,
         exists (
           select 1 from crm.email_verification_tokens evt
@@ -170,6 +174,7 @@ export class PostgresIdentityAuthentication
     if (!credential.has_mfa) {
       return {
         credentialVersion: credential.password_changed_at,
+        entryCredentialVersion: credential.credential_version,
         status: "verified",
         userId: credential.user_id,
       };
@@ -178,6 +183,7 @@ export class PostgresIdentityAuthentication
     this.#pruneChallenges(now.getTime());
     this.#challenges.set(challenge.hash, {
       credentialVersion: credential.password_changed_at,
+      entryCredentialVersion: credential.credential_version,
       expiresAt: now.getTime() + 5 * 60_000,
       failures: 0,
       userId: credential.user_id,
@@ -185,6 +191,7 @@ export class PostgresIdentityAuthentication
     return {
       challengeToken: challenge.raw,
       credentialVersion: credential.password_changed_at,
+      entryCredentialVersion: credential.credential_version,
       status: "mfa-required",
       userId: credential.user_id,
     };
@@ -218,10 +225,13 @@ export class PostgresIdentityAuthentication
     const database = databaseFromSession(command.transaction);
     const mfaResult = await sql<{
       readonly encrypted_secret: string;
+      readonly credential_version: string;
       readonly last_used_at: Date | null;
       readonly password_changed_at: Date | null;
     }>`
-      select mfa.encrypted_secret, mfa.last_used_at, u.password_changed_at
+      select mfa.encrypted_secret, mfa.last_used_at, u.password_changed_at,
+        coalesce(extract(epoch from u.password_changed_at)::text, 'none')
+          credential_version
       from crm.users u join crm.user_mfa_totp mfa on mfa.user_id = u.id
       where u.id = ${challenge.userId}::uuid and u.status = 'active'
         and mfa.confirmed_at is not null
@@ -230,10 +240,7 @@ export class PostgresIdentityAuthentication
     const mfa = mfaResult.rows[0];
     if (
       !mfa ||
-      !sameCredentialVersion(
-        mfa.password_changed_at,
-        challenge.credentialVersion,
-      )
+      mfa.credential_version !== challenge.entryCredentialVersion
     ) {
       this.#challenges.delete(challengeHash);
       return { auditUserId: challenge.userId, status: "expired" };
@@ -284,6 +291,7 @@ export class PostgresIdentityAuthentication
     this.#challenges.delete(challengeHash);
     return {
       credentialVersion: challenge.credentialVersion,
+      entryCredentialVersion: challenge.entryCredentialVersion,
       status: "verified",
       userId: challenge.userId,
     };

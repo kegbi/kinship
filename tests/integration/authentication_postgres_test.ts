@@ -550,6 +550,7 @@ Deno.test({
         completeMfa: () =>
           Promise.resolve({
             credentialVersion: null,
+            entryCredentialVersion: "none",
             status: "verified" as const,
             userId,
           }),
@@ -1494,6 +1495,12 @@ Deno.test({
       values (${userId}::uuid, ${await tokenService.hash(recoveryCode)})
     `;
 
+    await database`
+      update crm.users set
+        password_changed_at = '2026-08-15 12:00:00.123001+00'::timestamptz,
+        updated_at = now()
+      where id = ${userId}::uuid
+    `;
     const resetRaceChallengeResponse = await signIn(email);
     const resetRaceChallenge = extractCookie(
       resetRaceChallengeResponse,
@@ -1501,7 +1508,7 @@ Deno.test({
     );
     await database`
       update crm.users set
-        password_changed_at = password_changed_at + interval '1 second',
+        password_changed_at = '2026-08-15 12:00:00.123999+00'::timestamptz,
         updated_at = now()
       where id = ${userId}::uuid
     `;
@@ -1512,7 +1519,7 @@ Deno.test({
     );
     assert(
       resetRaceRejected.status === 410,
-      "password reset invalidates an outstanding MFA challenge",
+      "same-millisecond password reset invalidates an outstanding MFA challenge",
     );
     await assertRequestLog("/api/v1/mfa-challenges", "127.0.0.20", 410);
     assert(

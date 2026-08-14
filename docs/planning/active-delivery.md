@@ -11,7 +11,8 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 2 — Identity And Protected Workspace**
-- Current leaf: **APP-002D / `AUTH-002` — Invite and add a workspace member**
+- Current leaf: **APP-002E / `AUTH-004`, `WORKSPACE-001` — Preferences,
+  sessions, workspace, and members settings**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -123,8 +124,8 @@ runnable behavior cannot work without them.
         `/app`.
   - [x] Add the minimum gateway/CSRF/origin/secure-cookie behavior consumed by
         the protected Chromium path.
-- [ ] **APP-002D / `AUTH-002` — Invite and add a workspace member.**
-  - [ ] Deliver invitation creation, acceptance, expiry/replay handling, role
+- [x] **APP-002D / `AUTH-002` — Invite and add a workspace member.**
+  - [x] Deliver invitation creation, acceptance, expiry/replay handling, role
         checks, and member-list state.
 - [ ] **APP-002E / `AUTH-004`, `WORKSPACE-001` — Preferences, sessions,
       workspace, and members settings.**

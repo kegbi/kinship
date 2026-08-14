@@ -1,14 +1,19 @@
-import { buildOpenApiDocument, renderGeneratedClient } from "./generate.ts";
+import {
+  buildOpenApiDocument,
+  renderGeneratedClient,
+  renderInvitationClient,
+} from "./generate.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("AUTH-001/AUTH-003 OpenAPI is deterministic 3.1 with RFC 9457 problems", () => {
+Deno.test("AUTH-001/AUTH-002/AUTH-003 OpenAPI is deterministic and secret-safe", () => {
   const first = JSON.stringify(buildOpenApiDocument(), null, 2) + "\n";
   const second = JSON.stringify(buildOpenApiDocument(), null, 2) + "\n";
   assert(first === second, "OpenAPI generation must be byte stable");
   const document = buildOpenApiDocument();
+  const generatedClient = renderGeneratedClient() + renderInvitationClient();
   assert(document.openapi === "3.1.0", "contract must use OpenAPI 3.1");
   assert(
     first.includes("application/problem+json"),
@@ -19,7 +24,7 @@ Deno.test("AUTH-001/AUTH-003 OpenAPI is deterministic 3.1 with RFC 9457 problems
     "public contract must not expose secret fields",
   );
   assert(
-    renderGeneratedClient().includes("/api/v1/registrations"),
+    generatedClient.includes("/api/v1/registrations"),
     "generated client must consume registration contract",
   );
   const text = JSON.stringify(document);
@@ -55,11 +60,15 @@ Deno.test("AUTH-001/AUTH-003 OpenAPI is deterministic 3.1 with RFC 9457 problems
       "/api/v1/password-resets",
       "/api/v1/session",
       "/api/v1/sign-out",
+      "/api/v1/workspace-members",
+      "/api/v1/workspace-invitations",
+      "/api/v1/workspace-invitations/inspect",
+      "/api/v1/workspace-invitations/accept",
     ]
   ) {
     assert(text.includes(JSON.stringify(path)), `${path} must be documented`);
     assert(
-      renderGeneratedClient().includes(path),
+      generatedClient.includes(path),
       `${path} must have a generated frontend call`,
     );
   }
@@ -76,9 +85,30 @@ Deno.test("AUTH-001/AUTH-003 OpenAPI is deterministic 3.1 with RFC 9457 problems
     string,
     Record<
       string,
-      { parameters?: Array<{ name?: string; required?: boolean }> }
+      {
+        parameters?: Array<{ name?: string; required?: boolean }>;
+        security?: Array<Record<string, readonly unknown[]>>;
+      }
     >
   >;
+  for (const operations of Object.values(paths)) {
+    for (const operation of Object.values(operations)) {
+      for (const requirement of operation.security ?? []) {
+        for (const scheme of Object.keys(requirement)) {
+          assert(
+            components.securitySchemes?.[scheme] !== undefined,
+            `security requirement ${scheme} must resolve to a declared scheme`,
+          );
+        }
+      }
+    }
+  }
+  assert(
+    JSON.stringify(
+      paths["/api/v1/workspace-invitations/mfa"]?.post?.security,
+    ) === JSON.stringify([{ kinship_mfa: [], kinship_invitation: [] }]),
+    "invitation MFA must require both challenge and invitation cookies",
+  );
   for (
     const path of [
       "/api/v1/application-entry",
@@ -87,6 +117,9 @@ Deno.test("AUTH-001/AUTH-003 OpenAPI is deterministic 3.1 with RFC 9457 problems
       "/api/v1/password-reset-requests",
       "/api/v1/password-resets",
       "/api/v1/sign-out",
+      "/api/v1/workspace-invitations",
+      "/api/v1/workspace-invitations/inspect",
+      "/api/v1/workspace-invitations/accept",
     ]
   ) {
     const operation = paths[path]?.post;
@@ -122,6 +155,12 @@ Deno.test("AUTH-001/AUTH-003 OpenAPI is deterministic 3.1 with RFC 9457 problems
     responseContracts["/api/v1/sign-out"]?.post?.responses?.["503"] !==
       undefined,
     "sign-out must document a truthful revocation dependency failure",
+  );
+  assert(
+    text.includes('"InvitationToken"') && text.includes('"writeOnly":true') &&
+      generatedClient.includes("inspectWorkspaceInvitation(token?: string)") &&
+      generatedClient.includes("registerInvitedIdentity(input:"),
+    "invitation bearer material is request-only and never a response field",
   );
   assert(
     JSON.stringify(
