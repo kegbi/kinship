@@ -3,7 +3,14 @@ import "../styles/auth.css";
 
 interface Props {
   readonly description: string;
-  readonly pageId: "auth.sign-up" | "auth.verify-email" | "app.today";
+  readonly pageId:
+    | "app.today"
+    | "auth.mfa"
+    | "auth.recover"
+    | "auth.reset"
+    | "auth.sign-in"
+    | "auth.sign-up"
+    | "auth.verify-email";
   readonly title: string;
 }
 

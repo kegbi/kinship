@@ -307,6 +307,27 @@ BEGIN
 END
 $$;
 
+DO $$
+BEGIN
+  INSERT INTO api_request_logs (
+    method, path, client_ip, authentication_subject_digest, status_code
+  ) VALUES
+    ('POST', '/api/v1/sessions', '127.0.0.1', NULL, 401),
+    ('POST', '/api/v1/sessions', '127.0.0.1',
+      'hmac-sha256:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      401);
+
+  BEGIN
+    INSERT INTO api_request_logs (
+      method, path, authentication_subject_digest, status_code
+    ) VALUES ('POST', '/api/v1/sessions', 'owner@example.test', 401);
+    RAISE EXCEPTION 'raw authentication subject digest was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+END
+$$;
+
 ROLLBACK;
 
 SELECT 'schema_behavior_assertions_passed' AS result;

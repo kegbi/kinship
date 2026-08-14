@@ -207,27 +207,27 @@ silently resolve it by violating an accepted constraint.
 
 ## Canonical Personal CRM Schema
 
-- [personal-crm-schema/v1/README.md](personal-crm-schema/v1/README.md) is the
+- [personal-crm-schema/v2/README.md](personal-crm-schema/v2/README.md) is the
   starting point and current repository database baseline.
-- [personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql](personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql)
+- [personal-crm-schema/v2/personal_crm_schema_v2.sql](personal-crm-schema/v2/personal_crm_schema_v2.sql)
   is the canonical PostgreSQL DDL.
-- [personal-crm-schema/v1/personal_crm_rewrite_schema_spec_v3.md](personal-crm-schema/v1/personal_crm_rewrite_schema_spec_v3.md)
+- [personal-crm-schema/v2/personal_crm_schema_spec_v2.md](personal-crm-schema/v2/personal_crm_schema_spec_v2.md)
   is the human-readable schema and behavioral contract.
-- [personal-crm-schema/v1/personal_crm_field_catalog_v3.csv](personal-crm-schema/v1/personal_crm_field_catalog_v3.csv)
+- [personal-crm-schema/v2/personal_crm_field_catalog_v2.csv](personal-crm-schema/v2/personal_crm_field_catalog_v2.csv)
   is the field-level catalog.
-- [personal-crm-schema/v1/monica_table_mapping_v3.csv](personal-crm-schema/v1/monica_table_mapping_v3.csv)
+- [personal-crm-schema/v2/monica_table_mapping_v2.csv](personal-crm-schema/v2/monica_table_mapping_v2.csv)
   and
-  [personal-crm-schema/v1/monica_column_mapping_v3.csv](personal-crm-schema/v1/monica_column_mapping_v3.csv)
+  [personal-crm-schema/v2/monica_column_mapping_v2.csv](personal-crm-schema/v2/monica_column_mapping_v2.csv)
   are the complete Monica import mappings.
-- [personal-crm-schema/v1/personal_crm_schema_reaudit_v3.md](personal-crm-schema/v1/personal_crm_schema_reaudit_v3.md)
+- [personal-crm-schema/v2/personal_crm_schema_v2_changes.md](personal-crm-schema/v2/personal_crm_schema_v2_changes.md)
   and
-  [personal-crm-schema/v1/personal_crm_schema_v3_validation.json](personal-crm-schema/v1/personal_crm_schema_v3_validation.json)
-  contain the audit rationale and machine validation.
+  [personal-crm-schema/v2/personal_crm_schema_v2_validation.json](personal-crm-schema/v2/personal_crm_schema_v2_validation.json)
+  contain the change rationale and machine validation.
 
-Treat `personal-crm-schema/v1` as one synchronized, versioned unit. The
-directory is repository schema version 1; `_v3` in the filenames records the
-accepted external audit iteration. Do not update the SQL, specification,
-catalogs, mappings, or validation independently.
+Treat `personal-crm-schema/v2` as one synchronized, versioned unit. Repository
+v1 remains the immutable externally audited baseline; the external audit does
+not cover the repository-reviewed v2 delta. Do not update the SQL,
+specification, catalogs, mappings, migration, or validation independently.
 
 The canonical Personal CRM schema is the application's own data model. The
 Monica mappings in each schema version and
@@ -237,10 +237,10 @@ Monica-specific storage choices into canonical product tables.
 
 The DDL has passed the repository's live PostgreSQL validation matrix on
 PostgreSQL 18.4 and 17.10. See
-[docs/validation/postgresql-schema-v1.md](docs/validation/postgresql-schema-v1.md)
+[docs/validation/postgresql-schema-v2.md](docs/validation/postgresql-schema-v2.md)
 and rerun `deno task test:schema:matrix` after any schema-test or toolchain
-change. The external audit JSON remains immutable and still records that live
-execution was unavailable in the audit environment.
+change. The external v1 audit JSON remains immutable and still records that live
+execution was unavailable in its audit environment.
 
 The current database harness proves clean apply, transactional rollback,
 teardown and reapply, exact catalog shape, constraint behavior, partial-date

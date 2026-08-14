@@ -4,6 +4,12 @@ import { browserSecurityPolicy } from "./security_config.ts";
 import { resolveDatabaseUrl } from "../../packages/backend/platform/postgres/config.ts";
 import { SmtpVerificationMail } from "../../packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail.ts";
 import type { EnvironmentReader } from "../../packages/backend/platform/postgres/config.ts";
+import { decodeMfaEncryptionKeyset } from "../../packages/backend/modules/identity/public.ts";
+import { decodeAuthenticationSubjectKeyset } from "../../packages/backend/modules/api-access/public.ts";
+import {
+  createAuthenticationResponseEqualizer,
+  resolveAuthenticationResponseFloor,
+} from "./authentication_response.ts";
 
 const DEFAULT_PORT = 8000;
 
@@ -29,6 +35,23 @@ export function createApiRuntime(
   if (!databaseUrl) return { app: publicOnlyApp };
 
   const applicationEnvironment = environment.get("APP_ENV") ?? "development";
+  const mfaKeysetValue = environment.get("AUTH_MFA_ENCRYPTION_KEYSET");
+  const subjectKeysetValue = environment.get("AUTH_THROTTLE_SUBJECT_KEYSET");
+  if (applicationEnvironment === "production" && !mfaKeysetValue) {
+    throw new Error("AUTH_MFA_ENCRYPTION_KEYSET is required in production.");
+  }
+  if (applicationEnvironment === "production" && !subjectKeysetValue) {
+    throw new Error("AUTH_THROTTLE_SUBJECT_KEYSET is required in production.");
+  }
+  const mfaKeyset = mfaKeysetValue
+    ? decodeMfaEncryptionKeyset(mfaKeysetValue)
+    : undefined;
+  const subjectKeyset = subjectKeysetValue
+    ? decodeAuthenticationSubjectKeyset(subjectKeysetValue)
+    : undefined;
+  const authenticationResponseFloor = resolveAuthenticationResponseFloor(
+    environment.get("AUTH_MINIMUM_RESPONSE_MS"),
+  );
   const policy = browserSecurityPolicy(
     applicationEnvironment,
     environment.get("PUBLIC_WEB_ORIGIN"),
@@ -41,7 +64,14 @@ export function createApiRuntime(
     webOrigin: environment.get("PUBLIC_WEB_ORIGIN") ??
       "http://127.0.0.1:4321",
   });
-  return configure(databaseUrl, mail, policy);
+  return configure(
+    databaseUrl,
+    mail,
+    policy,
+    mfaKeyset,
+    subjectKeyset,
+    createAuthenticationResponseEqualizer(authenticationResponseFloor),
+  );
 }
 
 if (import.meta.main) {

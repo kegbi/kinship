@@ -1,0 +1,28 @@
+---
+import AuthLayout from "../../layouts/AuthLayout.astro";
+export const prerender = false;
+Astro.response.headers.set("Cache-Control", "private, no-store");
+Astro.response.headers.set("Referrer-Policy", "no-referrer");
+---
+
+<AuthLayout description="Complete your Kinship authentication challenge." pageId="auth.mfa" title="Security check — Kinship">
+  <main id="main-content" class="transition-main" tabindex="-1">
+    <section class="transition-card" aria-labelledby="mfa-heading">
+      <p class="eyebrow">Security check</p>
+      <h1 id="mfa-heading">One more step.</h1>
+      <p>Enter the six-digit code from your authenticator, or one unused recovery code.</p>
+      <form id="mfa-form" novalidate>
+        <label>Authenticator or recovery code<input name="factor" autocomplete="one-time-code" maxlength="128" required /></label>
+        <button type="submit">Continue securely</button>
+      </form>
+      <div id="auth-status" class="form-status" role="status" aria-live="polite" tabindex="-1"></div>
+      <p class="auth-links"><a href="/auth/sign-in">Return to sign-in</a></p>
+    </section>
+  </main>
+</AuthLayout>
+
+<script>
+  import { mountMfa } from "../../lib/auth-forms.ts";
+  const form = document.querySelector<HTMLFormElement>("#mfa-form");
+  if (form) mountMfa(form);
+</script>

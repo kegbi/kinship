@@ -3,43 +3,17 @@ import AuthLayout from "../layouts/AuthLayout.astro";
 export const prerender = true;
 ---
 
-<AuthLayout description="Enter your newly verified Kinship workspace." pageId="app.today" title="Your workspace — Kinship">
+<AuthLayout description="Enter your protected Kinship workspace." pageId="app.today" title="Your workspace — Kinship">
   <main id="main-content" class="transition-main" tabindex="-1">
     <section class="transition-card" aria-labelledby="entry-heading">
       <p class="eyebrow">First workspace</p>
       <h1 id="entry-heading">Preparing your workspace…</h1>
-      <div id="entry-status" role="status" aria-live="polite" tabindex="-1"><p>Confirming your one-time application entry.</p></div>
+      <div id="entry-status" role="status" aria-live="polite" tabindex="-1"><p>Resolving your protected session and active workspace.</p></div>
     </section>
   </main>
 </AuthLayout>
 
 <script>
-  import { consumeApplicationEntry } from "../../../../packages/contracts/generated/auth-client.ts";
-  const heading = document.querySelector<HTMLElement>("#entry-heading");
-  const status = document.querySelector<HTMLElement>("#entry-status");
-  consumeApplicationEntry().then((result) => {
-    if (result.ok) {
-      if (heading) heading.textContent = `Welcome, ${result.value.member.firstName}.`;
-      if (status) {
-        status.replaceChildren();
-        const ready = document.createElement("p");
-        const workspaceName = document.createElement("strong");
-        workspaceName.textContent = result.value.workspace.name;
-        ready.append(workspaceName, " is ready.");
-        const owner = document.createElement("p");
-        owner.textContent = "You are its verified owner. Today and the full protected navigation arrive in the next delivery step.";
-        status.append(ready, owner);
-        status.focus();
-      }
-      return;
-    }
-    if (heading) heading.textContent = "Application entry unavailable";
-    if (status) {
-      status.innerHTML = '<p>This one-time entry is no longer valid. Your verified account remains safe.</p><a class="button-link" href="/">Return home</a>';
-      status.focus();
-    }
-  }).catch(() => {
-    if (heading) heading.textContent = "Application entry unavailable";
-    if (status) status.textContent = "We could not reach Kinship. Please try again.";
-  });
+  import { mountProtectedEntry } from "../lib/auth-forms.ts";
+  void mountProtectedEntry();
 </script>

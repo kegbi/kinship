@@ -16,6 +16,78 @@ export function e2eEnvironment(
   };
 }
 
+export interface E2eTlsMaterial {
+  readonly certificate: string;
+  readonly directory: string;
+  readonly privateKey: string;
+}
+
+export async function createE2eTls(
+  project: string,
+): Promise<E2eTlsMaterial> {
+  if (!/^kinship-e2e-\d+-\d+$/.test(project)) {
+    throw new Error("Refusing to create TLS material for an invalid project.");
+  }
+  const script = `
+$ErrorActionPreference = 'Stop'
+$root = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar)
+$directory = [IO.Path]::GetFullPath([IO.Path]::Combine($root, '${project}-tls'))
+if ([IO.Path]::GetDirectoryName($directory) -ne $root -or (Test-Path -LiteralPath $directory)) { throw 'Unsafe or existing E2E TLS directory.' }
+[void](New-Item -ItemType Directory -Path $directory)
+try {
+  $rsa = [Security.Cryptography.RSA]::Create(2048)
+  try {
+    $name = [Security.Cryptography.X509Certificates.X500DistinguishedName]::new('CN=127.0.0.1')
+    $request = [Security.Cryptography.X509Certificates.CertificateRequest]::new($name, $rsa, [Security.Cryptography.HashAlgorithmName]::SHA256, [Security.Cryptography.RSASignaturePadding]::Pkcs1)
+    $san = [Security.Cryptography.X509Certificates.SubjectAlternativeNameBuilder]::new()
+    $san.AddDnsName('localhost')
+    $san.AddIpAddress([Net.IPAddress]::Parse('127.0.0.1'))
+    $request.CertificateExtensions.Add($san.Build())
+    $certificate = $request.CreateSelfSigned([DateTimeOffset]::UtcNow.AddMinutes(-1), [DateTimeOffset]::UtcNow.AddHours(4))
+    $certificatePath = [IO.Path]::Combine($directory, 'gateway.crt')
+    $privateKeyPath = [IO.Path]::Combine($directory, 'gateway.key')
+    $utf8 = [Text.UTF8Encoding]::new($false)
+    [IO.File]::WriteAllText($certificatePath, $certificate.ExportCertificatePem(), $utf8)
+    [IO.File]::WriteAllText($privateKeyPath, $rsa.ExportPkcs8PrivateKeyPem(), $utf8)
+    @{ certificate = $certificatePath; directory = $directory; privateKey = $privateKeyPath } | ConvertTo-Json -Compress
+  } finally { $rsa.Dispose() }
+} catch {
+  Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+  throw
+}`;
+  const parsed: unknown = JSON.parse(
+    await commandOutput(
+      "pwsh",
+      ["-NoProfile", "-NonInteractive", "-Command", script],
+      {},
+    ),
+  );
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error("E2E TLS generator returned an invalid result.");
+  }
+  const certificate = Reflect.get(parsed, "certificate");
+  const directory = Reflect.get(parsed, "directory");
+  const privateKey = Reflect.get(parsed, "privateKey");
+  if (
+    typeof certificate !== "string" || typeof directory !== "string" ||
+    typeof privateKey !== "string"
+  ) {
+    throw new Error("E2E TLS generator omitted a required path.");
+  }
+  return { certificate, directory, privateKey };
+}
+
+export async function removeE2eTls(
+  material: E2eTlsMaterial,
+): Promise<void> {
+  await command("pwsh", [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    `$ErrorActionPreference='Stop'; $root=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar); $directory=[IO.Path]::GetFullPath($env:KINSHIP_E2E_TLS_DIRECTORY); if ([IO.Path]::GetDirectoryName($directory) -ne $root -or [IO.Path]::GetFileName($directory) -notmatch '^kinship-e2e-\\d+-\\d+-tls$') { throw 'Refusing unsafe E2E TLS cleanup.' }; if (Test-Path -LiteralPath $directory) { Remove-Item -LiteralPath $directory -Recurse -Force }; if (Test-Path -LiteralPath $directory) { throw 'E2E TLS directory remained after cleanup.' }`,
+  ], { KINSHIP_E2E_TLS_DIRECTORY: material.directory });
+}
+
 export const E2E_COMPOSE_ARGS = [
   "compose",
   "--file",
@@ -32,6 +104,7 @@ export const E2E_ASTRO_TASK_ARGS = [
 
 export async function runE2eGate(operations: {
   readonly assertAbsent: () => Promise<void>;
+  readonly cleanupFiles?: () => Promise<void>;
   readonly down: () => Promise<void>;
   readonly startup: () => Promise<void>;
   readonly stopTest: () => Promise<void>;
@@ -68,6 +141,7 @@ export async function runE2eGate(operations: {
         operations.stopWeb,
         operations.down,
         operations.assertAbsent,
+        operations.cleanupFiles ?? (() => Promise.resolve()),
       ]
     ) {
       try {
@@ -141,6 +215,7 @@ async function composePort(
   service: string,
   containerPort: number,
   environment: Readonly<Record<string, string>>,
+  protocol = "http",
 ): Promise<string> {
   const mapping = await commandOutput(
     "docker",
@@ -149,7 +224,7 @@ async function composePort(
   );
   const port = mapping.match(/:(\d+)$/)?.[1];
   if (!port) throw new Error(`Could not inspect ${service} host port.`);
-  return `http://127.0.0.1:${port}`;
+  return `${protocol}://127.0.0.1:${port}`;
 }
 
 export interface OwnedProcess {
@@ -543,61 +618,150 @@ async function waitForApi(origin: string): Promise<void> {
   throw new Error("E2E API did not become ready within 120 seconds.");
 }
 
+async function waitForGatewayHealth(origin: string): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    try {
+      if ((await fetch(`${origin}/gateway-health`)).ok) return;
+    } catch {
+      // A required private upstream is still recovering.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(
+    "E2E gateway dependencies did not recover within 30 seconds.",
+  );
+}
+
+async function assertGatewayDependencyReadiness(
+  origin: string,
+  environment: Readonly<Record<string, string>>,
+): Promise<void> {
+  for (const service of ["api", "web"] as const) {
+    await command(
+      "docker",
+      [...E2E_COMPOSE_ARGS, "stop", "--timeout", "5", service],
+      environment,
+    );
+    try {
+      const deadline = Date.now() + 15_000;
+      let unavailable = false;
+      while (Date.now() < deadline) {
+        try {
+          unavailable =
+            (await fetch(`${origin}/gateway-health`)).status === 503;
+        } catch {
+          unavailable = false;
+        }
+        if (unavailable) break;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      if (!unavailable) {
+        throw new Error(
+          `Gateway readiness remained available after ${service} stopped.`,
+        );
+      }
+    } finally {
+      await command(
+        "docker",
+        [...E2E_COMPOSE_ARGS, "start", service],
+        environment,
+      );
+      await waitForGatewayHealth(origin);
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const project = e2eProjectName(Deno.pid, Date.now());
-  let apiTarget: string | undefined;
-  const forward = async (
-    request: Request,
-    destination: string | undefined,
-  ): Promise<Response> => {
-    if (!destination) return new Response("Service starting", { status: 503 });
-    const source = new URL(request.url);
-    const target = new URL(source.pathname + source.search, destination);
-    const init: RequestInit = {
-      method: request.method,
-      headers: request.headers,
-      redirect: "manual",
-    };
-    if (request.method !== "GET" && request.method !== "HEAD") {
-      init.body = request.body;
-    }
-    return await fetch(target, init);
-  };
-  const proxy = Deno.serve(
-    { hostname: "127.0.0.1", port: 0, onListen: () => undefined },
-    (request) => forward(request, apiTarget),
-  );
-  const proxyPort = (proxy.addr as Deno.NetAddr).port;
-  let web: OwnedWeb | undefined;
   let browser: OwnedProcess | undefined;
+  let tls: E2eTlsMaterial | undefined;
   let environment = e2eEnvironment(project, "http://127.0.0.1:1");
   await runE2eGate({
     startup: async () => {
-      const astro = await startAstro(`http://127.0.0.1:${proxyPort}`);
-      web = astro;
-      environment = e2eEnvironment(project, astro.origin);
-      await command("docker", [
-        ...E2E_COMPOSE_ARGS,
-        "up",
-        "--detach",
-        "--wait",
-        "--wait-timeout",
-        "120",
-      ], environment);
-      const [apiOrigin, mailOrigin] = await Promise.all([
-        composePort("api", 8000, environment),
-        composePort("mailpit", 8025, environment),
-        composePort("postgres", 5432, environment),
-      ]);
-      apiTarget = apiOrigin;
+      tls = await createE2eTls(project);
       environment = {
         ...environment,
-        API_ORIGIN: `http://127.0.0.1:${proxyPort}`,
+        GATEWAY_TLS_CERTIFICATE_PATH: tls.certificate,
+        GATEWAY_TLS_PRIVATE_KEY_PATH: tls.privateKey,
+      };
+      await command("docker", [
+        ...E2E_COMPOSE_ARGS,
+        "create",
+        "--build",
+      ], environment);
+      const gatewayContainer = await commandOutput(
+        "docker",
+        [...E2E_COMPOSE_ARGS, "ps", "--all", "--quiet", "gateway"],
+        environment,
+      );
+      if (!gatewayContainer) {
+        throw new Error("Gateway container was not created.");
+      }
+      await command("docker", ["start", gatewayContainer], environment);
+      const gatewayOrigin = await composePort(
+        "gateway",
+        8443,
+        environment,
+        "https",
+      );
+      environment = {
+        ...e2eEnvironment(project, gatewayOrigin),
+        GATEWAY_TLS_CERTIFICATE_PATH: tls.certificate,
+        GATEWAY_TLS_PRIVATE_KEY_PATH: tls.privateKey,
+      };
+      try {
+        await command("docker", [
+          ...E2E_COMPOSE_ARGS,
+          "up",
+          "--detach",
+          "--wait",
+          "--wait-timeout",
+          "120",
+        ], environment);
+      } catch (error) {
+        await command(
+          "docker",
+          [
+            ...E2E_COMPOSE_ARGS,
+            "ps",
+            "--all",
+          ],
+          environment,
+          true,
+        );
+        await command(
+          "docker",
+          [
+            ...E2E_COMPOSE_ARGS,
+            "logs",
+            "--no-color",
+            "--tail",
+            "100",
+            "gateway",
+            "web",
+            "api",
+          ],
+          environment,
+          true,
+        );
+        throw error;
+      }
+      const [readyGatewayOrigin, mailOrigin] = await Promise.all([
+        composePort("gateway", 8443, environment, "https"),
+        composePort("mailpit", 8025, environment),
+      ]);
+      if (readyGatewayOrigin !== gatewayOrigin) {
+        throw new Error("Docker reassigned the inspected gateway port.");
+      }
+      environment = {
+        ...environment,
         E2E_EXTERNAL_WEB: "1",
-        TEST_API_ORIGIN: apiOrigin,
         TEST_MAIL_ORIGIN: mailOrigin,
       };
-      await waitForApi(apiOrigin);
+      await waitForApi(gatewayOrigin);
+      await waitForGatewayHealth(gatewayOrigin);
+      await assertGatewayDependencyReadiness(gatewayOrigin, environment);
     },
     test: async () => {
       const args = ["exec", "playwright", "test", ...Deno.args];
@@ -615,22 +779,11 @@ async function main(): Promise<void> {
         throw new Error(`pnpm ${args.join(" ")} exited ${status.code}`);
       }
     },
-    webStatus: () => {
-      if (!web) {
-        return Promise.reject(new Error("E2E web process was not started."));
-      }
-      return web.child.status;
-    },
+    webStatus: () => new Promise<Deno.CommandStatus>(() => undefined),
     stopTest: async () => {
       if (browser) await stopOwnedProcess(browser);
     },
-    stopWeb: async () => {
-      try {
-        if (web) await stopWeb(web);
-      } finally {
-        await proxy.shutdown();
-      }
-    },
+    stopWeb: () => Promise.resolve(),
     down: () =>
       command(
         "docker",
@@ -645,6 +798,7 @@ async function main(): Promise<void> {
         environment,
       ).then(() => undefined),
     assertAbsent: () => assertProjectAbsent(project, environment),
+    cleanupFiles: () => tls ? removeE2eTls(tls) : Promise.resolve(),
   });
 }
 

@@ -19,15 +19,15 @@ CREATE TEMP TABLE expected_field_catalog (
   change_reason text
 );
 
-\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v3.csv' WITH (FORMAT csv, HEADER true)
+\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v2.csv' WITH (FORMAT csv, HEADER true)
 
 DO $$
 DECLARE
   actual_count bigint;
 BEGIN
   SELECT count(*) INTO actual_count FROM expected_field_catalog;
-  IF actual_count <> 811 THEN
-    RAISE EXCEPTION 'field catalog row count: expected 811, got %', actual_count;
+  IF actual_count <> 812 THEN
+    RAISE EXCEPTION 'field catalog row count: expected 812, got %', actual_count;
   END IF;
 
   IF EXISTS (
@@ -144,6 +144,19 @@ BEGIN
       )
   ) THEN
     RAISE EXCEPTION 'a known raw Monica credential column exists in the canonical schema';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_constraint
+    WHERE connamespace = 'crm'::regnamespace
+      AND conname = 'api_request_logs_auth_subject_digest_ck'
+      AND convalidated
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_indexes
+    WHERE schemaname = 'crm'
+      AND indexname = 'api_request_logs_auth_subject_idx'
+  ) THEN
+    RAISE EXCEPTION 'schema v2 authentication subject constraint/index missing';
   END IF;
 END
 $$;

@@ -13,15 +13,16 @@ supported PostgreSQL image:
 deno task test:schema --postgres-image postgres:17.10-alpine3.23
 ```
 
-The runner creates a unique Compose project, verifies every audited artifact
-hash, applies the DDL in one transaction, checks the live PostgreSQL catalog,
-runs database-enforceable behavior tests, proves transaction rollback, proves
-schema teardown and clean reapply, and always removes its containers and
-temporary storage.
+The runner creates a unique Compose project, verifies immutable external-audit
+v1 hashes and every repository-v2 artifact hash, applies clean v2 in one
+transaction, upgrades exact v1 through the immutable `0002` migration, checks
+the live PostgreSQL catalog, proves failed-migration rollback, runs
+database-enforceable behavior tests, proves teardown/reapply, and always removes
+its containers and temporary storage.
 
 The database tests cover:
 
-- audited table, column, foreign-key, explicit-index, JSONB, and workspace-field
+- v2 table, column, foreign-key, explicit-index, JSONB, and workspace-field
   counts;
 - exact field-catalog table/column membership and nullability;
 - primary keys, comments, valid indexes, validated constraints, extensions, and
@@ -31,6 +32,8 @@ The database tests cover:
 - reminder target constraints and occurrence de-duplication;
 - missing-file metadata and attachment links;
 - absence of known raw Monica credential columns from the canonical model.
+- nullable, constrained pseudonymous authentication-subject digests and their
+  partial lookup index.
 
 The schema cannot by itself prove application behavior. Cross-workspace
 authorization, recurrence generation across time zones, object-store failure

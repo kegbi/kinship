@@ -26,7 +26,7 @@ services:
       "run",
       "--allow-env=DATABASE_URL,PGHOST,PGPORT,PGUSERNAME,PGUSER,PGDATABASE,PGPASSWORD,PGMAX,PGSSL,PGSSLNEGOTIATION,PGIDLE_TIMEOUT,PGCONNECT_TIMEOUT,PGMAX_LIFETIME,PGMAX_PIPELINE,PGBACKOFF,PGKEEP_ALIVE,PGPREPARE,PGDEBUG,PGFETCH_TYPES,PGPUBLICATIONS,PGAPPNAME,PGTARGETSESSIONATTRS,PGTARGET_SESSION_ATTRS",
       "--allow-net=postgres:5432",
-      "--allow-read=/app/personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql",
+      "--allow-read=/app/personal-crm-schema/v1,/app/personal-crm-schema/v2",
       "tools/migrations/main.ts",
     ]
     environment:
@@ -61,6 +61,9 @@ services:
       dockerfile: Dockerfile.api
     environment:
       APP_ENV: ${APP_ENV:-development}
+      AUTH_MFA_ENCRYPTION_KEYSET: ${AUTH_MFA_ENCRYPTION_KEYSET:-}
+      AUTH_MINIMUM_RESPONSE_MS: ${AUTH_MINIMUM_RESPONSE_MS:-250}
+      AUTH_THROTTLE_SUBJECT_KEYSET: ${AUTH_THROTTLE_SUBJECT_KEYSET:-}
       HOST: 0.0.0.0
       PGDATABASE: ${POSTGRES_DB:-kinship}
       PGHOST: postgres
@@ -90,6 +93,61 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=16m
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    environment:
+      API_ORIGIN: http://api:8000
+      HOST: 0.0.0.0
+      PORT: "4321"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [
+        "CMD",
+        "node",
+        "-e",
+        "Promise.all([fetch('http://127.0.0.1:4321/auth/mfa'),fetch('http://api:8000/api/v1/health')]).then(r=>{if(r.some(x=>!x.ok))process.exit(1)}).catch(()=>process.exit(1))",
+      ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8443}:8443"
+    volumes:
+      - type: bind
+        source: ${GATEWAY_TLS_CERTIFICATE_PATH:-./.tls/gateway.crt}
+        target: /run/secrets/gateway_tls_certificate
+        read_only: true
+      - type: bind
+        source: ${GATEWAY_TLS_PRIVATE_KEY_PATH:-./.tls/gateway.key}
+        target: /run/secrets/gateway_tls_private_key
+        read_only: true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/gateway-health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+      - /var/cache/nginx:size=16m
 
 volumes:
   postgres-data:

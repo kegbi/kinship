@@ -1,12 +1,12 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-interface AuditValidation {
+interface SchemaValidation {
   readonly status: string;
   readonly source_tables: number;
   readonly source_columns: number;
-  readonly audited_v3_tables: number;
-  readonly audited_v3_columns: number;
+  readonly tables: number;
+  readonly columns: number;
   readonly explicit_indexes: number;
   readonly foreign_keys: number;
   readonly jsonb_fields: number;
@@ -14,7 +14,10 @@ interface AuditValidation {
   readonly table_mapping_rows: number;
   readonly column_mapping_rows: number;
   readonly field_catalog_rows: number;
-  readonly change_log_rows: number;
+  readonly all_indexes: number;
+  readonly check_constraints: number;
+  readonly primary_keys: number;
+  readonly unique_constraints: number;
   readonly deferred_foreign_keys: number;
   readonly sha256: Readonly<Record<string, string>>;
 }
@@ -42,15 +45,22 @@ interface CommandOptions {
 const DEFAULT_POSTGRES_IMAGE = "postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e";
 const SCHEMA_DATABASE = "crm_schema_test";
 const ROLLBACK_DATABASE = "crm_rollback_test";
+const UPGRADE_DATABASE = "crm_upgrade_test";
+const MIGRATION_ROLLBACK_DATABASE = "crm_migration_rollback_test";
 const DATABASE_USER = "crm_test";
 
 const scriptDirectory = resolve(
   fileURLToPath(new URL(".", import.meta.url)),
 );
 const repositoryRoot = resolve(scriptDirectory, "../..");
-const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v1");
+const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v2");
+const v1SchemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v1");
 const validationPath = resolve(
   schemaDirectory,
+  "personal_crm_schema_v2_validation.json",
+);
+const v1ValidationPath = resolve(
+  v1SchemaDirectory,
   "personal_crm_schema_v3_validation.json",
 );
 
@@ -117,19 +127,35 @@ async function sha256(path: string): Promise<string> {
   ).join("");
 }
 
-async function verifyAuditArtifacts(
-  validation: AuditValidation,
+async function verifyArtifacts(
+  validation: SchemaValidation,
 ): Promise<void> {
-  if (validation.status !== "passed") {
-    throw new Error(`Audited validation status is ${validation.status}`);
+  if (
+    validation.status !== "pending-live-validation" &&
+    validation.status !== "passed"
+  ) {
+    throw new Error(`Schema v2 validation status is ${validation.status}`);
   }
 
   for (const [filename, expectedHash] of Object.entries(validation.sha256)) {
     const actualHash = await sha256(resolve(schemaDirectory, filename));
     if (actualHash !== expectedHash) {
       throw new Error(
-        `Audited artifact hash mismatch for ${filename}: ${actualHash}`,
+        `Schema v2 artifact hash mismatch for ${filename}: ${actualHash}`,
       );
+    }
+  }
+}
+
+async function verifyImmutableV1Artifacts(): Promise<void> {
+  const parsed = JSON.parse(await Deno.readTextFile(v1ValidationPath)) as {
+    readonly sha256?: Readonly<Record<string, string>>;
+  };
+  if (!parsed.sha256) throw new Error("Invalid immutable v1 validation JSON.");
+  for (const [filename, expectedHash] of Object.entries(parsed.sha256)) {
+    const actualHash = await sha256(resolve(v1SchemaDirectory, filename));
+    if (actualHash !== expectedHash) {
+      throw new Error(`Immutable schema v1 artifact drifted: ${filename}.`);
     }
   }
 }
@@ -229,12 +255,12 @@ async function copyFixture(
   ], { quiet: true });
 }
 
-async function readAuditValidation(): Promise<AuditValidation> {
+async function readValidation(): Promise<SchemaValidation> {
   const parsed: unknown = JSON.parse(await Deno.readTextFile(validationPath));
   if (typeof parsed !== "object" || parsed === null || !("sha256" in parsed)) {
-    throw new Error("Invalid audited validation JSON");
+    throw new Error("Invalid schema v2 validation JSON");
   }
-  return parsed as AuditValidation;
+  return parsed as SchemaValidation;
 }
 
 async function readLiveMetrics(): Promise<LiveMetrics> {
@@ -276,32 +302,27 @@ async function readLiveMetrics(): Promise<LiveMetrics> {
   return JSON.parse(output) as LiveMetrics;
 }
 
-async function assertAuditCounts(validation: AuditValidation): Promise<void> {
+async function assertArtifactCounts(
+  validation: SchemaValidation,
+): Promise<void> {
   assertEqual(
     "table mapping rows",
-    await countCsvRows(resolve(schemaDirectory, "monica_table_mapping_v3.csv")),
+    await countCsvRows(resolve(schemaDirectory, "monica_table_mapping_v2.csv")),
     validation.table_mapping_rows,
   );
   assertEqual(
     "column mapping rows",
     await countCsvRows(
-      resolve(schemaDirectory, "monica_column_mapping_v3.csv"),
+      resolve(schemaDirectory, "monica_column_mapping_v2.csv"),
     ),
     validation.column_mapping_rows,
   );
   assertEqual(
     "field catalog rows",
     await countCsvRows(
-      resolve(schemaDirectory, "personal_crm_field_catalog_v3.csv"),
+      resolve(schemaDirectory, "personal_crm_field_catalog_v2.csv"),
     ),
     validation.field_catalog_rows,
-  );
-  assertEqual(
-    "change log rows",
-    await countCsvRows(
-      resolve(schemaDirectory, "personal_crm_v1_to_v3_changes.csv"),
-    ),
-    validation.change_log_rows,
   );
 }
 
@@ -309,7 +330,7 @@ async function applySchema(database: string): Promise<void> {
   await runPsql(database, [
     "--single-transaction",
     "-f",
-    "/tmp/personal_crm_rewrite_schema_v3.sql",
+    "/tmp/personal_crm_schema_v2.sql",
   ], { quiet: true });
 }
 
@@ -324,7 +345,7 @@ async function assertRollback(): Promise<void> {
       "-c",
       "BEGIN",
       "-f",
-      "/tmp/personal_crm_rewrite_schema_v3.sql",
+      "/tmp/personal_crm_schema_v2.sql",
       "-c",
       "ROLLBACK",
     ], { quiet: true });
@@ -348,10 +369,81 @@ async function assertRollback(): Promise<void> {
   }
 }
 
+async function assertV1UpgradeAndFailureRollback(): Promise<void> {
+  for (const database of [UPGRADE_DATABASE, MIGRATION_ROLLBACK_DATABASE]) {
+    await runPsql("postgres", ["-c", `CREATE DATABASE ${database}`], {
+      quiet: true,
+    });
+  }
+  try {
+    await runPsql(UPGRADE_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/personal_crm_schema_v1.sql",
+    ], { quiet: true });
+    await runPsql(UPGRADE_DATABASE, [
+      "-c",
+      "INSERT INTO crm.api_request_logs (method, path, status_code) VALUES ('GET', '/upgrade-preserved', 200)",
+      "--single-transaction",
+      "-f",
+      "/tmp/0002_add_authentication_subject_digest.sql",
+    ], { quiet: true });
+    const upgraded = await runPsql(UPGRADE_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      `SELECT
+        EXISTS(SELECT 1 FROM information_schema.columns
+          WHERE table_schema='crm' AND table_name='api_request_logs'
+            AND column_name='authentication_subject_digest')
+        AND (SELECT count(*) = 1 FROM crm.api_request_logs
+          WHERE path='/upgrade-preserved');`,
+    ], { quiet: true });
+    if (upgraded !== "t") {
+      throw new Error("v1-to-v2 migration did not preserve the exact fixture.");
+    }
+
+    await runPsql(MIGRATION_ROLLBACK_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/personal_crm_schema_v1.sql",
+    ], { quiet: true });
+    await runPsql(MIGRATION_ROLLBACK_DATABASE, [
+      "-c",
+      "BEGIN",
+      "-f",
+      "/tmp/0002_add_authentication_subject_digest.sql",
+      "-c",
+      "SELECT 1 / 0",
+    ], { allowFailure: true, quiet: true });
+    const rolledBack = await runPsql(MIGRATION_ROLLBACK_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      `SELECT NOT EXISTS(SELECT 1 FROM information_schema.columns
+        WHERE table_schema='crm' AND table_name='api_request_logs'
+          AND column_name='authentication_subject_digest');`,
+    ], { quiet: true });
+    if (rolledBack !== "t") {
+      throw new Error(
+        "failed v1-to-v2 migration did not roll back atomically.",
+      );
+    }
+  } finally {
+    for (const database of [UPGRADE_DATABASE, MIGRATION_ROLLBACK_DATABASE]) {
+      await runPsql("postgres", [
+        "-c",
+        `DROP DATABASE IF EXISTS ${database}`,
+      ], { quiet: true, allowFailure: true });
+    }
+  }
+}
+
 async function main(): Promise<void> {
-  const validation = await readAuditValidation();
-  await verifyAuditArtifacts(validation);
-  await assertAuditCounts(validation);
+  const validation = await readValidation();
+  await verifyArtifacts(validation);
+  await verifyImmutableV1Artifacts();
+  await assertArtifactCounts(validation);
 
   const dockerVersion = await runDocker(
     ["info", "--format", "{{.ServerVersion}}"],
@@ -366,12 +458,20 @@ async function main(): Promise<void> {
     started = true;
 
     await copyFixture(
-      "personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql",
-      "/tmp/personal_crm_rewrite_schema_v3.sql",
+      "personal-crm-schema/v2/personal_crm_schema_v2.sql",
+      "/tmp/personal_crm_schema_v2.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v1/personal_crm_field_catalog_v3.csv",
-      "/tmp/personal_crm_field_catalog_v3.csv",
+      "personal-crm-schema/v2/personal_crm_field_catalog_v2.csv",
+      "/tmp/personal_crm_field_catalog_v2.csv",
+    );
+    await copyFixture(
+      "personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql",
+      "/tmp/personal_crm_schema_v1.sql",
+    );
+    await copyFixture(
+      "personal-crm-schema/v2/migrations/0002_add_authentication_subject_digest.sql",
+      "/tmp/0002_add_authentication_subject_digest.sql",
     );
     await copyFixture(
       "tools/schema/assert_schema.sql",
@@ -392,12 +492,15 @@ async function main(): Promise<void> {
     await assertRollback();
     console.log("PASS atomic apply rollback");
 
+    await assertV1UpgradeAndFailureRollback();
+    console.log("PASS exact v1 upgrade and failed-migration rollback");
+
     await applySchema(SCHEMA_DATABASE);
     console.log("PASS clean schema apply");
 
     const metrics = await readLiveMetrics();
-    assertEqual("live tables", metrics.tables, validation.audited_v3_tables);
-    assertEqual("live columns", metrics.columns, validation.audited_v3_columns);
+    assertEqual("live tables", metrics.tables, validation.tables);
+    assertEqual("live columns", metrics.columns, validation.columns);
     assertEqual(
       "live foreign keys",
       metrics.foreign_keys,
@@ -426,7 +529,18 @@ async function main(): Promise<void> {
     assertEqual(
       "one primary key per table",
       metrics.primary_keys,
-      metrics.tables,
+      validation.primary_keys,
+    );
+    assertEqual("all indexes", metrics.all_indexes, validation.all_indexes);
+    assertEqual(
+      "check constraints",
+      metrics.check_constraints,
+      validation.check_constraints,
+    );
+    assertEqual(
+      "unique constraints",
+      metrics.unique_constraints,
+      validation.unique_constraints,
     );
 
     await runPsql(
@@ -464,12 +578,12 @@ async function main(): Promise<void> {
     assertEqual(
       "reapplied tables",
       reappliedMetrics.tables,
-      validation.audited_v3_tables,
+      validation.tables,
     );
     assertEqual(
       "reapplied columns",
       reappliedMetrics.columns,
-      validation.audited_v3_columns,
+      validation.columns,
     );
     console.log("PASS clean reapply after teardown");
 

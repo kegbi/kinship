@@ -1,16 +1,20 @@
 services:
   postgres:
-    ports:
-      - "127.0.0.1::5432"
+    ports: !reset []
     volumes: !reset []
     tmpfs:
       - /var/lib/postgresql
   api:
     environment:
       APP_ENV: test
+      AUTH_MFA_ENCRYPTION_KEYSET: '{"activeKeyId":"test","keys":{"test":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}'
+      AUTH_MINIMUM_RESPONSE_MS: "100"
+      AUTH_THROTTLE_SUBJECT_KEYSET: '{"activeVersion":1,"keys":{"v1":"UlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlI"}}'
       PUBLIC_WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN}
-    ports:
-      - "127.0.0.1::8000"
+    ports: !reset []
+  gateway:
+    ports: !override
+      - "127.0.0.1::8443"
   mailpit:
     ports:
       - "127.0.0.1::8025"

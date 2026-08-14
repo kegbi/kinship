@@ -1,0 +1,19 @@
+FROM node:24.7.0-bookworm-slim@sha256:0104d9447ea3ddf7373643be7f9915fc7b7c896e41d0d33229338e457217cd78 AS build
+
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/web ./apps/web
+COPY packages/contracts ./packages/contracts
+RUN corepack enable && pnpm install --frozen-lockfile
+RUN pnpm exec astro build --root apps/web
+
+FROM node:24.7.0-bookworm-slim@sha256:0104d9447ea3ddf7373643be7f9915fc7b7c896e41d0d33229338e457217cd78
+
+WORKDIR /app
+ENV HOST=0.0.0.0
+ENV PORT=4321
+COPY --from=build --chown=node:node /app/apps/web/dist ./apps/web/dist
+COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/package.json ./package.json
+USER node
+CMD ["node", "apps/web/dist/server/entry.mjs"]

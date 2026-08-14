@@ -62,6 +62,7 @@ flows:
 
   - id: AUTH-003
     title: Sign in through password and MFA challenges
+    deliveryStatus: delivered
     priority: P0
     actor: registered-person
     trigger: The person submits credentials.
@@ -90,7 +91,7 @@ flows:
     moduleIds: [identity, workspaces]
     permissions: [session.create]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/auth-003.spec.ts] }
 
   - id: AUTH-004
     title: Manage preferences and sessions

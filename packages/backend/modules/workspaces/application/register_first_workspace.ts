@@ -79,6 +79,11 @@ export interface VerificationMail {
     readonly expiresAt: Date;
     readonly token: string;
   }): Promise<void>;
+  sendPasswordReset?(message: {
+    readonly email: string;
+    readonly expiresAt: Date;
+    readonly token: string;
+  }): Promise<void>;
 }
 
 export interface RegistrationDependencies {

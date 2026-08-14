@@ -18,6 +18,13 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
       },
     },
   };
+  const originParameter = {
+    name: "Origin",
+    in: "header",
+    required: true,
+    description: "Must exactly match the configured public web origin.",
+    schema: { type: "string", format: "uri" },
+  };
   return {
     openapi: "3.1.0",
     info: { title: "Kinship API", version: "1.0.0" },
@@ -119,6 +126,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
               },
             },
             "400": problem,
+            "503": problem,
           },
         },
       },
@@ -128,9 +136,13 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           description:
             "Browser-only one-time application entry. Requires the exact Origin header configured for the public web origin and the HttpOnly kinship_entry cookie. The cookie is SameSite=Strict and is Secure outside explicit loopback HTTP development/test use.",
           security: [{ kinship_entry: [] }],
+          parameters: [originParameter],
           responses: {
             "200": {
               description: "Narrow application entry context",
+              headers: {
+                "Set-Cookie": { schema: { type: "string", writeOnly: true } },
+              },
               content: {
                 "application/json": {
                   schema: { $ref: "#/components/schemas/ApplicationEntry" },
@@ -139,6 +151,194 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             },
             "403": problem,
             "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/sessions": {
+        post: {
+          operationId: "signIn",
+          parameters: [originParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/SignInInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Authenticated session created and rotated",
+              headers: {
+                "Set-Cookie": { schema: { type: "string", writeOnly: true } },
+              },
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Authenticated" },
+                },
+              },
+            },
+            "202": {
+              description: "MFA challenge required",
+              headers: {
+                "Set-Cookie": { schema: { type: "string", writeOnly: true } },
+              },
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/MfaRequired" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "429": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/mfa-challenges": {
+        post: {
+          operationId: "completeMfa",
+          parameters: [originParameter],
+          security: [{ kinship_mfa: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/MfaInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "MFA accepted and authenticated session created",
+              headers: {
+                "Set-Cookie": { schema: { type: "string", writeOnly: true } },
+              },
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Authenticated" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "410": problem,
+            "429": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/password-reset-requests": {
+        post: {
+          operationId: "requestPasswordReset",
+          parameters: [originParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["email"],
+                  properties: {
+                    email: { type: "string", format: "email", maxLength: 254 },
+                  },
+                  additionalProperties: false,
+                },
+              },
+            },
+          },
+          responses: {
+            "202": {
+              description: "Request accepted without identity disclosure",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/RecoveryAccepted" },
+                },
+              },
+            },
+            "400": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/password-resets": {
+        post: {
+          operationId: "resetPassword",
+          parameters: [originParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/PasswordResetInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Password reset and sessions revoked",
+              headers: {
+                "Set-Cookie": { schema: { type: "string", writeOnly: true } },
+              },
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/PasswordResetAccepted",
+                  },
+                },
+              },
+            },
+            "400": problem,
+            "410": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/session": {
+        get: {
+          operationId: "getSession",
+          security: [{ kinship_session: [] }],
+          parameters: [{
+            name: "X-Workspace-Id",
+            in: "header",
+            required: false,
+            description:
+              "Optional requested workspace; always validated against active membership.",
+            schema: { type: "string", format: "uuid" },
+          }],
+          responses: {
+            "200": {
+              description: "Resolved principal and active workspace",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/SessionContext" },
+                },
+              },
+            },
+            "401": problem,
+          },
+        },
+      },
+      "/api/v1/sign-out": {
+        post: {
+          operationId: "signOut",
+          parameters: [originParameter],
+          security: [{ kinship_session: [] }],
+          responses: {
+            "200": {
+              description: "Current session revoked",
+              headers: {
+                "Set-Cookie": { schema: { type: "string", writeOnly: true } },
+              },
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/SignedOut" },
+                },
+              },
+            },
+            "403": problem,
             "503": problem,
           },
         },
@@ -152,6 +352,20 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           name: "kinship_entry",
           description:
             "One-time HttpOnly browser handoff; SameSite=Strict and Secure outside loopback.",
+        },
+        kinship_mfa: {
+          type: "apiKey",
+          in: "cookie",
+          name: "kinship_mfa",
+          description:
+            "Short-lived HttpOnly, SameSite=Strict MFA challenge; not an authenticated session.",
+        },
+        kinship_session: {
+          type: "apiKey",
+          in: "cookie",
+          name: "kinship_session",
+          description:
+            "Revocable random browser session; HttpOnly, SameSite=Strict, and Secure outside loopback.",
         },
       },
       schemas: {
@@ -219,6 +433,134 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        SignInInput: {
+          type: "object",
+          required: ["email", "password"],
+          properties: {
+            email: { type: "string", format: "email", maxLength: 254 },
+            password: {
+              type: "string",
+              minLength: 1,
+              maxLength: 128,
+              writeOnly: true,
+            },
+            workspaceId: { type: "string", format: "uuid" },
+          },
+          additionalProperties: false,
+        },
+        MfaInput: {
+          type: "object",
+          required: ["factor"],
+          properties: {
+            factor: {
+              type: "string",
+              minLength: 6,
+              maxLength: 128,
+              writeOnly: true,
+            },
+            workspaceId: { type: "string", format: "uuid" },
+          },
+          additionalProperties: false,
+        },
+        PasswordResetInput: {
+          type: "object",
+          required: ["password", "token"],
+          properties: {
+            password: {
+              type: "string",
+              minLength: 12,
+              maxLength: 128,
+              writeOnly: true,
+            },
+            token: {
+              type: "string",
+              minLength: 32,
+              maxLength: 256,
+              writeOnly: true,
+            },
+          },
+          additionalProperties: false,
+        },
+        Authenticated: {
+          type: "object",
+          required: ["status", "next", "workspace", "member"],
+          properties: {
+            status: { const: "authenticated" },
+            next: { const: "/app" },
+            workspace: {
+              type: "object",
+              required: ["id", "name"],
+              properties: {
+                id: { type: "string", format: "uuid" },
+                name: { type: "string" },
+              },
+              additionalProperties: false,
+            },
+            member: {
+              type: "object",
+              required: ["id", "role"],
+              properties: {
+                id: { type: "string", format: "uuid" },
+                role: { type: "string", enum: ["owner", "admin", "member"] },
+              },
+              additionalProperties: false,
+            },
+          },
+          additionalProperties: false,
+        },
+        MfaRequired: {
+          type: "object",
+          required: ["status", "next"],
+          properties: {
+            status: { const: "mfa-required" },
+            next: { const: "/auth/mfa" },
+          },
+          additionalProperties: false,
+        },
+        RecoveryAccepted: {
+          type: "object",
+          required: ["status"],
+          properties: { status: { const: "accepted" } },
+          additionalProperties: false,
+        },
+        PasswordResetAccepted: {
+          type: "object",
+          required: ["status", "next"],
+          properties: {
+            status: { const: "reset" },
+            next: { const: "/auth/sign-in" },
+          },
+          additionalProperties: false,
+        },
+        SignedOut: {
+          type: "object",
+          required: ["status", "next"],
+          properties: {
+            status: { const: "signed-out" },
+            next: { const: "/auth/sign-in" },
+          },
+          additionalProperties: false,
+        },
+        SessionContext: {
+          type: "object",
+          required: ["status", "principal", "workspace", "member"],
+          properties: {
+            status: { const: "authenticated" },
+            principal: {
+              type: "object",
+              required: ["userId"],
+              properties: { userId: { type: "string", format: "uuid" } },
+              additionalProperties: false,
+            },
+            workspace: {
+              $ref: "#/components/schemas/Authenticated/properties/workspace",
+            },
+            member: {
+              $ref: "#/components/schemas/Authenticated/properties/member",
+            },
+          },
+          additionalProperties: false,
+        },
         Problem: {
           type: "object",
           required: ["type", "title", "status", "detail", "code"],
@@ -241,7 +583,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
 }
 
 export function renderGeneratedClient(): string {
-  return `// Generated by deno task contracts:generate from packages/contracts/openapi/openapi.json. Do not edit.\n\nexport interface RegistrationInput {\n  readonly email: string;\n  readonly firstName: string;\n  readonly lastName: string;\n  readonly password: string;\n  readonly workspaceName: string;\n}\n\nexport interface ProblemDetails {\n  readonly type: string;\n  readonly title: string;\n  readonly status: number;\n  readonly detail: string;\n  readonly code: string;\n  readonly errors?: Readonly<Record<string, string>>;\n}\n\nexport interface ApplicationEntry {\n  readonly status: \"ready\";\n  readonly workspace: { readonly id: string; readonly name: string };\n  readonly member: { readonly id: string; readonly firstName: string };\n}\n\nexport type ApiResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly problem: ProblemDetails };\n\nasync function request<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {\n  const response = await fetch(path, { ...init, headers: { \"content-type\": \"application/json\", ...init?.headers } });\n  const body = await response.json() as T | ProblemDetails;\n  return response.ok ? { ok: true, value: body as T } : { ok: false, problem: body as ProblemDetails };\n}\n\nexport function register(input: RegistrationInput): Promise<ApiResult<{ readonly status: \"verification-required\" }>> {\n  return request(\"/api/v1/registrations\", { method: \"POST\", body: JSON.stringify(input) });\n}\n\nexport function retryVerificationDelivery(email: string): Promise<ApiResult<{ readonly status: \"accepted\" }>> {\n  return request(\"/api/v1/email-verification-deliveries\", { method: \"POST\", body: JSON.stringify({ email }) });\n}\n\nexport function verifyEmail(token: string): Promise<ApiResult<{ readonly status: \"verified\"; readonly next: \"/app\" }>> {\n  return request(\"/api/v1/email-verifications\", { method: \"POST\", body: JSON.stringify({ token }) });\n}\n\nexport function consumeApplicationEntry(): Promise<ApiResult<ApplicationEntry>> {\n  return request(\"/api/v1/application-entry\", { method: \"POST\" });\n}\n`;
+  return `// Generated by deno task contracts:generate from packages/contracts/openapi/openapi.json. Do not edit.\n\nexport interface RegistrationInput {\n  readonly email: string;\n  readonly firstName: string;\n  readonly lastName: string;\n  readonly password: string;\n  readonly workspaceName: string;\n}\n\nexport interface ProblemDetails {\n  readonly type: string;\n  readonly title: string;\n  readonly status: number;\n  readonly detail: string;\n  readonly code: string;\n  readonly errors?: Readonly<Record<string, string>>;\n}\n\nexport interface ApplicationEntry {\n  readonly status: \"ready\";\n  readonly workspace: { readonly id: string; readonly name: string };\n  readonly member: { readonly id: string; readonly firstName: string };\n}\n\nexport interface Authenticated {\n  readonly status: \"authenticated\";\n  readonly next: \"/app\";\n  readonly workspace: { readonly id: string; readonly name: string };\n  readonly member: { readonly id: string; readonly role: \"owner\" | \"admin\" | \"member\" };\n}\n\nexport interface SessionContext {\n  readonly status: \"authenticated\";\n  readonly principal: { readonly userId: string };\n  readonly workspace: Authenticated[\"workspace\"];\n  readonly member: Authenticated[\"member\"];\n}\n\nexport type ApiResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly problem: ProblemDetails };\n\nasync function request<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {\n  const response = await fetch(path, { ...init, headers: { \"content-type\": \"application/json\", ...init?.headers } });\n  const body = await response.json() as T | ProblemDetails;\n  return response.ok ? { ok: true, value: body as T } : { ok: false, problem: body as ProblemDetails };\n}\n\nexport function register(input: RegistrationInput): Promise<ApiResult<{ readonly status: \"verification-required\" }>> {\n  return request(\"/api/v1/registrations\", { method: \"POST\", body: JSON.stringify(input) });\n}\n\nexport function retryVerificationDelivery(email: string): Promise<ApiResult<{ readonly status: \"accepted\" }>> {\n  return request(\"/api/v1/email-verification-deliveries\", { method: \"POST\", body: JSON.stringify({ email }) });\n}\n\nexport function verifyEmail(token: string): Promise<ApiResult<{ readonly status: \"verified\"; readonly next: \"/app\" }>> {\n  return request(\"/api/v1/email-verifications\", { method: \"POST\", body: JSON.stringify({ token }) });\n}\n\nexport function consumeApplicationEntry(): Promise<ApiResult<ApplicationEntry>> {\n  return request(\"/api/v1/application-entry\", { method: \"POST\" });\n}\n\nexport function signIn(input: { readonly email: string; readonly password: string; readonly workspaceId?: string }): Promise<ApiResult<Authenticated | { readonly status: \"mfa-required\"; readonly next: \"/auth/mfa\" }>> {\n  return request(\"/api/v1/sessions\", { method: \"POST\", body: JSON.stringify(input) });\n}\n\nexport function completeMfa(factor: string, workspaceId?: string): Promise<ApiResult<Authenticated>> {\n  return request(\"/api/v1/mfa-challenges\", { method: \"POST\", body: JSON.stringify({ factor, ...(workspaceId ? { workspaceId } : {}) }) });\n}\n\nexport function requestPasswordReset(email: string): Promise<ApiResult<{ readonly status: \"accepted\" }>> {\n  return request(\"/api/v1/password-reset-requests\", { method: \"POST\", body: JSON.stringify({ email }) });\n}\n\nexport function resetPassword(token: string, password: string): Promise<ApiResult<{ readonly status: \"reset\"; readonly next: \"/auth/sign-in\" }>> {\n  return request(\"/api/v1/password-resets\", { method: \"POST\", body: JSON.stringify({ token, password }) });\n}\n\nexport function getSession(workspaceId?: string): Promise<ApiResult<SessionContext>> {\n  return request(\"/api/v1/session\", { headers: workspaceId ? { \"X-Workspace-Id\": workspaceId } : undefined });\n}\n\nexport function signOut(): Promise<ApiResult<{ readonly status: \"signed-out\"; readonly next: \"/auth/sign-in\" }>> {\n  return request(\"/api/v1/sign-out\", { method: \"POST\" });\n}\n`;
 }
 
 if (import.meta.main) {

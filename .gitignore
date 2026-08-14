@@ -4,3 +4,4 @@ node_modules/
 apps/web/.astro/
 apps/web/dist/
 .artifacts/
+.tls/

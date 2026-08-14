@@ -13,7 +13,7 @@ import {
   PostgresWorkspaceRegistration,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
-import { applyCanonicalBaseline } from "../../tools/migrations/baseline.ts";
+import { applyCanonicalSchema } from "../../tools/migrations/baseline.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -495,11 +495,18 @@ Deno.test({
       assert(rejected, "each module rejects a wrong exact postcondition link");
     }
 
-    const canonicalSql = await Deno.readTextFile(
+    const v1Sql = await Deno.readTextFile(
       "personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql",
     );
+    const v2Sql = await Deno.readTextFile(
+      "personal-crm-schema/v2/personal_crm_schema_v2.sql",
+    );
+    const migrationV1ToV2 = await Deno.readTextFile(
+      "personal-crm-schema/v2/migrations/0002_add_authentication_subject_digest.sql",
+    );
+    const artifacts = { migrationV1ToV2, v1Sql, v2Sql };
     assert(
-      await applyCanonicalBaseline(databaseUrl, canonicalSql) === "verify",
+      await applyCanonicalSchema(databaseUrl, artifacts) === "verify-v2",
       "unmodified canonical catalog verifies",
     );
     await sql`
@@ -509,7 +516,7 @@ Deno.test({
     try {
       let driftRejected = false;
       try {
-        await applyCanonicalBaseline(databaseUrl, canonicalSql);
+        await applyCanonicalSchema(databaseUrl, artifacts);
       } catch {
         driftRejected = true;
       }
@@ -532,7 +539,7 @@ Deno.test({
       try {
         let rejected = false;
         try {
-          await applyCanonicalBaseline(databaseUrl, canonicalSql);
+          await applyCanonicalSchema(databaseUrl, artifacts);
         } catch {
           rejected = true;
         }
@@ -557,6 +564,138 @@ Deno.test({
       () =>
         sql`alter table crm.users add constraint users_email_key unique (email)`,
       "same-table-count missing unique must be rejected",
+    );
+    await expectStructuralDrift(
+      () => sql`comment on schema crm is 'drifted namespace comment'`,
+      () => sql`comment on schema crm is null`,
+      "same-table-count namespace comment drift must be rejected",
+    );
+    await expectStructuralDrift(
+      () => sql`comment on table crm.users is 'drifted table comment'`,
+      () =>
+        sql`comment on table crm.users is 'Global login identity. A user can belong to one or more workspaces through workspace_members.'`,
+      "same-table-count table comment drift must be rejected",
+    );
+    await expectStructuralDrift(
+      () => sql`comment on column crm.users.email is 'drifted column comment'`,
+      () =>
+        sql`comment on column crm.users.email is 'Primary login email address.'`,
+      "same-table-count column comment drift must be rejected",
+    );
+    await expectStructuralDrift(
+      () => sql`create view crm.drift_view as select id from crm.users`,
+      () => sql`drop view crm.drift_view`,
+      "same-table-count added view must be rejected",
+    );
+    await expectStructuralDrift(
+      () =>
+        sql`create materialized view crm.drift_materialized as select count(*) total from crm.users`,
+      () => sql`drop materialized view crm.drift_materialized`,
+      "same-table-count added materialized view must be rejected",
+    );
+    await expectStructuralDrift(
+      () => sql`create sequence crm.drift_sequence`,
+      () => sql`drop sequence crm.drift_sequence`,
+      "same-table-count added sequence must be rejected",
+    );
+    await expectStructuralDrift(
+      () =>
+        sql.unsafe(`
+          create foreign data wrapper kinship_drift_fdw;
+          create server kinship_drift_server
+            foreign data wrapper kinship_drift_fdw;
+          create foreign table crm.drift_foreign (id integer)
+            server kinship_drift_server;
+        `),
+      () =>
+        sql.unsafe(`
+          drop foreign table crm.drift_foreign;
+          drop server kinship_drift_server;
+          drop foreign data wrapper kinship_drift_fdw;
+        `),
+      "same-table-count added foreign table must be rejected",
+    );
+    await expectStructuralDrift(
+      () =>
+        sql`create table crm.drift_partitioned (id integer) partition by range (id)`,
+      () => sql`drop table crm.drift_partitioned`,
+      "added partitioned relation must be rejected",
+    );
+    await expectStructuralDrift(
+      () =>
+        sql.unsafe(
+          "create function crm.drift_routine(integer) returns integer language sql immutable as 'select $1'",
+        ),
+      () => sql`drop function crm.drift_routine(integer)`,
+      "same-table-count added routine must be rejected",
+    );
+    await expectStructuralDrift(
+      () => sql`create type crm.drift_enum as enum ('one', 'two')`,
+      () => sql`drop type crm.drift_enum`,
+      "same-table-count added enum must be rejected",
+    );
+    await expectStructuralDrift(
+      () => sql`create domain crm.drift_domain as text check (value <> '')`,
+      () => sql`drop domain crm.drift_domain`,
+      "same-table-count added domain must be rejected",
+    );
+    await expectStructuralDrift(
+      () => sql`create type crm.drift_range as range (subtype = integer)`,
+      () => sql`drop type crm.drift_range`,
+      "same-table-count added range must be rejected",
+    );
+    await expectStructuralDrift(
+      () =>
+        sql.unsafe(`
+          create function public.kinship_drift_trigger()
+            returns trigger language plpgsql
+            as 'begin return new; end';
+          create trigger kinship_drift_trigger
+            before update on crm.users for each row
+            execute function public.kinship_drift_trigger();
+        `),
+      () =>
+        sql.unsafe(`
+          drop trigger kinship_drift_trigger on crm.users;
+          drop function public.kinship_drift_trigger();
+        `),
+      "same-table-count added noninternal trigger must be rejected",
+    );
+    await expectStructuralDrift(
+      () => sql`create policy kinship_drift_policy on crm.users using (true)`,
+      () => sql`drop policy kinship_drift_policy on crm.users`,
+      "same-table-count added row-security policy must be rejected",
+    );
+
+    await sql`drop schema crm cascade`;
+    await sql.unsafe(v1Sql);
+    await sql`
+      insert into crm.api_request_logs (method, path, client_ip, status_code)
+      values ('GET', '/upgrade-fixture', '127.0.0.1'::inet, 200)
+    `;
+    assert(
+      await applyCanonicalSchema(databaseUrl, artifacts) ===
+        "upgrade-v1-to-v2",
+      "exact repository v1 upgrades transactionally to v2",
+    );
+    const [upgraded] = await sql<{
+      readonly digest_column: boolean;
+      readonly fixture_count: number;
+    }[]>`
+      select
+        exists(select 1 from information_schema.columns
+          where table_schema = 'crm' and table_name = 'api_request_logs'
+            and column_name = 'authentication_subject_digest') digest_column,
+        (select count(*)::int from crm.api_request_logs
+          where path = '/upgrade-fixture') fixture_count
+    `;
+    assert(
+      upgraded?.digest_column === true && upgraded.fixture_count === 1,
+      "v1 upgrade preserves rows and adds the v2 field",
+    );
+    assert(
+      await applyCanonicalSchema(databaseUrl, artifacts) === "verify-v2",
+      "upgraded repository v2 verifies idempotently",
     );
     await expectStructuralDrift(
       () =>

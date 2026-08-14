@@ -19,6 +19,9 @@ const postgresPort = configured("POSTGRES_PORT") ?? "5432";
 const apiPort = configured("API_PORT") ?? "8000";
 const webPort = configured("WEB_PORT") ?? "4321";
 const smtpPort = configured("SMTP_PORT") ?? "1025";
+const mfaEncryptionKeyset = configured("AUTH_MFA_ENCRYPTION_KEYSET");
+const authenticationResponseFloor = configured("AUTH_MINIMUM_RESPONSE_MS");
+const throttleSubjectKeyset = configured("AUTH_THROTTLE_SUBJECT_KEYSET");
 const composeEnvironment = {
   POSTGRES_DB: postgresDatabase,
   POSTGRES_PASSWORD: postgresPassword,
@@ -84,6 +87,15 @@ try {
   const common = {
     APP_ENV: "development",
     PUBLIC_WEB_ORIGIN: `http://127.0.0.1:${webPort}`,
+    ...(mfaEncryptionKeyset
+      ? { AUTH_MFA_ENCRYPTION_KEYSET: mfaEncryptionKeyset }
+      : {}),
+    ...(authenticationResponseFloor
+      ? { AUTH_MINIMUM_RESPONSE_MS: authenticationResponseFloor }
+      : {}),
+    ...(throttleSubjectKeyset
+      ? { AUTH_THROTTLE_SUBJECT_KEYSET: throttleSubjectKeyset }
+      : {}),
   };
   const api = new Deno.Command(Deno.execPath(), {
     args: ["task", "dev:api"],

@@ -192,6 +192,22 @@ button:disabled {
   border-left: 3px solid #a44730;
   background: #fff3ef;
 }
+.form-status[data-state="loading"] {
+  color: #59675f;
+}
+.form-status[data-state="success"] {
+  padding: .85rem;
+  border-left: 3px solid #4f7052;
+  background: #eff7ef;
+}
+.auth-links {
+  display: flex;
+  gap: 1rem;
+  margin: 1.25rem 0 0;
+  flex-wrap: wrap;
+  color: #59675f;
+  font-size: .82rem;
+}
 .transition-main {
   display: grid;
   width: min(680px, calc(100% - 2rem));

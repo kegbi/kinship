@@ -23,6 +23,20 @@ export interface ApplicationEntry {
   readonly member: { readonly id: string; readonly firstName: string };
 }
 
+export interface Authenticated {
+  readonly status: "authenticated";
+  readonly next: "/app";
+  readonly workspace: { readonly id: string; readonly name: string };
+  readonly member: { readonly id: string; readonly role: "owner" | "admin" | "member" };
+}
+
+export interface SessionContext {
+  readonly status: "authenticated";
+  readonly principal: { readonly userId: string };
+  readonly workspace: Authenticated["workspace"];
+  readonly member: Authenticated["member"];
+}
+
 export type ApiResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly problem: ProblemDetails };
 
 async function request<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
@@ -45,4 +59,28 @@ export function verifyEmail(token: string): Promise<ApiResult<{ readonly status:
 
 export function consumeApplicationEntry(): Promise<ApiResult<ApplicationEntry>> {
   return request("/api/v1/application-entry", { method: "POST" });
+}
+
+export function signIn(input: { readonly email: string; readonly password: string; readonly workspaceId?: string }): Promise<ApiResult<Authenticated | { readonly status: "mfa-required"; readonly next: "/auth/mfa" }>> {
+  return request("/api/v1/sessions", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function completeMfa(factor: string, workspaceId?: string): Promise<ApiResult<Authenticated>> {
+  return request("/api/v1/mfa-challenges", { method: "POST", body: JSON.stringify({ factor, ...(workspaceId ? { workspaceId } : {}) }) });
+}
+
+export function requestPasswordReset(email: string): Promise<ApiResult<{ readonly status: "accepted" }>> {
+  return request("/api/v1/password-reset-requests", { method: "POST", body: JSON.stringify({ email }) });
+}
+
+export function resetPassword(token: string, password: string): Promise<ApiResult<{ readonly status: "reset"; readonly next: "/auth/sign-in" }>> {
+  return request("/api/v1/password-resets", { method: "POST", body: JSON.stringify({ token, password }) });
+}
+
+export function getSession(workspaceId?: string): Promise<ApiResult<SessionContext>> {
+  return request("/api/v1/session", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function signOut(): Promise<ApiResult<{ readonly status: "signed-out"; readonly next: "/auth/sign-in" }>> {
+  return request("/api/v1/sign-out", { method: "POST" });
 }
