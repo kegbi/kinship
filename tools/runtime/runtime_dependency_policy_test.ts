@@ -632,6 +632,24 @@ Deno.test("workspace rejects a sequence item mixed into allowBuilds", () => {
   );
 });
 
+Deno.test("workspace rejects an inconsistently indented allowBuilds sibling", () => {
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "pnpm-workspace.yaml",
+    (contents) =>
+      replaceExactlyOnce(
+        contents,
+        "  fsevents@2.3.2: false",
+        "   fsevents@2.3.2: false",
+      ),
+  );
+
+  assertEquals(
+    issueCodes(requirePolicyModule().validateRuntimeDependencyPolicy(snapshot)),
+    ["dependency.lifecycle"],
+  );
+});
+
 Deno.test("validator rejects Deno lock integrity drift outside direct specifiers", () => {
   const snapshot = mutate(
     repositorySnapshot(),
@@ -707,6 +725,25 @@ Deno.test("Compose rejects an image key without YAML colon separation", () => {
     "compose.schema-test.yaml",
     (contents) =>
       replaceExactlyOnce(contents, `image: ${pinned}`, `image:${pinned}`),
+  );
+
+  assertEquals(
+    issueCodes(requirePolicyModule().validateRuntimeDependencyPolicy(snapshot)),
+    ["container.pin"],
+  );
+});
+
+Deno.test("Compose rejects an inconsistently indented service image sibling", () => {
+  const pinned = `\${POSTGRES_IMAGE:-${EXPECTED_IMAGES.primary}}`;
+  const snapshot = mutate(
+    repositorySnapshot(),
+    "compose.schema-test.yaml",
+    (contents) =>
+      replaceExactlyOnce(
+        contents,
+        `    image: ${pinned}`,
+        `     image: ${pinned}`,
+      ),
   );
 
   assertEquals(
