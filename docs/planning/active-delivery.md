@@ -11,7 +11,8 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 2 — Identity And Protected Workspace**
-- Current leaf: **APP-002A / `AUTH-001` — Create the first workspace**
+- Current leaf: **APP-002B / `AUTH-003` — Sign in and establish a protected
+  session**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -56,11 +57,11 @@ These are cross-cutting acceptance items, not separately scheduled tickets.
       with the first application code that uses them.
 - [x] Exact runtime and dependency pins remain frozen once selected by
       executable application code.
-- [ ] The minimum raw migration runner and PostgreSQL Compose service arrive
+- [x] The minimum raw migration runner and PostgreSQL Compose service arrive
       with the first database-backed user flow.
-- [ ] The identity adapter and Better Auth accept/reject decision arrive with
+- [x] The identity adapter and Better Auth accept/reject decision arrive with
       the first real registration or sign-in flow.
-- [ ] Deterministic OpenAPI 3.1 and a frontend client boundary arrive with the
+- [x] Deterministic OpenAPI 3.1 and a frontend client boundary arrive with the
       first business API contract that benefits from generation; frontend code
       never imports backend internals.
 - [ ] Production-like gateway, secure-cookie, origin, CSRF, and test-TLS
@@ -107,10 +108,10 @@ runnable behavior cannot work without them.
 
 ## Phase 2 — Identity And Protected Workspace
 
-- [ ] **APP-002A / `AUTH-001` — Create the first workspace.**
-  - [ ] Deliver registration, verification, first workspace creation, and the
+- [x] **APP-002A / `AUTH-001` — Create the first workspace.**
+  - [x] Deliver registration, verification, first workspace creation, and the
         documented success and failure states atomically.
-  - [ ] Introduce only the identity/database/migration/Compose behavior consumed
+  - [x] Introduce only the identity/database/migration/Compose behavior consumed
         by this flow and prove rollback and imported-credential non-activation.
 - [ ] **APP-002B / `AUTH-003` — Sign in and establish a protected session.**
   - [ ] Deliver password and required MFA challenges, safe errors, session

@@ -317,15 +317,21 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
     "defaultDeliveryStatus: planned",
     "page delivery default",
   );
+  const deliveredFlows = new Map([
+    ["AUTH-001", "tests/e2e/auth-001.spec.ts"],
+  ]);
   for (const flow of flows) {
+    const deliveredTestRef = deliveredFlows.get(flow.id);
     assertEquals(
       scalar(flow.block, "deliveryStatus") ?? "planned",
-      "planned",
+      deliveredTestRef ? "delivered" : "planned",
       `${flow.id} effective delivery status`,
     );
     assertIncludes(
       flow.block,
-      "e2e: { required: true, testRefs: [] }",
+      deliveredTestRef
+        ? `e2e: { required: true, testRefs: [${deliveredTestRef}] }`
+        : "e2e: { required: true, testRefs: [] }",
       `${flow.id} E2E state`,
     );
   }

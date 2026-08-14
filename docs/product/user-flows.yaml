@@ -12,6 +12,7 @@ testPolicy:
 flows:
   - id: AUTH-001
     title: Create the first workspace
+    deliveryStatus: delivered
     priority: P0
     actor: anonymous-person
     trigger: The person chooses to create an account.
@@ -32,7 +33,7 @@ flows:
     moduleIds: [identity, workspaces]
     permissions: [registration.create]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/auth-001.spec.ts] }
 
   - id: AUTH-002
     title: Invite and add a workspace member

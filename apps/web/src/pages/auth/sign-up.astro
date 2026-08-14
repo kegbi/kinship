@@ -1,0 +1,45 @@
+---
+import AuthLayout from "../../layouts/AuthLayout.astro";
+export const prerender = true;
+---
+
+<AuthLayout description="Create your Kinship identity and first private workspace." pageId="auth.sign-up" title="Create your workspace — Kinship">
+  <main id="main-content" class="auth-main" tabindex="-1">
+    <section class="auth-intro" aria-labelledby="signup-heading">
+      <p class="eyebrow">A thoughtful place to begin</p>
+      <h1 id="signup-heading">Create your private circle.</h1>
+      <p>Start with one workspace for the people and details you care about. We’ll verify your email before you enter.</p>
+      <ul aria-label="What happens next">
+        <li>Your password is protected with Argon2id.</li>
+        <li>Your verification link works once.</li>
+        <li>Your workspace starts with you as its owner.</li>
+      </ul>
+    </section>
+
+    <section class="auth-card" aria-label="Create account">
+      <form id="registration-form" novalidate>
+        <div class="field-row">
+          <label>First name<input name="firstName" autocomplete="given-name" maxlength="100" required /></label>
+          <p class="field-error" data-field-error="firstName"></p>
+          <label>Last name <span>(optional)</span><input name="lastName" autocomplete="family-name" maxlength="100" /></label>
+          <p class="field-error" data-field-error="lastName"></p>
+        </div>
+        <label>Email address<input name="email" type="email" autocomplete="email" maxlength="254" required /></label>
+        <p class="field-error" data-field-error="email"></p>
+        <label>Workspace name<input name="workspaceName" autocomplete="organization" minlength="2" maxlength="120" required /></label>
+        <p class="field-error" data-field-error="workspaceName"></p>
+        <label>Password<input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" aria-describedby="password-help" required /></label>
+        <p id="password-help" class="field-help">Use at least 12 characters. A short sentence works well.</p>
+        <p class="field-error" data-field-error="password"></p>
+        <button type="submit">Create workspace</button>
+      </form>
+      <div id="registration-status" class="form-status" role="status" aria-live="polite" tabindex="-1"></div>
+    </section>
+  </main>
+</AuthLayout>
+
+<script>
+  import { mountRegistrationForm } from "../../lib/registration-form.ts";
+  const form = document.querySelector<HTMLFormElement>("#registration-form");
+  if (form) mountRegistrationForm(form);
+</script>

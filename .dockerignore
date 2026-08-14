@@ -1,0 +1,9 @@
+.git
+.artifacts
+.coverage
+.playwright-cli
+apps/web/dist
+apps/web/node_modules
+node_modules
+docs
+tests
