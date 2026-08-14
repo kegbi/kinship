@@ -5,7 +5,8 @@ export default defineConfig({
     include: ["apps/web/src/**/*.test.ts"],
     coverage: {
       provider: "v8",
-      include: ["apps/web/src/lib/health-status.ts"],
+      include: ["apps/web/src/lib/*.ts"],
+      exclude: ["apps/web/src/lib/*.test.ts"],
       reporter: ["text"],
       reportsDirectory: ".coverage/web",
       thresholds: {

@@ -34,20 +34,21 @@ const {
     <title>{title}</title>
   </head>
   <body data-page-id={pageId}>
-    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <a class="skip-link" href="#main-content" tabindex="0">Skip to main content</a>
     <div class="page-shell">
       <header class="site-header">
-        <a class="brand" href="/" aria-label="Kinship home">
+        <a class="brand" href="/" aria-label="Kinship home" tabindex="0">
           <span class="brand-mark" aria-hidden="true">K</span>
           <span>Kinship</span>
         </a>
 
         <nav aria-label="Public">
-          <a href="/" aria-current={currentPath === "/" ? "page" : undefined}>
+          <a href="/" tabindex="0" aria-current={currentPath === "/" ? "page" : undefined}>
             Home
           </a>
           <a
             href="/features"
+            tabindex="0"
             aria-current={currentPath === "/features" ? "page" : undefined}
           >
             Features

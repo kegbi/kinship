@@ -1,0 +1,19 @@
+services:
+  postgres:
+    ports:
+      - "127.0.0.1::5432"
+    volumes: !reset []
+    tmpfs:
+      - /var/lib/postgresql
+  api:
+    environment:
+      APP_ENV: test
+      PUBLIC_WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN}
+    ports:
+      - "127.0.0.1::8000"
+  mailpit:
+    ports:
+      - "127.0.0.1::8025"
+
+volumes:
+  postgres-data:

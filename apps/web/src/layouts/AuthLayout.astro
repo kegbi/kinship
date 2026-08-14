@@ -1,0 +1,32 @@
+---
+import "../styles/auth.css";
+
+interface Props {
+  readonly description: string;
+  readonly pageId: "auth.sign-up" | "auth.verify-email" | "app.today";
+  readonly title: string;
+}
+
+const { description, pageId, title } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="robots" content="noindex" />
+    <meta name="theme-color" content="#f6f2e9" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>{title}</title>
+  </head>
+  <body data-page-id={pageId}>
+    <a class="skip-link" href="#main-content" tabindex="0">Skip to main content</a>
+    <header class="auth-header">
+      <a class="brand" href="/" aria-label="Kinship home" tabindex="0"><span class="brand-mark" aria-hidden="true">K</span><span>Kinship</span></a>
+      <span>Private by design</span>
+    </header>
+    <slot />
+  </body>
+</html>

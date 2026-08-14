@@ -1,7 +1,7 @@
-# ADR 0002: Authentication Compatibility Spike
+# ADR 0002: Authentication Compatibility Decision
 
-- Status: spike-required
-- Date: 2026-08-09
+- Status: accepted
+- Date: 2026-08-14
 
 ## Context
 
@@ -12,23 +12,30 @@ schema owner or activate imported Monica credentials.
 
 ## Decision
 
-Run a bounded compatibility spike before authentication implementation. Better
-Auth is a candidate, not an accepted dependency.
+Reject Better Auth for the canonical identity boundary. Its supported core
+email/password contract requires user, session, account, and verification
+models, and stores password credentials in an account row using the `credential`
+provider. The canonical schema instead requires the owned credential in
+`crm.users.password_hash` and contains no identity-owned account table.
 
-Adopt it only if supported configuration or a maintainable public adapter can:
+A supported public configuration or adapter cannot represent that exact storage
+contract without a shadow account table, an unowned schema change, or synthetic
+model behavior. This fails the first fatal adoption criterion, so the spike
+stops without testing or hardening additional plugins.
 
-- use the exact canonical schema without adding parallel identity tables;
-- pass password/session rotation, revocation, MFA, passkey, recovery, CSRF, and
-  workspace-isolation tests;
-- keep all imported legacy credentials inactive;
-- operate on Deno/Hono and the selected PostgreSQL access layer without private
-  APIs or hidden lifecycle-script requirements.
-
-If any criterion fails, implement the identity application layer against the
-canonical tables using standards-based cryptography and focused libraries.
+Use a focused standards-based identity application layer over the canonical
+tables. Passwords use the Deno Web Crypto Argon2id primitive through injected
+ports; verification and application-entry tokens use secure random bytes and
+persist only cryptographic hashes. Transaction ownership remains with the
+workspace registration coordinator.
 
 ## Consequences
 
-- No auth package or version is pinned by this ADR.
-- The spike is disposable and must not migrate production data.
-- Its result updates this ADR to accepted or rejected before Slice 1 begins.
+- Better Auth is not a production dependency and no disposable spike machinery
+  or generated schema is retained.
+- The canonical schema remains the sole DDL authority; no parallel identity
+  tables or automatic migrations are permitted.
+- Imported legacy credential material remains inactive and is never upgraded or
+  overwritten through registration or verification.
+- Broader sign-in, MFA, recovery, passkey, and session-management behavior
+  remains deferred to its own delivery outcomes.

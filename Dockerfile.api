@@ -1,0 +1,13 @@
+FROM denoland/deno:debian-2.9.5@sha256:b429777c3dcff34a6488f365a1537db1640b2d48379b60f5e6206be034472463
+
+WORKDIR /app
+ENV DENO_NO_PACKAGE_JSON=1
+COPY --chown=deno:deno deno.json deno.lock package.json ./
+COPY --chown=deno:deno apps/api ./apps/api
+COPY --chown=deno:deno packages ./packages
+COPY --chown=deno:deno tools/migrations ./tools/migrations
+COPY --chown=deno:deno personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql ./personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql
+RUN DENO_NO_PACKAGE_JSON=1 deno install --frozen --node-modules-dir=none
+
+USER deno
+CMD ["deno", "run", "--allow-env=APP_ENV,DATABASE_URL,HOST,PORT,PUBLIC_WEB_ORIGIN,SMTP_FROM,SMTP_HOST,SMTP_PORT,PGHOST,PGPORT,PGUSERNAME,PGUSER,PGDATABASE,PGPASSWORD,PGMAX,PGSSL,PGSSLNEGOTIATION,PGIDLE_TIMEOUT,PGCONNECT_TIMEOUT,PGMAX_LIFETIME,PGMAX_PIPELINE,PGBACKOFF,PGKEEP_ALIVE,PGPREPARE,PGDEBUG,PGFETCH_TYPES,PGPUBLICATIONS,PGAPPNAME,PGTARGETSESSIONATTRS,PGTARGET_SESSION_ATTRS", "--allow-net", "apps/api/main.ts"]
