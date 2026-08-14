@@ -1,562 +1,101 @@
 ---
-const pageId = "public.home";
+import PublicLayout from "../layouts/PublicLayout.astro";
 ---
 
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width" />
-    <meta
-      name="description"
-      content="A calm, private home for the details that help relationships grow."
-    />
-    <meta name="theme-color" content="#f6f2e9" />
-    <title>Kinship — Remember what matters</title>
-  </head>
-  <body data-page-id={pageId}>
-    <a class="skip-link" href="#main-content">Skip to main content</a>
-    <div class="page-shell">
-      <header class="site-header" aria-label="Site header">
-        <a class="brand" href="/" aria-label="Kinship home">
-          <span class="brand-mark" aria-hidden="true">K</span>
-          <span>Kinship</span>
-        </a>
-        <p>Personal CRM, thoughtfully made</p>
-      </header>
+<PublicLayout
+  currentPath="/"
+  description="A calm, private home for the details that help relationships grow."
+  pageId="public.home"
+  title="Kinship — Remember what matters"
+>
+  <main id="main-content" tabindex="-1">
+    <section class="hero" aria-labelledby="hero-heading">
+      <div class="hero-copy">
+        <p class="eyebrow">For the people in your life</p>
+        <h1 id="hero-heading">
+          Relationships deserve a place <em>to grow.</em>
+        </h1>
+        <p class="lede">
+          Remember the small things, follow through on the important ones, and
+          stay present with the people who make up your world.
+        </p>
 
-      <main id="main-content" tabindex="-1">
-        <section class="hero" aria-labelledby="hero-heading">
-          <div class="hero-copy">
-            <p class="eyebrow">For the people in your life</p>
-            <h1 id="hero-heading">
-              Relationships deserve a place <em>to grow.</em>
-            </h1>
-            <p class="lede">
-              Remember the small things, follow through on the important ones,
-              and stay present with the people who make up your world.
-            </p>
+        <div
+          class="readiness"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          data-state="checking"
+        >
+          <span class="readiness-dot" aria-hidden="true"></span>
+          <span class="readiness-copy">
+            <strong data-readiness-title>Checking API readiness…</strong>
+            <span data-readiness-detail>
+              The page remains available while we connect.
+            </span>
+          </span>
+        </div>
+      </div>
 
-            <div
-              class="readiness"
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-              data-state="checking"
-            >
-              <span class="readiness-dot" aria-hidden="true"></span>
-              <span class="readiness-copy">
-                <strong data-readiness-title>Checking API readiness…</strong>
-                <span data-readiness-detail>
-                  The page remains available while we connect.
-                </span>
-              </span>
-            </div>
-          </div>
+      <div class="portrait" aria-hidden="true">
+        <div class="portrait-orbit portrait-orbit-one"></div>
+        <div class="portrait-orbit portrait-orbit-two"></div>
+        <div class="portrait-card portrait-card-main">
+          <span class="portrait-initials">MK</span>
+          <span class="portrait-name">Maya &amp; Kai</span>
+          <span class="portrait-note">Dinner · Saturday</span>
+        </div>
+        <div class="portrait-card portrait-card-small">
+          <span class="portrait-heart">♥</span>
+          <span>Keep close</span>
+        </div>
+        <span class="spark spark-one">✦</span>
+        <span class="spark spark-two">✦</span>
+      </div>
+    </section>
 
-          <div class="portrait" aria-hidden="true">
-            <div class="portrait-orbit portrait-orbit-one"></div>
-            <div class="portrait-orbit portrait-orbit-two"></div>
-            <div class="portrait-card portrait-card-main">
-              <span class="portrait-initials">MK</span>
-              <span class="portrait-name">Maya &amp; Kai</span>
-              <span class="portrait-note">Dinner · Saturday</span>
-            </div>
-            <div class="portrait-card portrait-card-small">
-              <span class="portrait-heart">♥</span>
-              <span>Keep close</span>
-            </div>
-            <span class="spark spark-one">✦</span>
-            <span class="spark spark-two">✦</span>
-          </div>
-        </section>
+    <section class="principles" aria-labelledby="principles-heading">
+      <div>
+        <p class="eyebrow">A quieter kind of software</p>
+        <h2 id="principles-heading">Made for care, not engagement.</h2>
+      </div>
+      <div class="principle-list">
+        <article>
+          <span aria-hidden="true">01</span>
+          <h3>Remember naturally</h3>
+          <p>
+            Keep context together, from important dates to the last
+            conversation.
+          </p>
+        </article>
+        <article>
+          <span aria-hidden="true">02</span>
+          <h3>Act with intention</h3>
+          <p>Turn thoughtful intentions into timely, human follow-through.</p>
+        </article>
+        <article>
+          <span aria-hidden="true">03</span>
+          <h3>Stay in control</h3>
+          <p>Your private relationship data stays organized around you.</p>
+        </article>
+      </div>
+    </section>
+  </main>
 
-        <section class="principles" aria-labelledby="principles-heading">
-          <div>
-            <p class="eyebrow">A quieter kind of software</p>
-            <h2 id="principles-heading">Made for care, not engagement.</h2>
-          </div>
-          <div class="principle-list">
-            <article>
-              <span aria-hidden="true">01</span>
-              <h3>Remember naturally</h3>
-              <p>Keep context together, from important dates to the last conversation.</p>
-            </article>
-            <article>
-              <span aria-hidden="true">02</span>
-              <h3>Act with intention</h3>
-              <p>Turn thoughtful intentions into timely, human follow-through.</p>
-            </article>
-            <article>
-              <span aria-hidden="true">03</span>
-              <h3>Stay in control</h3>
-              <p>Your private relationship data stays organized around you.</p>
-            </article>
-          </div>
-        </section>
-      </main>
+  <script>
+    import { checkApiReadiness } from "../lib/health-status.ts";
 
-      <footer>
-        <p>Built to help you show up for people.</p>
-        <p>Private by design.</p>
-      </footer>
-    </div>
+    const status = document.querySelector<HTMLElement>("[role='status']");
+    const title = document.querySelector<HTMLElement>("[data-readiness-title]");
+    const detail = document.querySelector<HTMLElement>("[data-readiness-detail]");
 
-    <script>
-      import { checkApiReadiness } from "../lib/health-status.ts";
-
-      const status = document.querySelector<HTMLElement>("[role='status']");
-      const title = document.querySelector<HTMLElement>("[data-readiness-title]");
-      const detail = document.querySelector<HTMLElement>("[data-readiness-detail]");
-
-      if (status && title && detail) {
-        const state = await checkApiReadiness();
-        status.dataset.state = state.kind;
-        title.textContent = state.message;
-        detail.textContent = state.kind === "ready"
-          ? "The service is healthy and ready for requests."
-          : "You can still explore this page. Try again when the service returns.";
-      }
-    </script>
-  </body>
-</html>
-
-<style is:global>
-  :root {
-    color-scheme: light;
-    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-      "Segoe UI", sans-serif;
-    color: #21332c;
-    background: #f6f2e9;
-    font-synthesis: none;
-  }
-
-  * {
-    box-sizing: border-box;
-  }
-
-  html {
-    scroll-behavior: smooth;
-  }
-
-  body {
-    margin: 0;
-    min-width: 320px;
-    background:
-      radial-gradient(circle at 88% 8%, rgb(218 151 102 / 20%), transparent 31rem),
-      linear-gradient(180deg, #f8f5ed 0%, #f2ede2 100%);
-  }
-
-  a {
-    color: inherit;
-  }
-
-  .skip-link {
-    position: fixed;
-    z-index: 10;
-    top: 0.75rem;
-    left: 0.75rem;
-    padding: 0.7rem 1rem;
-    border-radius: 999px;
-    color: white;
-    background: #21332c;
-    transform: translateY(-180%);
-  }
-
-  .skip-link:focus {
-    transform: translateY(0);
-  }
-
-  .page-shell {
-    width: min(1180px, calc(100% - 2rem));
-    margin: 0 auto;
-  }
-
-  .site-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1.5rem 0;
-    border-bottom: 1px solid rgb(33 51 44 / 14%);
-  }
-
-  .site-header p {
-    margin: 0;
-    color: #617068;
-    font-size: 0.82rem;
-    letter-spacing: 0.04em;
-  }
-
-  .brand {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.7rem;
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 1.25rem;
-    font-weight: 700;
-    text-decoration: none;
-  }
-
-  .brand-mark {
-    display: grid;
-    width: 2rem;
-    height: 2rem;
-    place-items: center;
-    border-radius: 50% 50% 45% 55%;
-    color: #f8f5ed;
-    background: #b8583c;
-    font-size: 0.9rem;
-  }
-
-  .hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1.08fr) minmax(20rem, 0.92fr);
-    gap: clamp(2rem, 7vw, 7rem);
-    align-items: center;
-    min-height: 43rem;
-    padding: clamp(4.5rem, 9vw, 8rem) 0;
-  }
-
-  .eyebrow {
-    margin: 0 0 1rem;
-    color: #a14932;
-    font-size: 0.72rem;
-    font-weight: 800;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-  }
-
-  h1,
-  h2,
-  h3,
-  p {
-    text-wrap: pretty;
-  }
-
-  h1 {
-    max-width: 12ch;
-    margin: 0;
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: clamp(3.4rem, 7vw, 6.8rem);
-    font-weight: 500;
-    line-height: 0.94;
-    letter-spacing: -0.055em;
-  }
-
-  h1 em {
-    color: #b8583c;
-    font-weight: 500;
-  }
-
-  .lede {
-    max-width: 38rem;
-    margin: 2rem 0 0;
-    color: #536159;
-    font-size: clamp(1.05rem, 1.7vw, 1.25rem);
-    line-height: 1.7;
-  }
-
-  .readiness {
-    display: inline-flex;
-    gap: 0.85rem;
-    align-items: center;
-    max-width: 31rem;
-    margin-top: 2rem;
-    padding: 0.9rem 1.1rem;
-    border: 1px solid rgb(33 51 44 / 12%);
-    border-radius: 0.9rem;
-    background: rgb(255 255 255 / 52%);
-    box-shadow: 0 1rem 3rem rgb(76 63 47 / 7%);
-  }
-
-  .readiness-dot {
-    width: 0.72rem;
-    height: 0.72rem;
-    flex: 0 0 auto;
-    border-radius: 50%;
-    background: #d19a3c;
-    box-shadow: 0 0 0 0.28rem rgb(209 154 60 / 14%);
-  }
-
-  .readiness[data-state="ready"] .readiness-dot {
-    background: #388060;
-    box-shadow: 0 0 0 0.28rem rgb(56 128 96 / 14%);
-  }
-
-  .readiness[data-state="unavailable"] .readiness-dot {
-    background: #b8583c;
-    box-shadow: 0 0 0 0.28rem rgb(184 88 60 / 14%);
-  }
-
-  .readiness-copy {
-    display: grid;
-    gap: 0.16rem;
-  }
-
-  .readiness-copy strong {
-    font-size: 0.92rem;
-  }
-
-  .readiness-copy span {
-    color: #64716a;
-    font-size: 0.78rem;
-    line-height: 1.4;
-  }
-
-  .portrait {
-    position: relative;
-    display: grid;
-    min-height: 30rem;
-    place-items: center;
-  }
-
-  .portrait::before {
-    position: absolute;
-    width: min(100%, 29rem);
-    aspect-ratio: 1;
-    border-radius: 48% 52% 44% 56%;
-    background: #d7dfce;
-    content: "";
-    transform: rotate(-7deg);
-  }
-
-  .portrait-orbit {
-    position: absolute;
-    z-index: 1;
-    border: 1px solid rgb(33 51 44 / 25%);
-    border-radius: 50%;
-  }
-
-  .portrait-orbit-one {
-    width: 24rem;
-    height: 31rem;
-    transform: rotate(28deg);
-  }
-
-  .portrait-orbit-two {
-    width: 31rem;
-    height: 20rem;
-    transform: rotate(-18deg);
-  }
-
-  .portrait-card {
-    position: absolute;
-    z-index: 2;
-    display: grid;
-    place-items: center;
-    border: 1px solid rgb(255 255 255 / 55%);
-    background: rgb(255 252 246 / 82%);
-    box-shadow: 0 2rem 5rem rgb(54 67 58 / 18%);
-    backdrop-filter: blur(1rem);
-  }
-
-  .portrait-card-main {
-    width: 15rem;
-    min-height: 18rem;
-    padding: 2rem;
-    border-radius: 7rem 7rem 1.5rem 1.5rem;
-    transform: rotate(4deg);
-  }
-
-  .portrait-initials {
-    display: grid;
-    width: 6.5rem;
-    height: 6.5rem;
-    place-items: center;
-    border-radius: 50%;
-    color: #fff8ef;
-    background: linear-gradient(145deg, #c96c50, #824936);
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 1.65rem;
-  }
-
-  .portrait-name {
-    align-self: end;
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 1.2rem;
-  }
-
-  .portrait-note {
-    align-self: start;
-    color: #6d786f;
-    font-size: 0.78rem;
-  }
-
-  .portrait-card-small {
-    right: 0;
-    bottom: 4rem;
-    grid-template-columns: auto auto;
-    gap: 0.65rem;
-    padding: 0.8rem 1rem;
-    border-radius: 999px;
-    font-size: 0.8rem;
-    font-weight: 700;
-    transform: rotate(-5deg);
-  }
-
-  .portrait-heart {
-    color: #b8583c;
-    font-size: 1rem;
-  }
-
-  .spark {
-    position: absolute;
-    z-index: 2;
-    color: #b8583c;
-  }
-
-  .spark-one {
-    top: 3rem;
-    right: 12%;
-    font-size: 2rem;
-  }
-
-  .spark-two {
-    bottom: 3rem;
-    left: 7%;
-    font-size: 1.2rem;
-  }
-
-  .principles {
-    display: grid;
-    grid-template-columns: 0.8fr 1.2fr;
-    gap: clamp(3rem, 9vw, 8rem);
-    padding: clamp(4rem, 8vw, 7rem) 0;
-    border-top: 1px solid rgb(33 51 44 / 14%);
-  }
-
-  .principles h2 {
-    max-width: 10ch;
-    margin: 0;
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: clamp(2.3rem, 4vw, 4rem);
-    font-weight: 500;
-    line-height: 1.05;
-    letter-spacing: -0.035em;
-  }
-
-  .principle-list {
-    display: grid;
-    gap: 0;
-  }
-
-  .principle-list article {
-    display: grid;
-    grid-template-columns: 2.5rem minmax(8rem, 0.75fr) 1.25fr;
-    gap: 1rem;
-    align-items: baseline;
-    padding: 1.35rem 0;
-    border-top: 1px solid rgb(33 51 44 / 14%);
-  }
-
-  .principle-list article:last-child {
-    border-bottom: 1px solid rgb(33 51 44 / 14%);
-  }
-
-  .principle-list article > span {
-    color: #a14932;
-    font-size: 0.7rem;
-    font-weight: 800;
-  }
-
-  .principle-list h3,
-  .principle-list p {
-    margin: 0;
-  }
-
-  .principle-list h3 {
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 1.1rem;
-  }
-
-  .principle-list p {
-    color: #637067;
-    font-size: 0.9rem;
-    line-height: 1.55;
-  }
-
-  footer {
-    display: flex;
-    justify-content: space-between;
-    padding: 1.75rem 0 2.5rem;
-    border-top: 1px solid rgb(33 51 44 / 14%);
-    color: #68746d;
-    font-size: 0.78rem;
-  }
-
-  footer p {
-    margin: 0;
-  }
-
-  @media (max-width: 800px) {
-    .site-header p {
-      display: none;
+    if (status && title && detail) {
+      const state = await checkApiReadiness();
+      status.dataset.state = state.kind;
+      title.textContent = state.message;
+      detail.textContent = state.kind === "ready"
+        ? "The service is healthy and ready for requests."
+        : "You can still explore this page. Try again when the service returns.";
     }
-
-    .hero {
-      grid-template-columns: 1fr;
-      min-height: auto;
-      padding: 4.5rem 0 3rem;
-    }
-
-    .portrait {
-      min-height: 26rem;
-      overflow: hidden;
-    }
-
-    .portrait::before {
-      width: 24rem;
-    }
-
-    .portrait-orbit-one {
-      width: 20rem;
-      height: 26rem;
-    }
-
-    .portrait-orbit-two {
-      width: 25rem;
-      height: 17rem;
-    }
-
-    .portrait-card-small {
-      right: max(0.5rem, 9vw);
-    }
-
-    .principles {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  @media (max-width: 540px) {
-    .page-shell {
-      width: min(100% - 1.25rem, 1180px);
-    }
-
-    h1 {
-      font-size: clamp(3rem, 15vw, 4.6rem);
-    }
-
-    .readiness {
-      width: 100%;
-    }
-
-    .principle-list article {
-      grid-template-columns: 2.25rem 1fr;
-    }
-
-    .principle-list p {
-      grid-column: 2;
-    }
-
-    footer {
-      display: grid;
-      gap: 0.4rem;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    html {
-      scroll-behavior: auto;
-    }
-  }
-</style>
+  </script>
+</PublicLayout>
