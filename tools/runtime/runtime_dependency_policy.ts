@@ -316,6 +316,7 @@ function parseYamlMappings(
   const root = Object.create(null) as Record<string, unknown>;
   const stack: Array<{
     indent: number;
+    childIndent?: number;
     path: readonly string[];
     value: Record<string, unknown>;
   }> = [
@@ -333,6 +334,8 @@ function parseYamlMappings(
       while ((stack.at(-1)?.indent ?? -1) >= indent) stack.pop();
       const parent = stack.at(-1);
       if (parent === undefined || indent <= parent.indent) throw new Error();
+      if (parent.childIndent === undefined) parent.childIndent = indent;
+      else if (indent !== parent.childIndent) throw new Error();
       if (entry.startsWith("- ")) {
         const mappingRequired = requiredMappingPaths.some((path) =>
           path.length === parent.path.length &&
