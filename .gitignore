@@ -2,3 +2,6 @@ monica-4.x
 .coverage/
 .worktrees/
 node_modules/
+apps/web/.astro/
+apps/web/dist/
+.artifacts/

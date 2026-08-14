@@ -13,19 +13,37 @@
   },
   "fmt": {
     "lineWidth": 80,
-    "exclude": ["docs/planning/tickets/"],
+    "exclude": [
+      "apps/web/.astro/",
+      "apps/web/dist/",
+      "docs/planning/tickets/"
+    ],
     "include": [
       "AGENTS.md",
+      "README.md",
+      "apps/",
       "compose.schema-test.yaml",
       "deno.json",
       ".agents/skills/run-tdd-ticket-loop/",
       ".codex/agents/",
       "docs/",
-      "tools/"
+      "eslint.config.js",
+      "packages/",
+      "playwright.config.ts",
+      "tests/",
+      "tools/",
+      "vitest.config.ts"
     ]
   },
   "lint": {
-    "include": ["tools/"],
+    "include": [
+      "apps/",
+      "packages/",
+      "playwright.config.ts",
+      "tests/",
+      "tools/",
+      "vitest.config.ts"
+    ],
     "rules": {
       "tags": ["recommended"],
       "include": ["eqeqeq"]
@@ -34,8 +52,26 @@
   "tasks": {
     "fmt": "deno fmt",
     "fmt:check": "deno fmt --check",
-    "lint": "deno lint",
-    "check": "DENO_NO_PACKAGE_JSON=1 deno check tools/schema/validate_postgres.ts",
+    "fix": "deno fmt",
+    "lint": "DENO_NO_PACKAGE_JSON=1 deno lint && pnpm exec eslint apps/web/src",
+    "check:api": "DENO_NO_PACKAGE_JSON=1 deno check apps/api/main.ts apps/api/app_test.ts packages/contracts/health_test.ts",
+    "check:web": "pnpm exec astro check --root apps/web",
+    "check:dev-tool": "DENO_NO_PACKAGE_JSON=1 deno check tools/dev.ts",
+    "check:schema-tool": "DENO_NO_PACKAGE_JSON=1 deno check tools/schema/validate_postgres.ts",
+    "check": "deno task check:api && deno task check:web && deno task check:dev-tool && deno task check:schema-tool",
+    "dev:api": "DENO_NO_PACKAGE_JSON=1 deno run --allow-env=PORT --allow-net=127.0.0.1 apps/api/main.ts",
+    "dev:web": "ASTRO_DEV_BACKGROUND=0 pnpm exec astro dev --root apps/web",
+    "dev": "DENO_NO_PACKAGE_JSON=1 deno run --allow-run=deno tools/dev.ts",
+    "build:api": "DENO_NO_PACKAGE_JSON=1 deno check apps/api/main.ts",
+    "build:web": "pnpm exec astro build --root apps/web",
+    "build": "deno task build:api && deno task build:web",
+    "test:unit": "pnpm exec vitest run",
+    "test:contract": "DENO_NO_PACKAGE_JSON=1 deno test apps/api/app_test.ts packages/contracts/health_test.ts",
+    "test": "deno task test:contract && deno task test:unit",
+    "test:coverage:api": "DENO_NO_PACKAGE_JSON=1 deno test --clean --coverage=.coverage/deno apps/api/app_test.ts packages/contracts/health_test.ts && deno coverage --include='apps/api|packages/contracts' --threshold=80 .coverage/deno",
+    "test:coverage:web": "pnpm exec vitest run --coverage",
+    "test:coverage": "deno task test:coverage:api && deno task test:coverage:web",
+    "test:e2e": "pnpm exec playwright test --project=chromium",
     "deps:deno": "DENO_NO_PACKAGE_JSON=1 deno install --frozen --node-modules-dir=none",
     "deps:deno:offline": "DENO_NO_PACKAGE_JSON=1 deno install --frozen --cached-only --node-modules-dir=none",
     "deps:node": "pnpm install --frozen-lockfile",
@@ -57,6 +93,13 @@
   "lock": {
     "path": "./deno.lock",
     "frozen": true
+  },
+  "coverage": {
+    "thresholds": {
+      "branches": 80,
+      "functions": 80,
+      "lines": 80
+    }
   },
   "minimumDependencyAge": "PT72H",
   "allowScripts": []

@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 1 — Runnable product surface**
-- Current leaf: **APP-001A — Runnable API and public home**
+- Current leaf: **APP-001B — Complete the static public product surface**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -52,9 +52,9 @@ Playwright test carrying its stable flow ID.
 
 These are cross-cutting acceptance items, not separately scheduled tickets.
 
-- [ ] Real root development, build, check, test, and coverage commands arrive
+- [x] Real root development, build, check, test, and coverage commands arrive
       with the first application code that uses them.
-- [ ] Exact runtime and dependency pins remain frozen once selected by
+- [x] Exact runtime and dependency pins remain frozen once selected by
       executable application code.
 - [ ] The minimum raw migration runner and PostgreSQL Compose service arrive
       with the first database-backed user flow.
@@ -83,17 +83,17 @@ These are cross-cutting acceptance items, not separately scheduled tickets.
 
 ## Phase 1 — Runnable Product Surface
 
-- [ ] **APP-001A — Runnable API and public home.**
-  - [ ] Create the Deno/Hono application under `apps/api`.
-  - [ ] Expose stable `/api/v1/health` health/readiness behavior without
+- [x] **APP-001A — Runnable API and public home.**
+  - [x] Create the Deno/Hono application under `apps/api`.
+  - [x] Expose stable `/api/v1/health` health/readiness behavior without
         secrets.
-  - [ ] Create the Astro application under `apps/web`.
-  - [ ] Render `public.home` with honest API ready and error states.
-  - [ ] Add only the shared API contract needed by this behavior.
-  - [ ] Add truthful root development, build, check, test, and coverage
+  - [x] Create the Astro application under `apps/web`.
+  - [x] Render `public.home` with honest API ready and error states.
+  - [x] Add only the shared API contract needed by this behavior.
+  - [x] Add truthful root development, build, check, test, and coverage
         commands.
-  - [ ] Add focused API/contract/UI tests and one Chromium smoke path.
-  - [ ] Document the one root command that starts both applications locally.
+  - [x] Add focused API/contract/UI tests and one Chromium smoke path.
+  - [x] Document the one root command that starts both applications locally.
 - [ ] **APP-001B — Complete the static public product surface.**
   - [ ] Deliver the accepted `public.features` route and public navigation.
   - [ ] Preserve accepted ready and not-found states, responsive layout,
