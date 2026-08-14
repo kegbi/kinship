@@ -15,51 +15,46 @@ better designs, current production technologies, and AI assistance built in.
 - Preserve solid architectural boundaries so each application module can be
   swapped, extended, or replaced independently.
 
-## Mandatory Change Method
+## Delivery Default
 
-Every new or changed production behavior must be developed in small RED -> GREEN
--> REFACTOR cycles. This applies to features, bug fixes, UI, API, workers,
-database access, migrations, infrastructure and configuration, generators,
-security controls, and repository enforcement tooling.
+Ship vertical user-visible behavior. The accepted architecture, product,
+authorization, and schema documents are sufficient to start application work. Do
+not add another contract, spike, validator, framework, or foundation ticket
+unless the active feature is concretely blocked without it.
 
-1. RED adds or changes the narrowest appropriate automated test or deterministic
-   executable check before production implementation. Run it and confirm that it
-   fails for the intended missing or incorrect behavior, not because
-   compilation, fixtures, permissions, services, or the environment are broken.
-   Production files remain unchanged during RED. A bug fix begins with a failing
-   regression test.
-2. GREEN makes the smallest architecture-compliant production change needed to
-   pass the RED proof. Never weaken, delete, skip, exclude, or over-mock a test
-   to make it pass.
-3. REFACTOR improves structure only while the focused and affected tests remain
-   green. New behavior discovered during refactoring starts another RED cycle.
+Production behavior follows a small RED -> GREEN -> REFACTOR cycle:
 
-Coverage and tests written after implementation do not substitute for recorded
-RED evidence. If a truthful harness does not exist, bootstrap and self-test the
-harness first; never add a no-op task. Documentation, contract, catalog,
-configuration, architecture, and infrastructure changes require a failing
-validator, contract test, schema test, or bounded executable probe before the
-change.
+1. Add the narrowest focused test for the requested behavior or regression and
+   observe the intended failure before changing production code.
+2. Implement the smallest architecture-compliant change that passes it.
+3. Refactor only while focused and affected tests remain green.
 
-Every code candidate then passes a separate clean, read-only review. The
-reviewer receives the accepted contracts, exact candidate revision, diff, and
-concise evidence for RED/GREEN/REFACTOR. Review covers bugs/correctness,
-security/privacy, architecture, performance/reliability, style/maintainability,
-and tests/TDD. Every actionable finding returns to a fresh implementer for a new
-RED -> GREEN -> REFACTOR round, followed by a fresh review of the new exact
-candidate.
+Apply evidence proportionately:
 
-The orchestrator alone accepts and integrates a ticket after independently
-rerunning applicable repository gates. Implementer self-review, hook success, or
-CI success does not replace independent review. Full role boundaries, worktree
-isolation, clean-context handoffs, exact-candidate review, and escalation rules
-are defined in
-[docs/development/autonomous-delivery.md](docs/development/autonomous-delivery.md).
-Invoke the repo-local run-tdd-ticket-loop skill for autonomous implementation
-runs. Clean implementation and review contexts may be generic subagents or
-contexts that follow the repo skill. Legacy repository role prompts and
-project-specific role definitions are not part of the supported simplified path
-unless separately authorized and updated.
+- Ordinary feature work runs its focused tests and affected existing gates.
+- Database, security, tenant, API, browser, and infrastructure tests are added
+  when the ticket changes those boundaries, not pre-emptively for future work.
+- Required cataloged user flows receive Playwright coverage when the complete
+  flow is delivered. A scaffold does not pretend to deliver a flow.
+- Documentation-only planning changes use review and existing validators. They
+  do not require a new permanent test unless machine-consumed behavior changes.
+- Spikes are time-boxed to the decision needed by the active feature. Once one
+  option is selected or an option is rejected, stop hardening rejected
+  alternatives.
+
+Use one clean implementer context per ticket and one separate clean, read-only
+reviewer for the exact candidate. Keep a single candidate commit; do not create
+test-freeze commits, hash catalogs, controller IDs, packet files, mirrored
+state, or evidence documents solely to operate the workflow. Review findings
+normally return to the same implementer with a regression test. Use a fresh
+implementer only for high-risk redesign or after a repeated failed approach.
+
+The controller integrates only an approved exact candidate after rerunning the
+applicable gates. See
+[docs/development/autonomous-delivery.md](docs/development/autonomous-delivery.md)
+and invoke the repo-local `run-tdd-ticket-loop` skill for autonomous
+implementation. The active work order is
+[docs/planning/active-delivery.md](docs/planning/active-delivery.md).
 
 ## Technology and Architecture Baseline
 
@@ -182,6 +177,10 @@ affected architecture documents together; never reuse a released ID.
 
 ## Delivery Planning
 
+- [docs/planning/active-delivery.md](docs/planning/active-delivery.md) is the
+  authoritative near-term work queue. It prioritizes runnable vertical
+  application behavior and introduces foundation capabilities only when the next
+  feature consumes them.
 - [docs/planning/README.md](docs/planning/README.md) defines the proposed
   milestone vocabulary, execution method, status, and entry points for the
   delivery plan.

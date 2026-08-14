@@ -1,169 +1,83 @@
-# Autonomous TDD Delivery
+# Autonomous Vertical Delivery
 
-Status: Accepted repository workflow, revised 2026-08-13
+Status: Accepted repository workflow, revised 2026-08-14
 
-This document defines the smallest reliable delivery loop for repository
-changes. It is subordinate to accepted architecture, schema, authorization,
-product, and quality contracts and cannot resolve an open product or
-architecture decision.
+This is the minimum reliable loop for shipping application behavior. Accepted
+architecture, schema, authorization, and product contracts remain authoritative,
+but new planning or enforcement work is not a prerequisite unless the active
+feature directly needs it.
 
-## Invariants
+## Default Shape
 
-1. One clean implementer owns one implementation or rework round.
-2. Every changed behavior begins with the narrowest automated test or
-   deterministic executable check and an observed RED failure before production
-   files change.
-3. RED must fail for the intended missing or incorrect behavior. Syntax, setup,
-   permission, service, timeout, and unrelated failures do not count.
-4. GREEN is the smallest architecture-compliant change that satisfies the RED
-   proof. Tests are not weakened, skipped, excluded, or over-mocked.
-5. REFACTOR changes structure only while the focused and affected checks remain
-   green.
-6. A separate clean, read-only reviewer examines the exact candidate revision.
-7. Every actionable finding returns to a fresh implementer for another RED ->
-   GREEN -> REFACTOR round and then another fresh review.
-8. The controller integrates only the exact reviewed candidate after
-   independently rerunning applicable gates.
-9. Parallel write-enabled work uses disjoint worktrees and disjoint ownership.
+1. Select one bounded vertical outcome that leaves the application runnable.
+2. Give one clean implementer exclusive write ownership.
+3. Observe one focused RED failure before production behavior changes.
+4. Implement GREEN and refactor with focused and affected checks green.
+5. Create a single candidate commit.
+6. Have one separate clean, read-only reviewer inspect that exact candidate.
+7. Rerun applicable gates and integrate the approved candidate.
 
-Production code must maintain at least 80% line, branch, and function coverage.
-This threshold does not reduce the mandatory checks for changed behavior,
-security and tenant isolation, the canonical schema, or required end-to-end user
-flows.
+Production code maintains at least 80% line, branch, and function coverage.
+Changed behavior, tenant/security boundaries, schema behavior, and delivered
+cataloged flows still need their focused tests regardless of aggregate coverage.
+
+## Proportional Testing
+
+- Pure domain behavior: focused unit tests.
+- PostgreSQL or adapter behavior: focused integration tests against the affected
+  supported boundary.
+- HTTP contracts: handler/contract tests for changed variants.
+- Complete cataloged user flows: Playwright with the stable flow ID.
+- Documentation-only planning: review plus existing validators; no new permanent
+  test unless machine-consumed behavior changes.
+- Configuration, migrations, and infrastructure: a focused executable smoke or
+  contract check that consumes the changed artifact.
+
+Do not rerun dependency bootstrap, the full PostgreSQL compatibility matrix, all
+browsers, container builds, or the entire repository for an unrelated small
+change. Those gates run when their boundary changes and in the appropriate
+aggregate/CI gate once it exists.
 
 ## Roles
 
-### Controller
+The controller selects scope, owns Git/worktrees, creates the candidate, sends
+review, reruns gates, and integrates.
 
-The controller selects a ready ticket or bounded change, records its base and
-scope, assigns one write owner, and chooses the applicable gates. It creates the
-candidate revision, dispatches review, reruns gates, and integrates an approved
-candidate. It does not use hidden metadata to substitute for executable proof.
+The implementer receives the base revision, outcome, relevant contracts, owned
+paths, and commands. It performs RED -> GREEN -> REFACTOR and reports concise
+command evidence. It does not write `.git`.
 
-### Implementer
+The reviewer receives the outcome, relevant contracts, exact candidate, diff,
+and concise test evidence. It is read-only and returns `APPROVED` or
+`CHANGES_REQUESTED` with concrete findings.
 
-The implementer receives only the bounded task, accepted contract references,
-base revision, allowed paths, and any review findings. It records concise
-evidence for RED, GREEN, REFACTOR, and the broader gates, then stops without
-committing, reviewing, accepting, or merging its own work.
+Review findings normally return to the same implementer with a regression test.
+Use a fresh implementer only for a high-risk redesign or after a repeated failed
+approach. Every changed candidate receives a fresh clean review.
 
-### Reviewer
+## Process Limits
 
-The reviewer starts in a fresh context and is read-only. The reviewer receives
-the task, accepted contracts, exact candidate revision, diff, and concise
-evidence. Review covers:
+- One candidate commit per ticket. No test-freeze commits are required.
+- No controller IDs, role packets, state mirrors, event ledgers, evidence hash
+  catalogs, or evidence-only files.
+- No permanent test for prose unless the prose is an executable contract.
+- No foundation ticket unless the active vertical outcome consumes it.
+- A spike answers one decision. Stop after selecting, rejecting, or deferring;
+  do not harden rejected alternatives.
+- After two failed approaches to the same issue, stop, narrow scope, or make the
+  smallest explicit decision. Do not grow an implementation framework around the
+  blocker.
 
-- bugs and correctness;
-- security, privacy, authorization, and workspace isolation;
-- architecture, schema ownership, and product/API contracts;
-- performance and reliability;
-- style and maintainability; and
-- test discrimination, coverage, E2E traceability, and TDD integrity.
+## Candidate Handoff
 
-The reviewer returns either APPROVED or CHANGES_REQUESTED with concrete,
-evidence-backed findings. Any actionable finding blocks acceptance.
-
-## RED -> GREEN -> REFACTOR
-
-### RED
-
-- Add or tighten the narrowest test or deterministic check first.
-- Run it before editing production or policy files.
-- Confirm the non-zero result comes from the intended assertion.
-- Record the command, exit code, concise output, and changed test/check paths.
-- For review rework, reproduce every dispatched finding together.
-- A documentation, contract, configuration, architecture-enforcement, or
-  infrastructure change starts with a failing validator or bounded probe.
-
-The test does not require a special commit before GREEN. The controller can use
-the diff and command evidence to verify that production files were unchanged
-during RED.
-
-### GREEN
-
-- Make the smallest compliant production change that passes the focused check.
-- Preserve module ownership, workspace isolation, schema authority, and
-  static-first frontend boundaries.
-- Do not broaden permissions or scope merely to make a test pass.
-- Record the focused passing command and changed production paths.
-
-### REFACTOR
-
-- Improve names and structure only after GREEN.
-- Keep the focused suite green and run every affected existing gate.
-- New behavior discovered during cleanup begins another RED cycle.
-- Record commands actually run, exit codes, and concise observed results.
-
-## Candidate And Review
-
-The trusted controller creates one exact candidate revision from the completed
-tree. The review handoff contains only:
-
-- the bounded task and accepted contract references;
-- the base and exact candidate revision;
-- the base-to-candidate diff;
-- concise RED/GREEN/REFACTOR and gate evidence; and
-- unresolved risks or prior findings, when present.
-
-No synthetic role identities, mirrored state files, event ledgers, evidence
-digests, provenance aliases, or metadata-only commits are required. Git history
-is the revision record; tests and command output are the behavioral evidence.
-
-After APPROVED, the controller independently reruns the applicable repository
-gates against the exact candidate. Any code, test, generated artifact, contract,
-or relevant configuration change after review creates a new candidate and
-requires a fresh review.
-
-## Command Truth
-
-Run only commands that exist and have real implementations. Current root tasks
-are documented in `deno.json`; policy prose is not a substitute for that file.
-Do not add no-op placeholders for planned application, UI, contract, E2E, CI,
-hook, or Compose work.
-
-The current pre-application baseline includes formatting, linting, type checks,
-the focused workflow-policy tests, frozen dependency bootstrap, and the
-PostgreSQL schema matrix. Add broader stable root tasks only with their first
-truthful executable harness.
-
-Tests use the smallest permissions needed for their layer. Deno-owned tooling
-must not accidentally consume the separate Node workspace. Frozen online
-bootstrap and an offline rerun use the same explicit cache and must leave locks
-unchanged.
-
-## Coverage And Required Test Classes
-
-The minimum production threshold is 80% independently for lines, branches, and
-functions. Coverage exclusions require narrow review and cannot hide changed
-behavior. The following remain mandatory regardless of aggregate percentage:
-
-- a regression or changed-behavior test for every production change;
-- all required cataloged Playwright flows before a flow is delivered;
-- authorization, workspace-isolation, and other security boundary tests;
-- the PostgreSQL schema matrix for schema or harness changes; and
-- contract, integration, accessibility, or browser tests required by the
-  affected accepted contract.
-
-## Worktrees And Protected Paths
-
-One write-enabled implementer owns a worktree at a time. Independent tasks may
-run in parallel only when their dependency and write sets are disjoint.
-Reviewers are read-only. The trusted controller performs branch, worktree,
-commit, merge, and cleanup operations.
-
-`.git` is never writable by an implementer. Ordinary work also does not change
-`.codex` or `.agents`; an explicitly authorized protected-configuration task may
-change only its named `.codex` or `.agents` paths.
+The handoff contains only the bounded outcome, relevant contract links, base and
+candidate revisions, diff, commands/results, coverage for changed production
+scope, and known risks. Git is the revision record; test output is behavioral
+evidence.
 
 ## Stop Conditions
 
-Continue through routine implementation choices. Stop after three bounded
-attempts at the same external blocker, or immediately when safe progress needs:
-
-- an unresolved product or architecture decision with materially different
-  outcomes;
-- missing external authority, credentials, or service state;
-- a destructive action outside the authorized scope; or
-- a scope expansion that changes the task's risk or ownership.
-
-Report the exact blocker, attempts, evidence, and smallest decision needed.
+Stop for a missing product/architecture decision with materially different
+outcomes, missing authority or credentials, a destructive out-of-scope action,
+or a scope expansion that changes risk. Routine implementation choices do not
+require escalation.

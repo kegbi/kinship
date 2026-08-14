@@ -8,10 +8,12 @@ accepts the release assignments and milestone meanings recorded in the product
 contract; unrelated new catalog work and architecture choices remain proposals
 until their own authorities approve them.
 
-This directory is the execution plan for moving the repository from its current
-schema-and-contract baseline to a production-ready Personal CRM. It derives work
-from the accepted architecture, product catalogs, and canonical schema; it does
-not override them.
+This directory maps the path from the schema-and-contract baseline to the
+Personal CRM. [`active-delivery.md`](active-delivery.md) is the authoritative
+near-term queue. The larger roadmap and operations documents are coverage and
+release references, not a list of prerequisites for starting application code.
+The existing `tickets/` tree is historical evidence from the retired workflow;
+new tickets do not use its packets, IDs, dispatch files, or evidence logs.
 
 The plan has two jobs:
 
@@ -86,6 +88,8 @@ as authority. Production ready remains independent of feature completion.
 
 ## Plan Documents
 
+- [`active-delivery.md`](active-delivery.md) is the short executable queue and
+  starts with the runnable API/web application.
 - [`roadmap.md`](roadmap.md) is the dependency-ordered implementation plan and
   defines each foundation and product work package.
 - [`quality-and-operations.md`](quality-and-operations.md) defines the test,
@@ -102,73 +106,48 @@ release catalog.
 
 ## How To Execute The Plan
 
-1. Resolve all decision gates whose `blocks` value includes the next work
-   package. Record accepted decisions in ADRs or product contracts.
-2. Bound one vertical work package using
-   [`autonomous-delivery.md`](../development/autonomous-delivery.md). Record the
-   exact base revision, accepted contracts, acceptance cases, commands, owned
-   paths, and implementer/reviewer isolation before implementation starts. Add a
-   module directory only when the ticket contains executable behavior.
-3. **RED:** add the narrowest automated test or deterministic executable check
-   first, leave production files unchanged, run it, and record that it fails for
-   the intended missing or incorrect behavior. Documentation, infrastructure,
-   configuration, catalogs, and enforcement tools require a truthful failing
-   validator or bounded probe too; a no-op harness is not evidence.
-4. **GREEN:** make the smallest architecture-compliant production change that
-   passes the RED proof. Never weaken, skip, exclude, or over-mock the proof.
-5. **REFACTOR:** improve structure only while the focused and affected tests
-   stay green. Any newly discovered behavior starts another RED -> GREEN ->
-   REFACTOR cycle.
-6. Build the complete vertical candidate: owning-module behavior, persistence,
-   API contract, generated client, UI states, telemetry, and required test
-   layers. Freeze its exact revision and RED/GREEN/REFACTOR evidence.
-7. Send only the ticket, accepted contracts, base and candidate revisions, diff,
-   and evidence to a fresh clean-context reviewer. Actionable findings return to
-   a fresh implementer for a new RED -> GREEN -> REFACTOR cycle and then another
-   clean review; the original implementation context cannot approve itself.
-8. The orchestrator independently reruns the applicable repository gates and is
-   the only role that accepts and integrates the ticket.
-9. Keep flow status `planned` until its complete observable outcome and required
-   alternate outcomes pass E2E. A page shell or partial use case is not a
-   delivered flow. Update generated artifacts and catalogs in that same accepted
-   change so CI can reject drift.
-10. Promote a slice only when its complete exit checklist passes in a clean,
-    production-like Compose stack.
+1. Take the single `Now` item from `active-delivery.md` and bound one vertical
+   observable outcome.
+2. Resolve only a decision that directly blocks that outcome; make the smallest
+   choice needed and resume the feature.
+3. Run focused RED -> GREEN -> REFACTOR with one clean implementer.
+4. Create one candidate commit and send it to one clean read-only reviewer.
+5. Rerun affected gates, integrate, and advance the active queue.
+6. Keep a cataloged flow `planned` until its complete observable outcome and
+   required E2E pass. Partial scaffolds remain honestly partial.
 
 ## Work-Package Definition Of Ready
 
-A work package is ready only when:
+A work package is ready when:
 
 - its page IDs, flow IDs, module owners, permissions, and schema facts are
   known;
-- all blocking decisions are accepted;
+- any decision that directly blocks its first behavior is accepted or bounded
+  inside the ticket;
 - API behavior and observable alternate outcomes are described;
 - cross-workspace and external-failure cases are enumerated;
-- fixture and test-layer needs are identified;
+- its focused test layer is identified;
 - any persistent-data change has a synchronized schema-version plan; and
 - the owning module can be implemented without an illegal dependency;
-- the bounded task fixes its base revision, owned paths, accepted contracts, and
-  exact verification commands; and
-- independent implementer, reviewer, and orchestrator contexts are available.
+- the bounded task fixes its observable outcome, owned paths, and relevant
+  existing verification commands; and
+- clean implementation and review contexts are available.
 
 ## Work-Package Definition Of Done
 
-A production work package is done only when:
+A production work package is done when:
 
 - domain and application behavior is complete through public module entry
   points;
 - authorization and workspace isolation are enforced before persistence;
-- PostgreSQL and external adapters pass their port contracts;
-- OpenAPI and generated frontend contracts are current;
-- every relevant UI state is implemented and accessible;
-- telemetry is useful and redacted;
+- every boundary changed by the ticket has its focused contract or integration
+  proof;
+- every UI state in the ticket is implemented and accessible;
 - production TypeScript remains at 80% line, branch, and function coverage;
 - required E2E flow annotations and page-state checks pass;
-- architecture, schema, generated-file, dependency, and security gates pass;
-- Compose teardown removes the exact disposable test project; and
-- the affected contracts, runbooks, and decision records are current;
-- truthful RED, GREEN, and REFACTOR evidence is attached to the exact candidate
-  revision;
+- affected existing architecture, schema, dependency, and security gates pass;
+- affected contracts are current;
+- concise RED, GREEN, and REFACTOR command results identify the exact candidate;
 - a fresh clean-context reviewer has no unresolved actionable finding; and
 - the orchestrator has independently rerun the applicable gates and accepted the
   exact reviewed revision.

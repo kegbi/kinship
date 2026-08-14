@@ -38,17 +38,19 @@ REFACTOR cycle:
    failures are invalid RED evidence. A bug fix starts with a failing regression
    test.
 2. GREEN makes only the smallest compliant production change required to pass
-   the frozen RED test. Tests cannot be weakened, deleted, skipped, excluded,
+   the RED test. Tests cannot be weakened, deleted, skipped, excluded,
    over-mocked, or reversed to obtain GREEN.
 3. REFACTOR improves structure without changing behavior and reruns the focused
    and affected broader gates. Any new behavior begins another RED cycle.
 
-This contract applies to backend, frontend, API, worker, database, migration,
-infrastructure, configuration, generator, security, and repository-tooling
-behavior. Documentation and contract changes require a failing validator,
-schema/contract test, or bounded executable probe. When no truthful test harness
-exists, its bootstrap and self-test are prerequisite work; no-op task names are
-forbidden.
+This contract applies to executable backend, frontend, API, worker, database,
+migration, infrastructure, configuration, generator, security, and
+repository-tooling behavior. Machine-consumed contracts or configuration need a
+focused executable consumer check. Planning and documentation-only prose changes
+receive review and any already-applicable validation; they do not require a new
+permanent test or validator. Bootstrap a truthful harness only when the vertical
+feature changes executable behavior that otherwise cannot be tested; no-op task
+names are forbidden.
 
 RED evidence records the command, non-zero exit, expected assertion, concise
 redacted output, changed test/check paths, and proof that production paths were
@@ -73,37 +75,32 @@ The reviewer independently checks and reports evidence for all of these lenses:
 - test discrimination, RED integrity, coverage, E2E traceability, and flake
   risk.
 
-Every actionable finding returns through a new RED -> GREEN -> REFACTOR round in
-a fresh implementation context, then a fresh reviewer examines the new exact
-candidate. Any post-review code, test, generated, contract, or relevant config
-change invalidates approval. Implementer self-review, hook success, and CI
-success do not replace this gate. The orchestrator independently reruns the
-applicable gate matrix before accepting and integrating the exact reviewed
-revision. The complete operational protocol is
+Actionable findings return to the implementer with a focused regression; use a
+fresh implementer for high-risk redesign or a repeated failed approach. A fresh
+reviewer examines every changed exact candidate. Implementer self-review, hook
+success, and CI success do not replace this gate. The controller independently
+reruns applicable gates before integrating the reviewed revision. The complete
+operational protocol is
 [`docs/development/autonomous-delivery.md`](../development/autonomous-delivery.md).
 
 ## Canonical Commands
 
-The current executable baseline exposes formatting, lint, type-check,
-workflow-policy, frozen dependency-bootstrap, and schema-matrix tasks through
-`deno.json`. Their scope remains narrow until the application scaffold exists.
-The workflow task checks the accepted delivery policy; the schema tasks cover
-the canonical database harness.
+The current executable baseline exposes formatting, lint, type-check, frozen
+dependency-bootstrap, and schema-matrix tasks through `deno.json`. Their scope
+remains narrow until the application scaffold exists. The schema tasks cover the
+canonical database harness. Retired workflow-prose and runtime-policy validators
+are not application gates.
 
 The root type-check task is intentionally exact and production-only:
 
 ```text
-DENO_NO_PACKAGE_JSON=1 deno check tools/schema/validate_postgres.ts tools/workflows/foundation_recovery_policy.ts tools/runtime/runtime_dependency_policy.ts
+DENO_NO_PACKAGE_JSON=1 deno check tools/schema/validate_postgres.ts
 ```
 
 Tests run through test tasks, never by appending targets, redirections, shell
 separators, or fallback commands to this check.
 
 ```text
-deno task test:workflow
-deno task test:workflow:coverage
-deno task test:runtime
-deno task test:runtime:coverage
 deno task deps:deno
 deno task deps:node
 ```

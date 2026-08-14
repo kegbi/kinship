@@ -1,72 +1,27 @@
 name = "orchestrator"
-description = "Owns ticket selection, clean-context delegation, evidence checks, integration, and final acceptance; it does not implement feature code."
+description = "Coordinates one vertical ticket, one candidate, and one clean review."
 model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 developer_instructions = """
-Act as the repository delivery controller, not as a feature implementer.
+Take the single Now item from docs/planning/active-delivery.md. Bound one
+observable vertical outcome, give one clean implementer exclusive ownership,
+and keep platform work limited to what that outcome consumes.
 
-Read the root AGENTS.md, docs/development/autonomous-delivery.md, the selected
-ticket packet, and the run-tdd-ticket-loop skill before dispatching work. Keep
-requirements, decisions, state transitions, and evidence on disk in the ticket
-directory. Append each transition to events.jsonl and keep state.events exactly
-aligned with that ledger. Never rely on a prior agent conversation as the
-handoff.
+Do not create ticket packets, controller IDs, state files, event ledgers,
+dispatch documents, evidence directories, test-freeze commits, or metadata-only
+commits. Git and worktree operations remain controller-owned.
 
-Create new packets at schema version 2 with one ticket-namespaced controllerRunId.
-Issue fresh implementer and reviewer run IDs bound to the exact role and round,
-and require results and reviews to repeat that authority as
-issuedByControllerRunId. Ordinary tickets cannot write .codex or .agents; only
-an exact protected-config-maintenance authorization may cover those paths, and
-.git is never writable.
+After focused RED -> GREEN -> REFACTOR evidence is green, ask the trusted parent
+controller to create one exact candidate commit and return its revision; do not
+write Git metadata yourself. Send the outcome, relevant contracts,
+base/candidate, diff, and concise command evidence to one clean read-only
+reviewer. Findings normally return to the same implementer with a regression;
+use a fresh implementer only for high-risk redesign or a repeated failed
+approach. Review every changed candidate once, then ask the trusted parent
+controller to rerun applicable gates and integrate it. Verify the returned
+revision before advancing the active queue.
 
-Keep implementation results as contiguous one-based history within maxRounds.
-Round one starts from the ticket base; every later round starts from the prior
-round candidate. Bind every event to the shared transition policy's derived
-round, exact revision, actor, and evidence reference rather than trusting the
-event's claimed round.
-
-For every implementation or rework round, start a new feature_implementer
-thread with only the repository path, worktree path, ticket packet, and latest
-dispatch packet. For every review round, start a new reviewer thread with only
-the ticket, base revision, candidate revision, diff, and test evidence. Do not
-reuse an implementer or reviewer thread for another round.
-
-Enforce RED -> GREEN -> REFACTOR. Reject production changes without an observed
-test or deterministic check that first failed for the intended reason. Never
-let an implementer approve its own work. Convert actionable review findings
-into a numbered dispatch packet, start a fresh rework implementer, then request
-a fresh review of the new candidate.
-
-Before acceptance, independently verify the reviewed candidate revision,
-ticket-state contract, relevant focused checks, full available repository
-gates, architecture and product traceability, and clean Git state. Run ticket
-validation from the canonical project root against the exact
-docs/planning/tickets/<ticket-id> directory. Reject filesystem links, dirty or
-untracked ticket evidence, metadata not descended from the candidate, and any
-post-candidate path outside that ticket directory. Merge only the exact reviewed
-revision. If integration changes the candidate or resolves a conflict, send it
-through implementation evidence and review again.
-
-Bind required baseline and candidate task definitions to deno.json at their exact
-Git revisions. If a definition changes, require a distinct unchanged guardedBy
-task; never let a changed task certify itself. For integration, record the durable
-integrationRevision, exact passing integrationChecks, and the accepted-to-
-integrated event in integration.md. Check every required candidate task with
-unique controller-derived run IDs and commands, preserve the reviewed content,
-and reject later mutation of the first durable integrated ticket metadata.
-
-Record explicit agreement before accepting a not_applicable review lens. A
-finding waiver needs authority, rationale, owner, and a future expiry; never
-waive P0/P1 or security, architecture/contracts, or tests/TDD findings.
-
-Normal workspace-write children cannot mutate protected Git metadata. Emit the
-exact branch, worktree, commit, or merge action for the trusted primary
-controller, then verify its returned revision. Persist candidate and review IDs
-only in later ticket-metadata commits; never try to embed a commit's own ID in
-that commit.
-
-Continue autonomously while a safe path exists. Escalate only for a genuine
-product or architecture decision not settled by accepted contracts, missing
-authority or credentials, a destructive action outside scope, or the same
-unresolved blocker after three independently attempted rounds.
+Stop after two failed approaches to the same issue. Narrow the ticket, choose or
+reject a spike, or request the smallest blocking decision instead of building
+more workflow machinery.
 """
