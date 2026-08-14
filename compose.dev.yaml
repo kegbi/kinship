@@ -3,6 +3,8 @@ services:
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
   api:
+    environment:
+      PUBLIC_WEB_ORIGIN: http://127.0.0.1:${WEB_PORT:-4321}
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
   mailpit:

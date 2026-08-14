@@ -11,8 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 2 — Identity And Protected Workspace**
-- Current leaf: **APP-002B / `AUTH-003` — Sign in and establish a protected
-  session**
+- Current leaf: **APP-002C — Protected application shell**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -113,10 +112,10 @@ runnable behavior cannot work without them.
         documented success and failure states atomically.
   - [x] Introduce only the identity/database/migration/Compose behavior consumed
         by this flow and prove rollback and imported-credential non-activation.
-- [ ] **APP-002B / `AUTH-003` — Sign in and establish a protected session.**
-  - [ ] Deliver password and required MFA challenges, safe errors, session
+- [x] **APP-002B / `AUTH-003` — Sign in and establish a protected session.**
+  - [x] Deliver password and required MFA challenges, safe errors, session
         rotation, sign-out, and protected-route rejection.
-  - [ ] Resolve active member and workspace context and prove a second-workspace
+  - [x] Resolve active member and workspace context and prove a second-workspace
         isolation negative.
 - [ ] **APP-002C — Protected application shell.**
   - [ ] Deliver the accepted authenticated navigation, first-workspace

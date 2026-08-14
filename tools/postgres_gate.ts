@@ -50,6 +50,8 @@ const composeArgs = [
   "compose.yaml",
   "--file",
   "compose.test.yaml",
+  "--file",
+  "compose.postgres-test.yaml",
 ] as const;
 
 async function execute(

@@ -2,9 +2,10 @@
 
 ## Canonical Baseline
 
-[`personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql`](../../personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql)
-is repository schema version 1 and the only accepted DDL baseline. SQL generated
-from Kysely, an ORM, or an authentication library cannot replace or amend it.
+[`personal-crm-schema/v2/personal_crm_schema_v2.sql`](../../personal-crm-schema/v2/personal_crm_schema_v2.sql)
+is repository schema version 2 and the accepted DDL baseline. Repository v1 is
+the immutable externally audited prior state. SQL generated from Kysely, an ORM,
+or an authentication library cannot replace or amend either version.
 
 The synchronized schema bundle is immutable after acceptance. A persistent
 change creates a new repository schema version with updated SQL, specification,

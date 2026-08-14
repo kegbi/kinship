@@ -1,0 +1,37 @@
+{
+  "status": "passed",
+  "schema_version": 2,
+  "external_audit_coverage": false,
+  "external_audit_baseline": "personal-crm-schema/v1",
+  "source_tables": 94,
+  "source_columns": 823,
+  "tables": 87,
+  "columns": 812,
+  "primary_keys": 87,
+  "foreign_keys": 168,
+  "explicit_indexes": 145,
+  "all_indexes": 249,
+  "check_constraints": 69,
+  "unique_constraints": 17,
+  "jsonb_fields": 17,
+  "workspace_id_fields": 44,
+  "deferred_foreign_keys": 2,
+  "table_mapping_rows": 94,
+  "column_mapping_rows": 823,
+  "field_catalog_rows": 812,
+  "live_postgresql_versions": ["18.4", "17.10"],
+  "errors": [],
+  "warnings": [
+    "Repository v2 is live-validated but is not covered by the external v1 audit."
+  ],
+  "sha256": {
+    "README.md": "fa2fd58d1248d0f65b91c4abe51e69a978a17309f85a39bb72fd63c70548abb9",
+    "personal_crm_schema_v2.sql": "0bb1375b65948a90c20d1c7f86dc4c14cf13dfd390865864ecd83082c2b10f62",
+    "personal_crm_schema_spec_v2.md": "83a26aaebaa4eb5d05da6974f77fdd69b18136cf2f0b2294dd26614885c6cdb5",
+    "personal_crm_field_catalog_v2.csv": "64991a6d81140604b2ca112d7d77a5eb4438f85f84cc4807e7208bbe69a46e87",
+    "monica_table_mapping_v2.csv": "4667acb02393c85a295a053ce5ddac85f96c62b40a85a30a9c5a9c9bc157b98b",
+    "monica_column_mapping_v2.csv": "c7f3dd2d40da388fa0cafe42bcfb4ebd7a4b9f5b5ca8ba7dae9507dc5e6b5ec6",
+    "personal_crm_schema_v2_changes.md": "6e0dec35826837850743ec94b28587f9997d346b144384eba935ee9fb0250aeb",
+    "migrations/0002_add_authentication_subject_digest.sql": "6483b51b4d432a265087ccc8e7045dfb42b22b2d0dc5b0e5da548b1966a3cef5"
+  }
+}

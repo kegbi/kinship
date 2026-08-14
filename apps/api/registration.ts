@@ -6,6 +6,7 @@ import type { BrowserSecurityPolicy } from "./security_config.ts";
 import {
   type FirstWorkspaceRegistrationCommand,
   type FirstWorkspaceRegistrationResult,
+  type ProtectedSessionResult,
   RegistrationError,
 } from "../../packages/backend/modules/workspaces/public.ts";
 
@@ -33,6 +34,26 @@ export interface RegistrationHttpServices {
   ) => Promise<FirstWorkspaceRegistrationResult>;
   readonly retryVerificationDelivery?: (email: string) => Promise<void>;
   readonly verification: EmailVerificationFacade;
+  readonly establishVerifiedEntry?: (command: {
+    readonly previousSessionToken?: string;
+    readonly userAgent?: string;
+    readonly userId: string;
+  }) => Promise<ProtectedSessionResult>;
+}
+
+function sessionCookie(
+  value: string,
+  policy: BrowserSecurityPolicy,
+  maxAge: number,
+): string {
+  return [
+    `kinship_session=${value}`,
+    "HttpOnly",
+    "SameSite=Strict",
+    policy.secureCookie ? "Secure" : undefined,
+    `Max-Age=${Math.max(0, Math.floor(maxAge))}`,
+    "Path=/",
+  ].filter(Boolean).join("; ");
 }
 
 function problem(
@@ -246,6 +267,47 @@ export function createRegistrationRoutes(
         "entry_handoff_invalid",
         "Application entry unavailable",
         "This application-entry handoff cannot be used.",
+      );
+    }
+    if (services.establishVerifiedEntry) {
+      let session;
+      try {
+        const previousSessionToken = cookieValue(
+          context.req.header("Cookie"),
+          "kinship_session",
+        );
+        const userAgent = context.req.header("User-Agent")?.slice(0, 1_000);
+        session = await services.establishVerifiedEntry({
+          ...(previousSessionToken ? { previousSessionToken } : {}),
+          ...(userAgent ? { userAgent } : {}),
+          userId: applicationContext.userId,
+        });
+      } catch {
+        return problem(
+          context,
+          503,
+          "entry_handoff_unavailable",
+          "Application entry unavailable",
+          "Application entry is temporarily unavailable. Please try again.",
+        );
+      }
+      if (session.status !== "authenticated") {
+        return problem(
+          context,
+          409,
+          "entry_handoff_invalid",
+          "Application entry unavailable",
+          "Workspace access is no longer active.",
+        );
+      }
+      context.header(
+        "Set-Cookie",
+        sessionCookie(
+          session.sessionToken,
+          services.browserSecurity,
+          (session.expiresAt.getTime() - Date.now()) / 1_000,
+        ),
+        { append: true },
       );
     }
     return context.json({

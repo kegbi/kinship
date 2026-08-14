@@ -4,7 +4,7 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("AUTH-001 OpenAPI is deterministic 3.1 with RFC 9457 problems", () => {
+Deno.test("AUTH-001/AUTH-003 OpenAPI is deterministic 3.1 with RFC 9457 problems", () => {
   const first = JSON.stringify(buildOpenApiDocument(), null, 2) + "\n";
   const second = JSON.stringify(buildOpenApiDocument(), null, 2) + "\n";
   assert(first === second, "OpenAPI generation must be byte stable");
@@ -46,5 +46,87 @@ Deno.test("AUTH-001 OpenAPI is deterministic 3.1 with RFC 9457 problems", () => 
       text.includes("exact Origin header") &&
       text.includes("SameSite=Strict") && text.includes("Secure"),
     "entry contract must document browser-only origin and cookie semantics",
+  );
+  for (
+    const path of [
+      "/api/v1/sessions",
+      "/api/v1/mfa-challenges",
+      "/api/v1/password-reset-requests",
+      "/api/v1/password-resets",
+      "/api/v1/session",
+      "/api/v1/sign-out",
+    ]
+  ) {
+    assert(text.includes(JSON.stringify(path)), `${path} must be documented`);
+    assert(
+      renderGeneratedClient().includes(path),
+      `${path} must have a generated frontend call`,
+    );
+  }
+  assert(
+    JSON.stringify(components.securitySchemes?.kinship_session).includes(
+      '"in":"cookie"',
+    ) &&
+      JSON.stringify(components.securitySchemes?.kinship_mfa).includes(
+        '"in":"cookie"',
+      ),
+    "session and MFA cookies must have explicit security schemes",
+  );
+  const paths = document.paths as Record<
+    string,
+    Record<
+      string,
+      { parameters?: Array<{ name?: string; required?: boolean }> }
+    >
+  >;
+  for (
+    const path of [
+      "/api/v1/application-entry",
+      "/api/v1/sessions",
+      "/api/v1/mfa-challenges",
+      "/api/v1/password-reset-requests",
+      "/api/v1/password-resets",
+      "/api/v1/sign-out",
+    ]
+  ) {
+    const operation = paths[path]?.post;
+    assert(
+      operation?.parameters?.some((parameter) =>
+        parameter.name === "Origin" && parameter.required === true
+      ),
+      `${path} must require exact Origin explicitly`,
+    );
+  }
+  const responseContracts = document.paths as Record<
+    string,
+    Record<
+      string,
+      { responses?: Record<string, unknown> }
+    >
+  >;
+  for (
+    const [path, status] of [
+      ["/api/v1/mfa-challenges", "200"],
+      ["/api/v1/password-reset-requests", "202"],
+      ["/api/v1/password-resets", "200"],
+      ["/api/v1/sign-out", "200"],
+    ] as const
+  ) {
+    assert(
+      JSON.stringify(responseContracts[path]?.post?.responses?.[status])
+        .includes("application/json"),
+      `${path} ${status} must document its generated-client response body`,
+    );
+  }
+  assert(
+    responseContracts["/api/v1/sign-out"]?.post?.responses?.["503"] !==
+      undefined,
+    "sign-out must document a truthful revocation dependency failure",
+  );
+  assert(
+    JSON.stringify(
+      responseContracts["/api/v1/mfa-challenges"]?.post?.responses?.["200"],
+    ).includes("Set-Cookie"),
+    "successful MFA must document session issuance and challenge deletion",
   );
 });

@@ -117,6 +117,31 @@ export function buildVerificationMessage(
   ].join("\r\n");
 }
 
+export function buildPasswordResetMessage(
+  options: Pick<SmtpVerificationMailOptions, "from" | "webOrigin">,
+  message: {
+    readonly email: string;
+    readonly expiresAt: Date;
+    readonly token: string;
+  },
+): string {
+  const resetUrl = new URL("/auth/reset-password", options.webOrigin);
+  resetUrl.searchParams.set("token", message.token);
+  return [
+    `From: Kinship <${safeHeader(options.from)}>`,
+    `To: ${safeHeader(message.email)}`,
+    "Subject: Reset your Kinship password",
+    "Content-Type: text/plain; charset=utf-8",
+    "MIME-Version: 1.0",
+    "",
+    "Use this single-use link to reset your Kinship password:",
+    resetUrl.toString(),
+    "",
+    `This link expires at ${message.expiresAt.toISOString()}.`,
+    "If you did not request this, you can ignore this email.",
+  ].join("\r\n");
+}
+
 async function readReply(
   connection: Deno.TcpConn,
   timeoutMs: number,
@@ -174,6 +199,24 @@ export class SmtpVerificationMail implements VerificationMail {
     readonly expiresAt: Date;
     readonly token: string;
   }): Promise<void> {
+    await this.#send(
+      message.email,
+      buildVerificationMessage(this.options, message),
+    );
+  }
+
+  async sendPasswordReset(message: {
+    readonly email: string;
+    readonly expiresAt: Date;
+    readonly token: string;
+  }): Promise<void> {
+    await this.#send(
+      message.email,
+      buildPasswordResetMessage(this.options, message),
+    );
+  }
+
+  async #send(email: string, content: string): Promise<void> {
     const pendingConnection = Deno.connect({
       hostname: this.options.host,
       port: this.options.port,
@@ -205,13 +248,12 @@ export class SmtpVerificationMail implements VerificationMail {
       );
       await command(
         connection,
-        `RCPT TO:<${safeHeader(message.email)}>`,
+        `RCPT TO:<${safeHeader(email)}>`,
         [250, 251],
         this.#timeouts,
       );
       await command(connection, "DATA", [354], this.#timeouts);
-      const body = buildVerificationMessage(this.options, message)
-        .replaceAll("\r\n.", "\r\n..");
+      const body = content.replaceAll("\r\n.", "\r\n..");
       await command(connection, `${body}\r\n.`, [250], this.#timeouts);
       await command(connection, "QUIT", [221], this.#timeouts);
     } finally {

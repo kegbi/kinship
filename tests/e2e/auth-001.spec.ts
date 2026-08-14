@@ -6,8 +6,8 @@ import {
 } from "@playwright/test";
 import axe from "axe-core";
 
-const apiOrigin = process.env.TEST_API_ORIGIN ?? "http://127.0.0.1:18000";
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
+const apiOrigin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
 
 async function verificationToken(
   request: APIRequestContext,

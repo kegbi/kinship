@@ -10,6 +10,7 @@ export default defineConfig({
   outputDir: ".artifacts/playwright",
   use: {
     baseURL: process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321",
+    ignoreHTTPSErrors: true,
     trace: "retain-on-failure",
   },
   projects: [

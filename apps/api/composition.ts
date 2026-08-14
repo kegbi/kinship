@@ -2,15 +2,23 @@ import { Hono } from "hono";
 import { sql } from "kysely";
 import { HEALTH_RESPONSE } from "../../packages/contracts/health.ts";
 import {
+  AesGcmMfaSecretBox,
   Argon2idPasswordHasher,
+  createPasswordRecovery,
+  type MfaEncryptionKeyset,
   PostgresEmailVerification,
+  PostgresIdentityAuthentication,
   PostgresIdentityRegistration,
+  PostgresPasswordRecoveryRepository,
   SecureTokenService,
   WebCryptoRandomSource,
 } from "../../packages/backend/modules/identity/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import {
+  type AuthenticationResponseEqualizer,
+  createProtectedSessionCoordinator,
   createVerificationDeliveryRetry,
+  PostgresActiveWorkspaceResolver,
   PostgresRegistrationTransaction,
   PostgresWorkspaceRegistration,
 } from "../../packages/backend/modules/workspaces/public.ts";
@@ -19,22 +27,41 @@ import {
   type VerificationMail,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import { SmtpVerificationMail } from "../../packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail.ts";
-import { PostgresRegistrationAudit } from "../../packages/backend/modules/governance/public.ts";
+import {
+  PostgresAuthenticationAudit,
+  PostgresRegistrationAudit,
+} from "../../packages/backend/modules/governance/public.ts";
+import {
+  AuthenticationSubjectDigester,
+  type AuthenticationSubjectKeyset,
+  PostgresAuthenticationAttemptBudget,
+} from "../../packages/backend/modules/api-access/public.ts";
 import {
   createRegistrationRoutes,
   type RegistrationHttpServices,
 } from "./registration.ts";
 import {
+  type AuthenticationHttpServices,
+  createAuthenticationRoutes,
+} from "./authentication.ts";
+import {
   type BrowserSecurityPolicy,
   browserSecurityPolicy,
 } from "./security_config.ts";
+import {
+  createAuthenticationResponseEqualizer,
+  DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
+} from "./authentication_response.ts";
 
 export interface ApiServices extends RegistrationHttpServices {
+  readonly passwordRecovery?: AuthenticationHttpServices["passwordRecovery"];
+  readonly protectedSessions?: AuthenticationHttpServices["protectedSessions"];
   readonly readiness?: () => Promise<boolean>;
 }
 
 export class CapturedVerificationMail implements VerificationMail {
   readonly #messages = new Map<string, string[]>();
+  readonly #passwordResets = new Map<string, string[]>();
 
   sendVerification(
     message: { readonly email: string; readonly token: string },
@@ -54,6 +81,21 @@ export class CapturedVerificationMail implements VerificationMail {
   tokens(email: string): readonly string[] {
     return this.#messages.get(email.toLowerCase()) ?? [];
   }
+
+  sendPasswordReset(
+    message: { readonly email: string; readonly token: string },
+  ): Promise<void> {
+    const key = message.email.toLowerCase();
+    this.#passwordResets.set(key, [
+      ...(this.#passwordResets.get(key) ?? []),
+      message.token,
+    ]);
+    return Promise.resolve();
+  }
+
+  latestPasswordResetToken(email: string): string | undefined {
+    return this.#passwordResets.get(email.toLowerCase())?.at(-1);
+  }
 }
 
 export function createApiApp(services?: ApiServices): Hono {
@@ -67,7 +109,19 @@ export function createApiApp(services?: ApiServices): Hono {
     return context.json(HEALTH_RESPONSE);
   });
 
-  if (services) api.route("/", createRegistrationRoutes(services));
+  if (services) {
+    api.route("/", createRegistrationRoutes(services));
+    if (services.passwordRecovery && services.protectedSessions) {
+      api.route(
+        "/",
+        createAuthenticationRoutes({
+          browserSecurity: services.browserSecurity,
+          passwordRecovery: services.passwordRecovery,
+          protectedSessions: services.protectedSessions,
+        }),
+      );
+    }
+  }
 
   return api;
 }
@@ -76,19 +130,53 @@ export function createConfiguredApiApp(
   databaseUrl: string,
   mailAdapter?: VerificationMail,
   policy: BrowserSecurityPolicy = browserSecurityPolicy("test", undefined),
+  mfaKeysetOverride?: MfaEncryptionKeyset,
+  subjectKeysetOverride?: AuthenticationSubjectKeyset,
+  responseEqualizerOverride?: AuthenticationResponseEqualizer,
 ): { readonly app: Hono; readonly close: () => Promise<void> } {
   const random = new WebCryptoRandomSource();
   const tokens = new SecureTokenService(random);
   const clock = { now: () => new Date() };
   const ids = { create: () => crypto.randomUUID() };
+  const environment = Deno.env.get("APP_ENV") ?? "development";
   const mail = mailAdapter ?? new SmtpVerificationMail({
-    environment: Deno.env.get("APP_ENV") ?? "development",
+    environment,
     from: Deno.env.get("SMTP_FROM") ?? "hello@kinship.local",
     host: Deno.env.get("SMTP_HOST") ?? "127.0.0.1",
     port: Number(Deno.env.get("SMTP_PORT") ?? "1025"),
     webOrigin: Deno.env.get("PUBLIC_WEB_ORIGIN") ?? "http://127.0.0.1:4321",
   });
   const connection = connectDatabase(databaseUrl);
+  const hasher = new Argon2idPasswordHasher(random, {
+    memoryKiB: 19_456,
+    iterations: 2,
+    parallelism: 1,
+    saltLength: 16,
+    hashLength: 32,
+  });
+  if (environment === "production" && !mfaKeysetOverride) {
+    throw new Error("AUTH_MFA_ENCRYPTION_KEYSET is required in production.");
+  }
+  const mfaKeyset = mfaKeysetOverride ?? {
+    activeKeyId: "local-development",
+    keys: new Map([["local-development", new Uint8Array(32).fill(0x4b)]]),
+  };
+  if (environment === "production" && !subjectKeysetOverride) {
+    throw new Error("AUTH_THROTTLE_SUBJECT_KEYSET is required in production.");
+  }
+  const subjectKeyset = subjectKeysetOverride ?? {
+    activeVersion: 1,
+    keys: new Map([[1, new Uint8Array(32).fill(0x52)]]),
+  };
+  const authentication = new PostgresIdentityAuthentication(
+    connection.db,
+    hasher,
+    tokens,
+    new AesGcmMfaSecretBox(mfaKeyset, random),
+    clock,
+    ids,
+  );
+  const transaction = new PostgresRegistrationTransaction(connection.db);
   const registrationDependencies = {
     audit: new PostgresRegistrationAudit(),
     clock,
@@ -96,7 +184,7 @@ export function createConfiguredApiApp(
     ids,
     mail,
     tokens,
-    transaction: new PostgresRegistrationTransaction(connection.db),
+    transaction,
     workspace: new PostgresWorkspaceRegistration(),
   };
   const registration = createFirstWorkspaceRegistration(
@@ -108,20 +196,49 @@ export function createConfiguredApiApp(
     clock,
     ids,
   );
+  const protectedSessions = createProtectedSessionCoordinator({
+    attemptBudget: new PostgresAuthenticationAttemptBudget(
+      connection.db,
+      new AuthenticationSubjectDigester(subjectKeyset),
+    ),
+    audit: new PostgresAuthenticationAudit(),
+    clock,
+    identity: authentication,
+    responseEqualizer: responseEqualizerOverride ??
+      createAuthenticationResponseEqualizer(
+        DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
+      ),
+    transaction,
+    workspace: new PostgresActiveWorkspaceResolver(),
+  });
+  const passwordRecovery = createPasswordRecovery({
+    clock,
+    hasher,
+    ids,
+    mail: {
+      sendPasswordReset: (message) => {
+        if (!mail.sendPasswordReset) {
+          return Promise.reject(new Error("Password-reset mail unavailable."));
+        }
+        return mail.sendPasswordReset(message);
+      },
+    },
+    repository: new PostgresPasswordRecoveryRepository(),
+    tokens,
+    transaction,
+  });
   const app = createApiApp({
     browserSecurity: policy,
-    hasher: new Argon2idPasswordHasher(random, {
-      memoryKiB: 19_456,
-      iterations: 2,
-      parallelism: 1,
-      saltLength: 16,
-      hashLength: 32,
-    }),
+    hasher,
+    passwordRecovery,
+    protectedSessions,
     register: registration,
     retryVerificationDelivery: createVerificationDeliveryRetry(
       registrationDependencies,
     ),
     verification,
+    establishVerifiedEntry: (command) =>
+      protectedSessions.establishVerifiedEntry(command),
     readiness: async () => {
       try {
         const probe = await Promise.race([
