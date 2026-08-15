@@ -381,6 +381,66 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
         },
       },
+      "/api/v1/people": {
+        post: {
+          operationId: "createPerson",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/PersonInput" },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "Workspace-owned person created",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/PersonCreated" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}": {
+        get: {
+          operationId: "getPerson",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            workspaceParameter,
+            {
+              name: "personId",
+              in: "path",
+              required: true,
+              schema: { type: "string", format: "uuid" },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Active-workspace person identity",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/PersonReady" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+      },
       "/api/v1/settings/profile": {
         ...securedRead("getSettingsProfile", "ProfileSettings"),
         put: securedPut(
@@ -1037,6 +1097,51 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        PersonInput: {
+          type: "object",
+          required: ["givenName", "isPartial"],
+          properties: {
+            duplicateOverride: { type: "boolean" },
+            familyName: { type: "string", maxLength: 200 },
+            givenName: { type: "string", maxLength: 200 },
+            isPartial: { type: "boolean" },
+            middleName: { type: "string", maxLength: 200 },
+            nickname: { type: "string", maxLength: 200 },
+          },
+          additionalProperties: false,
+        },
+        PersonIdentity: {
+          type: "object",
+          required: ["id", "givenName", "isPartial"],
+          properties: {
+            familyName: { type: "string" },
+            givenName: { type: "string" },
+            id: { type: "string", format: "uuid" },
+            isPartial: { type: "boolean" },
+            middleName: { type: "string" },
+            nickname: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        PersonCreated: {
+          type: "object",
+          required: ["status", "person", "next"],
+          properties: {
+            status: { const: "created" },
+            person: { $ref: "#/components/schemas/PersonIdentity" },
+            next: { type: "string", pattern: "^/app/people/[0-9a-f-]+$" },
+          },
+          additionalProperties: false,
+        },
+        PersonReady: {
+          type: "object",
+          required: ["status", "person"],
+          properties: {
+            status: { const: "ready" },
+            person: { $ref: "#/components/schemas/PersonIdentity" },
+          },
+          additionalProperties: false,
+        },
         ProfileInput: {
           type: "object",
           required: ["firstName", "lastName"],
@@ -1493,10 +1598,40 @@ export function updateManagedMember(memberId: string, input: Pick<ManagedMember,
 `;
 }
 
+export function renderPeopleClient(): string {
+  return `
+export interface PersonIdentity {
+  readonly familyName?: string;
+  readonly givenName: string;
+  readonly id: string;
+  readonly isPartial: boolean;
+  readonly middleName?: string;
+  readonly nickname?: string;
+}
+
+export interface PersonInput {
+  readonly duplicateOverride?: boolean;
+  readonly familyName?: string;
+  readonly givenName: string;
+  readonly isPartial: boolean;
+  readonly middleName?: string;
+  readonly nickname?: string;
+}
+
+export function createPerson(input: PersonInput, workspaceId?: string): Promise<ApiResult<{ readonly status: "created"; readonly person: PersonIdentity; readonly next: string }>> {
+  return request("/api/v1/people", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly person: PersonIdentity }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+`;
+}
+
 if (import.meta.main) {
   const openApi = JSON.stringify(buildOpenApiDocument(), null, 2) + "\n";
   const client = renderGeneratedClient() + renderInvitationClient() +
-    renderSettingsClient();
+    renderSettingsClient() + renderPeopleClient();
   const check = Deno.args.includes("--check");
   if (check) {
     const currentOpenApi = await Deno.readTextFile(openApiPath).catch(() => "");

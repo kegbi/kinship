@@ -34,6 +34,7 @@ import { SmtpVerificationMail } from "../../packages/backend/modules/workspaces/
 import {
   PostgresAuthenticationAudit,
   PostgresInvitationAudit,
+  PostgresPersonCreatedAudit,
   PostgresRegistrationAudit,
   PostgresSettingsAudit,
 } from "../../packages/backend/modules/governance/public.ts";
@@ -62,6 +63,12 @@ import {
 import { createSettingsRoutes, type SettingsHttpServices } from "./settings.ts";
 import { createSettingsManagement } from "../../packages/backend/modules/workspaces/public.ts";
 import {
+  createPeopleManagement,
+  PostgresPeopleRepository,
+  PostgresPeopleTransaction,
+} from "../../packages/backend/modules/people/public.ts";
+import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
+import {
   createAuthenticationResponseEqualizer,
   DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
 } from "./authentication_response.ts";
@@ -71,6 +78,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly passwordRecovery?: AuthenticationHttpServices["passwordRecovery"];
   readonly protectedSessions?: AuthenticationHttpServices["protectedSessions"];
   readonly settings?: SettingsHttpServices["settings"];
+  readonly people?: PeopleHttpServices["people"];
   readonly readiness?: () => Promise<boolean>;
 }
 
@@ -172,6 +180,16 @@ export function createApiApp(services?: ApiServices): Hono {
           }),
         );
       }
+    }
+    if (services.people && services.protectedSessions) {
+      api.route(
+        "/",
+        createPeopleRoutes({
+          browserSecurity: services.browserSecurity,
+          people: services.people,
+          protectedSessions: services.protectedSessions,
+        }),
+      );
     }
   }
 
@@ -329,11 +347,19 @@ export function createConfiguredApiApp(
     transaction,
     workspace: new PostgresWorkspaceSettings(),
   });
+  const people = createPeopleManagement({
+    audit: new PostgresPersonCreatedAudit(),
+    clock,
+    ids,
+    repository: new PostgresPeopleRepository(),
+    transaction: new PostgresPeopleTransaction(connection.db),
+  });
   const app = createApiApp({
     browserSecurity: policy,
     hasher,
     invitations,
     passwordRecovery,
+    people,
     protectedSessions,
     settings,
     register: registration,
