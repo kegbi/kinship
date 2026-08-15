@@ -129,6 +129,8 @@ async function keyboardReachMemberMenuToggle(page: Page): Promise<void> {
   await expect(page.getByRole("link", { name: "Today", exact: true }))
     .toBeFocused();
   await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Add person" })).toBeFocused();
+  await page.keyboard.press("Tab");
   const menuToggle = page.getByRole("button", { name: "Open member menu" });
   await expect(menuToggle).toBeFocused();
 }
@@ -171,7 +173,11 @@ test(
     }
     await expect(page.getByRole("button", { name: "Search people" }))
       .toBeDisabled();
-    await expect(page.getByRole("button", { name: "Add" })).toBeDisabled();
+    await expect(page.getByRole("link", { name: "Add person" }))
+      .toHaveAttribute(
+        "href",
+        "/app/people/new",
+      );
     await expect(page.getByLabel("Active workspace")).toBeHidden();
     await expect(page.getByText("TODAY-001")).toBeVisible();
     await expect(page.locator(".success-loop > li")).toHaveCount(3);
@@ -216,9 +222,8 @@ test(
     expect(searchPeopleBox).not.toBeNull();
     expect(searchPeopleBox!.width).toBeGreaterThanOrEqual(44);
     expect(searchPeopleBox!.height).toBeGreaterThanOrEqual(44);
-    const addAction = page.getByRole("button", { name: "Add" });
+    const addAction = page.getByRole("link", { name: "Add person" });
     await expect(addAction).toBeVisible();
-    await expect(addAction).toBeDisabled();
     const addActionBox = await addAction.boundingBox();
     expect(addActionBox).not.toBeNull();
     expect(addActionBox!.width).toBeGreaterThanOrEqual(44);

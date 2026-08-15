@@ -218,3 +218,29 @@ export function listManagedMembers(workspaceId?: string): Promise<ApiResult<{ re
 export function updateManagedMember(memberId: string, input: Pick<ManagedMember, "role" | "status">, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly member: ManagedMember }>> {
   return request(`/api/v1/settings/members/${encodeURIComponent(memberId)}`, { method: "PATCH", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
 }
+
+export interface PersonIdentity {
+  readonly familyName?: string;
+  readonly givenName: string;
+  readonly id: string;
+  readonly isPartial: boolean;
+  readonly middleName?: string;
+  readonly nickname?: string;
+}
+
+export interface PersonInput {
+  readonly duplicateOverride?: boolean;
+  readonly familyName?: string;
+  readonly givenName: string;
+  readonly isPartial: boolean;
+  readonly middleName?: string;
+  readonly nickname?: string;
+}
+
+export function createPerson(input: PersonInput, workspaceId?: string): Promise<ApiResult<{ readonly status: "created"; readonly person: PersonIdentity; readonly next: string }>> {
+  return request("/api/v1/people", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly person: PersonIdentity }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}

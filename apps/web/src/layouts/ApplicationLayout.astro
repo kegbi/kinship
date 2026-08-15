@@ -2,10 +2,12 @@
 import "../styles/application.css";
 
 interface Props {
-  readonly current: "settings" | "today";
+  readonly current: "people" | "settings" | "today";
   readonly description: string;
   readonly pageId:
     | "app.today"
+    | "people.create"
+    | "people.profile"
     | "settings.index"
     | "settings.members"
     | "settings.preferences"
@@ -49,7 +51,7 @@ const { current, description, pageId, title } = Astro.props;
 
           <nav class="primary-nav" aria-label="Primary navigation">
             <a href="/app" tabindex="0" aria-current={current === "today" ? "page" : undefined}>Today</a>
-            <span class="future-nav" aria-disabled="true">People <small>Coming next</small></span>
+            <span class="future-nav" aria-disabled="true" aria-current={current === "people" ? "page" : undefined}>People <small>Directory next</small></span>
             <span class="future-nav" aria-disabled="true">Tasks <small>Planned</small></span>
             <span class="future-nav" aria-disabled="true">Journal <small>Planned</small></span>
           </nav>
@@ -59,8 +61,7 @@ const { current, description, pageId, title } = Astro.props;
               Search people
             </button>
             <span id="people-search-note" class="sr-only">People search becomes available with the People directory.</span>
-            <button class="add-action" type="button" disabled aria-describedby="quick-capture-note">Add</button>
-            <span id="quick-capture-note" class="sr-only">Quick capture becomes available when its owning features ship.</span>
+            <a class="add-action" href="/app/people/new" tabindex="0">Add person</a>
             <div class="member-menu" role="group" aria-label="Member menu">
               <button id="member-menu-toggle" type="button" aria-label="Open member menu" aria-expanded="false" aria-controls="member-popover">Member menu</button>
               <div id="member-popover" class="member-popover" hidden>

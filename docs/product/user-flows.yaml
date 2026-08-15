@@ -269,6 +269,7 @@ flows:
 
   - id: PEOPLE-001
     title: Create a person
+    deliveryStatus: delivered
     priority: P0
     actor: crm-writer
     trigger: The member chooses to add a person.
@@ -289,7 +290,7 @@ flows:
     moduleIds: [people]
     permissions: [people.write]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-003a.spec.ts] }
 
   - id: PEOPLE-002
     title: Find a person

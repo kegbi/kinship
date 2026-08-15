@@ -3,12 +3,20 @@ function assert(condition: unknown, message: string): asserts condition {
 }
 
 Deno.test("production-like Compose exposes only the gateway application entry", async () => {
-  const [base, test, gateway, web] = await Promise.all([
-    Deno.readTextFile(new URL("../compose.yaml", import.meta.url)),
-    Deno.readTextFile(new URL("../compose.test.yaml", import.meta.url)),
-    Deno.readTextFile(new URL("../gateway/nginx.conf", import.meta.url)),
-    Deno.readTextFile(new URL("../Dockerfile.web", import.meta.url)),
-  ]);
+  const [base, test, gateway, gatewayImage, profileShell, web] = await Promise
+    .all([
+      Deno.readTextFile(new URL("../compose.yaml", import.meta.url)),
+      Deno.readTextFile(new URL("../compose.test.yaml", import.meta.url)),
+      Deno.readTextFile(new URL("../gateway/nginx.conf", import.meta.url)),
+      Deno.readTextFile(new URL("../Dockerfile.gateway", import.meta.url)),
+      Deno.readTextFile(
+        new URL(
+          "../apps/web/src/pages/internal/person-profile-shell.astro",
+          import.meta.url,
+        ),
+      ).catch(() => ""),
+      Deno.readTextFile(new URL("../Dockerfile.web", import.meta.url)),
+    ]);
   assert(
     base.includes("  gateway:") && base.includes("  web:"),
     "stack has gateway and private renderer",
@@ -112,6 +120,27 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
       gateway.includes("max-age=31536000, immutable") &&
       gateway.includes("error_page 404 /404.html"),
     "gateway directly serves extensionless prerendered and fingerprinted assets",
+  );
+  const profileLocation = gateway.match(
+    /location ~ "\^\/app\/people\/[\s\S]*?\n {4}\}/,
+  )?.[0] ?? "";
+  assert(
+    profileLocation.includes(
+      "try_files /internal/person-profile-shell/index.html =404",
+    ) &&
+      !profileLocation.includes("proxy_pass") &&
+      gateway.includes("location = /internal/person-profile-shell") &&
+      gateway.includes("location ^~ /internal/person-profile-shell/") &&
+      gateway.includes('"~^/app/people/[0-9a-fA-F]') &&
+      gateway.includes('"/app/people/:personId"'),
+    "UUID person paths use one low-cardinality static profile shell without the renderer",
+  );
+  assert(
+    profileShell.includes("export const prerender = true") &&
+      gatewayImage.includes(
+        "COPY --from=build --chown=nginx:nginx /app/apps/web/dist/client /usr/share/nginx/html",
+      ),
+    "the gateway image receives the prerendered reusable profile shell artifact",
   );
   const invitationLocation = gateway.match(
     /location ~ \^\/invite\/\[\^\/\]\+\$ \{[\s\S]*?\n {4}\}/,
