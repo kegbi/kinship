@@ -382,6 +382,66 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
         },
       },
       "/api/v1/people": {
+        get: {
+          operationId: "listPeople",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            workspaceParameter,
+            {
+              name: "search",
+              in: "query",
+              schema: { type: "string", maxLength: 200 },
+            },
+            {
+              name: "tag",
+              in: "query",
+              schema: { type: "string", format: "uuid" },
+            },
+            {
+              name: "lifecycle",
+              in: "query",
+              schema: {
+                type: "string",
+                enum: ["active", "archived"],
+                default: "active",
+              },
+            },
+            {
+              name: "sort",
+              in: "query",
+              schema: {
+                type: "string",
+                enum: ["given-name", "family-name", "recently-added"],
+                default: "given-name",
+              },
+            },
+            {
+              name: "cursor",
+              in: "query",
+              schema: { type: "string", maxLength: 2_000 },
+            },
+            {
+              name: "limit",
+              in: "query",
+              schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Tenant-scoped people directory page",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/PeopleDirectoryPage" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
         post: {
           operationId: "createPerson",
           security: [{ kinship_session: [] }],
@@ -411,6 +471,46 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
         },
       },
+      "/api/v1/people/tag-options": {
+        get: {
+          operationId: "listPeopleTagOptions",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            workspaceParameter,
+            {
+              name: "search",
+              in: "query",
+              schema: { type: "string", maxLength: 200 },
+            },
+            {
+              name: "cursor",
+              in: "query",
+              schema: { type: "string", maxLength: 2_000 },
+            },
+            {
+              name: "selected",
+              in: "query",
+              schema: { type: "string", format: "uuid" },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Bounded tenant-scoped people tag options",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/PeopleTagOptionsPage",
+                  },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+      },
       "/api/v1/people/{personId}": {
         get: {
           operationId: "getPerson",
@@ -426,7 +526,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           ],
           responses: {
             "200": {
-              description: "Active-workspace person identity",
+              description: "Current-workspace person identity and lifecycle",
               content: {
                 "application/json": {
                   schema: { $ref: "#/components/schemas/PersonReady" },
@@ -1123,6 +1223,76 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        PeopleDirectoryTag: {
+          type: "object",
+          required: ["id", "name"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            name: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        PeopleDirectoryPerson: {
+          type: "object",
+          required: [
+            "id",
+            "givenName",
+            "isPartial",
+            "isStarred",
+            "lifecycle",
+            "tagCount",
+            "tags",
+          ],
+          properties: {
+            familyName: { type: "string" },
+            givenName: { type: "string" },
+            id: { type: "string", format: "uuid" },
+            isPartial: { type: "boolean" },
+            isStarred: { type: "boolean" },
+            lifecycle: {
+              type: "string",
+              enum: ["active", "archived"],
+            },
+            middleName: { type: "string" },
+            nickname: { type: "string" },
+            tagCount: { type: "integer", minimum: 0 },
+            tags: {
+              type: "array",
+              maxItems: 5,
+              items: { $ref: "#/components/schemas/PeopleDirectoryTag" },
+            },
+          },
+          additionalProperties: false,
+        },
+        PeopleDirectoryPage: {
+          type: "object",
+          required: ["status", "lifecycle", "people"],
+          properties: {
+            status: { const: "ready" },
+            lifecycle: { type: "string", enum: ["active", "archived"] },
+            people: {
+              type: "array",
+              items: { $ref: "#/components/schemas/PeopleDirectoryPerson" },
+            },
+            nextCursor: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        PeopleTagOptionsPage: {
+          type: "object",
+          required: ["status", "options"],
+          properties: {
+            status: { const: "ready" },
+            options: {
+              type: "array",
+              maxItems: 20,
+              items: { $ref: "#/components/schemas/PeopleDirectoryTag" },
+            },
+            nextCursor: { type: "string" },
+            selected: { $ref: "#/components/schemas/PeopleDirectoryTag" },
+          },
+          additionalProperties: false,
+        },
         PersonCreated: {
           type: "object",
           required: ["status", "person", "next"],
@@ -1137,7 +1307,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           type: "object",
           required: ["status", "person"],
           properties: {
-            status: { const: "ready" },
+            status: { type: "string", enum: ["ready", "archived"] },
             person: { $ref: "#/components/schemas/PersonIdentity" },
           },
           additionalProperties: false,
@@ -1618,11 +1788,76 @@ export interface PersonInput {
   readonly nickname?: string;
 }
 
+export type PeopleDirectoryLifecycle = "active" | "archived";
+export type PeopleDirectorySort = "given-name" | "family-name" | "recently-added";
+
+export interface PeopleDirectoryTag {
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface PeopleDirectoryPerson extends PersonIdentity {
+  readonly isStarred: boolean;
+  readonly lifecycle: PeopleDirectoryLifecycle;
+  readonly tagCount: number;
+  readonly tags: readonly PeopleDirectoryTag[];
+}
+
+export interface PeopleDirectoryInput {
+  readonly cursor?: string;
+  readonly lifecycle?: PeopleDirectoryLifecycle;
+  readonly limit?: number;
+  readonly search?: string;
+  readonly sort?: PeopleDirectorySort;
+  readonly tagId?: string;
+}
+
+export interface PeopleDirectoryPage {
+  readonly lifecycle: PeopleDirectoryLifecycle;
+  readonly nextCursor?: string;
+  readonly people: readonly PeopleDirectoryPerson[];
+  readonly status: "ready";
+}
+
+export interface PeopleTagOptionsInput {
+  readonly cursor?: string;
+  readonly search?: string;
+  readonly selectedTagId?: string;
+}
+
+export interface PeopleTagOptionsPage {
+  readonly nextCursor?: string;
+  readonly options: readonly PeopleDirectoryTag[];
+  readonly selected?: PeopleDirectoryTag;
+  readonly status: "ready";
+}
+
+export function listPeople(input: PeopleDirectoryInput = {}, workspaceId?: string): Promise<ApiResult<PeopleDirectoryPage>> {
+  const query = new URLSearchParams();
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.lifecycle) query.set("lifecycle", input.lifecycle);
+  if (input.limit) query.set("limit", String(input.limit));
+  if (input.search) query.set("search", input.search);
+  if (input.sort) query.set("sort", input.sort);
+  if (input.tagId) query.set("tag", input.tagId);
+  const suffix = query.size > 0 ? \`?\${query.toString()}\` : "";
+  return request(\`/api/v1/people\${suffix}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listPeopleTagOptions(input: PeopleTagOptionsInput = {}, workspaceId?: string): Promise<ApiResult<PeopleTagOptionsPage>> {
+  const query = new URLSearchParams();
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.search) query.set("search", input.search);
+  if (input.selectedTagId) query.set("selected", input.selectedTagId);
+  const suffix = query.size > 0 ? \`?\${query.toString()}\` : "";
+  return request(\`/api/v1/people/tag-options\${suffix}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
 export function createPerson(input: PersonInput, workspaceId?: string): Promise<ApiResult<{ readonly status: "created"; readonly person: PersonIdentity; readonly next: string }>> {
   return request("/api/v1/people", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
 }
 
-export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly person: PersonIdentity }>> {
+export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready" | "archived"; readonly person: PersonIdentity }>> {
   return request(\`/api/v1/people/\${encodeURIComponent(personId)}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 `;

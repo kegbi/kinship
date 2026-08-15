@@ -6,6 +6,7 @@ import {
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 
 interface ProfileElements {
+  readonly archived: HTMLElement;
   readonly heading: HTMLElement;
   readonly partial: HTMLElement;
   readonly ready: HTMLElement;
@@ -15,14 +16,17 @@ interface ProfileElements {
 type ProfileState = "forbidden" | "not-found" | "unavailable";
 
 function elements(): ProfileElements | undefined {
+  const archived = document.querySelector<HTMLElement>(
+    "#person-profile-archived",
+  );
   const heading = document.querySelector<HTMLElement>("#person-profile-name");
   const partial = document.querySelector<HTMLElement>(
     "#person-profile-partial",
   );
   const ready = document.querySelector<HTMLElement>("#person-profile-ready");
   const state = document.querySelector<HTMLElement>("#person-profile-state");
-  return heading && partial && ready && state
-    ? { heading, partial, ready, state }
+  return archived && heading && partial && ready && state
+    ? { archived, heading, partial, ready, state }
     : undefined;
 }
 
@@ -80,7 +84,11 @@ function renderState(profile: ProfileElements, state: ProfileState): void {
   profile.state.focus();
 }
 
-function renderReady(profile: ProfileElements, person: PersonIdentity): void {
+function renderReady(
+  profile: ProfileElements,
+  person: PersonIdentity,
+  status: "archived" | "ready",
+): void {
   const name = displayName(person);
   profile.heading.textContent = name;
   for (
@@ -97,6 +105,7 @@ function renderReady(profile: ProfileElements, person: PersonIdentity): void {
     if (target) target.textContent = person[field] || "Unknown";
   }
   profile.partial.hidden = !person.isPartial;
+  profile.archived.hidden = status !== "archived";
   profile.state.hidden = true;
   profile.ready.hidden = false;
   document.title = `${name} — Kinship`;
@@ -136,5 +145,5 @@ export async function mountPeopleProfile(): Promise<void> {
     renderState(profile, problemState(result.problem));
     return;
   }
-  renderReady(profile, result.value.person);
+  renderReady(profile, result.value.person, result.value.status);
 }

@@ -956,6 +956,252 @@ summary:focus-visible,
   background: #fff8ed;
 }
 
+.state-badge.archived {
+  color: #6c3a1e;
+  background: #f6e4d4;
+}
+
+.people-directory-page {
+  width: min(1120px, calc(100% - 2rem));
+}
+
+.people-directory-heading {
+  align-items: end;
+}
+
+.people-directory-heading p {
+  max-width: 42rem;
+  color: #5e6b64;
+  line-height: 1.55;
+}
+
+.directory-heading-actions {
+  display: flex;
+  gap: .65rem;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.directory-heading-actions .button-link {
+  margin-top: 0;
+}
+
+.people-directory-controls {
+  display: grid;
+  grid-template-columns: minmax(16rem, 1fr) minmax(18rem, .75fr) minmax(10rem,
+    .35fr) auto;
+  gap: .75rem;
+  margin: 2rem 0 1.25rem;
+  padding: 1rem;
+  border: 1px solid rgb(32 53 45 / 13%);
+  border-radius: 1rem;
+  align-items: end;
+  background: #fffdf8;
+}
+
+.people-directory-controls label {
+  display: grid;
+  gap: .4rem;
+  color: #425148;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.directory-tag-picker {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  gap: .4rem;
+}
+
+.directory-tag-picker legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.directory-tag-search {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) auto;
+  gap: .4rem;
+}
+
+.directory-tag-search button,
+.directory-tag-pagination button {
+  min-height: 42px;
+  padding: .55rem .7rem;
+  font-size: .75rem;
+}
+
+.directory-tag-pagination {
+  display: flex;
+  min-height: 1.5rem;
+  gap: .5rem;
+  align-items: center;
+}
+
+.directory-tag-pagination p {
+  margin: 0;
+  color: #5e6b64;
+  font-size: .72rem;
+}
+
+.people-directory-controls input,
+.people-directory-controls select,
+.people-directory-controls button,
+.directory-pagination button,
+.directory-error button {
+  min-height: 48px;
+  padding: .7rem .85rem;
+  border: 1px solid #aeb7ae;
+  border-radius: .7rem;
+  background: white;
+}
+
+.people-directory-controls button,
+.directory-pagination button,
+.directory-error button {
+  border-color: #20352d;
+  color: white;
+  background: #20352d;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.people-directory-controls :disabled,
+.directory-pagination button:disabled {
+  cursor: wait;
+  opacity: .62;
+}
+
+.directory-state {
+  display: flex;
+  gap: 1rem;
+  min-height: 11rem;
+  padding: clamp(1.25rem, 4vw, 2.25rem);
+  border: 1px dashed #aeb7ae;
+  border-radius: 1rem;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: #fffdf8;
+}
+
+.directory-state h2,
+.directory-state p {
+  margin: 0;
+}
+
+.directory-state h2 {
+  font-family: Georgia, serif;
+  font-size: clamp(1.6rem, 4vw, 2.3rem);
+  font-weight: 500;
+}
+
+.directory-state p {
+  margin-top: .45rem;
+  color: #5e6b64;
+}
+
+.directory-loading-mark {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid #c4cbc4;
+  border-top-color: #a44730;
+  border-radius: 50%;
+  animation: directory-spin .8s linear infinite;
+}
+
+@keyframes directory-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.directory-error {
+  border-color: #c88774;
+  background: #fff8f5;
+}
+
+.directory-error button {
+  margin-top: 1rem;
+}
+
+.people-directory-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.people-directory-list > li {
+  min-width: 0;
+}
+
+.person-directory-link {
+  display: grid;
+  min-height: 9rem;
+  padding: 1.15rem;
+  border: 1px solid rgb(32 53 45 / 14%);
+  border-radius: .9rem;
+  align-content: start;
+  background: #fffdf8;
+  box-shadow: 0 .5rem 1.5rem rgb(45 55 46 / 5%);
+  text-decoration: none;
+}
+
+.person-directory-link:hover {
+  border-color: #809087;
+  transform: translateY(-1px);
+}
+
+.person-directory-link h2 {
+  margin: 0;
+  font-family: Georgia, serif;
+  font-size: 1.55rem;
+  font-weight: 500;
+}
+
+.directory-person-details {
+  margin: .45rem 0 0;
+  color: #5e6b64;
+  font-size: .82rem;
+}
+
+.directory-person-tags {
+  display: flex;
+  gap: .4rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  flex-wrap: wrap;
+  list-style: none;
+}
+
+.directory-person-tags li {
+  padding: .3rem .55rem;
+  border-radius: 999px;
+  color: #425148;
+  background: #e8eee8;
+  font-size: .7rem;
+  font-weight: 750;
+}
+
+.directory-pagination {
+  display: flex;
+  margin-top: 1rem;
+  justify-content: center;
+}
+
 @media (max-width: 1050px) {
   .header-row {
     grid-template-columns: auto 1fr;
@@ -1072,6 +1318,20 @@ summary:focus-visible,
 
   .settings-form {
     grid-template-columns: 1fr;
+  }
+
+  .people-directory-controls,
+  .people-directory-list {
+    grid-template-columns: 1fr;
+  }
+
+  .directory-heading-actions {
+    justify-content: stretch;
+  }
+
+  .directory-heading-actions .button-link {
+    flex: 1;
+    justify-content: center;
   }
 
   .name-grid,

@@ -34,6 +34,7 @@ export interface PossibleDuplicate {
 
 export type PersonIdentityLookup =
   | { readonly person: PersonIdentity; readonly status: "ready" }
+  | { readonly person: PersonIdentity; readonly status: "archived" }
   | { readonly status: "not-found" }
   | { readonly status: "forbidden" };
 

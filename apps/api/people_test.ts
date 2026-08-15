@@ -1,5 +1,6 @@
 import { type ApiServices, createApiApp } from "./composition.ts";
 import type { PeopleManagement } from "../../packages/backend/modules/people/public.ts";
+import { createPeopleDirectory } from "../../packages/backend/read-models/people-directory/public.ts";
 import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -11,6 +12,12 @@ Deno.test("PEOPLE-001 person creation requires an active session", async () => {
     browserSecurity: {
       origin: "http://localhost",
       secureCookie: false,
+    },
+    directory: {
+      list: () => Promise.reject(new Error("must not be called")),
+    },
+    tagOptions: {
+      list: () => Promise.reject(new Error("must not be called")),
     },
     people: {
       create: () => Promise.reject(new Error("must not be called")),
@@ -46,17 +53,29 @@ const actor = {
 
 function services(
   people: Pick<PeopleManagement, "create"> & Partial<PeopleManagement>,
+  directory: PeopleHttpServices["directory"] = {
+    list: () =>
+      Promise.resolve({
+        people: [],
+        status: "ready",
+      }),
+  },
+  tagOptions: PeopleHttpServices["tagOptions"] = {
+    list: () => Promise.resolve({ options: [], status: "ready" }),
+  },
 ): PeopleHttpServices {
   return {
     browserSecurity: {
       origin: "http://localhost",
       secureCookie: false,
     },
+    directory,
     people: {
       get: () => Promise.resolve({ status: "not-found" }),
       ...people,
     },
     protectedSessions: { resolve: () => Promise.resolve(actor) },
+    tagOptions,
   };
 }
 
@@ -66,6 +85,262 @@ const headers = {
   origin: "http://localhost",
   "X-Workspace-Id": actor.workspaceId,
 };
+
+Deno.test("PEOPLE-002 HTTP lists only the resolved active workspace", async () => {
+  let received: unknown;
+  const personTags = Array.from({ length: 8 }, (_, index) => ({
+    id: `00000000-0000-4000-8000-${String(index + 200).padStart(12, "0")}`,
+    name: `Tag ${index + 1}`,
+  }));
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    createPeopleDirectory({
+      repository: {
+        list: (command) => {
+          received = command;
+          return Promise.resolve({
+            people: [{
+              cursor: {
+                id: "00000000-0000-4000-8000-000000000100",
+                primary: "lovelace",
+                secondary: "ada",
+              },
+              familyName: "Lovelace",
+              givenName: "Ada",
+              id: "00000000-0000-4000-8000-000000000100",
+              isPartial: false,
+              isStarred: false,
+              lifecycle: "active",
+              tagCount: personTags.length,
+              tags: personTags,
+            }],
+            status: "ready",
+          });
+        },
+      },
+    }),
+  ));
+
+  const response = await app.request(
+    "http://localhost/api/v1/people?search=Ada&lifecycle=active&sort=family-name&limit=20",
+    { headers },
+  );
+  assert(response.status === 200, "directory response is ready");
+  const body = await response.json() as {
+    readonly people?: readonly {
+      readonly id: string;
+      readonly tagCount: number;
+      readonly tags: readonly unknown[];
+    }[];
+  };
+
+  assert(
+    body.people?.[0]?.id === "00000000-0000-4000-8000-000000000100" &&
+      body.people[0].tags.length === 5 && body.people[0].tagCount === 8,
+    "directory returns a bounded tag preview and exact count",
+  );
+  assert(
+    (received as typeof actor & { readonly search: string })?.workspaceId ===
+        actor.workspaceId &&
+      (received as typeof actor & { readonly search: string })?.search ===
+        "Ada",
+    "resolved actor and query criteria reach the directory use case",
+  );
+});
+
+Deno.test("PEOPLE-002 bounds tag options outside every people page", async () => {
+  const unboundedTags = Array.from({ length: 25 }, (_, index) => ({
+    id: `00000000-0000-4000-8000-${String(index + 100).padStart(12, "0")}`,
+    name: `Tag ${String(index + 1).padStart(2, "0")}`,
+  }));
+  const selectedTag = unboundedTags[24]!;
+  let tagOptionInput: unknown;
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    {
+      list: () =>
+        Promise.resolve({
+          availableTags: unboundedTags,
+          nextCursor: "people-cursor",
+          people: [],
+          status: "ready",
+        }),
+    },
+    {
+      list: (_resolved, input) => {
+        tagOptionInput = input;
+        return Promise.resolve({
+          nextCursor: "tag-cursor",
+          options: unboundedTags.slice(0, 20),
+          selected: selectedTag,
+          status: "ready",
+        });
+      },
+    },
+  ));
+
+  for (const query of ["", "?cursor=people-cursor"]) {
+    const response = await app.request(
+      `http://localhost/api/v1/people${query}`,
+      { headers },
+    );
+    const body = await response.json() as Record<string, unknown>;
+    assert(
+      response.status === 200 && !("availableTags" in body),
+      "people pages never repeat the workspace tag vocabulary",
+    );
+  }
+
+  const options = await app.request(
+    `http://localhost/api/v1/people/tag-options?search=tag&selected=${selectedTag.id}`,
+    { headers },
+  );
+  const body = await options.json() as { readonly options?: unknown[] };
+  assert(
+    options.status === 200 && (body.options?.length ?? 21) <= 20 &&
+      (tagOptionInput as { readonly search?: string }).search === "tag",
+    "tag options have their own fixed-size searchable page",
+  );
+});
+
+Deno.test("PEOPLE-002 maps tag-option validation, denial, cursor, and outage safely", async () => {
+  let calls = 0;
+  const invalidApp = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    {
+      list: () => {
+        calls += 1;
+        return Promise.resolve({ options: [], status: "ready" });
+      },
+    },
+  ));
+  const invalid = await invalidApp.request(
+    "http://localhost/api/v1/people/tag-options?selected=not-a-uuid",
+    { headers },
+  );
+  assert(invalid.status === 400 && calls === 0, "invalid tag query is early");
+
+  for (
+    const scenario of [
+      { expected: 403, result: { status: "forbidden" as const } },
+      { expected: 400, result: { status: "invalid-input" as const } },
+    ]
+  ) {
+    const app = createPeopleRoutes(services(
+      { create: () => Promise.reject(new Error("must not create")) },
+      undefined,
+      { list: () => Promise.resolve(scenario.result) },
+    ));
+    const response = await app.request(
+      "http://localhost/api/v1/people/tag-options",
+      { headers },
+    );
+    assert(
+      response.status === scenario.expected &&
+        response.headers.get("content-type") === "application/problem+json",
+      "tag option state maps to safe problem details",
+    );
+  }
+
+  const unavailable = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    { list: () => Promise.reject(new Error("private tag query detail")) },
+  ));
+  const outage = await unavailable.request(
+    "http://localhost/api/v1/people/tag-options",
+    { headers },
+  );
+  assert(outage.status === 503, "tag option outage is retryable");
+  assert(
+    !(await outage.text()).includes("private tag query detail"),
+    "tag option dependency detail stays private",
+  );
+});
+
+Deno.test("PEOPLE-002 HTTP maps directory validation, denial, stale cursor, and outage safely", async () => {
+  let calls = 0;
+  const invalidApp = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    {
+      list: () => {
+        calls += 1;
+        return Promise.resolve({ status: "forbidden" });
+      },
+    },
+  ));
+  const invalid = await invalidApp.request(
+    "http://localhost/api/v1/people?lifecycle=deleted&limit=500",
+    { headers },
+  );
+  assert(
+    invalid.status === 400 && calls === 0,
+    "invalid query is rejected early",
+  );
+
+  for (
+    const scenario of [
+      { expected: 403, result: { status: "forbidden" as const } },
+      { expected: 409, result: { status: "stale-cursor" as const } },
+    ]
+  ) {
+    const app = createPeopleRoutes(services(
+      { create: () => Promise.reject(new Error("must not create")) },
+      { list: () => Promise.resolve(scenario.result) },
+    ));
+    const response = await app.request("http://localhost/api/v1/people", {
+      headers,
+    });
+    assert(
+      response.status === scenario.expected,
+      "directory state maps safely",
+    );
+    assert(
+      response.headers.get("content-type") === "application/problem+json",
+      "directory failure uses problem details",
+    );
+  }
+
+  const unavailable = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    { list: () => Promise.reject(new Error("private database detail")) },
+  ));
+  const outage = await unavailable.request("http://localhost/api/v1/people", {
+    headers,
+  });
+  assert(outage.status === 503, "dependency outage is retryable");
+  assert(
+    !(await outage.text()).includes("private database detail"),
+    "dependency detail stays private",
+  );
+});
+
+Deno.test("PEOPLE-002 HTTP distinguishes an archived canonical identity", async () => {
+  const personId = "00000000-0000-4000-8000-000000000100";
+  const app = createPeopleRoutes(services({
+    create: () => Promise.reject(new Error("must not create")),
+    get: () =>
+      Promise.resolve({
+        person: {
+          givenName: "Harriet",
+          id: personId,
+          isPartial: false,
+        },
+        status: "archived",
+      }),
+  }));
+  const response = await app.request(
+    `http://localhost/api/v1/people/${personId}`,
+    { headers },
+  );
+  assert(
+    response.status === 200 &&
+      (await response.json() as { readonly status: string }).status ===
+        "archived",
+    "archived identity remains readable on its canonical route",
+  );
+});
 
 Deno.test("PEOPLE-001 HTTP creates in only the resolved active workspace", async () => {
   let received: Parameters<PeopleManagement["create"]> | undefined;

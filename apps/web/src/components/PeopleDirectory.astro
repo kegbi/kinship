@@ -1,0 +1,94 @@
+---
+interface Props {
+  readonly lifecycle: "active" | "archived";
+}
+
+const { lifecycle } = Astro.props;
+const archived = lifecycle === "archived";
+---
+
+<main
+  id="main-content"
+  class="page-frame people-directory-page"
+  data-people-lifecycle={lifecycle}
+  tabindex="-1"
+>
+  <header class="page-heading people-directory-heading">
+    <div>
+      <p class="eyebrow">People · <span data-workspace-name></span></p>
+      <h1>{archived ? "Archived people" : "People"}</h1>
+      <p>{archived ? "Browse people kept for history without mixing them into active results." : "Find the right person without leaving your active workspace."}</p>
+    </div>
+    <div class="directory-heading-actions">
+      {archived
+        ? <a class="button-link secondary-link" href="/app/people">View active people</a>
+        : <>
+            <a class="button-link" href="/app/people/new">Add person</a>
+            <a class="button-link secondary-link" href="/app/people/archived">View archived people</a>
+          </>}
+    </div>
+  </header>
+
+  <form id="people-directory-controls" class="people-directory-controls" role="search">
+    <label class="directory-search-field">
+      Search people
+      <input id="people-directory-search" name="search" type="search" maxlength="200" autocomplete="off" placeholder="Name or nickname" />
+    </label>
+    <fieldset class="directory-tag-picker">
+      <legend>Tag filter</legend>
+      <label for="people-tag-options-search">Search tag options</label>
+      <div class="directory-tag-search">
+        <input id="people-tag-options-search" type="search" maxlength="200" autocomplete="off" placeholder="Tag name" />
+        <button id="people-tag-options-search-button" type="button">Search tags</button>
+      </div>
+      <label for="people-directory-tag">Tag</label>
+      <select id="people-directory-tag" name="tag">
+        <option value="">All tags</option>
+      </select>
+      <div class="directory-tag-pagination">
+        <button id="people-tag-options-more" type="button" hidden>Load more tags</button>
+        <p id="people-tag-options-status" role="status" aria-live="polite"></p>
+      </div>
+    </fieldset>
+    <label>
+      Sort by
+      <select id="people-directory-sort" name="sort">
+        <option value="given-name">Given name</option>
+        <option value="family-name">Family name</option>
+        <option value="recently-added">Recently added</option>
+      </select>
+    </label>
+    <button type="submit">Find people</button>
+  </form>
+
+  <p id="people-directory-announcement" class="sr-status" role="status" aria-live="polite"></p>
+
+  <section id="people-directory-state" class="directory-state" role="status" aria-live="polite">
+    <div class="directory-loading-mark" aria-hidden="true"></div>
+    <div>
+      <h2>Loading {archived ? "archived " : ""}people…</h2>
+      <p>Looking only in your active workspace.</p>
+    </div>
+  </section>
+
+  <section id="people-directory-error" class="directory-state directory-error" role="alert" tabindex="-1" hidden>
+    <div>
+      <h2>People temporarily unavailable</h2>
+      <p>Your saved people have not changed. Check your connection and try again.</p>
+      <button id="people-directory-retry" type="button">Try again</button>
+    </div>
+  </section>
+
+  <section id="people-directory-empty" class="directory-state directory-empty" tabindex="-1" hidden>
+    <div>
+      <h2>No people found</h2>
+      <p>Try a different name, tag, or sort.</p>
+      {!archived && <a class="button-link" href="/app/people/new">Add a person</a>}
+    </div>
+  </section>
+
+  <ul id="people-directory-list" class="people-directory-list" aria-label={archived ? "Archived people" : "Active people"} hidden></ul>
+  <div class="directory-pagination">
+    <button id="people-directory-more" type="button" hidden>Load more people</button>
+  </div>
+</main>

@@ -6,7 +6,9 @@ interface Props {
   readonly description: string;
   readonly pageId:
     | "app.today"
+    | "people.archived"
     | "people.create"
+    | "people.index"
     | "people.profile"
     | "settings.index"
     | "settings.members"
@@ -51,16 +53,12 @@ const { current, description, pageId, title } = Astro.props;
 
           <nav class="primary-nav" aria-label="Primary navigation">
             <a href="/app" tabindex="0" aria-current={current === "today" ? "page" : undefined}>Today</a>
-            <span class="future-nav" aria-disabled="true" aria-current={current === "people" ? "page" : undefined}>People <small>Directory next</small></span>
+            <a href="/app/people" tabindex="0" aria-current={current === "people" ? "page" : undefined}>People</a>
             <span class="future-nav" aria-disabled="true">Tasks <small>Planned</small></span>
             <span class="future-nav" aria-disabled="true">Journal <small>Planned</small></span>
           </nav>
 
           <div class="global-actions" aria-label="Workspace actions">
-            <button class="quiet-action" type="button" disabled aria-describedby="people-search-note">
-              Search people
-            </button>
-            <span id="people-search-note" class="sr-only">People search becomes available with the People directory.</span>
             <a class="add-action" href="/app/people/new" tabindex="0">Add person</a>
             <div class="member-menu" role="group" aria-label="Member menu">
               <button id="member-menu-toggle" type="button" aria-label="Open member menu" aria-expanded="false" aria-controls="member-popover">Member menu</button>

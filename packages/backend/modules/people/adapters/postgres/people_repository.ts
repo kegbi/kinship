@@ -88,6 +88,7 @@ export class PostgresPeopleRepository implements PeopleRepository {
     command: Parameters<PeopleRepository["getIdentity"]>[0],
   ): Promise<PersonIdentityLookup> {
     const result = await sql<{
+      readonly archived_at: Date | null;
       readonly family_name: string | null;
       readonly given_name: string | null;
       readonly id: string | null;
@@ -96,14 +97,14 @@ export class PostgresPeopleRepository implements PeopleRepository {
       readonly nickname: string | null;
     }>`
       select person.id::text, person.given_name, person.middle_name,
-        person.family_name, person.nickname, person.is_partial
+        person.family_name, person.nickname, person.is_partial,
+        person.archived_at
       from crm.users account
       join crm.workspace_members member on member.user_id = account.id
       join crm.workspaces workspace on workspace.id = member.workspace_id
       left join crm.people person
         on person.id = ${command.personId}::uuid
         and person.workspace_id = workspace.id
-        and person.archived_at is null
         and person.deleted_at is null
       where account.id = ${command.userId}::uuid
         and account.status = 'active'
@@ -131,7 +132,7 @@ export class PostgresPeopleRepository implements PeopleRepository {
         ...(row.middle_name ? { middleName: row.middle_name } : {}),
         ...(row.nickname ? { nickname: row.nickname } : {}),
       },
-      status: "ready",
+      status: row.archived_at ? "archived" : "ready",
     };
   }
 
