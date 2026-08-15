@@ -76,6 +76,11 @@ import {
   PostgresPeopleDirectoryRepository,
 } from "../../packages/backend/read-models/people-directory/public.ts";
 import {
+  createPersonProfile,
+  type PersonProfile,
+  PostgresPersonProfileRepository,
+} from "../../packages/backend/read-models/person-profile/public.ts";
+import {
   createAuthenticationResponseEqualizer,
   DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
 } from "./authentication_response.ts";
@@ -87,6 +92,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly protectedSessions?: AuthenticationHttpServices["protectedSessions"];
   readonly settings?: SettingsHttpServices["settings"];
   readonly people?: PeopleHttpServices["people"];
+  readonly profile?: PersonProfile;
   readonly tagOptions?: PeopleTagOptions;
   readonly readiness?: () => Promise<boolean>;
 }
@@ -191,8 +197,8 @@ export function createApiApp(services?: ApiServices): Hono {
       }
     }
     if (
-      services.directory && services.people && services.protectedSessions &&
-      services.tagOptions
+      services.directory && services.people && services.profile &&
+      services.protectedSessions && services.tagOptions
     ) {
       api.route(
         "/",
@@ -200,6 +206,7 @@ export function createApiApp(services?: ApiServices): Hono {
           browserSecurity: services.browserSecurity,
           directory: services.directory,
           people: services.people,
+          profile: services.profile,
           protectedSessions: services.protectedSessions,
           tagOptions: services.tagOptions,
         }),
@@ -375,6 +382,9 @@ export function createConfiguredApiApp(
   const tagOptions = createPeopleTagOptions({
     repository: directoryRepository,
   });
+  const profile = createPersonProfile({
+    repository: new PostgresPersonProfileRepository(connection.db),
+  });
   const app = createApiApp({
     browserSecurity: policy,
     directory,
@@ -382,6 +392,7 @@ export function createConfiguredApiApp(
     invitations,
     passwordRecovery,
     people,
+    profile,
     protectedSessions,
     settings,
     tagOptions,

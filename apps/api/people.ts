@@ -4,6 +4,7 @@ import type {
   PeopleManagement,
   PersonIdentity,
 } from "../../packages/backend/modules/people/public.ts";
+import type { PersonProfile } from "../../packages/backend/read-models/person-profile/public.ts";
 import type {
   PeopleDirectory,
   PeopleTagOptions,
@@ -17,6 +18,7 @@ export interface PeopleHttpServices {
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly directory: PeopleDirectory;
   readonly people: PeopleManagement;
+  readonly profile: PersonProfile;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
   readonly tagOptions: PeopleTagOptions;
 }
@@ -270,7 +272,7 @@ export function createPeopleRoutes(services: PeopleHttpServices): Hono {
         "Sign in with an active workspace membership.",
       );
     }
-    const result = await services.people.get(resolved, parsed.data).catch(() =>
+    const result = await services.profile.get(resolved, parsed.data).catch(() =>
       undefined
     );
     if (!result) {
@@ -302,7 +304,8 @@ export function createPeopleRoutes(services: PeopleHttpServices): Hono {
     }
     context.header("Cache-Control", "private, no-store");
     return context.json({
-      person: identity(result.person),
+      dueInformation: result.dueInformation,
+      person: result.person,
       status: result.status,
     });
   });

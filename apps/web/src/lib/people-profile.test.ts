@@ -26,12 +26,27 @@ function markup(path = `/app/people/${personId}`): void {
     <section id="person-profile-state" tabindex="-1"><h1>Opening person…</h1></section>
     <section id="person-profile-ready" hidden>
       <h1 id="person-profile-name" tabindex="-1"></h1>
+      <div id="person-profile-avatar"></div>
       <p id="person-profile-archived" hidden></p>
       <p id="person-profile-partial" hidden></p>
+      <p id="person-profile-favorite" hidden></p>
+      <p id="person-profile-deceased" hidden></p>
+      <p id="person-profile-self" hidden></p>
+      <p data-profile-description></p>
+      <ul id="person-profile-tags"></ul>
       <span data-profile-field="givenName"></span>
       <span data-profile-field="middleName"></span>
       <span data-profile-field="familyName"></span>
       <span data-profile-field="nickname"></span>
+      <p id="person-profile-due-state"></p>
+      <nav id="person-profile-sections">
+        <a href="?section=important-dates" data-section-link="important-dates">Important dates</a>
+        <a href="?section=documents" data-section-link="documents">Documents</a>
+        <a href="?section=photos" data-section-link="photos">Photos</a>
+      </nav>
+      <section id="profile-section-important-dates" data-profile-section="important-dates" tabindex="-1"><h2>Important dates</h2></section>
+      <section id="profile-section-documents" data-profile-section="documents" data-load-mode="independent" tabindex="-1"><h2>Documents</h2></section>
+      <section id="profile-section-photos" data-profile-section="photos" data-load-mode="independent" tabindex="-1"><h2>Photos</h2></section>
     </section>`;
 }
 
@@ -48,11 +63,20 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response(session))
       .mockResolvedValueOnce(response({
+        dueInformation: {
+          detail: "Due information will become available with planning.",
+          status: "unavailable",
+        },
         person: {
           familyName: "Lovelace",
           givenName: "Ada",
           id: personId,
+          isDeceased: false,
           isPartial: true,
+          isSelf: false,
+          isStarred: false,
+          tagCount: 0,
+          tags: [],
         },
         status: "ready",
       }));
@@ -81,6 +105,112 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         "hidden",
       ),
     ).toBe(false);
+  });
+
+  it("[APP-003C] renders orientation first and focuses stable section deep links", async () => {
+    markup(`/app/people/${personId}?section=documents`);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockResolvedValueOnce(response({
+          dueInformation: {
+            detail: "Due information will become available with planning.",
+            status: "unavailable",
+          },
+          person: {
+            description: "Mathematician and correspondent.",
+            familyName: "Lovelace",
+            givenName: "Ada",
+            id: personId,
+            isDeceased: true,
+            isPartial: false,
+            isSelf: false,
+            isStarred: true,
+            tagCount: 0,
+            tags: [],
+          },
+          status: "ready",
+        })),
+    );
+
+    await mountPeopleProfile();
+
+    expect(document.querySelector("[data-profile-description]")?.textContent)
+      .toBe("Mathematician and correspondent.");
+    expect(
+      document.querySelector<HTMLElement>("#person-profile-favorite")?.hidden,
+    ).toBe(false);
+    expect(
+      document.querySelector<HTMLElement>("#person-profile-deceased")?.hidden,
+    ).toBe(false);
+    expect(document.querySelector("#person-profile-due-state")?.textContent)
+      .toContain("planning");
+    expect(document.activeElement).toBe(
+      document.querySelector("#profile-section-documents"),
+    );
+
+    document.querySelector<HTMLAnchorElement>(
+      '[data-section-link="photos"]',
+    )?.click();
+    expect(location.search).toBe("?section=photos");
+    expect(document.activeElement).toBe(
+      document.querySelector("#profile-section-photos"),
+    );
+  });
+
+  it("[APP-003C] reconciles queryless and invalid section history", async () => {
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockResolvedValueOnce(response({
+          dueInformation: {
+            detail: "Due information will become available with planning.",
+            status: "unavailable",
+          },
+          person: {
+            familyName: "Lovelace",
+            givenName: "Ada",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            tagCount: 0,
+            tags: [],
+          },
+          status: "ready",
+        })),
+    );
+
+    await mountPeopleProfile();
+    const heading = document.querySelector("#person-profile-name");
+    const photos = document.querySelector<HTMLAnchorElement>(
+      '[data-section-link="photos"]',
+    );
+    photos?.click();
+    expect(location.search).toBe("?section=photos");
+    expect(photos?.getAttribute("aria-current")).toBe("location");
+
+    history.back();
+    await vi.waitFor(() => expect(location.search).toBe(""));
+    expect(document.querySelectorAll("[data-section-link][aria-current]"))
+      .toHaveLength(0);
+    expect(document.activeElement).toBe(heading);
+
+    history.replaceState({}, "", `?section=not-a-section`);
+    document.querySelector<HTMLAnchorElement>(
+      '[data-section-link="documents"]',
+    )?.click();
+    history.back();
+    await vi.waitFor(() =>
+      expect(location.search).toBe("?section=not-a-section")
+    );
+    expect(document.querySelectorAll("[data-section-link][aria-current]"))
+      .toHaveLength(0);
+    expect(document.activeElement).toBe(heading);
   });
 
   it("renders explicit not-found, forbidden, and unavailable states", async () => {
@@ -124,10 +254,19 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       vi.fn()
         .mockResolvedValueOnce(response(session))
         .mockResolvedValueOnce(response({
+          dueInformation: {
+            detail: "Due information will become available with planning.",
+            status: "unavailable",
+          },
           person: {
             givenName: "Harriet",
             id: personId,
+            isDeceased: false,
             isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            tagCount: 0,
+            tags: [],
           },
           status: "archived",
         })),

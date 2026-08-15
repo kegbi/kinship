@@ -228,6 +228,21 @@ export interface PersonIdentity {
   readonly nickname?: string;
 }
 
+export interface PersonProfileIdentity extends PersonIdentity {
+  readonly description?: string;
+  readonly gender?: string;
+  readonly isDeceased: boolean;
+  readonly isSelf: boolean;
+  readonly isStarred: boolean;
+  readonly tagCount: number;
+  readonly tags: readonly PeopleDirectoryTag[];
+}
+
+export interface PersonDueInformation {
+  readonly detail: string;
+  readonly status: "unavailable";
+}
+
 export interface PersonInput {
   readonly duplicateOverride?: boolean;
   readonly familyName?: string;
@@ -306,6 +321,6 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
   return request("/api/v1/people", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
 }
 
-export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready" | "archived"; readonly person: PersonIdentity }>> {
+export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
   return request(`/api/v1/people/${encodeURIComponent(personId)}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }

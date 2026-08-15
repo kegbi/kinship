@@ -1,11 +1,37 @@
 ---
 import ApplicationLayout from "../../layouts/ApplicationLayout.astro";
+
 export const prerender = true;
+
+const sections = [
+  ["identity-summary", "Identity summary", "core"],
+  ["important-dates", "Important dates", "core"],
+  ["contact-methods", "Contact methods", "core"],
+  ["addresses", "Addresses", "core"],
+  ["relationships", "Relationships", "core"],
+  ["first-meeting", "First meeting", "core"],
+  ["work", "Work", "core"],
+  ["food-preferences", "Food preferences", "core"],
+  ["pets", "Pets", "core"],
+  ["life-events", "Life events", "independent"],
+  ["notes", "Notes", "independent"],
+  ["conversations", "Conversations", "independent"],
+  ["calls", "Calls", "independent"],
+  ["activities", "Activities", "independent"],
+  ["tasks", "Tasks", "independent"],
+  ["reminders", "Reminders", "independent"],
+  ["stay-in-touch", "Stay in touch", "core"],
+  ["gifts", "Gifts", "independent"],
+  ["debts", "Debts", "independent"],
+  ["documents", "Documents", "independent"],
+  ["photos", "Photos", "independent"],
+  ["audit-summary", "Audit summary", "independent"],
+] as const;
 ---
 
 <ApplicationLayout
   current="people"
-  description="View a saved person identity in the active Kinship workspace."
+  description="Open one canonical workspace for a saved person in Kinship."
   pageId="people.profile"
   title="Person — Kinship"
 >
@@ -13,26 +39,102 @@ export const prerender = true;
     <section id="person-profile-state" class="person-profile-state" role="status" aria-live="polite" tabindex="-1">
       <p class="eyebrow">Person workspace</p>
       <h1>Opening person…</h1>
-      <p>Loading the saved identity from your active workspace.</p>
+      <p>Loading identity and orientation from your active workspace.</p>
     </section>
 
-    <section id="person-profile-ready" class="created-person" aria-labelledby="person-profile-name" hidden>
-      <p class="eyebrow">Person workspace · <span data-workspace-name></span></p>
-      <h1 id="person-profile-name" tabindex="-1"><span class="sr-only">Saved person identity</span></h1>
-      <p class="state-badge calm">Identity saved</p>
-      <p id="person-profile-archived" class="state-badge archived" hidden>Archived person · read-only</p>
-      <p id="person-profile-partial" class="state-badge" hidden>Partial identity · unknown values preserved</p>
-      <dl class="identity-summary">
-        <div><dt>Given name</dt><dd data-profile-field="givenName"></dd></div>
-        <div><dt>Middle name</dt><dd data-profile-field="middleName"></dd></div>
-        <div><dt>Family name</dt><dd data-profile-field="familyName"></dd></div>
-        <div><dt>Nickname</dt><dd data-profile-field="nickname"></dd></div>
-      </dl>
-      <aside class="profile-next-step">
-        <h2>Profile foundation</h2>
-        <p>This canonical page currently shows the saved identity. Additional profile sections are not available yet.</p>
-      </aside>
-      <a class="button-link" href="/app/people/new">Add another person</a>
+    <section id="person-profile-ready" class="person-workspace" aria-labelledby="person-profile-name" hidden>
+      <a class="profile-back-link" href="/app/people">← Back to people</a>
+
+      <header class="person-profile-hero">
+        <div id="person-profile-avatar" class="person-profile-avatar" aria-hidden="true"></div>
+        <div class="person-profile-heading">
+          <p class="eyebrow">Person workspace · <span data-workspace-name></span></p>
+          <h1 id="person-profile-name" tabindex="-1"><span class="sr-only">Saved person identity</span></h1>
+          <div class="person-profile-badges" aria-label="Person states">
+            <p class="state-badge calm">Identity saved</p>
+            <p id="person-profile-favorite" class="state-badge favorite" hidden>Favorite</p>
+            <p id="person-profile-self" class="state-badge calm" hidden>Your person record</p>
+            <p id="person-profile-deceased" class="state-badge" hidden>Deceased</p>
+            <p id="person-profile-archived" class="state-badge archived" hidden>Archived person · read-only</p>
+            <p id="person-profile-partial" class="state-badge" hidden>Partial identity · unknown values preserved</p>
+          </div>
+          <p class="person-profile-description" data-profile-description></p>
+          <ul id="person-profile-tags" class="profile-tag-list" aria-label="Person tags"></ul>
+        </div>
+      </header>
+
+      <section class="profile-due-summary" aria-labelledby="person-profile-due-heading">
+        <div>
+          <p class="section-kicker">Orientation first</p>
+          <h2 id="person-profile-due-heading">Due information</h2>
+        </div>
+        <p id="person-profile-due-state" class="section-state unavailable" role="status"></p>
+      </section>
+
+      <div class="person-workspace-layout">
+        <details class="profile-section-directory" open>
+          <summary>Workspace sections</summary>
+          <nav id="person-profile-sections" aria-label="Person workspace sections">
+            <ul>
+              {sections.map(([id, title]) => (
+                <li><a href={`?section=${id}`} data-section-link={id}>{title}</a></li>
+              ))}
+            </ul>
+          </nav>
+        </details>
+
+        <div class="profile-section-list">
+          {sections.map(([id, title, loadMode]) => id === "identity-summary"
+            ? (
+              <section
+                id={`profile-section-${id}`}
+                class="profile-section-card identity-section-card"
+                data-profile-section={id}
+                data-section-state="ready"
+                tabindex="-1"
+                aria-labelledby={`profile-section-${id}-heading`}
+              >
+                <header class="profile-section-heading">
+                  <div>
+                    <p class="section-kicker">Available now</p>
+                    <h2 id={`profile-section-${id}-heading`}>{title}</h2>
+                  </div>
+                  <span class="state-badge calm">Ready</span>
+                </header>
+                <dl class="identity-summary">
+                  <div><dt>Given name</dt><dd data-profile-field="givenName"></dd></div>
+                  <div><dt>Middle name</dt><dd data-profile-field="middleName"></dd></div>
+                  <div><dt>Family name</dt><dd data-profile-field="familyName"></dd></div>
+                  <div><dt>Nickname</dt><dd data-profile-field="nickname"></dd></div>
+                  <div><dt>Gender</dt><dd data-profile-field="gender"></dd></div>
+                </dl>
+              </section>
+            )
+            : (
+              <section
+                id={`profile-section-${id}`}
+                class="profile-section-card unavailable-section-card"
+                data-profile-section={id}
+                data-load-mode={loadMode}
+                data-section-state="unavailable"
+                tabindex="-1"
+                aria-labelledby={`profile-section-${id}-heading`}
+              >
+                <header class="profile-section-heading">
+                  <div>
+                    <p class="section-kicker">Person workspace section</p>
+                    <h2 id={`profile-section-${id}-heading`}>{title}</h2>
+                  </div>
+                  <span class="state-badge">Unavailable</span>
+                </header>
+                <p>This section is not available yet. No empty result is being inferred and no saved data has changed.</p>
+                {loadMode === "independent" && (
+                  <p class="independent-load-note">This heavier section has its own loading and error boundary when delivered.</p>
+                )}
+              </section>
+            ))}
+        </div>
+      </div>
     </section>
   </main>
 </ApplicationLayout>

@@ -526,7 +526,8 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           ],
           responses: {
             "200": {
-              description: "Current-workspace person identity and lifecycle",
+              description:
+                "Current-workspace person identity, lifecycle, and due-information shell",
               content: {
                 "application/json": {
                   schema: { $ref: "#/components/schemas/PersonReady" },
@@ -1223,6 +1224,48 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        PersonProfileIdentity: {
+          type: "object",
+          required: [
+            "id",
+            "givenName",
+            "isPartial",
+            "isStarred",
+            "isDeceased",
+            "isSelf",
+            "tagCount",
+            "tags",
+          ],
+          properties: {
+            description: { type: "string" },
+            familyName: { type: "string" },
+            gender: { type: "string" },
+            givenName: { type: "string" },
+            id: { type: "string", format: "uuid" },
+            isDeceased: { type: "boolean" },
+            isPartial: { type: "boolean" },
+            isSelf: { type: "boolean" },
+            isStarred: { type: "boolean" },
+            middleName: { type: "string" },
+            nickname: { type: "string" },
+            tagCount: { type: "integer", minimum: 0 },
+            tags: {
+              type: "array",
+              maxItems: 8,
+              items: { $ref: "#/components/schemas/PeopleDirectoryTag" },
+            },
+          },
+          additionalProperties: false,
+        },
+        PersonDueInformation: {
+          type: "object",
+          required: ["status", "detail"],
+          properties: {
+            status: { const: "unavailable" },
+            detail: { type: "string" },
+          },
+          additionalProperties: false,
+        },
         PeopleDirectoryTag: {
           type: "object",
           required: ["id", "name"],
@@ -1305,10 +1348,13 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
         },
         PersonReady: {
           type: "object",
-          required: ["status", "person"],
+          required: ["status", "person", "dueInformation"],
           properties: {
             status: { type: "string", enum: ["ready", "archived"] },
-            person: { $ref: "#/components/schemas/PersonIdentity" },
+            person: { $ref: "#/components/schemas/PersonProfileIdentity" },
+            dueInformation: {
+              $ref: "#/components/schemas/PersonDueInformation",
+            },
           },
           additionalProperties: false,
         },
@@ -1779,6 +1825,21 @@ export interface PersonIdentity {
   readonly nickname?: string;
 }
 
+export interface PersonProfileIdentity extends PersonIdentity {
+  readonly description?: string;
+  readonly gender?: string;
+  readonly isDeceased: boolean;
+  readonly isSelf: boolean;
+  readonly isStarred: boolean;
+  readonly tagCount: number;
+  readonly tags: readonly PeopleDirectoryTag[];
+}
+
+export interface PersonDueInformation {
+  readonly detail: string;
+  readonly status: "unavailable";
+}
+
 export interface PersonInput {
   readonly duplicateOverride?: boolean;
   readonly familyName?: string;
@@ -1857,7 +1918,7 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
   return request("/api/v1/people", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
 }
 
-export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready" | "archived"; readonly person: PersonIdentity }>> {
+export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
   return request(\`/api/v1/people/\${encodeURIComponent(personId)}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 `;

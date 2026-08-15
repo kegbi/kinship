@@ -22,6 +22,9 @@ Deno.test("PEOPLE-001 person creation requires an active session", async () => {
     people: {
       create: () => Promise.reject(new Error("must not be called")),
     },
+    profile: {
+      get: () => Promise.reject(new Error("must not be called")),
+    },
     protectedSessions: {
       resolve: () => Promise.resolve(undefined),
     },
@@ -63,6 +66,9 @@ function services(
   tagOptions: PeopleHttpServices["tagOptions"] = {
     list: () => Promise.resolve({ options: [], status: "ready" }),
   },
+  profile: PeopleHttpServices["profile"] = {
+    get: () => Promise.resolve({ status: "not-found" }),
+  },
 ): PeopleHttpServices {
   return {
     browserSecurity: {
@@ -74,6 +80,7 @@ function services(
       get: () => Promise.resolve({ status: "not-found" }),
       ...people,
     },
+    profile,
     protectedSessions: { resolve: () => Promise.resolve(actor) },
     tagOptions,
   };
@@ -318,18 +325,31 @@ Deno.test("PEOPLE-002 HTTP maps directory validation, denial, stale cursor, and 
 
 Deno.test("PEOPLE-002 HTTP distinguishes an archived canonical identity", async () => {
   const personId = "00000000-0000-4000-8000-000000000100";
-  const app = createPeopleRoutes(services({
-    create: () => Promise.reject(new Error("must not create")),
-    get: () =>
-      Promise.resolve({
-        person: {
-          givenName: "Harriet",
-          id: personId,
-          isPartial: false,
-        },
-        status: "archived",
-      }),
-  }));
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      get: () =>
+        Promise.resolve({
+          dueInformation: {
+            detail: "Planning unavailable.",
+            status: "unavailable",
+          },
+          person: {
+            givenName: "Harriet",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            tagCount: 0,
+            tags: [],
+          },
+          status: "archived",
+        }),
+    },
+  ));
   const response = await app.request(
     `http://localhost/api/v1/people/${personId}`,
     { headers },
@@ -339,6 +359,61 @@ Deno.test("PEOPLE-002 HTTP distinguishes an archived canonical identity", async 
       (await response.json() as { readonly status: string }).status ===
         "archived",
     "archived identity remains readable on its canonical route",
+  );
+});
+
+Deno.test("[APP-003C] HTTP opens the read-only person workspace summary", async () => {
+  const personId = "00000000-0000-4000-8000-000000000100";
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      get: () =>
+        Promise.resolve({
+          dueInformation: {
+            detail: "Due information will become available with planning.",
+            status: "unavailable",
+          },
+          person: {
+            description: "Mathematician and correspondent.",
+            familyName: "Lovelace",
+            givenName: "Ada",
+            id: personId,
+            isDeceased: true,
+            isPartial: false,
+            isSelf: false,
+            isStarred: true,
+            tagCount: 0,
+            tags: [],
+          },
+          status: "ready",
+        }),
+    },
+  ));
+
+  const response = await app.request(
+    `http://localhost/api/v1/people/${personId}`,
+    { headers },
+  );
+  const body = await response.json() as {
+    readonly dueInformation?: { readonly status?: string };
+    readonly person?: {
+      readonly description?: string;
+      readonly isDeceased?: boolean;
+      readonly isStarred?: boolean;
+    };
+  };
+
+  assert(response.status === 200, "person workspace summary is readable");
+  assert(
+    body.person?.description === "Mathematician and correspondent." &&
+      body.person.isStarred === true && body.person.isDeceased === true,
+    "identity orientation fields remain in the profile response",
+  );
+  assert(
+    body.dueInformation?.status === "unavailable",
+    "the shell reports its not-yet-delivered due projection honestly",
   );
 });
 
@@ -387,21 +462,34 @@ Deno.test("PEOPLE-001 HTTP creates in only the resolved active workspace", async
 Deno.test("PEOPLE-001 HTTP reads canonical identity only in the resolved workspace", async () => {
   const personId = "00000000-0000-4000-8000-000000000100";
   let received: unknown;
-  const app = createPeopleRoutes(services({
-    create: () => Promise.reject(new Error("must not create")),
-    get: (resolved: unknown, id: string) => {
-      received = [resolved, id];
-      return Promise.resolve({
-        person: {
-          familyName: "Lovelace",
-          givenName: "Ada",
-          id: personId,
-          isPartial: false,
-        },
-        status: "ready",
-      });
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      get: (resolved, id) => {
+        received = [resolved, id];
+        return Promise.resolve({
+          dueInformation: {
+            detail: "Planning unavailable.",
+            status: "unavailable",
+          },
+          person: {
+            familyName: "Lovelace",
+            givenName: "Ada",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            tagCount: 0,
+            tags: [],
+          },
+          status: "ready",
+        });
+      },
     },
-  } as unknown as PeopleManagement));
+  ));
   const response = await app.request(
     `http://localhost/api/v1/people/${personId}`,
     { headers },
@@ -419,7 +507,7 @@ Deno.test("PEOPLE-001 HTTP reads canonical identity only in the resolved workspa
     (received as [typeof actor, string])?.[0].workspaceId ===
         actor.workspaceId &&
       (received as [typeof actor, string])?.[1] === personId,
-    "resolved actor and route ID reach the public application facade",
+    "resolved actor and route ID reach the person-profile read model",
   );
   assert(
     response.headers.get("cache-control") === "private, no-store",
@@ -435,10 +523,12 @@ Deno.test("PEOPLE-001 HTTP maps canonical identity read states safely", async ()
       { expected: 404, status: "not-found" as const },
     ]
   ) {
-    const app = createPeopleRoutes(services({
-      create: () => Promise.reject(new Error("must not create")),
-      get: () => Promise.resolve({ status: scenario.status }),
-    }));
+    const app = createPeopleRoutes(services(
+      { create: () => Promise.reject(new Error("must not create")) },
+      undefined,
+      undefined,
+      { get: () => Promise.resolve({ status: scenario.status }) },
+    ));
     const response = await app.request(
       `http://localhost/api/v1/people/${personId}`,
       { headers },
@@ -450,10 +540,14 @@ Deno.test("PEOPLE-001 HTTP maps canonical identity read states safely", async ()
     );
   }
 
-  const unavailable = createPeopleRoutes(services({
-    create: () => Promise.reject(new Error("must not create")),
-    get: () => Promise.reject(new Error("private dependency detail")),
-  }));
+  const unavailable = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      get: () => Promise.reject(new Error("private dependency detail")),
+    },
+  ));
   const unavailableResponse = await unavailable.request(
     `http://localhost/api/v1/people/${personId}`,
     { headers },

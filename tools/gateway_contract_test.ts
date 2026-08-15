@@ -175,3 +175,55 @@ Deno.test("AUTH-003 E2E has no direct product API or host Astro escape hatch", a
     "product actions use the sole gateway origin",
   );
 });
+
+Deno.test("[APP-003C] static person shell keeps the accepted canonical sections", async () => {
+  const shell = await Deno.readTextFile(
+    new URL(
+      "../apps/web/src/pages/internal/person-profile-shell.astro",
+      import.meta.url,
+    ),
+  );
+  const expected = [
+    "identity-summary",
+    "important-dates",
+    "contact-methods",
+    "addresses",
+    "relationships",
+    "first-meeting",
+    "work",
+    "food-preferences",
+    "pets",
+    "life-events",
+    "notes",
+    "conversations",
+    "calls",
+    "activities",
+    "tasks",
+    "reminders",
+    "stay-in-touch",
+    "gifts",
+    "debts",
+    "documents",
+    "photos",
+    "audit-summary",
+  ];
+  const declared = [...shell.matchAll(
+    /\["([a-z-]+)", "[^"]+", "(?:core|independent)"\]/g,
+  )].map((match) => match[1]);
+  assert(
+    JSON.stringify(declared) === JSON.stringify(expected),
+    "the shell declares every page-catalog section once and in order",
+  );
+  assert(
+    shell.includes("href={`?section=${id}`}") &&
+      shell.includes("data-profile-section={id}") &&
+      shell.includes("data-load-mode={loadMode}") &&
+      shell.includes("No empty result is being inferred"),
+    "sections use canonical query deep links and honest independent states",
+  );
+  assert(
+    !shell.includes("/app/people/:personId/") &&
+      !shell.includes("/app/people/${personId}/"),
+    "the shell introduces no person-specific subpage tree",
+  );
+});
