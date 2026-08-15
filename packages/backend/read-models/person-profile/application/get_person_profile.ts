@@ -26,6 +26,7 @@ export interface PersonProfileIdentity {
   readonly nickname?: string;
   readonly tagCount: number;
   readonly tags: readonly PersonProfileTag[];
+  readonly updatedAt: string;
 }
 
 export interface PersonDueInformation {

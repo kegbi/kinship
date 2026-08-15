@@ -236,6 +236,34 @@ export interface PersonProfileIdentity extends PersonIdentity {
   readonly isStarred: boolean;
   readonly tagCount: number;
   readonly tags: readonly PeopleDirectoryTag[];
+  readonly updatedAt: string;
+}
+
+export interface PersonLifecycleIdentity extends PersonIdentity {
+  readonly lifecycle: "active" | "archived" | "deleted";
+  readonly updatedAt: string;
+}
+
+export interface PersonEditInput {
+  readonly expectedUpdatedAt: string;
+  readonly familyName?: string;
+  readonly givenName: string;
+  readonly isPartial: boolean;
+  readonly middleName?: string;
+  readonly nickname?: string;
+}
+
+export interface PersonTransitionInput {
+  readonly expectedUpdatedAt: string;
+}
+
+export interface PersonDeletionImpact {
+  readonly impact: {
+    readonly confirmation: string;
+    readonly dependentRecordPolicy: "retained";
+    readonly person: PersonLifecycleIdentity;
+  };
+  readonly status: "ready";
 }
 
 export interface PersonDueInformation {
@@ -323,4 +351,24 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
 
 export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
   return request(`/api/v1/people/${encodeURIComponent(personId)}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function editPerson(personId: string, input: PersonEditInput, workspaceId?: string): Promise<ApiResult<{ readonly person: PersonLifecycleIdentity; readonly status: "updated" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}`, { method: "PATCH", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function archivePerson(personId: string, input: PersonTransitionInput, workspaceId?: string): Promise<ApiResult<{ readonly person: PersonLifecycleIdentity; readonly status: "archived" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/archive`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function restorePerson(personId: string, input: PersonTransitionInput, workspaceId?: string): Promise<ApiResult<{ readonly person: PersonLifecycleIdentity; readonly status: "restored" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/restore`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function getPersonDeletionImpact(personId: string, workspaceId?: string): Promise<ApiResult<PersonDeletionImpact>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/deletion-impact`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function deletePerson(personId: string, input: PersonTransitionInput & { readonly confirmation: string }, workspaceId?: string): Promise<ApiResult<{ readonly next: "/app/people"; readonly personId: string; readonly status: "deleted" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}`, { method: "DELETE", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
 }

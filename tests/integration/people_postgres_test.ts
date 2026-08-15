@@ -8,12 +8,17 @@ import {
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import {
   createPeopleManagement,
+  createPersonLifecycle,
   type PeopleActor,
   type PeopleRepository,
   PostgresPeopleRepository,
   PostgresPeopleTransaction,
+  PostgresPersonLifecycleRepository,
 } from "../../packages/backend/modules/people/public.ts";
-import { PostgresPersonCreatedAudit } from "../../packages/backend/modules/governance/public.ts";
+import {
+  PostgresPersonCreatedAudit,
+  PostgresPersonLifecycleAudit,
+} from "../../packages/backend/modules/governance/public.ts";
 import {
   type ApplicationDatabase,
   connectDatabase,
@@ -1225,6 +1230,511 @@ Deno.test({
         await Promise.allSettled([creation]);
       }
     }
+  },
+});
+
+Deno.test({
+  name:
+    "PEOPLE-004 PostgreSQL lifecycle is tenant-safe, atomic, auditable, and retains dependents",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await sql`truncate table crm.users, crm.workspaces restart identity cascade`;
+    const owner = await register(
+      `lifecycle-owner-${crypto.randomUUID()}@example.test`,
+      "Lifecycle circle",
+    );
+    const foreign = await register(
+      `lifecycle-foreign-${crypto.randomUUID()}@example.test`,
+      "Foreign lifecycle circle",
+    );
+    const created = await createPerson(owner, {
+      familyName: "Lovelace",
+      givenName: "Ada",
+      isPartial: false,
+    });
+    const createdBody = await created.json() as {
+      readonly person: { readonly id: string };
+    };
+    const personId = createdBody.person.id;
+    const foreignPerson = await createPerson(foreign, {
+      givenName: "Foreign",
+      isPartial: false,
+    });
+    const foreignId = (await foreignPerson.json() as {
+      readonly person: { readonly id: string };
+    }).person.id;
+    await sql`
+      insert into crm.person_dates (person_id, kind, precision)
+      values (${personId}, 'custom', 'unknown')
+    `;
+    const headers = {
+      "content-type": "application/json",
+      cookie: owner.cookie,
+      origin: "http://localhost",
+      "X-Workspace-Id": owner.workspaceId,
+    };
+    const ready = await getPerson(owner, personId);
+    const readyBody = await ready.json() as {
+      readonly person: { readonly updatedAt: string };
+    };
+    const initialImpact = await configured.app.request(
+      `http://localhost/api/v1/people/${personId}/deletion-impact`,
+      {
+        headers: {
+          cookie: owner.cookie,
+          "X-Workspace-Id": owner.workspaceId,
+        },
+      },
+    );
+    const initialImpactBody = await initialImpact.json() as {
+      readonly impact: { readonly person: { readonly updatedAt: string } };
+    };
+    assert(
+      initialImpactBody.impact.person.updatedAt === readyBody.person.updatedAt,
+      `profile and lifecycle versions agree: ${readyBody.person.updatedAt} / ${initialImpactBody.impact.person.updatedAt}`,
+    );
+    const edited = await configured.app.request(
+      `http://localhost/api/v1/people/${personId}`,
+      {
+        body: JSON.stringify({
+          expectedUpdatedAt: readyBody.person.updatedAt,
+          familyName: "Byron",
+          givenName: "Ada",
+          isPartial: false,
+        }),
+        headers,
+        method: "PATCH",
+      },
+    );
+    const editedBody = await edited.json() as {
+      readonly person: { readonly updatedAt: string };
+    };
+    assert(
+      edited.status === 200,
+      `identity edit succeeds: ${edited.status} ${JSON.stringify(editedBody)}`,
+    );
+
+    const staleArchive = await configured.app.request(
+      `http://localhost/api/v1/people/${personId}/archive`,
+      {
+        body: JSON.stringify({
+          expectedUpdatedAt: readyBody.person.updatedAt,
+        }),
+        headers,
+        method: "POST",
+      },
+    );
+    assert(staleArchive.status === 409, "stale mutation is explicit");
+    const archiveRequest = () =>
+      configured.app.request(
+        `http://localhost/api/v1/people/${personId}/archive`,
+        {
+          body: JSON.stringify({
+            expectedUpdatedAt: editedBody.person.updatedAt,
+          }),
+          headers,
+          method: "POST",
+        },
+      );
+    const [archiveA, archiveB] = await Promise.all([
+      archiveRequest(),
+      archiveRequest(),
+    ]);
+    const archiveBody = await archiveA.clone().json() as {
+      readonly person: { readonly updatedAt: string };
+    };
+    assert(
+      archiveA.status === 200 && archiveB.status === 200,
+      "overlapping archive requests serialize and replay idempotently",
+    );
+    const archivedEdit = await configured.app.request(
+      `http://localhost/api/v1/people/${personId}`,
+      {
+        body: JSON.stringify({
+          expectedUpdatedAt: archiveBody.person.updatedAt,
+          familyName: "Blocked",
+          givenName: "Ada",
+          isPartial: false,
+        }),
+        headers,
+        method: "PATCH",
+      },
+    );
+    assert(
+      archivedEdit.status === 409 &&
+        (await archivedEdit.json() as { readonly code: string }).code ===
+          "archived_write_rejected",
+      "archived identity is read-only",
+    );
+    const restored = await configured.app.request(
+      `http://localhost/api/v1/people/${personId}/restore`,
+      {
+        body: JSON.stringify({
+          expectedUpdatedAt: archiveBody.person.updatedAt,
+        }),
+        headers,
+        method: "POST",
+      },
+    );
+    assert(restored.status === 200, "archived person restores");
+    const impact = await configured.app.request(
+      `http://localhost/api/v1/people/${personId}/deletion-impact`,
+      { headers },
+    );
+    const impactBody = await impact.json() as {
+      readonly impact: {
+        readonly confirmation: string;
+        readonly dependentRecordPolicy: string;
+        readonly person: { readonly updatedAt: string };
+      };
+    };
+    assert(
+      impact.status === 200 &&
+        impactBody.impact.dependentRecordPolicy === "retained",
+      "impact exposes canonical dependent retention",
+    );
+    const cancelled = await configured.app.request(
+      `http://localhost/api/v1/people/${personId}`,
+      {
+        body: JSON.stringify({
+          confirmation: "wrong",
+          expectedUpdatedAt: impactBody.impact.person.updatedAt,
+        }),
+        headers,
+        method: "DELETE",
+      },
+    );
+    assert(cancelled.status === 400, "incorrect confirmation changes nothing");
+    const deleteRequest = () =>
+      configured.app.request(
+        `http://localhost/api/v1/people/${personId}`,
+        {
+          body: JSON.stringify({
+            confirmation: impactBody.impact.confirmation,
+            expectedUpdatedAt: impactBody.impact.person.updatedAt,
+          }),
+          headers,
+          method: "DELETE",
+        },
+      );
+    const deleted = await deleteRequest();
+    const replayed = await deleteRequest();
+    assert(
+      deleted.status === 200 && replayed.status === 200 &&
+        (await getPerson(owner, personId)).status === 404,
+      "soft-delete is hidden and idempotent",
+    );
+    const [proof] = await sql<{
+      readonly audit_count: number;
+      readonly date_count: number;
+      readonly deleted: boolean;
+    }[]>`
+      select
+        person.deleted_at is not null as deleted,
+        (select count(*)::int from crm.person_dates
+          where person_id = ${personId}) as date_count,
+        (select count(*)::int from crm.audit_events
+          where person_id = ${personId}
+            and action in (
+              'people.person-updated', 'people.person-archived',
+              'people.person-restored', 'people.person-deleted'
+            )) as audit_count
+      from crm.people person where person.id = ${personId}
+    `;
+    assert(
+      proof?.deleted && proof.date_count === 1 && proof.audit_count === 4,
+      "delete retains dependent history and each real change has one audit",
+    );
+    assert(
+      (await configured.app.request(
+            `http://localhost/api/v1/people/${foreignId}/deletion-impact`,
+            { headers },
+          )).status === 404 &&
+        (await configured.app.request(
+            `http://localhost/api/v1/people/${crypto.randomUUID()}/deletion-impact`,
+            { headers },
+          )).status === 404,
+      "foreign and missing lifecycle identifiers are indistinguishable",
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "PEOPLE-004 fixed-clock edits advance versions and retain exact audit identity",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await sql`truncate table crm.users, crm.workspaces restart identity cascade`;
+    const owner = await register(
+      `lifecycle-clock-${crypto.randomUUID()}@example.test`,
+      "Lifecycle clock circle",
+    );
+    const created = await createPerson(owner, {
+      familyName: "Lovelace",
+      givenName: "Ada",
+      isPartial: false,
+    });
+    const personId = (await created.json() as {
+      readonly person: { readonly id: string };
+    }).person.id;
+    const [identity] = await sql<{ readonly user_id: string }[]>`
+      select user_id::text from crm.workspace_members
+      where id = ${owner.memberId}
+    `;
+    assert(identity, "fixed-clock lifecycle actor exists");
+    const actor: PeopleActor = {
+      memberId: owner.memberId,
+      role: "owner",
+      userId: identity.user_id,
+      workspaceId: owner.workspaceId,
+    };
+    const fixedClock = new Date("2099-01-01T00:00:00.000Z");
+    const lifecycle = createPersonLifecycle({
+      audit: new PostgresPersonLifecycleAudit(),
+      clock: { now: () => fixedClock },
+      repository: new PostgresPersonLifecycleRepository(),
+      transaction: new PostgresPeopleTransaction(peopleConnection.db),
+    });
+    const initial = await getPerson(owner, personId);
+    const initialBody = await initial.json() as {
+      readonly person: { readonly updatedAt: string };
+    };
+
+    const first = await lifecycle.edit(actor, personId, {
+      expectedUpdatedAt: initialBody.person.updatedAt,
+      familyName: "Byron",
+      givenName: "Ada",
+      isPartial: false,
+    });
+    assert(first.status === "updated", "first fixed-clock edit commits");
+    const [firstProof] = await sql<{
+      readonly family_name: string;
+      readonly updated_at: string;
+    }[]>`
+      select family_name,
+        to_char(updated_at at time zone 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+      from crm.people where id = ${personId}
+    `;
+    assert(
+      firstProof?.family_name === "Byron" &&
+        firstProof.updated_at === first.person.updatedAt,
+      "first intended identity and returned version are persisted",
+    );
+
+    const second = await lifecycle.edit(actor, personId, {
+      expectedUpdatedAt: first.person.updatedAt,
+      familyName: "King",
+      givenName: "Ada",
+      isPartial: false,
+    });
+    assert(second.status === "updated", "second fixed-clock edit commits");
+    assert(
+      second.person.updatedAt !== first.person.updatedAt &&
+        second.person.updatedAt > first.person.updatedAt,
+      "each fixed-clock mutation returns a unique strictly newer version",
+    );
+
+    const headers = {
+      "content-type": "application/json",
+      cookie: owner.cookie,
+      origin: "http://localhost",
+      "X-Workspace-Id": owner.workspaceId,
+    };
+    const replay = await configured.app.request(
+      `http://localhost/api/v1/people/${personId}`,
+      {
+        body: JSON.stringify({
+          expectedUpdatedAt: first.person.updatedAt,
+          familyName: "Replay",
+          givenName: "Ada",
+          isPartial: false,
+        }),
+        headers,
+        method: "PATCH",
+      },
+    );
+    assert(replay.status === 409, "replaying the earlier token is stale");
+
+    const [proof] = await sql<{
+      readonly audit_count: number;
+      readonly distinct_audit_count: number;
+      readonly family_name: string;
+      readonly version_is_newer: boolean;
+    }[]>`
+      select person.family_name,
+        person.updated_at > ${first.person.updatedAt}::timestamptz
+          as version_is_newer,
+        (select count(*)::int from crm.audit_events
+          where person_id = ${personId}
+            and action = 'people.person-updated') as audit_count,
+        (select count(distinct id)::int from crm.audit_events
+          where person_id = ${personId}
+            and action = 'people.person-updated') as distinct_audit_count
+      from crm.people person where person.id = ${personId}
+    `;
+    assert(
+      proof?.family_name === "King" && proof.version_is_newer,
+      "the stale replay cannot alter the second committed identity or version",
+    );
+    assert(
+      proof.audit_count === 2 && proof.distinct_audit_count === 2,
+      "both intended fixed-clock edits are audited exactly once by distinct IDs",
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "PEOPLE-004 archived people delete directly without losing archive history",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await sql`truncate table crm.users, crm.workspaces restart identity cascade`;
+    const owner = await register(
+      `archived-delete-${crypto.randomUUID()}@example.test`,
+      "Archived delete circle",
+    );
+    const otherOwner = await register(
+      `archived-delete-other-${crypto.randomUUID()}@example.test`,
+      "Other archived delete circle",
+    );
+    const created = await createPerson(owner, {
+      familyName: "Lovelace",
+      givenName: "Ada",
+      isPartial: false,
+    });
+    const personId = (await created.json() as {
+      readonly person: { readonly id: string };
+    }).person.id;
+    const otherCreated = await createPerson(otherOwner, {
+      familyName: "Contact",
+      givenName: "Foreign",
+      isPartial: false,
+    });
+    const otherPersonId = (await otherCreated.json() as {
+      readonly person: { readonly id: string };
+    }).person.id;
+    await sql`
+      insert into crm.person_dates (person_id, kind, precision)
+      values (${personId}, 'custom', 'unknown')
+    `;
+    const headers = {
+      "content-type": "application/json",
+      cookie: owner.cookie,
+      origin: "http://localhost",
+      "X-Workspace-Id": owner.workspaceId,
+    };
+    const readyBody = await (await getPerson(owner, personId)).json() as {
+      readonly person: { readonly updatedAt: string };
+    };
+    const archived = await configured.app.request(
+      `http://localhost/api/v1/people/${personId}/archive`,
+      {
+        body: JSON.stringify({
+          expectedUpdatedAt: readyBody.person.updatedAt,
+        }),
+        headers,
+        method: "POST",
+      },
+    );
+    const archivedBody = await archived.json() as {
+      readonly person: { readonly updatedAt: string };
+    };
+    assert(archived.status === 200, "fixture archives the person");
+    const impact = await configured.app.request(
+      `http://localhost/api/v1/people/${personId}/deletion-impact`,
+      { headers },
+    );
+    const impactBody = await impact.json() as {
+      readonly impact: {
+        readonly confirmation: string;
+        readonly person: { readonly updatedAt: string };
+      };
+    };
+    assert(
+      impact.status === 200 &&
+        impactBody.impact.person.updatedAt === archivedBody.person.updatedAt,
+      "deletion preview preserves the archived version",
+    );
+
+    const otherReady = await (await getPerson(otherOwner, otherPersonId))
+      .json() as {
+        readonly person: { readonly updatedAt: string };
+      };
+    const crossed = await configured.app.request(
+      `http://localhost/api/v1/people/${otherPersonId}`,
+      {
+        body: JSON.stringify({
+          confirmation: "DELETE Foreign Contact",
+          expectedUpdatedAt: otherReady.person.updatedAt,
+        }),
+        headers,
+        method: "DELETE",
+      },
+    );
+    assert(crossed.status === 404, "cross-tenant delete remains hidden");
+
+    const deleteRequest = () =>
+      configured.app.request(
+        `http://localhost/api/v1/people/${personId}`,
+        {
+          body: JSON.stringify({
+            confirmation: impactBody.impact.confirmation,
+            expectedUpdatedAt: impactBody.impact.person.updatedAt,
+          }),
+          headers,
+          method: "DELETE",
+        },
+      );
+    const deleted = await deleteRequest();
+    assert(
+      deleted.status === 200,
+      `archived person deletes directly: ${deleted.status} ${await deleted
+        .text()}`,
+    );
+    const replayed = await deleteRequest();
+    assert(replayed.status === 200, "archived delete replay is idempotent");
+
+    const [proof] = await sql<{
+      readonly archived: boolean;
+      readonly date_count: number;
+      readonly delete_audit_count: number;
+      readonly deleted: boolean;
+      readonly other_unchanged: boolean;
+      readonly other_delete_audit_count: number;
+    }[]>`
+      select
+        person.archived_at is not null as archived,
+        person.deleted_at is not null as deleted,
+        other.archived_at is null and other.deleted_at is null
+          as other_unchanged,
+        (select count(*)::int from crm.person_dates
+          where person_id = ${personId}) as date_count,
+        (select count(*)::int from crm.audit_events
+          where person_id = ${personId}
+            and action = 'people.person-deleted') as delete_audit_count,
+        (select count(*)::int from crm.audit_events
+          where person_id = ${otherPersonId}
+            and action = 'people.person-deleted') as other_delete_audit_count
+      from crm.people person
+      cross join crm.people other
+      where person.id = ${personId} and other.id = ${otherPersonId}
+    `;
+    assert(
+      proof?.archived && proof.deleted && proof.date_count === 1,
+      "delete preserves archive history and dependent records",
+    );
+    assert(
+      proof.delete_audit_count === 1,
+      "delete and its replay create exactly one deletion audit",
+    );
+    assert(
+      proof.other_unchanged && proof.other_delete_audit_count === 0,
+      "cross-tenant person and audit history remain unchanged",
+    );
   },
 });
 

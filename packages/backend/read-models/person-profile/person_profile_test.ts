@@ -1,4 +1,8 @@
-import { createPersonProfile, type PersonProfileRepository } from "./public.ts";
+import {
+  createPersonProfile,
+  type PersonProfileIdentity,
+  type PersonProfileRepository,
+} from "./public.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -11,6 +15,24 @@ const actor = {
   workspaceId: "00000000-0000-4000-8000-000000000003",
 };
 const personId = "00000000-0000-4000-8000-000000000100";
+
+Deno.test("[PEOPLE-004] profile implementations require a lifecycle version", () => {
+  // @ts-expect-error updatedAt is required at the public read-model boundary.
+  const incomplete: PersonProfileIdentity = {
+    givenName: "Ada",
+    id: personId,
+    isDeceased: false,
+    isPartial: false,
+    isSelf: false,
+    isStarred: false,
+    tagCount: 0,
+    tags: [],
+  };
+  assert(
+    incomplete.updatedAt === undefined,
+    "invalid fixture stays compile-only",
+  );
+});
 
 Deno.test("[APP-003C] person profile composes orientation through one read-only query", async () => {
   let received: unknown;
@@ -33,6 +55,7 @@ Deno.test("[APP-003C] person profile composes orientation through one read-only 
             id: "00000000-0000-4000-8000-000000000200",
             name: "Friend",
           }],
+          updatedAt: "2026-08-15T08:00:00.000Z",
         },
         status: "ready",
       });
@@ -80,6 +103,7 @@ Deno.test("[APP-003C] person profile preserves archived, missing, and forbidden 
                   isStarred: false,
                   tagCount: 0,
                   tags: [],
+                  updatedAt: "2026-08-15T08:00:00.000Z",
                 },
                 status,
               }

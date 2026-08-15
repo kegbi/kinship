@@ -33,6 +33,45 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
       "Optional requested workspace; validated against active membership.",
     schema: { type: "string", format: "uuid" },
   };
+  const personIdParameter = {
+    name: "personId",
+    in: "path",
+    required: true,
+    schema: { type: "string", format: "uuid" },
+  };
+  const personMutation = (
+    operationId: string,
+    input: string,
+    output: string,
+  ) => ({
+    operationId,
+    security: [{ kinship_session: [] }],
+    parameters: [originParameter, workspaceParameter, personIdParameter],
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: { $ref: `#/components/schemas/${input}` },
+        },
+      },
+    },
+    responses: {
+      "200": {
+        description: "Atomic current-workspace person lifecycle change",
+        content: {
+          "application/json": {
+            schema: { $ref: `#/components/schemas/${output}` },
+          },
+        },
+      },
+      "400": problem,
+      "401": problem,
+      "403": problem,
+      "404": problem,
+      "409": problem,
+      "503": problem,
+    },
+  });
   const securedRead = (operationId: string, schema: string) => ({
     get: {
       operationId,
@@ -517,12 +556,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           security: [{ kinship_session: [] }],
           parameters: [
             workspaceParameter,
-            {
-              name: "personId",
-              in: "path",
-              required: true,
-              schema: { type: "string", format: "uuid" },
-            },
+            personIdParameter,
           ],
           responses: {
             "200": {
@@ -531,6 +565,54 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
               content: {
                 "application/json": {
                   schema: { $ref: "#/components/schemas/PersonReady" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+        patch: personMutation(
+          "editPerson",
+          "PersonEditInput",
+          "PersonLifecycleChanged",
+        ),
+        delete: personMutation(
+          "deletePerson",
+          "PersonDeleteInput",
+          "PersonDeleted",
+        ),
+      },
+      "/api/v1/people/{personId}/archive": {
+        post: personMutation(
+          "archivePerson",
+          "PersonTransitionInput",
+          "PersonLifecycleChanged",
+        ),
+      },
+      "/api/v1/people/{personId}/restore": {
+        post: personMutation(
+          "restorePerson",
+          "PersonTransitionInput",
+          "PersonLifecycleChanged",
+        ),
+      },
+      "/api/v1/people/{personId}/deletion-impact": {
+        get: {
+          operationId: "getPersonDeletionImpact",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter, personIdParameter],
+          responses: {
+            "200": {
+              description: "Canonical soft-delete impact and confirmation",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/PersonDeletionImpact",
+                  },
                 },
               },
             },
@@ -1235,6 +1317,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             "isSelf",
             "tagCount",
             "tags",
+            "updatedAt",
           ],
           properties: {
             description: { type: "string" },
@@ -1254,6 +1337,107 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
               maxItems: 8,
               items: { $ref: "#/components/schemas/PeopleDirectoryTag" },
             },
+            updatedAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
+        PersonLifecycleIdentity: {
+          type: "object",
+          required: [
+            "id",
+            "givenName",
+            "isPartial",
+            "lifecycle",
+            "updatedAt",
+          ],
+          properties: {
+            familyName: { type: "string" },
+            givenName: { type: "string" },
+            id: { type: "string", format: "uuid" },
+            isPartial: { type: "boolean" },
+            lifecycle: {
+              type: "string",
+              enum: ["active", "archived", "deleted"],
+            },
+            middleName: { type: "string" },
+            nickname: { type: "string" },
+            updatedAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
+        PersonEditInput: {
+          type: "object",
+          required: ["expectedUpdatedAt", "givenName", "isPartial"],
+          properties: {
+            expectedUpdatedAt: { type: "string", format: "date-time" },
+            familyName: { type: "string", maxLength: 200 },
+            givenName: { type: "string", maxLength: 200 },
+            isPartial: { type: "boolean" },
+            middleName: { type: "string", maxLength: 200 },
+            nickname: { type: "string", maxLength: 200 },
+          },
+          additionalProperties: false,
+        },
+        PersonTransitionInput: {
+          type: "object",
+          required: ["expectedUpdatedAt"],
+          properties: {
+            expectedUpdatedAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
+        PersonDeleteInput: {
+          type: "object",
+          required: ["confirmation", "expectedUpdatedAt"],
+          properties: {
+            confirmation: { type: "string", minLength: 1, maxLength: 500 },
+            expectedUpdatedAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
+        PersonLifecycleChanged: {
+          type: "object",
+          required: ["person", "status"],
+          properties: {
+            person: { $ref: "#/components/schemas/PersonLifecycleIdentity" },
+            status: {
+              type: "string",
+              enum: ["updated", "archived", "restored"],
+            },
+          },
+          additionalProperties: false,
+        },
+        PersonDeletionImpact: {
+          type: "object",
+          required: ["impact", "status"],
+          properties: {
+            impact: {
+              type: "object",
+              required: [
+                "confirmation",
+                "dependentRecordPolicy",
+                "person",
+              ],
+              properties: {
+                confirmation: { type: "string" },
+                dependentRecordPolicy: { const: "retained" },
+                person: {
+                  $ref: "#/components/schemas/PersonLifecycleIdentity",
+                },
+              },
+              additionalProperties: false,
+            },
+            status: { const: "ready" },
+          },
+          additionalProperties: false,
+        },
+        PersonDeleted: {
+          type: "object",
+          required: ["next", "personId", "status"],
+          properties: {
+            next: { const: "/app/people" },
+            personId: { type: "string", format: "uuid" },
+            status: { const: "deleted" },
           },
           additionalProperties: false,
         },
@@ -1833,6 +2017,34 @@ export interface PersonProfileIdentity extends PersonIdentity {
   readonly isStarred: boolean;
   readonly tagCount: number;
   readonly tags: readonly PeopleDirectoryTag[];
+  readonly updatedAt: string;
+}
+
+export interface PersonLifecycleIdentity extends PersonIdentity {
+  readonly lifecycle: "active" | "archived" | "deleted";
+  readonly updatedAt: string;
+}
+
+export interface PersonEditInput {
+  readonly expectedUpdatedAt: string;
+  readonly familyName?: string;
+  readonly givenName: string;
+  readonly isPartial: boolean;
+  readonly middleName?: string;
+  readonly nickname?: string;
+}
+
+export interface PersonTransitionInput {
+  readonly expectedUpdatedAt: string;
+}
+
+export interface PersonDeletionImpact {
+  readonly impact: {
+    readonly confirmation: string;
+    readonly dependentRecordPolicy: "retained";
+    readonly person: PersonLifecycleIdentity;
+  };
+  readonly status: "ready";
 }
 
 export interface PersonDueInformation {
@@ -1920,6 +2132,26 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
 
 export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
   return request(\`/api/v1/people/\${encodeURIComponent(personId)}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function editPerson(personId: string, input: PersonEditInput, workspaceId?: string): Promise<ApiResult<{ readonly person: PersonLifecycleIdentity; readonly status: "updated" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}\`, { method: "PATCH", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function archivePerson(personId: string, input: PersonTransitionInput, workspaceId?: string): Promise<ApiResult<{ readonly person: PersonLifecycleIdentity; readonly status: "archived" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/archive\`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function restorePerson(personId: string, input: PersonTransitionInput, workspaceId?: string): Promise<ApiResult<{ readonly person: PersonLifecycleIdentity; readonly status: "restored" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/restore\`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function getPersonDeletionImpact(personId: string, workspaceId?: string): Promise<ApiResult<PersonDeletionImpact>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/deletion-impact\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function deletePerson(personId: string, input: PersonTransitionInput & { readonly confirmation: string }, workspaceId?: string): Promise<ApiResult<{ readonly next: "/app/people"; readonly personId: string; readonly status: "deleted" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}\`, { method: "DELETE", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
 }
 `;
 }

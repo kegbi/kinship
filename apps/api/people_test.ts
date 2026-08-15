@@ -1,5 +1,8 @@
 import { type ApiServices, createApiApp } from "./composition.ts";
-import type { PeopleManagement } from "../../packages/backend/modules/people/public.ts";
+import type {
+  PeopleManagement,
+  PersonLifecycle,
+} from "../../packages/backend/modules/people/public.ts";
 import { createPeopleDirectory } from "../../packages/backend/read-models/people-directory/public.ts";
 import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
 
@@ -20,7 +23,12 @@ Deno.test("PEOPLE-001 person creation requires an active session", async () => {
       list: () => Promise.reject(new Error("must not be called")),
     },
     people: {
+      archive: () => Promise.reject(new Error("must not be called")),
       create: () => Promise.reject(new Error("must not be called")),
+      delete: () => Promise.reject(new Error("must not be called")),
+      edit: () => Promise.reject(new Error("must not be called")),
+      previewDeletion: () => Promise.reject(new Error("must not be called")),
+      restore: () => Promise.reject(new Error("must not be called")),
     },
     profile: {
       get: () => Promise.reject(new Error("must not be called")),
@@ -55,7 +63,10 @@ const actor = {
 };
 
 function services(
-  people: Pick<PeopleManagement, "create"> & Partial<PeopleManagement>,
+  people:
+    & Pick<PeopleManagement, "create">
+    & Partial<PeopleManagement>
+    & Partial<PersonLifecycle>,
   directory: PeopleHttpServices["directory"] = {
     list: () =>
       Promise.resolve({
@@ -77,7 +88,12 @@ function services(
     },
     directory,
     people: {
+      archive: () => Promise.reject(new Error("must not archive")),
+      delete: () => Promise.reject(new Error("must not delete")),
+      edit: () => Promise.reject(new Error("must not edit")),
       get: () => Promise.resolve({ status: "not-found" }),
+      previewDeletion: () => Promise.reject(new Error("must not preview")),
+      restore: () => Promise.reject(new Error("must not restore")),
       ...people,
     },
     profile,
@@ -345,6 +361,7 @@ Deno.test("PEOPLE-002 HTTP distinguishes an archived canonical identity", async 
             isStarred: false,
             tagCount: 0,
             tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
           },
           status: "archived",
         }),
@@ -386,6 +403,7 @@ Deno.test("[APP-003C] HTTP opens the read-only person workspace summary", async 
             isStarred: true,
             tagCount: 0,
             tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
           },
           status: "ready",
         }),
@@ -484,6 +502,7 @@ Deno.test("PEOPLE-001 HTTP reads canonical identity only in the resolved workspa
             isStarred: false,
             tagCount: 0,
             tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
           },
           status: "ready",
         });
@@ -646,4 +665,110 @@ Deno.test("PEOPLE-001 HTTP rejects forged origin and malformed identity before u
   assert(forged.status === 403, "exact origin required");
   assert(malformed.status === 400, "unknown body fields rejected");
   assert(calls === 0, "invalid requests do not invoke application behavior");
+});
+
+Deno.test("PEOPLE-004 HTTP exposes versioned edit, archive, restore, impact, and delete", async () => {
+  const person = {
+    familyName: "Lovelace",
+    givenName: "Ada",
+    id: "00000000-0000-4000-8000-000000000100",
+    isPartial: false,
+    lifecycle: "active" as const,
+    updatedAt: "2026-08-15T08:00:00.000Z",
+  };
+  const app = createPeopleRoutes(services({
+    archive: () =>
+      Promise.resolve({
+        person: { ...person, lifecycle: "archived" },
+        status: "archived",
+      }),
+    create: () => Promise.reject(new Error("must not create")),
+    delete: () => Promise.resolve({ personId: person.id, status: "deleted" }),
+    edit: () => Promise.resolve({ person, status: "updated" }),
+    previewDeletion: () =>
+      Promise.resolve({
+        impact: {
+          confirmation: "DELETE Ada Lovelace",
+          dependentRecordPolicy: "retained",
+          person,
+        },
+        status: "ready",
+      }),
+    restore: () => Promise.resolve({ person, status: "restored" }),
+  }));
+  const mutationBody = JSON.stringify({
+    expectedUpdatedAt: person.updatedAt,
+    givenName: "Ada",
+    isPartial: false,
+  });
+  const edit = await app.request(
+    `http://localhost/api/v1/people/${person.id}`,
+    { body: mutationBody, headers, method: "PATCH" },
+  );
+  assert(edit.status === 200, "edit route is ready");
+  for (const action of ["archive", "restore"] as const) {
+    const response = await app.request(
+      `http://localhost/api/v1/people/${person.id}/${action}`,
+      {
+        body: JSON.stringify({ expectedUpdatedAt: person.updatedAt }),
+        headers,
+        method: "POST",
+      },
+    );
+    assert(response.status === 200, `${action} route is ready`);
+  }
+  const impact = await app.request(
+    `http://localhost/api/v1/people/${person.id}/deletion-impact`,
+    { headers },
+  );
+  assert(
+    impact.status === 200 &&
+      (await impact.json() as { impact: { dependentRecordPolicy: string } })
+          .impact.dependentRecordPolicy === "retained",
+    "impact route states canonical retention",
+  );
+  const deleted = await app.request(
+    `http://localhost/api/v1/people/${person.id}`,
+    {
+      body: JSON.stringify({
+        confirmation: "DELETE Ada Lovelace",
+        expectedUpdatedAt: person.updatedAt,
+      }),
+      headers,
+      method: "DELETE",
+    },
+  );
+  assert(deleted.status === 200, "confirmed deletion route is ready");
+});
+
+Deno.test("PEOPLE-004 HTTP maps lifecycle conflicts without leaking dependencies", async () => {
+  for (
+    const scenario of [
+      { expected: 409, result: { status: "stale" as const } },
+      {
+        expected: 409,
+        result: { status: "archived-write-rejected" as const },
+      },
+      { expected: 404, result: { status: "not-found" as const } },
+      { expected: 403, result: { status: "forbidden" as const } },
+    ]
+  ) {
+    const app = createPeopleRoutes(services({
+      create: () => Promise.reject(new Error("must not create")),
+      edit: () => Promise.resolve(scenario.result),
+    }));
+    const response = await app.request(
+      "http://localhost/api/v1/people/00000000-0000-4000-8000-000000000100",
+      {
+        body: JSON.stringify({
+          expectedUpdatedAt: "2026-08-15T08:00:00.000Z",
+          givenName: "Ada",
+          isPartial: false,
+        }),
+        headers,
+        method: "PATCH",
+      },
+    );
+    assert(response.status === scenario.expected, "lifecycle result maps");
+  }
 });

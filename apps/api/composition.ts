@@ -35,6 +35,7 @@ import {
   PostgresAuthenticationAudit,
   PostgresInvitationAudit,
   PostgresPersonCreatedAudit,
+  PostgresPersonLifecycleAudit,
   PostgresRegistrationAudit,
   PostgresSettingsAudit,
 } from "../../packages/backend/modules/governance/public.ts";
@@ -64,8 +65,10 @@ import { createSettingsRoutes, type SettingsHttpServices } from "./settings.ts";
 import { createSettingsManagement } from "../../packages/backend/modules/workspaces/public.ts";
 import {
   createPeopleManagement,
+  createPersonLifecycle,
   PostgresPeopleRepository,
   PostgresPeopleTransaction,
+  PostgresPersonLifecycleRepository,
 } from "../../packages/backend/modules/people/public.ts";
 import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
 import {
@@ -368,13 +371,21 @@ export function createConfiguredApiApp(
     transaction,
     workspace: new PostgresWorkspaceSettings(),
   });
-  const people = createPeopleManagement({
+  const peopleTransaction = new PostgresPeopleTransaction(connection.db);
+  const peopleManagement = createPeopleManagement({
     audit: new PostgresPersonCreatedAudit(),
     clock,
     ids,
     repository: new PostgresPeopleRepository(),
-    transaction: new PostgresPeopleTransaction(connection.db),
+    transaction: peopleTransaction,
   });
+  const peopleLifecycle = createPersonLifecycle({
+    audit: new PostgresPersonLifecycleAudit(),
+    clock,
+    repository: new PostgresPersonLifecycleRepository(),
+    transaction: peopleTransaction,
+  });
+  const people = { ...peopleManagement, ...peopleLifecycle };
   const directoryRepository = new PostgresPeopleDirectoryRepository(
     connection.db,
   );

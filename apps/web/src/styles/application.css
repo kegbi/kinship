@@ -925,6 +925,119 @@ summary:focus-visible,
   background: #fff8ed;
 }
 
+.person-lifecycle-panel {
+  background: #fffdf8;
+  border: 1px solid rgb(32 53 45 / 13%);
+  border-radius: 1rem;
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.person-lifecycle-panel h2,
+.person-delete-dialog h3 {
+  margin: 0;
+}
+
+.person-lifecycle-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.person-lifecycle-buttons button {
+  min-height: 44px;
+  padding: .7rem 1rem;
+  border: 1px solid #aeb7ae;
+  border-radius: 999px;
+  color: #20352d;
+  background: white;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.person-lifecycle-buttons .button-primary {
+  border-color: #20352d;
+  color: white;
+  background: #20352d;
+}
+
+.person-lifecycle-buttons .button-danger {
+  border-color: #a44730;
+  color: white;
+  background: #a44730;
+}
+
+.person-lifecycle-buttons button:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
+.person-lifecycle-form {
+  border-top: 1px solid rgb(32 53 45 / 13%);
+  display: grid;
+  gap: 1rem;
+  padding-top: 1rem;
+}
+
+.person-delete-dialog {
+  width: min(34rem, calc(100% - 2rem));
+  max-width: none;
+  padding: 1.25rem;
+  border: 1px solid rgb(32 53 45 / 20%);
+  border-radius: 1rem;
+  color: #20352d;
+  background: #fffdf8;
+  box-shadow: 0 24px 64px rgb(32 53 45 / 28%);
+}
+
+.person-delete-dialog::backdrop {
+  background: rgb(18 31 26 / 58%);
+}
+
+.person-delete-dialog form {
+  display: grid;
+  gap: 1rem;
+}
+
+.person-lifecycle-form .form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .9rem;
+}
+
+.person-lifecycle-form label,
+.person-delete-dialog label {
+  display: grid;
+  gap: .4rem;
+  font-weight: 700;
+}
+
+.person-lifecycle-form input,
+.person-delete-dialog input {
+  width: 100%;
+  min-height: 44px;
+  padding: .65rem .75rem;
+  border: 1px solid #aeb7ae;
+  border-radius: .6rem;
+  background: white;
+}
+
+.person-lifecycle-form .checkbox-row {
+  display: flex;
+  align-items: center;
+}
+
+.person-lifecycle-form .checkbox-row input {
+  width: 1.1rem;
+  min-height: auto;
+}
+
+.person-delete-dialog:not([open]),
+.person-lifecycle-form[hidden] {
+  display: none;
+}
+
 .profile-due-summary h2,
 .profile-section-heading h2 {
   margin: 0;

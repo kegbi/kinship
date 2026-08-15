@@ -1,0 +1,194 @@
+import { sql } from "kysely";
+import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import type {
+  PersonLifecycleRecord,
+  PersonLifecycleRepository,
+} from "../../public.ts";
+
+interface PersonRow {
+  readonly archived_at: Date | null;
+  readonly deleted_at: Date | null;
+  readonly family_name: string | null;
+  readonly given_name: string;
+  readonly id: string;
+  readonly is_partial: boolean;
+  readonly middle_name: string | null;
+  readonly nickname: string | null;
+  readonly updated_at: string;
+}
+
+function record(row: PersonRow): PersonLifecycleRecord {
+  return {
+    ...(row.family_name ? { familyName: row.family_name } : {}),
+    givenName: row.given_name,
+    id: row.id,
+    isPartial: row.is_partial,
+    lifecycle: row.deleted_at
+      ? "deleted"
+      : row.archived_at
+      ? "archived"
+      : "active",
+    ...(row.middle_name ? { middleName: row.middle_name } : {}),
+    ...(row.nickname ? { nickname: row.nickname } : {}),
+    updatedAt: row.updated_at,
+  };
+}
+
+export class PostgresPersonLifecycleRepository
+  implements PersonLifecycleRepository {
+  async lock(
+    command: Parameters<PersonLifecycleRepository["lock"]>[0],
+  ): Promise<Awaited<ReturnType<PersonLifecycleRepository["lock"]>>> {
+    const database = databaseFromSession(command.transaction);
+    const authorization = await sql<{ readonly authorized: boolean }>`
+      select true as authorized
+      from crm.users account
+      join crm.workspace_members member on member.user_id = account.id
+      join crm.workspaces workspace on workspace.id = member.workspace_id
+      where account.id = ${command.userId}::uuid
+        and account.status = 'active'
+        and account.deleted_at is null
+        and member.id = ${command.memberId}::uuid
+        and member.workspace_id = ${command.workspaceId}::uuid
+        and member.role = ${command.role}
+        and member.role in ('owner', 'admin', 'member')
+        and member.status = 'active'
+        and member.left_at is null
+        and workspace.id = ${command.workspaceId}::uuid
+        and workspace.status = 'active'
+        and workspace.deleted_at is null
+      for update of account, member, workspace
+    `.execute(database);
+    if (authorization.rows[0]?.authorized !== true) {
+      return { status: "forbidden" };
+    }
+    const result = await sql<PersonRow>`
+      select id::text, given_name, middle_name, family_name, nickname,
+        is_partial, archived_at, deleted_at,
+        to_char(updated_at at time zone 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+      from crm.people
+      where id = ${command.personId}::uuid
+        and workspace_id = ${command.workspaceId}::uuid
+      for update
+    `.execute(database);
+    const row = result.rows[0];
+    return row
+      ? { person: record(row), status: "ready" }
+      : { status: "not-found" };
+  }
+
+  async mutate(
+    command: Parameters<PersonLifecycleRepository["mutate"]>[0],
+  ): Promise<PersonLifecycleRecord | undefined> {
+    const database = databaseFromSession(command.transaction);
+    let result;
+    if (command.action === "edit" && command.input) {
+      result = await sql<PersonRow>`
+        update crm.people set
+          given_name = ${command.input.givenName},
+          middle_name = ${command.input.middleName ?? null},
+          family_name = ${command.input.familyName ?? null},
+          nickname = ${command.input.nickname ?? null},
+          is_partial = ${command.input.isPartial},
+          updated_at = greatest(
+            ${command.occurredAt}::timestamptz,
+            updated_at + interval '1 microsecond'
+          )
+        where id = ${command.personId}::uuid
+          and workspace_id = ${command.workspaceId}::uuid
+          and deleted_at is null and archived_at is null
+        returning id::text, given_name, middle_name, family_name, nickname,
+          is_partial, archived_at, deleted_at,
+          to_char(updated_at at time zone 'UTC',
+            'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+      `.execute(database);
+    } else if (command.action === "archive") {
+      result = await sql<PersonRow>`
+        update crm.people set archived_at = greatest(
+            ${command.occurredAt}::timestamptz,
+            updated_at + interval '1 microsecond'
+          ),
+          updated_at = greatest(
+            ${command.occurredAt}::timestamptz,
+            updated_at + interval '1 microsecond'
+          )
+        where id = ${command.personId}::uuid
+          and workspace_id = ${command.workspaceId}::uuid
+          and deleted_at is null and archived_at is null
+        returning id::text, given_name, middle_name, family_name, nickname,
+          is_partial, archived_at, deleted_at,
+          to_char(updated_at at time zone 'UTC',
+            'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+      `.execute(database);
+    } else if (command.action === "restore") {
+      result = await sql<PersonRow>`
+        update crm.people set archived_at = null,
+          updated_at = greatest(
+            ${command.occurredAt}::timestamptz,
+            updated_at + interval '1 microsecond'
+          )
+        where id = ${command.personId}::uuid
+          and workspace_id = ${command.workspaceId}::uuid
+          and deleted_at is null and archived_at is not null
+        returning id::text, given_name, middle_name, family_name, nickname,
+          is_partial, archived_at, deleted_at,
+          to_char(updated_at at time zone 'UTC',
+            'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+      `.execute(database);
+    } else if (command.action === "delete") {
+      result = await sql<PersonRow>`
+        update crm.people set deleted_at = greatest(
+            ${command.occurredAt}::timestamptz,
+            updated_at + interval '1 microsecond'
+          ),
+          updated_at = greatest(
+            ${command.occurredAt}::timestamptz,
+            updated_at + interval '1 microsecond'
+          )
+        where id = ${command.personId}::uuid
+          and workspace_id = ${command.workspaceId}::uuid
+          and deleted_at is null
+        returning id::text, given_name, middle_name, family_name, nickname,
+          is_partial, archived_at, deleted_at,
+          to_char(updated_at at time zone 'UTC',
+            'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+      `.execute(database);
+    } else {
+      return undefined;
+    }
+    const row = result.rows[0];
+    return row ? record(row) : undefined;
+  }
+
+  async assertPostcondition(
+    command: Parameters<PersonLifecycleRepository["assertPostcondition"]>[0],
+  ): Promise<void> {
+    const expectedArchived = command.action === "delete"
+      ? command.before.lifecycle === "archived"
+      : command.person.lifecycle === "archived";
+    const expectedDeleted = command.person.lifecycle === "deleted";
+    const result = await sql<{ readonly valid: boolean }>`
+      select count(*) = 1 as valid
+      from crm.people
+      where id = ${command.person.id}::uuid
+        and workspace_id = ${command.workspaceId}::uuid
+        and given_name = ${command.person.givenName}
+        and middle_name is not distinct from ${
+      command.person.middleName ?? null
+    }
+        and family_name is not distinct from ${
+      command.person.familyName ?? null
+    }
+        and nickname is not distinct from ${command.person.nickname ?? null}
+        and is_partial = ${command.person.isPartial}
+        and (archived_at is not null) = ${expectedArchived}
+        and (deleted_at is not null) = ${expectedDeleted}
+        and to_char(updated_at at time zone 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') = ${command.person.updatedAt}
+    `.execute(databaseFromSession(command.transaction));
+    if (result.rows[0]?.valid !== true) {
+      throw new Error(`Person ${command.action} postcondition failed.`);
+    }
+  }
+}
