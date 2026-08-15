@@ -1,0 +1,372 @@
+import {
+  type APIRequestContext,
+  type BrowserContext,
+  expect,
+  type Page,
+  test,
+} from "@playwright/test";
+import axe from "axe-core";
+import { execFileSync } from "node:child_process";
+
+const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
+const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
+const password = "correct horse battery staple";
+const composeArgs = [
+  "compose",
+  "--file",
+  "compose.yaml",
+  "--file",
+  "compose.test.yaml",
+] as const;
+
+function sqlLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function databaseSql(statement: string): void {
+  execFileSync("docker", [
+    ...composeArgs,
+    "exec",
+    "-T",
+    "postgres",
+    "psql",
+    "-U",
+    process.env.POSTGRES_USER ?? "kinship_e2e",
+    "-d",
+    process.env.POSTGRES_DB ?? "kinship_e2e",
+    "-v",
+    "ON_ERROR_STOP=1",
+    "-c",
+    statement,
+  ], { cwd: process.cwd(), env: process.env, stdio: "pipe" });
+}
+
+function databaseValue(statement: string): string {
+  return execFileSync("docker", [
+    ...composeArgs,
+    "exec",
+    "-T",
+    "postgres",
+    "psql",
+    "-U",
+    process.env.POSTGRES_USER ?? "kinship_e2e",
+    "-d",
+    process.env.POSTGRES_DB ?? "kinship_e2e",
+    "-At",
+    "-v",
+    "ON_ERROR_STOP=1",
+    "-c",
+    statement,
+  ], { cwd: process.cwd(), encoding: "utf8", env: process.env }).trim();
+}
+
+async function verificationToken(
+  request: APIRequestContext,
+  email: string,
+): Promise<string> {
+  let token: string | undefined;
+  await expect.poll(async () => {
+    const response = await request.get(
+      `${mailOrigin}/api/v1/search?query=${encodeURIComponent(`to:${email}`)}`,
+    );
+    const body = await response.json() as { messages?: Array<{ ID: string }> };
+    for (const message of body.messages ?? []) {
+      const detail = await request.get(
+        `${mailOrigin}/api/v1/message/${message.ID}`,
+      );
+      const content = await detail.json() as { Text?: string };
+      const link = content.Text?.match(/https?:\/\/\S+\?token=\S+/)?.[0];
+      if (link && new URL(link).pathname === "/auth/verify-email") {
+        token = new URL(link).searchParams.get("token") ?? undefined;
+      }
+    }
+    return token;
+  }).toBeTruthy();
+  return token!;
+}
+
+async function registerVerified(
+  request: APIRequestContext,
+  email: string,
+  workspaceName: string,
+): Promise<void> {
+  expect((await request.post(`${origin}/api/v1/registrations`, {
+    data: {
+      email,
+      firstName: "Test",
+      lastName: "Member",
+      password,
+      workspaceName,
+    },
+  })).status()).toBe(202);
+  expect((await request.post(`${origin}/api/v1/email-verifications`, {
+    data: { token: await verificationToken(request, email) },
+  })).status()).toBe(200);
+}
+
+async function signIn(page: Page, email: string): Promise<void> {
+  await page.goto("/auth/sign-in");
+  await page.getByLabel("Email address").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/app$/);
+}
+
+async function sessionCookie(context: BrowserContext): Promise<string> {
+  const cookie = (await context.cookies()).find((item) =>
+    item.name === "kinship_session"
+  );
+  expect(cookie).toBeTruthy();
+  return `kinship_session=${cookie!.value}`;
+}
+
+async function expectAccessible(page: Page): Promise<void> {
+  await page.addScriptTag({ content: axe.source });
+  const violations = await page.evaluate(async () =>
+    (await (globalThis as typeof globalThis & {
+      axe: { run(): Promise<{ violations: unknown[] }> };
+    }).axe.run()).violations
+  );
+  expect(violations).toEqual([]);
+}
+
+test(
+  "[AUTH-004] [WORKSPACE-001] member settings and role-safe workspace administration are tenant-safe",
+  {
+    annotation: [
+      { type: "flow", description: "AUTH-004" },
+      { type: "flow", description: "WORKSPACE-001" },
+    ],
+  },
+  async ({ browser, browserName, context, page, request }) => {
+    test.setTimeout(180_000);
+    const suffix = `${browserName}-${Date.now()}`;
+    const ownerEmail = `settings-owner-${suffix}@example.test`;
+    const memberEmail = `settings-member-${suffix}@example.test`;
+    const foreignEmail = `settings-foreign-${suffix}@example.test`;
+    await registerVerified(request, ownerEmail, `Owner ${suffix}`);
+    await registerVerified(request, memberEmail, `Member ${suffix}`);
+    await registerVerified(request, foreignEmail, `Foreign ${suffix}`);
+    const ownerWorkspaceId = databaseValue(
+      `select w.id::text from crm.workspaces w join crm.users u on u.id = w.created_by_user_id where u.email = ${
+        sqlLiteral(ownerEmail)
+      }`,
+    );
+    const memberUserId = databaseValue(
+      `select id::text from crm.users where email = ${sqlLiteral(memberEmail)}`,
+    );
+    const foreignMemberId = databaseValue(
+      `select wm.id::text from crm.workspace_members wm join crm.users u on u.id = wm.user_id where u.email = ${
+        sqlLiteral(foreignEmail)
+      }`,
+    );
+    const foreignWorkspaceId = databaseValue(
+      `select w.id::text from crm.workspaces w join crm.users u on u.id = w.created_by_user_id where u.email = ${
+        sqlLiteral(foreignEmail)
+      }`,
+    );
+    const ownerUserId = databaseValue(
+      `select id::text from crm.users where email = ${sqlLiteral(ownerEmail)}`,
+    );
+    databaseSql(
+      `with inserted as (insert into crm.workspace_members (id, workspace_id, user_id, role, status, joined_at, created_at, updated_at) values (gen_random_uuid(), ${
+        sqlLiteral(ownerWorkspaceId)
+      }::uuid, ${
+        sqlLiteral(memberUserId)
+      }::uuid, 'member', 'active', now(), now(), now()) returning id) insert into crm.member_preferences (member_id) select id from inserted`,
+    );
+    databaseSql(
+      `with inserted as (insert into crm.workspace_members (id, workspace_id, user_id, role, status, joined_at, created_at, updated_at) values (gen_random_uuid(), ${
+        sqlLiteral(foreignWorkspaceId)
+      }::uuid, ${
+        sqlLiteral(ownerUserId)
+      }::uuid, 'admin', 'active', now(), now(), now()) returning id) insert into crm.member_preferences (member_id) select id from inserted`,
+    );
+
+    await signIn(page, ownerEmail);
+    await page.goto("/app/settings/profile");
+    await expect(page.locator("body")).toHaveAttribute(
+      "data-page-id",
+      "settings.profile",
+    );
+    await expect(page.getByLabel("First name")).toHaveValue("Test");
+    await page.getByLabel("First name").fill("");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByRole("alert")).toContainText("Review");
+    await expect(page.getByLabel("First name")).toBeFocused();
+    await expectAccessible(page);
+    await page.getByLabel("First name").fill("Ada");
+    await page.getByLabel("Last name").fill("Owner");
+    await expect(page.getByText("Unsaved changes.")).toBeVisible();
+    const navigationChoice = new Promise<void>((resolve) => {
+      page.once("dialog", async (dialog) => {
+        expect(dialog.type()).toBe("beforeunload");
+        await dialog.dismiss();
+        resolve();
+      });
+    });
+    await page.getByRole("link", { name: "All settings" }).click();
+    await navigationChoice;
+    await expect(page).toHaveURL(/\/app\/settings\/profile$/);
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Profile saved" }))
+      .toBeVisible();
+    await expect(page.getByText("All changes saved.")).toBeVisible();
+
+    await page.goto("/app/settings/preferences");
+    await page.getByLabel("Locale").fill("sr-Latn");
+    const timeZone = page.getByLabel("Time zone");
+    await timeZone.fill("Not/AZone");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByRole("alert")).toContainText("Review");
+    await expect(page.getByText("Enter a valid IANA time zone.")).toBeVisible();
+    await expect(timeZone).toHaveAttribute("aria-invalid", "true");
+    await expect(timeZone).toBeFocused();
+    await timeZone.fill("Europe/Belgrade");
+    const currency = page.getByLabel("Currency");
+    await currency.fill("ZZZ");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Choose a supported currency.")).toBeVisible();
+    await expect(currency).toHaveAttribute("aria-invalid", "true");
+    await expect(currency).toBeFocused();
+    await currency.fill("EUR");
+    await page.getByLabel("Use fluid layout").check();
+    await expect(page.getByText("Unsaved changes.")).toBeVisible();
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Preferences saved" }),
+    ).toBeVisible();
+
+    const otherContext = await browser.newContext({ ignoreHTTPSErrors: true });
+    const otherPage = await otherContext.newPage();
+    await signIn(otherPage, ownerEmail);
+    await page.goto("/app/settings/security");
+    await expect(page.getByText(/2 active/)).toBeVisible();
+    await page.getByRole("button", { name: "Revoke", exact: true }).click();
+    await expect(page.getByText(/1 active/)).toBeVisible();
+    await otherPage.goto("/app");
+    await expect(
+      otherPage.getByRole("heading", { name: "Sign in to Kinship" }),
+    ).toBeVisible();
+    await otherContext.close();
+
+    await page.goto("/app/settings/workspace");
+    await page.evaluate(
+      (workspaceId) =>
+        sessionStorage.setItem("kinship.active-workspace", workspaceId),
+      ownerWorkspaceId,
+    );
+    await page.reload();
+    const workspaceName = page.getByLabel("Workspace name");
+    const workspaceSwitcher = page.getByLabel("Active workspace");
+    await workspaceName.fill(`Unsaved ${suffix}`);
+    const cancelSwitch = new Promise<void>((resolve) => {
+      page.once("dialog", async (dialog) => {
+        expect(dialog.type()).toBe("confirm");
+        expect(dialog.message()).toMatch(/unsaved changes/i);
+        await dialog.dismiss();
+        resolve();
+      });
+    });
+    await workspaceSwitcher.selectOption(foreignWorkspaceId);
+    await cancelSwitch;
+    await expect(workspaceSwitcher).toHaveValue(ownerWorkspaceId);
+    await expect(workspaceName).toHaveValue(`Unsaved ${suffix}`);
+    await expect(page.getByText("Unsaved changes.")).toBeVisible();
+    expect(
+      await page.evaluate(() =>
+        sessionStorage.getItem("kinship.active-workspace")
+      ),
+    ).toBe(ownerWorkspaceId);
+    expect(databaseValue(
+      `select name from crm.workspaces where id = ${
+        sqlLiteral(ownerWorkspaceId)
+      }::uuid`,
+    )).not.toBe(`Unsaved ${suffix}`);
+
+    const discardSwitch = new Promise<void>((resolve) => {
+      page.once("dialog", async (dialog) => {
+        expect(dialog.type()).toBe("confirm");
+        await dialog.accept();
+        resolve();
+      });
+    });
+    await workspaceSwitcher.selectOption(foreignWorkspaceId);
+    await discardSwitch;
+    await expect(page).toHaveURL(/\/app\/settings\/workspace$/);
+    await expect(workspaceSwitcher).toHaveValue(foreignWorkspaceId);
+    await expect(workspaceName).toHaveValue(`Foreign ${suffix}`);
+    expect(
+      await page.evaluate(() =>
+        sessionStorage.getItem("kinship.active-workspace")
+      ),
+    ).toBe(foreignWorkspaceId);
+    await workspaceSwitcher.selectOption(ownerWorkspaceId);
+    await expect(workspaceName).toHaveValue(`Owner ${suffix}`);
+
+    await page.getByLabel("Workspace name").fill(`Trusted ${suffix}`);
+    await page.getByLabel("Workspace slug").fill(
+      `trusted-${browserName}-${Date.now()}`,
+    );
+    await page.getByLabel("Default locale").fill("sr-Latn");
+    await page.getByLabel("Default time zone").fill("Europe/Belgrade");
+    const defaultCurrency = page.getByLabel("Default currency");
+    await defaultCurrency.fill("ZZZ");
+    await page.getByLabel("Default reminder time").fill("09:30");
+    await expect(page.getByText("Unsaved changes.")).toBeVisible();
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Choose a supported currency.")).toBeVisible();
+    await expect(defaultCurrency).toHaveAttribute("aria-invalid", "true");
+    await expect(defaultCurrency).toBeFocused();
+    await defaultCurrency.fill("EUR");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Workspace settings saved" }),
+    ).toBeVisible();
+
+    await page.goto("/app/settings/members");
+    const memberRole = page.getByLabel(`Access level for ${memberEmail}`);
+    const memberRow = memberRole.locator("xpath=ancestor::li");
+    await memberRole.selectOption("admin");
+    await memberRow.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText(`${memberEmail} updated.`)).toBeVisible();
+    const ownerRole = page.getByLabel(`Access level for ${ownerEmail}`);
+    const ownerRow = ownerRole.locator("xpath=ancestor::li");
+    await ownerRole.selectOption("member");
+    await ownerRow.getByRole("button", { name: "Save" }).click();
+    await expect(
+      page.getByText(/At least one active workspace owner must remain/i),
+    ).toBeVisible();
+    await memberRole.selectOption("member");
+    await memberRow.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText(`${memberEmail} updated.`)).toBeVisible();
+    const crossed = await request.patch(
+      `${origin}/api/v1/settings/members/${foreignMemberId}`,
+      {
+        headers: {
+          cookie: await sessionCookie(context),
+          origin,
+          "X-Workspace-Id": ownerWorkspaceId,
+        },
+        data: { role: "admin", status: "active" },
+      },
+    );
+    expect(crossed.status()).toBe(404);
+
+    const memberContext = await browser.newContext({ ignoreHTTPSErrors: true });
+    const memberPage = await memberContext.newPage();
+    await signIn(memberPage, memberEmail);
+    await memberPage.evaluate(
+      (workspaceId) =>
+        sessionStorage.setItem("kinship.active-workspace", workspaceId),
+      ownerWorkspaceId,
+    );
+    await memberPage.goto("/app/settings/workspace");
+    await expect(
+      memberPage.getByRole("heading", {
+        name: "Workspace settings unavailable",
+      }),
+    ).toBeVisible();
+    await memberContext.close();
+  },
+);

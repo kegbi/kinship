@@ -1,6 +1,6 @@
 schemaVersion: 1
 decisionStatus: accepted
-schemaSource: personal-crm-schema/v2/personal_crm_schema_v2.sql
+schemaSource: personal-crm-schema/v4/personal_crm_schema_v4.sql
 
 sharedKernel:
   path: packages/backend/shared-kernel

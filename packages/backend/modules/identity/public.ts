@@ -53,3 +53,9 @@ export type {
   InvitationIdentityDisplaySummary,
   InvitationIdentityFacade,
 } from "./application/invitation_identity.ts";
+export { PostgresIdentityAccountSettings } from "./adapters/postgres/account_settings.ts";
+export type {
+  IdentityAccountSettingsFacade,
+  IdentityProfile,
+  IdentitySessionSummary,
+} from "./application/account_settings.ts";

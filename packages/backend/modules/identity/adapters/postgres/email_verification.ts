@@ -95,9 +95,9 @@ export class PostgresEmailVerification
       `.execute(transaction);
       await sql`
         insert into crm.user_sessions (
-          id, user_id, session_hash, created_at, last_seen_at, expires_at, revoked_at
+          id, user_id, session_hash, purpose, created_at, last_seen_at, expires_at, revoked_at
         ) values (
-          ${this.ids.create()}::uuid, ${token.user_id}::uuid, ${handoff.hash},
+          ${this.ids.create()}::uuid, ${token.user_id}::uuid, ${handoff.hash}, 'verified-entry',
           ${now}, ${now}, ${new Date(now.getTime() + 10 * 60 * 1_000)}, null
         )
       `.execute(transaction);
@@ -123,7 +123,7 @@ export class PostgresEmailVerification
         join crm.workspace_members wm on wm.user_id = u.id
         join crm.workspaces w on w.id = wm.workspace_id
         where s.session_hash = ${sessionHash}
-          and s.revoked_at is null
+          and s.purpose = 'verified-entry' and s.revoked_at is null
           and s.expires_at > ${now}
           and u.email_verified_at is not null
           and u.status = 'active'
@@ -135,7 +135,8 @@ export class PostgresEmailVerification
       if (!context) return undefined;
       await sql`
         update crm.user_sessions set revoked_at = ${now}, last_seen_at = ${now}
-        where session_hash = ${sessionHash} and revoked_at is null
+        where session_hash = ${sessionHash} and purpose = 'verified-entry'
+          and revoked_at is null
       `.execute(transaction);
       return context;
     });
@@ -176,10 +177,10 @@ export class PostgresEmailVerification
     }
     const inserted = await sql<{ readonly id: string }>`
       insert into crm.user_sessions (
-        id, user_id, session_hash, ip_address, user_agent,
+        id, user_id, session_hash, purpose, ip_address, user_agent,
         created_at, last_seen_at, expires_at, revoked_at
       )
-      select ${this.ids.create()}::uuid, u.id, ${entry.hash},
+      select ${this.ids.create()}::uuid, u.id, ${entry.hash}, 'verified-entry',
         ${command.ipAddress ?? null}::inet, ${command.userAgent ?? null},
         ${now}, ${now}, ${expiresAt}, null
       from crm.users u
@@ -198,7 +199,7 @@ export class PostgresEmailVerification
       select count(*) = 1 valid from crm.user_sessions
       where id = ${entryId}::uuid and user_id = ${command.userId}::uuid
         and session_hash = ${entry.hash} and expires_at = ${expiresAt}
-        and revoked_at is null
+        and purpose = 'verified-entry' and revoked_at is null
     `.execute(database);
     if (postcondition.rows[0]?.valid !== true) {
       throw new Error("Verified identity entry postcondition failed.");
@@ -221,6 +222,7 @@ export class PostgresEmailVerification
       from crm.user_sessions s
       join crm.users u on u.id = s.user_id
       where s.session_hash = ${sessionHash}
+        and s.purpose = 'verified-entry'
         and s.revoked_at is null and s.expires_at > ${now}
         and u.email = ${command.expectedEmail}
         and u.email_verified_at is not null and u.status = 'active'
@@ -234,7 +236,8 @@ export class PostgresEmailVerification
     if (!identity) return undefined;
     await sql`
       update crm.user_sessions set revoked_at = ${now}, last_seen_at = ${now}
-      where session_hash = ${sessionHash} and revoked_at is null
+      where session_hash = ${sessionHash} and purpose = 'verified-entry'
+        and revoked_at is null
     `.execute(database);
     return identity;
   }

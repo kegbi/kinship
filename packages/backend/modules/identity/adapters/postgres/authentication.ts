@@ -336,15 +336,16 @@ export class PostgresIdentityAuthentication
       const previousHash = await this.#sessionHash(command.previousToken);
       await sql`
         update crm.user_sessions set revoked_at = ${now}, last_seen_at = ${now}
-        where session_hash = ${previousHash} and revoked_at is null
+        where session_hash = ${previousHash} and purpose = 'authenticated'
+          and revoked_at is null
       `.execute(database);
     }
     const inserted = await sql<{ readonly id: string }>`
       insert into crm.user_sessions (
-        id, user_id, session_hash, ip_address, user_agent,
+        id, user_id, session_hash, purpose, ip_address, user_agent,
         created_at, last_seen_at, expires_at, revoked_at
       )
-      select ${this.ids.create()}::uuid, u.id, ${sessionHash},
+      select ${this.ids.create()}::uuid, u.id, ${sessionHash}, 'authenticated',
         ${command.ipAddress ?? null}::inet, ${command.userAgent ?? null},
         ${now}, ${now}, ${expiresAt}, null
       from crm.users u
@@ -374,6 +375,7 @@ export class PostgresIdentityAuthentication
     const result = await sql<{ readonly valid: boolean }>`
       select count(*) = 1 valid from crm.user_sessions
       where user_id = ${command.userId}::uuid and session_hash = ${hash}
+        and purpose = 'authenticated'
         and expires_at = ${command.expiresAt} and revoked_at is null
     `.execute(databaseFromSession(command.transaction));
     if (result.rows[0]?.valid !== true) {
@@ -389,6 +391,7 @@ export class PostgresIdentityAuthentication
         select u.id::text as "userId"
         from crm.user_sessions s join crm.users u on u.id = s.user_id
         where s.session_hash = ${hash} and s.revoked_at is null
+          and s.purpose = 'authenticated'
           and s.expires_at > ${now} and u.status = 'active'
           and u.email_verified_at is not null
           and exists (
@@ -401,7 +404,8 @@ export class PostgresIdentityAuthentication
       if (!principal) return undefined;
       await sql`
         update crm.user_sessions set last_seen_at = ${now}
-        where session_hash = ${hash} and revoked_at is null
+        where session_hash = ${hash} and purpose = 'authenticated'
+          and revoked_at is null
       `.execute(transaction);
       return principal;
     });
@@ -416,7 +420,7 @@ export class PostgresIdentityAuthentication
     const revoked = await sql<{ readonly id: string }>`
       update crm.user_sessions set revoked_at = ${now}, last_seen_at = ${now}
       where session_hash = ${hash} and revoked_at is null
-        and expires_at > ${now}
+        and purpose = 'authenticated' and expires_at > ${now}
       returning id::text
     `.execute(databaseFromSession(command.transaction));
     if (revoked.rows.length !== 1) {

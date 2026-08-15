@@ -7,16 +7,16 @@ const categories = [
     title: "Personal",
     description: "Your identity, preferences, and security.",
     items: [
-      ["Profile", "Name, email, and personal account context", "profile name email account"],
-      ["Preferences", "Locale, time zone, formats, and display", "preferences locale time zone display density"],
-      ["Security & sessions", "Password, MFA, passkeys, recovery, and sessions", "security password mfa passkeys recovery sessions"],
+      ["Profile", "Name, email, and personal account context", "profile name email account", "/app/settings/profile"],
+      ["Preferences", "Locale, time zone, formats, and display", "preferences locale time zone display density", "/app/settings/preferences"],
+      ["Security & sessions", "Password, MFA, passkeys, recovery, and sessions", "security password mfa passkeys recovery sessions", "/app/settings/security"],
     ],
   },
   {
     title: "Workspace",
     description: "Shared workspace settings, clearly separate from personal choices.",
     items: [
-      ["General", "Workspace identity and shared defaults", "workspace general identity defaults"],
+      ["General", "Workspace identity and shared defaults", "workspace general identity defaults", "/app/settings/workspace"],
       ["Members", "Roles, active members, and invitations", "members roles invitations", "/app/settings/members"],
       ["Personalization", "Profile modules and controlled vocabularies", "personalization vocabularies tags relationship activity"],
     ],
@@ -78,7 +78,7 @@ const categories = [
             </header>
             <div class="settings-card-grid">
               {category.items.map(([title, description, search, href]) => (
-                <article class="settings-card" data-settings-item data-search={`${category.title} ${title} ${search}`} data-requires-workspace-admin={title === "Members" ? "true" : undefined}>
+                <article class="settings-card" data-settings-item data-search={`${category.title} ${title} ${search}`} data-requires-workspace-admin={title === "Members" || title === "General" ? "true" : undefined}>
                   <div><h3>{title}</h3><p>{description}</p></div>
                   {href ? <a class="planned-label settings-card-link" href={href}>Open</a> : <span class="planned-label">Planned</span>}
                 </article>

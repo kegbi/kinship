@@ -157,6 +157,11 @@ Deno.test("AUTH-001/AUTH-002/AUTH-003 OpenAPI is deterministic and secret-safe",
     "sign-out must document a truthful revocation dependency failure",
   );
   assert(
+    responseContracts["/api/v1/settings/members/{memberId}"]?.patch
+      ?.responses?.["404"] !== undefined,
+    "managed-member update must document an unknown or cross-workspace target",
+  );
+  assert(
     text.includes('"InvitationToken"') && text.includes('"writeOnly":true') &&
       generatedClient.includes("inspectWorkspaceInvitation(token?: string)") &&
       generatedClient.includes("registerInvitedIdentity(input:"),

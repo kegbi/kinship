@@ -1198,11 +1198,11 @@ Deno.test({
     assert(invitee, "replacement invitee exists");
     await sql`
       insert into crm.user_sessions (
-        id, user_id, session_hash, created_at, last_seen_at, expires_at
+        id, user_id, session_hash, purpose, created_at, last_seen_at, expires_at
       ) values (
         gen_random_uuid(), ${invitee.id}::uuid,
         ${await tokenService.hash(`authenticated-session:${normalToken.raw}`)},
-        now(), now(), now() + interval '10 minutes'
+        'authenticated', now(), now(), now() + interval '10 minutes'
       )
     `;
     const normalTokenAttempt = await configured.app.request(

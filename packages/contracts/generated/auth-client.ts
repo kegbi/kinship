@@ -130,3 +130,91 @@ export function inspectWorkspaceInvitation(token?: string): Promise<ApiResult<In
 export function acceptWorkspaceInvitation(token?: string): Promise<ApiResult<{ readonly status: "accepted"; readonly next: "/app"; readonly workspace: Authenticated["workspace"] }>> {
   return request("/api/v1/workspace-invitations/accept", { method: "POST", body: JSON.stringify(token ? { token } : {}) });
 }
+
+export interface ProfileSettings {
+  readonly email: string;
+  readonly firstName: string;
+  readonly lastName: string;
+}
+
+export interface MemberPreferences {
+  readonly contactNameOrder: "given_family_nickname" | "family_given_nickname";
+  readonly contactSortOrder: "given_name_asc" | "family_name_asc";
+  readonly currencyCode?: string;
+  readonly fluidLayout: boolean;
+  readonly locale: string;
+  readonly measurementSystem: "metric" | "imperial";
+  readonly temperatureScale: "celsius" | "fahrenheit";
+  readonly timezone?: string;
+}
+
+export interface MemberSession {
+  readonly id: string;
+  readonly current: boolean;
+  readonly createdAt: string;
+  readonly lastSeenAt: string;
+  readonly expiresAt: string;
+  readonly ipAddress?: string;
+  readonly userAgent?: string;
+}
+
+export interface WorkspaceSettings {
+  readonly name: string;
+  readonly slug?: string;
+  readonly defaultLocale: string;
+  readonly defaultTimezone?: string;
+  readonly defaultCurrencyCode?: string;
+  readonly defaultReminderTime: string;
+}
+
+export interface ManagedMember {
+  readonly id: string;
+  readonly email: string;
+  readonly name: string;
+  readonly role: "owner" | "admin" | "member";
+  readonly status: "active" | "suspended";
+}
+
+function workspaceHeader(workspaceId?: string): HeadersInit | undefined {
+  return workspaceId ? { "X-Workspace-Id": workspaceId } : undefined;
+}
+
+export function getSettingsProfile(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly profile: ProfileSettings }>> {
+  return request("/api/v1/settings/profile", { headers: workspaceHeader(workspaceId) });
+}
+
+export function updateSettingsProfile(input: Pick<ProfileSettings, "firstName" | "lastName">, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly profile: ProfileSettings }>> {
+  return request("/api/v1/settings/profile", { method: "PUT", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function getMemberPreferences(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: MemberPreferences }>> {
+  return request("/api/v1/settings/preferences", { headers: workspaceHeader(workspaceId) });
+}
+
+export function updateMemberPreferences(input: MemberPreferences, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: MemberPreferences }>> {
+  return request("/api/v1/settings/preferences", { method: "PUT", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function listMemberSessions(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly sessions: readonly MemberSession[] }>> {
+  return request("/api/v1/settings/sessions", { headers: workspaceHeader(workspaceId) });
+}
+
+export function revokeMemberSession(sessionId: string, workspaceId?: string): Promise<ApiResult<{ readonly status: "revoked"; readonly current: boolean }>> {
+  return request(`/api/v1/settings/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE", headers: workspaceHeader(workspaceId) });
+}
+
+export function getWorkspaceSettings(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly workspace: WorkspaceSettings }>> {
+  return request("/api/v1/settings/workspace", { headers: workspaceHeader(workspaceId) });
+}
+
+export function updateWorkspaceSettings(input: WorkspaceSettings, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly workspace: WorkspaceSettings }>> {
+  return request("/api/v1/settings/workspace", { method: "PUT", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function listManagedMembers(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly members: readonly ManagedMember[] }>> {
+  return request("/api/v1/settings/members", { headers: workspaceHeader(workspaceId) });
+}
+
+export function updateManagedMember(memberId: string, input: Pick<ManagedMember, "role" | "status">, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly member: ManagedMember }>> {
+  return request(`/api/v1/settings/members/${encodeURIComponent(memberId)}`, { method: "PATCH", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}

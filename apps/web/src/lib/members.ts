@@ -1,11 +1,11 @@
 import {
   createWorkspaceInvitation,
-  getSession,
   getWorkspaceMembers,
+  listManagedMembers,
+  updateManagedMember,
   type WorkspaceMembers,
 } from "../../../../packages/contracts/generated/auth-client.ts";
-
-const ACTIVE_WORKSPACE_KEY = "kinship.active-workspace";
+import { resolveWorkspaceSession } from "./workspace-context.ts";
 
 interface MemberElements {
   readonly form: HTMLFormElement;
@@ -13,6 +13,8 @@ interface MemberElements {
   readonly invitationCount: HTMLElement;
   readonly memberCount: HTMLElement;
   readonly memberList: HTMLUListElement;
+  readonly managedList?: HTMLUListElement;
+  readonly managedState?: HTMLElement;
   readonly membersState: HTMLElement;
   readonly pendingList: HTMLUListElement;
   readonly pendingState: HTMLElement;
@@ -27,6 +29,8 @@ function elements(): MemberElements | undefined {
   );
   const memberCount = document.querySelector<HTMLElement>("#member-count");
   const memberList = document.querySelector<HTMLUListElement>("#member-list");
+  const managedList = document.querySelector<HTMLUListElement>("#managed-list");
+  const managedState = document.querySelector<HTMLElement>("#managed-state");
   const membersState = document.querySelector<HTMLElement>("#members-state");
   const pendingList = document.querySelector<HTMLUListElement>("#pending-list");
   const pendingState = document.querySelector<HTMLElement>("#pending-state");
@@ -41,12 +45,80 @@ function elements(): MemberElements | undefined {
       invitationCount,
       memberCount,
       memberList,
+      ...(managedList && managedState ? { managedList, managedState } : {}),
       membersState,
       pendingList,
       pendingState,
       submit,
     }
     : undefined;
+}
+
+async function renderManagement(
+  ui: MemberElements,
+  workspaceId: string,
+): Promise<void> {
+  if (!ui.managedList || !ui.managedState) return;
+  const managedList = ui.managedList;
+  const managedState = ui.managedState;
+  const result = await listManagedMembers(workspaceId).catch(() => undefined);
+  if (!result?.ok) {
+    managedState.textContent = result?.problem.detail ??
+      "Member administration is unavailable.";
+    return;
+  }
+  managedList.replaceChildren(...result.value.members.map((member) => {
+    const row = document.createElement("li");
+    const copy = document.createElement("span");
+    const strong = document.createElement("strong");
+    strong.textContent = member.name || member.email;
+    copy.append(strong);
+    const controls = document.createElement("span");
+    controls.className = "member-controls";
+    const role = document.createElement("select");
+    role.setAttribute("aria-label", `Access level for ${member.email}`);
+    for (const value of ["owner", "admin", "member"] as const) {
+      const option = document.createElement("option");
+      option.textContent = value[0]!.toUpperCase() + value.slice(1);
+      option.value = value;
+      role.add(option);
+    }
+    role.value = member.role;
+    const active = document.createElement("select");
+    active.setAttribute("aria-label", `Status for ${member.email}`);
+    for (const value of ["active", "suspended"] as const) {
+      const option = document.createElement("option");
+      option.textContent = value[0]!.toUpperCase() + value.slice(1);
+      option.value = value;
+      active.add(option);
+    }
+    active.value = member.status;
+    const save = document.createElement("button");
+    save.type = "button";
+    save.textContent = "Save";
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      const updated = await updateManagedMember(member.id, {
+        role: role.value as "admin" | "member" | "owner",
+        status: active.value as "active" | "suspended",
+      }, workspaceId).catch(() => undefined);
+      save.disabled = false;
+      const message = updated?.ok
+        ? `${member.email} updated.`
+        : updated?.problem.detail ?? "Member could not be updated.";
+      if (updated?.ok) await renderManagement(ui, workspaceId);
+      managedState.hidden = false;
+      managedState.textContent = message;
+    });
+    controls.append(role, active, save);
+    row.append(copy, controls);
+    return row;
+  }));
+  managedList.hidden = result.value.members.length === 0;
+  managedState.hidden = result.value.members.length > 0;
+  if (result.value.members.length === 0) {
+    managedState.textContent = "No manageable members.";
+  }
 }
 
 function listRow(
@@ -100,16 +172,14 @@ function renderLists(ui: MemberElements, value: WorkspaceMembers): void {
 export async function mountMembersPage(): Promise<void> {
   const ui = elements();
   if (!ui) return;
-  const selectedWorkspaceId = sessionStorage.getItem(ACTIVE_WORKSPACE_KEY) ??
-    undefined;
-  const session = await getSession(selectedWorkspaceId).catch(() => undefined);
-  if (!session?.ok) {
+  const session = await resolveWorkspaceSession();
+  if (session.status !== "ready") {
     ui.form.hidden = true;
     ui.membersState.textContent = "Your session could not be confirmed.";
     ui.pendingState.textContent = "Pending invitations are unavailable.";
     return;
   }
-  const workspaceId = session.value.workspace.id;
+  const workspaceId = session.session.workspace.id;
   const load = async (): Promise<void> => {
     const result = await getWorkspaceMembers(workspaceId).catch(() =>
       undefined
@@ -128,6 +198,7 @@ export async function mountMembersPage(): Promise<void> {
       return;
     }
     renderLists(ui, result.value);
+    await renderManagement(ui, workspaceId);
   };
   await load();
   ui.form.addEventListener("submit", async (event) => {

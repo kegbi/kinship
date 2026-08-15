@@ -96,6 +96,7 @@ flows:
 
   - id: AUTH-004
     title: Manage preferences and sessions
+    deliveryStatus: delivered
     priority: P0
     actor: active-member
     trigger: The member changes a preference or revokes a session.
@@ -120,7 +121,7 @@ flows:
     moduleIds: [identity, workspaces]
     permissions: [member.self.manage]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-002e.spec.ts] }
 
   - id: AUTH-005
     title: Leave a workspace or delete the personal identity safely
@@ -151,6 +152,7 @@ flows:
 
   - id: WORKSPACE-001
     title: Manage workspace settings and members
+    deliveryStatus: delivered
     priority: P1
     actor: workspace-admin
     trigger: An administrator changes workspace configuration.
@@ -170,7 +172,7 @@ flows:
     moduleIds: [workspaces]
     permissions: [workspace.manage]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-002e.spec.ts] }
 
   - id: WORKSPACE-002
     title: Reset or delete a workspace safely

@@ -26,6 +26,19 @@ export {
   createProtectedSessionCoordinator,
   protectedSessionHttpStatus,
 } from "./application/protected_session.ts";
+export { createSettingsManagement } from "./application/settings_management.ts";
+export type {
+  ManagedMember,
+  MemberPreferences,
+  SettingsActor,
+  SettingsAudit,
+  SettingsManagement,
+  SettingsManagementDependencies,
+  SettingsTransaction,
+  WorkspaceConfiguration,
+  WorkspaceMemberRecord,
+  WorkspaceSettingsRepository,
+} from "./application/settings_management.ts";
 export { createWorkspaceInvitationCoordinator } from "./application/invite_member.ts";
 export type {
   InvitationAcceptance,
@@ -42,6 +55,7 @@ export type {
   WorkspaceRole,
 } from "./application/invite_member.ts";
 export { PostgresWorkspaceInvitations } from "./adapters/postgres/workspace_invitations.ts";
+export { PostgresWorkspaceSettings } from "./adapters/postgres/settings_management.ts";
 export type {
   ActiveWorkspaceContext,
   ActiveWorkspaceResolver,

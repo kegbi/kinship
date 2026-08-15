@@ -19,15 +19,15 @@ CREATE TEMP TABLE expected_field_catalog (
   change_reason text
 );
 
-\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v2.csv' WITH (FORMAT csv, HEADER true)
+\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v4.csv' WITH (FORMAT csv, HEADER true)
 
 DO $$
 DECLARE
   actual_count bigint;
 BEGIN
   SELECT count(*) INTO actual_count FROM expected_field_catalog;
-  IF actual_count <> 812 THEN
-    RAISE EXCEPTION 'field catalog row count: expected 812, got %', actual_count;
+  IF actual_count <> 813 THEN
+    RAISE EXCEPTION 'field catalog row count: expected 813, got %', actual_count;
   END IF;
 
   IF EXISTS (
@@ -156,7 +156,26 @@ BEGIN
     WHERE schemaname = 'crm'
       AND indexname = 'api_request_logs_auth_subject_idx'
   ) THEN
-    RAISE EXCEPTION 'schema v2 authentication subject constraint/index missing';
+    RAISE EXCEPTION 'schema authentication subject constraint/index missing';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE connamespace = 'crm'::regnamespace
+      AND conname = 'user_sessions_purpose_check'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE connamespace = 'crm'::regnamespace
+      AND conname = 'user_sessions_legacy_revoked_check'
+  ) THEN
+    RAISE EXCEPTION 'user-session purpose constraints missing';
+  END IF;
+
+  IF (SELECT count(*) FROM crm.currencies) <> 165 OR NOT EXISTS (
+    SELECT 1 FROM crm.currencies
+    WHERE code = 'EUR' AND name = 'Euro' AND minor_unit = 2 AND is_active
+  ) THEN
+    RAISE EXCEPTION 'schema v4 ISO 4217 currency catalog missing or drifted';
   END IF;
 END
 $$;

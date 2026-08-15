@@ -25,6 +25,66 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
     description: "Must exactly match the configured public web origin.",
     schema: { type: "string", format: "uri" },
   };
+  const workspaceParameter = {
+    name: "X-Workspace-Id",
+    in: "header",
+    required: false,
+    description:
+      "Optional requested workspace; validated against active membership.",
+    schema: { type: "string", format: "uuid" },
+  };
+  const securedRead = (operationId: string, schema: string) => ({
+    get: {
+      operationId,
+      security: [{ kinship_session: [] }],
+      parameters: [workspaceParameter],
+      responses: {
+        "200": {
+          description: "Current member settings",
+          content: {
+            "application/json": {
+              schema: { $ref: `#/components/schemas/${schema}` },
+            },
+          },
+        },
+        "401": problem,
+        "403": problem,
+        "503": problem,
+      },
+    },
+  });
+  const securedPut = (
+    operationId: string,
+    input: string,
+    output: string,
+  ) => ({
+    operationId,
+    security: [{ kinship_session: [] }],
+    parameters: [originParameter, workspaceParameter],
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: { $ref: `#/components/schemas/${input}` },
+        },
+      },
+    },
+    responses: {
+      "200": {
+        description: "Settings saved",
+        content: {
+          "application/json": {
+            schema: { $ref: `#/components/schemas/${output}` },
+          },
+        },
+      },
+      "400": problem,
+      "401": problem,
+      "403": problem,
+      "409": problem,
+      "503": problem,
+    },
+  });
   return {
     openapi: "3.1.0",
     info: { title: "Kinship API", version: "1.0.0" },
@@ -319,6 +379,95 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             },
             "401": problem,
           },
+        },
+      },
+      "/api/v1/settings/profile": {
+        ...securedRead("getSettingsProfile", "ProfileSettings"),
+        put: securedPut(
+          "updateSettingsProfile",
+          "ProfileInput",
+          "ProfileSettings",
+        ),
+      },
+      "/api/v1/settings/preferences": {
+        ...securedRead("getMemberPreferences", "PreferenceSettings"),
+        put: securedPut(
+          "updateMemberPreferences",
+          "PreferencesInput",
+          "PreferenceSettings",
+        ),
+      },
+      "/api/v1/settings/sessions": securedRead(
+        "listMemberSessions",
+        "SessionSettings",
+      ),
+      "/api/v1/settings/sessions/{sessionId}": {
+        delete: {
+          operationId: "revokeMemberSession",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            originParameter,
+            workspaceParameter,
+            {
+              name: "sessionId",
+              in: "path",
+              required: true,
+              schema: { type: "string", format: "uuid" },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Owned session revoked",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/SessionRevoked" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/settings/workspace": {
+        ...securedRead("getWorkspaceSettings", "WorkspaceSettings"),
+        put: securedPut(
+          "updateWorkspaceSettings",
+          "WorkspaceSettingsInput",
+          "WorkspaceSettings",
+        ),
+      },
+      "/api/v1/settings/members": securedRead(
+        "listManagedMembers",
+        "ManagedMembers",
+      ),
+      "/api/v1/settings/members/{memberId}": {
+        patch: {
+          ...securedPut(
+            "updateManagedMember",
+            "MemberUpdateInput",
+            "ManagedMemberResult",
+          ),
+          responses: {
+            ...securedPut(
+              "updateManagedMember",
+              "MemberUpdateInput",
+              "ManagedMemberResult",
+            ).responses,
+            "404": problem,
+          },
+          parameters: [
+            originParameter,
+            workspaceParameter,
+            {
+              name: "memberId",
+              in: "path",
+              required: true,
+              schema: { type: "string", format: "uuid" },
+            },
+          ],
         },
       },
       "/api/v1/sign-out": {
@@ -888,6 +1037,187 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        ProfileInput: {
+          type: "object",
+          required: ["firstName", "lastName"],
+          properties: {
+            firstName: { type: "string", minLength: 1, maxLength: 100 },
+            lastName: { type: "string", maxLength: 100 },
+          },
+          additionalProperties: false,
+        },
+        ProfileSettings: {
+          type: "object",
+          required: ["status", "profile"],
+          properties: {
+            status: { const: "ready" },
+            profile: {
+              type: "object",
+              required: ["email", "firstName", "lastName"],
+              properties: {
+                email: { type: "string", format: "email" },
+                firstName: { type: "string" },
+                lastName: { type: "string" },
+              },
+              additionalProperties: false,
+            },
+          },
+          additionalProperties: false,
+        },
+        PreferencesInput: {
+          type: "object",
+          required: [
+            "contactNameOrder",
+            "contactSortOrder",
+            "fluidLayout",
+            "locale",
+            "measurementSystem",
+            "temperatureScale",
+          ],
+          properties: {
+            contactNameOrder: {
+              type: "string",
+              enum: ["given_family_nickname", "family_given_nickname"],
+            },
+            contactSortOrder: {
+              type: "string",
+              enum: ["given_name_asc", "family_name_asc"],
+            },
+            currencyCode: { type: "string", pattern: "^[A-Z]{3}$" },
+            fluidLayout: { type: "boolean" },
+            locale: { type: "string" },
+            measurementSystem: {
+              type: "string",
+              enum: ["metric", "imperial"],
+            },
+            temperatureScale: {
+              type: "string",
+              enum: ["celsius", "fahrenheit"],
+            },
+            timezone: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        PreferenceSettings: {
+          type: "object",
+          required: ["status", "preferences"],
+          properties: {
+            status: { const: "ready" },
+            preferences: { $ref: "#/components/schemas/PreferencesInput" },
+          },
+          additionalProperties: false,
+        },
+        SessionSettings: {
+          type: "object",
+          required: ["status", "sessions"],
+          properties: {
+            status: { const: "ready" },
+            sessions: {
+              type: "array",
+              items: {
+                type: "object",
+                required: [
+                  "id",
+                  "current",
+                  "createdAt",
+                  "lastSeenAt",
+                  "expiresAt",
+                ],
+                properties: {
+                  id: { type: "string", format: "uuid" },
+                  current: { type: "boolean" },
+                  createdAt: { type: "string", format: "date-time" },
+                  lastSeenAt: { type: "string", format: "date-time" },
+                  expiresAt: { type: "string", format: "date-time" },
+                  ipAddress: { type: "string" },
+                  userAgent: { type: "string" },
+                },
+                additionalProperties: false,
+              },
+            },
+          },
+          additionalProperties: false,
+        },
+        SessionRevoked: {
+          type: "object",
+          required: ["status", "current"],
+          properties: {
+            status: { const: "revoked" },
+            current: { type: "boolean" },
+          },
+          additionalProperties: false,
+        },
+        WorkspaceSettingsInput: {
+          type: "object",
+          required: [
+            "name",
+            "defaultLocale",
+            "defaultReminderTime",
+          ],
+          properties: {
+            name: { type: "string", minLength: 1, maxLength: 200 },
+            slug: { type: "string" },
+            defaultLocale: { type: "string" },
+            defaultTimezone: { type: "string" },
+            defaultCurrencyCode: { type: "string", pattern: "^[A-Z]{3}$" },
+            defaultReminderTime: {
+              type: "string",
+              pattern: "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+            },
+          },
+          additionalProperties: false,
+        },
+        WorkspaceSettings: {
+          type: "object",
+          required: ["status", "workspace"],
+          properties: {
+            status: { const: "ready" },
+            workspace: { $ref: "#/components/schemas/WorkspaceSettingsInput" },
+          },
+          additionalProperties: false,
+        },
+        ManagedMember: {
+          type: "object",
+          required: ["id", "email", "name", "role", "status"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            email: { type: "string", format: "email" },
+            name: { type: "string" },
+            role: { type: "string", enum: ["owner", "admin", "member"] },
+            status: { type: "string", enum: ["active", "suspended"] },
+          },
+          additionalProperties: false,
+        },
+        ManagedMembers: {
+          type: "object",
+          required: ["status", "members"],
+          properties: {
+            status: { const: "ready" },
+            members: {
+              type: "array",
+              items: { $ref: "#/components/schemas/ManagedMember" },
+            },
+          },
+          additionalProperties: false,
+        },
+        MemberUpdateInput: {
+          type: "object",
+          required: ["role", "status"],
+          properties: {
+            role: { type: "string", enum: ["owner", "admin", "member"] },
+            status: { type: "string", enum: ["active", "suspended"] },
+          },
+          additionalProperties: false,
+        },
+        ManagedMemberResult: {
+          type: "object",
+          required: ["status", "member"],
+          properties: {
+            status: { const: "ready" },
+            member: { $ref: "#/components/schemas/ManagedMember" },
+          },
+          additionalProperties: false,
+        },
         InvitationInput: {
           type: "object",
           required: ["email", "role"],
@@ -1071,9 +1401,102 @@ export function inspectWorkspaceInvitation`,
   );
 }
 
+function renderSettingsClient(): string {
+  return `
+export interface ProfileSettings {
+  readonly email: string;
+  readonly firstName: string;
+  readonly lastName: string;
+}
+
+export interface MemberPreferences {
+  readonly contactNameOrder: "given_family_nickname" | "family_given_nickname";
+  readonly contactSortOrder: "given_name_asc" | "family_name_asc";
+  readonly currencyCode?: string;
+  readonly fluidLayout: boolean;
+  readonly locale: string;
+  readonly measurementSystem: "metric" | "imperial";
+  readonly temperatureScale: "celsius" | "fahrenheit";
+  readonly timezone?: string;
+}
+
+export interface MemberSession {
+  readonly id: string;
+  readonly current: boolean;
+  readonly createdAt: string;
+  readonly lastSeenAt: string;
+  readonly expiresAt: string;
+  readonly ipAddress?: string;
+  readonly userAgent?: string;
+}
+
+export interface WorkspaceSettings {
+  readonly name: string;
+  readonly slug?: string;
+  readonly defaultLocale: string;
+  readonly defaultTimezone?: string;
+  readonly defaultCurrencyCode?: string;
+  readonly defaultReminderTime: string;
+}
+
+export interface ManagedMember {
+  readonly id: string;
+  readonly email: string;
+  readonly name: string;
+  readonly role: "owner" | "admin" | "member";
+  readonly status: "active" | "suspended";
+}
+
+function workspaceHeader(workspaceId?: string): HeadersInit | undefined {
+  return workspaceId ? { "X-Workspace-Id": workspaceId } : undefined;
+}
+
+export function getSettingsProfile(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly profile: ProfileSettings }>> {
+  return request("/api/v1/settings/profile", { headers: workspaceHeader(workspaceId) });
+}
+
+export function updateSettingsProfile(input: Pick<ProfileSettings, "firstName" | "lastName">, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly profile: ProfileSettings }>> {
+  return request("/api/v1/settings/profile", { method: "PUT", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function getMemberPreferences(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: MemberPreferences }>> {
+  return request("/api/v1/settings/preferences", { headers: workspaceHeader(workspaceId) });
+}
+
+export function updateMemberPreferences(input: MemberPreferences, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: MemberPreferences }>> {
+  return request("/api/v1/settings/preferences", { method: "PUT", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function listMemberSessions(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly sessions: readonly MemberSession[] }>> {
+  return request("/api/v1/settings/sessions", { headers: workspaceHeader(workspaceId) });
+}
+
+export function revokeMemberSession(sessionId: string, workspaceId?: string): Promise<ApiResult<{ readonly status: "revoked"; readonly current: boolean }>> {
+  return request(\`/api/v1/settings/sessions/\${encodeURIComponent(sessionId)}\`, { method: "DELETE", headers: workspaceHeader(workspaceId) });
+}
+
+export function getWorkspaceSettings(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly workspace: WorkspaceSettings }>> {
+  return request("/api/v1/settings/workspace", { headers: workspaceHeader(workspaceId) });
+}
+
+export function updateWorkspaceSettings(input: WorkspaceSettings, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly workspace: WorkspaceSettings }>> {
+  return request("/api/v1/settings/workspace", { method: "PUT", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function listManagedMembers(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly members: readonly ManagedMember[] }>> {
+  return request("/api/v1/settings/members", { headers: workspaceHeader(workspaceId) });
+}
+
+export function updateManagedMember(memberId: string, input: Pick<ManagedMember, "role" | "status">, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly member: ManagedMember }>> {
+  return request(\`/api/v1/settings/members/\${encodeURIComponent(memberId)}\`, { method: "PATCH", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+`;
+}
+
 if (import.meta.main) {
   const openApi = JSON.stringify(buildOpenApiDocument(), null, 2) + "\n";
-  const client = renderGeneratedClient() + renderInvitationClient();
+  const client = renderGeneratedClient() + renderInvitationClient() +
+    renderSettingsClient();
   const check = Deno.args.includes("--check");
   if (check) {
     const currentOpenApi = await Deno.readTextFile(openApiPath).catch(() => "");

@@ -1,17 +1,27 @@
 import postgres from "postgres";
 
 export type SchemaAction =
-  | "apply-v2"
+  | "apply-v4"
   | "reject"
-  | "upgrade-v1-to-v2"
-  | "verify-v2";
+  | "upgrade-v1-to-v4"
+  | "upgrade-v2-to-v4"
+  | "upgrade-v3-to-v4"
+  | "verify-v4";
 
 export const V1_SQL_SHA256 =
   "3d082df6641ddeea9706adee39b41b90656709979a5f980cc93a7d98d1a79e91";
 export const V2_SQL_SHA256 =
   "0bb1375b65948a90c20d1c7f86dc4c14cf13dfd390865864ecd83082c2b10f62";
+export const V3_SQL_SHA256 =
+  "e00707ac4c7f13e04f33bae98df6723b688cc09b09036c1474bfd32c2aa2e890";
+export const V4_SQL_SHA256 =
+  "c318b76d75dfae9307f71b1d46dfe7462017f153fdcf81eaa660ce5e36216b21";
 export const V1_TO_V2_MIGRATION_SHA256 =
   "6483b51b4d432a265087ccc8e7045dfb42b22b2d0dc5b0e5da548b1966a3cef5";
+export const V2_TO_V3_MIGRATION_SHA256 =
+  "0ab1477040d98eb25f2b285a643f3faf2e97bea867ff5058ce0dbc876a38a134";
+export const V3_TO_V4_MIGRATION_SHA256 =
+  "cf9dffcecb7baeffc0d149fe3caecb7827f6b5dca7c267ecd03d2be40659f251";
 
 export function canonicalTableNames(sqlText: string): string[] {
   return Array.from(
@@ -24,13 +34,19 @@ export function canonicalTableNames(sqlText: string): string[] {
 
 export function decideSchemaAction(state: {
   readonly crmSchemaExists: boolean;
-  readonly state: "drift" | "empty" | "v1" | "v2";
+  readonly state: "drift" | "empty" | "v1" | "v2" | "v3" | "v4";
 }): SchemaAction {
-  if (!state.crmSchemaExists && state.state === "empty") return "apply-v2";
+  if (!state.crmSchemaExists && state.state === "empty") return "apply-v4";
   if (state.crmSchemaExists && state.state === "v1") {
-    return "upgrade-v1-to-v2";
+    return "upgrade-v1-to-v4";
   }
-  if (state.crmSchemaExists && state.state === "v2") return "verify-v2";
+  if (state.crmSchemaExists && state.state === "v2") {
+    return "upgrade-v2-to-v4";
+  }
+  if (state.crmSchemaExists && state.state === "v3") {
+    return "upgrade-v3-to-v4";
+  }
+  if (state.crmSchemaExists && state.state === "v4") return "verify-v4";
   return "reject";
 }
 
@@ -276,10 +292,47 @@ function structuresMatch(
     actual.every((item, index) => item === expected[index]);
 }
 
+interface CurrencyCatalogRow {
+  readonly code: string;
+  readonly is_active: boolean;
+  readonly minor_unit: number;
+  readonly name: string;
+}
+
+async function currencyCatalog(
+  transaction: postgres.TransactionSql,
+  schema: string,
+): Promise<readonly CurrencyCatalogRow[]> {
+  if (!/^[a-z][a-z0-9_]+$/.test(schema)) {
+    throw new Error("Invalid internal schema identifier.");
+  }
+  return await transaction.unsafe<CurrencyCatalogRow[]>(
+    `select code::text, name, minor_unit::int, is_active
+     from ${schema}.currencies order by code`,
+  );
+}
+
+function currencyCatalogMatches(
+  actual: readonly CurrencyCatalogRow[],
+  expected: readonly CurrencyCatalogRow[],
+): boolean {
+  const byCode = new Map(actual.map((row) => [row.code.trim(), row]));
+  return expected.length === 165 && expected.every((row) => {
+    const candidate = byCode.get(row.code.trim());
+    return candidate?.name === row.name &&
+      candidate.minor_unit === row.minor_unit &&
+      candidate.is_active === row.is_active;
+  });
+}
+
 export interface CanonicalSchemaArtifacts {
   readonly migrationV1ToV2: string;
+  readonly migrationV2ToV3: string;
+  readonly migrationV3ToV4: string;
   readonly v1Sql: string;
   readonly v2Sql: string;
+  readonly v3Sql: string;
+  readonly v4Sql: string;
 }
 
 export async function applyCanonicalSchema(
@@ -289,16 +342,28 @@ export async function applyCanonicalSchema(
   await Promise.all([
     verifyArtifactChecksum(artifacts.v1Sql, V1_SQL_SHA256, "Schema v1 SQL"),
     verifyArtifactChecksum(artifacts.v2Sql, V2_SQL_SHA256, "Schema v2 SQL"),
+    verifyArtifactChecksum(artifacts.v3Sql, V3_SQL_SHA256, "Schema v3 SQL"),
+    verifyArtifactChecksum(artifacts.v4Sql, V4_SQL_SHA256, "Schema v4 SQL"),
     verifyArtifactChecksum(
       artifacts.migrationV1ToV2,
       V1_TO_V2_MIGRATION_SHA256,
       "Schema v1-to-v2 migration",
     ),
+    verifyArtifactChecksum(
+      artifacts.migrationV2ToV3,
+      V2_TO_V3_MIGRATION_SHA256,
+      "Schema v2-to-v3 migration",
+    ),
+    verifyArtifactChecksum(
+      artifacts.migrationV3ToV4,
+      V3_TO_V4_MIGRATION_SHA256,
+      "Schema v3-to-v4 migration",
+    ),
   ]);
-  const expectedTables = canonicalTableNames(artifacts.v2Sql);
+  const expectedTables = canonicalTableNames(artifacts.v4Sql);
   if (expectedTables.length !== 87) {
     throw new Error(
-      "Canonical schema v2 does not contain the accepted table catalog.",
+      "Canonical schema v4 does not contain the accepted table catalog.",
     );
   }
   const client = postgres(databaseUrl, {
@@ -322,20 +387,31 @@ export async function applyCanonicalSchema(
       const suffix = crypto.randomUUID().replaceAll("-", "");
       const expectedV1Schema = `kinship_expected_v1_${suffix}`;
       const expectedV2Schema = `kinship_expected_v2_${suffix}`;
+      const expectedV3Schema = `kinship_expected_v3_${suffix}`;
+      const expectedV4Schema = `kinship_expected_v4_${suffix}`;
       await transaction.unsafe(
         canonicalSqlForSchema(artifacts.v1Sql, expectedV1Schema),
       );
       await transaction.unsafe(
         canonicalSqlForSchema(artifacts.v2Sql, expectedV2Schema),
       );
+      await transaction.unsafe(
+        canonicalSqlForSchema(artifacts.v3Sql, expectedV3Schema),
+      );
+      await transaction.unsafe(
+        canonicalSqlForSchema(artifacts.v4Sql, expectedV4Schema),
+      );
       await transaction`set local search_path = public`;
-      const [actual, expectedV1, expectedV2] = await Promise.all([
-        state.crm_schema_exists
-          ? catalogStructure(transaction, "crm")
-          : Promise.resolve([]),
-        catalogStructure(transaction, expectedV1Schema),
-        catalogStructure(transaction, expectedV2Schema),
-      ]);
+      const [actual, expectedV1, expectedV2, expectedV3, expectedV4] =
+        await Promise.all([
+          state.crm_schema_exists
+            ? catalogStructure(transaction, "crm")
+            : Promise.resolve([]),
+          catalogStructure(transaction, expectedV1Schema),
+          catalogStructure(transaction, expectedV2Schema),
+          catalogStructure(transaction, expectedV3Schema),
+          catalogStructure(transaction, expectedV4Schema),
+        ]);
       const catalogState = !state.crm_schema_exists &&
           state.crm_table_count === 0
         ? "empty"
@@ -343,6 +419,10 @@ export async function applyCanonicalSchema(
         ? "v1"
         : structuresMatch(actual, expectedV2)
         ? "v2"
+        : structuresMatch(actual, expectedV3)
+        ? "v3"
+        : structuresMatch(actual, expectedV4)
+        ? "v4"
         : "drift";
       const action = decideSchemaAction({
         crmSchemaExists: state.crm_schema_exists,
@@ -351,25 +431,43 @@ export async function applyCanonicalSchema(
       if (action === "reject") {
         throw new Error("Refusing ambiguous or drifted database state.");
       }
-      if (action === "apply-v2") {
-        await transaction.unsafe(artifacts.v2Sql);
-      } else if (action === "upgrade-v1-to-v2") {
+      if (action === "apply-v4") {
+        await transaction.unsafe(artifacts.v4Sql);
+      } else if (action === "upgrade-v1-to-v4") {
         await transaction.unsafe(artifacts.migrationV1ToV2);
+        await transaction.unsafe(artifacts.migrationV2ToV3);
+        await transaction.unsafe(artifacts.migrationV3ToV4);
+      } else if (action === "upgrade-v2-to-v4") {
+        await transaction.unsafe(artifacts.migrationV2ToV3);
+        await transaction.unsafe(artifacts.migrationV3ToV4);
+      } else if (action === "upgrade-v3-to-v4") {
+        await transaction.unsafe(artifacts.migrationV3ToV4);
       }
       await transaction`set local search_path = public`;
       const finalStructure = await catalogStructure(transaction, "crm");
-      if (!structuresMatch(finalStructure, expectedV2)) {
+      if (!structuresMatch(finalStructure, expectedV4)) {
         const mismatch = finalStructure.findIndex((item, index) =>
-          item !== expectedV2[index]
+          item !== expectedV4[index]
         );
         throw new Error(
-          `Canonical schema v2 structural verification failed at ${mismatch}: actual=${
+          `Canonical schema v4 structural verification failed at ${mismatch}: actual=${
             finalStructure[mismatch] ?? "<missing>"
-          }; expected=${expectedV2[mismatch] ?? "<missing>"}.`,
+          }; expected=${expectedV4[mismatch] ?? "<missing>"}.`,
+        );
+      }
+      const [actualCurrencies, expectedCurrencies] = await Promise.all([
+        currencyCatalog(transaction, "crm"),
+        currencyCatalog(transaction, expectedV4Schema),
+      ]);
+      if (!currencyCatalogMatches(actualCurrencies, expectedCurrencies)) {
+        throw new Error(
+          "Canonical schema v4 currency reference-data verification failed.",
         );
       }
       await transaction.unsafe(`drop schema ${expectedV1Schema} cascade`);
       await transaction.unsafe(`drop schema ${expectedV2Schema} cascade`);
+      await transaction.unsafe(`drop schema ${expectedV3Schema} cascade`);
+      await transaction.unsafe(`drop schema ${expectedV4Schema} cascade`);
       return action;
     });
   } finally {
