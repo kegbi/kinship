@@ -63,6 +63,46 @@ const sections = [
         </div>
       </header>
 
+      <section class="person-lifecycle-panel" aria-labelledby="person-lifecycle-heading">
+        <div>
+          <p class="section-kicker">Person lifecycle</p>
+          <h2 id="person-lifecycle-heading">Manage identity and availability</h2>
+          <p id="person-lifecycle-status" class="section-state" role="status" aria-live="polite"></p>
+        </div>
+        <div class="person-lifecycle-buttons">
+          <button id="person-edit-open" class="button-secondary" type="button">Edit person</button>
+          <button id="person-archive" class="button-secondary" type="button">Archive person</button>
+          <button id="person-restore" class="button-secondary" type="button" hidden>Restore person</button>
+          <button id="person-delete-open" class="button-danger" type="button">Delete person</button>
+        </div>
+
+        <form id="person-edit-form" class="person-lifecycle-form" hidden>
+          <div class="form-grid">
+            <label>Given name <input name="givenName" maxlength="200" /></label>
+            <label>Middle name <input name="middleName" maxlength="200" /></label>
+            <label>Family name <input name="familyName" maxlength="200" /></label>
+            <label>Nickname <input name="nickname" maxlength="200" /></label>
+          </div>
+          <label class="checkbox-row"><input name="isPartial" type="checkbox" /> This is a partial identity</label>
+          <div class="person-lifecycle-buttons">
+            <button class="button-primary" type="submit">Save person</button>
+            <button id="person-edit-cancel" class="button-secondary" type="button">Cancel edit</button>
+          </div>
+        </form>
+
+        <dialog id="person-delete-dialog" class="person-delete-dialog" aria-labelledby="person-delete-heading" aria-describedby="person-delete-impact">
+          <form id="person-delete-form">
+            <h3 id="person-delete-heading">Delete this person?</h3>
+            <p id="person-delete-impact" role="status">Loading deletion impact…</p>
+            <label>Confirmation <input id="person-delete-confirmation" name="confirmation" autocomplete="off" required /></label>
+            <div class="person-lifecycle-buttons">
+              <button class="button-danger" type="submit">Confirm delete</button>
+              <button id="person-delete-cancel" class="button-secondary" type="button">Cancel delete</button>
+            </div>
+          </form>
+        </dialog>
+      </section>
+
       <section class="profile-due-summary" aria-labelledby="person-profile-due-heading">
         <div>
           <p class="section-kicker">Orientation first</p>

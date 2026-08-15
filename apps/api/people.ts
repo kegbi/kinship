@@ -3,6 +3,8 @@ import { z } from "zod";
 import type {
   PeopleManagement,
   PersonIdentity,
+  PersonLifecycle,
+  PersonLifecycleRecord,
 } from "../../packages/backend/modules/people/public.ts";
 import type { PersonProfile } from "../../packages/backend/read-models/person-profile/public.ts";
 import type {
@@ -17,7 +19,7 @@ type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface PeopleHttpServices {
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly directory: PeopleDirectory;
-  readonly people: PeopleManagement;
+  readonly people: PeopleManagement & PersonLifecycle;
   readonly profile: PersonProfile;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
   readonly tagOptions: PeopleTagOptions;
@@ -32,6 +34,16 @@ const personSchema = z.object({
   nickname: z.string().trim().max(200).optional(),
 }).strict();
 const personIdSchema = z.uuid();
+const expectedUpdatedAtSchema = z.iso.datetime({ offset: true });
+const editPersonSchema = personSchema.omit({ duplicateOverride: true }).extend({
+  expectedUpdatedAt: expectedUpdatedAtSchema,
+});
+const transitionSchema = z.object({
+  expectedUpdatedAt: expectedUpdatedAtSchema,
+}).strict();
+const deletePersonSchema = transitionSchema.extend({
+  confirmation: z.string().min(1).max(500),
+});
 const directoryQuerySchema = z.object({
   cursor: z.string().max(2_000).optional(),
   lifecycle: z.enum(["active", "archived"]).default("active"),
@@ -122,6 +134,77 @@ function identity(person: PersonIdentity) {
     ...(person.middleName ? { middleName: person.middleName } : {}),
     ...(person.nickname ? { nickname: person.nickname } : {}),
   };
+}
+
+function lifecycleIdentity(person: PersonLifecycleRecord) {
+  return {
+    ...identity(person),
+    lifecycle: person.lifecycle,
+    updatedAt: person.updatedAt,
+  };
+}
+
+function lifecycleFailure(
+  context: Context,
+  status:
+    | "archived-write-rejected"
+    | "confirmation-required"
+    | "forbidden"
+    | "not-found"
+    | "stale"
+    | "validation-error",
+  errors?: Readonly<Record<string, string>>,
+): Response {
+  if (status === "forbidden") {
+    return problem(
+      context,
+      403,
+      "people_forbidden",
+      "Person unavailable",
+      "Your active workspace membership no longer permits this change.",
+    );
+  }
+  if (status === "not-found") {
+    return problem(
+      context,
+      404,
+      "person_not_found",
+      "Person not found",
+      "No person with this identifier exists in the current workspace.",
+    );
+  }
+  if (status === "stale") {
+    return problem(
+      context,
+      409,
+      "person_stale",
+      "Person changed",
+      "Refresh this person before trying the lifecycle action again.",
+    );
+  }
+  if (status === "archived-write-rejected") {
+    return problem(
+      context,
+      409,
+      "archived_write_rejected",
+      "Archived person is read-only",
+      "Restore this person before editing their identity.",
+    );
+  }
+  return problem(
+    context,
+    400,
+    status === "confirmation-required"
+      ? "confirmation_required"
+      : "validation_failed",
+    status === "confirmation-required"
+      ? "Confirmation required"
+      : "Invalid person",
+    status === "confirmation-required"
+      ? "Enter the exact confirmation shown in the deletion impact preview."
+      : "Review the highlighted identity fields and try again.",
+    errors,
+  );
 }
 
 export function createPeopleRoutes(services: PeopleHttpServices): Hono {
@@ -307,6 +390,210 @@ export function createPeopleRoutes(services: PeopleHttpServices): Hono {
       dueInformation: result.dueInformation,
       person: result.person,
       status: result.status,
+    });
+  });
+  routes.patch("/api/v1/people/:personId", async (context) => {
+    const forbidden = requireOrigin(context, services.browserSecurity);
+    if (forbidden) return forbidden;
+    const personId = personIdSchema.safeParse(context.req.param("personId"));
+    const input = editPersonSchema.safeParse(
+      await context.req.json().catch(() => undefined),
+    );
+    if (!personId.success || !input.success) {
+      return problem(
+        context,
+        400,
+        "validation_failed",
+        "Invalid person",
+        "Review the identity fields and current version before saving.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const result = await services.people.edit(resolved, personId.data, {
+      expectedUpdatedAt: input.data.expectedUpdatedAt,
+      ...(input.data.familyName ? { familyName: input.data.familyName } : {}),
+      givenName: input.data.givenName,
+      isPartial: input.data.isPartial,
+      ...(input.data.middleName ? { middleName: input.data.middleName } : {}),
+      ...(input.data.nickname ? { nickname: input.data.nickname } : {}),
+    }).catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "people_unavailable",
+        "Person could not be updated",
+        "The person service is temporarily unavailable.",
+      );
+    }
+    if (result.status !== "updated") {
+      return lifecycleFailure(
+        context,
+        result.status,
+        result.status === "validation-error" ? result.errors : undefined,
+      );
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json({
+      person: lifecycleIdentity(result.person),
+      status: "updated",
+    });
+  });
+  for (const action of ["archive", "restore"] as const) {
+    routes.post(`/api/v1/people/:personId/${action}`, async (context) => {
+      const forbidden = requireOrigin(context, services.browserSecurity);
+      if (forbidden) return forbidden;
+      const personId = personIdSchema.safeParse(context.req.param("personId"));
+      const input = transitionSchema.safeParse(
+        await context.req.json().catch(() => undefined),
+      );
+      if (!personId.success || !input.success) {
+        return problem(
+          context,
+          400,
+          "validation_failed",
+          "Invalid lifecycle request",
+          "Refresh this person before trying again.",
+        );
+      }
+      const resolved = await actor(context, services);
+      if (!resolved) {
+        return problem(
+          context,
+          401,
+          "session_invalid",
+          "Authentication required",
+          "Sign in with an active workspace membership.",
+        );
+      }
+      const result = await services.people[action](
+        resolved,
+        personId.data,
+        input.data,
+      ).catch(() => undefined);
+      if (!result) {
+        return problem(
+          context,
+          503,
+          "people_unavailable",
+          "Person could not be changed",
+          "The person service is temporarily unavailable.",
+        );
+      }
+      if (result.status !== "archived" && result.status !== "restored") {
+        return lifecycleFailure(context, result.status);
+      }
+      context.header("Cache-Control", "private, no-store");
+      return context.json({
+        person: lifecycleIdentity(result.person),
+        status: result.status,
+      });
+    });
+  }
+  routes.get("/api/v1/people/:personId/deletion-impact", async (context) => {
+    const personId = personIdSchema.safeParse(context.req.param("personId"));
+    if (!personId.success) {
+      return problem(
+        context,
+        400,
+        "person_id_invalid",
+        "Invalid person",
+        "Use a valid canonical person identifier.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const result = await services.people.previewDeletion(
+      resolved,
+      personId.data,
+    ).catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "people_unavailable",
+        "Deletion impact unavailable",
+        "The person service is temporarily unavailable.",
+      );
+    }
+    if (result.status !== "ready") {
+      return lifecycleFailure(context, result.status);
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json({
+      impact: {
+        confirmation: result.impact.confirmation,
+        dependentRecordPolicy: result.impact.dependentRecordPolicy,
+        person: lifecycleIdentity(result.impact.person),
+      },
+      status: "ready",
+    });
+  });
+  routes.delete("/api/v1/people/:personId", async (context) => {
+    const forbidden = requireOrigin(context, services.browserSecurity);
+    if (forbidden) return forbidden;
+    const personId = personIdSchema.safeParse(context.req.param("personId"));
+    const input = deletePersonSchema.safeParse(
+      await context.req.json().catch(() => undefined),
+    );
+    if (!personId.success || !input.success) {
+      return problem(
+        context,
+        400,
+        "validation_failed",
+        "Invalid deletion request",
+        "Use the current deletion impact preview and exact confirmation.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const result = await services.people.delete(
+      resolved,
+      personId.data,
+      input.data,
+    ).catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "people_unavailable",
+        "Person could not be deleted",
+        "The person service is temporarily unavailable.",
+      );
+    }
+    if (result.status !== "deleted") {
+      return lifecycleFailure(context, result.status);
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json({
+      next: "/app/people",
+      personId: result.personId,
+      status: "deleted",
     });
   });
   routes.post("/api/v1/people", async (context) => {

@@ -23,12 +23,15 @@ interface PersonProfileRow {
   readonly nickname: string | null;
   readonly tag_count: number;
   readonly tags: readonly PersonProfileTag[];
+  readonly updated_at: string | null;
 }
 
 function identity(row: PersonProfileRow): PersonProfileIdentity | undefined {
   if (
     !row.id || row.given_name === null || row.is_deceased === null ||
-    row.is_partial === null || row.is_self === null || row.is_starred === null
+    row.is_partial === null || row.is_self === null ||
+    row.is_starred === null ||
+    row.updated_at === null
   ) {
     return undefined;
   }
@@ -46,6 +49,7 @@ function identity(row: PersonProfileRow): PersonProfileIdentity | undefined {
     ...(row.nickname ? { nickname: row.nickname } : {}),
     tagCount: row.tag_count,
     tags: row.tags,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -61,6 +65,8 @@ export class PostgresPersonProfileRepository
         person.family_name, person.nickname, person.description,
         gender.name as gender, person.is_partial, person.is_starred,
         person.is_deceased, person.archived_at,
+        to_char(person.updated_at at time zone 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at,
         coalesce(member.self_person_id = person.id, false) as is_self,
         coalesce(tag_summary.tag_count, 0)::int as tag_count,
         coalesce(tag_preview.tags, '[]'::jsonb) as tags

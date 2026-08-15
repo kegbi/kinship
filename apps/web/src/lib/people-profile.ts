@@ -1,7 +1,13 @@
 import {
+  archivePerson,
+  deletePerson,
+  editPerson,
   getPerson,
+  getPersonDeletionImpact,
+  type PersonIdentity,
   type PersonProfileIdentity,
   type ProblemDetails,
+  restorePerson,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 
@@ -22,6 +28,22 @@ interface ProfileElements {
 }
 
 type ProfileState = "forbidden" | "not-found" | "unavailable";
+
+interface LifecycleElements {
+  readonly archive: HTMLButtonElement;
+  readonly deleteCancel: HTMLButtonElement;
+  readonly deleteConfirm: HTMLButtonElement;
+  readonly deleteDialog: HTMLDialogElement;
+  readonly deleteForm: HTMLFormElement;
+  readonly deleteInput: HTMLInputElement;
+  readonly deleteMessage: HTMLElement;
+  readonly deleteOpen: HTMLButtonElement;
+  readonly editCancel: HTMLButtonElement;
+  readonly editForm: HTMLFormElement;
+  readonly editOpen: HTMLButtonElement;
+  readonly restore: HTMLButtonElement;
+  readonly status: HTMLElement;
+}
 
 function elements(): ProfileElements | undefined {
   const archived = document.querySelector<HTMLElement>(
@@ -74,14 +96,70 @@ function personId(): string | undefined {
     .exec(globalThis.location.pathname)?.[1];
 }
 
-function displayName(person: PersonProfileIdentity): string {
+function displayName(person: PersonIdentity): string {
   const formal = [person.givenName, person.familyName].filter(Boolean).join(
     " ",
   );
   return formal || person.nickname || "Unnamed person";
 }
 
-function initials(person: PersonProfileIdentity): string {
+function lifecycleElements(): LifecycleElements | undefined {
+  const archive = document.querySelector<HTMLButtonElement>("#person-archive");
+  const deleteCancel = document.querySelector<HTMLButtonElement>(
+    "#person-delete-cancel",
+  );
+  const deleteConfirm = document.querySelector<HTMLButtonElement>(
+    '#person-delete-form button[type="submit"]',
+  );
+  const deleteDialog = document.querySelector<HTMLDialogElement>(
+    "#person-delete-dialog",
+  );
+  const deleteForm = document.querySelector<HTMLFormElement>(
+    "#person-delete-form",
+  );
+  const deleteInput = document.querySelector<HTMLInputElement>(
+    "#person-delete-confirmation",
+  );
+  const deleteMessage = document.querySelector<HTMLElement>(
+    "#person-delete-impact",
+  );
+  const deleteOpen = document.querySelector<HTMLButtonElement>(
+    "#person-delete-open",
+  );
+  const editCancel = document.querySelector<HTMLButtonElement>(
+    "#person-edit-cancel",
+  );
+  const editForm = document.querySelector<HTMLFormElement>("#person-edit-form");
+  const editOpen = document.querySelector<HTMLButtonElement>(
+    "#person-edit-open",
+  );
+  const restore = document.querySelector<HTMLButtonElement>("#person-restore");
+  const status = document.querySelector<HTMLElement>(
+    "#person-lifecycle-status",
+  );
+  return archive && deleteCancel && deleteConfirm && deleteDialog &&
+      deleteForm && deleteInput &&
+      deleteMessage &&
+      deleteOpen && editCancel && editForm && editOpen && restore && status
+    ? {
+      archive,
+      deleteCancel,
+      deleteConfirm,
+      deleteDialog,
+      deleteForm,
+      deleteInput,
+      deleteMessage,
+      deleteOpen,
+      editCancel,
+      editForm,
+      editOpen,
+      restore,
+      status,
+    }
+    : undefined;
+}
+
+function initials(person: PersonIdentity): string {
   const values = [person.givenName, person.familyName].flatMap((value) =>
     value ? [value] : []
   );
@@ -257,6 +335,252 @@ function renderReady(
   if (!focusSection(currentSection())) profile.heading.focus();
 }
 
+function renderLifecycleState(
+  profile: ProfileElements,
+  lifecycle: LifecycleElements,
+  state: "active" | "archived",
+): void {
+  const archived = state === "archived";
+  profile.archived.hidden = !archived;
+  lifecycle.editOpen.hidden = archived;
+  lifecycle.archive.hidden = archived;
+  lifecycle.restore.hidden = !archived;
+  lifecycle.editForm.hidden = true;
+}
+
+function fillEditForm(
+  lifecycle: LifecycleElements,
+  person: PersonIdentity,
+): void {
+  const fields = lifecycle.editForm.elements;
+  (fields.namedItem("givenName") as HTMLInputElement).value = person.givenName;
+  (fields.namedItem("middleName") as HTMLInputElement).value =
+    person.middleName ?? "";
+  (fields.namedItem("familyName") as HTMLInputElement).value =
+    person.familyName ?? "";
+  (fields.namedItem("nickname") as HTMLInputElement).value = person.nickname ??
+    "";
+  (fields.namedItem("isPartial") as HTMLInputElement).checked =
+    person.isPartial;
+}
+
+function updateIdentity(
+  profile: ProfileElements,
+  person: PersonIdentity,
+): void {
+  const name = displayName(person);
+  profile.heading.textContent = name;
+  profile.avatar.textContent = initials(person);
+  for (
+    const field of [
+      "givenName",
+      "middleName",
+      "familyName",
+      "nickname",
+    ] as const
+  ) {
+    const target = document.querySelector<HTMLElement>(
+      `[data-profile-field="${field}"]`,
+    );
+    if (target) target.textContent = person[field] || "Unknown";
+  }
+  profile.partial.hidden = !person.isPartial;
+  document.title = `${name} — Kinship`;
+}
+
+function mountLifecycleActions(
+  profile: ProfileElements,
+  initialPerson: PersonProfileIdentity,
+  initialState: "archived" | "ready",
+  personId: string,
+  workspaceId: string,
+): void {
+  const lifecycle = lifecycleElements();
+  if (!lifecycle) return;
+  let person: PersonIdentity = initialPerson;
+  let updatedAt = initialPerson.updatedAt;
+  let state: "active" | "archived" = initialState === "archived"
+    ? "archived"
+    : "active";
+  let deleteConfirmation = "";
+  let deleteRequestSequence = 0;
+  let deleteSubmitting = false;
+  fillEditForm(lifecycle, person);
+  renderLifecycleState(profile, lifecycle, state);
+
+  const announce = (message: string): void => {
+    lifecycle.status.textContent = message;
+  };
+  const disableActions = (disabled: boolean): void => {
+    for (
+      const button of [
+        lifecycle.archive,
+        lifecycle.deleteOpen,
+        lifecycle.editOpen,
+        lifecycle.restore,
+      ]
+    ) button.disabled = disabled;
+  };
+
+  lifecycle.editOpen.addEventListener("click", () => {
+    fillEditForm(lifecycle, person);
+    lifecycle.editForm.hidden = false;
+    (lifecycle.editForm.elements.namedItem("givenName") as HTMLInputElement)
+      .focus();
+  });
+  lifecycle.editCancel.addEventListener("click", () => {
+    lifecycle.editForm.hidden = true;
+    lifecycle.editOpen.focus();
+    announce("Edit cancelled. No changes were saved.");
+  });
+  lifecycle.editForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = new FormData(lifecycle.editForm);
+    const result = await editPerson(personId, {
+      expectedUpdatedAt: updatedAt,
+      familyName: String(data.get("familyName") ?? ""),
+      givenName: String(data.get("givenName") ?? ""),
+      isPartial: data.get("isPartial") === "on",
+      middleName: String(data.get("middleName") ?? ""),
+      nickname: String(data.get("nickname") ?? ""),
+    }, workspaceId).catch(() => undefined);
+    if (!result || !result.ok) {
+      announce(
+        result && !result.ok
+          ? result.problem.detail
+          : "Person update is temporarily unavailable.",
+      );
+      return;
+    }
+    person = result.value.person;
+    updatedAt = result.value.person.updatedAt;
+    lifecycle.editForm.hidden = true;
+    updateIdentity(profile, person);
+    announce("Person identity updated.");
+    profile.heading.focus();
+  });
+
+  const transition = async (action: "archive" | "restore"): Promise<void> => {
+    disableActions(true);
+    const result = await (action === "archive" ? archivePerson : restorePerson)(
+      personId,
+      { expectedUpdatedAt: updatedAt },
+      workspaceId,
+    ).catch(() => undefined);
+    disableActions(false);
+    if (!result || !result.ok) {
+      announce(
+        result && !result.ok
+          ? result.problem.detail
+          : `Person ${action} is temporarily unavailable.`,
+      );
+      return;
+    }
+    person = result.value.person;
+    updatedAt = result.value.person.updatedAt;
+    state = action === "archive" ? "archived" : "active";
+    renderLifecycleState(profile, lifecycle, state);
+    announce(
+      action === "archive"
+        ? "Person archived. They now appear in Archived people."
+        : "Person restored. They now appear in People.",
+    );
+    profile.heading.focus();
+  };
+  lifecycle.archive.addEventListener("click", () => void transition("archive"));
+  lifecycle.restore.addEventListener("click", () => void transition("restore"));
+
+  const cancelDelete = (): void => {
+    deleteRequestSequence += 1;
+    deleteSubmitting = false;
+    lifecycle.deleteConfirm.disabled = false;
+    if (lifecycle.deleteDialog.open) lifecycle.deleteDialog.close();
+    lifecycle.deleteForm.reset();
+    lifecycle.deleteOpen.focus();
+    announce("Delete cancelled. No changes were made.");
+  };
+  lifecycle.deleteCancel.addEventListener("click", cancelDelete);
+  lifecycle.deleteDialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    cancelDelete();
+  });
+  lifecycle.deleteDialog.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab") return;
+    const controls = [
+      lifecycle.deleteInput,
+      lifecycle.deleteConfirm,
+      lifecycle.deleteCancel,
+    ].filter((control) => !control.disabled);
+    const first = controls[0];
+    const last = controls.at(-1);
+    if (!first || !last) return;
+    const active = document.activeElement;
+    if (
+      event.shiftKey &&
+      (active === first || active === lifecycle.deleteDialog ||
+        !lifecycle.deleteDialog.contains(active))
+    ) {
+      event.preventDefault();
+      last.focus();
+    } else if (
+      !event.shiftKey &&
+      (active === last || active === lifecycle.deleteDialog ||
+        !lifecycle.deleteDialog.contains(active))
+    ) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+  lifecycle.deleteOpen.addEventListener("click", async () => {
+    const requestSequence = ++deleteRequestSequence;
+    lifecycle.deleteMessage.textContent = "Loading deletion impact…";
+    lifecycle.deleteForm.reset();
+    lifecycle.deleteConfirm.disabled = true;
+    lifecycle.deleteDialog.showModal();
+    const result = await getPersonDeletionImpact(personId, workspaceId).catch(
+      () => undefined,
+    );
+    if (
+      requestSequence !== deleteRequestSequence ||
+      !lifecycle.deleteDialog.open
+    ) return;
+    if (!result || !result.ok) {
+      lifecycle.deleteMessage.textContent = result && !result.ok
+        ? result.problem.detail
+        : "Deletion impact is temporarily unavailable.";
+      return;
+    }
+    deleteConfirmation = result.value.impact.confirmation;
+    updatedAt = result.value.impact.person.updatedAt;
+    lifecycle.deleteMessage.textContent =
+      `This person will be hidden from Kinship. Related records are retained. Enter ${deleteConfirmation} to continue.`;
+    lifecycle.deleteConfirm.disabled = false;
+    lifecycle.deleteInput.focus();
+  });
+  lifecycle.deleteForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (deleteSubmitting) return;
+    deleteSubmitting = true;
+    lifecycle.deleteConfirm.disabled = true;
+    const result = await deletePerson(personId, {
+      confirmation: lifecycle.deleteInput.value,
+      expectedUpdatedAt: updatedAt,
+    }, workspaceId).catch(() => undefined);
+    if (!result || !result.ok) {
+      deleteSubmitting = false;
+      lifecycle.deleteConfirm.disabled = false;
+      lifecycle.deleteMessage.textContent = result && !result.ok
+        ? result.problem.detail
+        : "Person deletion is temporarily unavailable.";
+      lifecycle.deleteInput.focus();
+      return;
+    }
+    deleteRequestSequence += 1;
+    lifecycle.deleteDialog.close();
+    globalThis.location.assign(result.value.next);
+  });
+}
+
 function problemState(problem: ProblemDetails): ProfileState {
   if (problem.status === 404) return "not-found";
   if (problem.status === 401 || problem.status === 403) return "forbidden";
@@ -296,5 +620,12 @@ export async function mountPeopleProfile(): Promise<void> {
     result.value.person,
     result.value.dueInformation,
     result.value.status,
+  );
+  mountLifecycleActions(
+    profile,
+    result.value.person,
+    result.value.status,
+    id,
+    session.session.workspace.id,
   );
 }

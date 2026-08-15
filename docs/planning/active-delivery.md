@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 4 — Profile Facts And Relationships**
-- Current leaf: **APP-004A / `PEOPLE-004` — Person lifecycle**
+- Current leaf: **APP-004B / `PEOPLE-005` — Important and partial dates**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -151,8 +151,8 @@ runnable behavior cannot work without them.
 
 ## Phase 4 — Profile Facts And Relationships
 
-- [ ] **APP-004A / `PEOPLE-004` — Person lifecycle.**
-  - [ ] Deliver edit, archive, restore, and delete as the indivisible accepted
+- [x] **APP-004A / `PEOPLE-004` — Person lifecycle.**
+  - [x] Deliver edit, archive, restore, and delete as the indivisible accepted
         flow with impact, authorization, and cross-workspace checks.
 - [ ] **APP-004B / `PEOPLE-005` — Important and partial dates.**
   - [ ] Deliver birthday, first meeting, death, and custom partial-date behavior

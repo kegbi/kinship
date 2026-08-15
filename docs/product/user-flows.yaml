@@ -347,6 +347,7 @@ flows:
 
   - id: PEOPLE-004
     title: Edit, archive, restore, or delete a person
+    deliveryStatus: delivered
     priority: P0
     actor: crm-writer
     trigger: The member invokes a person lifecycle action.
@@ -366,7 +367,7 @@ flows:
     moduleIds: [people]
     permissions: [people.write, people.delete]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-004a.spec.ts] }
 
   - id: PEOPLE-005
     title: Record important and partial dates

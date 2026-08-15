@@ -203,3 +203,41 @@ Deno.test("[APP-003C] OpenAPI describes the canonical workspace summary", () => 
     "due-information unavailability is a typed honest contract",
   );
 });
+
+Deno.test("PEOPLE-004 OpenAPI versions every tenant-safe lifecycle action", () => {
+  const document = buildOpenApiDocument();
+  const paths = document.paths as Record<
+    string,
+    Record<string, {
+      readonly parameters?: readonly { readonly name?: string }[];
+      readonly responses?: Readonly<Record<string, unknown>>;
+      readonly security?: readonly Readonly<
+        Record<string, readonly unknown[]>
+      >[];
+    }>
+  >;
+  for (
+    const [path, method] of [
+      ["/api/v1/people/{personId}", "patch"],
+      ["/api/v1/people/{personId}", "delete"],
+      ["/api/v1/people/{personId}/archive", "post"],
+      ["/api/v1/people/{personId}/restore", "post"],
+      ["/api/v1/people/{personId}/deletion-impact", "get"],
+    ] as const
+  ) {
+    const operation = paths[path]?.[method];
+    assert(operation, `${method} ${path} is documented`);
+    assert(
+      JSON.stringify(operation.security) ===
+          JSON.stringify([{ kinship_session: [] }]) &&
+        operation.parameters?.some((parameter) =>
+            parameter.name === "X-Workspace-Id"
+          ) === true &&
+        operation.parameters.some((parameter) => parameter.name === "personId"),
+      `${method} ${path} is session and workspace scoped`,
+    );
+    for (const status of ["200", "400", "401", "403", "404", "503"]) {
+      assert(operation.responses?.[status], `${method} documents ${status}`);
+    }
+  }
+});
