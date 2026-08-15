@@ -371,6 +371,7 @@ flows:
 
   - id: PEOPLE-005
     title: Record important and partial dates
+    deliveryStatus: delivered
     priority: P0
     actor: crm-writer
     trigger: The member records a birthday, first meeting, death, or custom date.
@@ -392,7 +393,7 @@ flows:
     moduleIds: [people, planning, journal]
     permissions: [people.write]
     testLayers: [unit, integration, schema, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-004b.spec.ts] }
 
   - id: PEOPLE-006
     title: Maintain person profile facts within enabled sections

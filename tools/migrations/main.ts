@@ -17,6 +17,10 @@ const v4SchemaPath = new URL(
   "../../personal-crm-schema/v4/personal_crm_schema_v4.sql",
   import.meta.url,
 );
+const v5SchemaPath = new URL(
+  "../../personal-crm-schema/v5/personal_crm_schema_v5.sql",
+  import.meta.url,
+);
 const migrationPath = new URL(
   "../../personal-crm-schema/v2/migrations/0002_add_authentication_subject_digest.sql",
   import.meta.url,
@@ -27,6 +31,10 @@ const migrationV2ToV3Path = new URL(
 );
 const migrationV3ToV4Path = new URL(
   "../../personal-crm-schema/v4/migrations/0004_seed_iso_4217_currencies.sql",
+  import.meta.url,
+);
+const migrationV4ToV5Path = new URL(
+  "../../personal-crm-schema/v5/migrations/0005_add_person_date_year_approximation.sql",
   import.meta.url,
 );
 
@@ -41,10 +49,12 @@ if (import.meta.main) {
     migrationV1ToV2: await Deno.readTextFile(migrationPath),
     migrationV2ToV3: await Deno.readTextFile(migrationV2ToV3Path),
     migrationV3ToV4: await Deno.readTextFile(migrationV3ToV4Path),
+    migrationV4ToV5: await Deno.readTextFile(migrationV4ToV5Path),
     v1Sql: await Deno.readTextFile(v1SchemaPath),
     v2Sql: await Deno.readTextFile(v2SchemaPath),
     v3Sql: await Deno.readTextFile(v3SchemaPath),
     v4Sql: await Deno.readTextFile(v4SchemaPath),
+    v5Sql: await Deno.readTextFile(v5SchemaPath),
   });
-  console.log(`Canonical schema v4: ${action}`);
+  console.log(`Canonical schema v5: ${action}`);
 }

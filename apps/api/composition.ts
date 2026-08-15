@@ -33,6 +33,7 @@ import {
 import { SmtpVerificationMail } from "../../packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail.ts";
 import {
   PostgresAuthenticationAudit,
+  PostgresImportantDateAudit,
   PostgresInvitationAudit,
   PostgresPersonCreatedAudit,
   PostgresPersonLifecycleAudit,
@@ -64,12 +65,16 @@ import {
 import { createSettingsRoutes, type SettingsHttpServices } from "./settings.ts";
 import { createSettingsManagement } from "../../packages/backend/modules/workspaces/public.ts";
 import {
+  createImportantDateManagement,
   createPeopleManagement,
   createPersonLifecycle,
+  type ImportantDateManagement,
+  PostgresImportantDateRepository,
   PostgresPeopleRepository,
   PostgresPeopleTransaction,
   PostgresPersonLifecycleRepository,
 } from "../../packages/backend/modules/people/public.ts";
+import { PostgresPersonDateReminderPublisher } from "../../packages/backend/modules/planning/public.ts";
 import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
 import {
   createPeopleDirectory,
@@ -91,6 +96,7 @@ import {
 export interface ApiServices extends RegistrationHttpServices {
   readonly directory?: PeopleDirectory;
   readonly invitations?: InvitationHttpServices["invitations"];
+  readonly importantDates?: ImportantDateManagement;
   readonly passwordRecovery?: AuthenticationHttpServices["passwordRecovery"];
   readonly protectedSessions?: AuthenticationHttpServices["protectedSessions"];
   readonly settings?: SettingsHttpServices["settings"];
@@ -208,6 +214,9 @@ export function createApiApp(services?: ApiServices): Hono {
         createPeopleRoutes({
           browserSecurity: services.browserSecurity,
           directory: services.directory,
+          ...(services.importantDates
+            ? { importantDates: services.importantDates }
+            : {}),
           people: services.people,
           profile: services.profile,
           protectedSessions: services.protectedSessions,
@@ -385,6 +394,14 @@ export function createConfiguredApiApp(
     repository: new PostgresPersonLifecycleRepository(),
     transaction: peopleTransaction,
   });
+  const importantDates = createImportantDateManagement({
+    audit: new PostgresImportantDateAudit(),
+    clock,
+    ids,
+    publisher: new PostgresPersonDateReminderPublisher(),
+    repository: new PostgresImportantDateRepository(),
+    transaction: peopleTransaction,
+  });
   const people = { ...peopleManagement, ...peopleLifecycle };
   const directoryRepository = new PostgresPeopleDirectoryRepository(
     connection.db,
@@ -401,6 +418,7 @@ export function createConfiguredApiApp(
     directory,
     hasher,
     invitations,
+    importantDates,
     passwordRecovery,
     people,
     profile,

@@ -124,6 +124,37 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
       "503": problem,
     },
   });
+  const importantDateRequired = [
+    "isAgeBased",
+    "isYearApproximate",
+    "kind",
+    "precision",
+  ];
+  const importantDateProperties = {
+    day: { type: "integer", minimum: 1, maximum: 31 },
+    isAgeBased: { type: "boolean" },
+    isYearApproximate: { type: "boolean" },
+    kind: {
+      type: "string",
+      enum: ["birthday", "custom", "deceased", "first_met"],
+    },
+    label: { type: "string", maxLength: 200 },
+    month: { type: "integer", minimum: 1, maximum: 12 },
+    notes: { type: "string", maxLength: 2_000 },
+    precision: {
+      type: "string",
+      enum: [
+        "day",
+        "full",
+        "month",
+        "month_day",
+        "unknown",
+        "year",
+        "year_month",
+      ],
+    },
+    year: { type: "integer", minimum: 1, maximum: 9999 },
+  };
   return {
     openapi: "3.1.0",
     info: { title: "Kinship API", version: "1.0.0" },
@@ -592,6 +623,125 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           "PersonTransitionInput",
           "PersonLifecycleChanged",
         ),
+      },
+      "/api/v1/people/{personId}/dates": {
+        get: {
+          operationId: "listImportantDates",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter, personIdParameter],
+          responses: {
+            "200": {
+              description: "Exact important-date list for one workspace person",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ImportantDateList" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+        post: {
+          operationId: "createImportantDate",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, personIdParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ImportantDateInput" },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "Important date created",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ImportantDateChanged" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/dates/{dateId}": {
+        parameters: [{
+          name: "dateId",
+          in: "path",
+          required: true,
+          schema: { type: "string", format: "uuid" },
+        }],
+        patch: {
+          operationId: "updateImportantDate",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, personIdParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ImportantDateUpdateInput",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Important date updated",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ImportantDateChanged" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+        delete: {
+          operationId: "deleteImportantDate",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, personIdParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/PersonTransitionInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Important date deleted",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ImportantDateDeleted" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
       },
       "/api/v1/people/{personId}/restore": {
         post: personMutation(
@@ -1450,6 +1600,74 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        ImportantDateInput: {
+          type: "object",
+          required: importantDateRequired,
+          properties: importantDateProperties,
+          additionalProperties: false,
+        },
+        ImportantDateUpdateInput: {
+          type: "object",
+          required: [...importantDateRequired, "expectedUpdatedAt"],
+          properties: {
+            ...importantDateProperties,
+            expectedUpdatedAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
+        ImportantDate: {
+          type: "object",
+          required: [
+            ...importantDateRequired,
+            "createdAt",
+            "id",
+            "personId",
+            "scheduling",
+            "updatedAt",
+          ],
+          properties: {
+            ...importantDateProperties,
+            createdAt: { type: "string", format: "date-time" },
+            id: { type: "string", format: "uuid" },
+            personId: { type: "string", format: "uuid" },
+            scheduling: {
+              type: "string",
+              enum: ["annual-reminder", "not-schedulable"],
+            },
+            updatedAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
+        ImportantDateList: {
+          type: "object",
+          required: ["dates", "status"],
+          properties: {
+            dates: {
+              type: "array",
+              items: { $ref: "#/components/schemas/ImportantDate" },
+            },
+            status: { type: "string", enum: ["ready", "archived"] },
+          },
+          additionalProperties: false,
+        },
+        ImportantDateChanged: {
+          type: "object",
+          required: ["date", "status"],
+          properties: {
+            date: { $ref: "#/components/schemas/ImportantDate" },
+            status: { type: "string", enum: ["created", "updated"] },
+          },
+          additionalProperties: false,
+        },
+        ImportantDateDeleted: {
+          type: "object",
+          required: ["dateId", "status"],
+          properties: {
+            dateId: { type: "string", format: "uuid" },
+            status: { const: "deleted" },
+          },
+          additionalProperties: false,
+        },
         PeopleDirectoryTag: {
           type: "object",
           required: ["id", "name"],
@@ -2052,6 +2270,29 @@ export interface PersonDueInformation {
   readonly status: "unavailable";
 }
 
+export type ImportantDateKind = "birthday" | "custom" | "deceased" | "first_met";
+export type ImportantDatePrecision = "day" | "full" | "month" | "month_day" | "unknown" | "year" | "year_month";
+
+export interface ImportantDateInput {
+  readonly day?: number;
+  readonly isAgeBased: boolean;
+  readonly isYearApproximate: boolean;
+  readonly kind: ImportantDateKind;
+  readonly label?: string;
+  readonly month?: number;
+  readonly notes?: string;
+  readonly precision: ImportantDatePrecision;
+  readonly year?: number;
+}
+
+export interface ImportantDate extends ImportantDateInput {
+  readonly createdAt: string;
+  readonly id: string;
+  readonly personId: string;
+  readonly scheduling: "annual-reminder" | "not-schedulable";
+  readonly updatedAt: string;
+}
+
 export interface PersonInput {
   readonly duplicateOverride?: boolean;
   readonly familyName?: string;
@@ -2132,6 +2373,22 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
 
 export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
   return request(\`/api/v1/people/\${encodeURIComponent(personId)}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listImportantDates(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dates: readonly ImportantDate[]; readonly status: "ready" | "archived" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/dates\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function createImportantDate(personId: string, input: ImportantDateInput, workspaceId?: string): Promise<ApiResult<{ readonly date: ImportantDate; readonly status: "created" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/dates\`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function updateImportantDate(personId: string, dateId: string, input: ImportantDateInput & PersonTransitionInput, workspaceId?: string): Promise<ApiResult<{ readonly date: ImportantDate; readonly status: "updated" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/dates/\${encodeURIComponent(dateId)}\`, { method: "PATCH", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function deleteImportantDate(personId: string, dateId: string, input: PersonTransitionInput, workspaceId?: string): Promise<ApiResult<{ readonly dateId: string; readonly status: "deleted" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/dates/\${encodeURIComponent(dateId)}\`, { method: "DELETE", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
 }
 
 export function editPerson(personId: string, input: PersonEditInput, workspaceId?: string): Promise<ApiResult<{ readonly person: PersonLifecycleIdentity; readonly status: "updated" }>> {

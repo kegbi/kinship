@@ -1,5 +1,28 @@
 export { createPeopleManagement } from "./application/create_person.ts";
+export { createImportantDateManagement } from "./application/important_dates.ts";
 export { createPersonLifecycle } from "./application/lifecycle_person.ts";
+export type {
+  ImportantDateAction,
+  ImportantDateAudit,
+  ImportantDateContextLock,
+  ImportantDateCreateResult,
+  ImportantDateDeleteInput,
+  ImportantDateDeleteResult,
+  ImportantDateDependencies,
+  ImportantDateFailure,
+  ImportantDateKind,
+  ImportantDateListResult,
+  ImportantDateLock,
+  ImportantDateManagement,
+  ImportantDateMutationResult,
+  ImportantDatePrecision,
+  ImportantDatePublisher,
+  ImportantDateRecord,
+  ImportantDateRepository,
+  ImportantDateUpdateInput,
+  ImportantDateUpdateResult,
+  ImportantDateValue,
+} from "./application/important_dates.ts";
 export type {
   CreatePersonInput,
   CreatePersonResult,
@@ -38,3 +61,4 @@ export {
   PostgresPeopleTransaction,
 } from "./adapters/postgres/people_repository.ts";
 export { PostgresPersonLifecycleRepository } from "./adapters/postgres/person_lifecycle_repository.ts";
+export { PostgresImportantDateRepository } from "./adapters/postgres/important_date_repository.ts";

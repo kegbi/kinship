@@ -10,6 +10,7 @@ COPY --chown=deno:deno personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql
 COPY --chown=deno:deno personal-crm-schema/v2 ./personal-crm-schema/v2
 COPY --chown=deno:deno personal-crm-schema/v3 ./personal-crm-schema/v3
 COPY --chown=deno:deno personal-crm-schema/v4 ./personal-crm-schema/v4
+COPY --chown=deno:deno personal-crm-schema/v5 ./personal-crm-schema/v5
 RUN DENO_NO_PACKAGE_JSON=1 deno install --frozen --node-modules-dir=none
 
 USER deno

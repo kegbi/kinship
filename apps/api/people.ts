@@ -1,6 +1,8 @@
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import type {
+  ImportantDateManagement,
+  ImportantDateRecord,
   PeopleManagement,
   PersonIdentity,
   PersonLifecycle,
@@ -19,6 +21,7 @@ type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface PeopleHttpServices {
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly directory: PeopleDirectory;
+  readonly importantDates?: ImportantDateManagement;
   readonly people: PeopleManagement & PersonLifecycle;
   readonly profile: PersonProfile;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
@@ -44,6 +47,43 @@ const transitionSchema = z.object({
 const deletePersonSchema = transitionSchema.extend({
   confirmation: z.string().min(1).max(500),
 });
+const importantDateValueSchema = z.object({
+  day: z.number().int().min(1).max(31).optional(),
+  isAgeBased: z.boolean(),
+  isYearApproximate: z.boolean(),
+  kind: z.enum(["birthday", "custom", "deceased", "first_met"]),
+  label: z.string().trim().max(200).optional(),
+  month: z.number().int().min(1).max(12).optional(),
+  notes: z.string().trim().max(2_000).optional(),
+  precision: z.enum([
+    "day",
+    "full",
+    "month",
+    "month_day",
+    "unknown",
+    "year",
+    "year_month",
+  ]),
+  year: z.number().int().min(1).max(9999).optional(),
+}).strict();
+const importantDateUpdateSchema = importantDateValueSchema.extend({
+  expectedUpdatedAt: expectedUpdatedAtSchema,
+});
+const importantDateDeleteSchema = transitionSchema;
+
+function importantDateInput(input: z.infer<typeof importantDateValueSchema>) {
+  return {
+    ...(input.day === undefined ? {} : { day: input.day }),
+    isAgeBased: input.isAgeBased,
+    isYearApproximate: input.isYearApproximate,
+    kind: input.kind,
+    ...(input.label ? { label: input.label } : {}),
+    ...(input.month === undefined ? {} : { month: input.month }),
+    ...(input.notes ? { notes: input.notes } : {}),
+    precision: input.precision,
+    ...(input.year === undefined ? {} : { year: input.year }),
+  };
+}
 const directoryQuerySchema = z.object({
   cursor: z.string().max(2_000).optional(),
   lifecycle: z.enum(["active", "archived"]).default("active"),
@@ -142,6 +182,87 @@ function lifecycleIdentity(person: PersonLifecycleRecord) {
     lifecycle: person.lifecycle,
     updatedAt: person.updatedAt,
   };
+}
+
+function importantDate(date: ImportantDateRecord) {
+  return {
+    ...(date.day === undefined ? {} : { day: date.day }),
+    createdAt: date.createdAt,
+    id: date.id,
+    isAgeBased: date.isAgeBased,
+    isYearApproximate: date.isYearApproximate,
+    kind: date.kind,
+    ...(date.label ? { label: date.label } : {}),
+    ...(date.month === undefined ? {} : { month: date.month }),
+    ...(date.notes ? { notes: date.notes } : {}),
+    personId: date.personId,
+    precision: date.precision,
+    scheduling: date.scheduling,
+    updatedAt: date.updatedAt,
+    ...(date.year === undefined ? {} : { year: date.year }),
+  };
+}
+
+function importantDateFailure(
+  context: Context,
+  result: Exclude<
+    Awaited<ReturnType<ImportantDateManagement["create"]>>,
+    { status: "created" | "deleted" | "updated" }
+  >,
+): Response {
+  if (result.status === "forbidden") {
+    return problem(
+      context,
+      403,
+      "people_forbidden",
+      "Important dates unavailable",
+      "Your active workspace membership no longer permits this change.",
+    );
+  }
+  if (result.status === "not-found") {
+    return problem(
+      context,
+      404,
+      "person_date_not_found",
+      "Important date not found",
+      "The person or important date does not exist in the active workspace.",
+    );
+  }
+  if (result.status === "stale") {
+    return problem(
+      context,
+      409,
+      "person_date_stale",
+      "Important date changed",
+      "Refresh the important dates before trying again.",
+    );
+  }
+  if (result.status === "conflict") {
+    return problem(
+      context,
+      409,
+      "person_date_conflict",
+      "Important date already exists",
+      "Birthday, first meeting, and date of death can each be recorded once.",
+    );
+  }
+  if (result.status === "archived-write-rejected") {
+    return problem(
+      context,
+      409,
+      "archived_write_rejected",
+      "Archived person is read-only",
+      "Restore this person before changing important dates.",
+    );
+  }
+  return problem(
+    context,
+    400,
+    "validation_failed",
+    "Invalid important date",
+    "Use only the components declared by the selected precision.",
+    result.errors,
+  );
 }
 
 function lifecycleFailure(
@@ -391,6 +512,211 @@ export function createPeopleRoutes(services: PeopleHttpServices): Hono {
       person: result.person,
       status: result.status,
     });
+  });
+  routes.get("/api/v1/people/:personId/dates", async (context) => {
+    const personId = personIdSchema.safeParse(context.req.param("personId"));
+    if (!personId.success) {
+      return problem(
+        context,
+        400,
+        "person_id_invalid",
+        "Invalid person",
+        "Use a valid canonical person identifier.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const result = await services.importantDates?.list(resolved, personId.data)
+      .catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "important_dates_unavailable",
+        "Important dates unavailable",
+        "Important dates are temporarily unavailable.",
+      );
+    }
+    if (result.status === "forbidden") {
+      return problem(
+        context,
+        403,
+        "people_forbidden",
+        "Important dates unavailable",
+        "Your active workspace membership no longer permits this view.",
+      );
+    }
+    if (result.status === "not-found") {
+      return problem(
+        context,
+        404,
+        "person_not_found",
+        "Person not found",
+        "No person with this identifier exists in the current workspace.",
+      );
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json({
+      dates: result.dates.map(importantDate),
+      status: result.status,
+    });
+  });
+  routes.post("/api/v1/people/:personId/dates", async (context) => {
+    const forbidden = requireOrigin(context, services.browserSecurity);
+    if (forbidden) return forbidden;
+    const personId = personIdSchema.safeParse(context.req.param("personId"));
+    const input = importantDateValueSchema.safeParse(
+      await context.req.json().catch(() => undefined),
+    );
+    if (!personId.success || !input.success) {
+      return problem(
+        context,
+        400,
+        "validation_failed",
+        "Invalid important date",
+        "Review the precision and known components.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const result = await services.importantDates?.create(
+      resolved,
+      personId.data,
+      importantDateInput(input.data),
+    ).catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "important_dates_unavailable",
+        "Important date could not be saved",
+        "The important-date service is temporarily unavailable.",
+      );
+    }
+    if (result.status !== "created") {
+      return importantDateFailure(context, result);
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json(
+      { date: importantDate(result.date), status: "created" },
+      201,
+    );
+  });
+  routes.patch("/api/v1/people/:personId/dates/:dateId", async (context) => {
+    const forbidden = requireOrigin(context, services.browserSecurity);
+    if (forbidden) return forbidden;
+    const personId = personIdSchema.safeParse(context.req.param("personId"));
+    const dateId = personIdSchema.safeParse(context.req.param("dateId"));
+    const input = importantDateUpdateSchema.safeParse(
+      await context.req.json().catch(() => undefined),
+    );
+    if (!personId.success || !dateId.success || !input.success) {
+      return problem(
+        context,
+        400,
+        "validation_failed",
+        "Invalid important date",
+        "Review the precision, known components, and current version.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const { expectedUpdatedAt, ...value } = input.data;
+    const result = await services.importantDates?.update(
+      resolved,
+      personId.data,
+      dateId.data,
+      { ...importantDateInput(value), expectedUpdatedAt },
+    ).catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "important_dates_unavailable",
+        "Important date could not be saved",
+        "The important-date service is temporarily unavailable.",
+      );
+    }
+    if (result.status !== "updated") {
+      return importantDateFailure(context, result);
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json({
+      date: importantDate(result.date),
+      status: "updated",
+    });
+  });
+  routes.delete("/api/v1/people/:personId/dates/:dateId", async (context) => {
+    const forbidden = requireOrigin(context, services.browserSecurity);
+    if (forbidden) return forbidden;
+    const personId = personIdSchema.safeParse(context.req.param("personId"));
+    const dateId = personIdSchema.safeParse(context.req.param("dateId"));
+    const input = importantDateDeleteSchema.safeParse(
+      await context.req.json().catch(() => undefined),
+    );
+    if (!personId.success || !dateId.success || !input.success) {
+      return problem(
+        context,
+        400,
+        "validation_failed",
+        "Invalid important date deletion",
+        "Refresh this important date before deleting it.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const result = await services.importantDates?.delete(
+      resolved,
+      personId.data,
+      dateId.data,
+      input.data,
+    ).catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "important_dates_unavailable",
+        "Important date could not be deleted",
+        "The important-date service is temporarily unavailable.",
+      );
+    }
+    if (result.status !== "deleted") {
+      return importantDateFailure(context, result);
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json({ dateId: result.dateId, status: "deleted" });
   });
   routes.patch("/api/v1/people/:personId", async (context) => {
     const forbidden = requireOrigin(context, services.browserSecurity);
