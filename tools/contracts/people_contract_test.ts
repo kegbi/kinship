@@ -163,3 +163,43 @@ Deno.test("PEOPLE-001 OpenAPI describes tenant-safe canonical identity reads", (
     );
   }
 });
+
+Deno.test("[APP-003C] OpenAPI describes the canonical workspace summary", () => {
+  const document = buildOpenApiDocument();
+  const schemas = (document.components as {
+    readonly schemas?: Readonly<Record<string, unknown>>;
+  }).schemas;
+  const ready = schemas?.PersonReady as {
+    readonly properties?: Readonly<Record<string, unknown>>;
+    readonly required?: readonly string[];
+  } | undefined;
+  const identity = schemas?.PersonProfileIdentity as {
+    readonly additionalProperties?: unknown;
+    readonly properties?: Readonly<Record<string, unknown>>;
+    readonly required?: readonly string[];
+  } | undefined;
+  const due = schemas?.PersonDueInformation as {
+    readonly additionalProperties?: unknown;
+    readonly properties?: Readonly<Record<string, unknown>>;
+    readonly required?: readonly string[];
+  } | undefined;
+
+  assert(
+    ready?.required?.includes("dueInformation") === true &&
+      ready.properties?.dueInformation !== undefined,
+    "person workspace response requires the due-information summary",
+  );
+  assert(
+    identity?.additionalProperties === false &&
+      identity.required?.includes("isStarred") === true &&
+      identity.required.includes("isDeceased") &&
+      identity.properties?.description !== undefined,
+    "profile identity is strict and includes orientation fields",
+  );
+  assert(
+    due?.additionalProperties === false &&
+      due.required?.includes("status") === true &&
+      due.properties?.detail !== undefined,
+    "due-information unavailability is a typed honest contract",
+  );
+});

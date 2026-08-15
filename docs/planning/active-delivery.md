@@ -10,8 +10,8 @@ prerequisite queues.
 
 ## Cursor
 
-- Current phase: **Phase 3 — People Core**
-- Current leaf: **APP-003C — Open the canonical person workspace shell**
+- Current phase: **Phase 4 — Profile Facts And Relationships**
+- Current leaf: **APP-004A / `PEOPLE-004` — Person lifecycle**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -141,11 +141,11 @@ runnable behavior cannot work without them.
 - [x] **APP-003B / `PEOPLE-002` — Find a person.**
   - [x] Deliver people list, search, filter/sort behavior required by the flow,
         empty/loading/error states, and archived-list entry point.
-- [ ] **APP-003C — Open the canonical person workspace shell.**
-  - [ ] Use only `/app/people/:personId` for person-specific work.
-  - [ ] Deliver identity summary, deep-linkable section shell, not-found and
+- [x] **APP-003C — Open the canonical person workspace shell.**
+  - [x] Use only `/app/people/:personId` for person-specific work.
+  - [x] Deliver identity summary, deep-linkable section shell, not-found and
         cross-workspace rejection, and honest unavailable/empty section states.
-- [ ] **Phase 3 accepted:** create, find, and open a person form one tenant-safe
+- [x] **Phase 3 accepted:** create, find, and open a person form one tenant-safe
       API-to-database-to-Astro walking path. `PEOPLE-003` remains incomplete
       until Phase 8 supplies every enabled core section.
 

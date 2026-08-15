@@ -23,6 +23,10 @@ import {
   createPeopleTagOptions,
   PostgresPeopleDirectoryRepository,
 } from "../../packages/backend/read-models/people-directory/public.ts";
+import {
+  createPersonProfile,
+  PostgresPersonProfileRepository,
+} from "../../packages/backend/read-models/person-profile/public.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -44,6 +48,9 @@ const people = createPeopleManagement({
 });
 const directory = createPeopleDirectory({
   repository: new PostgresPeopleDirectoryRepository(peopleConnection.db),
+});
+const personProfile = createPersonProfile({
+  repository: new PostgresPersonProfileRepository(peopleConnection.db),
 });
 const mail = new CapturedVerificationMail();
 const configured = createConfiguredApiApp(
@@ -874,6 +881,140 @@ Deno.test({
         (await stale.json() as { readonly code: string }).code ===
           "stale_cursor",
       "a mutated cursor anchor is rejected explicitly",
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "[APP-003C] real PostgreSQL person workspace is tenant-safe and lifecycle-aware",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await sql`truncate table crm.users, crm.workspaces restart identity cascade`;
+    const owner = await register(
+      `profile-owner-${crypto.randomUUID()}@example.test`,
+      "Profile circle",
+    );
+    const foreign = await register(
+      `profile-foreign-${crypto.randomUUID()}@example.test`,
+      "Foreign profile circle",
+    );
+    const personId = crypto.randomUUID();
+    const foreignPersonId = crypto.randomUUID();
+    const genderId = crypto.randomUUID();
+    const foreignTagId = crypto.randomUUID();
+    await sql.begin(async (transaction) => {
+      await transaction`
+        insert into crm.gender_options (id, workspace_id, name)
+        values (${genderId}, ${owner.workspaceId}, 'Woman')
+      `;
+      await transaction`
+        insert into crm.people (
+          id, workspace_id, created_by_member_id, gender_option_id,
+          given_name, family_name, description, is_starred, is_deceased
+        ) values (
+          ${personId}, ${owner.workspaceId}, ${owner.memberId}, ${genderId},
+          'Ada', 'Lovelace', 'Mathematician and correspondent.', true, true
+        )
+      `;
+      await transaction`
+        update crm.workspace_members set self_person_id = ${personId}
+        where id = ${owner.memberId}
+      `;
+      await transaction`
+        insert into crm.tags (id, workspace_id, name, slug)
+        select gen_random_uuid(), ${owner.workspaceId},
+          'Profile ' || lpad(sequence::text, 2, '0'),
+          'profile-' || lpad(sequence::text, 2, '0')
+        from generate_series(1, 10) sequence
+      `;
+      await transaction`
+        insert into crm.person_tags (person_id, tag_id)
+        select ${personId}, tag.id from crm.tags tag
+        where tag.workspace_id = ${owner.workspaceId}
+      `;
+      await transaction`
+        insert into crm.people (
+          id, workspace_id, created_by_member_id, given_name
+        ) values (
+          ${foreignPersonId}, ${foreign.workspaceId}, ${foreign.memberId},
+          'Foreign'
+        )
+      `;
+      await transaction`
+        insert into crm.tags (id, workspace_id, name, slug)
+        values (${foreignTagId}, ${foreign.workspaceId}, 'Private', 'private')
+      `;
+      await transaction`
+        insert into crm.person_tags (person_id, tag_id)
+        values (${personId}, ${foreignTagId})
+      `;
+    });
+
+    const ready = await getPerson(owner, personId);
+    const readyBody = await ready.json() as {
+      readonly dueInformation: { readonly status: string };
+      readonly person: {
+        readonly description?: string;
+        readonly gender?: string;
+        readonly isDeceased: boolean;
+        readonly isSelf: boolean;
+        readonly isStarred: boolean;
+        readonly tagCount: number;
+        readonly tags: readonly { readonly name: string }[];
+      };
+      readonly status: string;
+    };
+    assert(
+      ready.status === 200 && readyBody.status === "ready" &&
+        readyBody.person.description ===
+          "Mathematician and correspondent." &&
+        readyBody.person.gender === "Woman" && readyBody.person.isStarred &&
+        readyBody.person.isDeceased && readyBody.person.isSelf,
+      "active profile returns current-workspace orientation",
+    );
+    assert(
+      readyBody.person.tags.length === 8 &&
+        readyBody.person.tagCount === 10 &&
+        readyBody.person.tags.every((tag) => tag.name !== "Private") &&
+        readyBody.dueInformation.status === "unavailable",
+      "profile bounds same-workspace tags and reports due projection honestly",
+    );
+    assert(
+      (await getPerson(owner, foreignPersonId)).status === 404 &&
+        (await getPerson(owner, crypto.randomUUID())).status === 404,
+      "foreign and missing person identifiers are indistinguishable",
+    );
+
+    const [ownerUser] = await sql<{ readonly id: string }[]>`
+      select user_id::text as id from crm.workspace_members
+      where id = ${owner.memberId}
+    `;
+    assert(ownerUser, "owner user exists");
+    const forged = await personProfile.get({
+      memberId: owner.memberId,
+      role: "owner",
+      userId: ownerUser.id,
+      workspaceId: foreign.workspaceId,
+    }, foreignPersonId);
+    assert(
+      forged.status === "forbidden",
+      "forged active-workspace context is denied without identity disclosure",
+    );
+
+    await sql`update crm.people set archived_at = now() where id = ${personId}`;
+    const archived = await getPerson(owner, personId);
+    assert(
+      archived.status === 200 &&
+        (await archived.json() as { readonly status: string }).status ===
+          "archived",
+      "archived person remains readable",
+    );
+    await sql`update crm.people set deleted_at = now() where id = ${personId}`;
+    assert(
+      (await getPerson(owner, personId)).status === 404,
+      "soft-deleted person is not exposed",
     );
   },
 });
