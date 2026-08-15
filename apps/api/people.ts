@@ -4,6 +4,10 @@ import type {
   PeopleManagement,
   PersonIdentity,
 } from "../../packages/backend/modules/people/public.ts";
+import type {
+  PeopleDirectory,
+  PeopleTagOptions,
+} from "../../packages/backend/read-models/people-directory/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
 
@@ -11,8 +15,10 @@ type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
 export interface PeopleHttpServices {
   readonly browserSecurity: BrowserSecurityPolicy;
+  readonly directory: PeopleDirectory;
   readonly people: PeopleManagement;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
+  readonly tagOptions: PeopleTagOptions;
 }
 
 const personSchema = z.object({
@@ -24,6 +30,21 @@ const personSchema = z.object({
   nickname: z.string().trim().max(200).optional(),
 }).strict();
 const personIdSchema = z.uuid();
+const directoryQuerySchema = z.object({
+  cursor: z.string().max(2_000).optional(),
+  lifecycle: z.enum(["active", "archived"]).default("active"),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  search: z.string().trim().max(200).optional(),
+  sort: z.enum(["given-name", "family-name", "recently-added"]).default(
+    "given-name",
+  ),
+  tag: z.uuid().optional(),
+}).strict();
+const tagOptionsQuerySchema = z.object({
+  cursor: z.string().max(2_000).optional(),
+  search: z.string().trim().max(200).optional(),
+  selected: z.uuid().optional(),
+}).strict();
 
 function problem(
   context: Context,
@@ -103,6 +124,131 @@ function identity(person: PersonIdentity) {
 
 export function createPeopleRoutes(services: PeopleHttpServices): Hono {
   const routes = new Hono();
+  routes.get("/api/v1/people", async (context) => {
+    const parsed = directoryQuerySchema.safeParse(context.req.query());
+    if (!parsed.success) {
+      return problem(
+        context,
+        400,
+        "people_query_invalid",
+        "Invalid people query",
+        "Review the search, tag, sort, lifecycle, and pagination criteria.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const result = await services.directory.list(resolved, {
+      ...(parsed.data.cursor ? { cursor: parsed.data.cursor } : {}),
+      lifecycle: parsed.data.lifecycle,
+      limit: parsed.data.limit,
+      ...(parsed.data.search ? { search: parsed.data.search } : {}),
+      sort: parsed.data.sort,
+      ...(parsed.data.tag ? { tagId: parsed.data.tag } : {}),
+    }).catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "people_unavailable",
+        "People unavailable",
+        "The people directory is temporarily unavailable.",
+      );
+    }
+    if (result.status === "forbidden") {
+      return problem(
+        context,
+        403,
+        "people_forbidden",
+        "People unavailable",
+        "Your active workspace membership no longer permits this view.",
+      );
+    }
+    if (result.status === "stale-cursor") {
+      return problem(
+        context,
+        409,
+        "stale_cursor",
+        "People list changed",
+        "Refresh the directory before continuing from this page.",
+      );
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json({
+      lifecycle: parsed.data.lifecycle,
+      ...(result.nextCursor ? { nextCursor: result.nextCursor } : {}),
+      people: result.people,
+      status: "ready",
+    });
+  });
+  routes.get("/api/v1/people/tag-options", async (context) => {
+    const parsed = tagOptionsQuerySchema.safeParse(context.req.query());
+    if (!parsed.success) {
+      return problem(
+        context,
+        400,
+        "tag_options_query_invalid",
+        "Invalid tag options query",
+        "Review the tag search and pagination criteria.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const result = await services.tagOptions.list(resolved, {
+      ...(parsed.data.cursor ? { cursor: parsed.data.cursor } : {}),
+      ...(parsed.data.search ? { search: parsed.data.search } : {}),
+      ...(parsed.data.selected ? { selectedTagId: parsed.data.selected } : {}),
+    }).catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "tag_options_unavailable",
+        "Tag options unavailable",
+        "Tag options are temporarily unavailable.",
+      );
+    }
+    if (result.status === "forbidden") {
+      return problem(
+        context,
+        403,
+        "people_forbidden",
+        "Tag options unavailable",
+        "Your active workspace membership no longer permits this view.",
+      );
+    }
+    if (result.status === "invalid-input") {
+      return problem(
+        context,
+        400,
+        "tag_options_cursor_invalid",
+        "Invalid tag options cursor",
+        "Start a new tag search before continuing.",
+      );
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json({
+      ...(result.nextCursor ? { nextCursor: result.nextCursor } : {}),
+      options: result.options,
+      ...(result.selected ? { selected: result.selected } : {}),
+      status: "ready",
+    });
+  });
   routes.get("/api/v1/people/:personId", async (context) => {
     const parsed = personIdSchema.safeParse(context.req.param("personId"));
     if (!parsed.success) {
@@ -157,7 +303,7 @@ export function createPeopleRoutes(services: PeopleHttpServices): Hono {
     context.header("Cache-Control", "private, no-store");
     return context.json({
       person: identity(result.person),
-      status: "ready",
+      status: result.status,
     });
   });
   routes.post("/api/v1/people", async (context) => {

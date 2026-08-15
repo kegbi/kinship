@@ -1,0 +1,19 @@
+---
+import PeopleDirectory from "../../../components/PeopleDirectory.astro";
+import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
+export const prerender = true;
+---
+
+<ApplicationLayout
+  current="people"
+  description="Search and browse people in your active Kinship workspace."
+  pageId="people.index"
+  title="People — Kinship"
+>
+  <PeopleDirectory lifecycle="active" />
+</ApplicationLayout>
+
+<script>
+  import { mountPeopleDirectory } from "../../../lib/people-directory.ts";
+  void mountPeopleDirectory();
+</script>

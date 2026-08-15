@@ -294,6 +294,7 @@ flows:
 
   - id: PEOPLE-002
     title: Find a person
+    deliveryStatus: delivered
     priority: P0
     actor: active-member
     trigger: The member searches, filters, sorts, or browses people.
@@ -309,7 +310,7 @@ flows:
     moduleIds: [people]
     permissions: [people.read]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-003b.spec.ts] }
 
   - id: PEOPLE-003
     title: Read the complete person workspace

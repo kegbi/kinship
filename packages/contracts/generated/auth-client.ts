@@ -237,10 +237,75 @@ export interface PersonInput {
   readonly nickname?: string;
 }
 
+export type PeopleDirectoryLifecycle = "active" | "archived";
+export type PeopleDirectorySort = "given-name" | "family-name" | "recently-added";
+
+export interface PeopleDirectoryTag {
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface PeopleDirectoryPerson extends PersonIdentity {
+  readonly isStarred: boolean;
+  readonly lifecycle: PeopleDirectoryLifecycle;
+  readonly tagCount: number;
+  readonly tags: readonly PeopleDirectoryTag[];
+}
+
+export interface PeopleDirectoryInput {
+  readonly cursor?: string;
+  readonly lifecycle?: PeopleDirectoryLifecycle;
+  readonly limit?: number;
+  readonly search?: string;
+  readonly sort?: PeopleDirectorySort;
+  readonly tagId?: string;
+}
+
+export interface PeopleDirectoryPage {
+  readonly lifecycle: PeopleDirectoryLifecycle;
+  readonly nextCursor?: string;
+  readonly people: readonly PeopleDirectoryPerson[];
+  readonly status: "ready";
+}
+
+export interface PeopleTagOptionsInput {
+  readonly cursor?: string;
+  readonly search?: string;
+  readonly selectedTagId?: string;
+}
+
+export interface PeopleTagOptionsPage {
+  readonly nextCursor?: string;
+  readonly options: readonly PeopleDirectoryTag[];
+  readonly selected?: PeopleDirectoryTag;
+  readonly status: "ready";
+}
+
+export function listPeople(input: PeopleDirectoryInput = {}, workspaceId?: string): Promise<ApiResult<PeopleDirectoryPage>> {
+  const query = new URLSearchParams();
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.lifecycle) query.set("lifecycle", input.lifecycle);
+  if (input.limit) query.set("limit", String(input.limit));
+  if (input.search) query.set("search", input.search);
+  if (input.sort) query.set("sort", input.sort);
+  if (input.tagId) query.set("tag", input.tagId);
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  return request(`/api/v1/people${suffix}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listPeopleTagOptions(input: PeopleTagOptionsInput = {}, workspaceId?: string): Promise<ApiResult<PeopleTagOptionsPage>> {
+  const query = new URLSearchParams();
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.search) query.set("search", input.search);
+  if (input.selectedTagId) query.set("selected", input.selectedTagId);
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  return request(`/api/v1/people/tag-options${suffix}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
 export function createPerson(input: PersonInput, workspaceId?: string): Promise<ApiResult<{ readonly status: "created"; readonly person: PersonIdentity; readonly next: string }>> {
   return request("/api/v1/people", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
 }
 
-export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly person: PersonIdentity }>> {
+export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready" | "archived"; readonly person: PersonIdentity }>> {
   return request(`/api/v1/people/${encodeURIComponent(personId)}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }

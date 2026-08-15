@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 3 — People Core**
-- Current leaf: **APP-003B / `PEOPLE-002` — Find a person**
+- Current leaf: **APP-003C — Open the canonical person workspace shell**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -138,8 +138,8 @@ runnable behavior cannot work without them.
 - [x] **APP-003A / `PEOPLE-001` — Create a person.**
   - [x] Deliver domain/application behavior, tenant-safe PostgreSQL adapter,
         versioned API, creation UI, validation/conflict states, and flow E2E.
-- [ ] **APP-003B / `PEOPLE-002` — Find a person.**
-  - [ ] Deliver people list, search, filter/sort behavior required by the flow,
+- [x] **APP-003B / `PEOPLE-002` — Find a person.**
+  - [x] Deliver people list, search, filter/sort behavior required by the flow,
         empty/loading/error states, and archived-list entry point.
 - [ ] **APP-003C — Open the canonical person workspace shell.**
   - [ ] Use only `/app/people/:personId` for person-specific work.

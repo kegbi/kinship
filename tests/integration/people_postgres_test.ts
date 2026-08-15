@@ -1,4 +1,6 @@
 import postgres from "postgres";
+import { Kysely, sql as kyselySql } from "kysely";
+import { PostgresJSDialect } from "kysely-postgres-js";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
@@ -12,7 +14,15 @@ import {
   PostgresPeopleTransaction,
 } from "../../packages/backend/modules/people/public.ts";
 import { PostgresPersonCreatedAudit } from "../../packages/backend/modules/governance/public.ts";
-import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import {
+  type ApplicationDatabase,
+  connectDatabase,
+} from "../../packages/backend/platform/postgres/database.ts";
+import {
+  createPeopleDirectory,
+  createPeopleTagOptions,
+  PostgresPeopleDirectoryRepository,
+} from "../../packages/backend/read-models/people-directory/public.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -31,6 +41,9 @@ const people = createPeopleManagement({
   ids: { create: () => crypto.randomUUID() },
   repository: new PostgresPeopleRepository(),
   transaction: new PostgresPeopleTransaction(peopleConnection.db),
+});
+const directory = createPeopleDirectory({
+  repository: new PostgresPeopleDirectoryRepository(peopleConnection.db),
 });
 const mail = new CapturedVerificationMail();
 const configured = createConfiguredApiApp(
@@ -130,6 +143,36 @@ async function getPerson(
       headers: {
         cookie: fixture.cookie,
         "X-Workspace-Id": workspaceId,
+      },
+    },
+  );
+}
+
+async function listPeople(
+  fixture: Fixture,
+  query = "",
+): Promise<Response> {
+  return await configured.app.request(
+    `http://localhost/api/v1/people${query ? `?${query}` : ""}`,
+    {
+      headers: {
+        cookie: fixture.cookie,
+        "X-Workspace-Id": fixture.workspaceId,
+      },
+    },
+  );
+}
+
+async function listTagOptions(
+  fixture: Fixture,
+  query = "",
+): Promise<Response> {
+  return await configured.app.request(
+    `http://localhost/api/v1/people/tag-options${query ? `?${query}` : ""}`,
+    {
+      headers: {
+        cookie: fixture.cookie,
+        "X-Workspace-Id": fixture.workspaceId,
       },
     },
   );
@@ -465,6 +508,373 @@ Deno.test({
       "unknown given name remains empty and explicitly partial",
     );
     assert(proof.audit_count === 3, "every committed owner person is audited");
+  },
+});
+
+Deno.test({
+  name:
+    "PEOPLE-002 real PostgreSQL directory isolates, searches, filters, sorts, paginates, and distinguishes lifecycle",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await sql`truncate table crm.users, crm.workspaces restart identity cascade`;
+    const owner = await register(
+      `directory-owner-${crypto.randomUUID()}@example.test`,
+      "Directory circle",
+    );
+    const foreign = await register(
+      `directory-foreign-${crypto.randomUUID()}@example.test`,
+      "Foreign directory",
+    );
+    const adaId = crypto.randomUUID();
+    const graceId = crypto.randomUUID();
+    const alanId = crypto.randomUUID();
+    const archivedId = crypto.randomUUID();
+    const foreignPersonId = crypto.randomUUID();
+    const friendsTagId = crypto.randomUUID();
+    const foreignTagId = crypto.randomUUID();
+    await sql.begin(async (transaction) => {
+      await transaction`
+        insert into crm.people (
+          id, workspace_id, created_by_member_id, given_name, family_name,
+          is_starred, created_at, updated_at
+        ) values
+          (${adaId}, ${owner.workspaceId}, ${owner.memberId}, 'Ada',
+            'Lovelace', true, '2026-08-12T12:00:00Z', now()),
+          (${graceId}, ${owner.workspaceId}, ${owner.memberId}, 'Grace',
+            'Hopper', false, '2026-08-13T12:00:00Z', now()),
+          (${alanId}, ${owner.workspaceId}, ${owner.memberId}, 'Alan',
+            'Turing', false, '2026-08-14T12:00:00Z', now()),
+          (${archivedId}, ${owner.workspaceId}, ${owner.memberId}, 'Harriet',
+            'Tubman', false, '2026-08-11T12:00:00Z', now())
+      `;
+      await transaction`
+        update crm.people set archived_at = '2026-08-15T12:00:00Z'
+        where id = ${archivedId}
+      `;
+      await transaction`
+        insert into crm.people (
+          id, workspace_id, created_by_member_id, given_name, family_name
+        ) values (
+          ${foreignPersonId}, ${foreign.workspaceId}, ${foreign.memberId},
+          'Foreign', 'Ada'
+        )
+      `;
+      await transaction`
+        insert into crm.tags (id, workspace_id, name, slug) values
+          (${friendsTagId}, ${owner.workspaceId}, 'Friends', 'friends'),
+          (${foreignTagId}, ${foreign.workspaceId}, 'Private', 'private')
+      `;
+      await transaction`
+        insert into crm.tags (id, workspace_id, name, slug)
+        select gen_random_uuid(), ${owner.workspaceId},
+          'Bulk ' || lpad(sequence::text, 2, '0'),
+          'bulk-' || lpad(sequence::text, 2, '0')
+        from generate_series(1, 25) sequence
+      `;
+      await transaction`
+        insert into crm.person_tags (person_id, tag_id) values
+          (${adaId}, ${friendsTagId}),
+          (${adaId}, ${foreignTagId}),
+          (${foreignPersonId}, ${foreignTagId})
+      `;
+      await transaction`
+        insert into crm.person_tags (person_id, tag_id)
+        select ${adaId}, tag.id
+        from crm.tags tag
+        where tag.workspace_id = ${owner.workspaceId}
+          and tag.slug between 'bulk-01' and 'bulk-07'
+      `;
+    });
+
+    const searched = await listPeople(
+      owner,
+      "search=ada&lifecycle=active&sort=given-name",
+    );
+    const searchedBody = await searched.json() as {
+      readonly people: readonly {
+        readonly id: string;
+        readonly lifecycle: string;
+        readonly tagCount: number;
+        readonly tags: readonly {
+          readonly id: string;
+          readonly name: string;
+        }[];
+      }[];
+    };
+    assert(
+      searched.status === 200 && searchedBody.people.length === 1 &&
+        searchedBody.people[0]?.id === adaId &&
+        searchedBody.people[0]?.lifecycle === "active",
+      "search returns only the matching active-workspace person",
+    );
+    assert(
+      searchedBody.people[0]?.tags.length === 5 &&
+        searchedBody.people[0]?.tagCount === 8 &&
+        searchedBody.people[0]?.tags.map((tag) => tag.name).join(",") ===
+          "Bulk 01,Bulk 02,Bulk 03,Bulk 04,Bulk 05" &&
+        searchedBody.people[0]?.tags.every((tag) =>
+          tag.id !== friendsTagId && tag.id !== foreignTagId
+        ),
+      "person tags are a bounded same-workspace preview with an exact count",
+    );
+    assert(
+      !("availableTags" in searchedBody),
+      "people pages never return the workspace tag vocabulary",
+    );
+
+    const firstTagPage = await listTagOptions(
+      owner,
+      `selected=${friendsTagId}`,
+    );
+    const firstTagBody = await firstTagPage.json() as {
+      readonly nextCursor?: string;
+      readonly options: readonly {
+        readonly id: string;
+        readonly name: string;
+      }[];
+      readonly selected?: { readonly id: string };
+    };
+    assert(
+      firstTagPage.status === 200 && firstTagBody.options.length === 20 &&
+        firstTagBody.nextCursor &&
+        firstTagBody.selected?.id === friendsTagId &&
+        firstTagBody.options.every((tag) => tag.id !== foreignTagId),
+      "first tag-options page is bounded and retains a later selected tag",
+    );
+    const nextTagPage = await listTagOptions(
+      owner,
+      `selected=${friendsTagId}&cursor=${
+        encodeURIComponent(firstTagBody.nextCursor)
+      }`,
+    );
+    const nextTagBody = await nextTagPage.json() as {
+      readonly nextCursor?: string;
+      readonly options: readonly { readonly id: string }[];
+    };
+    assert(
+      nextTagPage.status === 200 && nextTagBody.options.length === 6 &&
+        !nextTagBody.nextCursor &&
+        nextTagBody.options.some((tag) => tag.id === friendsTagId),
+      "tag cursor reaches every later same-workspace option without overflow",
+    );
+    const searchedTags = await listTagOptions(owner, "search=FRIENDS");
+    const searchedTagsBody = await searchedTags.json() as {
+      readonly options: readonly { readonly id: string }[];
+    };
+    assert(
+      searchedTags.status === 200 && searchedTagsBody.options.length === 1 &&
+        searchedTagsBody.options[0]?.id === friendsTagId,
+      "tag option refinement is normalized and case-insensitive",
+    );
+    const foreignSelectedTag = await listTagOptions(
+      owner,
+      `selected=${foreignTagId}&search=private`,
+    );
+    const foreignSelectedTagBody = await foreignSelectedTag.json() as {
+      readonly options: readonly unknown[];
+      readonly selected?: unknown;
+    };
+    assert(
+      foreignSelectedTag.status === 200 &&
+        foreignSelectedTagBody.options.length === 0 &&
+        foreignSelectedTagBody.selected === undefined,
+      "foreign selected and searched tags disclose no option or label",
+    );
+
+    const tagged = await listPeople(
+      owner,
+      `tag=${friendsTagId}&sort=family-name`,
+    );
+    const taggedBody = await tagged.json() as {
+      readonly people: readonly {
+        readonly id: string;
+        readonly tagCount: number;
+        readonly tags: readonly { readonly name: string }[];
+      }[];
+    };
+    assert(
+      tagged.status === 200 && taggedBody.people.length === 1 &&
+        taggedBody.people[0]?.id === adaId &&
+        taggedBody.people[0].tagCount === 8 &&
+        taggedBody.people[0].tags.length === 5 &&
+        taggedBody.people[0].tags.every((tag) => tag.name !== "Friends"),
+      "same-workspace tag filter retains the bounded preview and exact count",
+    );
+    const foreignTagged = await listPeople(owner, `tag=${foreignTagId}`);
+    assert(
+      foreignTagged.status === 200 &&
+        (await foreignTagged.json() as { readonly people: unknown[] }).people
+            .length === 0,
+      "foreign tag identifiers disclose no matches",
+    );
+
+    const firstPage = await listPeople(owner, "sort=family-name&limit=2");
+    const firstPageBody = await firstPage.json() as {
+      readonly nextCursor?: string;
+      readonly people: readonly {
+        readonly familyName: string;
+        readonly id: string;
+      }[];
+    };
+    assert(
+      firstPageBody.people.map((person) => person.familyName).join(",") ===
+          "Hopper,Lovelace" && firstPageBody.nextCursor,
+      "family-name order is deterministic and paginated",
+    );
+    const secondPage = await listPeople(
+      owner,
+      `sort=family-name&limit=2&cursor=${
+        encodeURIComponent(firstPageBody.nextCursor)
+      }`,
+    );
+    const secondPageBody = await secondPage.json() as {
+      readonly nextCursor?: string;
+      readonly people: readonly { readonly id: string }[];
+    };
+    assert(
+      secondPage.status === 200 && secondPageBody.people.length === 1 &&
+        secondPageBody.people[0]?.id === alanId && !secondPageBody.nextCursor &&
+        !("availableTags" in secondPageBody),
+      "cursor continues without duplicates, offsets, or repeated tag vocabulary",
+    );
+
+    const budgetUser = await sql<{ readonly id: string }[]>`
+      select user_id::text as id from crm.workspace_members
+      where id = ${owner.memberId}
+    `;
+    assert(budgetUser[0], "query budget actor exists");
+    let queryCount = 0;
+    const observedClient = postgres(databaseUrl, {
+      debug: () => {
+        queryCount += 1;
+      },
+      max: 1,
+      onnotice: () => undefined,
+    });
+    const observedDatabase = new Kysely<ApplicationDatabase>({
+      dialect: new PostgresJSDialect({ postgres: observedClient }),
+    });
+    try {
+      // Establish the driver connection before measuring repository statements;
+      // postgres.js performs its own type-discovery query on first connection.
+      await kyselySql`select 1`.execute(observedDatabase);
+      queryCount = 0;
+      const observedDirectory = createPeopleDirectory({
+        repository: new PostgresPeopleDirectoryRepository(observedDatabase),
+      });
+      const observedTagRepository = new PostgresPeopleDirectoryRepository(
+        observedDatabase,
+      );
+      const observedTags = createPeopleTagOptions({
+        repository: observedTagRepository,
+      });
+      const budgetActor = {
+        memberId: owner.memberId,
+        role: "owner" as const,
+        userId: budgetUser[0].id,
+        workspaceId: owner.workspaceId,
+      };
+      const budgetFirst = await observedDirectory.list(budgetActor, {
+        limit: 1,
+        sort: "given-name",
+      });
+      assert(
+        budgetFirst.status === "ready" && budgetFirst.nextCursor &&
+          queryCount === 2,
+        "first directory page stays within two SQL statements",
+      );
+      const beforeContinuation = queryCount;
+      await observedDirectory.list(budgetActor, {
+        cursor: budgetFirst.nextCursor,
+        limit: 1,
+        sort: "given-name",
+      });
+      assert(
+        queryCount - beforeContinuation === 3,
+        "cursor anchor validation keeps continuation within three statements without tag lookup",
+      );
+      const beforeTags = queryCount;
+      const tagBudgetFirst = await observedTags.list(budgetActor, {
+        selectedTagId: friendsTagId,
+      });
+      assert(
+        tagBudgetFirst.status === "ready" &&
+          tagBudgetFirst.options.length === 20 &&
+          tagBudgetFirst.nextCursor &&
+          tagBudgetFirst.selected?.id === friendsTagId &&
+          queryCount - beforeTags === 3,
+        "bounded tag options use authorization, one limited page, and one selected lookup",
+      );
+      const beforeTagContinuation = queryCount;
+      await observedTags.list(budgetActor, {
+        cursor: tagBudgetFirst.nextCursor,
+      });
+      assert(
+        queryCount - beforeTagContinuation === 2,
+        "tag continuation stays within authorization and one limited seek query",
+      );
+    } finally {
+      await observedDatabase.destroy();
+    }
+
+    const archived = await listPeople(owner, "lifecycle=archived");
+    const archivedBody = await archived.json() as {
+      readonly lifecycle: string;
+      readonly people: readonly {
+        readonly id: string;
+        readonly lifecycle: string;
+      }[];
+    };
+    assert(
+      archived.status === 200 && archivedBody.lifecycle === "archived" &&
+        archivedBody.people.length === 1 &&
+        archivedBody.people[0]?.id === archivedId &&
+        archivedBody.people[0]?.lifecycle === "archived",
+      "archived list is explicit and separate",
+    );
+    const archivedRead = await getPerson(owner, archivedId);
+    assert(
+      archivedRead.status === 200 &&
+        (await archivedRead.json() as { readonly status: string }).status ===
+          "archived",
+      "canonical identity read distinguishes an archived person",
+    );
+    assert(
+      (await getPerson(owner, foreignPersonId)).status === 404 &&
+        (await getPerson(owner, crypto.randomUUID())).status === 404,
+      "foreign and missing identifiers remain indistinguishable not-found",
+    );
+
+    const ownerUser = await sql<{ readonly id: string }[]>`
+      select user_id::text as id from crm.workspace_members
+      where id = ${owner.memberId}
+    `;
+    assert(ownerUser[0], "owner user fixture exists");
+    const forbidden = await directory.list({
+      memberId: owner.memberId,
+      role: "owner",
+      userId: ownerUser[0].id,
+      workspaceId: foreign.workspaceId,
+    }, {});
+    assert(
+      forbidden.status === "forbidden",
+      "forged workspace context is forbidden without results",
+    );
+
+    await sql`update crm.people set family_name = 'Changed' where id = ${adaId}`;
+    const stale = await listPeople(
+      owner,
+      `sort=family-name&limit=2&cursor=${
+        encodeURIComponent(firstPageBody.nextCursor)
+      }`,
+    );
+    assert(
+      stale.status === 409 &&
+        (await stale.json() as { readonly code: string }).code ===
+          "stale_cursor",
+      "a mutated cursor anchor is rejected explicitly",
+    );
   },
 });
 

@@ -69,16 +69,25 @@ import {
 } from "../../packages/backend/modules/people/public.ts";
 import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
 import {
+  createPeopleDirectory,
+  createPeopleTagOptions,
+  type PeopleDirectory,
+  type PeopleTagOptions,
+  PostgresPeopleDirectoryRepository,
+} from "../../packages/backend/read-models/people-directory/public.ts";
+import {
   createAuthenticationResponseEqualizer,
   DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
 } from "./authentication_response.ts";
 
 export interface ApiServices extends RegistrationHttpServices {
+  readonly directory?: PeopleDirectory;
   readonly invitations?: InvitationHttpServices["invitations"];
   readonly passwordRecovery?: AuthenticationHttpServices["passwordRecovery"];
   readonly protectedSessions?: AuthenticationHttpServices["protectedSessions"];
   readonly settings?: SettingsHttpServices["settings"];
   readonly people?: PeopleHttpServices["people"];
+  readonly tagOptions?: PeopleTagOptions;
   readonly readiness?: () => Promise<boolean>;
 }
 
@@ -181,13 +190,18 @@ export function createApiApp(services?: ApiServices): Hono {
         );
       }
     }
-    if (services.people && services.protectedSessions) {
+    if (
+      services.directory && services.people && services.protectedSessions &&
+      services.tagOptions
+    ) {
       api.route(
         "/",
         createPeopleRoutes({
           browserSecurity: services.browserSecurity,
+          directory: services.directory,
           people: services.people,
           protectedSessions: services.protectedSessions,
+          tagOptions: services.tagOptions,
         }),
       );
     }
@@ -354,14 +368,23 @@ export function createConfiguredApiApp(
     repository: new PostgresPeopleRepository(),
     transaction: new PostgresPeopleTransaction(connection.db),
   });
+  const directoryRepository = new PostgresPeopleDirectoryRepository(
+    connection.db,
+  );
+  const directory = createPeopleDirectory({ repository: directoryRepository });
+  const tagOptions = createPeopleTagOptions({
+    repository: directoryRepository,
+  });
   const app = createApiApp({
     browserSecurity: policy,
+    directory,
     hasher,
     invitations,
     passwordRecovery,
     people,
     protectedSessions,
     settings,
+    tagOptions,
     register: registration,
     retryVerificationDelivery: createVerificationDeliveryRetry(
       registrationDependencies,

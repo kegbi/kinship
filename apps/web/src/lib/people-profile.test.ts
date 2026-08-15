@@ -26,6 +26,7 @@ function markup(path = `/app/people/${personId}`): void {
     <section id="person-profile-state" tabindex="-1"><h1>Opening person…</h1></section>
     <section id="person-profile-ready" hidden>
       <h1 id="person-profile-name" tabindex="-1"></h1>
+      <p id="person-profile-archived" hidden></p>
       <p id="person-profile-partial" hidden></p>
       <span data-profile-field="givenName"></span>
       <span data-profile-field="middleName"></span>
@@ -114,5 +115,28 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
     document.body.innerHTML = "<main></main>";
     await expect(mountPeopleProfile()).resolves.toBeUndefined();
+  });
+
+  it("distinguishes an archived canonical person as read-only", async () => {
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockResolvedValueOnce(response({
+          person: {
+            givenName: "Harriet",
+            id: personId,
+            isPartial: false,
+          },
+          status: "archived",
+        })),
+    );
+    await mountPeopleProfile();
+    expect(
+      document.querySelector("#person-profile-archived")?.hasAttribute(
+        "hidden",
+      ),
+    ).toBe(false);
   });
 });
