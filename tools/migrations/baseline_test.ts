@@ -9,31 +9,36 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("schema v4 migration classifies only exact empty and v1-v4 states", () => {
+Deno.test("schema v5 migration classifies only exact empty and v1-v5 states", () => {
   assert(
     decideSchemaAction({ crmSchemaExists: false, state: "empty" }) ===
-      "apply-v4",
-    "empty target applies the full v4 schema",
+      "apply-v5",
+    "empty target applies the full v5 schema",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v1" }) ===
-      "upgrade-v1-to-v4",
+      "upgrade-v1-to-v5",
     "exact v1 target upgrades",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v2" }) ===
-      "upgrade-v2-to-v4",
+      "upgrade-v2-to-v5",
     "exact v2 target upgrades",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v3" }) ===
-      "upgrade-v3-to-v4",
+      "upgrade-v3-to-v5",
     "exact v3 target upgrades",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v4" }) ===
-      "verify-v4",
-    "exact v4 target verifies idempotently",
+      "upgrade-v4-to-v5",
+    "exact v4 target upgrades",
+  );
+  assert(
+    decideSchemaAction({ crmSchemaExists: true, state: "v5" }) ===
+      "verify-v5",
+    "exact v5 target verifies idempotently",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "drift" }) ===

@@ -4,6 +4,40 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
+interface ObjectSchema {
+  readonly $ref?: string;
+  readonly additionalProperties?: boolean;
+  readonly allOf?: readonly ObjectSchema[];
+  readonly properties?: Readonly<Record<string, ObjectSchema>>;
+  readonly required?: readonly string[];
+  readonly type?: string;
+}
+
+function acceptsObjectInstance(
+  schemas: Readonly<Record<string, ObjectSchema>>,
+  schema: ObjectSchema,
+  instance: Readonly<Record<string, unknown>>,
+): boolean {
+  if (schema.$ref) {
+    const name = schema.$ref.split("/").at(-1);
+    return name !== undefined && schemas[name] !== undefined &&
+      acceptsObjectInstance(schemas, schemas[name], instance);
+  }
+  if (
+    schema.allOf?.some((part) =>
+      !acceptsObjectInstance(schemas, part, instance)
+    )
+  ) return false;
+  if (schema.required?.some((name) => !(name in instance))) return false;
+  if (
+    schema.additionalProperties === false &&
+    Object.keys(instance).some((name) =>
+      schema.properties?.[name] === undefined
+    )
+  ) return false;
+  return true;
+}
+
 Deno.test("PEOPLE-001 OpenAPI describes tenant-safe person creation", () => {
   const document = buildOpenApiDocument();
   const paths = document.paths as Record<string, {
@@ -240,4 +274,72 @@ Deno.test("PEOPLE-004 OpenAPI versions every tenant-safe lifecycle action", () =
       assert(operation.responses?.[status], `${method} documents ${status}`);
     }
   }
+});
+
+Deno.test("PEOPLE-005 OpenAPI preserves partial and approximate date state", () => {
+  const document = buildOpenApiDocument();
+  const paths = document.paths as Record<string, Record<string, unknown>>;
+  const collection = paths["/api/v1/people/{personId}/dates"];
+  const item = paths["/api/v1/people/{personId}/dates/{dateId}"];
+  assert(
+    Boolean(collection?.get && collection.post && item?.patch && item.delete),
+    "important-date CRUD/list operations are versioned",
+  );
+  const schemas = (document.components as {
+    schemas: Record<string, { properties?: Record<string, unknown> }>;
+  }).schemas;
+  const input = schemas.ImportantDateInput;
+  assert(
+    Boolean(input?.properties?.precision) &&
+      Boolean(input?.properties?.isYearApproximate),
+    "precision and approximation are independent transport fields",
+  );
+
+  const objectSchemas = schemas as Readonly<Record<string, ObjectSchema>>;
+  const dateInput = {
+    day: 29,
+    isAgeBased: false,
+    isYearApproximate: true,
+    kind: "birthday",
+    month: 2,
+    precision: "full",
+    year: 1984,
+  };
+  const createSchema = objectSchemas.ImportantDateInput;
+  const updateSchema = objectSchemas.ImportantDateUpdateInput;
+  const responseSchema = objectSchemas.ImportantDate;
+  assert(
+    createSchema && updateSchema && responseSchema,
+    "important-date schemas exist",
+  );
+  assert(
+    acceptsObjectInstance(
+      objectSchemas,
+      createSchema,
+      dateInput,
+    ),
+    "a representative create input satisfies its closed schema",
+  );
+  assert(
+    acceptsObjectInstance(
+      objectSchemas,
+      updateSchema,
+      {
+        ...dateInput,
+        expectedUpdatedAt: "2026-08-15T12:00:00.000Z",
+      },
+    ),
+    "a representative update input satisfies its composed schema",
+  );
+  assert(
+    acceptsObjectInstance(objectSchemas, responseSchema, {
+      ...dateInput,
+      createdAt: "2026-08-15T12:00:00.000Z",
+      id: "00000000-0000-4000-8000-000000000200",
+      personId: "00000000-0000-4000-8000-000000000100",
+      scheduling: "annual-reminder",
+      updatedAt: "2026-08-15T12:00:00.000Z",
+    }),
+    "a representative response date satisfies its composed schema",
+  );
 });

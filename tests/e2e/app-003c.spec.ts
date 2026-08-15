@@ -212,7 +212,9 @@ test(
     await expect(page.locator("[data-profile-section]")).toHaveCount(22);
     await expect(
       page.locator('[data-profile-section][data-section-state="unavailable"]'),
-    ).toHaveCount(21);
+    ).toHaveCount(20);
+    await expect(page.locator("#profile-section-important-dates"))
+      .toHaveAttribute("data-section-state", "ready");
     await expect(page.locator("#profile-section-documents")).toHaveAttribute(
       "data-load-mode",
       "independent",

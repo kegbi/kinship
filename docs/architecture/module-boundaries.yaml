@@ -1,6 +1,6 @@
 schemaVersion: 1
 decisionStatus: accepted
-schemaSource: personal-crm-schema/v4/personal_crm_schema_v4.sql
+schemaSource: personal-crm-schema/v5/personal_crm_schema_v5.sql
 
 sharedKernel:
   path: packages/backend/shared-kernel
@@ -126,6 +126,7 @@ modules:
     publishes: [
       people.person-created,
       people.person-updated,
+      people.person-date-updated,
       people.person-archived,
     ]
     consumes: [workspace.configuration-changed]
@@ -191,7 +192,11 @@ modules:
       planning.reminder-due,
       planning.reminder-delivered,
     ]
-    consumes: [people.person-updated, workspace.configuration-changed]
+    consumes: [
+      people.person-date-updated,
+      people.person-updated,
+      workspace.configuration-changed,
+    ]
 
   - id: files
     path: packages/backend/modules/files

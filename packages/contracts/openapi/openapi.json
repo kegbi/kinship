@@ -1497,6 +1497,475 @@
         }
       }
     },
+    "/api/v1/people/{personId}/dates": {
+      "get": {
+        "operationId": "listImportantDates",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "personId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exact important-date list for one workspace person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportantDateList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createImportantDate",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "description": "Must exactly match the configured public web origin.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "personId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportantDateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Important date created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportantDateChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{personId}/dates/{dateId}": {
+      "parameters": [
+        {
+          "name": "dateId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "patch": {
+        "operationId": "updateImportantDate",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "description": "Must exactly match the configured public web origin.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "personId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportantDateUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Important date updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportantDateChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteImportantDate",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "description": "Must exactly match the configured public web origin.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "personId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonTransitionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Important date deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportantDateDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/people/{personId}/restore": {
       "post": {
         "operationId": "restorePerson",
@@ -4130,6 +4599,285 @@
           },
           "detail": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ImportantDateInput": {
+        "type": "object",
+        "required": [
+          "isAgeBased",
+          "isYearApproximate",
+          "kind",
+          "precision"
+        ],
+        "properties": {
+          "day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "isAgeBased": {
+            "type": "boolean"
+          },
+          "isYearApproximate": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "birthday",
+              "custom",
+              "deceased",
+              "first_met"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "month": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "precision": {
+            "type": "string",
+            "enum": [
+              "day",
+              "full",
+              "month",
+              "month_day",
+              "unknown",
+              "year",
+              "year_month"
+            ]
+          },
+          "year": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9999
+          }
+        },
+        "additionalProperties": false
+      },
+      "ImportantDateUpdateInput": {
+        "type": "object",
+        "required": [
+          "isAgeBased",
+          "isYearApproximate",
+          "kind",
+          "precision",
+          "expectedUpdatedAt"
+        ],
+        "properties": {
+          "day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "isAgeBased": {
+            "type": "boolean"
+          },
+          "isYearApproximate": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "birthday",
+              "custom",
+              "deceased",
+              "first_met"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "month": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "precision": {
+            "type": "string",
+            "enum": [
+              "day",
+              "full",
+              "month",
+              "month_day",
+              "unknown",
+              "year",
+              "year_month"
+            ]
+          },
+          "year": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9999
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ImportantDate": {
+        "type": "object",
+        "required": [
+          "isAgeBased",
+          "isYearApproximate",
+          "kind",
+          "precision",
+          "createdAt",
+          "id",
+          "personId",
+          "scheduling",
+          "updatedAt"
+        ],
+        "properties": {
+          "day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "isAgeBased": {
+            "type": "boolean"
+          },
+          "isYearApproximate": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "birthday",
+              "custom",
+              "deceased",
+              "first_met"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "month": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "precision": {
+            "type": "string",
+            "enum": [
+              "day",
+              "full",
+              "month",
+              "month_day",
+              "unknown",
+              "year",
+              "year_month"
+            ]
+          },
+          "year": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9999
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scheduling": {
+            "type": "string",
+            "enum": [
+              "annual-reminder",
+              "not-schedulable"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ImportantDateList": {
+        "type": "object",
+        "required": [
+          "dates",
+          "status"
+        ],
+        "properties": {
+          "dates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportantDate"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "archived"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ImportantDateChanged": {
+        "type": "object",
+        "required": [
+          "date",
+          "status"
+        ],
+        "properties": {
+          "date": {
+            "$ref": "#/components/schemas/ImportantDate"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "created",
+              "updated"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ImportantDateDeleted": {
+        "type": "object",
+        "required": [
+          "dateId",
+          "status"
+        ],
+        "properties": {
+          "dateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "deleted"
           }
         },
         "additionalProperties": false

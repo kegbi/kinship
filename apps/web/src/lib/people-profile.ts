@@ -10,6 +10,7 @@ import {
   restorePerson,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
+import { mountImportantDates } from "./important-dates.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
@@ -480,6 +481,11 @@ function mountLifecycleActions(
     updatedAt = result.value.person.updatedAt;
     state = action === "archive" ? "archived" : "active";
     renderLifecycleState(profile, lifecycle, state);
+    document.dispatchEvent(
+      new CustomEvent("person-lifecycle-changed", {
+        detail: { archived: state === "archived" },
+      }),
+    );
     announce(
       action === "archive"
         ? "Person archived. They now appear in Archived people."
@@ -627,5 +633,10 @@ export async function mountPeopleProfile(): Promise<void> {
     result.value.status,
     id,
     session.session.workspace.id,
+  );
+  await mountImportantDates(
+    id,
+    session.session.workspace.id,
+    result.value.status === "archived",
   );
 }

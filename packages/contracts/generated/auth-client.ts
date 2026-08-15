@@ -271,6 +271,29 @@ export interface PersonDueInformation {
   readonly status: "unavailable";
 }
 
+export type ImportantDateKind = "birthday" | "custom" | "deceased" | "first_met";
+export type ImportantDatePrecision = "day" | "full" | "month" | "month_day" | "unknown" | "year" | "year_month";
+
+export interface ImportantDateInput {
+  readonly day?: number;
+  readonly isAgeBased: boolean;
+  readonly isYearApproximate: boolean;
+  readonly kind: ImportantDateKind;
+  readonly label?: string;
+  readonly month?: number;
+  readonly notes?: string;
+  readonly precision: ImportantDatePrecision;
+  readonly year?: number;
+}
+
+export interface ImportantDate extends ImportantDateInput {
+  readonly createdAt: string;
+  readonly id: string;
+  readonly personId: string;
+  readonly scheduling: "annual-reminder" | "not-schedulable";
+  readonly updatedAt: string;
+}
+
 export interface PersonInput {
   readonly duplicateOverride?: boolean;
   readonly familyName?: string;
@@ -351,6 +374,22 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
 
 export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
   return request(`/api/v1/people/${encodeURIComponent(personId)}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listImportantDates(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dates: readonly ImportantDate[]; readonly status: "ready" | "archived" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/dates`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function createImportantDate(personId: string, input: ImportantDateInput, workspaceId?: string): Promise<ApiResult<{ readonly date: ImportantDate; readonly status: "created" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/dates`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function updateImportantDate(personId: string, dateId: string, input: ImportantDateInput & PersonTransitionInput, workspaceId?: string): Promise<ApiResult<{ readonly date: ImportantDate; readonly status: "updated" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/dates/${encodeURIComponent(dateId)}`, { method: "PATCH", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function deleteImportantDate(personId: string, dateId: string, input: PersonTransitionInput, workspaceId?: string): Promise<ApiResult<{ readonly dateId: string; readonly status: "deleted" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/dates/${encodeURIComponent(dateId)}`, { method: "DELETE", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
 }
 
 export function editPerson(personId: string, input: PersonEditInput, workspaceId?: string): Promise<ApiResult<{ readonly person: PersonLifecycleIdentity; readonly status: "updated" }>> {

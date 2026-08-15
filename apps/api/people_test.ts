@@ -1,5 +1,6 @@
 import { type ApiServices, createApiApp } from "./composition.ts";
 import type {
+  ImportantDateManagement,
   PeopleManagement,
   PersonLifecycle,
 } from "../../packages/backend/modules/people/public.ts";
@@ -80,6 +81,7 @@ function services(
   profile: PeopleHttpServices["profile"] = {
     get: () => Promise.resolve({ status: "not-found" }),
   },
+  importantDates?: ImportantDateManagement,
 ): PeopleHttpServices {
   return {
     browserSecurity: {
@@ -87,6 +89,7 @@ function services(
       secureCookie: false,
     },
     directory,
+    ...(importantDates ? { importantDates } : {}),
     people: {
       archive: () => Promise.reject(new Error("must not archive")),
       delete: () => Promise.reject(new Error("must not delete")),
@@ -101,6 +104,154 @@ function services(
     tagOptions,
   };
 }
+
+Deno.test("PEOPLE-005 HTTP preserves precision across list, create, update, and delete", async () => {
+  const personId = "00000000-0000-4000-8000-000000000100";
+  const date = {
+    createdAt: "2026-08-15T12:00:00.000000Z",
+    id: "00000000-0000-4000-8000-000000000200",
+    isAgeBased: true,
+    isYearApproximate: true,
+    kind: "birthday" as const,
+    personId,
+    precision: "year" as const,
+    scheduling: "not-schedulable" as const,
+    updatedAt: "2026-08-15T12:00:00.000000Z",
+    year: 1984,
+  };
+  let createdInput: unknown;
+  const importantDates: ImportantDateManagement = {
+    create: (_actor, _personId, input) => {
+      createdInput = input;
+      return Promise.resolve({ date, status: "created" });
+    },
+    delete: () => Promise.resolve({ dateId: date.id, status: "deleted" }),
+    list: () => Promise.resolve({ dates: [date], status: "ready" }),
+    update: (_actor, _personId, _dateId, input) =>
+      Promise.resolve({
+        date: { ...date, ...input, scheduling: "not-schedulable" },
+        status: "updated",
+      }),
+  };
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create person")) },
+    undefined,
+    undefined,
+    undefined,
+    importantDates,
+  ));
+  const listed = await app.request(
+    `http://localhost/api/v1/people/${personId}/dates`,
+    { headers },
+  );
+  assert(
+    listed.status === 200 &&
+      (await listed.json() as { dates: typeof date[] }).dates[0]
+          ?.isYearApproximate === true,
+    "list keeps approximation explicit",
+  );
+  const body = JSON.stringify({
+    isAgeBased: true,
+    isYearApproximate: true,
+    kind: "birthday",
+    precision: "year",
+    year: 1984,
+  });
+  const created = await app.request(
+    `http://localhost/api/v1/people/${personId}/dates`,
+    { body, headers, method: "POST" },
+  );
+  assert(created.status === 201, "create route is ready");
+  assert(
+    (createdInput as { year?: number; month?: number }).year === 1984 &&
+      !("month" in (createdInput as object)),
+    "transport does not invent missing components",
+  );
+  const updated = await app.request(
+    `http://localhost/api/v1/people/${personId}/dates/${date.id}`,
+    {
+      body: JSON.stringify({
+        ...JSON.parse(body),
+        expectedUpdatedAt: date.updatedAt,
+      }),
+      headers,
+      method: "PATCH",
+    },
+  );
+  assert(updated.status === 200, "update route is ready");
+  const deleted = await app.request(
+    `http://localhost/api/v1/people/${personId}/dates/${date.id}`,
+    {
+      body: JSON.stringify({ expectedUpdatedAt: date.updatedAt }),
+      headers,
+      method: "DELETE",
+    },
+  );
+  assert(deleted.status === 200, "delete route is ready");
+});
+
+Deno.test("PEOPLE-005 HTTP maps invalid precision, conflicts, stale versions, and tenancy safely", async () => {
+  const personId = "00000000-0000-4000-8000-000000000100";
+  let calls = 0;
+  const base: ImportantDateManagement = {
+    create: () => {
+      calls += 1;
+      return Promise.resolve(
+        calls === 1
+          ? {
+            errors: { month: "Remove month; it contradicts year precision." },
+            status: "validation-error",
+          }
+          : { status: "conflict" },
+      );
+    },
+    delete: () => Promise.resolve({ status: "stale" }),
+    list: () => Promise.resolve({ status: "not-found" }),
+    update: () => Promise.resolve({ status: "forbidden" }),
+  };
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create person")) },
+    undefined,
+    undefined,
+    undefined,
+    base,
+  ));
+  const invalid = await app.request(
+    `http://localhost/api/v1/people/${personId}/dates`,
+    {
+      body: JSON.stringify({
+        isAgeBased: false,
+        isYearApproximate: false,
+        kind: "birthday",
+        month: 2,
+        precision: "year",
+        year: 2020,
+      }),
+      headers,
+      method: "POST",
+    },
+  );
+  assert(invalid.status === 400 && calls === 1, "domain shape error is safe");
+  const conflict = await app.request(
+    `http://localhost/api/v1/people/${personId}/dates`,
+    {
+      body: JSON.stringify({
+        isAgeBased: false,
+        isYearApproximate: false,
+        kind: "birthday",
+        precision: "unknown",
+      }),
+      headers,
+      method: "POST",
+    },
+  );
+  assert(conflict.status === 409, "singleton conflict is explicit");
+  const concealed = await app.request(
+    `http://localhost/api/v1/people/${personId}/dates`,
+    { headers },
+  );
+  assert(concealed.status === 404, "cross-workspace person is concealed");
+});
 
 const headers = {
   cookie: "kinship_session=current-token",

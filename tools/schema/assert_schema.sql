@@ -19,15 +19,15 @@ CREATE TEMP TABLE expected_field_catalog (
   change_reason text
 );
 
-\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v4.csv' WITH (FORMAT csv, HEADER true)
+\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v5.csv' WITH (FORMAT csv, HEADER true)
 
 DO $$
 DECLARE
   actual_count bigint;
 BEGIN
   SELECT count(*) INTO actual_count FROM expected_field_catalog;
-  IF actual_count <> 813 THEN
-    RAISE EXCEPTION 'field catalog row count: expected 813, got %', actual_count;
+  IF actual_count <> 814 THEN
+    RAISE EXCEPTION 'field catalog row count: expected 814, got %', actual_count;
   END IF;
 
   IF EXISTS (
@@ -175,7 +175,20 @@ BEGIN
     SELECT 1 FROM crm.currencies
     WHERE code = 'EUR' AND name = 'Euro' AND minor_unit = 2 AND is_active
   ) THEN
-    RAISE EXCEPTION 'schema v4 ISO 4217 currency catalog missing or drifted';
+    RAISE EXCEPTION 'schema v5 ISO 4217 currency catalog missing or drifted';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'crm' AND table_name = 'person_dates'
+      AND column_name = 'is_year_approximate' AND is_nullable = 'NO'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE connamespace = 'crm'::regnamespace
+      AND conname = 'person_dates_is_year_approximate_ck'
+      AND convalidated
+  ) THEN
+    RAISE EXCEPTION 'schema v5 person-date approximation invariant missing';
   END IF;
 END
 $$;

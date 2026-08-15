@@ -5,3 +5,4 @@ export { PostgresInvitationAudit } from "./adapters/postgres/invitation_audit.ts
 export { PostgresSettingsAudit } from "./adapters/postgres/settings_audit.ts";
 export { PostgresPersonCreatedAudit } from "./adapters/postgres/person_created_audit.ts";
 export { PostgresPersonLifecycleAudit } from "./adapters/postgres/person_lifecycle_audit.ts";
+export { PostgresImportantDateAudit } from "./adapters/postgres/important_date_audit.ts";

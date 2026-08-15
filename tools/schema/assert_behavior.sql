@@ -79,6 +79,25 @@ BEGIN
     RAISE EXCEPTION 'partial-date round trip: expected 7 precision rows, got %', row_count;
   END IF;
 
+  UPDATE person_dates SET is_year_approximate = true
+  WHERE person_id = person_a AND kind = 'custom_year';
+  IF NOT EXISTS (
+    SELECT 1 FROM person_dates
+    WHERE person_id = person_a AND kind = 'custom_year'
+      AND year = 2000 AND precision = 'year' AND is_year_approximate
+  ) THEN
+    RAISE EXCEPTION 'approximate year did not round trip independently';
+  END IF;
+
+  BEGIN
+    INSERT INTO person_dates (
+      person_id, kind, precision, is_year_approximate
+    ) VALUES (person_a, 'invalid_approximation', 'unknown', true);
+    RAISE EXCEPTION 'year approximation without a year was not rejected';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
   BEGIN
     INSERT INTO person_dates (person_id, kind, year, month, precision)
     VALUES (person_a, 'invalid_full', 2000, 2, 'full');

@@ -1289,6 +1289,91 @@ summary:focus-visible,
   font-weight: 750;
 }
 
+.important-dates-list {
+  display: grid;
+  gap: 0.75rem;
+  list-style: none;
+  margin: 1rem 0;
+  padding: 0;
+}
+
+.important-dates-list li {
+  align-items: center;
+  background: #f8f4ec;
+  border: 1px solid rgb(32 53 45 / 13%);
+  border-radius: 0.85rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.85rem;
+}
+
+.important-dates-list li > div:first-child {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.important-dates-list small {
+  color: #5e6b64;
+}
+
+.important-date-actions,
+.important-date-form .form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.important-date-form {
+  border-top: 1px solid rgb(32 53 45 / 13%);
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
+.important-date-form[hidden] {
+  display: none;
+}
+
+.important-date-form .form-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+
+.important-date-form label {
+  display: grid;
+  font-weight: 650;
+  gap: 0.35rem;
+}
+
+.important-date-form input,
+.important-date-form select,
+.important-date-form textarea {
+  border: 1px solid #aeb7ae;
+  border-radius: 0.65rem;
+  font: inherit;
+  padding: 0.65rem 0.75rem;
+}
+
+.important-date-form .checkbox-row {
+  align-items: center;
+  display: flex;
+  font-weight: 500;
+}
+
+.important-date-form .checkbox-row input {
+  inline-size: auto;
+}
+
+@media (max-width: 42rem) {
+  .important-dates-list li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .profile-next-step {
   padding: 1rem;
   border-left: 3px solid #c87d50;
