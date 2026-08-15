@@ -1,0 +1,357 @@
+import {
+  getMemberPreferences,
+  getSettingsProfile,
+  getWorkspaceSettings,
+  listMemberSessions,
+  revokeMemberSession,
+  updateMemberPreferences,
+  updateSettingsProfile,
+  updateWorkspaceSettings,
+} from "../../../../packages/contracts/generated/auth-client.ts";
+import {
+  resolveWorkspaceSession,
+  WORKSPACE_CHANGE_REQUEST_EVENT,
+  type WorkspaceChangeRequestDetail,
+} from "./workspace-context.ts";
+
+let activeBeforeUnload: ((event: Event) => void) | undefined;
+let activeWorkspaceChangeRequest: ((event: Event) => void) | undefined;
+
+async function selectedWorkspace(): Promise<string | undefined> {
+  const resolved = await resolveWorkspaceSession();
+  return resolved.status === "ready"
+    ? resolved.session.workspace.id
+    : undefined;
+}
+
+function status(): HTMLElement | undefined {
+  return document.querySelector<HTMLElement>("#settings-status") ?? undefined;
+}
+
+function input(form: HTMLFormElement, name: string): HTMLInputElement {
+  return form.elements.namedItem(name) as HTMLInputElement;
+}
+
+function select(form: HTMLFormElement, name: string): HTMLSelectElement {
+  return form.elements.namedItem(name) as HTMLSelectElement;
+}
+
+function setUnavailable(message: string): void {
+  const target = status();
+  if (target) target.textContent = message;
+}
+
+function formSnapshot(form: HTMLFormElement): string {
+  return JSON.stringify(Array.from(new FormData(form).entries()));
+}
+
+function prepareSettingsForm(form: HTMLFormElement): {
+  markSaved(): void;
+  showErrors(errors: Readonly<Record<string, string>>): boolean;
+  validate(): boolean;
+} {
+  const dirtyStatus = document.querySelector<HTMLElement>("#settings-dirty");
+  const errorSummary = document.querySelector<HTMLElement>("#settings-errors");
+  let baseline = formSnapshot(form);
+  let dirty = false;
+  const firstInvalid = (): HTMLElement | undefined =>
+    Array.from(form.elements).find((control) =>
+      control instanceof HTMLElement &&
+      "validity" in control &&
+      !(control as HTMLInputElement).validity.valid
+    ) as HTMLElement | undefined;
+  const showValidation = (): void => {
+    if (errorSummary) {
+      errorSummary.hidden = false;
+      errorSummary.textContent = "Review the highlighted fields and try again.";
+    }
+    firstInvalid()?.focus();
+  };
+  const updateDirty = (): void => {
+    dirty = formSnapshot(form) !== baseline;
+    form.dataset.dirty = String(dirty);
+    if (dirtyStatus) {
+      dirtyStatus.textContent = dirty
+        ? "Unsaved changes."
+        : "All changes saved.";
+      dirtyStatus.dataset.state = dirty ? "dirty" : "saved";
+    }
+  };
+  form.addEventListener("input", updateDirty);
+  form.addEventListener("change", updateDirty);
+  form.addEventListener("invalid", (event) => {
+    (event.target as HTMLElement).setAttribute("aria-invalid", "true");
+    queueMicrotask(showValidation);
+  }, true);
+  form.addEventListener("input", (event) => {
+    const control = event.target as HTMLInputElement;
+    control.setCustomValidity?.("");
+    const fieldError = form.querySelector<HTMLElement>(
+      `[data-field-error="${control.name}"]`,
+    );
+    if (fieldError) fieldError.textContent = "";
+    if (control.validity?.valid) control.removeAttribute("aria-invalid");
+  });
+  if (activeBeforeUnload) {
+    globalThis.removeEventListener("beforeunload", activeBeforeUnload);
+  }
+  activeBeforeUnload = (event: Event): void => {
+    if (!dirty) return;
+    event.preventDefault();
+    event.returnValue = true;
+  };
+  globalThis.addEventListener("beforeunload", activeBeforeUnload);
+  if (activeWorkspaceChangeRequest) {
+    globalThis.removeEventListener(
+      WORKSPACE_CHANGE_REQUEST_EVENT,
+      activeWorkspaceChangeRequest,
+    );
+  }
+  activeWorkspaceChangeRequest = (event: Event): void => {
+    if (!dirty) return;
+    const request = event as CustomEvent<WorkspaceChangeRequestDetail>;
+    const discard = globalThis.confirm(
+      "You have unsaved changes in this workspace. Discard them and switch workspaces?",
+    );
+    if (!discard) {
+      event.preventDefault();
+      return;
+    }
+    request.detail.onProceed(() => {
+      baseline = formSnapshot(form);
+      updateDirty();
+      if (dirtyStatus) dirtyStatus.textContent = "Unsaved changes discarded.";
+    });
+  };
+  globalThis.addEventListener(
+    WORKSPACE_CHANGE_REQUEST_EVENT,
+    activeWorkspaceChangeRequest,
+  );
+  updateDirty();
+  return {
+    markSaved() {
+      baseline = formSnapshot(form);
+      updateDirty();
+      if (errorSummary) errorSummary.hidden = true;
+    },
+    showErrors(errors) {
+      let applied = false;
+      for (const [name, message] of Object.entries(errors)) {
+        const control = form.elements.namedItem(name);
+        if (!(control instanceof HTMLInputElement)) continue;
+        control.setCustomValidity(message);
+        control.setAttribute("aria-invalid", "true");
+        const fieldError = form.querySelector<HTMLElement>(
+          `[data-field-error="${name}"]`,
+        );
+        if (fieldError) fieldError.textContent = message;
+        applied = true;
+      }
+      if (applied) showValidation();
+      return applied;
+    },
+    validate() {
+      if (form.checkValidity()) return true;
+      showValidation();
+      return false;
+    },
+  };
+}
+
+export async function mountProfileSettings(): Promise<void> {
+  const form = document.querySelector<HTMLFormElement>("#profile-form");
+  if (!form) return;
+  const workspaceId = await selectedWorkspace();
+  if (!workspaceId) {
+    return setUnavailable("Your session could not be confirmed.");
+  }
+  const loaded = await getSettingsProfile(workspaceId).catch(() => undefined);
+  if (!loaded?.ok) return setUnavailable("Your profile could not be loaded.");
+  input(form, "email").value = loaded.value.profile.email;
+  input(form, "firstName").value = loaded.value.profile.firstName;
+  input(form, "lastName").value = loaded.value.profile.lastName;
+  const guard = prepareSettingsForm(form);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!guard.validate()) return;
+    setUnavailable("Saving profile…");
+    const result = await updateSettingsProfile({
+      firstName: input(form, "firstName").value.trim(),
+      lastName: input(form, "lastName").value.trim(),
+    }, workspaceId).catch(() => undefined);
+    if (result?.ok) guard.markSaved();
+    setUnavailable(
+      result?.ok
+        ? "Profile saved."
+        : result?.problem.detail ?? "Profile could not be saved.",
+    );
+  });
+}
+
+export async function mountPreferenceSettings(): Promise<void> {
+  const form = document.querySelector<HTMLFormElement>("#preferences-form");
+  if (!form) return;
+  const workspaceId = await selectedWorkspace();
+  if (!workspaceId) {
+    return setUnavailable("Your session could not be confirmed.");
+  }
+  const loaded = await getMemberPreferences(workspaceId).catch(() => undefined);
+  if (!loaded?.ok) {
+    return setUnavailable("Your preferences could not be loaded.");
+  }
+  const value = loaded.value.preferences;
+  input(form, "locale").value = value.locale;
+  input(form, "timezone").value = value.timezone ?? "";
+  input(form, "currencyCode").value = value.currencyCode ?? "";
+  input(form, "fluidLayout").checked = value.fluidLayout;
+  select(form, "temperatureScale").value = value.temperatureScale;
+  select(form, "measurementSystem").value = value.measurementSystem;
+  select(form, "contactSortOrder").value = value.contactSortOrder;
+  select(form, "contactNameOrder").value = value.contactNameOrder;
+  const guard = prepareSettingsForm(form);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!guard.validate()) return;
+    setUnavailable("Saving preferences…");
+    const timezone = input(form, "timezone").value.trim();
+    const currencyCode = input(form, "currencyCode").value.trim().toUpperCase();
+    const result = await updateMemberPreferences({
+      contactNameOrder: select(form, "contactNameOrder")
+        .value as typeof value.contactNameOrder,
+      contactSortOrder: select(form, "contactSortOrder")
+        .value as typeof value.contactSortOrder,
+      ...(currencyCode ? { currencyCode } : {}),
+      fluidLayout: input(form, "fluidLayout").checked,
+      locale: input(form, "locale").value.trim(),
+      measurementSystem: select(form, "measurementSystem")
+        .value as typeof value.measurementSystem,
+      temperatureScale: select(form, "temperatureScale")
+        .value as typeof value.temperatureScale,
+      ...(timezone ? { timezone } : {}),
+    }, workspaceId).catch(() => undefined);
+    if (
+      !result?.ok && result?.problem.status === 400 &&
+      guard.showErrors(result.problem.errors ?? {})
+    ) {
+      return setUnavailable(result.problem.detail);
+    }
+    if (result?.ok) guard.markSaved();
+    setUnavailable(
+      result?.ok
+        ? "Preferences saved."
+        : result?.problem.detail ?? "Preferences could not be saved.",
+    );
+  });
+}
+
+export async function mountSecuritySettings(): Promise<void> {
+  const list = document.querySelector<HTMLUListElement>("#session-list");
+  const count = document.querySelector<HTMLElement>("#session-count");
+  if (!list || !count) return;
+  const workspaceId = await selectedWorkspace();
+  if (!workspaceId) {
+    return setUnavailable("Your session could not be confirmed.");
+  }
+  const render = async (): Promise<void> => {
+    const loaded = await listMemberSessions(workspaceId).catch(() => undefined);
+    if (!loaded?.ok) {
+      return setUnavailable("Your sessions could not be loaded.");
+    }
+    count.textContent = `${loaded.value.sessions.length} active`;
+    list.replaceChildren(...loaded.value.sessions.map((session) => {
+      const row = document.createElement("li");
+      const copy = document.createElement("span");
+      const title = document.createElement("strong");
+      title.textContent = session.current
+        ? "This session"
+        : session.userAgent ?? "Browser session";
+      const detail = document.createElement("small");
+      detail.textContent = `Last active ${
+        new Date(session.lastSeenAt).toLocaleString()
+      }${session.ipAddress ? ` · ${session.ipAddress}` : ""}`;
+      copy.append(title, detail);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = session.current ? "Revoke and sign out" : "Revoke";
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        const result = await revokeMemberSession(session.id, workspaceId).catch(
+          () => undefined,
+        );
+        if (!result?.ok) {
+          setUnavailable(
+            result?.problem.detail ?? "Session could not be revoked.",
+          );
+          button.disabled = false;
+          return;
+        }
+        if (result.value.current) {
+          globalThis.location.assign("/auth/sign-in");
+          return;
+        }
+        setUnavailable("Session revoked.");
+        await render();
+      });
+      row.append(copy, button);
+      return row;
+    }));
+    setUnavailable(loaded.value.sessions.length ? "" : "No active sessions.");
+  };
+  await render();
+}
+
+export async function mountWorkspaceSettings(): Promise<void> {
+  const form = document.querySelector<HTMLFormElement>("#workspace-form");
+  if (!form) return;
+  const workspaceId = await selectedWorkspace();
+  if (!workspaceId) {
+    return setUnavailable("Your session could not be confirmed.");
+  }
+  const loaded = await getWorkspaceSettings(workspaceId).catch(() => undefined);
+  if (!loaded?.ok) {
+    return setUnavailable(
+      loaded?.problem.detail ?? "Workspace settings could not be loaded.",
+    );
+  }
+  const value = loaded.value.workspace;
+  for (
+    const [name, current] of Object.entries({
+      name: value.name,
+      slug: value.slug ?? "",
+      defaultLocale: value.defaultLocale,
+      defaultTimezone: value.defaultTimezone ?? "",
+      defaultCurrencyCode: value.defaultCurrencyCode ?? "",
+      defaultReminderTime: value.defaultReminderTime,
+    })
+  ) input(form, name).value = current;
+  const guard = prepareSettingsForm(form);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!guard.validate()) return;
+    const slug = input(form, "slug").value.trim();
+    const defaultTimezone = input(form, "defaultTimezone").value.trim();
+    const defaultCurrencyCode = input(form, "defaultCurrencyCode").value.trim()
+      .toUpperCase();
+    setUnavailable("Saving workspace settings…");
+    const result = await updateWorkspaceSettings({
+      name: input(form, "name").value.trim(),
+      ...(slug ? { slug } : {}),
+      defaultLocale: input(form, "defaultLocale").value.trim(),
+      ...(defaultTimezone ? { defaultTimezone } : {}),
+      ...(defaultCurrencyCode ? { defaultCurrencyCode } : {}),
+      defaultReminderTime: input(form, "defaultReminderTime").value,
+    }, workspaceId).catch(() => undefined);
+    if (
+      !result?.ok && result?.problem.status === 400 &&
+      guard.showErrors(result.problem.errors ?? {})
+    ) {
+      return setUnavailable(result.problem.detail);
+    }
+    if (result?.ok) guard.markSaved();
+    setUnavailable(
+      result?.ok
+        ? "Workspace settings saved."
+        : result?.problem.detail ?? "Workspace settings could not be saved.",
+    );
+  });
+}

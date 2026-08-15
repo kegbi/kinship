@@ -4,11 +4,15 @@ import {
   type SessionContext,
   signOut,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import {
+  ACTIVE_WORKSPACE_KEY,
+  requestWorkspaceChange,
+  resolveWorkspaceSession,
+} from "./workspace-context.ts";
 
 type Navigate = (path: string) => void;
 
 const browserNavigate: Navigate = (path) => globalThis.location.assign(path);
-const ACTIVE_WORKSPACE_KEY = "kinship.active-workspace";
 
 interface ShellElements {
   readonly access: HTMLElement;
@@ -24,7 +28,6 @@ interface ResolvedShellSession {
   readonly session: SessionContext;
 }
 
-type SessionResult = Awaited<ReturnType<typeof getSession>>;
 type ShellResolution = ResolvedShellSession | "unavailable" | undefined;
 
 function shellElements(): ShellElements | undefined {
@@ -88,10 +91,15 @@ function renderRouteForbidden(elements: ShellElements): void {
   elements.access.hidden = false;
   elements.access.replaceChildren();
   const heading = document.createElement("h1");
-  heading.textContent = "You don’t have access to Members";
+  const workspaceSettings = document.body.dataset.pageId ===
+    "settings.workspace";
+  heading.textContent = workspaceSettings
+    ? "Workspace settings unavailable"
+    : "You don’t have access to Members";
   const copy = document.createElement("p");
-  copy.textContent =
-    "Only workspace owners and admins can view members and invitations.";
+  copy.textContent = workspaceSettings
+    ? "Only workspace owners and admins can manage workspace identity and defaults."
+    : "Only workspace owners and admins can view members and invitations.";
   const link = document.createElement("a");
   link.className = "button-link";
   link.href = "/app/settings";
@@ -137,32 +145,14 @@ function renderSession(
     `${session.workspace.name} is ready. ${sessionMessage}`;
 }
 
-function isDefinitiveAccessLoss(
-  result: SessionResult | undefined,
-): boolean {
-  return result?.ok === false && result.problem.status === 401;
-}
-
 function isUnavailableStatus(status: number): boolean {
   return status >= 500;
 }
 
 async function resolveSession(): Promise<ShellResolution> {
-  const savedWorkspace = sessionStorage.getItem(ACTIVE_WORKSPACE_KEY) ??
-    undefined;
-  let result = await getSession(savedWorkspace).catch(() => undefined);
-  if (!result) return "unavailable";
-  if (result.ok) return { session: result.value };
-  if (!isDefinitiveAccessLoss(result)) return "unavailable";
-  if (savedWorkspace) {
-    result = await getSession().catch(() => undefined);
-    if (!result) return "unavailable";
-    if (result.ok) {
-      sessionStorage.removeItem(ACTIVE_WORKSPACE_KEY);
-      return { session: result.value };
-    }
-    if (!isDefinitiveAccessLoss(result)) return "unavailable";
-  }
+  const selected = await resolveWorkspaceSession();
+  if (selected.status === "ready") return { session: selected.session };
+  if (selected.status === "unavailable") return "unavailable";
   const entry = await consumeApplicationEntry().catch(() => undefined);
   if (!entry) return "unavailable";
   if (!entry.ok) {
@@ -202,7 +192,9 @@ export async function mountApplicationShell(
     );
   }
   if (
-    document.body.dataset.pageId === "settings.members" && !isWorkspaceAdmin
+    (document.body.dataset.pageId === "settings.members" ||
+      document.body.dataset.pageId === "settings.workspace") &&
+    !isWorkspaceAdmin
   ) {
     renderRouteForbidden(elements);
     return;
@@ -222,12 +214,24 @@ export async function mountApplicationShell(
 
   elements.select.addEventListener("change", async () => {
     const hadFocus = document.activeElement === elements.select;
+    const change = requestWorkspaceChange(
+      activeWorkspaceId,
+      elements.select.value,
+    );
+    if (!change.allowed) {
+      elements.select.value = activeWorkspaceId;
+      elements.status.textContent =
+        "Workspace switch canceled. Your unsaved changes and active workspace were kept.";
+      if (hadFocus) elements.select.focus();
+      return;
+    }
     elements.select.disabled = true;
     elements.status.textContent = "Switching workspace…";
     const selected = await getSession(elements.select.value).catch(() =>
       undefined
     );
     if (selected?.ok) {
+      change.proceed();
       activeWorkspaceId = selected.value.workspace.id;
       sessionStorage.setItem(
         ACTIVE_WORKSPACE_KEY,

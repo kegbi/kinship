@@ -1956,13 +1956,13 @@ Deno.test({
     const activeSignOutToken = "active-sign-out-token";
     await database`
       insert into crm.user_sessions (
-        user_id, session_hash, expires_at, created_at, last_seen_at
+        user_id, session_hash, purpose, expires_at, created_at, last_seen_at
       ) values (
         ${userId}::uuid,
         ${await tokenService.hash(
       `authenticated-session:${activeSignOutToken}`,
     )},
-        now() + interval '1 hour', now(), now()
+        'authenticated', now() + interval '1 hour', now(), now()
       )
     `;
     const signedOut = await configured.app.request(

@@ -38,6 +38,12 @@ export const prerender = true;
       <ul id="member-list" class="member-list" hidden></ul>
     </section>
 
+    <section class="member-section" aria-labelledby="member-admin-heading">
+      <div class="section-heading"><h2 id="member-admin-heading">Member administration</h2><span class="state-badge calm">Role-safe</span></div>
+      <p id="managed-state" class="list-state" role="status" aria-live="polite">Loading role controls…</p>
+      <ul id="managed-list" class="member-list managed-list" hidden></ul>
+    </section>
+
     <section class="member-section" aria-labelledby="pending-invitations-heading">
       <div class="section-heading"><h2 id="pending-invitations-heading">Pending invitations</h2><span id="invitation-count" class="state-badge calm">Loading…</span></div>
       <div id="pending-state" class="list-state" role="status" aria-live="polite">Loading pending invitations…</div>

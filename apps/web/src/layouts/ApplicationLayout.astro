@@ -4,7 +4,14 @@ import "../styles/application.css";
 interface Props {
   readonly current: "settings" | "today";
   readonly description: string;
-  readonly pageId: "app.today" | "settings.index" | "settings.members";
+  readonly pageId:
+    | "app.today"
+    | "settings.index"
+    | "settings.members"
+    | "settings.preferences"
+    | "settings.profile"
+    | "settings.security"
+    | "settings.workspace";
   readonly title: string;
 }
 
@@ -58,7 +65,7 @@ const { current, description, pageId, title } = Astro.props;
               <button id="member-menu-toggle" type="button" aria-label="Open member menu" aria-expanded="false" aria-controls="member-popover">Member menu</button>
               <div id="member-popover" class="member-popover" hidden>
                 <p class="menu-workspace"><span>Active workspace</span><strong data-workspace-name></strong></p>
-                <span class="menu-item unavailable" aria-disabled="true">Profile <small>Coming next</small></span>
+                <span class="menu-item unavailable" aria-disabled="true">Profile <small>Available from settings</small></span>
                 <a class="menu-item" href="/app/settings" tabindex="0" aria-current={current === "settings" ? "page" : undefined}>Settings</a>
                 <span class="menu-item unavailable" aria-disabled="true">Help &amp; what's new <small>Support is being prepared</small></span>
               </div>

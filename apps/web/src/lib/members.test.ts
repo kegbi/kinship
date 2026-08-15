@@ -10,12 +10,17 @@ function response(body: unknown, status = 200): Response {
   });
 }
 
-function markup(): HTMLFormElement {
+function markup(managed = false): HTMLFormElement {
   document.body.innerHTML = `
     <form id="invitation-form"><input name="email" value="invitee@example.test"><select name="role"><option value="member">Member</option><option value="admin">Admin</option></select><button type="submit">Send</button></form>
     <p id="invitation-status"></p><span id="invitation-count"></span><span id="member-count"></span>
     <ul id="member-list" hidden></ul><div id="members-state"></div>
-    <ul id="pending-list" hidden></ul><div id="pending-state"></div>`;
+    <ul id="pending-list" hidden></ul><div id="pending-state"></div>
+    ${
+    managed
+      ? '<ul id="managed-list" hidden></ul><p id="managed-state" hidden></p>'
+      : ""
+  }`;
   return document.querySelector<HTMLFormElement>("form")!;
 }
 
@@ -53,6 +58,63 @@ afterEach(() => {
 });
 
 describe("AUTH-002 members settings", () => {
+  it("recovers a stale saved workspace through one valid default session", async () => {
+    markup();
+    const staleWorkspace = "00000000-0000-4000-8000-000000000099";
+    sessionStorage.setItem("kinship.active-workspace", staleWorkspace);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        response({ code: "session_invalid", status: 401 }, 401),
+      )
+      .mockResolvedValueOnce(response(session))
+      .mockResolvedValueOnce(response(members));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountMembersPage();
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
+      "X-Workspace-Id": staleWorkspace,
+      "content-type": "application/json",
+    });
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toEqual({
+      "content-type": "application/json",
+    });
+    expect(sessionStorage.getItem("kinship.active-workspace")).toBeNull();
+    expect(document.querySelector("#member-list")?.textContent).toContain(
+      "Owner Person",
+    );
+  });
+
+  it("retains a saved workspace on transport, 503, and 403 session failures", async () => {
+    const staleWorkspace = "00000000-0000-4000-8000-000000000099";
+    for (
+      const failure of [
+        new Error("offline"),
+        response({ code: "session_unavailable", status: 503 }, 503),
+        response({ code: "session_forbidden", status: 403 }, 403),
+      ]
+    ) {
+      markup();
+      sessionStorage.setItem("kinship.active-workspace", staleWorkspace);
+      const fetchMock = vi.fn();
+      if (failure instanceof Error) fetchMock.mockRejectedValueOnce(failure);
+      else fetchMock.mockResolvedValueOnce(failure);
+      vi.stubGlobal("fetch", fetchMock);
+
+      await mountMembersPage();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(sessionStorage.getItem("kinship.active-workspace")).toBe(
+        staleWorkspace,
+      );
+      expect(document.querySelector("#members-state")?.textContent).toMatch(
+        /session could not be confirmed/i,
+      );
+      sessionStorage.clear();
+    }
+  });
+
   it("renders lists and submits one generated-client invitation", async () => {
     const form = markup();
     const selectedWorkspaceId = "selected-workspace";
@@ -161,5 +223,28 @@ describe("AUTH-002 members settings", () => {
     );
     document.body.innerHTML = "<main></main>";
     await expect(mountMembersPage()).resolves.toBeUndefined();
+  });
+
+  it("keeps a successful member update announcement visible after refresh", async () => {
+    markup(true);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(session))
+      .mockResolvedValueOnce(response(members))
+      .mockResolvedValueOnce(
+        response({ status: "ready", members: members.members }),
+      )
+      .mockResolvedValueOnce(
+        response({ status: "ready", member: members.members[0] }),
+      )
+      .mockResolvedValueOnce(
+        response({ status: "ready", members: members.members }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    await mountMembersPage();
+    document.querySelector<HTMLButtonElement>("#managed-list button")!.click();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    const state = document.querySelector<HTMLElement>("#managed-state")!;
+    expect(state.hidden).toBe(false);
+    expect(state.textContent).toBe("owner@example.test updated.");
   });
 });

@@ -10,9 +10,8 @@ prerequisite queues.
 
 ## Cursor
 
-- Current phase: **Phase 2 — Identity And Protected Workspace**
-- Current leaf: **APP-002E / `AUTH-004`, `WORKSPACE-001` — Preferences,
-  sessions, workspace, and members settings**
+- Current phase: **Phase 3 — People Core**
+- Current leaf: **APP-003A / `PEOPLE-001` — Create a person**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -127,11 +126,11 @@ runnable behavior cannot work without them.
 - [x] **APP-002D / `AUTH-002` — Invite and add a workspace member.**
   - [x] Deliver invitation creation, acceptance, expiry/replay handling, role
         checks, and member-list state.
-- [ ] **APP-002E / `AUTH-004`, `WORKSPACE-001` — Preferences, sessions,
+- [x] **APP-002E / `AUTH-004`, `WORKSPACE-001` — Preferences, sessions,
       workspace, and members settings.**
-  - [ ] Deliver personal profile/preferences and session management.
-  - [ ] Deliver role-safe workspace settings and member administration.
-- [ ] **Phase 2 accepted:** anonymous, active-member, administrator, owner, and
+  - [x] Deliver personal profile/preferences and session management.
+  - [x] Deliver role-safe workspace settings and member administration.
+- [x] **Phase 2 accepted:** anonymous, active-member, administrator, owner, and
       cross-workspace boundaries pass the Slice 1 identity/workspace flows.
 
 ## Phase 3 — People Core

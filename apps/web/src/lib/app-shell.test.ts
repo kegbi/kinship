@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountApplicationShell, mountSettingsSearch } from "./app-shell.ts";
+import { mountProfileSettings } from "./settings.ts";
 
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -27,6 +28,13 @@ function shellMarkup(): void {
       <button id="member-sign-out" type="button">Sign out</button>
       <p id="shell-status" role="status" tabindex="-1"></p>
     </div>`;
+}
+
+function profileMarkup(): void {
+  document.querySelector("#protected-shell")?.insertAdjacentHTML(
+    "beforeend",
+    `<form id="profile-form"><div id="settings-errors" hidden></div><input name="email"><input name="firstName"><input name="lastName"><button type="submit">Save changes</button><p id="settings-dirty"></p></form><p id="settings-status"></p>`,
+  );
 }
 
 function session(
@@ -79,6 +87,22 @@ describe("APP-002C protected application shell", () => {
       "You don’t have access to Members",
     );
     expect(document.body.textContent).not.toContain("Privileged members UI");
+  });
+
+  it("returns a canonical forbidden state for direct workspace-settings access", async () => {
+    shellMarkup();
+    document.body.dataset.pageId = "settings.workspace";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        ...(session() as Record<string, unknown>),
+        member: { id: "member", role: "member" },
+      })),
+    );
+    await mountApplicationShell();
+    expect(document.querySelector("#access-state")?.textContent).toContain(
+      "Workspace settings unavailable",
+    );
   });
   it("reveals one active workspace and signs out without browser token storage", async () => {
     shellMarkup();
@@ -187,6 +211,125 @@ describe("APP-002C protected application shell", () => {
       "X-Workspace-Id": workspaces[1]!.id,
       "content-type": "application/json",
     });
+  });
+
+  it("cancels a dirty workspace switch before changing selection or storage", async () => {
+    shellMarkup();
+    profileMarkup();
+    const workspaces = [
+      {
+        id: "00000000-0000-4000-8000-000000000001",
+        name: "Family circle",
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000002",
+        name: "Community circle",
+      },
+    ];
+    sessionStorage.setItem("kinship.active-workspace", workspaces[0]!.id);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(session(workspaces[0]!.id, workspaces)))
+      .mockResolvedValueOnce(response(session(workspaces[0]!.id, workspaces)))
+      .mockResolvedValueOnce(response({
+        status: "ready",
+        profile: {
+          email: "owner@example.test",
+          firstName: "Original",
+          lastName: "Owner",
+        },
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    const navigate = vi.fn();
+
+    await mountApplicationShell(navigate);
+    await mountProfileSettings();
+    const firstName = document.querySelector<HTMLInputElement>(
+      '[name="firstName"]',
+    )!;
+    firstName.value = "Unsaved for family";
+    firstName.dispatchEvent(new Event("input", { bubbles: true }));
+    const select = document.querySelector<HTMLSelectElement>(
+      "#workspace-switcher",
+    )!;
+    select.focus();
+    select.value = workspaces[1]!.id;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledOnce());
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(select.value).toBe(workspaces[0]!.id);
+    expect(sessionStorage.getItem("kinship.active-workspace")).toBe(
+      workspaces[0]!.id,
+    );
+    expect(firstName.value).toBe("Unsaved for family");
+    expect(document.querySelector("#profile-form")?.getAttribute("data-dirty"))
+      .toBe("true");
+    expect(document.querySelector("#shell-status")?.textContent).toMatch(
+      /canceled/i,
+    );
+    expect(document.activeElement).toBe(select);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("discards dirty state once before committing a workspace switch", async () => {
+    shellMarkup();
+    profileMarkup();
+    history.replaceState({}, "", "/app/settings/profile");
+    const workspaces = [
+      {
+        id: "00000000-0000-4000-8000-000000000001",
+        name: "Family circle",
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000002",
+        name: "Community circle",
+      },
+    ];
+    sessionStorage.setItem("kinship.active-workspace", workspaces[0]!.id);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(session(workspaces[0]!.id, workspaces)))
+      .mockResolvedValueOnce(response(session(workspaces[0]!.id, workspaces)))
+      .mockResolvedValueOnce(response({
+        status: "ready",
+        profile: {
+          email: "owner@example.test",
+          firstName: "Original",
+          lastName: "Owner",
+        },
+      }))
+      .mockResolvedValueOnce(response(session(workspaces[1]!.id, workspaces)));
+    vi.stubGlobal("fetch", fetchMock);
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
+    const navigate = vi.fn();
+
+    await mountApplicationShell(navigate);
+    await mountProfileSettings();
+    const firstName = document.querySelector<HTMLInputElement>(
+      '[name="firstName"]',
+    )!;
+    firstName.value = "Discard this";
+    firstName.dispatchEvent(new Event("input", { bubbles: true }));
+    const select = document.querySelector<HTMLSelectElement>(
+      "#workspace-switcher",
+    )!;
+    select.value = workspaces[1]!.id;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+
+    await vi.waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith("/app/settings/profile")
+    );
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(sessionStorage.getItem("kinship.active-workspace")).toBe(
+      workspaces[1]!.id,
+    );
+    expect(document.querySelector("#profile-form")?.getAttribute("data-dirty"))
+      .toBe("false");
+    const unload = new Event("beforeunload", { cancelable: true });
+    globalThis.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(false);
   });
 
   it("retains a saved workspace when its session request is offline", async () => {

@@ -504,9 +504,29 @@ Deno.test({
     const migrationV1ToV2 = await Deno.readTextFile(
       "personal-crm-schema/v2/migrations/0002_add_authentication_subject_digest.sql",
     );
-    const artifacts = { migrationV1ToV2, v1Sql, v2Sql };
+    const v3Sql = await Deno.readTextFile(
+      "personal-crm-schema/v3/personal_crm_schema_v3.sql",
+    );
+    const migrationV2ToV3 = await Deno.readTextFile(
+      "personal-crm-schema/v3/migrations/0003_add_user_session_purpose.sql",
+    );
+    const v4Sql = await Deno.readTextFile(
+      "personal-crm-schema/v4/personal_crm_schema_v4.sql",
+    );
+    const migrationV3ToV4 = await Deno.readTextFile(
+      "personal-crm-schema/v4/migrations/0004_seed_iso_4217_currencies.sql",
+    );
+    const artifacts = {
+      migrationV1ToV2,
+      migrationV2ToV3,
+      migrationV3ToV4,
+      v1Sql,
+      v2Sql,
+      v3Sql,
+      v4Sql,
+    };
     assert(
-      await applyCanonicalSchema(databaseUrl, artifacts) === "verify-v2",
+      await applyCanonicalSchema(databaseUrl, artifacts) === "verify-v4",
       "unmodified canonical catalog verifies",
     );
     await sql`
@@ -675,8 +695,8 @@ Deno.test({
     `;
     assert(
       await applyCanonicalSchema(databaseUrl, artifacts) ===
-        "upgrade-v1-to-v2",
-      "exact repository v1 upgrades transactionally to v2",
+        "upgrade-v1-to-v4",
+      "exact repository v1 upgrades transactionally to v4",
     );
     const [upgraded] = await sql<{
       readonly digest_column: boolean;
@@ -694,8 +714,8 @@ Deno.test({
       "v1 upgrade preserves rows and adds the v2 field",
     );
     assert(
-      await applyCanonicalSchema(databaseUrl, artifacts) === "verify-v2",
-      "upgraded repository v2 verifies idempotently",
+      await applyCanonicalSchema(databaseUrl, artifacts) === "verify-v4",
+      "upgraded repository v4 verifies idempotently",
     );
     await expectStructuralDrift(
       () =>

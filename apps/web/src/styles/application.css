@@ -664,6 +664,82 @@ summary:focus-visible,
   background: #faf8f2;
 }
 
+.member-list button,
+.settings-form button {
+  min-height: 44px;
+  padding: .65rem .9rem;
+  border: 1px solid #20352d;
+  border-radius: .65rem;
+  color: white;
+  background: #20352d;
+  cursor: pointer;
+}
+
+.detail-settings {
+  max-width: 64rem;
+}
+
+.settings-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  max-width: 54rem;
+  padding: clamp(1.2rem, 3vw, 2rem);
+  border: 1px solid rgb(32 53 45 / 13%);
+  border-radius: 1rem;
+  background: #fffdf8;
+}
+
+.settings-form label {
+  display: grid;
+  gap: .4rem;
+  font-size: .82rem;
+  font-weight: 750;
+}
+
+.settings-form input,
+.settings-form select {
+  min-height: 48px;
+  padding: .7rem .85rem;
+  border: 1px solid #aeb7ae;
+  border-radius: .7rem;
+  background: white;
+}
+
+.settings-form .check-label {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.settings-form .check-label input {
+  min-height: 1rem;
+}
+
+.settings-form #settings-errors,
+.settings-form #settings-dirty,
+.settings-form #settings-status {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.settings-form #settings-errors {
+  padding: .75rem;
+  border: 1px solid #9d2c2c;
+  border-radius: .65rem;
+  color: #701d1d;
+  background: #fff1f0;
+}
+
+.settings-form #settings-dirty[data-state="dirty"] {
+  color: #7b4c00;
+  font-weight: 750;
+}
+
+.settings-form [aria-invalid="true"] {
+  border-color: #9d2c2c;
+  outline: 2px solid rgb(157 44 44 / 20%);
+}
+
 .member-list li > span:first-child {
   display: grid;
   gap: .2rem;
@@ -680,6 +756,20 @@ summary:focus-visible,
   font-size: .75rem;
   font-weight: 800;
   text-transform: capitalize;
+}
+
+.member-controls {
+  display: flex;
+  gap: .4rem;
+  align-items: center;
+}
+
+.member-controls select {
+  min-height: 44px;
+  padding: .5rem;
+  border: 1px solid #aeb7ae;
+  border-radius: .6rem;
+  background: white;
 }
 
 .empty-search {
@@ -803,6 +893,10 @@ summary:focus-visible,
     grid-template-columns: 1fr;
   }
 
+  .settings-form {
+    grid-template-columns: 1fr;
+  }
+
   .invitation-form button,
   .secondary-link {
     width: 100%;
@@ -812,6 +906,12 @@ summary:focus-visible,
 
   .section-heading {
     align-items: center;
+  }
+
+  .managed-list li,
+  .member-controls {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

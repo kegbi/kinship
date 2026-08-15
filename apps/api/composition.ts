@@ -7,6 +7,7 @@ import {
   createPasswordRecovery,
   type MfaEncryptionKeyset,
   PostgresEmailVerification,
+  PostgresIdentityAccountSettings,
   PostgresIdentityAuthentication,
   PostgresIdentityRegistration,
   PostgresInvitationIdentity,
@@ -23,6 +24,7 @@ import {
   PostgresRegistrationTransaction,
   PostgresWorkspaceInvitations,
   PostgresWorkspaceRegistration,
+  PostgresWorkspaceSettings,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import {
   createFirstWorkspaceRegistration,
@@ -33,6 +35,7 @@ import {
   PostgresAuthenticationAudit,
   PostgresInvitationAudit,
   PostgresRegistrationAudit,
+  PostgresSettingsAudit,
 } from "../../packages/backend/modules/governance/public.ts";
 import { createWorkspaceInvitationCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import {
@@ -56,6 +59,8 @@ import {
   type BrowserSecurityPolicy,
   browserSecurityPolicy,
 } from "./security_config.ts";
+import { createSettingsRoutes, type SettingsHttpServices } from "./settings.ts";
+import { createSettingsManagement } from "../../packages/backend/modules/workspaces/public.ts";
 import {
   createAuthenticationResponseEqualizer,
   DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
@@ -65,6 +70,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly invitations?: InvitationHttpServices["invitations"];
   readonly passwordRecovery?: AuthenticationHttpServices["passwordRecovery"];
   readonly protectedSessions?: AuthenticationHttpServices["protectedSessions"];
+  readonly settings?: SettingsHttpServices["settings"];
   readonly readiness?: () => Promise<boolean>;
 }
 
@@ -153,6 +159,16 @@ export function createApiApp(services?: ApiServices): Hono {
             hasher: services.hasher,
             invitations: services.invitations,
             protectedSessions: services.protectedSessions,
+          }),
+        );
+      }
+      if (services.settings) {
+        api.route(
+          "/",
+          createSettingsRoutes({
+            browserSecurity: services.browserSecurity,
+            protectedSessions: services.protectedSessions,
+            settings: services.settings,
           }),
         );
       }
@@ -305,12 +321,21 @@ export function createConfiguredApiApp(
     tokens,
     transaction,
   });
+  const settings = createSettingsManagement({
+    audit: new PostgresSettingsAudit(),
+    clock,
+    identity: new PostgresIdentityAccountSettings(tokens),
+    identityDisplay: invitationIdentity,
+    transaction,
+    workspace: new PostgresWorkspaceSettings(),
+  });
   const app = createApiApp({
     browserSecurity: policy,
     hasher,
     invitations,
     passwordRecovery,
     protectedSessions,
+    settings,
     register: registration,
     retryVerificationDelivery: createVerificationDeliveryRetry(
       registrationDependencies,
