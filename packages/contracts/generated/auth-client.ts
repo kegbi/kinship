@@ -40,7 +40,9 @@ export interface SessionContext {
 
 export type ApiResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly problem: ProblemDetails };
 
-async function request<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
+type RequestOptions = Omit<RequestInit, "headers"> & { readonly headers?: HeadersInit | undefined };
+
+async function request<T>(path: string, init?: RequestOptions): Promise<ApiResult<T>> {
   const response = await fetch(path, { ...init, headers: { "content-type": "application/json", ...init?.headers } });
   const body = await response.json() as T | ProblemDetails;
   return response.ok ? { ok: true, value: body as T } : { ok: false, problem: body as ProblemDetails };
@@ -234,6 +236,7 @@ export interface PersonProfileIdentity extends PersonIdentity {
   readonly isDeceased: boolean;
   readonly isSelf: boolean;
   readonly isStarred: boolean;
+  readonly profileSections?: readonly { readonly id: ProfileFactSectionId; readonly status: "hidden" | "ready" }[];
   readonly tagCount: number;
   readonly tags: readonly PeopleDirectoryTag[];
   readonly updatedAt: string;
@@ -320,9 +323,11 @@ export interface PeopleDirectoryPerson extends PersonIdentity {
 
 export interface PeopleDirectoryInput {
   readonly cursor?: string;
+  readonly excludePersonId?: string;
   readonly lifecycle?: PeopleDirectoryLifecycle;
   readonly limit?: number;
   readonly search?: string;
+  readonly selectedPersonId?: string;
   readonly sort?: PeopleDirectorySort;
   readonly tagId?: string;
 }
@@ -331,6 +336,7 @@ export interface PeopleDirectoryPage {
   readonly lifecycle: PeopleDirectoryLifecycle;
   readonly nextCursor?: string;
   readonly people: readonly PeopleDirectoryPerson[];
+  readonly selected?: PeopleDirectoryPerson;
   readonly status: "ready";
 }
 
@@ -347,12 +353,156 @@ export interface PeopleTagOptionsPage {
   readonly status: "ready";
 }
 
+export type ProfileFactSectionId = "addresses" | "contact-methods" | "first-meeting" | "food-preferences" | "pets" | "tags" | "work";
+export interface ProfileFactOption {
+  readonly id: string;
+  readonly kind?: "contact-label" | "contact-type" | "pet-category";
+  readonly name: string;
+}
+export interface AddressFact {
+  readonly section: "addresses";
+  readonly city?: string;
+  readonly country?: string;
+  readonly displayName?: string;
+  readonly isPrimary: boolean;
+  readonly labelIds: readonly string[];
+  readonly postalCode?: string;
+  readonly region?: string;
+  readonly street?: string;
+}
+export interface ContactMethodFact {
+  readonly section: "contact-methods";
+  readonly isPrimary: boolean;
+  readonly labelIds: readonly string[];
+  readonly notes?: string;
+  readonly typeId: string;
+  readonly value: string;
+}
+export interface FirstMeetingFact {
+  readonly section: "first-meeting";
+  readonly introducedByPersonId?: string;
+  readonly notes?: string;
+  readonly placeText?: string;
+}
+export interface FoodPreferencesFact {
+  readonly foodPreferences?: string;
+  readonly section: "food-preferences";
+}
+export interface PetFact {
+  readonly section: "pets";
+  readonly categoryId?: string;
+  readonly name?: string;
+  readonly notes?: string;
+}
+export interface TagsFact {
+  readonly section: "tags";
+  readonly tagIds: readonly string[];
+}
+export interface OccupationFact {
+  readonly section: "work";
+  readonly description?: string;
+  readonly endOn?: string;
+  readonly isCurrent: boolean;
+  readonly organizationId?: string;
+  readonly organizationName?: string;
+  readonly startOn?: string;
+  readonly title: string;
+}
+export interface ProfileFactValueBySection {
+  readonly addresses: AddressFact;
+  readonly "contact-methods": ContactMethodFact;
+  readonly "first-meeting": FirstMeetingFact;
+  readonly "food-preferences": FoodPreferencesFact;
+  readonly pets: PetFact;
+  readonly tags: TagsFact;
+  readonly work: OccupationFact;
+}
+export type ProfileFactValue = ProfileFactValueBySection[ProfileFactSectionId];
+type ProfileFactCreateMetadata = {
+  readonly expectedPersonUpdatedAt: string;
+};
+type ProfileFactUpdateMetadata = ProfileFactCreateMetadata & {
+  readonly expectedUpdatedAt: string;
+  readonly id: string;
+};
+type AddressFactInput<Metadata> = AddressFact & Metadata & (
+  | { readonly displayName: string }
+  | { readonly street: string }
+  | { readonly city: string }
+  | { readonly region: string }
+  | { readonly postalCode: string }
+  | { readonly country: string }
+);
+type FirstMeetingFactInput<Metadata> = FirstMeetingFact & Metadata & (
+  | { readonly introducedByPersonId: string }
+  | { readonly notes: string }
+  | { readonly placeText: string }
+);
+type PetFactInput<Metadata> = PetFact & Metadata & (
+  | { readonly categoryId: string }
+  | { readonly name: string }
+);
+export type ProfileFactCreateInputBySection = {
+  readonly addresses: AddressFactInput<ProfileFactCreateMetadata>;
+  readonly "contact-methods": ContactMethodFact & ProfileFactCreateMetadata;
+  readonly "first-meeting": FirstMeetingFactInput<ProfileFactCreateMetadata>;
+  readonly "food-preferences": Omit<FoodPreferencesFact, "foodPreferences"> &
+    ProfileFactCreateMetadata & { readonly foodPreferences: string };
+  readonly pets: PetFactInput<ProfileFactCreateMetadata>;
+  readonly tags: TagsFact & ProfileFactCreateMetadata;
+  readonly work: OccupationFact & ProfileFactCreateMetadata;
+};
+export type ProfileFactCreateInput = ProfileFactCreateInputBySection[ProfileFactSectionId];
+export type ProfileFactUpdateInputBySection = {
+  readonly addresses: AddressFactInput<ProfileFactUpdateMetadata>;
+  readonly "contact-methods": ContactMethodFact & ProfileFactUpdateMetadata;
+  readonly "first-meeting": FirstMeetingFactInput<ProfileFactUpdateMetadata>;
+  readonly "food-preferences": Omit<FoodPreferencesFact, "foodPreferences"> &
+    ProfileFactUpdateMetadata & { readonly foodPreferences: string };
+  readonly pets: PetFactInput<ProfileFactUpdateMetadata>;
+  readonly tags: TagsFact & ProfileFactUpdateMetadata;
+  readonly work: OccupationFact & ProfileFactUpdateMetadata;
+};
+export type ProfileFactUpdateInput = ProfileFactUpdateInputBySection[ProfileFactSectionId];
+export interface ProfileFactDeleteInput {
+  readonly expectedPersonUpdatedAt: string;
+  readonly expectedUpdatedAt: string;
+  readonly section: ProfileFactSectionId;
+}
+export type ProfileFactListInput = {
+  readonly cursor?: string;
+  readonly optionSearch?: string;
+} & (
+  | { readonly includeOptions: true; readonly optionCursor?: string }
+  | { readonly includeOptions?: never; readonly optionCursor?: never }
+);
+export type ProfileFactRecord = {
+  readonly [Section in ProfileFactSectionId]: {
+    readonly id: string;
+    readonly referencesResolved?: boolean;
+    readonly section: Section;
+    readonly selectedOptions?: readonly ProfileFactOption[];
+    readonly updatedAt: string;
+    readonly value: ProfileFactValueBySection[Section];
+  };
+}[ProfileFactSectionId];
+export interface ProfileFactSection {
+  readonly nextCursor?: string;
+  readonly nextOptionsCursor?: string;
+  readonly options: readonly ProfileFactOption[];
+  readonly personUpdatedAt: string;
+  readonly records: readonly ProfileFactRecord[];
+  readonly status: "ready" | "archived" | "hidden";
+}
+
 export function listPeople(input: PeopleDirectoryInput = {}, workspaceId?: string): Promise<ApiResult<PeopleDirectoryPage>> {
   const query = new URLSearchParams();
   if (input.cursor) query.set("cursor", input.cursor);
+  if (input.excludePersonId) query.set("excludePersonId", input.excludePersonId);
   if (input.lifecycle) query.set("lifecycle", input.lifecycle);
   if (input.limit) query.set("limit", String(input.limit));
   if (input.search) query.set("search", input.search);
+  if (input.selectedPersonId) query.set("selectedPersonId", input.selectedPersonId);
   if (input.sort) query.set("sort", input.sort);
   if (input.tagId) query.set("tag", input.tagId);
   const suffix = query.size > 0 ? `?${query.toString()}` : "";
@@ -374,6 +524,28 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
 
 export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
   return request(`/api/v1/people/${encodeURIComponent(personId)}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listProfileFacts(personId: string, section: ProfileFactSectionId, input: ProfileFactListInput = {}, workspaceId?: string): Promise<ApiResult<ProfileFactSection>> {
+  const query = new URLSearchParams();
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.includeOptions) query.set("includeOptions", "true");
+  if (input.optionCursor) query.set("optionCursor", input.optionCursor);
+  if (input.optionSearch) query.set("optionSearch", input.optionSearch);
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/facts/${encodeURIComponent(section)}${suffix}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function createProfileFact<Section extends ProfileFactSectionId>(personId: string, section: Section, input: ProfileFactCreateInputBySection[Section], workspaceId?: string): Promise<ApiResult<{ readonly personUpdatedAt: string; readonly record: Extract<ProfileFactRecord, { readonly section: Section }>; readonly status: "saved" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/facts/${encodeURIComponent(section)}`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function updateProfileFact<Section extends ProfileFactSectionId>(personId: string, section: Section, factId: string, input: ProfileFactUpdateInputBySection[Section], workspaceId?: string): Promise<ApiResult<{ readonly personUpdatedAt: string; readonly record: Extract<ProfileFactRecord, { readonly section: Section }>; readonly status: "saved" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/facts/${encodeURIComponent(section)}/${encodeURIComponent(factId)}`, { method: "PUT", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function deleteProfileFact(personId: string, section: ProfileFactSectionId, factId: string, input: ProfileFactDeleteInput, workspaceId?: string): Promise<ApiResult<{ readonly factId: string; readonly personUpdatedAt: string; readonly status: "deleted" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/facts/${encodeURIComponent(section)}/${encodeURIComponent(factId)}`, { method: "DELETE", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
 }
 
 export function listImportantDates(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dates: readonly ImportantDate[]; readonly status: "ready" | "archived" }>> {

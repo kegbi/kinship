@@ -10,6 +10,7 @@ export type {
   PersonProfileIdentity,
   PersonProfileRepository,
   PersonProfileRepositoryResult,
+  PersonProfileSection,
   PersonProfileTag,
 } from "./application/get_person_profile.ts";
 export { PostgresPersonProfileRepository } from "./adapters/postgres/person_profile_repository.ts";

@@ -57,7 +57,10 @@ function filters(
           and filter_tag.workspace_id = ${command.workspaceId}::uuid
       )`
     : sql``;
-  return { lifecycle, search, tag };
+  const excluded = command.excludePersonId
+    ? sql`and person.id <> ${command.excludePersonId}::uuid`
+    : sql``;
+  return { excluded, lifecycle, search, tag };
 }
 
 function ordering(sort: PeopleDirectoryCriteria["sort"]): {
@@ -138,6 +141,52 @@ export class PostgresPeopleDirectoryRepository
     return authorization.rows[0]?.authorized === true;
   }
 
+  async findSelected(
+    command: Parameters<
+      NonNullable<PeopleDirectoryRepository["findSelected"]>
+    >[0],
+  ): Promise<PeopleDirectoryPersonRecord | undefined> {
+    if (!await this.authorized(command)) return undefined;
+    const selected = await sql<{
+      readonly family_name: string | null;
+      readonly given_name: string;
+      readonly id: string;
+      readonly is_partial: boolean;
+      readonly is_starred: boolean;
+      readonly middle_name: string | null;
+      readonly nickname: string | null;
+    }>`
+      select person.id::text, person.given_name, person.middle_name,
+        person.family_name, person.nickname, person.is_partial,
+        person.is_starred
+      from crm.people person
+      where person.id = ${command.personId}::uuid
+        and person.workspace_id = ${command.workspaceId}::uuid
+        and person.archived_at is null
+        and person.deleted_at is null
+      limit 1
+    `.execute(this.database);
+    const row = selected.rows[0];
+    if (!row) return undefined;
+    return {
+      cursor: {
+        id: row.id,
+        primary: row.given_name.toLowerCase(),
+        secondary: row.family_name?.toLowerCase() ?? "",
+      },
+      ...(row.family_name ? { familyName: row.family_name } : {}),
+      givenName: row.given_name,
+      id: row.id,
+      isPartial: row.is_partial,
+      isStarred: row.is_starred,
+      lifecycle: "active",
+      ...(row.middle_name ? { middleName: row.middle_name } : {}),
+      ...(row.nickname ? { nickname: row.nickname } : {}),
+      tagCount: 0,
+      tags: [],
+    };
+  }
+
   async list(
     command: Parameters<PeopleDirectoryRepository["list"]>[0],
   ): Promise<Awaited<ReturnType<PeopleDirectoryRepository["list"]>>> {
@@ -158,6 +207,7 @@ export class PostgresPeopleDirectoryRepository
         where person.id = ${command.after.id}::uuid
           and person.workspace_id = ${command.workspaceId}::uuid
           and person.deleted_at is null
+          ${criteria.excluded}
           and ${criteria.lifecycle}
           ${criteria.search}
           ${criteria.tag}
@@ -209,6 +259,7 @@ export class PostgresPeopleDirectoryRepository
       ) tag_preview on true
       where person.workspace_id = ${command.workspaceId}::uuid
         and person.deleted_at is null
+        ${criteria.excluded}
         and ${criteria.lifecycle}
         ${criteria.search}
         ${criteria.tag}

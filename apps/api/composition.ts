@@ -21,6 +21,7 @@ import {
   createProtectedSessionCoordinator,
   createVerificationDeliveryRetry,
   PostgresActiveWorkspaceResolver,
+  PostgresProfileFactConfiguration,
   PostgresRegistrationTransaction,
   PostgresWorkspaceInvitations,
   PostgresWorkspaceRegistration,
@@ -37,6 +38,7 @@ import {
   PostgresInvitationAudit,
   PostgresPersonCreatedAudit,
   PostgresPersonLifecycleAudit,
+  PostgresProfileFactAudit,
   PostgresRegistrationAudit,
   PostgresSettingsAudit,
 } from "../../packages/backend/modules/governance/public.ts";
@@ -68,11 +70,13 @@ import {
   createImportantDateManagement,
   createPeopleManagement,
   createPersonLifecycle,
+  createProfileFactManagement,
   type ImportantDateManagement,
   PostgresImportantDateRepository,
   PostgresPeopleRepository,
   PostgresPeopleTransaction,
   PostgresPersonLifecycleRepository,
+  PostgresProfileFactRepository,
 } from "../../packages/backend/modules/people/public.ts";
 import { PostgresPersonDateReminderPublisher } from "../../packages/backend/modules/planning/public.ts";
 import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
@@ -97,6 +101,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly directory?: PeopleDirectory;
   readonly invitations?: InvitationHttpServices["invitations"];
   readonly importantDates?: ImportantDateManagement;
+  readonly profileFacts?: PeopleHttpServices["profileFacts"];
   readonly passwordRecovery?: AuthenticationHttpServices["passwordRecovery"];
   readonly protectedSessions?: AuthenticationHttpServices["protectedSessions"];
   readonly settings?: SettingsHttpServices["settings"];
@@ -216,6 +221,9 @@ export function createApiApp(services?: ApiServices): Hono {
           directory: services.directory,
           ...(services.importantDates
             ? { importantDates: services.importantDates }
+            : {}),
+          ...(services.profileFacts
+            ? { profileFacts: services.profileFacts }
             : {}),
           people: services.people,
           profile: services.profile,
@@ -402,6 +410,14 @@ export function createConfiguredApiApp(
     repository: new PostgresImportantDateRepository(),
     transaction: peopleTransaction,
   });
+  const profileFacts = createProfileFactManagement({
+    audit: new PostgresProfileFactAudit(),
+    clock,
+    ids,
+    repository: new PostgresProfileFactRepository(),
+    transaction: peopleTransaction,
+    workspace: new PostgresProfileFactConfiguration(),
+  });
   const people = { ...peopleManagement, ...peopleLifecycle };
   const directoryRepository = new PostgresPeopleDirectoryRepository(
     connection.db,
@@ -422,6 +438,7 @@ export function createConfiguredApiApp(
     passwordRecovery,
     people,
     profile,
+    profileFacts,
     protectedSessions,
     settings,
     tagOptions,

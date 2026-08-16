@@ -56,6 +56,7 @@ export type {
 } from "./application/invite_member.ts";
 export { PostgresWorkspaceInvitations } from "./adapters/postgres/workspace_invitations.ts";
 export { PostgresWorkspaceSettings } from "./adapters/postgres/settings_management.ts";
+export { PostgresProfileFactConfiguration } from "./adapters/postgres/profile_fact_configuration.ts";
 export type {
   ActiveWorkspaceContext,
   ActiveWorkspaceResolver,

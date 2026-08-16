@@ -123,6 +123,39 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     ).toBe(false);
   });
 
+  it("PEOPLE-006 hides the visible tag surface for a disabled module", async () => {
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockResolvedValueOnce(response({
+          dueInformation: {
+            detail: "No due information.",
+            status: "unavailable",
+          },
+          person: {
+            givenName: "Ada",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            profileSections: [{ id: "tags", status: "hidden" }],
+            tagCount: 0,
+            tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
+          },
+          status: "ready",
+        })),
+    );
+
+    await mountPeopleProfile();
+    expect(
+      document.querySelector<HTMLElement>("#person-profile-tags")?.hidden,
+    ).toBe(true);
+  });
+
   it("[APP-003C] renders orientation first and focuses stable section deep links", async () => {
     markup(`/app/people/${personId}?section=documents`);
     vi.stubGlobal(
@@ -363,11 +396,20 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     );
     expect(fetchMock.mock.calls[2]?.[1]?.method).toBe("PATCH");
 
+    const factRevision = "2026-08-15T09:00:00.000001Z";
+    document.dispatchEvent(
+      new CustomEvent("person-revision-changed", {
+        detail: { personUpdatedAt: factRevision },
+      }),
+    );
     document.querySelector<HTMLButtonElement>("#person-archive")?.click();
     await vi.waitFor(() =>
       expect(document.querySelector<HTMLElement>("#person-restore")?.hidden)
         .toBe(false)
     );
+    expect(JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body))).toEqual({
+      expectedUpdatedAt: factRevision,
+    });
     expect(document.querySelector<HTMLElement>("#person-edit-open")?.hidden)
       .toBe(true);
     document.querySelector<HTMLButtonElement>("#person-restore")?.click();

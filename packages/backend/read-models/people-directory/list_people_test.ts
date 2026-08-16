@@ -68,6 +68,7 @@ Deno.test("PEOPLE-002 directory normalizes criteria and emits a bounded opaque c
   const directory = createPeopleDirectory({ repository });
 
   const first = await directory.list(actor, {
+    excludePersonId: record(9).id,
     lifecycle: "active",
     limit: 2,
     search: "  Ada  ",
@@ -77,12 +78,14 @@ Deno.test("PEOPLE-002 directory normalizes criteria and emits a bounded opaque c
   assert(first.people.length === 2 && first.nextCursor, "page is bounded");
   assert(
     calls[0]?.workspaceId === actor.workspaceId &&
-      calls[0]?.search === "Ada" && calls[0]?.limit === 2,
+      calls[0]?.search === "Ada" && calls[0]?.limit === 2 &&
+      calls[0]?.excludePersonId === record(9).id,
     "normalized criteria and actor reach the repository",
   );
 
   await directory.list(actor, {
     cursor: first.nextCursor,
+    excludePersonId: record(9).id,
     lifecycle: "active",
     limit: 2,
     search: "Ada",
@@ -92,6 +95,18 @@ Deno.test("PEOPLE-002 directory normalizes criteria and emits a bounded opaque c
     calls[1]?.after?.id === record(2).id &&
       calls[1]?.after?.primary === "person-2",
     "opaque cursor resumes after the final emitted person",
+  );
+  const mismatchedExclude = await directory.list(actor, {
+    cursor: first.nextCursor,
+    excludePersonId: record(8).id,
+    lifecycle: "active",
+    limit: 2,
+    search: "Ada",
+    sort: "family-name",
+  });
+  assert(
+    mismatchedExclude.status === "stale-cursor" && calls.length === 2,
+    "exclude-person criteria is bound into the opaque cursor",
   );
 });
 
@@ -144,4 +159,42 @@ Deno.test("PEOPLE-002 directory preserves forbidden without disclosure", async (
   });
   const result = await directory.list(actor, {});
   assert(result.status === "forbidden", "authorization denial is explicit");
+});
+
+Deno.test("PEOPLE-006 directory hydrates one selected active tenant person outside the page", async () => {
+  const selectedId = "00000000-0000-4000-8000-000000000099";
+  const selected = {
+    cursor: { id: selectedId, primary: "charles", secondary: "babbage" },
+    familyName: "Babbage",
+    givenName: "Charles",
+    id: selectedId,
+    isPartial: false,
+    isStarred: false,
+    lifecycle: "active" as const,
+    tagCount: 0,
+    tags: [],
+  };
+  const directory = createPeopleDirectory({
+    repository: {
+      findSelected: ({ personId }) =>
+        Promise.resolve(personId === selectedId ? selected : undefined),
+      list: () => Promise.resolve({ people: [], status: "ready" }),
+    },
+  });
+
+  const result = await directory.list(actor, { selectedPersonId: selectedId });
+  assert(result.status === "ready", "selected lookup is ready");
+  assert(
+    result.selected?.id === selectedId &&
+      result.selected.givenName === "Charles",
+    "selected descriptor is returned outside the bounded page",
+  );
+  const self = await directory.list(actor, {
+    excludePersonId: selectedId,
+    selectedPersonId: selectedId,
+  });
+  assert(
+    self.status === "ready" && self.selected === undefined,
+    "the profile subject is concealed from selected introducer hydration",
+  );
 });

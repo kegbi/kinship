@@ -11,6 +11,7 @@ import {
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 import { mountImportantDates } from "./important-dates.ts";
+import { mountProfileFacts } from "./profile-facts.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
@@ -330,6 +331,10 @@ function renderReady(
   profile.archived.hidden = status !== "archived";
   profile.due.textContent = dueInformation.detail;
   renderTags(profile.tags, person);
+  profile.tags.hidden =
+    person.profileSections?.some((section) =>
+      section.id === "tags" && section.status === "hidden"
+    ) === true;
   profile.state.hidden = true;
   profile.ready.hidden = false;
   document.title = `${name} — Kinship`;
@@ -408,6 +413,11 @@ function mountLifecycleActions(
   let deleteSubmitting = false;
   fillEditForm(lifecycle, person);
   renderLifecycleState(profile, lifecycle, state);
+  document.addEventListener("person-revision-changed", (event) => {
+    updatedAt = (event as CustomEvent<{
+      readonly personUpdatedAt: string;
+    }>).detail.personUpdatedAt;
+  });
 
   const announce = (message: string): void => {
     lifecycle.status.textContent = message;
@@ -455,6 +465,11 @@ function mountLifecycleActions(
     }
     person = result.value.person;
     updatedAt = result.value.person.updatedAt;
+    document.dispatchEvent(
+      new CustomEvent("person-revision-changed", {
+        detail: { personUpdatedAt: updatedAt },
+      }),
+    );
     lifecycle.editForm.hidden = true;
     updateIdentity(profile, person);
     announce("Person identity updated.");
@@ -479,6 +494,11 @@ function mountLifecycleActions(
     }
     person = result.value.person;
     updatedAt = result.value.person.updatedAt;
+    document.dispatchEvent(
+      new CustomEvent("person-revision-changed", {
+        detail: { personUpdatedAt: updatedAt },
+      }),
+    );
     state = action === "archive" ? "archived" : "active";
     renderLifecycleState(profile, lifecycle, state);
     document.dispatchEvent(
@@ -634,9 +654,17 @@ export async function mountPeopleProfile(): Promise<void> {
     id,
     session.session.workspace.id,
   );
-  await mountImportantDates(
-    id,
-    session.session.workspace.id,
-    result.value.status === "archived",
-  );
+  await Promise.all([
+    mountImportantDates(
+      id,
+      session.session.workspace.id,
+      result.value.status === "archived",
+    ),
+    mountProfileFacts(
+      id,
+      session.session.workspace.id,
+      result.value.status === "archived",
+      result.value.person.updatedAt,
+    ),
+  ]);
 }

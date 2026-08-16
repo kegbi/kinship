@@ -7,6 +7,11 @@ import type {
   PersonIdentity,
   PersonLifecycle,
   PersonLifecycleRecord,
+  ProfileFactCreateInput,
+  ProfileFactManagement,
+  ProfileFactMutationResult,
+  ProfileFactRecord,
+  ProfileFactUpdateInput,
 } from "../../packages/backend/modules/people/public.ts";
 import type { PersonProfile } from "../../packages/backend/read-models/person-profile/public.ts";
 import type {
@@ -23,6 +28,7 @@ export interface PeopleHttpServices {
   readonly directory: PeopleDirectory;
   readonly importantDates?: ImportantDateManagement;
   readonly people: PeopleManagement & PersonLifecycle;
+  readonly profileFacts?: ProfileFactManagement;
   readonly profile: PersonProfile;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
   readonly tagOptions: PeopleTagOptions;
@@ -70,6 +76,116 @@ const importantDateUpdateSchema = importantDateValueSchema.extend({
   expectedUpdatedAt: expectedUpdatedAtSchema,
 });
 const importantDateDeleteSchema = transitionSchema;
+const profileFactSectionSchema = z.enum([
+  "addresses",
+  "contact-methods",
+  "first-meeting",
+  "food-preferences",
+  "pets",
+  "tags",
+  "work",
+]);
+const profileFactListQuerySchema = z.object({
+  cursor: z.string().max(2_000).optional(),
+  includeOptions: z.enum(["true"]).optional(),
+  optionCursor: z.string().max(2_000).optional(),
+  optionSearch: z.string().trim().max(200).optional(),
+}).strict().superRefine((query, context) => {
+  if (query.optionCursor && query.includeOptions !== "true") {
+    context.addIssue({
+      code: "custom",
+      message: "Option continuation requires includeOptions=true.",
+      path: ["optionCursor"],
+    });
+  }
+});
+const optionalText = z.string().trim().max(2_000).optional();
+const profileFactCreateBaseSchema = z.object({
+  expectedPersonUpdatedAt: expectedUpdatedAtSchema,
+});
+const profileFactUpdateBaseSchema = profileFactCreateBaseSchema.extend({
+  expectedUpdatedAt: expectedUpdatedAtSchema,
+  id: z.uuid(),
+});
+const profileFactSchemas = (profileFactBaseSchema: z.ZodObject) => ({
+  addresses: profileFactBaseSchema.extend({
+    city: z.string().trim().max(200).optional(),
+    country: z.string().trim().max(200).optional(),
+    displayName: z.string().trim().max(200).optional(),
+    isPrimary: z.boolean(),
+    labelIds: z.array(z.uuid()).max(20),
+    postalCode: z.string().trim().max(50).optional(),
+    region: z.string().trim().max(200).optional(),
+    section: z.literal("addresses"),
+    street: z.string().trim().max(500).optional(),
+  }).strict().refine((value) =>
+    Boolean(
+      value.city || value.country || value.displayName || value.postalCode ||
+        value.region || value.street,
+    ), { message: "Enter an address detail." }),
+  "contact-methods": profileFactBaseSchema.extend({
+    isPrimary: z.boolean(),
+    labelIds: z.array(z.uuid()).max(20),
+    notes: optionalText,
+    section: z.literal("contact-methods"),
+    typeId: z.uuid(),
+    value: z.string().trim().min(1).max(2_000),
+  }).strict(),
+  "first-meeting": profileFactBaseSchema.extend({
+    introducedByPersonId: z.uuid().optional(),
+    notes: optionalText,
+    placeText: z.string().trim().max(500).optional(),
+    section: z.literal("first-meeting"),
+  }).strict().refine(
+    (value) =>
+      Boolean(value.introducedByPersonId || value.notes || value.placeText),
+    { message: "Enter first-meeting context." },
+  ),
+  "food-preferences": profileFactBaseSchema.extend({
+    foodPreferences: z.string().trim().min(1).max(2_000),
+    section: z.literal("food-preferences"),
+  }).strict(),
+  pets: profileFactBaseSchema.extend({
+    categoryId: z.uuid().optional(),
+    name: z.string().trim().max(200).optional(),
+    notes: optionalText,
+    section: z.literal("pets"),
+  }).strict().refine(
+    (value) => Boolean(value.categoryId || value.name),
+    {
+      message: "Enter a pet detail.",
+    },
+  ),
+  tags: profileFactBaseSchema.extend({
+    section: z.literal("tags"),
+    tagIds: z.array(z.uuid()).max(500),
+  }).strict(),
+  work: profileFactBaseSchema.extend({
+    description: optionalText,
+    endOn: z.iso.date().optional(),
+    isCurrent: z.boolean(),
+    organizationId: z.uuid().optional(),
+    organizationName: z.string().trim().max(200).optional(),
+    section: z.literal("work"),
+    startOn: z.iso.date().optional(),
+    title: z.string().trim().min(1).max(200),
+  }).strict(),
+} as const);
+const profileFactCreateSchemas = profileFactSchemas(
+  profileFactCreateBaseSchema,
+);
+const profileFactUpdateSchemas = profileFactSchemas(
+  profileFactUpdateBaseSchema,
+);
+const profileFactDeleteSchema = z.object({
+  expectedPersonUpdatedAt: expectedUpdatedAtSchema,
+  expectedUpdatedAt: expectedUpdatedAtSchema,
+  section: profileFactSectionSchema,
+}).strict();
+
+function publicProfileFact(record: ProfileFactRecord) {
+  return { ...record, value: { section: record.section, ...record.value } };
+}
 
 function importantDateInput(input: z.infer<typeof importantDateValueSchema>) {
   return {
@@ -86,9 +202,11 @@ function importantDateInput(input: z.infer<typeof importantDateValueSchema>) {
 }
 const directoryQuerySchema = z.object({
   cursor: z.string().max(2_000).optional(),
+  excludePersonId: z.uuid().optional(),
   lifecycle: z.enum(["active", "archived"]).default("active"),
   limit: z.coerce.number().int().min(1).max(50).default(20),
   search: z.string().trim().max(200).optional(),
+  selectedPersonId: z.uuid().optional(),
   sort: z.enum(["given-name", "family-name", "recently-added"]).default(
     "given-name",
   ),
@@ -265,6 +383,74 @@ function importantDateFailure(
   );
 }
 
+function profileFactFailure(
+  context: Context,
+  result: Exclude<ProfileFactMutationResult, { status: "deleted" | "saved" }>,
+): Response {
+  if (result.status === "forbidden") {
+    return problem(
+      context,
+      403,
+      "people_forbidden",
+      "Profile facts unavailable",
+      "Your active workspace membership no longer permits this change.",
+    );
+  }
+  if (result.status === "not-found") {
+    return problem(
+      context,
+      404,
+      "person_fact_not_found",
+      "Profile fact not found",
+      "The person or profile fact does not exist in the active workspace.",
+    );
+  }
+  if (result.status === "hidden") {
+    return problem(
+      context,
+      409,
+      "profile_section_hidden",
+      "Profile section hidden",
+      "An administrator disabled this section. Saved data was retained.",
+    );
+  }
+  if (result.status === "invalid-reference") {
+    return problem(
+      context,
+      400,
+      "profile_fact_reference_invalid",
+      "Profile option unavailable",
+      "Select an active option from the current workspace.",
+    );
+  }
+  if (result.status === "archived-write-rejected") {
+    return problem(
+      context,
+      409,
+      "archived_write_rejected",
+      "Archived person is read-only",
+      "Restore this person before changing profile facts.",
+    );
+  }
+  if (result.status === "stale") {
+    return problem(
+      context,
+      409,
+      "profile_fact_stale",
+      "Profile fact changed",
+      "Refresh this section before trying again.",
+    );
+  }
+  return problem(
+    context,
+    400,
+    "validation_failed",
+    "Invalid profile fact",
+    "Review the highlighted profile fields.",
+    result.status === "validation-error" ? result.errors : undefined,
+  );
+}
+
 function lifecycleFailure(
   context: Context,
   status:
@@ -353,9 +539,15 @@ export function createPeopleRoutes(services: PeopleHttpServices): Hono {
     }
     const result = await services.directory.list(resolved, {
       ...(parsed.data.cursor ? { cursor: parsed.data.cursor } : {}),
+      ...(parsed.data.excludePersonId
+        ? { excludePersonId: parsed.data.excludePersonId }
+        : {}),
       lifecycle: parsed.data.lifecycle,
       limit: parsed.data.limit,
       ...(parsed.data.search ? { search: parsed.data.search } : {}),
+      ...(parsed.data.selectedPersonId
+        ? { selectedPersonId: parsed.data.selectedPersonId }
+        : {}),
       sort: parsed.data.sort,
       ...(parsed.data.tag ? { tagId: parsed.data.tag } : {}),
     }).catch(() => undefined);
@@ -391,6 +583,7 @@ export function createPeopleRoutes(services: PeopleHttpServices): Hono {
       lifecycle: parsed.data.lifecycle,
       ...(result.nextCursor ? { nextCursor: result.nextCursor } : {}),
       people: result.people,
+      ...(result.selected ? { selected: result.selected } : {}),
       status: "ready",
     });
   });
@@ -513,6 +706,290 @@ export function createPeopleRoutes(services: PeopleHttpServices): Hono {
       status: result.status,
     });
   });
+  routes.get("/api/v1/people/:personId/facts/:section", async (context) => {
+    const personId = personIdSchema.safeParse(context.req.param("personId"));
+    const section = profileFactSectionSchema.safeParse(
+      context.req.param("section"),
+    );
+    const query = profileFactListQuerySchema.safeParse(context.req.query());
+    if (!personId.success || !section.success || !query.success) {
+      return problem(
+        context,
+        400,
+        "profile_fact_request_invalid",
+        "Invalid profile section",
+        "Use a supported section and canonical person identifier.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const result = await services.profileFacts?.list(
+      resolved,
+      personId.data,
+      section.data,
+      {
+        ...(query.data.cursor ? { cursor: query.data.cursor } : {}),
+        ...(query.data.includeOptions ? { includeOptions: true } : {}),
+        ...(query.data.optionCursor
+          ? { optionCursor: query.data.optionCursor }
+          : {}),
+        ...(query.data.optionSearch
+          ? { optionSearch: query.data.optionSearch }
+          : {}),
+      },
+    ).catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "profile_facts_unavailable",
+        "Profile facts unavailable",
+        "This profile section is temporarily unavailable.",
+      );
+    }
+    if (result.status === "forbidden") {
+      return problem(
+        context,
+        403,
+        "people_forbidden",
+        "Profile facts unavailable",
+        "Your active workspace membership no longer permits this view.",
+      );
+    }
+    if (result.status === "not-found") {
+      return problem(
+        context,
+        404,
+        "person_not_found",
+        "Person not found",
+        "No person with this identifier exists in the active workspace.",
+      );
+    }
+    if (result.status === "stale-cursor") {
+      return problem(
+        context,
+        409,
+        "profile_fact_cursor_stale",
+        "Profile section changed",
+        "Restart this profile section before loading more facts.",
+      );
+    }
+    if (!("records" in result)) {
+      return problem(
+        context,
+        409,
+        "profile_fact_cursor_stale",
+        "Profile section changed",
+        "Restart this profile section before loading more facts.",
+      );
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json({
+      ...result,
+      records: result.records.map(publicProfileFact),
+    });
+  });
+  routes.post("/api/v1/people/:personId/facts/:section", async (context) => {
+    const forbidden = requireOrigin(context, services.browserSecurity);
+    if (forbidden) return forbidden;
+    const personId = personIdSchema.safeParse(context.req.param("personId"));
+    const section = profileFactSectionSchema.safeParse(
+      context.req.param("section"),
+    );
+    if (!personId.success || !section.success) {
+      return problem(
+        context,
+        400,
+        "profile_fact_request_invalid",
+        "Invalid profile fact",
+        "Use a supported section and canonical person identifier.",
+      );
+    }
+    const input = profileFactCreateSchemas[section.data].safeParse(
+      await context.req.json().catch(() => undefined),
+    );
+    if (!input.success || input.data.section !== section.data) {
+      return problem(
+        context,
+        400,
+        "validation_failed",
+        "Invalid profile fact",
+        "Review the fields for this profile section.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const { section: _inputSection, ...factInput } = input.data;
+    const result = await services.profileFacts?.create(
+      resolved,
+      personId.data,
+      section.data,
+      factInput as unknown as ProfileFactCreateInput,
+    ).catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "profile_facts_unavailable",
+        "Profile fact could not be saved",
+        "This profile section is temporarily unavailable.",
+      );
+    }
+    if (result.status !== "saved") return profileFactFailure(context, result);
+    context.header("Cache-Control", "private, no-store");
+    return context.json({
+      ...result,
+      record: publicProfileFact(result.record),
+    });
+  });
+  routes.put(
+    "/api/v1/people/:personId/facts/:section/:factId",
+    async (context) => {
+      const forbidden = requireOrigin(context, services.browserSecurity);
+      if (forbidden) return forbidden;
+      const personId = personIdSchema.safeParse(context.req.param("personId"));
+      const factId = personIdSchema.safeParse(context.req.param("factId"));
+      const section = profileFactSectionSchema.safeParse(
+        context.req.param("section"),
+      );
+      if (!personId.success || !factId.success || !section.success) {
+        return problem(
+          context,
+          400,
+          "profile_fact_request_invalid",
+          "Invalid profile fact",
+          "Use supported canonical profile identifiers.",
+        );
+      }
+      const input = profileFactUpdateSchemas[section.data].safeParse(
+        await context.req.json().catch(() => undefined),
+      );
+      if (
+        !input.success || input.data.section !== section.data ||
+        input.data.id !== factId.data
+      ) {
+        return problem(
+          context,
+          400,
+          "validation_failed",
+          "Invalid profile fact",
+          "Review the identifiers and current version for this profile fact.",
+        );
+      }
+      const resolved = await actor(context, services);
+      if (!resolved) {
+        return problem(
+          context,
+          401,
+          "session_invalid",
+          "Authentication required",
+          "Sign in with an active workspace membership.",
+        );
+      }
+      const { section: _inputSection, ...factInput } = input.data;
+      const result = await services.profileFacts?.update(
+        resolved,
+        personId.data,
+        section.data,
+        factInput as unknown as ProfileFactUpdateInput,
+      ).catch(() => undefined);
+      if (!result) {
+        return problem(
+          context,
+          503,
+          "profile_facts_unavailable",
+          "Profile fact could not be saved",
+          "This profile section is temporarily unavailable.",
+        );
+      }
+      if (result.status !== "saved") return profileFactFailure(context, result);
+      context.header("Cache-Control", "private, no-store");
+      return context.json({
+        ...result,
+        record: publicProfileFact(result.record),
+      });
+    },
+  );
+  routes.delete(
+    "/api/v1/people/:personId/facts/:section/:factId",
+    async (context) => {
+      const forbidden = requireOrigin(context, services.browserSecurity);
+      if (forbidden) return forbidden;
+      const personId = personIdSchema.safeParse(context.req.param("personId"));
+      const factId = personIdSchema.safeParse(context.req.param("factId"));
+      const section = profileFactSectionSchema.safeParse(
+        context.req.param("section"),
+      );
+      const input = profileFactDeleteSchema.safeParse(
+        await context.req.json().catch(() => undefined),
+      );
+      if (
+        !personId.success || !factId.success || !section.success ||
+        !input.success ||
+        (input.success && section.success &&
+          input.data.section !== section.data)
+      ) {
+        return problem(
+          context,
+          400,
+          "profile_fact_request_invalid",
+          "Invalid profile fact",
+          "Use current canonical profile identifiers.",
+        );
+      }
+      const resolved = await actor(context, services);
+      if (!resolved) {
+        return problem(
+          context,
+          401,
+          "session_invalid",
+          "Authentication required",
+          "Sign in with an active workspace membership.",
+        );
+      }
+      const result = await services.profileFacts?.delete(
+        resolved,
+        personId.data,
+        section.data,
+        factId.data,
+        input.data.expectedUpdatedAt,
+        input.data.expectedPersonUpdatedAt,
+      ).catch(() => undefined);
+      if (!result) {
+        return problem(
+          context,
+          503,
+          "profile_facts_unavailable",
+          "Profile fact could not be deleted",
+          "This profile section is temporarily unavailable.",
+        );
+      }
+      if (result.status !== "deleted") {
+        return profileFactFailure(
+          context,
+          result,
+        );
+      }
+      context.header("Cache-Control", "private, no-store");
+      return context.json(result);
+    },
+  );
   routes.get("/api/v1/people/:personId/dates", async (context) => {
     const personId = personIdSchema.safeParse(context.req.param("personId"));
     if (!personId.success) {
