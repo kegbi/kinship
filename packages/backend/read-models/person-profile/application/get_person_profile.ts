@@ -19,6 +19,7 @@ export interface PersonProfileSection {
     | "first-meeting"
     | "food-preferences"
     | "pets"
+    | "relationships"
     | "tags"
     | "work";
   readonly status: "hidden" | "ready";

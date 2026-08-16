@@ -198,3 +198,55 @@ Deno.test("PEOPLE-006 directory hydrates one selected active tenant person outsi
     "the profile subject is concealed from selected introducer hydration",
   );
 });
+
+Deno.test("PEOPLE-006 selected hydration is bound to the requested lifecycle", async () => {
+  const selectedId = "00000000-0000-4000-8000-000000000098";
+  const lifecycles: string[] = [];
+  const directory = createPeopleDirectory({
+    repository: {
+      findSelected: ({ lifecycle, personId }) => {
+        lifecycles.push(lifecycle);
+        return Promise.resolve(
+          personId === selectedId && lifecycle === "archived"
+            ? {
+              cursor: {
+                id: selectedId,
+                primary: "harriet",
+                secondary: "tubman",
+              },
+              familyName: "Tubman",
+              givenName: "Harriet",
+              id: selectedId,
+              isPartial: false,
+              isStarred: false,
+              lifecycle: "archived" as const,
+              tagCount: 0,
+              tags: [],
+            }
+            : undefined,
+        );
+      },
+      list: () => Promise.resolve({ people: [], status: "ready" }),
+    },
+  });
+
+  const active = await directory.list(actor, { selectedPersonId: selectedId });
+  assert(
+    active.status === "ready" && active.selected === undefined,
+    "active remains the default selected lifecycle",
+  );
+  const archived = await directory.list(actor, {
+    lifecycle: "archived",
+    selectedPersonId: selectedId,
+  });
+  assert(
+    archived.status === "ready" &&
+      archived.selected?.id === selectedId &&
+      archived.selected.lifecycle === "archived",
+    "explicit archived selected descriptor is returned",
+  );
+  assert(
+    lifecycles.join(",") === "active,archived",
+    "selected hydration receives normalized lifecycle criteria",
+  );
+});

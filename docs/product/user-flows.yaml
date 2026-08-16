@@ -421,6 +421,7 @@ flows:
 
   - id: RELATIONSHIP-001
     title: Create or change a relationship between people
+    deliveryStatus: delivered
     priority: P0
     actor: crm-writer
     trigger: The member edits a relationship from a person workspace.
@@ -442,7 +443,7 @@ flows:
     moduleIds: [people, relationships, workspaces]
     permissions: [relationships.write]
     testLayers: [unit, integration, schema, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-004d.spec.ts] }
 
   - id: INTERACTION-001
     title: Log and review an activity or note

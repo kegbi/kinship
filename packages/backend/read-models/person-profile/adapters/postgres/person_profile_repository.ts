@@ -113,7 +113,8 @@ export class PostgresPersonProfileRepository
         ) order by available.sort_order) as sections
         from (values
           ('contact-methods', 1), ('addresses', 2), ('first-meeting', 3),
-          ('work', 4), ('food-preferences', 5), ('pets', 6), ('tags', 7)
+          ('relationships', 4), ('work', 5), ('food-preferences', 6),
+          ('pets', 7), ('tags', 8)
         ) available(id, sort_order)
         left join crm.workspace_profile_modules module
           on module.workspace_id = workspace.id and module.key = available.id

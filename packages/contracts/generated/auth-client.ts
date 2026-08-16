@@ -236,7 +236,7 @@ export interface PersonProfileIdentity extends PersonIdentity {
   readonly isDeceased: boolean;
   readonly isSelf: boolean;
   readonly isStarred: boolean;
-  readonly profileSections?: readonly { readonly id: ProfileFactSectionId; readonly status: "hidden" | "ready" }[];
+  readonly profileSections?: readonly { readonly id: PersonProfileSectionId; readonly status: "hidden" | "ready" }[];
   readonly tagCount: number;
   readonly tags: readonly PeopleDirectoryTag[];
   readonly updatedAt: string;
@@ -258,6 +258,66 @@ export interface PersonEditInput {
 
 export interface PersonTransitionInput {
   readonly expectedUpdatedAt: string;
+}
+
+export interface RelationshipType {
+  readonly archived: boolean;
+  readonly forwardLabel: string;
+  readonly id: string;
+  readonly reverseLabel: string;
+}
+
+export interface Relationship {
+  readonly createdAt: string;
+  readonly forwardLabel: string;
+  readonly fromPersonId: string;
+  readonly id: string;
+  readonly relationshipTypeId: string;
+  readonly relationshipTypeArchived: boolean;
+  readonly reverseLabel: string;
+  readonly status: "active" | "ended";
+  readonly toPersonId: string;
+  readonly updatedAt: string;
+}
+
+export interface RelationshipDisplay {
+  readonly label: string;
+  readonly name?: string;
+  readonly personId: string;
+  readonly relationshipId: string;
+}
+
+export interface RelationshipWithDisplay extends Relationship {
+  readonly display: RelationshipDisplay;
+}
+
+export interface RelationshipChanged {
+  readonly affectedPersonIds: readonly [string, string];
+  readonly forward: RelationshipDisplay;
+  readonly inverse: RelationshipDisplay;
+  readonly relationship: Relationship;
+  readonly status: "created" | "existing" | "updated";
+}
+
+export interface RelatedPersonRelationshipInput {
+  readonly person: PersonInput;
+  readonly relationshipTypeId: string;
+}
+
+export interface RelatedPersonRelationshipChanged extends RelationshipChanged {
+  readonly person: PersonIdentity;
+  readonly status: "created";
+}
+
+export interface RelationshipListInput {
+  readonly cursor?: string;
+  readonly limit?: number;
+}
+
+export interface RelationshipListPage {
+  readonly nextCursor?: string;
+  readonly relationships: readonly RelationshipWithDisplay[];
+  readonly status: "archived" | "hidden" | "ready";
 }
 
 export interface PersonDeletionImpact {
@@ -354,6 +414,7 @@ export interface PeopleTagOptionsPage {
 }
 
 export type ProfileFactSectionId = "addresses" | "contact-methods" | "first-meeting" | "food-preferences" | "pets" | "tags" | "work";
+export type PersonProfileSectionId = ProfileFactSectionId | "relationships";
 export interface ProfileFactOption {
   readonly id: string;
   readonly kind?: "contact-label" | "contact-type" | "pet-category";
@@ -524,6 +585,39 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
 
 export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
   return request(`/api/v1/people/${encodeURIComponent(personId)}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listRelationshipTypes(input: { readonly cursor?: string; readonly search?: string; readonly selected?: readonly string[] } = {}, workspaceId?: string): Promise<ApiResult<{ readonly nextCursor?: string; readonly options: readonly RelationshipType[]; readonly selected: readonly RelationshipType[]; readonly status: "hidden" | "ready" }>> {
+  const query = new URLSearchParams();
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.search) query.set("search", input.search);
+  if (input.selected?.length) query.set("selected", input.selected.join(","));
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return request(`/api/v1/relationship-types${suffix}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listRelationships(personId: string, input: RelationshipListInput = {}, workspaceId?: string): Promise<ApiResult<RelationshipListPage>> {
+  const query = new URLSearchParams();
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.limit) query.set("limit", String(input.limit));
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/relationships${suffix}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function createRelationship(personId: string, input: { readonly relationshipTypeId: string; readonly targetPersonId: string }, workspaceId?: string): Promise<ApiResult<RelationshipChanged>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/relationships`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function createRelatedPersonRelationship(personId: string, input: RelatedPersonRelationshipInput, workspaceId?: string): Promise<ApiResult<RelatedPersonRelationshipChanged>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/relationships/related-person`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function updateRelationship(personId: string, relationshipId: string, input: { readonly expectedUpdatedAt: string; readonly relationshipTypeId: string }, workspaceId?: string): Promise<ApiResult<RelationshipChanged>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/relationships/${encodeURIComponent(relationshipId)}`, { method: "PATCH", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function deleteRelationship(personId: string, relationshipId: string, input: PersonTransitionInput, workspaceId?: string): Promise<ApiResult<{ readonly affectedPersonIds: readonly [string, string]; readonly relationshipId: string; readonly status: "deleted" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/relationships/${encodeURIComponent(relationshipId)}`, { method: "DELETE", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
 }
 
 export function listProfileFacts(personId: string, section: ProfileFactSectionId, input: ProfileFactListInput = {}, workspaceId?: string): Promise<ApiResult<ProfileFactSection>> {

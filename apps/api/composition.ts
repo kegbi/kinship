@@ -23,6 +23,7 @@ import {
   PostgresActiveWorkspaceResolver,
   PostgresProfileFactConfiguration,
   PostgresRegistrationTransaction,
+  PostgresRelationshipWorkspaceBoundary,
   PostgresWorkspaceInvitations,
   PostgresWorkspaceRegistration,
   PostgresWorkspaceSettings,
@@ -40,6 +41,7 @@ import {
   PostgresPersonLifecycleAudit,
   PostgresProfileFactAudit,
   PostgresRegistrationAudit,
+  PostgresRelationshipAudit,
   PostgresSettingsAudit,
 } from "../../packages/backend/modules/governance/public.ts";
 import { createWorkspaceInvitationCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
@@ -77,9 +79,16 @@ import {
   PostgresPeopleTransaction,
   PostgresPersonLifecycleRepository,
   PostgresProfileFactRepository,
+  PostgresRelationshipPersonBoundary,
 } from "../../packages/backend/modules/people/public.ts";
 import { PostgresPersonDateReminderPublisher } from "../../packages/backend/modules/planning/public.ts";
 import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
+import { createRelationshipRoutes } from "./relationships.ts";
+import {
+  createRelationshipManagement,
+  PostgresRelationshipRepository,
+  type RelationshipManagement,
+} from "../../packages/backend/modules/relationships/public.ts";
 import {
   createPeopleDirectory,
   createPeopleTagOptions,
@@ -107,6 +116,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly settings?: SettingsHttpServices["settings"];
   readonly people?: PeopleHttpServices["people"];
   readonly profile?: PersonProfile;
+  readonly relationships?: RelationshipManagement;
   readonly tagOptions?: PeopleTagOptions;
   readonly readiness?: () => Promise<boolean>;
 }
@@ -229,6 +239,16 @@ export function createApiApp(services?: ApiServices): Hono {
           profile: services.profile,
           protectedSessions: services.protectedSessions,
           tagOptions: services.tagOptions,
+        }),
+      );
+    }
+    if (services.protectedSessions && services.relationships) {
+      api.route(
+        "/",
+        createRelationshipRoutes({
+          browserSecurity: services.browserSecurity,
+          protectedSessions: services.protectedSessions,
+          relationships: services.relationships,
         }),
       );
     }
@@ -418,6 +438,16 @@ export function createConfiguredApiApp(
     transaction: peopleTransaction,
     workspace: new PostgresProfileFactConfiguration(),
   });
+  const relationships = createRelationshipManagement({
+    audit: new PostgresRelationshipAudit(),
+    clock,
+    ids,
+    people: new PostgresRelationshipPersonBoundary(),
+    peopleCreation: peopleManagement,
+    repository: new PostgresRelationshipRepository(),
+    transaction: peopleTransaction,
+    workspace: new PostgresRelationshipWorkspaceBoundary(),
+  });
   const people = { ...peopleManagement, ...peopleLifecycle };
   const directoryRepository = new PostgresPeopleDirectoryRepository(
     connection.db,
@@ -439,6 +469,7 @@ export function createConfiguredApiApp(
     people,
     profile,
     profileFacts,
+    relationships,
     protectedSessions,
     settings,
     tagOptions,
