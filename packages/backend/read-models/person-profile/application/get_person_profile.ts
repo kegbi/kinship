@@ -12,6 +12,18 @@ export interface PersonProfileTag {
   readonly name: string;
 }
 
+export interface PersonProfileSection {
+  readonly id:
+    | "addresses"
+    | "contact-methods"
+    | "first-meeting"
+    | "food-preferences"
+    | "pets"
+    | "tags"
+    | "work";
+  readonly status: "hidden" | "ready";
+}
+
 export interface PersonProfileIdentity {
   readonly description?: string;
   readonly familyName?: string;
@@ -24,6 +36,7 @@ export interface PersonProfileIdentity {
   readonly isStarred: boolean;
   readonly middleName?: string;
   readonly nickname?: string;
+  readonly profileSections?: readonly PersonProfileSection[];
   readonly tagCount: number;
   readonly tags: readonly PersonProfileTag[];
   readonly updatedAt: string;
@@ -73,11 +86,18 @@ export function createPersonProfile(dependencies: {
       if (result.status !== "ready" && result.status !== "archived") {
         return result;
       }
+      const tagsHidden =
+        result.person.profileSections?.some((section) =>
+          section.id === "tags" && section.status === "hidden"
+        ) === true;
       return {
         dueInformation: unavailableDueInformation,
         person: {
           ...result.person,
-          tags: result.person.tags.slice(0, PERSON_PROFILE_TAG_PREVIEW_LIMIT),
+          tagCount: tagsHidden ? 0 : result.person.tagCount,
+          tags: tagsHidden
+            ? []
+            : result.person.tags.slice(0, PERSON_PROFILE_TAG_PREVIEW_LIMIT),
         },
         status: result.status,
       };

@@ -1367,6 +1367,70 @@ summary:focus-visible,
   inline-size: auto;
 }
 
+.profile-fact-list {
+  display: grid;
+  gap: 0.7rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.profile-fact-list li {
+  align-items: center;
+  background: #faf8f2;
+  border: 1px solid rgb(32 53 45 / 18%);
+  border-radius: 0.85rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: space-between;
+  padding: 0.8rem;
+}
+
+.profile-fact-list p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.profile-fact-form {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.profile-fact-form[hidden] {
+  display: none;
+}
+
+.profile-fact-form label {
+  display: grid;
+  font-weight: 700;
+  gap: 0.35rem;
+}
+
+.profile-fact-form input,
+.profile-fact-form select,
+.profile-fact-form textarea {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+}
+
+.profile-fact-form select[multiple] {
+  min-height: 7rem;
+}
+
+.profile-fact-form .checkbox-row {
+  align-items: center;
+  display: flex;
+  font-weight: 500;
+}
+
+.profile-fact-form .checkbox-row input {
+  width: auto;
+}
+
 @media (max-width: 42rem) {
   .important-dates-list li {
     align-items: stretch;

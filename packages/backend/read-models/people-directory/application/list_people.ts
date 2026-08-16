@@ -33,9 +33,11 @@ export interface PeopleDirectoryPerson {
 
 export interface ListPeopleInput {
   readonly cursor?: string;
+  readonly excludePersonId?: string;
   readonly lifecycle?: PeopleDirectoryLifecycle;
   readonly limit?: number;
   readonly search?: string;
+  readonly selectedPersonId?: string;
   readonly sort?: PeopleDirectorySort;
   readonly tagId?: string;
 }
@@ -51,6 +53,7 @@ export interface PeopleDirectoryPersonRecord extends PeopleDirectoryPerson {
 }
 
 export interface PeopleDirectoryCriteria {
+  readonly excludePersonId?: string;
   readonly lifecycle: PeopleDirectoryLifecycle;
   readonly limit: number;
   readonly search: string;
@@ -67,6 +70,9 @@ export type PeopleDirectoryRepositoryResult =
   };
 
 export interface PeopleDirectoryRepository {
+  findSelected?(
+    command: PeopleDirectoryActor & { readonly personId: string },
+  ): Promise<PeopleDirectoryPersonRecord | undefined>;
   list(
     command: PeopleDirectoryActor & PeopleDirectoryCriteria & {
       readonly after?: PeopleDirectoryCursor;
@@ -80,10 +86,12 @@ export type ListPeopleResult =
   | {
     readonly nextCursor?: string;
     readonly people: readonly PeopleDirectoryPerson[];
+    readonly selected?: PeopleDirectoryPerson;
     readonly status: "ready";
   };
 
 interface EncodedCursor extends PeopleDirectoryCursor {
+  readonly excludePersonId: string | null;
   readonly lifecycle: PeopleDirectoryLifecycle;
   readonly search: string;
   readonly sort: PeopleDirectorySort;
@@ -98,6 +106,9 @@ function normalize(input: ListPeopleInput): PeopleDirectoryCriteria {
   const search = input.search?.trim().slice(0, 200) ?? "";
   const limit = Math.max(1, Math.min(50, Math.trunc(input.limit ?? 20)));
   return {
+    ...(input.excludePersonId
+      ? { excludePersonId: input.excludePersonId }
+      : {}),
     lifecycle: input.lifecycle ?? "active",
     limit: Number.isFinite(limit) ? limit : 20,
     search,
@@ -137,6 +148,8 @@ function decodeCursor(value: string): EncodedCursor | undefined {
     const cursor = parsed as Partial<EncodedCursor>;
     if (
       cursor.version !== 1 ||
+      (cursor.excludePersonId !== null &&
+        !UUID_PATTERN.test(cursor.excludePersonId ?? "")) ||
       !UUID_PATTERN.test(cursor.id ?? "") ||
       typeof cursor.primary !== "string" ||
       typeof cursor.secondary !== "string" ||
@@ -159,6 +172,7 @@ function cursorMatches(
   criteria: PeopleDirectoryCriteria,
 ): boolean {
   return cursor.lifecycle === criteria.lifecycle &&
+    cursor.excludePersonId === (criteria.excludePersonId ?? null) &&
     cursor.search === criteria.search && cursor.sort === criteria.sort &&
     cursor.tagId === (criteria.tagId ?? null);
 }
@@ -170,6 +184,7 @@ function encodeCursor(
   return base64UrlEncode(JSON.stringify(
     {
       ...record.cursor,
+      excludePersonId: criteria.excludePersonId ?? null,
       lifecycle: criteria.lifecycle,
       search: criteria.search,
       sort: criteria.sort,
@@ -221,6 +236,14 @@ export function createPeopleDirectory(dependencies: {
           : {}),
       });
       if (result.status !== "ready") return result;
+      const selected = input.selectedPersonId &&
+          input.selectedPersonId !== input.excludePersonId &&
+          dependencies.repository.findSelected
+        ? await dependencies.repository.findSelected({
+          ...actor,
+          personId: input.selectedPersonId,
+        })
+        : undefined;
       const hasMore = result.people.length > criteria.limit;
       const page = result.people.slice(0, criteria.limit);
       const final = page.at(-1);
@@ -229,6 +252,7 @@ export function createPeopleDirectory(dependencies: {
           ? { nextCursor: encodeCursor(final, criteria) }
           : {}),
         people: page.map(person),
+        ...(selected ? { selected: person(selected) } : {}),
         status: "ready",
       };
     },

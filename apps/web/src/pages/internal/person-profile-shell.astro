@@ -27,6 +27,14 @@ const sections = [
   ["photos", "Photos", "independent"],
   ["audit-summary", "Audit summary", "independent"],
 ] as const;
+const profileFactSections = new Set<string>([
+  "contact-methods",
+  "addresses",
+  "first-meeting",
+  "work",
+  "food-preferences",
+  "pets",
+]);
 ---
 
 <ApplicationLayout
@@ -148,6 +156,11 @@ const sections = [
                   <div><dt>Nickname</dt><dd data-profile-field="nickname"></dd></div>
                   <div><dt>Gender</dt><dd data-profile-field="gender"></dd></div>
                 </dl>
+                <div data-profile-fact-section="tags" data-section-state="loading">
+                  <p data-profile-fact-state role="status" aria-live="polite">Loading tag assignments…</p>
+                  <button data-profile-fact-add class="button-secondary" type="button" hidden>Edit tags</button>
+                  <form data-profile-fact-form hidden novalidate></form>
+                </div>
               </section>
             )
             : id === "important-dates"
@@ -235,6 +248,32 @@ const sections = [
                     <button id="important-date-cancel" type="button">Cancel</button>
                   </div>
                 </form>
+              </section>
+            )
+            : profileFactSections.has(id)
+            ? (
+              <section
+                id={`profile-section-${id}`}
+                class="profile-section-card profile-fact-card"
+                data-profile-section={id}
+                data-profile-fact-section={id}
+                data-section-state="loading"
+                tabindex="-1"
+                aria-labelledby={`profile-section-${id}-heading`}
+              >
+                <header class="profile-section-heading">
+                  <div>
+                    <p class="section-kicker">Available profile fact</p>
+                    <h2 id={`profile-section-${id}-heading`}>{title}</h2>
+                  </div>
+                  <span data-profile-fact-badge class="state-badge">Loading</span>
+                </header>
+                <p data-profile-fact-state class="section-state" role="status" aria-live="polite" tabindex="-1">
+                  Loading {title.toLowerCase()}…
+                </p>
+                <ul data-profile-fact-list class="profile-fact-list" aria-label={`Saved ${title.toLowerCase()}`}></ul>
+                <button data-profile-fact-add class="button-primary" type="button" hidden>Add {title.toLowerCase()}</button>
+                <form data-profile-fact-form class="profile-fact-form" hidden novalidate></form>
               </section>
             )
             : (

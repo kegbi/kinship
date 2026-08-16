@@ -1,13 +1,89 @@
 import { buildOpenApiDocument } from "./generate.ts";
+import type {
+  ProfileFactCreateInputBySection,
+  ProfileFactListInput,
+  ProfileFactUpdateInputBySection,
+  ProfileFactValueBySection,
+} from "../../packages/contracts/generated/auth-client.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
+Deno.test("PEOPLE-006 generated mutation inputs remain stricter than response values", () => {
+  // @ts-expect-error food mutation requires a concrete preference value.
+  const emptyFood: ProfileFactCreateInputBySection["food-preferences"] = {
+    expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+    section: "food-preferences",
+  };
+  // @ts-expect-error address mutation requires at least one address detail.
+  const emptyAddress: ProfileFactCreateInputBySection["addresses"] = {
+    expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+    isPrimary: false,
+    labelIds: [],
+    section: "addresses",
+  };
+  // @ts-expect-error first-meeting mutation requires narrative, place, or introducer.
+  const emptyMeeting: ProfileFactCreateInputBySection["first-meeting"] = {
+    expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+    section: "first-meeting",
+  };
+  // @ts-expect-error pet mutation requires a name or category.
+  const emptyPet: ProfileFactCreateInputBySection["pets"] = {
+    expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+    section: "pets",
+  };
+  const foodResponse: ProfileFactValueBySection["food-preferences"] = {
+    section: "food-preferences",
+  };
+  const createWithId: ProfileFactCreateInputBySection["pets"] = {
+    expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+    // @ts-expect-error create never accepts a client-supplied identity.
+    id: "00000000-0000-4000-8000-000000000200",
+    name: "Byron",
+    section: "pets",
+  };
+  // @ts-expect-error update requires both the target identity and fact revision.
+  const updateWithoutVersion: ProfileFactUpdateInputBySection["pets"] = {
+    expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+    name: "Byron",
+    section: "pets",
+  };
+  const invalidListInput: ProfileFactListInput = {
+    // @ts-expect-error options hydration supports only the literal true query.
+    includeOptions: false,
+  };
+  // @ts-expect-error an option cursor requires explicit options mode.
+  const cursorWithoutOptions: ProfileFactListInput = {
+    optionCursor: "opaque-option-cursor",
+  };
+  assert(
+    emptyFood.section === "food-preferences" &&
+      emptyAddress.section === "addresses" &&
+      emptyMeeting.section === "first-meeting" &&
+      emptyPet.section === "pets" &&
+      createWithId.section === "pets" &&
+      updateWithoutVersion.section === "pets" &&
+      Object.hasOwn(invalidListInput, "includeOptions") &&
+      Object.hasOwn(cursorWithoutOptions, "optionCursor") &&
+      foodResponse.foodPreferences === undefined,
+    "compile-only invalid fixtures and a permissive response DTO stay distinct",
+  );
+});
+
 interface ObjectSchema {
   readonly $ref?: string;
   readonly additionalProperties?: boolean;
   readonly allOf?: readonly ObjectSchema[];
+  readonly anyOf?: readonly ObjectSchema[];
+  readonly const?: unknown;
+  readonly enum?: readonly unknown[];
+  readonly items?: ObjectSchema;
+  readonly maxItems?: number;
+  readonly maxLength?: number;
+  readonly minLength?: number;
+  readonly oneOf?: readonly ObjectSchema[];
+  readonly pattern?: string;
   readonly properties?: Readonly<Record<string, ObjectSchema>>;
   readonly required?: readonly string[];
   readonly type?: string;
@@ -28,13 +104,51 @@ function acceptsObjectInstance(
       !acceptsObjectInstance(schemas, part, instance)
     )
   ) return false;
+  if (
+    schema.anyOf &&
+    !schema.anyOf.some((part) => acceptsObjectInstance(schemas, part, instance))
+  ) return false;
+  if (schema.oneOf) {
+    return schema.oneOf.filter((part) =>
+      acceptsObjectInstance(schemas, part, instance)
+    ).length === 1;
+  }
   if (schema.required?.some((name) => !(name in instance))) return false;
+  if (
+    Object.entries(schema.properties ?? {}).some(([name, property]) =>
+      name in instance && !acceptsProperty(property, instance[name])
+    )
+  ) return false;
   if (
     schema.additionalProperties === false &&
     Object.keys(instance).some((name) =>
       schema.properties?.[name] === undefined
     )
   ) return false;
+  return true;
+}
+
+function acceptsProperty(schema: ObjectSchema, value: unknown): boolean {
+  if (schema.const !== undefined && value !== schema.const) return false;
+  if (schema.enum && !schema.enum.includes(value)) return false;
+  if (typeof value === "string") {
+    if (schema.minLength !== undefined && value.length < schema.minLength) {
+      return false;
+    }
+    if (schema.maxLength !== undefined && value.length > schema.maxLength) {
+      return false;
+    }
+    if (
+      schema.pattern !== undefined && !new RegExp(schema.pattern).test(value)
+    ) {
+      return false;
+    }
+  }
+  if (Array.isArray(value)) {
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -97,7 +211,9 @@ Deno.test("PEOPLE-002 OpenAPI describes tenant-safe cursor directory reads", () 
       "lifecycle",
       "sort",
       "cursor",
+      "excludePersonId",
       "limit",
+      "selectedPersonId",
     ]
   ) {
     assert(
@@ -341,5 +457,344 @@ Deno.test("PEOPLE-005 OpenAPI preserves partial and approximate date state", () 
       updatedAt: "2026-08-15T12:00:00.000Z",
     }),
     "a representative response date satisfies its composed schema",
+  );
+});
+
+Deno.test("PEOPLE-006 OpenAPI exposes strict section-scoped profile facts", () => {
+  const document = buildOpenApiDocument();
+  const paths = document.paths as Record<string, Record<string, unknown>>;
+  const section = paths["/api/v1/people/{personId}/facts/{section}"];
+  const item = paths["/api/v1/people/{personId}/facts/{section}/{factId}"];
+  assert(
+    Boolean(section?.get && section.post && item?.put && item.delete),
+    "profile-fact list/create/update/delete operations remain canonical",
+  );
+  const schemas = (document.components as {
+    schemas: Readonly<Record<string, ObjectSchema>>;
+  }).schemas;
+  const input = schemas.ProfileFactCreateInput;
+  const updateInput = schemas.ProfileFactUpdateInput;
+  assert(
+    input?.oneOf?.length === 7,
+    "profile-fact input is a discriminated union of seven closed sections",
+  );
+  assert(
+    updateInput?.oneOf?.length === 7,
+    "profile-fact updates use a separate discriminated union",
+  );
+  const petCreate = {
+    expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+    name: "Byron",
+    section: "pets",
+  };
+  assert(
+    acceptsObjectInstance(schemas, input, petCreate) &&
+      !acceptsObjectInstance(schemas, input, {
+        ...petCreate,
+        id: "00000000-0000-4000-8000-000000000200",
+      }) &&
+      !acceptsObjectInstance(schemas, updateInput, petCreate) &&
+      acceptsObjectInstance(schemas, updateInput, {
+        ...petCreate,
+        expectedUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        id: "00000000-0000-4000-8000-000000000200",
+      }),
+    "create forbids identity while update requires identity and fact revision",
+  );
+  assert(
+    [
+      { section: "addresses", isPrimary: false, labelIds: [], city: "London" },
+      {
+        section: "contact-methods",
+        isPrimary: true,
+        labelIds: [],
+        typeId: "00000000-0000-4000-8000-000000000300",
+        value: "ada@example.test",
+      },
+      { section: "first-meeting", notes: "Met at a salon" },
+      { section: "food-preferences", foodPreferences: "Tea" },
+      { section: "pets", name: "Byron", notes: "A quiet companion" },
+      { section: "tags", tagIds: [] },
+      { section: "work", isCurrent: true, title: "Engineer" },
+    ].every((value) =>
+      acceptsObjectInstance(schemas, input, {
+        ...value,
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+      })
+    ),
+    "every representative section satisfies exactly one closed input variant",
+  );
+  const value = schemas.ProfileFactValue;
+  assert(value !== undefined, "profile-fact value union is documented");
+  assert(
+    acceptsObjectInstance(schemas, value, {
+      section: "first-meeting",
+      notes: "Met at a salon",
+    }) &&
+      acceptsObjectInstance(schemas, value, {
+        section: "pets",
+        notes: "A quiet companion",
+      }),
+    "overlapping notes shapes remain distinguishable by section",
+  );
+  assert(
+    !acceptsObjectInstance(schemas, input, {}) &&
+      !acceptsObjectInstance(schemas, input, {
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        section: "food-preferences",
+      }) &&
+      !acceptsObjectInstance(schemas, input, {
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        section: "first-meeting",
+      }) &&
+      !acceptsObjectInstance(schemas, input, {
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        section: "pets",
+      }) &&
+      !acceptsObjectInstance(schemas, input, {
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        city: "",
+        isPrimary: false,
+        labelIds: [],
+        section: "addresses",
+      }) &&
+      !acceptsObjectInstance(schemas, input, {
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        notes: "   ",
+        section: "first-meeting",
+      }) &&
+      !acceptsObjectInstance(schemas, input, {
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        name: "",
+        section: "pets",
+      }) &&
+      !acceptsObjectInstance(schemas, input, {
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        section: "contact-methods",
+        foodPreferences: "Tea",
+        isPrimary: true,
+        labelIds: [],
+        typeId: "00000000-0000-4000-8000-000000000300",
+        value: "ada@example.test",
+      }) &&
+      !acceptsObjectInstance(schemas, input, {
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        section: "addresses",
+        isPrimary: true,
+        labelIds: [],
+        typeId: "00000000-0000-4000-8000-000000000300",
+        value: "ada@example.test",
+        workspaceId: "00000000-0000-4000-8000-000000000400",
+      }),
+    "empty facts, discriminator mismatches, cross-section fields, and extras are rejected",
+  );
+  const base = {
+    expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+  };
+  const ids = Array.from(
+    { length: 501 },
+    (_, index) =>
+      `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+  );
+  assert(
+    !acceptsObjectInstance(schemas, input, {
+      ...base,
+      foodPreferences: "",
+      section: "food-preferences",
+    }) &&
+      acceptsObjectInstance(schemas, input, {
+        ...base,
+        foodPreferences: "x".repeat(2_000),
+        section: "food-preferences",
+      }) &&
+      !acceptsObjectInstance(schemas, input, {
+        ...base,
+        foodPreferences: "x".repeat(2_001),
+        section: "food-preferences",
+      }) &&
+      acceptsObjectInstance(schemas, input, {
+        ...base,
+        isPrimary: false,
+        labelIds: ids.slice(0, 20),
+        section: "addresses",
+        street: "x".repeat(500),
+      }) &&
+      !acceptsObjectInstance(schemas, input, {
+        ...base,
+        isPrimary: false,
+        labelIds: ids.slice(0, 21),
+        section: "addresses",
+        street: "x".repeat(501),
+      }) &&
+      acceptsObjectInstance(schemas, input, {
+        ...base,
+        section: "tags",
+        tagIds: ids.slice(0, 500),
+      }) &&
+      !acceptsObjectInstance(schemas, input, {
+        ...base,
+        section: "tags",
+        tagIds: ids,
+      }) &&
+      !acceptsObjectInstance(schemas, input, {
+        ...base,
+        isCurrent: true,
+        section: "work",
+        title: "",
+      }) &&
+      !acceptsObjectInstance(schemas, input, {
+        ...base,
+        isCurrent: true,
+        section: "work",
+        title: "x".repeat(201),
+      }) &&
+      [
+        {
+          ...base,
+          isPrimary: false,
+          labelIds: [],
+          section: "addresses",
+          city: "x".repeat(201),
+        },
+        {
+          ...base,
+          isPrimary: false,
+          labelIds: [],
+          section: "addresses",
+          country: "x".repeat(201),
+        },
+        {
+          ...base,
+          displayName: "x".repeat(201),
+          isPrimary: false,
+          labelIds: [],
+          section: "addresses",
+        },
+        {
+          ...base,
+          isPrimary: false,
+          labelIds: [],
+          postalCode: "x".repeat(51),
+          section: "addresses",
+        },
+        {
+          ...base,
+          isPrimary: false,
+          labelIds: [],
+          region: "x".repeat(201),
+          section: "addresses",
+        },
+        {
+          ...base,
+          isPrimary: false,
+          labelIds: [],
+          section: "contact-methods",
+          typeId: ids[0],
+          value: "x".repeat(2_001),
+        },
+        {
+          ...base,
+          isPrimary: false,
+          labelIds: [],
+          notes: "x".repeat(2_001),
+          section: "contact-methods",
+          typeId: ids[0],
+          value: "x",
+        },
+        {
+          ...base,
+          notes: "x".repeat(2_001),
+          section: "first-meeting",
+        },
+        {
+          ...base,
+          placeText: "x".repeat(501),
+          section: "first-meeting",
+        },
+        {
+          ...base,
+          name: "x".repeat(201),
+          section: "pets",
+        },
+        {
+          ...base,
+          name: "Byron",
+          notes: "x".repeat(2_001),
+          section: "pets",
+        },
+        {
+          ...base,
+          description: "x".repeat(2_001),
+          isCurrent: true,
+          section: "work",
+          title: "Engineer",
+        },
+        {
+          ...base,
+          isCurrent: true,
+          organizationName: "x".repeat(201),
+          section: "work",
+          title: "Engineer",
+        },
+      ].every((candidate) =>
+        !acceptsObjectInstance(schemas, input, candidate)
+      ) &&
+      [
+        { ...base, foodPreferences: "   ", section: "food-preferences" },
+        {
+          ...base,
+          isCurrent: true,
+          section: "work",
+          title: "   ",
+        },
+        {
+          ...base,
+          isPrimary: false,
+          labelIds: [],
+          section: "contact-methods",
+          typeId: ids[0],
+          value: "   ",
+        },
+      ].every((candidate) => !acceptsObjectInstance(schemas, input, candidate)),
+    "input variants enforce the runtime string and collection boundaries",
+  );
+  assert(
+    ([
+      ["AddressFactCreateInput", "AddressFactUpdateInput"],
+      ["ContactMethodFactCreateInput", "ContactMethodFactUpdateInput"],
+      ["FirstMeetingFactCreateInput", "FirstMeetingFactUpdateInput"],
+      ["FoodPreferencesFactCreateInput", "FoodPreferencesFactUpdateInput"],
+      ["PetFactCreateInput", "PetFactUpdateInput"],
+      ["TagsFactCreateInput", "TagsFactUpdateInput"],
+      ["OccupationFactCreateInput", "OccupationFactUpdateInput"],
+    ] as const).every(([createName, updateName]) => {
+      const createProperties = schemas[createName]?.properties ?? {};
+      const updateProperties = schemas[updateName]?.properties ?? {};
+      return Object.entries(createProperties).every(([name, property]) =>
+        JSON.stringify(updateProperties[name]) === JSON.stringify(property)
+      );
+    }),
+    "create and update variants publish identical field boundaries",
+  );
+  const listOperation = section?.get as {
+    readonly parameters?: readonly {
+      readonly description?: string;
+      readonly name?: string;
+      readonly schema?: ObjectSchema;
+    }[];
+  };
+  assert(
+    JSON.stringify(
+      listOperation.parameters?.find((parameter) =>
+        parameter.name === "includeOptions"
+      )?.schema?.enum,
+    ) === JSON.stringify([true]),
+    "includeOptions documents only the literal true query semantic",
+  );
+  assert(
+    listOperation.parameters?.find((parameter) =>
+      parameter.name === "optionCursor"
+    )?.description === "Requires includeOptions=true.",
+    "the documented query relation matches runtime option continuation",
   );
 });

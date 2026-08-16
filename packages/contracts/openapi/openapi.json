@@ -716,11 +716,27 @@
             }
           },
           {
+            "name": "excludePersonId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
             "name": "search",
             "in": "query",
             "schema": {
               "type": "string",
               "maxLength": 200
+            }
+          },
+          {
+            "name": "selectedPersonId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -1899,6 +1915,542 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ImportantDateDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{personId}/facts/{section}": {
+      "parameters": [
+        {
+          "name": "section",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ProfileFactSectionId"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listProfileFacts",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "personId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            }
+          },
+          {
+            "name": "includeOptions",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "enum": [
+                true
+              ]
+            }
+          },
+          {
+            "name": "optionCursor",
+            "in": "query",
+            "required": false,
+            "description": "Requires includeOptions=true.",
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            }
+          },
+          {
+            "name": "optionSearch",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One enabled person profile-fact section",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileFactSection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createProfileFact",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "description": "Must exactly match the configured public web origin.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "personId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileFactCreateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile fact saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileFactChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{personId}/facts/{section}/{factId}": {
+      "parameters": [
+        {
+          "name": "section",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ProfileFactSectionId"
+          }
+        },
+        {
+          "name": "factId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "put": {
+        "operationId": "updateProfileFact",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "description": "Must exactly match the configured public web origin.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "personId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileFactUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile fact updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileFactChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteProfileFact",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "description": "Must exactly match the configured public web origin.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "personId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileFactDeleteInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile fact deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileFactDeleted"
                 }
               }
             }
@@ -4384,6 +4936,29 @@
           "nickname": {
             "type": "string"
           },
+          "profileSections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "status"
+              ],
+              "properties": {
+                "id": {
+                  "$ref": "#/components/schemas/ProfileFactSectionId"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "hidden",
+                    "ready"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
           "tagCount": {
             "type": "integer",
             "minimum": 0
@@ -4882,6 +5457,1319 @@
         },
         "additionalProperties": false
       },
+      "ProfileFactSectionId": {
+        "type": "string",
+        "enum": [
+          "addresses",
+          "contact-methods",
+          "first-meeting",
+          "food-preferences",
+          "pets",
+          "tags",
+          "work"
+        ]
+      },
+      "ProfileFactOption": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "contact-label",
+              "contact-type",
+              "pet-category"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProfileFactValue": {
+        "discriminator": {
+          "propertyName": "section"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/AddressFact"
+          },
+          {
+            "$ref": "#/components/schemas/ContactMethodFact"
+          },
+          {
+            "$ref": "#/components/schemas/FirstMeetingFact"
+          },
+          {
+            "$ref": "#/components/schemas/FoodPreferencesFact"
+          },
+          {
+            "$ref": "#/components/schemas/PetFact"
+          },
+          {
+            "$ref": "#/components/schemas/TagsFact"
+          },
+          {
+            "$ref": "#/components/schemas/OccupationFact"
+          }
+        ]
+      },
+      "AddressFact": {
+        "type": "object",
+        "required": [
+          "section",
+          "isPrimary",
+          "labelIds"
+        ],
+        "properties": {
+          "city": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "country": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "isPrimary": {
+            "type": "boolean"
+          },
+          "labelIds": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "postalCode": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "region": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "street": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "section": {
+            "const": "addresses"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContactMethodFact": {
+        "type": "object",
+        "required": [
+          "section",
+          "isPrimary",
+          "labelIds",
+          "typeId",
+          "value"
+        ],
+        "properties": {
+          "isPrimary": {
+            "type": "boolean"
+          },
+          "labelIds": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "typeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "\\S"
+          },
+          "section": {
+            "const": "contact-methods"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FirstMeetingFact": {
+        "type": "object",
+        "required": [
+          "section"
+        ],
+        "properties": {
+          "introducedByPersonId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "placeText": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "section": {
+            "const": "first-meeting"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FoodPreferencesFact": {
+        "type": "object",
+        "required": [
+          "section"
+        ],
+        "properties": {
+          "foodPreferences": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "\\S"
+          },
+          "section": {
+            "const": "food-preferences"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PetFact": {
+        "type": "object",
+        "required": [
+          "section"
+        ],
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "section": {
+            "const": "pets"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TagsFact": {
+        "type": "object",
+        "required": [
+          "section",
+          "tagIds"
+        ],
+        "properties": {
+          "tagIds": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "section": {
+            "const": "tags"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccupationFact": {
+        "type": "object",
+        "required": [
+          "section",
+          "isCurrent",
+          "title"
+        ],
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "endOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "startOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "\\S"
+          },
+          "section": {
+            "const": "work"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProfileFactCreateInput": {
+        "discriminator": {
+          "propertyName": "section"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/AddressFactCreateInput"
+          },
+          {
+            "$ref": "#/components/schemas/ContactMethodFactCreateInput"
+          },
+          {
+            "$ref": "#/components/schemas/FirstMeetingFactCreateInput"
+          },
+          {
+            "$ref": "#/components/schemas/FoodPreferencesFactCreateInput"
+          },
+          {
+            "$ref": "#/components/schemas/PetFactCreateInput"
+          },
+          {
+            "$ref": "#/components/schemas/TagsFactCreateInput"
+          },
+          {
+            "$ref": "#/components/schemas/OccupationFactCreateInput"
+          }
+        ]
+      },
+      "AddressFactCreateInput": {
+        "type": "object",
+        "required": [
+          "section",
+          "expectedPersonUpdatedAt",
+          "isPrimary",
+          "labelIds"
+        ],
+        "properties": {
+          "city": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "country": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "isPrimary": {
+            "type": "boolean"
+          },
+          "labelIds": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "postalCode": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "region": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "street": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "section": {
+            "const": "addresses"
+          }
+        },
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "city"
+            ],
+            "properties": {
+              "city": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "country"
+            ],
+            "properties": {
+              "country": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "displayName"
+            ],
+            "properties": {
+              "displayName": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "postalCode"
+            ],
+            "properties": {
+              "postalCode": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "region"
+            ],
+            "properties": {
+              "region": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "street"
+            ],
+            "properties": {
+              "street": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          }
+        ]
+      },
+      "ContactMethodFactCreateInput": {
+        "type": "object",
+        "required": [
+          "section",
+          "expectedPersonUpdatedAt",
+          "isPrimary",
+          "labelIds",
+          "typeId",
+          "value"
+        ],
+        "properties": {
+          "isPrimary": {
+            "type": "boolean"
+          },
+          "labelIds": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "typeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "\\S"
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "section": {
+            "const": "contact-methods"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FirstMeetingFactCreateInput": {
+        "type": "object",
+        "required": [
+          "section",
+          "expectedPersonUpdatedAt"
+        ],
+        "properties": {
+          "introducedByPersonId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "placeText": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "section": {
+            "const": "first-meeting"
+          }
+        },
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "introducedByPersonId"
+            ]
+          },
+          {
+            "required": [
+              "notes"
+            ],
+            "properties": {
+              "notes": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "placeText"
+            ],
+            "properties": {
+              "placeText": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          }
+        ]
+      },
+      "FoodPreferencesFactCreateInput": {
+        "type": "object",
+        "required": [
+          "section",
+          "expectedPersonUpdatedAt",
+          "foodPreferences"
+        ],
+        "properties": {
+          "foodPreferences": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "\\S"
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "section": {
+            "const": "food-preferences"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PetFactCreateInput": {
+        "type": "object",
+        "required": [
+          "section",
+          "expectedPersonUpdatedAt"
+        ],
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "section": {
+            "const": "pets"
+          }
+        },
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "categoryId"
+            ]
+          },
+          {
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          }
+        ]
+      },
+      "TagsFactCreateInput": {
+        "type": "object",
+        "required": [
+          "section",
+          "expectedPersonUpdatedAt",
+          "tagIds"
+        ],
+        "properties": {
+          "tagIds": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "section": {
+            "const": "tags"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccupationFactCreateInput": {
+        "type": "object",
+        "required": [
+          "section",
+          "expectedPersonUpdatedAt",
+          "isCurrent",
+          "title"
+        ],
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "endOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "startOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "\\S"
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "section": {
+            "const": "work"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProfileFactUpdateInput": {
+        "discriminator": {
+          "propertyName": "section"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/AddressFactUpdateInput"
+          },
+          {
+            "$ref": "#/components/schemas/ContactMethodFactUpdateInput"
+          },
+          {
+            "$ref": "#/components/schemas/FirstMeetingFactUpdateInput"
+          },
+          {
+            "$ref": "#/components/schemas/FoodPreferencesFactUpdateInput"
+          },
+          {
+            "$ref": "#/components/schemas/PetFactUpdateInput"
+          },
+          {
+            "$ref": "#/components/schemas/TagsFactUpdateInput"
+          },
+          {
+            "$ref": "#/components/schemas/OccupationFactUpdateInput"
+          }
+        ]
+      },
+      "AddressFactUpdateInput": {
+        "type": "object",
+        "required": [
+          "section",
+          "expectedPersonUpdatedAt",
+          "expectedUpdatedAt",
+          "id",
+          "isPrimary",
+          "labelIds"
+        ],
+        "properties": {
+          "city": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "country": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "isPrimary": {
+            "type": "boolean"
+          },
+          "labelIds": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "postalCode": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "region": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "street": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "section": {
+            "const": "addresses"
+          }
+        },
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "city"
+            ],
+            "properties": {
+              "city": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "country"
+            ],
+            "properties": {
+              "country": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "displayName"
+            ],
+            "properties": {
+              "displayName": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "postalCode"
+            ],
+            "properties": {
+              "postalCode": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "region"
+            ],
+            "properties": {
+              "region": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "street"
+            ],
+            "properties": {
+              "street": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          }
+        ]
+      },
+      "ContactMethodFactUpdateInput": {
+        "type": "object",
+        "required": [
+          "section",
+          "expectedPersonUpdatedAt",
+          "expectedUpdatedAt",
+          "id",
+          "isPrimary",
+          "labelIds",
+          "typeId",
+          "value"
+        ],
+        "properties": {
+          "isPrimary": {
+            "type": "boolean"
+          },
+          "labelIds": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "typeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "\\S"
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "section": {
+            "const": "contact-methods"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FirstMeetingFactUpdateInput": {
+        "type": "object",
+        "required": [
+          "section",
+          "expectedPersonUpdatedAt",
+          "expectedUpdatedAt",
+          "id"
+        ],
+        "properties": {
+          "introducedByPersonId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "placeText": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "section": {
+            "const": "first-meeting"
+          }
+        },
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "introducedByPersonId"
+            ]
+          },
+          {
+            "required": [
+              "notes"
+            ],
+            "properties": {
+              "notes": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "placeText"
+            ],
+            "properties": {
+              "placeText": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          }
+        ]
+      },
+      "FoodPreferencesFactUpdateInput": {
+        "type": "object",
+        "required": [
+          "section",
+          "expectedPersonUpdatedAt",
+          "expectedUpdatedAt",
+          "id",
+          "foodPreferences"
+        ],
+        "properties": {
+          "foodPreferences": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "\\S"
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "section": {
+            "const": "food-preferences"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PetFactUpdateInput": {
+        "type": "object",
+        "required": [
+          "section",
+          "expectedPersonUpdatedAt",
+          "expectedUpdatedAt",
+          "id"
+        ],
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "section": {
+            "const": "pets"
+          }
+        },
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "categoryId"
+            ]
+          },
+          {
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          }
+        ]
+      },
+      "TagsFactUpdateInput": {
+        "type": "object",
+        "required": [
+          "section",
+          "expectedPersonUpdatedAt",
+          "expectedUpdatedAt",
+          "id",
+          "tagIds"
+        ],
+        "properties": {
+          "tagIds": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "section": {
+            "const": "tags"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccupationFactUpdateInput": {
+        "type": "object",
+        "required": [
+          "section",
+          "expectedPersonUpdatedAt",
+          "expectedUpdatedAt",
+          "id",
+          "isCurrent",
+          "title"
+        ],
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "endOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "startOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "\\S"
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "section": {
+            "const": "work"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProfileFactDeleteInput": {
+        "type": "object",
+        "required": [
+          "expectedPersonUpdatedAt",
+          "expectedUpdatedAt",
+          "section"
+        ],
+        "properties": {
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "section": {
+            "$ref": "#/components/schemas/ProfileFactSectionId"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProfileFactRecord": {
+        "type": "object",
+        "required": [
+          "id",
+          "section",
+          "updatedAt",
+          "value"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "referencesResolved": {
+            "type": "boolean"
+          },
+          "section": {
+            "$ref": "#/components/schemas/ProfileFactSectionId"
+          },
+          "selectedOptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProfileFactOption"
+            }
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "value": {
+            "$ref": "#/components/schemas/ProfileFactValue"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProfileFactSection": {
+        "type": "object",
+        "required": [
+          "status",
+          "options",
+          "personUpdatedAt",
+          "records"
+        ],
+        "properties": {
+          "nextCursor": {
+            "type": "string"
+          },
+          "nextOptionsCursor": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "archived",
+              "hidden"
+            ]
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProfileFactOption"
+            }
+          },
+          "personUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProfileFactRecord"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProfileFactChanged": {
+        "type": "object",
+        "required": [
+          "status",
+          "personUpdatedAt",
+          "record"
+        ],
+        "properties": {
+          "status": {
+            "const": "saved"
+          },
+          "personUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "record": {
+            "$ref": "#/components/schemas/ProfileFactRecord"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProfileFactDeleted": {
+        "type": "object",
+        "required": [
+          "status",
+          "factId",
+          "personUpdatedAt"
+        ],
+        "properties": {
+          "status": {
+            "const": "deleted"
+          },
+          "factId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "personUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
       "PeopleDirectoryTag": {
         "type": "object",
         "required": [
@@ -4980,6 +6868,9 @@
           },
           "nextCursor": {
             "type": "string"
+          },
+          "selected": {
+            "$ref": "#/components/schemas/PeopleDirectoryPerson"
           }
         },
         "additionalProperties": false

@@ -5,6 +5,7 @@ import {
   PERSON_PROFILE_TAG_PREVIEW_LIMIT,
   type PersonProfileIdentity,
   type PersonProfileRepository,
+  type PersonProfileSection,
   type PersonProfileTag,
 } from "../../application/get_person_profile.ts";
 
@@ -21,6 +22,7 @@ interface PersonProfileRow {
   readonly is_starred: boolean | null;
   readonly middle_name: string | null;
   readonly nickname: string | null;
+  readonly profile_sections: readonly PersonProfileSection[];
   readonly tag_count: number;
   readonly tags: readonly PersonProfileTag[];
   readonly updated_at: string | null;
@@ -47,6 +49,7 @@ function identity(row: PersonProfileRow): PersonProfileIdentity | undefined {
     isStarred: row.is_starred,
     ...(row.middle_name ? { middleName: row.middle_name } : {}),
     ...(row.nickname ? { nickname: row.nickname } : {}),
+    profileSections: row.profile_sections,
     tagCount: row.tag_count,
     tags: row.tags,
     updatedAt: row.updated_at,
@@ -70,6 +73,7 @@ export class PostgresPersonProfileRepository
         coalesce(member.self_person_id = person.id, false) as is_self,
         coalesce(tag_summary.tag_count, 0)::int as tag_count,
         coalesce(tag_preview.tags, '[]'::jsonb) as tags
+        , coalesce(profile_sections.sections, '[]'::jsonb) as profile_sections
       from crm.users account
       join crm.workspace_members member on member.user_id = account.id
       join crm.workspaces workspace on workspace.id = member.workspace_id
@@ -102,6 +106,18 @@ export class PostgresPersonProfileRepository
           limit ${PERSON_PROFILE_TAG_PREVIEW_LIMIT}
         ) preview
       ) tag_preview on true
+      left join lateral (
+        select jsonb_agg(jsonb_build_object(
+          'id', available.id,
+          'status', case when module.is_active = false then 'hidden' else 'ready' end
+        ) order by available.sort_order) as sections
+        from (values
+          ('contact-methods', 1), ('addresses', 2), ('first-meeting', 3),
+          ('work', 4), ('food-preferences', 5), ('pets', 6), ('tags', 7)
+        ) available(id, sort_order)
+        left join crm.workspace_profile_modules module
+          on module.workspace_id = workspace.id and module.key = available.id
+      ) profile_sections on true
       where account.id = ${command.userId}::uuid
         and account.status = 'active'
         and account.deleted_at is null

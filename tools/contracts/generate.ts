@@ -155,6 +155,105 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
     },
     year: { type: "integer", minimum: 1, maximum: 9999 },
   };
+  const profileFactProperties = {
+    city: { type: "string", maxLength: 200 },
+    country: { type: "string", maxLength: 200 },
+    categoryId: { type: "string", format: "uuid" },
+    description: { type: "string", maxLength: 2_000 },
+    displayName: { type: "string", maxLength: 200 },
+    endOn: { type: "string", format: "date" },
+    foodPreferences: {
+      type: "string",
+      minLength: 1,
+      maxLength: 2_000,
+      pattern: "\\S",
+    },
+    isCurrent: { type: "boolean" },
+    isPrimary: { type: "boolean" },
+    labelIds: {
+      type: "array",
+      maxItems: 20,
+      items: { type: "string", format: "uuid" },
+    },
+    name: { type: "string", maxLength: 200 },
+    notes: { type: "string", maxLength: 2_000 },
+    organizationId: { type: "string", format: "uuid" },
+    organizationName: { type: "string", maxLength: 200 },
+    introducedByPersonId: { type: "string", format: "uuid" },
+    placeText: { type: "string", maxLength: 500 },
+    postalCode: { type: "string", maxLength: 50 },
+    region: { type: "string", maxLength: 200 },
+    section: { type: "string" },
+    startOn: { type: "string", format: "date" },
+    street: { type: "string", maxLength: 500 },
+    tagIds: {
+      type: "array",
+      maxItems: 500,
+      items: { type: "string", format: "uuid" },
+    },
+    title: { type: "string", minLength: 1, maxLength: 200, pattern: "\\S" },
+    typeId: { type: "string", format: "uuid" },
+    value: {
+      type: "string",
+      minLength: 1,
+      maxLength: 2_000,
+      pattern: "\\S",
+    },
+  };
+  const selectedProfileFactProperties = (names: readonly string[]) =>
+    Object.fromEntries(names.map((name) => [
+      name,
+      profileFactProperties[name as keyof typeof profileFactProperties],
+    ]));
+  const closedSchema = (
+    section: string,
+    required: readonly string[],
+    properties: readonly string[],
+    _source: typeof profileFactProperties,
+  ) => ({
+    type: "object",
+    required: ["section", ...required],
+    properties: {
+      ...selectedProfileFactProperties(properties),
+      section: { const: section },
+    },
+    additionalProperties: false,
+  });
+  const profileFactInputSchema = (
+    section: string,
+    required: readonly string[],
+    properties: readonly string[],
+    source: typeof profileFactProperties,
+    update = false,
+  ) => ({
+    ...closedSchema(
+      section,
+      [
+        "expectedPersonUpdatedAt",
+        ...(update ? ["expectedUpdatedAt", "id"] : []),
+        ...required,
+      ],
+      ["section", ...properties],
+      source,
+    ),
+    properties: {
+      ...selectedProfileFactProperties(properties),
+      expectedPersonUpdatedAt: { type: "string", format: "date-time" },
+      ...(update
+        ? {
+          expectedUpdatedAt: { type: "string", format: "date-time" },
+          id: { type: "string", format: "uuid" },
+        }
+        : {}),
+      section: { const: section },
+    },
+  });
+  const requiredNonBlankProfileFactDetail = (name: string) => ({
+    required: [name],
+    properties: {
+      [name]: { type: "string", minLength: 1, pattern: "\\S" },
+    },
+  });
   return {
     openapi: "3.1.0",
     info: { title: "Kinship API", version: "1.0.0" },
@@ -458,9 +557,19 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           parameters: [
             workspaceParameter,
             {
+              name: "excludePersonId",
+              in: "query",
+              schema: { type: "string", format: "uuid" },
+            },
+            {
               name: "search",
               in: "query",
               schema: { type: "string", maxLength: 200 },
+            },
+            {
+              name: "selectedPersonId",
+              in: "query",
+              schema: { type: "string", format: "uuid" },
             },
             {
               name: "tag",
@@ -731,6 +840,159 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
               content: {
                 "application/json": {
                   schema: { $ref: "#/components/schemas/ImportantDateDeleted" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/facts/{section}": {
+        parameters: [{
+          name: "section",
+          in: "path",
+          required: true,
+          schema: { $ref: "#/components/schemas/ProfileFactSectionId" },
+        }],
+        get: {
+          operationId: "listProfileFacts",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter, personIdParameter, {
+            name: "cursor",
+            in: "query",
+            required: false,
+            schema: { type: "string", maxLength: 2_000 },
+          }, {
+            name: "includeOptions",
+            in: "query",
+            required: false,
+            schema: { type: "boolean", enum: [true] },
+          }, {
+            name: "optionCursor",
+            in: "query",
+            required: false,
+            description: "Requires includeOptions=true.",
+            schema: { type: "string", maxLength: 2_000 },
+          }, {
+            name: "optionSearch",
+            in: "query",
+            required: false,
+            schema: { type: "string", maxLength: 200 },
+          }],
+          responses: {
+            "200": {
+              description: "One enabled person profile-fact section",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ProfileFactSection" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+        post: {
+          operationId: "createProfileFact",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, personIdParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ProfileFactCreateInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Profile fact saved",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ProfileFactChanged" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/facts/{section}/{factId}": {
+        parameters: [
+          {
+            name: "section",
+            in: "path",
+            required: true,
+            schema: { $ref: "#/components/schemas/ProfileFactSectionId" },
+          },
+          {
+            name: "factId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        put: {
+          operationId: "updateProfileFact",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, personIdParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ProfileFactUpdateInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Profile fact updated",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ProfileFactChanged" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+        delete: {
+          operationId: "deleteProfileFact",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, personIdParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ProfileFactDeleteInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Profile fact deleted",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ProfileFactDeleted" },
                 },
               },
             },
@@ -1481,6 +1743,18 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             isStarred: { type: "boolean" },
             middleName: { type: "string" },
             nickname: { type: "string" },
+            profileSections: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["id", "status"],
+                properties: {
+                  id: { $ref: "#/components/schemas/ProfileFactSectionId" },
+                  status: { type: "string", enum: ["hidden", "ready"] },
+                },
+                additionalProperties: false,
+              },
+            },
             tagCount: { type: "integer", minimum: 0 },
             tags: {
               type: "array",
@@ -1668,6 +1942,366 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        ProfileFactSectionId: {
+          type: "string",
+          enum: [
+            "addresses",
+            "contact-methods",
+            "first-meeting",
+            "food-preferences",
+            "pets",
+            "tags",
+            "work",
+          ],
+        },
+        ProfileFactOption: {
+          type: "object",
+          required: ["id", "name"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            kind: {
+              type: "string",
+              enum: ["contact-label", "contact-type", "pet-category"],
+            },
+            name: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        ProfileFactValue: {
+          discriminator: { propertyName: "section" },
+          oneOf: [
+            "AddressFact",
+            "ContactMethodFact",
+            "FirstMeetingFact",
+            "FoodPreferencesFact",
+            "PetFact",
+            "TagsFact",
+            "OccupationFact",
+          ].map((name) => ({ $ref: `#/components/schemas/${name}` })),
+        },
+        AddressFact: closedSchema(
+          "addresses",
+          ["isPrimary", "labelIds"],
+          [
+            "city",
+            "country",
+            "displayName",
+            "isPrimary",
+            "labelIds",
+            "postalCode",
+            "region",
+            "street",
+          ],
+          profileFactProperties,
+        ),
+        ContactMethodFact: closedSchema(
+          "contact-methods",
+          ["isPrimary", "labelIds", "typeId", "value"],
+          ["isPrimary", "labelIds", "notes", "typeId", "value"],
+          profileFactProperties,
+        ),
+        FirstMeetingFact: closedSchema(
+          "first-meeting",
+          [],
+          ["introducedByPersonId", "notes", "placeText"],
+          profileFactProperties,
+        ),
+        FoodPreferencesFact: closedSchema(
+          "food-preferences",
+          [],
+          ["foodPreferences"],
+          profileFactProperties,
+        ),
+        PetFact: closedSchema(
+          "pets",
+          [],
+          ["categoryId", "name", "notes"],
+          profileFactProperties,
+        ),
+        TagsFact: closedSchema(
+          "tags",
+          ["tagIds"],
+          ["tagIds"],
+          profileFactProperties,
+        ),
+        OccupationFact: closedSchema(
+          "work",
+          ["isCurrent", "title"],
+          [
+            "description",
+            "endOn",
+            "isCurrent",
+            "organizationId",
+            "organizationName",
+            "startOn",
+            "title",
+          ],
+          profileFactProperties,
+        ),
+        ProfileFactCreateInput: {
+          discriminator: { propertyName: "section" },
+          oneOf: [
+            "AddressFactCreateInput",
+            "ContactMethodFactCreateInput",
+            "FirstMeetingFactCreateInput",
+            "FoodPreferencesFactCreateInput",
+            "PetFactCreateInput",
+            "TagsFactCreateInput",
+            "OccupationFactCreateInput",
+          ].map((name) => ({ $ref: `#/components/schemas/${name}` })),
+        },
+        AddressFactCreateInput: {
+          ...profileFactInputSchema("addresses", ["isPrimary", "labelIds"], [
+            "city",
+            "country",
+            "displayName",
+            "isPrimary",
+            "labelIds",
+            "postalCode",
+            "region",
+            "street",
+          ], profileFactProperties),
+          anyOf: [
+            "city",
+            "country",
+            "displayName",
+            "postalCode",
+            "region",
+            "street",
+          ]
+            .map(requiredNonBlankProfileFactDetail),
+        },
+        ContactMethodFactCreateInput: profileFactInputSchema(
+          "contact-methods",
+          ["isPrimary", "labelIds", "typeId", "value"],
+          ["isPrimary", "labelIds", "notes", "typeId", "value"],
+          profileFactProperties,
+        ),
+        FirstMeetingFactCreateInput: {
+          ...profileFactInputSchema("first-meeting", [], [
+            "introducedByPersonId",
+            "notes",
+            "placeText",
+          ], profileFactProperties),
+          anyOf: [
+            { required: ["introducedByPersonId"] },
+            requiredNonBlankProfileFactDetail("notes"),
+            requiredNonBlankProfileFactDetail("placeText"),
+          ],
+        },
+        FoodPreferencesFactCreateInput: profileFactInputSchema(
+          "food-preferences",
+          [
+            "foodPreferences",
+          ],
+          [
+            "foodPreferences",
+          ],
+          profileFactProperties,
+        ),
+        PetFactCreateInput: {
+          ...profileFactInputSchema("pets", [], [
+            "categoryId",
+            "name",
+            "notes",
+          ], profileFactProperties),
+          anyOf: [
+            { required: ["categoryId"] },
+            requiredNonBlankProfileFactDetail("name"),
+          ],
+        },
+        TagsFactCreateInput: profileFactInputSchema(
+          "tags",
+          ["tagIds"],
+          ["tagIds"],
+          profileFactProperties,
+        ),
+        OccupationFactCreateInput: profileFactInputSchema("work", [
+          "isCurrent",
+          "title",
+        ], [
+          "description",
+          "endOn",
+          "isCurrent",
+          "organizationId",
+          "organizationName",
+          "startOn",
+          "title",
+        ], profileFactProperties),
+        ProfileFactUpdateInput: {
+          discriminator: { propertyName: "section" },
+          oneOf: [
+            "AddressFactUpdateInput",
+            "ContactMethodFactUpdateInput",
+            "FirstMeetingFactUpdateInput",
+            "FoodPreferencesFactUpdateInput",
+            "PetFactUpdateInput",
+            "TagsFactUpdateInput",
+            "OccupationFactUpdateInput",
+          ].map((name) => ({ $ref: `#/components/schemas/${name}` })),
+        },
+        AddressFactUpdateInput: {
+          ...profileFactInputSchema(
+            "addresses",
+            ["isPrimary", "labelIds"],
+            [
+              "city",
+              "country",
+              "displayName",
+              "isPrimary",
+              "labelIds",
+              "postalCode",
+              "region",
+              "street",
+            ],
+            profileFactProperties,
+            true,
+          ),
+          anyOf: [
+            "city",
+            "country",
+            "displayName",
+            "postalCode",
+            "region",
+            "street",
+          ].map(requiredNonBlankProfileFactDetail),
+        },
+        ContactMethodFactUpdateInput: profileFactInputSchema(
+          "contact-methods",
+          ["isPrimary", "labelIds", "typeId", "value"],
+          ["isPrimary", "labelIds", "notes", "typeId", "value"],
+          profileFactProperties,
+          true,
+        ),
+        FirstMeetingFactUpdateInput: {
+          ...profileFactInputSchema(
+            "first-meeting",
+            [],
+            [
+              "introducedByPersonId",
+              "notes",
+              "placeText",
+            ],
+            profileFactProperties,
+            true,
+          ),
+          anyOf: [
+            { required: ["introducedByPersonId"] },
+            requiredNonBlankProfileFactDetail("notes"),
+            requiredNonBlankProfileFactDetail("placeText"),
+          ],
+        },
+        FoodPreferencesFactUpdateInput: profileFactInputSchema(
+          "food-preferences",
+          ["foodPreferences"],
+          ["foodPreferences"],
+          profileFactProperties,
+          true,
+        ),
+        PetFactUpdateInput: {
+          ...profileFactInputSchema(
+            "pets",
+            [],
+            [
+              "categoryId",
+              "name",
+              "notes",
+            ],
+            profileFactProperties,
+            true,
+          ),
+          anyOf: [
+            { required: ["categoryId"] },
+            requiredNonBlankProfileFactDetail("name"),
+          ],
+        },
+        TagsFactUpdateInput: profileFactInputSchema(
+          "tags",
+          ["tagIds"],
+          ["tagIds"],
+          profileFactProperties,
+          true,
+        ),
+        OccupationFactUpdateInput: profileFactInputSchema(
+          "work",
+          ["isCurrent", "title"],
+          [
+            "description",
+            "endOn",
+            "isCurrent",
+            "organizationId",
+            "organizationName",
+            "startOn",
+            "title",
+          ],
+          profileFactProperties,
+          true,
+        ),
+        ProfileFactDeleteInput: {
+          type: "object",
+          required: ["expectedPersonUpdatedAt", "expectedUpdatedAt", "section"],
+          properties: {
+            expectedPersonUpdatedAt: { type: "string", format: "date-time" },
+            expectedUpdatedAt: { type: "string", format: "date-time" },
+            section: { $ref: "#/components/schemas/ProfileFactSectionId" },
+          },
+          additionalProperties: false,
+        },
+        ProfileFactRecord: {
+          type: "object",
+          required: ["id", "section", "updatedAt", "value"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            referencesResolved: { type: "boolean" },
+            section: { $ref: "#/components/schemas/ProfileFactSectionId" },
+            selectedOptions: {
+              type: "array",
+              items: { $ref: "#/components/schemas/ProfileFactOption" },
+            },
+            updatedAt: { type: "string", format: "date-time" },
+            value: { $ref: "#/components/schemas/ProfileFactValue" },
+          },
+          additionalProperties: false,
+        },
+        ProfileFactSection: {
+          type: "object",
+          required: ["status", "options", "personUpdatedAt", "records"],
+          properties: {
+            nextCursor: { type: "string" },
+            nextOptionsCursor: { type: "string" },
+            status: { type: "string", enum: ["ready", "archived", "hidden"] },
+            options: {
+              type: "array",
+              items: { $ref: "#/components/schemas/ProfileFactOption" },
+            },
+            personUpdatedAt: { type: "string", format: "date-time" },
+            records: {
+              type: "array",
+              items: { $ref: "#/components/schemas/ProfileFactRecord" },
+            },
+          },
+          additionalProperties: false,
+        },
+        ProfileFactChanged: {
+          type: "object",
+          required: ["status", "personUpdatedAt", "record"],
+          properties: {
+            status: { const: "saved" },
+            personUpdatedAt: { type: "string", format: "date-time" },
+            record: { $ref: "#/components/schemas/ProfileFactRecord" },
+          },
+          additionalProperties: false,
+        },
+        ProfileFactDeleted: {
+          type: "object",
+          required: ["status", "factId", "personUpdatedAt"],
+          properties: {
+            status: { const: "deleted" },
+            factId: { type: "string", format: "uuid" },
+            personUpdatedAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
         PeopleDirectoryTag: {
           type: "object",
           required: ["id", "name"],
@@ -1720,6 +2354,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
               items: { $ref: "#/components/schemas/PeopleDirectoryPerson" },
             },
             nextCursor: { type: "string" },
+            selected: { $ref: "#/components/schemas/PeopleDirectoryPerson" },
           },
           additionalProperties: false,
         },
@@ -2092,10 +2727,15 @@ function renderGeneratedClientBase(): string {
 }
 
 export function renderGeneratedClient(): string {
-  return renderGeneratedClientBase().replace(
-    'verifyEmail(token: string): Promise<ApiResult<{ readonly status: "verified"; readonly next: "/app" }>>',
-    'verifyEmail(token: string): Promise<ApiResult<{ readonly status: "verified"; readonly next: "/app" | "/invite/continue" }>>',
-  );
+  return renderGeneratedClientBase()
+    .replace(
+      'verifyEmail(token: string): Promise<ApiResult<{ readonly status: "verified"; readonly next: "/app" }>>',
+      'verifyEmail(token: string): Promise<ApiResult<{ readonly status: "verified"; readonly next: "/app" | "/invite/continue" }>>',
+    )
+    .replace(
+      "async function request<T>(path: string, init?: RequestInit)",
+      'type RequestOptions = Omit<RequestInit, "headers"> & { readonly headers?: HeadersInit | undefined };\n\nasync function request<T>(path: string, init?: RequestOptions)',
+    );
 }
 
 function renderInvitationClientWithLegacyDestination(): string {
@@ -2233,6 +2873,7 @@ export interface PersonProfileIdentity extends PersonIdentity {
   readonly isDeceased: boolean;
   readonly isSelf: boolean;
   readonly isStarred: boolean;
+  readonly profileSections?: readonly { readonly id: ProfileFactSectionId; readonly status: "hidden" | "ready" }[];
   readonly tagCount: number;
   readonly tags: readonly PeopleDirectoryTag[];
   readonly updatedAt: string;
@@ -2319,9 +2960,11 @@ export interface PeopleDirectoryPerson extends PersonIdentity {
 
 export interface PeopleDirectoryInput {
   readonly cursor?: string;
+  readonly excludePersonId?: string;
   readonly lifecycle?: PeopleDirectoryLifecycle;
   readonly limit?: number;
   readonly search?: string;
+  readonly selectedPersonId?: string;
   readonly sort?: PeopleDirectorySort;
   readonly tagId?: string;
 }
@@ -2330,6 +2973,7 @@ export interface PeopleDirectoryPage {
   readonly lifecycle: PeopleDirectoryLifecycle;
   readonly nextCursor?: string;
   readonly people: readonly PeopleDirectoryPerson[];
+  readonly selected?: PeopleDirectoryPerson;
   readonly status: "ready";
 }
 
@@ -2346,12 +2990,156 @@ export interface PeopleTagOptionsPage {
   readonly status: "ready";
 }
 
+export type ProfileFactSectionId = "addresses" | "contact-methods" | "first-meeting" | "food-preferences" | "pets" | "tags" | "work";
+export interface ProfileFactOption {
+  readonly id: string;
+  readonly kind?: "contact-label" | "contact-type" | "pet-category";
+  readonly name: string;
+}
+export interface AddressFact {
+  readonly section: "addresses";
+  readonly city?: string;
+  readonly country?: string;
+  readonly displayName?: string;
+  readonly isPrimary: boolean;
+  readonly labelIds: readonly string[];
+  readonly postalCode?: string;
+  readonly region?: string;
+  readonly street?: string;
+}
+export interface ContactMethodFact {
+  readonly section: "contact-methods";
+  readonly isPrimary: boolean;
+  readonly labelIds: readonly string[];
+  readonly notes?: string;
+  readonly typeId: string;
+  readonly value: string;
+}
+export interface FirstMeetingFact {
+  readonly section: "first-meeting";
+  readonly introducedByPersonId?: string;
+  readonly notes?: string;
+  readonly placeText?: string;
+}
+export interface FoodPreferencesFact {
+  readonly foodPreferences?: string;
+  readonly section: "food-preferences";
+}
+export interface PetFact {
+  readonly section: "pets";
+  readonly categoryId?: string;
+  readonly name?: string;
+  readonly notes?: string;
+}
+export interface TagsFact {
+  readonly section: "tags";
+  readonly tagIds: readonly string[];
+}
+export interface OccupationFact {
+  readonly section: "work";
+  readonly description?: string;
+  readonly endOn?: string;
+  readonly isCurrent: boolean;
+  readonly organizationId?: string;
+  readonly organizationName?: string;
+  readonly startOn?: string;
+  readonly title: string;
+}
+export interface ProfileFactValueBySection {
+  readonly addresses: AddressFact;
+  readonly "contact-methods": ContactMethodFact;
+  readonly "first-meeting": FirstMeetingFact;
+  readonly "food-preferences": FoodPreferencesFact;
+  readonly pets: PetFact;
+  readonly tags: TagsFact;
+  readonly work: OccupationFact;
+}
+export type ProfileFactValue = ProfileFactValueBySection[ProfileFactSectionId];
+type ProfileFactCreateMetadata = {
+  readonly expectedPersonUpdatedAt: string;
+};
+type ProfileFactUpdateMetadata = ProfileFactCreateMetadata & {
+  readonly expectedUpdatedAt: string;
+  readonly id: string;
+};
+type AddressFactInput<Metadata> = AddressFact & Metadata & (
+  | { readonly displayName: string }
+  | { readonly street: string }
+  | { readonly city: string }
+  | { readonly region: string }
+  | { readonly postalCode: string }
+  | { readonly country: string }
+);
+type FirstMeetingFactInput<Metadata> = FirstMeetingFact & Metadata & (
+  | { readonly introducedByPersonId: string }
+  | { readonly notes: string }
+  | { readonly placeText: string }
+);
+type PetFactInput<Metadata> = PetFact & Metadata & (
+  | { readonly categoryId: string }
+  | { readonly name: string }
+);
+export type ProfileFactCreateInputBySection = {
+  readonly addresses: AddressFactInput<ProfileFactCreateMetadata>;
+  readonly "contact-methods": ContactMethodFact & ProfileFactCreateMetadata;
+  readonly "first-meeting": FirstMeetingFactInput<ProfileFactCreateMetadata>;
+  readonly "food-preferences": Omit<FoodPreferencesFact, "foodPreferences"> &
+    ProfileFactCreateMetadata & { readonly foodPreferences: string };
+  readonly pets: PetFactInput<ProfileFactCreateMetadata>;
+  readonly tags: TagsFact & ProfileFactCreateMetadata;
+  readonly work: OccupationFact & ProfileFactCreateMetadata;
+};
+export type ProfileFactCreateInput = ProfileFactCreateInputBySection[ProfileFactSectionId];
+export type ProfileFactUpdateInputBySection = {
+  readonly addresses: AddressFactInput<ProfileFactUpdateMetadata>;
+  readonly "contact-methods": ContactMethodFact & ProfileFactUpdateMetadata;
+  readonly "first-meeting": FirstMeetingFactInput<ProfileFactUpdateMetadata>;
+  readonly "food-preferences": Omit<FoodPreferencesFact, "foodPreferences"> &
+    ProfileFactUpdateMetadata & { readonly foodPreferences: string };
+  readonly pets: PetFactInput<ProfileFactUpdateMetadata>;
+  readonly tags: TagsFact & ProfileFactUpdateMetadata;
+  readonly work: OccupationFact & ProfileFactUpdateMetadata;
+};
+export type ProfileFactUpdateInput = ProfileFactUpdateInputBySection[ProfileFactSectionId];
+export interface ProfileFactDeleteInput {
+  readonly expectedPersonUpdatedAt: string;
+  readonly expectedUpdatedAt: string;
+  readonly section: ProfileFactSectionId;
+}
+export type ProfileFactListInput = {
+  readonly cursor?: string;
+  readonly optionSearch?: string;
+} & (
+  | { readonly includeOptions: true; readonly optionCursor?: string }
+  | { readonly includeOptions?: never; readonly optionCursor?: never }
+);
+export type ProfileFactRecord = {
+  readonly [Section in ProfileFactSectionId]: {
+    readonly id: string;
+    readonly referencesResolved?: boolean;
+    readonly section: Section;
+    readonly selectedOptions?: readonly ProfileFactOption[];
+    readonly updatedAt: string;
+    readonly value: ProfileFactValueBySection[Section];
+  };
+}[ProfileFactSectionId];
+export interface ProfileFactSection {
+  readonly nextCursor?: string;
+  readonly nextOptionsCursor?: string;
+  readonly options: readonly ProfileFactOption[];
+  readonly personUpdatedAt: string;
+  readonly records: readonly ProfileFactRecord[];
+  readonly status: "ready" | "archived" | "hidden";
+}
+
 export function listPeople(input: PeopleDirectoryInput = {}, workspaceId?: string): Promise<ApiResult<PeopleDirectoryPage>> {
   const query = new URLSearchParams();
   if (input.cursor) query.set("cursor", input.cursor);
+  if (input.excludePersonId) query.set("excludePersonId", input.excludePersonId);
   if (input.lifecycle) query.set("lifecycle", input.lifecycle);
   if (input.limit) query.set("limit", String(input.limit));
   if (input.search) query.set("search", input.search);
+  if (input.selectedPersonId) query.set("selectedPersonId", input.selectedPersonId);
   if (input.sort) query.set("sort", input.sort);
   if (input.tagId) query.set("tag", input.tagId);
   const suffix = query.size > 0 ? \`?\${query.toString()}\` : "";
@@ -2373,6 +3161,28 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
 
 export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
   return request(\`/api/v1/people/\${encodeURIComponent(personId)}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listProfileFacts(personId: string, section: ProfileFactSectionId, input: ProfileFactListInput = {}, workspaceId?: string): Promise<ApiResult<ProfileFactSection>> {
+  const query = new URLSearchParams();
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.includeOptions) query.set("includeOptions", "true");
+  if (input.optionCursor) query.set("optionCursor", input.optionCursor);
+  if (input.optionSearch) query.set("optionSearch", input.optionSearch);
+  const suffix = query.size ? \`?\${query.toString()}\` : "";
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/facts/\${encodeURIComponent(section)}\${suffix}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function createProfileFact<Section extends ProfileFactSectionId>(personId: string, section: Section, input: ProfileFactCreateInputBySection[Section], workspaceId?: string): Promise<ApiResult<{ readonly personUpdatedAt: string; readonly record: Extract<ProfileFactRecord, { readonly section: Section }>; readonly status: "saved" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/facts/\${encodeURIComponent(section)}\`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function updateProfileFact<Section extends ProfileFactSectionId>(personId: string, section: Section, factId: string, input: ProfileFactUpdateInputBySection[Section], workspaceId?: string): Promise<ApiResult<{ readonly personUpdatedAt: string; readonly record: Extract<ProfileFactRecord, { readonly section: Section }>; readonly status: "saved" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/facts/\${encodeURIComponent(section)}/\${encodeURIComponent(factId)}\`, { method: "PUT", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function deleteProfileFact(personId: string, section: ProfileFactSectionId, factId: string, input: ProfileFactDeleteInput, workspaceId?: string): Promise<ApiResult<{ readonly factId: string; readonly personUpdatedAt: string; readonly status: "deleted" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/facts/\${encodeURIComponent(section)}/\${encodeURIComponent(factId)}\`, { method: "DELETE", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
 }
 
 export function listImportantDates(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dates: readonly ImportantDate[]; readonly status: "ready" | "archived" }>> {

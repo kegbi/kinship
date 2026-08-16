@@ -3,6 +3,7 @@ import type {
   ImportantDateManagement,
   PeopleManagement,
   PersonLifecycle,
+  ProfileFactManagement,
 } from "../../packages/backend/modules/people/public.ts";
 import { createPeopleDirectory } from "../../packages/backend/read-models/people-directory/public.ts";
 import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
@@ -82,6 +83,7 @@ function services(
     get: () => Promise.resolve({ status: "not-found" }),
   },
   importantDates?: ImportantDateManagement,
+  profileFacts?: ProfileFactManagement,
 ): PeopleHttpServices {
   return {
     browserSecurity: {
@@ -90,6 +92,7 @@ function services(
     },
     directory,
     ...(importantDates ? { importantDates } : {}),
+    ...(profileFacts ? { profileFacts } : {}),
     people: {
       archive: () => Promise.reject(new Error("must not archive")),
       delete: () => Promise.reject(new Error("must not delete")),
@@ -104,6 +107,323 @@ function services(
     tagOptions,
   };
 }
+
+Deno.test("PEOPLE-006 HTTP refreshes one strict profile-fact section", async () => {
+  const personId = "00000000-0000-4000-8000-000000000100";
+  const factId = "00000000-0000-4000-8000-000000000200";
+  const record = {
+    id: factId,
+    section: "contact-methods" as const,
+    updatedAt: "2026-08-16T12:00:00.000000Z",
+    value: {
+      isPrimary: true,
+      labelIds: [] as readonly string[],
+      typeId: "00000000-0000-4000-8000-000000000300",
+      value: "ada@example.test",
+    },
+  };
+  let savedPersonId = "";
+  const listInputs: unknown[] = [];
+  const save: ProfileFactManagement["create"] = (
+    _actor,
+    receivedPersonId,
+    section,
+    input,
+  ) => {
+    savedPersonId = receivedPersonId;
+    if (section === "work" && "endOn" in input) {
+      return Promise.resolve({
+        errors: {
+          endOn: "End date must be on or after the start date.",
+        },
+        status: "validation-error" as const,
+      });
+    }
+    return Promise.resolve({
+      personUpdatedAt: "2026-08-16T12:00:00.000001Z",
+      record,
+      status: "saved",
+    });
+  };
+  const profileFacts: ProfileFactManagement = {
+    create: save,
+    delete: () =>
+      Promise.resolve({
+        factId,
+        personUpdatedAt: "2026-08-16T12:00:00.000001Z",
+        status: "deleted",
+      }),
+    list: (_actor, _personId, _section, input) => {
+      const receivedInput = input ?? {};
+      listInputs.push(receivedInput);
+      if (
+        receivedInput.cursor === "forged-fact" ||
+        receivedInput.optionCursor === "forged-option"
+      ) {
+        return Promise.resolve({ status: "stale-cursor" as const });
+      }
+      return Promise.resolve({
+        options: [],
+        personUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        records: [record],
+        status: "ready",
+      });
+    },
+    update: save,
+  };
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create person")) },
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    profileFacts,
+  ));
+  const listed = await app.request(
+    `http://localhost/api/v1/people/${personId}/facts/contact-methods`,
+    { headers },
+  );
+  const listedBody = await listed.clone().json() as {
+    readonly records?: readonly {
+      readonly value?: { readonly section?: string };
+    }[];
+  };
+  assert(
+    listed.status === 200 &&
+      listedBody.records?.[0]?.value?.section === "contact-methods",
+    "section read is available with a discriminated value",
+  );
+  const falseOptions = await app.request(
+    `http://localhost/api/v1/people/${personId}/facts/contact-methods?includeOptions=false`,
+    { headers },
+  );
+  assert(
+    falseOptions.status === 400,
+    "includeOptions rejects every value except the literal true semantic",
+  );
+  const beforeMissingInclude = listInputs.length;
+  for (const cursor of ["valid-looking", "stale", "forged-option"]) {
+    const missingInclude = await app.request(
+      `http://localhost/api/v1/people/${personId}/facts/contact-methods?optionCursor=${cursor}`,
+      { headers },
+    );
+    assert(
+      missingInclude.status === 400,
+      "option cursors require the explicit options continuation mode",
+    );
+  }
+  assert(
+    listInputs.length === beforeMissingInclude,
+    "invalid option cursor combinations stop before the people facade",
+  );
+  const forgedFactCursor = await app.request(
+    `http://localhost/api/v1/people/${personId}/facts/contact-methods?cursor=forged-fact`,
+    { headers },
+  );
+  const forgedOptionCursor = await app.request(
+    `http://localhost/api/v1/people/${personId}/facts/contact-methods?includeOptions=true&optionSearch=Email&optionCursor=forged-option`,
+    { headers },
+  );
+  assert(
+    forgedFactCursor.status === 409 && forgedOptionCursor.status === 409 &&
+      JSON.stringify(listInputs.at(-1)) === JSON.stringify({
+          includeOptions: true,
+          optionCursor: "forged-option",
+          optionSearch: "Email",
+        }),
+    "opaque fact and option cursors are passed through and stale cursors map to 409",
+  );
+  const saved = await app.request(
+    `http://localhost/api/v1/people/${personId}/facts/contact-methods`,
+    {
+      body: JSON.stringify({
+        ...record.value,
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        section: "contact-methods",
+      }),
+      headers,
+      method: "POST",
+    },
+  );
+  assert(
+    saved.status === 200 && savedPersonId === personId,
+    "strict local save reaches the resolved person",
+  );
+  const createWithId = await app.request(
+    `http://localhost/api/v1/people/${personId}/facts/contact-methods`,
+    {
+      body: JSON.stringify({
+        ...record.value,
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        id: factId,
+        section: "contact-methods",
+      }),
+      headers,
+      method: "POST",
+    },
+  );
+  const incompleteUpdate = await app.request(
+    `http://localhost/api/v1/people/${personId}/facts/contact-methods/${factId}`,
+    {
+      body: JSON.stringify({
+        ...record.value,
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        section: "contact-methods",
+      }),
+      headers,
+      method: "PUT",
+    },
+  );
+  const updated = await app.request(
+    `http://localhost/api/v1/people/${personId}/facts/contact-methods/${factId}`,
+    {
+      body: JSON.stringify({
+        ...record.value,
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        expectedUpdatedAt: record.updatedAt,
+        id: factId,
+        section: "contact-methods",
+      }),
+      headers,
+      method: "PUT",
+    },
+  );
+  assert(
+    createWithId.status === 400 && incompleteUpdate.status === 400 &&
+      updated.status === 200,
+    "create forbids IDs while item update requires matching ID and revision",
+  );
+  for (
+    const [section, value] of [
+      ["addresses", { city: "London", isPrimary: false, labelIds: [] }],
+      ["first-meeting", { notes: "Met at a salon" }],
+      ["food-preferences", { foodPreferences: "Tea" }],
+      ["pets", { name: "Byron" }],
+      ["tags", { tagIds: [] }],
+      ["work", { isCurrent: true, title: "Engineer" }],
+    ] as const
+  ) {
+    const body = {
+      ...value,
+      expectedPersonUpdatedAt: record.updatedAt,
+      expectedUpdatedAt: record.updatedAt,
+      id: factId,
+      section,
+    };
+    const createRejected = await app.request(
+      `http://localhost/api/v1/people/${personId}/facts/${section}`,
+      { body: JSON.stringify(body), headers, method: "POST" },
+    );
+    const updateAccepted = await app.request(
+      `http://localhost/api/v1/people/${personId}/facts/${section}/${factId}`,
+      { body: JSON.stringify(body), headers, method: "PUT" },
+    );
+    assert(
+      createRejected.status === 400 && updateAccepted.status === 200,
+      `${section} keeps create and update transport identities separate`,
+    );
+  }
+  const extra = await app.request(
+    `http://localhost/api/v1/people/${personId}/facts/contact-methods`,
+    {
+      body: JSON.stringify({
+        ...record.value,
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        section: "contact-methods",
+        workspaceId: actor.workspaceId,
+      }),
+      headers,
+      method: "POST",
+    },
+  );
+  assert(extra.status === 400, "route rejects undeclared workspace evidence");
+  for (
+    const [section, value] of [
+      ["addresses", { isPrimary: false, labelIds: [] }],
+      ["first-meeting", {}],
+      ["food-preferences", {}],
+      ["pets", { notes: "Notes alone are not a pet identity" }],
+    ] as const
+  ) {
+    const rejected = await app.request(
+      `http://localhost/api/v1/people/${personId}/facts/${section}`,
+      {
+        body: JSON.stringify({
+          ...value,
+          expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+          section,
+        }),
+        headers,
+        method: "POST",
+      },
+    );
+    assert(rejected.status === 400, `${section} rejects an empty fact`);
+  }
+  for (
+    const invalid of [
+      {},
+      {
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        foodPreferences: "Tea",
+        isPrimary: true,
+        labelIds: [],
+        typeId: "00000000-0000-4000-8000-000000000300",
+        value: "ada@example.test",
+      },
+      {
+        city: "London",
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        isPrimary: false,
+        labelIds: [],
+        section: "addresses",
+      },
+    ]
+  ) {
+    const rejected = await app.request(
+      `http://localhost/api/v1/people/${personId}/facts/contact-methods`,
+      { body: JSON.stringify(invalid), headers, method: "POST" },
+    );
+    assert(rejected.status === 400, "empty and cross-section inputs fail");
+  }
+  const invalidRange = await app.request(
+    `http://localhost/api/v1/people/${personId}/facts/work`,
+    {
+      body: JSON.stringify({
+        endOn: "2025-12-31",
+        expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
+        isCurrent: false,
+        section: "work",
+        startOn: "2026-01-01",
+        title: "Engineer",
+      }),
+      headers,
+      method: "POST",
+    },
+  );
+  const rangeProblem = await invalidRange.json() as {
+    readonly errors?: Readonly<Record<string, string>>;
+  };
+  assert(
+    invalidRange.status === 400 && rangeProblem.errors?.endOn,
+    "work range failures remain field-level 400 responses",
+  );
+  const clearedFood = await app.request(
+    `http://localhost/api/v1/people/${personId}/facts/food-preferences/${personId}`,
+    {
+      body: JSON.stringify({
+        expectedPersonUpdatedAt: record.updatedAt,
+        expectedUpdatedAt: record.updatedAt,
+        section: "food-preferences",
+      }),
+      headers,
+      method: "DELETE",
+    },
+  );
+  assert(
+    clearedFood.status === 200,
+    "food preferences expose an explicit clear command",
+  );
+});
 
 Deno.test("PEOPLE-005 HTTP preserves precision across list, create, update, and delete", async () => {
   const personId = "00000000-0000-4000-8000-000000000100";
@@ -319,6 +639,119 @@ Deno.test("PEOPLE-002 HTTP lists only the resolved active workspace", async () =
       (received as typeof actor & { readonly search: string })?.search ===
         "Ada",
     "resolved actor and query criteria reach the directory use case",
+  );
+});
+
+Deno.test("PEOPLE-006 HTTP hydrates one bounded introducer descriptor", async () => {
+  const subjectId = "00000000-0000-4000-8000-000000000100";
+  const selectedId = "00000000-0000-4000-8000-000000000101";
+  let selectedCommand: unknown;
+  const selected = {
+    cursor: { id: selectedId, primary: "hopper", secondary: "grace" },
+    familyName: "Hopper",
+    givenName: "Grace",
+    id: selectedId,
+    isPartial: false,
+    isStarred: false,
+    lifecycle: "active" as const,
+    tagCount: 0,
+    tags: [],
+  };
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    createPeopleDirectory({
+      repository: {
+        findSelected: (command) => {
+          selectedCommand = command;
+          return Promise.resolve(
+            command.personId === selectedId ? selected : undefined,
+          );
+        },
+        list: () => Promise.resolve({ people: [], status: "ready" }),
+      },
+    }),
+  ));
+
+  const response = await app.request(
+    `http://localhost/api/v1/people?limit=1&selectedPersonId=${selectedId}&excludePersonId=${subjectId}`,
+    { headers },
+  );
+  const body = await response.json() as {
+    readonly selected?: { readonly id: string; readonly givenName: string };
+  };
+  assert(
+    response.status === 200 && body.selected?.id === selectedId &&
+      body.selected.givenName === "Grace",
+    "selected introducer is hydrated outside the bounded page",
+  );
+  assert(
+    (selectedCommand as { readonly workspaceId?: string })?.workspaceId ===
+      actor.workspaceId,
+    "selected lookup stays in the resolved tenant boundary",
+  );
+});
+
+Deno.test("PEOPLE-006 HTTP binds excluded people to directory continuation", async () => {
+  const subjectId = "00000000-0000-4000-8000-000000000100";
+  const otherExcludeId = "00000000-0000-4000-8000-000000000101";
+  const candidate = (id: string, givenName: string) => ({
+    cursor: { id, primary: givenName.toLowerCase(), secondary: "" },
+    givenName,
+    id,
+    isPartial: false,
+    isStarred: false,
+    lifecycle: "active" as const,
+    tagCount: 0,
+    tags: [],
+  });
+  let receivedExclude = "";
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    createPeopleDirectory({
+      repository: {
+        list: (command) => {
+          receivedExclude = command.excludePersonId ?? "";
+          return Promise.resolve({
+            people: [
+              candidate(
+                "00000000-0000-4000-8000-000000000201",
+                "Barbara",
+              ),
+              candidate(
+                "00000000-0000-4000-8000-000000000202",
+                "Charles",
+              ),
+            ],
+            status: "ready" as const,
+          });
+        },
+      },
+    }),
+  ));
+
+  const first = await app.request(
+    `http://localhost/api/v1/people?limit=1&excludePersonId=${subjectId}`,
+    { headers },
+  );
+  const firstBody = await first.json() as {
+    readonly nextCursor?: string;
+    readonly people: readonly { readonly id: string }[];
+  };
+  assert(
+    first.status === 200 && firstBody.people.length === 1 &&
+      firstBody.people[0]?.id !== subjectId && receivedExclude === subjectId &&
+      firstBody.nextCursor,
+    "excluded subject does not consume the bounded result slot",
+  );
+  const mismatch = await app.request(
+    `http://localhost/api/v1/people?limit=1&excludePersonId=${otherExcludeId}&cursor=${
+      encodeURIComponent(firstBody.nextCursor ?? "")
+    }`,
+    { headers },
+  );
+  assert(
+    mismatch.status === 409,
+    "opaque continuation rejects a changed excluded-person criterion",
   );
 });
 

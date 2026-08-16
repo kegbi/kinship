@@ -115,3 +115,36 @@ Deno.test("[APP-003C] person profile preserves archived, missing, and forbidden 
     assert(result.status === status, `${status} remains distinguishable`);
   }
 });
+
+Deno.test("PEOPLE-006 hidden tag projection discloses no retained assignments", async () => {
+  const profile = createPersonProfile({
+    repository: {
+      get: () =>
+        Promise.resolve({
+          person: {
+            givenName: "Ada",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            profileSections: [{ id: "tags", status: "hidden" }],
+            tagCount: 2,
+            tags: [
+              { id: crypto.randomUUID(), name: "Private" },
+              { id: crypto.randomUUID(), name: "Retained" },
+            ],
+            updatedAt: "2026-08-15T08:00:00.000Z",
+          },
+          status: "ready" as const,
+        }),
+    },
+  });
+
+  const result = await profile.get(actor, personId);
+  assert(result.status === "ready", "profile remains available");
+  assert(
+    result.person.tagCount === 0 && result.person.tags.length === 0,
+    "hidden module strips tag count and descriptors at composition",
+  );
+});

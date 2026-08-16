@@ -1,6 +1,32 @@
 export { createPeopleManagement } from "./application/create_person.ts";
 export { createImportantDateManagement } from "./application/important_dates.ts";
 export { createPersonLifecycle } from "./application/lifecycle_person.ts";
+export { createProfileFactManagement } from "./application/profile_facts.ts";
+export type {
+  AddressFact,
+  ContactMethodFact,
+  FirstMeetingFact,
+  FoodPreferencesFact,
+  OccupationFact,
+  PetFact,
+  ProfileFactAudit,
+  ProfileFactContextLock,
+  ProfileFactCreateInput,
+  ProfileFactDependencies,
+  ProfileFactFailureResult,
+  ProfileFactListResult,
+  ProfileFactManagement,
+  ProfileFactMutationResult,
+  ProfileFactOption,
+  ProfileFactRecord,
+  ProfileFactRepository,
+  ProfileFactSection,
+  ProfileFactUpdateInput,
+  ProfileFactValue,
+  ProfileFactWorkspaceBoundary,
+  ProfileFactWorkspaceInspection,
+  TagsFact,
+} from "./application/profile_facts.ts";
 export type {
   ImportantDateAction,
   ImportantDateAudit,
@@ -62,3 +88,4 @@ export {
 } from "./adapters/postgres/people_repository.ts";
 export { PostgresPersonLifecycleRepository } from "./adapters/postgres/person_lifecycle_repository.ts";
 export { PostgresImportantDateRepository } from "./adapters/postgres/important_date_repository.ts";
+export { PostgresProfileFactRepository } from "./adapters/postgres/profile_fact_repository.ts";
