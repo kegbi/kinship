@@ -26,6 +26,45 @@ export interface RegistrationTransactionRunner {
   ): Promise<T>;
 }
 
+export const DEFAULT_RELATIONSHIP_TYPE_VOCABULARY = {
+  version: 1,
+  types: [
+    ["partner", "partner"],
+    ["spouse", "spouse"],
+    ["date", "date"],
+    ["lover", "lover"],
+    ["inlovewith", "lovedby"],
+    ["lovedby", "inlovewith"],
+    ["ex", "ex"],
+    ["parent", "child"],
+    ["child", "parent"],
+    ["sibling", "sibling"],
+    ["grandparent", "grandchild"],
+    ["grandchild", "grandparent"],
+    ["uncle", "nephew"],
+    ["nephew", "uncle"],
+    ["cousin", "cousin"],
+    ["godfather", "godson"],
+    ["godson", "godfather"],
+    ["stepparent", "stepchild"],
+    ["stepchild", "stepparent"],
+    ["friend", "friend"],
+    ["bestfriend", "bestfriend"],
+    ["colleague", "colleague"],
+    ["boss", "subordinate"],
+    ["subordinate", "boss"],
+    ["mentor", "protege"],
+    ["protege", "mentor"],
+  ].map(([forwardLabel, reverseLabel], sortOrder) => ({
+    forwardLabel: forwardLabel!,
+    reverseLabel: reverseLabel!,
+    sortOrder,
+  })),
+} as const;
+
+export type DefaultRelationshipType =
+  (typeof DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types)[number];
+
 export interface WorkspaceRegistrationWriter {
   createWorkspace(command: {
     readonly createdByUserId: string;
@@ -48,11 +87,18 @@ export interface WorkspaceRegistrationWriter {
     readonly transaction: RegistrationTransaction;
     readonly workspaceId: string;
   }): Promise<void>;
+  provisionDefaultRelationshipTypes(command: {
+    readonly transaction: RegistrationTransaction;
+    readonly types: readonly DefaultRelationshipType[];
+    readonly version: number;
+    readonly workspaceId: string;
+  }): Promise<void>;
   assertFirstWorkspacePostconditions(command: {
     readonly joinedAt: Date;
     readonly memberId: string;
     readonly name: string;
     readonly transaction: RegistrationTransaction;
+    readonly relationshipTypes: readonly DefaultRelationshipType[];
     readonly userId: string;
     readonly workspaceId: string;
   }): Promise<void>;
@@ -189,6 +235,12 @@ export function createFirstWorkspaceRegistration(
           transaction,
           workspaceId: workspace.workspaceId,
         });
+        await dependencies.workspace.provisionDefaultRelationshipTypes({
+          transaction,
+          types: DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types,
+          version: DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.version,
+          workspaceId: workspace.workspaceId,
+        });
         await dependencies.audit.recordWorkspaceCreated({
           memberId: membership.memberId,
           occurredAt: now,
@@ -210,6 +262,7 @@ export function createFirstWorkspaceRegistration(
           joinedAt: now,
           memberId: membership.memberId,
           name: command.workspaceName,
+          relationshipTypes: DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types,
           transaction,
           userId: user.userId,
           workspaceId: workspace.workspaceId,

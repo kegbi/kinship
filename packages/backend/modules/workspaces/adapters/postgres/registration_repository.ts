@@ -75,10 +75,46 @@ export class PostgresWorkspaceRegistration
     `.execute(databaseFromSession(command.transaction));
   }
 
+  async provisionDefaultRelationshipTypes(command: {
+    readonly transaction: RegistrationTransaction;
+    readonly types: readonly {
+      readonly forwardLabel: string;
+      readonly reverseLabel: string;
+      readonly sortOrder: number;
+    }[];
+    readonly version: number;
+    readonly workspaceId: string;
+  }): Promise<void> {
+    const database = databaseFromSession(command.transaction);
+    await sql`select pg_advisory_xact_lock(hashtextextended(${command.workspaceId}, ${command.version}))`
+      .execute(database);
+    for (const type of command.types) {
+      await sql`
+        insert into crm.relationship_types (
+          workspace_id, forward_label, reverse_label, is_system, can_delete,
+          is_archived, sort_order
+        )
+        select ${command.workspaceId}::uuid, ${type.forwardLabel},
+          ${type.reverseLabel}, true, false, false, ${type.sortOrder}
+        where not exists (
+          select 1 from crm.relationship_types
+          where workspace_id = ${command.workspaceId}::uuid
+            and forward_label = ${type.forwardLabel}
+            and reverse_label = ${type.reverseLabel}
+        )
+      `.execute(database);
+    }
+  }
+
   async assertFirstWorkspacePostconditions(command: {
     readonly joinedAt: Date;
     readonly memberId: string;
     readonly name: string;
+    readonly relationshipTypes: readonly {
+      readonly forwardLabel: string;
+      readonly reverseLabel: string;
+      readonly sortOrder: number;
+    }[];
     readonly transaction: RegistrationTransaction;
     readonly userId: string;
     readonly workspaceId: string;
@@ -115,6 +151,33 @@ export class PostgresWorkspaceRegistration
     `.execute(databaseFromSession(command.transaction));
     if (result.rows[0]?.valid !== true) {
       throw new Error("First workspace postconditions failed.");
+    }
+    const relationshipTypes = await sql<{
+      can_delete: boolean;
+      forward_label: string;
+      group_id: string | null;
+      is_archived: boolean;
+      is_system: boolean;
+      reverse_label: string;
+      sort_order: number;
+    }>`
+      select forward_label, reverse_label, is_system, can_delete, is_archived,
+        sort_order, group_id::text
+      from crm.relationship_types
+      where workspace_id = ${command.workspaceId}::uuid
+      order by sort_order, id
+    `.execute(databaseFromSession(command.transaction));
+    if (
+      relationshipTypes.rows.length !== command.relationshipTypes.length ||
+      relationshipTypes.rows.some((actual, index) => {
+        const expected = command.relationshipTypes[index];
+        return !expected || actual.forward_label !== expected.forwardLabel ||
+          actual.reverse_label !== expected.reverseLabel ||
+          actual.sort_order !== expected.sortOrder || !actual.is_system ||
+          actual.can_delete || actual.is_archived || actual.group_id !== null;
+      })
+    ) {
+      throw new Error("Default relationship-type postconditions failed.");
     }
   }
 }

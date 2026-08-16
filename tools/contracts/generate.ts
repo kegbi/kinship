@@ -130,6 +130,30 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
     "kind",
     "precision",
   ];
+  const relationshipRequired = [
+    "createdAt",
+    "forwardLabel",
+    "fromPersonId",
+    "id",
+    "relationshipTypeId",
+    "relationshipTypeArchived",
+    "reverseLabel",
+    "status",
+    "toPersonId",
+    "updatedAt",
+  ];
+  const relationshipProperties = {
+    createdAt: { type: "string", format: "date-time" },
+    forwardLabel: { type: "string" },
+    fromPersonId: { type: "string", format: "uuid" },
+    id: { type: "string", format: "uuid" },
+    relationshipTypeId: { type: "string", format: "uuid" },
+    relationshipTypeArchived: { type: "boolean" },
+    reverseLabel: { type: "string" },
+    status: { enum: ["active", "ended"] },
+    toPersonId: { type: "string", format: "uuid" },
+    updatedAt: { type: "string", format: "date-time" },
+  };
   const importantDateProperties = {
     day: { type: "integer", minimum: 1, maximum: 31 },
     isAgeBased: { type: "boolean" },
@@ -557,6 +581,11 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           parameters: [
             workspaceParameter,
             {
+              name: "cursor",
+              in: "query",
+              schema: { type: "string", maxLength: 2_000 },
+            },
+            {
               name: "excludePersonId",
               in: "query",
               schema: { type: "string", format: "uuid" },
@@ -593,11 +622,6 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
                 enum: ["given-name", "family-name", "recently-added"],
                 default: "given-name",
               },
-            },
-            {
-              name: "cursor",
-              in: "query",
-              schema: { type: "string", maxLength: 2_000 },
             },
             {
               name: "limit",
@@ -686,6 +710,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             "400": problem,
             "401": problem,
             "403": problem,
+            "409": problem,
             "503": problem,
           },
         },
@@ -732,6 +757,232 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           "PersonTransitionInput",
           "PersonLifecycleChanged",
         ),
+      },
+      "/api/v1/relationship-types": {
+        get: {
+          operationId: "listRelationshipTypes",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            workspaceParameter,
+            {
+              name: "cursor",
+              in: "query",
+              schema: { type: "string", maxLength: 2_000 },
+            },
+            {
+              name: "search",
+              in: "query",
+              schema: { type: "string", maxLength: 200 },
+            },
+            {
+              name: "selected",
+              in: "query",
+              style: "form",
+              explode: false,
+              schema: {
+                type: "array",
+                maxItems: 20,
+                items: { type: "string", format: "uuid" },
+              },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Bounded active workspace relationship types",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/RelationshipTypeList" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/relationships": {
+        get: {
+          operationId: "listRelationships",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            workspaceParameter,
+            personIdParameter,
+            {
+              name: "cursor",
+              in: "query",
+              schema: { type: "string", maxLength: 2_000 },
+            },
+            {
+              name: "limit",
+              in: "query",
+              schema: { type: "integer", minimum: 1, maximum: 20, default: 20 },
+            },
+          ],
+          responses: {
+            "200": {
+              description:
+                "Directional relationships for one person profile section",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/RelationshipList" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+        post: {
+          operationId: "createRelationship",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, personIdParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/RelationshipCreateInput",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Idempotent existing relationship",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/RelationshipChanged" },
+                },
+              },
+            },
+            "201": {
+              description: "Relationship created",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/RelationshipChanged" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/relationships/{relationshipId}": {
+        parameters: [{
+          name: "relationshipId",
+          in: "path",
+          required: true,
+          schema: { type: "string", format: "uuid" },
+        }],
+        patch: {
+          operationId: "updateRelationship",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, personIdParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/RelationshipUpdateInput",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Relationship updated",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/RelationshipChanged" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+        delete: {
+          operationId: "deleteRelationship",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, personIdParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/PersonTransitionInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description:
+                "Relationship unlinked without deleting either person",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/RelationshipDeleted" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/relationships/related-person": {
+        post: {
+          operationId: "createRelatedPersonRelationship",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, personIdParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/RelatedPersonRelationshipInput",
+                },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "Person and relationship created atomically",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref:
+                      "#/components/schemas/RelatedPersonRelationshipChanged",
+                  },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
       },
       "/api/v1/people/{personId}/dates": {
         get: {
@@ -1749,7 +2000,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
                 type: "object",
                 required: ["id", "status"],
                 properties: {
-                  id: { $ref: "#/components/schemas/ProfileFactSectionId" },
+                  id: { $ref: "#/components/schemas/PersonProfileSectionId" },
                   status: { type: "string", enum: ["hidden", "ready"] },
                 },
                 additionalProperties: false,
@@ -1865,6 +2116,168 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        RelationshipType: {
+          type: "object",
+          required: ["archived", "forwardLabel", "id", "reverseLabel"],
+          properties: {
+            archived: { type: "boolean" },
+            forwardLabel: { type: "string" },
+            id: { type: "string", format: "uuid" },
+            reverseLabel: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        RelationshipTypeList: {
+          type: "object",
+          required: ["options", "selected", "status"],
+          properties: {
+            nextCursor: { type: "string" },
+            options: {
+              type: "array",
+              maxItems: 20,
+              items: { $ref: "#/components/schemas/RelationshipType" },
+            },
+            selected: {
+              type: "array",
+              maxItems: 20,
+              items: { $ref: "#/components/schemas/RelationshipType" },
+            },
+            status: { enum: ["hidden", "ready"] },
+          },
+          additionalProperties: false,
+        },
+        Relationship: {
+          type: "object",
+          required: relationshipRequired,
+          properties: relationshipProperties,
+          additionalProperties: false,
+        },
+        RelationshipDisplay: {
+          type: "object",
+          required: ["label", "personId", "relationshipId"],
+          properties: {
+            label: { type: "string" },
+            name: { type: "string" },
+            personId: { type: "string", format: "uuid" },
+            relationshipId: { type: "string", format: "uuid" },
+          },
+          additionalProperties: false,
+        },
+        RelationshipWithDisplay: {
+          type: "object",
+          required: [...relationshipRequired, "display"],
+          properties: {
+            ...relationshipProperties,
+            display: { $ref: "#/components/schemas/RelationshipDisplay" },
+          },
+          additionalProperties: false,
+        },
+        RelationshipCreateInput: {
+          type: "object",
+          required: ["relationshipTypeId", "targetPersonId"],
+          properties: {
+            relationshipTypeId: { type: "string", format: "uuid" },
+            targetPersonId: { type: "string", format: "uuid" },
+          },
+          additionalProperties: false,
+        },
+        RelationshipUpdateInput: {
+          type: "object",
+          required: ["expectedUpdatedAt", "relationshipTypeId"],
+          properties: {
+            expectedUpdatedAt: { type: "string", format: "date-time" },
+            relationshipTypeId: { type: "string", format: "uuid" },
+          },
+          additionalProperties: false,
+        },
+        RelationshipList: {
+          type: "object",
+          required: ["relationships", "status"],
+          properties: {
+            nextCursor: { type: "string" },
+            relationships: {
+              type: "array",
+              maxItems: 20,
+              items: {
+                $ref: "#/components/schemas/RelationshipWithDisplay",
+              },
+            },
+            status: { enum: ["archived", "hidden", "ready"] },
+          },
+          additionalProperties: false,
+        },
+        RelationshipChanged: {
+          type: "object",
+          required: [
+            "affectedPersonIds",
+            "forward",
+            "inverse",
+            "relationship",
+            "status",
+          ],
+          properties: {
+            affectedPersonIds: {
+              type: "array",
+              minItems: 2,
+              maxItems: 2,
+              items: { type: "string", format: "uuid" },
+            },
+            forward: { $ref: "#/components/schemas/RelationshipDisplay" },
+            inverse: { $ref: "#/components/schemas/RelationshipDisplay" },
+            relationship: { $ref: "#/components/schemas/Relationship" },
+            status: { enum: ["created", "existing", "updated"] },
+          },
+          additionalProperties: false,
+        },
+        RelatedPersonRelationshipInput: {
+          type: "object",
+          required: ["person", "relationshipTypeId"],
+          properties: {
+            person: { $ref: "#/components/schemas/PersonInput" },
+            relationshipTypeId: { type: "string", format: "uuid" },
+          },
+          additionalProperties: false,
+        },
+        RelatedPersonRelationshipChanged: {
+          type: "object",
+          required: [
+            "affectedPersonIds",
+            "forward",
+            "inverse",
+            "person",
+            "relationship",
+            "status",
+          ],
+          properties: {
+            affectedPersonIds: {
+              type: "array",
+              minItems: 2,
+              maxItems: 2,
+              items: { type: "string", format: "uuid" },
+            },
+            forward: { $ref: "#/components/schemas/RelationshipDisplay" },
+            inverse: { $ref: "#/components/schemas/RelationshipDisplay" },
+            person: { $ref: "#/components/schemas/PersonIdentity" },
+            relationship: { $ref: "#/components/schemas/Relationship" },
+            status: { const: "created" },
+          },
+          additionalProperties: false,
+        },
+        RelationshipDeleted: {
+          type: "object",
+          required: ["affectedPersonIds", "relationshipId", "status"],
+          properties: {
+            affectedPersonIds: {
+              type: "array",
+              minItems: 2,
+              maxItems: 2,
+              items: { type: "string", format: "uuid" },
+            },
+            relationshipId: { type: "string", format: "uuid" },
+            status: { const: "deleted" },
+          },
+          additionalProperties: false,
+        },
         PersonDueInformation: {
           type: "object",
           required: ["status", "detail"],
@@ -1941,6 +2354,19 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             status: { const: "deleted" },
           },
           additionalProperties: false,
+        },
+        PersonProfileSectionId: {
+          type: "string",
+          enum: [
+            "addresses",
+            "contact-methods",
+            "first-meeting",
+            "food-preferences",
+            "pets",
+            "relationships",
+            "tags",
+            "work",
+          ],
         },
         ProfileFactSectionId: {
           type: "string",
@@ -2873,7 +3299,7 @@ export interface PersonProfileIdentity extends PersonIdentity {
   readonly isDeceased: boolean;
   readonly isSelf: boolean;
   readonly isStarred: boolean;
-  readonly profileSections?: readonly { readonly id: ProfileFactSectionId; readonly status: "hidden" | "ready" }[];
+  readonly profileSections?: readonly { readonly id: PersonProfileSectionId; readonly status: "hidden" | "ready" }[];
   readonly tagCount: number;
   readonly tags: readonly PeopleDirectoryTag[];
   readonly updatedAt: string;
@@ -2895,6 +3321,66 @@ export interface PersonEditInput {
 
 export interface PersonTransitionInput {
   readonly expectedUpdatedAt: string;
+}
+
+export interface RelationshipType {
+  readonly archived: boolean;
+  readonly forwardLabel: string;
+  readonly id: string;
+  readonly reverseLabel: string;
+}
+
+export interface Relationship {
+  readonly createdAt: string;
+  readonly forwardLabel: string;
+  readonly fromPersonId: string;
+  readonly id: string;
+  readonly relationshipTypeId: string;
+  readonly relationshipTypeArchived: boolean;
+  readonly reverseLabel: string;
+  readonly status: "active" | "ended";
+  readonly toPersonId: string;
+  readonly updatedAt: string;
+}
+
+export interface RelationshipDisplay {
+  readonly label: string;
+  readonly name?: string;
+  readonly personId: string;
+  readonly relationshipId: string;
+}
+
+export interface RelationshipWithDisplay extends Relationship {
+  readonly display: RelationshipDisplay;
+}
+
+export interface RelationshipChanged {
+  readonly affectedPersonIds: readonly [string, string];
+  readonly forward: RelationshipDisplay;
+  readonly inverse: RelationshipDisplay;
+  readonly relationship: Relationship;
+  readonly status: "created" | "existing" | "updated";
+}
+
+export interface RelatedPersonRelationshipInput {
+  readonly person: PersonInput;
+  readonly relationshipTypeId: string;
+}
+
+export interface RelatedPersonRelationshipChanged extends RelationshipChanged {
+  readonly person: PersonIdentity;
+  readonly status: "created";
+}
+
+export interface RelationshipListInput {
+  readonly cursor?: string;
+  readonly limit?: number;
+}
+
+export interface RelationshipListPage {
+  readonly nextCursor?: string;
+  readonly relationships: readonly RelationshipWithDisplay[];
+  readonly status: "archived" | "hidden" | "ready";
 }
 
 export interface PersonDeletionImpact {
@@ -2991,6 +3477,7 @@ export interface PeopleTagOptionsPage {
 }
 
 export type ProfileFactSectionId = "addresses" | "contact-methods" | "first-meeting" | "food-preferences" | "pets" | "tags" | "work";
+export type PersonProfileSectionId = ProfileFactSectionId | "relationships";
 export interface ProfileFactOption {
   readonly id: string;
   readonly kind?: "contact-label" | "contact-type" | "pet-category";
@@ -3161,6 +3648,39 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
 
 export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
   return request(\`/api/v1/people/\${encodeURIComponent(personId)}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listRelationshipTypes(input: { readonly cursor?: string; readonly search?: string; readonly selected?: readonly string[] } = {}, workspaceId?: string): Promise<ApiResult<{ readonly nextCursor?: string; readonly options: readonly RelationshipType[]; readonly selected: readonly RelationshipType[]; readonly status: "hidden" | "ready" }>> {
+  const query = new URLSearchParams();
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.search) query.set("search", input.search);
+  if (input.selected?.length) query.set("selected", input.selected.join(","));
+  const suffix = query.size ? \`?\${query.toString()}\` : "";
+  return request(\`/api/v1/relationship-types\${suffix}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listRelationships(personId: string, input: RelationshipListInput = {}, workspaceId?: string): Promise<ApiResult<RelationshipListPage>> {
+  const query = new URLSearchParams();
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.limit) query.set("limit", String(input.limit));
+  const suffix = query.size ? \`?\${query.toString()}\` : "";
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/relationships\${suffix}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function createRelationship(personId: string, input: { readonly relationshipTypeId: string; readonly targetPersonId: string }, workspaceId?: string): Promise<ApiResult<RelationshipChanged>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/relationships\`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function createRelatedPersonRelationship(personId: string, input: RelatedPersonRelationshipInput, workspaceId?: string): Promise<ApiResult<RelatedPersonRelationshipChanged>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/relationships/related-person\`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function updateRelationship(personId: string, relationshipId: string, input: { readonly expectedUpdatedAt: string; readonly relationshipTypeId: string }, workspaceId?: string): Promise<ApiResult<RelationshipChanged>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/relationships/\${encodeURIComponent(relationshipId)}\`, { method: "PATCH", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function deleteRelationship(personId: string, relationshipId: string, input: PersonTransitionInput, workspaceId?: string): Promise<ApiResult<{ readonly affectedPersonIds: readonly [string, string]; readonly relationshipId: string; readonly status: "deleted" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/relationships/\${encodeURIComponent(relationshipId)}\`, { method: "DELETE", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
 }
 
 export function listProfileFacts(personId: string, section: ProfileFactSectionId, input: ProfileFactListInput = {}, workspaceId?: string): Promise<ApiResult<ProfileFactSection>> {

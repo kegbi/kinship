@@ -1,6 +1,7 @@
 import {
   createFirstWorkspaceRegistration,
   createVerificationDeliveryRetry,
+  DEFAULT_RELATIONSHIP_TYPE_VOCABULARY,
   type RegistrationDependencies,
   RegistrationError,
   type RegistrationTransaction,
@@ -116,6 +117,19 @@ function fakeDependencies(failAt?: string): {
           effect("settings");
           return Promise.resolve();
         },
+        provisionDefaultRelationshipTypes(command) {
+          assert(command.version === 1, "default vocabulary is versioned");
+          assert(
+            command.types === DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types,
+            "registration uses the one deterministic public vocabulary",
+          );
+          assert(
+            command.types.length === 26,
+            "exact default vocabulary is provisioned",
+          );
+          effect("relationship-types");
+          return Promise.resolve();
+        },
         assertFirstWorkspacePostconditions() {
           effect("workspace.postconditions");
           return Promise.resolve();
@@ -167,7 +181,7 @@ Deno.test("first workspace registration coordinates every required effect in one
   );
   assert(
     effects.join(",") ===
-      "transaction.begin,identity,workspace,membership,preferences,settings,audit,identity.postconditions,workspace.postconditions,audit.postconditions,transaction.commit,mail",
+      "transaction.begin,identity,workspace,membership,preferences,settings,relationship-types,audit,identity.postconditions,workspace.postconditions,audit.postconditions,transaction.commit,mail",
     `unexpected effect order: ${effects.join(",")}`,
   );
 });
@@ -179,6 +193,7 @@ for (
     "membership",
     "preferences",
     "settings",
+    "relationship-types",
     "audit",
     "identity.postconditions",
     "workspace.postconditions",

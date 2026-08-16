@@ -82,7 +82,9 @@ test(
 
     await page.goto("/app/people/new");
     await page.getByLabel("Given name").fill("Ada");
-    await page.getByLabel("Family name").fill("Lovelace");
+    await page.locator(
+      '#people-create-form input[name="familyName"]',
+    ).fill("Lovelace");
     await page.getByRole("button", { name: "Save person", exact: true })
       .click();
     await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
@@ -96,7 +98,9 @@ test(
     ).toBeVisible();
 
     await page.getByRole("button", { name: "Edit person" }).click();
-    await page.getByLabel("Family name").fill("Byron");
+    await page.locator(
+      '#person-edit-form input[name="familyName"]',
+    ).fill("Byron");
     await page.getByRole("button", { name: "Save person" }).click();
     await expect(
       page.getByRole("heading", { level: 1, name: "Ada Byron" }),

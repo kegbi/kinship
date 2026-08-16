@@ -1,10 +1,12 @@
 export {
   createFirstWorkspaceRegistration,
   createVerificationDeliveryRetry,
+  DEFAULT_RELATIONSHIP_TYPE_VOCABULARY,
   RegistrationError,
   VerificationDeliveryError,
 } from "./application/register_first_workspace.ts";
 export type {
+  DefaultRelationshipType,
   FirstWorkspaceRegistrationCommand,
   FirstWorkspaceRegistrationResult,
   RegistrationAudit,
@@ -57,6 +59,18 @@ export type {
 export { PostgresWorkspaceInvitations } from "./adapters/postgres/workspace_invitations.ts";
 export { PostgresWorkspaceSettings } from "./adapters/postgres/settings_management.ts";
 export { PostgresProfileFactConfiguration } from "./adapters/postgres/profile_fact_configuration.ts";
+export { PostgresRelationshipWorkspaceBoundary } from "./adapters/postgres/relationship_workspace_boundary.ts";
+export type {
+  RelationshipWorkspaceActor,
+  RelationshipWorkspaceBoundary,
+  RelationshipWorkspaceDefaults,
+  RelationshipWorkspaceInspection,
+  RelationshipWorkspaceTransaction,
+  WorkspaceRelationshipType,
+  WorkspaceRelationshipTypeCursor,
+  WorkspaceRelationshipTypePage,
+  WorkspaceRelationshipTypeRecord,
+} from "./application/relationship_workspace_boundary.ts";
 export type {
   ActiveWorkspaceContext,
   ActiveWorkspaceResolver,

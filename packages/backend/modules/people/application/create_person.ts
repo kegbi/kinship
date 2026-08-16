@@ -90,6 +90,14 @@ export interface PeopleManagementDependencies {
   };
 }
 
+export interface TransactionalPeopleCreation {
+  createInTransaction(
+    actor: PeopleActor,
+    input: CreatePersonInput,
+    transaction: PeopleTransaction,
+  ): Promise<CreatePersonResult>;
+}
+
 export type CreatePersonResult =
   | {
     readonly errors: Readonly<Record<string, string>>;
@@ -142,7 +150,54 @@ function validate(
 export function createPeopleManagement(
   dependencies: PeopleManagementDependencies,
 ) {
+  const createInTransaction = async (
+    actor: PeopleActor,
+    rawInput: CreatePersonInput,
+    transaction: PeopleTransaction,
+  ): Promise<CreatePersonResult> => {
+    const input = normalize(rawInput);
+    const errors = validate(input);
+    if (Object.keys(errors).length > 0) {
+      return { errors, status: "validation-error" };
+    }
+    const authorized = await dependencies.repository
+      .revalidateAndLockCreateContext({ ...actor, transaction });
+    if (!authorized) return { status: "forbidden" };
+    const duplicates = await dependencies.repository.findPossibleDuplicates({
+      ...actor,
+      ...input,
+      transaction,
+    });
+    if (duplicates.length > 0 && !input.duplicateOverride) {
+      return { duplicates, status: "possible-duplicate" };
+    }
+    const person: PersonIdentity = {
+      ...(input.familyName ? { familyName: input.familyName } : {}),
+      givenName: input.givenName,
+      id: dependencies.ids.create(),
+      isPartial: input.isPartial,
+      ...(input.middleName ? { middleName: input.middleName } : {}),
+      ...(input.nickname ? { nickname: input.nickname } : {}),
+    };
+    const created = await dependencies.repository.create({
+      ...actor,
+      ...person,
+      transaction,
+    });
+    if (!created) return { status: "forbidden" };
+    const occurredAt = dependencies.clock.now();
+    const auditCommand = { actor, occurredAt, person: created, transaction };
+    await dependencies.audit.record(auditCommand);
+    await dependencies.repository.assertCreatedPostcondition({
+      ...actor,
+      ...created,
+      transaction,
+    });
+    await dependencies.audit.assertPostcondition(auditCommand);
+    return { person: created, status: "created" };
+  };
   return {
+    createInTransaction,
     create: async (
       actor: PeopleActor,
       rawInput: CreatePersonInput,
@@ -152,46 +207,9 @@ export function createPeopleManagement(
       if (Object.keys(errors).length > 0) {
         return { errors, status: "validation-error" };
       }
-      return await dependencies.transaction.run(async (transaction) => {
-        const authorized = await dependencies.repository
-          .revalidateAndLockCreateContext({ ...actor, transaction });
-        if (!authorized) return { status: "forbidden" };
-        const duplicates = await dependencies.repository.findPossibleDuplicates(
-          { ...actor, ...input, transaction },
-        );
-        if (duplicates.length > 0 && !input.duplicateOverride) {
-          return { duplicates, status: "possible-duplicate" };
-        }
-        const person: PersonIdentity = {
-          ...(input.familyName ? { familyName: input.familyName } : {}),
-          givenName: input.givenName,
-          id: dependencies.ids.create(),
-          isPartial: input.isPartial,
-          ...(input.middleName ? { middleName: input.middleName } : {}),
-          ...(input.nickname ? { nickname: input.nickname } : {}),
-        };
-        const created = await dependencies.repository.create({
-          ...actor,
-          ...person,
-          transaction,
-        });
-        if (!created) return { status: "forbidden" };
-        const occurredAt = dependencies.clock.now();
-        const auditCommand = {
-          actor,
-          occurredAt,
-          person: created,
-          transaction,
-        };
-        await dependencies.audit.record(auditCommand);
-        await dependencies.repository.assertCreatedPostcondition({
-          ...actor,
-          ...created,
-          transaction,
-        });
-        await dependencies.audit.assertPostcondition(auditCommand);
-        return { person: created, status: "created" };
-      });
+      return await dependencies.transaction.run((transaction) =>
+        createInTransaction(actor, input, transaction)
+      );
     },
     get: (
       actor: PeopleActor,
@@ -207,4 +225,7 @@ export function createPeopleManagement(
   };
 }
 
-export type PeopleManagement = ReturnType<typeof createPeopleManagement>;
+export type PeopleManagement = Pick<
+  ReturnType<typeof createPeopleManagement>,
+  "create" | "get"
+>;

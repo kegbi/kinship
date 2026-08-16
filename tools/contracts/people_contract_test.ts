@@ -1,5 +1,6 @@
 import { buildOpenApiDocument } from "./generate.ts";
 import type {
+  PersonProfileSectionId,
   ProfileFactCreateInputBySection,
   ProfileFactListInput,
   ProfileFactUpdateInputBySection,
@@ -71,6 +72,91 @@ Deno.test("PEOPLE-006 generated mutation inputs remain stricter than response va
   );
 });
 
+Deno.test("RELATIONSHIP-001 OpenAPI publishes strict directional section operations", () => {
+  const document = buildOpenApiDocument() as unknown as {
+    readonly paths: Readonly<Record<string, unknown>>;
+    readonly components: {
+      readonly schemas: Readonly<
+        Record<
+          string,
+          {
+            readonly additionalProperties?: boolean;
+            readonly required?: readonly string[];
+          }
+        >
+      >;
+    };
+  };
+  const paths = document.paths;
+  assert(
+    Boolean(paths["/api/v1/relationship-types"]),
+    "relationship type search is missing",
+  );
+  assert(
+    Boolean(paths["/api/v1/people/{personId}/relationships"]),
+    "relationship list/create is missing",
+  );
+  assert(
+    Boolean(paths["/api/v1/people/{personId}/relationships/{relationshipId}"]),
+    "relationship update/delete is missing",
+  );
+  assert(
+    Boolean(
+      paths[
+        "/api/v1/people/{personId}/relationships/related-person"
+      ],
+    ),
+    "atomic related-person operation is missing",
+  );
+  for (
+    const name of [
+      "RelationshipCreateInput",
+      "RelationshipUpdateInput",
+      "Relationship",
+      "RelationshipDisplay",
+      "RelationshipWithDisplay",
+      "RelationshipList",
+      "RelationshipChanged",
+      "RelationshipDeleted",
+      "RelatedPersonRelationshipInput",
+      "RelatedPersonRelationshipChanged",
+    ]
+  ) {
+    assert(
+      document.components.schemas[name]?.additionalProperties === false,
+      `${name} is not strict`,
+    );
+  }
+  assert(
+    document.components.schemas.RelationshipCreateInput?.required?.join(",") ===
+      "relationshipTypeId,targetPersonId",
+    "relationship create contract admits romantic metadata",
+  );
+  const listItem = (document.components.schemas.RelationshipList as {
+    readonly properties?: {
+      readonly relationships?: { readonly items?: ObjectSchema };
+    };
+  }).properties?.relationships?.items;
+  assert(
+    listItem?.$ref === "#/components/schemas/RelationshipWithDisplay" &&
+      listItem.allOf === undefined,
+    "relationship list still composes a closed base through allOf",
+  );
+  const changed = document.components.schemas.RelationshipChanged as {
+    readonly properties?: Readonly<Record<string, ObjectSchema>>;
+    readonly required?: readonly string[];
+  };
+  assert(
+    changed.required?.includes("forward") === true &&
+      changed.required.includes("inverse") &&
+      changed.properties?.forward?.$ref ===
+        "#/components/schemas/RelationshipDisplay" &&
+      changed.properties.inverse?.$ref ===
+        "#/components/schemas/RelationshipDisplay",
+    "relationship mutation directions do not reference the strict display",
+  );
+});
+
 interface ObjectSchema {
   readonly $ref?: string;
   readonly additionalProperties?: boolean;
@@ -80,6 +166,9 @@ interface ObjectSchema {
   readonly enum?: readonly unknown[];
   readonly items?: ObjectSchema;
   readonly maxItems?: number;
+  readonly minItems?: number;
+  readonly maximum?: number;
+  readonly minimum?: number;
   readonly maxLength?: number;
   readonly minLength?: number;
   readonly oneOf?: readonly ObjectSchema[];
@@ -116,7 +205,7 @@ function acceptsObjectInstance(
   if (schema.required?.some((name) => !(name in instance))) return false;
   if (
     Object.entries(schema.properties ?? {}).some(([name, property]) =>
-      name in instance && !acceptsProperty(property, instance[name])
+      name in instance && !acceptsProperty(schemas, property, instance[name])
     )
   ) return false;
   if (
@@ -128,9 +217,22 @@ function acceptsObjectInstance(
   return true;
 }
 
-function acceptsProperty(schema: ObjectSchema, value: unknown): boolean {
+function acceptsProperty(
+  schemas: Readonly<Record<string, ObjectSchema>>,
+  schema: ObjectSchema,
+  value: unknown,
+): boolean {
+  if (schema.$ref) {
+    const name = schema.$ref.split("/").at(-1);
+    return name !== undefined && schemas[name] !== undefined &&
+      acceptsProperty(schemas, schemas[name], value);
+  }
   if (schema.const !== undefined && value !== schema.const) return false;
   if (schema.enum && !schema.enum.includes(value)) return false;
+  if (typeof value === "number") {
+    if (schema.minimum !== undefined && value < schema.minimum) return false;
+    if (schema.maximum !== undefined && value > schema.maximum) return false;
+  }
   if (typeof value === "string") {
     if (schema.minLength !== undefined && value.length < schema.minLength) {
       return false;
@@ -145,12 +247,101 @@ function acceptsProperty(schema: ObjectSchema, value: unknown): boolean {
     }
   }
   if (Array.isArray(value)) {
+    if (schema.minItems !== undefined && value.length < schema.minItems) {
+      return false;
+    }
     if (schema.maxItems !== undefined && value.length > schema.maxItems) {
       return false;
     }
+    if (
+      schema.items &&
+      value.some((item) => !acceptsProperty(schemas, schema.items!, item))
+    ) return false;
+    return true;
+  }
+  if (typeof value === "object" && value !== null) {
+    return acceptsObjectInstance(
+      schemas,
+      schema,
+      value as Readonly<Record<string, unknown>>,
+    );
   }
   return true;
 }
+
+Deno.test("RELATIONSHIP-001 response schemas validate exact API instances", () => {
+  const document = buildOpenApiDocument() as unknown as {
+    readonly components: {
+      readonly schemas: Readonly<Record<string, ObjectSchema>>;
+    };
+  };
+  const schemas = document.components.schemas;
+  const relationship = {
+    createdAt: "2026-08-16T12:00:00.000Z",
+    forwardLabel: "parent",
+    fromPersonId: "00000000-0000-4000-8000-000000000100",
+    id: "00000000-0000-4000-8000-000000000300",
+    relationshipTypeArchived: false,
+    relationshipTypeId: "00000000-0000-4000-8000-000000000200",
+    reverseLabel: "child",
+    status: "active",
+    toPersonId: "00000000-0000-4000-8000-000000000101",
+    updatedAt: "2026-08-16T12:00:00.000Z",
+  };
+  const display = {
+    label: "parent",
+    name: "Target Person",
+    personId: relationship.toPersonId,
+    relationshipId: relationship.id,
+  };
+  const list = {
+    relationships: [{ ...relationship, display }],
+    status: "ready",
+  };
+  const changed = {
+    affectedPersonIds: [relationship.fromPersonId, relationship.toPersonId],
+    forward: display,
+    inverse: {
+      label: "child",
+      personId: relationship.fromPersonId,
+      relationshipId: relationship.id,
+    },
+    relationship,
+    status: "created",
+  };
+  const updated = { ...changed, status: "updated" };
+  const deleted = {
+    affectedPersonIds: changed.affectedPersonIds,
+    relationshipId: relationship.id,
+    status: "deleted",
+  };
+  assert(
+    acceptsObjectInstance(schemas, schemas.RelationshipList!, list) &&
+      acceptsObjectInstance(schemas, schemas.RelationshipChanged!, changed) &&
+      acceptsObjectInstance(schemas, schemas.RelationshipChanged!, updated) &&
+      acceptsObjectInstance(schemas, schemas.RelationshipDeleted!, deleted),
+    "representative list/create/update/unlink response is rejected",
+  );
+  assert(
+    !acceptsObjectInstance(schemas, schemas.RelationshipList!, {
+      ...list,
+      relationships: [{ ...relationship, display, extra: true }],
+    }) &&
+      !acceptsObjectInstance(schemas, schemas.RelationshipChanged!, {
+        ...changed,
+        inverse: { label: "child", personId: relationship.fromPersonId },
+      }) &&
+      !acceptsObjectInstance(schemas, schemas.RelationshipChanged!, {
+        ...changed,
+        inverse: { ...changed.inverse, extra: true },
+      }) &&
+      !acceptsObjectInstance(schemas, schemas.RelationshipDeleted!, {
+        ...deleted,
+        extra: true,
+      }),
+    "strict relationship responses admit missing or extra properties",
+  );
+});
 
 Deno.test("PEOPLE-001 OpenAPI describes tenant-safe person creation", () => {
   const document = buildOpenApiDocument();
@@ -333,6 +524,30 @@ Deno.test("[APP-003C] OpenAPI describes the canonical workspace summary", () => 
     readonly properties?: Readonly<Record<string, unknown>>;
     readonly required?: readonly string[];
   } | undefined;
+  const profileSections = schemas?.PersonProfileSectionId as ObjectSchema;
+  const factSections = schemas?.ProfileFactSectionId as ObjectSchema;
+  const profileSectionItems = (identity?.properties?.profileSections as {
+    readonly items?: ObjectSchema;
+  } | undefined)?.items;
+  const representative = {
+    dueInformation: {
+      detail: "Planning and reminders are not delivered yet.",
+      status: "unavailable",
+    },
+    person: {
+      givenName: "Ada",
+      id: "00000000-0000-4000-8000-000000000100",
+      isDeceased: false,
+      isPartial: false,
+      isSelf: false,
+      isStarred: true,
+      profileSections: [{ id: "relationships", status: "ready" }],
+      tagCount: 0,
+      tags: [],
+      updatedAt: "2026-08-16T12:00:00.000Z",
+    },
+    status: "ready",
+  };
 
   assert(
     ready?.required?.includes("dueInformation") === true &&
@@ -351,6 +566,88 @@ Deno.test("[APP-003C] OpenAPI describes the canonical workspace summary", () => 
       due.required?.includes("status") === true &&
       due.properties?.detail !== undefined,
     "due-information unavailability is a typed honest contract",
+  );
+  assert(
+    profileSections?.enum?.includes("relationships") === true &&
+      factSections?.enum?.includes("relationships") !== true &&
+      profileSectionItems?.properties?.id?.$ref ===
+        "#/components/schemas/PersonProfileSectionId",
+    "person profile sections do not use their distinct section vocabulary",
+  );
+  assert(
+    acceptsObjectInstance(
+      schemas as Readonly<Record<string, ObjectSchema>>,
+      (schemas as Readonly<Record<string, ObjectSchema>>).PersonReady!,
+      representative,
+    ) &&
+      !acceptsObjectInstance(
+        schemas as Readonly<Record<string, ObjectSchema>>,
+        (schemas as Readonly<Record<string, ObjectSchema>>).PersonReady!,
+        {
+          ...representative,
+          person: {
+            ...representative.person,
+            profileSections: [{ id: "notes", status: "ready" }],
+          },
+        },
+      ),
+    "representative person response does not enforce profile section IDs",
+  );
+  const relationshipsSection: PersonProfileSectionId = "relationships";
+  // @ts-expect-error unsupported profile sections remain unavailable.
+  const unsupportedSection: PersonProfileSectionId = "notes";
+  assert(
+    relationshipsSection === "relationships" &&
+      String(unsupportedSection) === "notes",
+    "generated profile-section type fixtures were not evaluated",
+  );
+});
+
+Deno.test("collection parameters are unique and publish exact runtime limits", () => {
+  const document = buildOpenApiDocument() as unknown as {
+    readonly paths: Readonly<
+      Record<
+        string,
+        Readonly<
+          Record<string, {
+            readonly parameters?: readonly {
+              readonly in?: string;
+              readonly name?: string;
+              readonly schema?: ObjectSchema;
+            }[];
+          }>
+        >
+      >
+    >;
+    readonly components: {
+      readonly schemas: Readonly<Record<string, ObjectSchema>>;
+    };
+  };
+  const limit = document.paths["/api/v1/people/{personId}/relationships"]?.get
+    ?.parameters?.find((parameter) => parameter.name === "limit")?.schema;
+  const peopleLimit = document.paths["/api/v1/people"]?.get?.parameters?.find(
+    (parameter) => parameter.name === "limit",
+  )?.schema;
+  for (const [path, item] of Object.entries(document.paths)) {
+    for (const [method, operation] of Object.entries(item)) {
+      const parameters = operation.parameters ?? [];
+      const keys = parameters.map((parameter) =>
+        `${parameter.in ?? ""}:${parameter.name ?? ""}`
+      );
+      assert(
+        new Set(keys).size === keys.length,
+        `${method.toUpperCase()} ${path} duplicates an (in,name) parameter`,
+      );
+    }
+  }
+  assert(
+    peopleLimit?.maximum === 50 &&
+      acceptsProperty(document.components.schemas, peopleLimit, 50) &&
+      !acceptsProperty(document.components.schemas, peopleLimit, 51) &&
+      limit?.maximum === 20 &&
+      acceptsProperty(document.components.schemas, limit, 20) &&
+      !acceptsProperty(document.components.schemas, limit, 21),
+    "people and relationship list limits diverge from runtime",
   );
 });
 

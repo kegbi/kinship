@@ -381,6 +381,10 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         status: "ready",
       }));
     vi.stubGlobal("fetch", fetchMock);
+    const lifecycleEvents: unknown[] = [];
+    const recordLifecycle = (event: Event) =>
+      lifecycleEvents.push((event as CustomEvent).detail);
+    document.addEventListener("person-lifecycle-changed", recordLifecycle);
     await mountPeopleProfile();
 
     document.querySelector<HTMLButtonElement>("#person-edit-open")?.click();
@@ -412,11 +416,24 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     });
     expect(document.querySelector<HTMLElement>("#person-edit-open")?.hidden)
       .toBe(true);
+    expect(lifecycleEvents[0]).toEqual({
+      archived: true,
+      personId,
+      personUpdatedAt: archived.updatedAt,
+      state: "archived",
+    });
     document.querySelector<HTMLButtonElement>("#person-restore")?.click();
     await vi.waitFor(() =>
       expect(document.querySelector<HTMLElement>("#person-edit-open")?.hidden)
         .toBe(false)
     );
+    expect(lifecycleEvents[1]).toEqual({
+      archived: false,
+      personId,
+      personUpdatedAt: restored.updatedAt,
+      state: "active",
+    });
+    document.removeEventListener("person-lifecycle-changed", recordLifecycle);
 
     document.querySelector<HTMLButtonElement>("#person-delete-open")?.click();
     await vi.waitFor(() =>

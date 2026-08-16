@@ -250,6 +250,66 @@ const profileFactSections = new Set<string>([
                 </form>
               </section>
             )
+            : id === "relationships"
+            ? (
+              <section
+                id="profile-section-relationships"
+                class="profile-section-card relationships-card"
+                data-profile-section="relationships"
+                data-section-state="loading"
+                tabindex="-1"
+                aria-labelledby="profile-section-relationships-heading"
+              >
+                <header class="profile-section-heading">
+                  <div>
+                    <p class="section-kicker">Directional connections</p>
+                    <h2 id="profile-section-relationships-heading">Relationships</h2>
+                  </div>
+                  <span id="relationships-badge" class="state-badge">Loading</span>
+                </header>
+                <p id="relationships-state" class="section-state" role="status" aria-live="polite" tabindex="-1">Loading relationships…</p>
+                <ul id="relationships-list" class="profile-fact-list" aria-label="Saved relationships" tabindex="-1"></ul>
+                <nav class="form-actions" aria-label="Relationship pages">
+                  <button id="relationships-previous" class="button-secondary" type="button" hidden>Previous relationships</button>
+                  <button id="relationships-load-more" class="button-secondary" type="button" hidden>Next relationships</button>
+                </nav>
+                <button id="relationship-add" class="button-primary" type="button" hidden>Add relationship</button>
+                <form id="relationship-form" class="profile-fact-form" hidden novalidate>
+                  <fieldset>
+                    <legend>Choose an existing person</legend>
+                    <label>Search people <input id="relationship-person-search" type="search" maxlength="200" /></label>
+                    <button id="relationship-person-search-button" class="button-secondary" type="button">Search people</button>
+                    <label>Related person <select id="relationship-target" name="targetPersonId"><option value="">Select existing person</option></select></label>
+                  </fieldset>
+                  <fieldset>
+                    <legend>Or create a new related person</legend>
+                    <div class="form-grid">
+                      <label>New person given name <input name="newGivenName" maxlength="200" /></label>
+                      <label>New person family name <input name="newFamilyName" maxlength="200" /></label>
+                    </div>
+                  </fieldset>
+                  <fieldset>
+                    <legend>Relationship type</legend>
+                    <label>Search relationship types <input id="relationship-type-search" type="search" maxlength="200" /></label>
+                    <button id="relationship-type-search-button" class="button-secondary" type="button">Search relationship types</button>
+                    <label>Relationship type <select id="relationship-type" name="relationshipTypeId" required><option value="">Select relationship type</option></select></label>
+                    <nav class="form-actions" aria-label="Relationship type pages">
+                      <button id="relationship-types-previous" type="button" hidden>Previous relationship types</button>
+                      <button id="relationship-types-next" type="button" hidden>Next relationship types</button>
+                    </nav>
+                  </fieldset>
+                  <div id="relationship-duplicate-choices" role="group" aria-label="Possible duplicate person choices" hidden>
+                    <p>A person with this name may already exist.</p>
+                    <button id="relationship-select-existing" class="button-secondary" type="button">Select existing person</button>
+                    <button id="relationship-create-anyway" class="button-secondary" type="button">Create anyway</button>
+                  </div>
+                  <div class="form-actions">
+                    <button class="button-primary" type="submit">Save relationship</button>
+                    <button id="relationship-cancel" type="button">Cancel</button>
+                  </div>
+                </form>
+              </section>
+            )
             : profileFactSections.has(id)
             ? (
               <section

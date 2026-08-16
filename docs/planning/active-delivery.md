@@ -161,8 +161,8 @@ runnable behavior cannot work without them.
   - [ ] Deliver contact methods, addresses, work, organizations, tags, pets,
         food preferences, and other accepted enabled sections as local workspace
         actions.
-- [ ] **APP-004D / `RELATIONSHIP-001` — Relationships between people.**
-  - [ ] Deliver directional relationship create/change behavior, uniqueness,
+- [x] **APP-004D / `RELATIONSHIP-001` — Relationships between people.**
+  - [x] Deliver directional relationship create/change behavior, uniqueness,
         permissions, and archive interactions.
 - [ ] **APP-004E / `WORKSPACE-003` — Profile modules and vocabularies.**
   - [ ] Deliver module settings and controlled vocabularies through accepted

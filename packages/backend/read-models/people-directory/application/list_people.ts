@@ -71,7 +71,10 @@ export type PeopleDirectoryRepositoryResult =
 
 export interface PeopleDirectoryRepository {
   findSelected?(
-    command: PeopleDirectoryActor & { readonly personId: string },
+    command: PeopleDirectoryActor & {
+      readonly lifecycle: PeopleDirectoryLifecycle;
+      readonly personId: string;
+    },
   ): Promise<PeopleDirectoryPersonRecord | undefined>;
   list(
     command: PeopleDirectoryActor & PeopleDirectoryCriteria & {
@@ -241,6 +244,7 @@ export function createPeopleDirectory(dependencies: {
           dependencies.repository.findSelected
         ? await dependencies.repository.findSelected({
           ...actor,
+          lifecycle: criteria.lifecycle,
           personId: input.selectedPersonId,
         })
         : undefined;

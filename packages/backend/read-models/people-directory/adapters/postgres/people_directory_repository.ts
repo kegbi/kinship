@@ -162,7 +162,10 @@ export class PostgresPeopleDirectoryRepository
       from crm.people person
       where person.id = ${command.personId}::uuid
         and person.workspace_id = ${command.workspaceId}::uuid
-        and person.archived_at is null
+        and case when ${command.lifecycle} = 'archived'
+          then person.archived_at is not null
+          else person.archived_at is null
+        end
         and person.deleted_at is null
       limit 1
     `.execute(this.database);
@@ -179,7 +182,7 @@ export class PostgresPeopleDirectoryRepository
       id: row.id,
       isPartial: row.is_partial,
       isStarred: row.is_starred,
-      lifecycle: "active",
+      lifecycle: command.lifecycle,
       ...(row.middle_name ? { middleName: row.middle_name } : {}),
       ...(row.nickname ? { nickname: row.nickname } : {}),
       tagCount: 0,

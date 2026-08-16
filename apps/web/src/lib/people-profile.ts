@@ -12,6 +12,7 @@ import {
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 import { mountImportantDates } from "./important-dates.ts";
 import { mountProfileFacts } from "./profile-facts.ts";
+import { mountRelationships } from "./relationships.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
@@ -503,7 +504,12 @@ function mountLifecycleActions(
     renderLifecycleState(profile, lifecycle, state);
     document.dispatchEvent(
       new CustomEvent("person-lifecycle-changed", {
-        detail: { archived: state === "archived" },
+        detail: {
+          archived: state === "archived",
+          personId,
+          personUpdatedAt: updatedAt,
+          state,
+        },
       }),
     );
     announce(
@@ -664,6 +670,15 @@ export async function mountPeopleProfile(): Promise<void> {
       id,
       session.session.workspace.id,
       result.value.status === "archived",
+      result.value.person.updatedAt,
+    ),
+    mountRelationships(
+      id,
+      session.session.workspace.id,
+      result.value.status === "archived",
+      result.value.person.profileSections?.some((section) =>
+        section.id === "relationships" && section.status === "hidden"
+      ) === true,
       result.value.person.updatedAt,
     ),
   ]);

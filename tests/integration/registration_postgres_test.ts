@@ -9,6 +9,7 @@ import {
 } from "../../packages/backend/modules/identity/public.ts";
 import { PostgresRegistrationAudit } from "../../packages/backend/modules/governance/public.ts";
 import {
+  DEFAULT_RELATIONSHIP_TYPE_VOCABULARY,
   PostgresRegistrationTransaction,
   PostgresWorkspaceRegistration,
 } from "../../packages/backend/modules/workspaces/public.ts";
@@ -78,6 +79,7 @@ Deno.test({
       members: number;
       preferences: number;
       settings: number;
+      relationship_types: number;
       tokens: number;
       users: number;
       workspaces: number;
@@ -88,6 +90,7 @@ Deno.test({
         (select count(*)::int from crm.workspace_members where role = 'owner' and status = 'active') members,
         (select count(*)::int from crm.member_preferences) preferences,
         (select count(*)::int from crm.workspace_settings) settings,
+        (select count(*)::int from crm.relationship_types) relationship_types,
         (select count(*)::int from crm.audit_events where action = 'workspace.created') audits,
         (select count(*)::int from crm.email_verification_tokens where used_at is null) tokens
     `;
@@ -97,9 +100,127 @@ Deno.test({
     );
     assert(
       shape.preferences === 1 && shape.settings === 1 && shape.audits === 1 &&
-        shape.tokens === 1,
+        shape.tokens === 1 && shape.relationship_types ===
+          DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types.length,
       "required defaults, audit, and token must be atomic",
     );
+    const provisioned = await sql<{
+      can_delete: boolean;
+      forward_label: string;
+      is_archived: boolean;
+      is_system: boolean;
+      reverse_label: string;
+      sort_order: number;
+    }[]>`
+      select forward_label, reverse_label, sort_order, is_system, can_delete,
+        is_archived
+      from crm.relationship_types order by sort_order, id
+    `;
+    assert(
+      provisioned.every((actual, index) => {
+        const expected = DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types[index];
+        return expected && actual.forward_label === expected.forwardLabel &&
+          actual.reverse_label === expected.reverseLabel &&
+          actual.sort_order === expected.sortOrder && actual.is_system &&
+          !actual.can_delete && !actual.is_archived;
+      }),
+      "fresh workspace receives the exact versioned relationship vocabulary",
+    );
+    const [ownerWorkspace] = await sql<{
+      user_id: string;
+      workspace_id: string;
+    }[]>`
+      select created_by_user_id::text user_id, id::text workspace_id
+      from crm.workspaces
+    `;
+    assert(ownerWorkspace, "registered workspace link exists");
+    const registrationTransaction = new PostgresRegistrationTransaction(
+      postconditionConnection.db,
+    );
+    const registrationWorkspace = new PostgresWorkspaceRegistration();
+    await registrationTransaction.run(async (transaction) => {
+      await registrationWorkspace.provisionDefaultRelationshipTypes({
+        transaction,
+        types: DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types,
+        version: DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.version,
+        workspaceId: ownerWorkspace.workspace_id,
+      });
+      await registrationWorkspace.provisionDefaultRelationshipTypes({
+        transaction,
+        types: DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types,
+        version: DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.version,
+        workspaceId: ownerWorkspace.workspace_id,
+      });
+    });
+    const [replayedDefaults] = await sql<{ count: number }[]>`
+      select count(*)::int count from crm.relationship_types
+      where workspace_id = ${ownerWorkspace.workspace_id}::uuid
+    `;
+    assert(
+      replayedDefaults?.count ===
+        DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types.length,
+      "default vocabulary replay is idempotent",
+    );
+    for (const failure of ["settings", "types", "postcondition"] as const) {
+      const failedWorkspaceId = crypto.randomUUID();
+      let rejected = false;
+      try {
+        await registrationTransaction.run(async (transaction) => {
+          await registrationWorkspace.createWorkspace({
+            createdByUserId: ownerWorkspace.user_id,
+            name: `Rollback ${failure}`,
+            transaction,
+            workspaceId: failedWorkspaceId,
+          });
+          if (failure === "settings") {
+            await registrationWorkspace.createWorkspaceSettings({
+              transaction,
+              workspaceId: failedWorkspaceId,
+            });
+            await registrationWorkspace.createWorkspaceSettings({
+              transaction,
+              workspaceId: failedWorkspaceId,
+            });
+          } else {
+            await registrationWorkspace.provisionDefaultRelationshipTypes({
+              transaction,
+              types: failure === "types"
+                ? [{
+                  forwardLabel: null as unknown as string,
+                  reverseLabel: "invalid",
+                  sortOrder: 0,
+                }]
+                : DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types,
+              version: DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.version,
+              workspaceId: failedWorkspaceId,
+            });
+            if (failure === "postcondition") {
+              await registrationWorkspace.assertFirstWorkspacePostconditions({
+                joinedAt: new Date(0),
+                memberId: crypto.randomUUID(),
+                name: "wrong",
+                relationshipTypes: DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types,
+                transaction,
+                userId: ownerWorkspace.user_id,
+                workspaceId: failedWorkspaceId,
+              });
+            }
+          }
+        });
+      } catch {
+        rejected = true;
+      }
+      const [partial] = await sql<{ count: number }[]>`
+        select
+          (select count(*)::int from crm.workspaces where id = ${failedWorkspaceId}::uuid) +
+          (select count(*)::int from crm.workspace_settings where workspace_id = ${failedWorkspaceId}::uuid) +
+          (select count(*)::int from crm.relationship_types where workspace_id = ${failedWorkspaceId}::uuid) count
+      `;
+      assert(
+        rejected && partial?.count === 0,
+        `${failure} failure rolls back workspace and all defaults`,
+      );
+    }
 
     const token = capturedMail.latestToken("owner@example.test");
     assert(token, "injected mail fake must receive verification");
@@ -254,6 +375,25 @@ Deno.test({
       { count: number }[]
     >`select count(*)::int as count from crm.users`;
     assert(userCount?.count === 1, "duplicate race must not add rows");
+
+    assert(
+      (await register("second-tenant@example.test")).status === 202,
+      "second tenant registration succeeds",
+    );
+    const tenantDefaults = await sql<{
+      count: number;
+      workspace_id: string;
+    }[]>`
+      select workspace_id::text, count(*)::int count
+      from crm.relationship_types group by workspace_id order by workspace_id
+    `;
+    assert(
+      tenantDefaults.length === 2 &&
+        tenantDefaults.every((row) =>
+          row.count === DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types.length
+        ),
+      "each workspace owns one isolated copy of the exact defaults",
+    );
 
     await reset();
     const expiredEmail = "expired@example.test";
@@ -470,6 +610,7 @@ Deno.test({
               joinedAt: new Date(0),
               memberId: links.member_id,
               name: "wrong workspace",
+              relationshipTypes: DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types,
               transaction: session,
               userId: crypto.randomUUID(),
               workspaceId: links.workspace_id,
