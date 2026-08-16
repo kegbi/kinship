@@ -58,6 +58,26 @@ export type {
 } from "./application/invite_member.ts";
 export { PostgresWorkspaceInvitations } from "./adapters/postgres/workspace_invitations.ts";
 export { PostgresWorkspaceSettings } from "./adapters/postgres/settings_management.ts";
+export { PostgresWorkspacePersonalization } from "./adapters/postgres/personalization.ts";
+export {
+  createPersonalizationManagement,
+  PERSONALIZATION_SECTIONS,
+} from "./application/personalization.ts";
+export type {
+  PersonalizationDependencies,
+  PersonalizationEntry,
+  PersonalizationItemCapabilities,
+  PersonalizationManagement,
+  PersonalizationMutation,
+  PersonalizationMutationResult,
+  PersonalizationRepository,
+  PersonalizationResult,
+  PersonalizationSection,
+  PersonalizationSectionCapabilities,
+  PersonalizationTransaction,
+  WorkspacePersonalizationDeleteCommand,
+  WorkspacePersonalizationRepository,
+} from "./application/personalization.ts";
 export { PostgresProfileFactConfiguration } from "./adapters/postgres/profile_fact_configuration.ts";
 export { PostgresRelationshipWorkspaceBoundary } from "./adapters/postgres/relationship_workspace_boundary.ts";
 export type {

@@ -93,12 +93,18 @@ function renderRouteForbidden(elements: ShellElements): void {
   const heading = document.createElement("h1");
   const workspaceSettings = document.body.dataset.pageId ===
     "settings.workspace";
+  const personalization = document.body.dataset.pageId ===
+    "settings.personalization";
   heading.textContent = workspaceSettings
     ? "Workspace settings unavailable"
+    : personalization
+    ? "Personalization unavailable"
     : "You don’t have access to Members";
   const copy = document.createElement("p");
   copy.textContent = workspaceSettings
     ? "Only workspace owners and admins can manage workspace identity and defaults."
+    : personalization
+    ? "Only workspace owners and admins can manage workspace personalization."
     : "Only workspace owners and admins can view members and invitations.";
   const link = document.createElement("a");
   link.className = "button-link";
@@ -193,7 +199,8 @@ export async function mountApplicationShell(
   }
   if (
     (document.body.dataset.pageId === "settings.members" ||
-      document.body.dataset.pageId === "settings.workspace") &&
+      document.body.dataset.pageId === "settings.workspace" ||
+      document.body.dataset.pageId === "settings.personalization") &&
     !isWorkspaceAdmin
   ) {
     renderRouteForbidden(elements);

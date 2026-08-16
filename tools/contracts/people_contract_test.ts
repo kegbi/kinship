@@ -1,5 +1,7 @@
 import { buildOpenApiDocument } from "./generate.ts";
 import type {
+  PersonalizationCreateInputBySection,
+  PersonalizationUpdateInputBySection,
   PersonProfileSectionId,
   ProfileFactCreateInputBySection,
   ProfileFactListInput,
@@ -154,6 +156,126 @@ Deno.test("RELATIONSHIP-001 OpenAPI publishes strict directional section operati
       changed.properties.inverse?.$ref ===
         "#/components/schemas/RelationshipDisplay",
     "relationship mutation directions do not reference the strict display",
+  );
+});
+
+Deno.test("WORKSPACE-003 OpenAPI binds strict mutation inputs to each section", () => {
+  const document = buildOpenApiDocument() as unknown as {
+    readonly components: {
+      readonly schemas: Readonly<Record<string, ObjectSchema>>;
+    };
+  };
+  const schemas = document.components.schemas;
+  for (
+    const name of [
+      "PersonalizationNamedCreate",
+      "PersonalizationNameOnlyCreate",
+      "PersonalizationRelationshipCreate",
+      "PersonalizationReminderCreate",
+      "PersonalizationNamedUpdate",
+      "PersonalizationGenderUpdate",
+      "PersonalizationNameOnlyUpdate",
+      "PersonalizationRelationshipUpdate",
+      "PersonalizationReminderUpdate",
+    ]
+  ) {
+    assert(
+      schemas[name]?.additionalProperties === false,
+      `${name} is missing or permissive`,
+    );
+  }
+  assert(
+    schemas.PersonalizationCreate?.anyOf?.length === 4 &&
+      schemas.PersonalizationUpdate?.anyOf?.length === 5,
+    "personalization mutations do not publish their strict shape union",
+  );
+  const createMapping = schemas.PersonalizationCreate as ObjectSchema & {
+    readonly "x-sectionSchemas"?: Readonly<Record<string, string | null>>;
+  };
+  const updateMapping = schemas.PersonalizationUpdate as ObjectSchema & {
+    readonly "x-sectionSchemas"?: Readonly<Record<string, string | null>>;
+  };
+  assert(
+    createMapping["x-sectionSchemas"]?.["reminder-rules"] ===
+        "#/components/schemas/PersonalizationReminderCreate" &&
+      updateMapping["x-sectionSchemas"]?.["relationship-types"] ===
+        "#/components/schemas/PersonalizationRelationshipUpdate" &&
+      createMapping["x-sectionSchemas"]?.["pet-categories"] === null &&
+      updateMapping["x-sectionSchemas"]?.["emotion-options"] === null,
+    "personalization mutation shapes are not bound to path sections",
+  );
+  assert(
+    !acceptsObjectInstance(schemas, schemas.PersonalizationReminderUpdate!, {
+      expectedUpdatedAt: "2026-08-17T12:00:00.000000Z",
+      name: "ignored",
+    }) &&
+      !acceptsObjectInstance(
+        schemas,
+        schemas.PersonalizationRelationshipUpdate!,
+        {
+          expectedUpdatedAt: "2026-08-17T12:00:00.000000Z",
+          name: "generic label",
+        },
+      ),
+    "section-specific update schemas admit unsupported generic fields",
+  );
+  assert(
+    acceptsObjectInstance(schemas, schemas.PersonalizationGenderUpdate!, {
+      expectedUpdatedAt: "2026-08-17T12:00:00.000000Z",
+      isDefault: true,
+    }) &&
+      !acceptsObjectInstance(schemas, schemas.PersonalizationGenderUpdate!, {
+        expectedUpdatedAt: "2026-08-17T12:00:00.000000Z",
+        isDefault: false,
+      }),
+    "gender default action is not published as literal true",
+  );
+});
+
+Deno.test("WORKSPACE-003 generated client binds mutation inputs to sections", () => {
+  const reminder: PersonalizationUpdateInputBySection["reminder-rules"] = {
+    daysBefore: 14,
+    expectedUpdatedAt: "2026-08-17T12:00:00.000000Z",
+  };
+  const relationship:
+    PersonalizationUpdateInputBySection["relationship-types"] = {
+      expectedUpdatedAt: "2026-08-17T12:00:00.000000Z",
+      forwardLabel: "Parent",
+      reverseLabel: "Child",
+    };
+  const gender: PersonalizationUpdateInputBySection["gender-options"] = {
+    expectedUpdatedAt: "2026-08-17T12:00:00.000000Z",
+    isDefault: true,
+  };
+  const invalidGender: PersonalizationUpdateInputBySection["gender-options"] = {
+    expectedUpdatedAt: "2026-08-17T12:00:00.000000Z",
+    // @ts-expect-error gender default is a one-way literal action.
+    isDefault: false,
+  };
+  const invalidReminder: PersonalizationUpdateInputBySection["reminder-rules"] =
+    {
+      expectedUpdatedAt: "2026-08-17T12:00:00.000000Z",
+      // @ts-expect-error reminder rules do not have a generic name.
+      name: "ignored",
+    };
+  // @ts-expect-error directional labels must be updated as a pair.
+  const invalidRelationship:
+    PersonalizationUpdateInputBySection["relationship-types"] = {
+      expectedUpdatedAt: "2026-08-17T12:00:00.000000Z",
+      forwardLabel: "Parent",
+    };
+  // @ts-expect-error shared global pet categories cannot be created.
+  const invalidPet: PersonalizationCreateInputBySection["pet-categories"] = {
+    name: "Shared",
+  };
+  assert(
+    reminder.daysBefore === 14 &&
+      gender.isDefault === true && Object.hasOwn(invalidGender, "isDefault") &&
+      relationship.forwardLabel === "Parent" &&
+      Object.hasOwn(invalidReminder, "name") &&
+      Object.hasOwn(invalidRelationship, "forwardLabel") &&
+      Object.hasOwn(invalidPet, "name"),
+    "compile-only invalid section fixtures remain observable",
   );
 });
 

@@ -96,3 +96,7 @@ export type {
   RelationshipPersonInspection,
   RelationshipPersonSummary,
 } from "./application/relationship_person_boundary.ts";
+export type { TagPersonalizationFacade } from "./application/tag_personalization.ts";
+export { PostgresTagPersonalization } from "./adapters/postgres/tag_personalization.ts";
+export { PostgresPeoplePersonalizationReferences } from "./adapters/postgres/personalization_references.ts";
+export type { PeoplePersonalizationReferences } from "./application/personalization_references.ts";

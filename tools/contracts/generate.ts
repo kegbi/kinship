@@ -1345,6 +1345,139 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           "WorkspaceSettings",
         ),
       },
+      "/api/v1/settings/personalization/{section}": {
+        parameters: [{
+          name: "section",
+          in: "path",
+          required: true,
+          schema: { $ref: "#/components/schemas/PersonalizationSection" },
+        }],
+        get: {
+          operationId: "listPersonalizationEntries",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter],
+          responses: {
+            "200": {
+              description: "Active-workspace personalization section",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/PersonalizationList" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+        post: {
+          operationId: "createPersonalizationEntry",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/PersonalizationCreate" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Personalization entry created",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/PersonalizationSaved" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/settings/personalization/{section}/{id}": {
+        parameters: [
+          {
+            name: "section",
+            in: "path",
+            required: true,
+            schema: { $ref: "#/components/schemas/PersonalizationSection" },
+          },
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        patch: {
+          operationId: "updatePersonalizationEntry",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/PersonalizationUpdate" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Personalization entry updated",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/PersonalizationSaved" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+        delete: {
+          operationId: "deletePersonalizationEntry",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, {
+            name: "expectedUpdatedAt",
+            in: "query",
+            required: true,
+            schema: { type: "string", format: "date-time" },
+          }, {
+            name: "replacementId",
+            in: "query",
+            required: false,
+            schema: { type: "string", format: "uuid" },
+          }],
+          responses: {
+            "200": {
+              description: "Personalization entry deleted",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/PersonalizationDeleted",
+                  },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
       "/api/v1/settings/members": securedRead(
         "listManagedMembers",
         "ManagedMembers",
@@ -2960,6 +3093,299 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        PersonalizationSection: {
+          type: "string",
+          enum: [
+            "profile-modules",
+            "gender-options",
+            "contact-method-types",
+            "contact-labels",
+            "activity-types",
+            "emotion-options",
+            "life-event-types",
+            "relationship-types",
+            "pet-categories",
+            "reminder-rules",
+            "tags",
+          ],
+        },
+        PersonalizationEntry: {
+          type: "object",
+          required: [
+            "capabilities",
+            "canDelete",
+            "id",
+            "isActive",
+            "isDefault",
+            "kind",
+            "name",
+            "readOnly",
+            "referenceCount",
+            "sortOrder",
+            "updatedAt",
+          ],
+          properties: {
+            capabilities: {
+              type: "object",
+              required: [
+                "delete",
+                "disable",
+                "editValue",
+                "rename",
+                "reorder",
+                "replace",
+                "setDefault",
+              ],
+              properties: {
+                delete: { type: "boolean" },
+                disable: { type: "boolean" },
+                editValue: { type: "boolean" },
+                rename: { type: "boolean" },
+                reorder: { type: "boolean" },
+                replace: { type: "boolean" },
+                setDefault: { type: "boolean" },
+              },
+              additionalProperties: false,
+            },
+            canDelete: { type: "boolean" },
+            daysBefore: { type: "integer", minimum: 0, maximum: 3650 },
+            forwardLabel: { type: "string" },
+            id: { type: "string", format: "uuid" },
+            isActive: { type: "boolean" },
+            isDefault: { type: "boolean" },
+            kind: {
+              type: "string",
+              enum: ["named", "relationship-type", "reminder-rule"],
+            },
+            name: { type: "string" },
+            readOnly: { type: "boolean" },
+            referenceCount: { type: "integer", minimum: 0 },
+            reverseLabel: { type: "string" },
+            sortOrder: { type: "integer", minimum: 0 },
+            updatedAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
+        PersonalizationList: {
+          type: "object",
+          required: [
+            "capabilities",
+            "entries",
+            "readOnly",
+            "section",
+            "status",
+          ],
+          properties: {
+            capabilities: {
+              type: "object",
+              required: ["create", "editValue"],
+              properties: {
+                create: { type: "boolean" },
+                editValue: { type: "boolean" },
+              },
+              additionalProperties: false,
+            },
+            entries: {
+              type: "array",
+              items: { $ref: "#/components/schemas/PersonalizationEntry" },
+            },
+            readOnly: { type: "boolean" },
+            section: { $ref: "#/components/schemas/PersonalizationSection" },
+            status: { const: "ready" },
+          },
+          additionalProperties: false,
+        },
+        PersonalizationNamedCreate: {
+          type: "object",
+          required: ["name"],
+          properties: {
+            name: { type: "string", minLength: 1, maxLength: 200 },
+            sortOrder: { type: "integer", minimum: 0, maximum: 10000 },
+          },
+          additionalProperties: false,
+        },
+        PersonalizationNameOnlyCreate: {
+          type: "object",
+          required: ["name"],
+          properties: {
+            name: { type: "string", minLength: 1, maxLength: 200 },
+          },
+          additionalProperties: false,
+        },
+        PersonalizationRelationshipCreate: {
+          type: "object",
+          required: ["forwardLabel", "reverseLabel"],
+          properties: {
+            forwardLabel: { type: "string", minLength: 1, maxLength: 200 },
+            reverseLabel: { type: "string", minLength: 1, maxLength: 200 },
+            sortOrder: { type: "integer", minimum: 0, maximum: 10000 },
+          },
+          additionalProperties: false,
+        },
+        PersonalizationReminderCreate: {
+          type: "object",
+          required: ["daysBefore"],
+          properties: {
+            daysBefore: { type: "integer", minimum: 0, maximum: 3650 },
+          },
+          additionalProperties: false,
+        },
+        PersonalizationCreate: {
+          anyOf: [
+            { $ref: "#/components/schemas/PersonalizationNamedCreate" },
+            { $ref: "#/components/schemas/PersonalizationNameOnlyCreate" },
+            {
+              $ref: "#/components/schemas/PersonalizationRelationshipCreate",
+            },
+            { $ref: "#/components/schemas/PersonalizationReminderCreate" },
+          ],
+          "x-sectionSchemas": {
+            "profile-modules":
+              "#/components/schemas/PersonalizationNamedCreate",
+            "gender-options": "#/components/schemas/PersonalizationNamedCreate",
+            "contact-method-types":
+              "#/components/schemas/PersonalizationNamedCreate",
+            "contact-labels":
+              "#/components/schemas/PersonalizationNameOnlyCreate",
+            "activity-types": "#/components/schemas/PersonalizationNamedCreate",
+            "emotion-options": null,
+            "life-event-types":
+              "#/components/schemas/PersonalizationNamedCreate",
+            "relationship-types":
+              "#/components/schemas/PersonalizationRelationshipCreate",
+            "pet-categories": null,
+            "reminder-rules":
+              "#/components/schemas/PersonalizationReminderCreate",
+            tags: "#/components/schemas/PersonalizationNameOnlyCreate",
+          },
+        },
+        PersonalizationNamedUpdate: {
+          type: "object",
+          required: ["expectedUpdatedAt"],
+          properties: {
+            expectedUpdatedAt: { type: "string", format: "date-time" },
+            isActive: { type: "boolean" },
+            name: { type: "string", minLength: 1, maxLength: 200 },
+            sortOrder: { type: "integer", minimum: 0, maximum: 10000 },
+          },
+          anyOf: [
+            { required: ["isActive"] },
+            { required: ["name"] },
+            { required: ["sortOrder"] },
+          ],
+          additionalProperties: false,
+        },
+        PersonalizationGenderUpdate: {
+          type: "object",
+          required: ["expectedUpdatedAt"],
+          properties: {
+            expectedUpdatedAt: { type: "string", format: "date-time" },
+            isActive: { type: "boolean" },
+            isDefault: { type: "boolean", const: true },
+            name: { type: "string", minLength: 1, maxLength: 200 },
+            sortOrder: { type: "integer", minimum: 0, maximum: 10000 },
+          },
+          anyOf: [
+            { required: ["isActive"] },
+            { required: ["isDefault"] },
+            { required: ["name"] },
+            { required: ["sortOrder"] },
+          ],
+          additionalProperties: false,
+        },
+        PersonalizationNameOnlyUpdate: {
+          type: "object",
+          required: ["expectedUpdatedAt", "name"],
+          properties: {
+            expectedUpdatedAt: { type: "string", format: "date-time" },
+            name: { type: "string", minLength: 1, maxLength: 200 },
+          },
+          additionalProperties: false,
+        },
+        PersonalizationRelationshipUpdate: {
+          type: "object",
+          required: ["expectedUpdatedAt"],
+          properties: {
+            expectedUpdatedAt: { type: "string", format: "date-time" },
+            forwardLabel: { type: "string", minLength: 1, maxLength: 200 },
+            isActive: { type: "boolean" },
+            reverseLabel: { type: "string", minLength: 1, maxLength: 200 },
+            sortOrder: { type: "integer", minimum: 0, maximum: 10000 },
+          },
+          dependentRequired: {
+            forwardLabel: ["reverseLabel"],
+            reverseLabel: ["forwardLabel"],
+          },
+          anyOf: [
+            { required: ["forwardLabel", "reverseLabel"] },
+            { required: ["isActive"] },
+            { required: ["sortOrder"] },
+          ],
+          additionalProperties: false,
+        },
+        PersonalizationReminderUpdate: {
+          type: "object",
+          required: ["expectedUpdatedAt"],
+          properties: {
+            expectedUpdatedAt: { type: "string", format: "date-time" },
+            daysBefore: { type: "integer", minimum: 0, maximum: 3650 },
+            isActive: { type: "boolean" },
+          },
+          anyOf: [
+            { required: ["daysBefore"] },
+            { required: ["isActive"] },
+          ],
+          additionalProperties: false,
+        },
+        PersonalizationUpdate: {
+          anyOf: [
+            { $ref: "#/components/schemas/PersonalizationNamedUpdate" },
+            { $ref: "#/components/schemas/PersonalizationGenderUpdate" },
+            { $ref: "#/components/schemas/PersonalizationNameOnlyUpdate" },
+            {
+              $ref: "#/components/schemas/PersonalizationRelationshipUpdate",
+            },
+            { $ref: "#/components/schemas/PersonalizationReminderUpdate" },
+          ],
+          "x-sectionSchemas": {
+            "profile-modules":
+              "#/components/schemas/PersonalizationNamedUpdate",
+            "gender-options":
+              "#/components/schemas/PersonalizationGenderUpdate",
+            "contact-method-types":
+              "#/components/schemas/PersonalizationNamedUpdate",
+            "contact-labels":
+              "#/components/schemas/PersonalizationNameOnlyUpdate",
+            "activity-types": "#/components/schemas/PersonalizationNamedUpdate",
+            "emotion-options": null,
+            "life-event-types":
+              "#/components/schemas/PersonalizationNamedUpdate",
+            "relationship-types":
+              "#/components/schemas/PersonalizationRelationshipUpdate",
+            "pet-categories": null,
+            "reminder-rules":
+              "#/components/schemas/PersonalizationReminderUpdate",
+            tags: "#/components/schemas/PersonalizationNameOnlyUpdate",
+          },
+        },
+        PersonalizationSaved: {
+          type: "object",
+          required: ["entry", "status"],
+          properties: {
+            entry: { $ref: "#/components/schemas/PersonalizationEntry" },
+            status: { const: "saved" },
+          },
+          additionalProperties: false,
+        },
+        PersonalizationDeleted: {
+          type: "object",
+          required: ["id", "status"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            status: { const: "deleted" },
+          },
+          additionalProperties: false,
+        },
         ManagedMember: {
           type: "object",
           required: ["id", "email", "name", "role", "status"],
@@ -3236,6 +3662,110 @@ export interface ManagedMember {
   readonly status: "active" | "suspended";
 }
 
+export type PersonalizationSection = "profile-modules" | "gender-options" | "contact-method-types" | "contact-labels" | "activity-types" | "emotion-options" | "life-event-types" | "relationship-types" | "pet-categories" | "reminder-rules" | "tags";
+
+type PersonalizationAtLeastOne<T, K extends keyof T = keyof T> = K extends keyof T ? Required<Pick<T, K>> & Partial<Omit<T, K>> : never;
+
+export interface PersonalizationNamedCreateInput {
+  readonly name: string;
+  readonly sortOrder?: number;
+}
+
+export interface PersonalizationNameOnlyCreateInput {
+  readonly name: string;
+}
+
+export interface PersonalizationRelationshipCreateInput {
+  readonly forwardLabel: string;
+  readonly reverseLabel: string;
+  readonly sortOrder?: number;
+}
+
+export interface PersonalizationReminderCreateInput {
+  readonly daysBefore: number;
+}
+
+export type PersonalizationNamedUpdateInput = { readonly expectedUpdatedAt: string } & PersonalizationAtLeastOne<{
+  readonly isActive: boolean;
+  readonly name: string;
+  readonly sortOrder: number;
+}>;
+
+export type PersonalizationGenderUpdateInput = { readonly expectedUpdatedAt: string } & PersonalizationAtLeastOne<{
+  readonly isActive: boolean;
+  readonly isDefault: true;
+  readonly name: string;
+  readonly sortOrder: number;
+}>;
+
+export interface PersonalizationNameOnlyUpdateInput {
+  readonly expectedUpdatedAt: string;
+  readonly name: string;
+}
+
+export type PersonalizationRelationshipUpdateInput = { readonly expectedUpdatedAt: string } & (
+  | {
+    readonly forwardLabel: string;
+    readonly isActive?: boolean;
+    readonly reverseLabel: string;
+    readonly sortOrder?: number;
+  }
+  | ({ readonly forwardLabel?: never; readonly reverseLabel?: never } & PersonalizationAtLeastOne<{
+    readonly isActive: boolean;
+    readonly sortOrder: number;
+  }>)
+);
+
+export type PersonalizationReminderUpdateInput = { readonly expectedUpdatedAt: string } & PersonalizationAtLeastOne<{
+  readonly daysBefore: number;
+  readonly isActive: boolean;
+}>;
+
+export interface PersonalizationCreateInputBySection {
+  readonly "profile-modules": PersonalizationNamedCreateInput;
+  readonly "gender-options": PersonalizationNamedCreateInput;
+  readonly "contact-method-types": PersonalizationNamedCreateInput;
+  readonly "contact-labels": PersonalizationNameOnlyCreateInput;
+  readonly "activity-types": PersonalizationNamedCreateInput;
+  readonly "emotion-options": never;
+  readonly "life-event-types": PersonalizationNamedCreateInput;
+  readonly "relationship-types": PersonalizationRelationshipCreateInput;
+  readonly "pet-categories": never;
+  readonly "reminder-rules": PersonalizationReminderCreateInput;
+  readonly tags: PersonalizationNameOnlyCreateInput;
+}
+
+export interface PersonalizationUpdateInputBySection {
+  readonly "profile-modules": PersonalizationNamedUpdateInput;
+  readonly "gender-options": PersonalizationGenderUpdateInput;
+  readonly "contact-method-types": PersonalizationNamedUpdateInput;
+  readonly "contact-labels": PersonalizationNameOnlyUpdateInput;
+  readonly "activity-types": PersonalizationNamedUpdateInput;
+  readonly "emotion-options": never;
+  readonly "life-event-types": PersonalizationNamedUpdateInput;
+  readonly "relationship-types": PersonalizationRelationshipUpdateInput;
+  readonly "pet-categories": never;
+  readonly "reminder-rules": PersonalizationReminderUpdateInput;
+  readonly tags: PersonalizationNameOnlyUpdateInput;
+}
+
+export interface PersonalizationEntry {
+  readonly capabilities: { readonly delete: boolean; readonly disable: boolean; readonly editValue: boolean; readonly rename: boolean; readonly reorder: boolean; readonly replace: boolean; readonly setDefault: boolean };
+  readonly canDelete: boolean;
+  readonly daysBefore?: number;
+  readonly forwardLabel?: string;
+  readonly id: string;
+  readonly isActive: boolean;
+  readonly isDefault: boolean;
+  readonly kind: "named" | "relationship-type" | "reminder-rule";
+  readonly name: string;
+  readonly readOnly: boolean;
+  readonly referenceCount: number;
+  readonly reverseLabel?: string;
+  readonly sortOrder: number;
+  readonly updatedAt: string;
+}
+
 function workspaceHeader(workspaceId?: string): HeadersInit | undefined {
   return workspaceId ? { "X-Workspace-Id": workspaceId } : undefined;
 }
@@ -3270,6 +3800,24 @@ export function getWorkspaceSettings(workspaceId?: string): Promise<ApiResult<{ 
 
 export function updateWorkspaceSettings(input: WorkspaceSettings, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly workspace: WorkspaceSettings }>> {
   return request("/api/v1/settings/workspace", { method: "PUT", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function listPersonalizationEntries(section: PersonalizationSection, workspaceId?: string): Promise<ApiResult<{ readonly capabilities: { readonly create: boolean; readonly editValue: boolean }; readonly entries: readonly PersonalizationEntry[]; readonly readOnly: boolean; readonly section: PersonalizationSection; readonly status: "ready" }>> {
+  return request(\`/api/v1/settings/personalization/\${encodeURIComponent(section)}\`, { headers: workspaceHeader(workspaceId) });
+}
+
+export function createPersonalizationEntry<S extends PersonalizationSection>(section: S, input: PersonalizationCreateInputBySection[S], workspaceId?: string): Promise<ApiResult<{ readonly entry: PersonalizationEntry; readonly status: "saved" }>> {
+  return request(\`/api/v1/settings/personalization/\${encodeURIComponent(section)}\`, { method: "POST", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function updatePersonalizationEntry<S extends PersonalizationSection>(section: S, id: string, input: PersonalizationUpdateInputBySection[S], workspaceId?: string): Promise<ApiResult<{ readonly entry: PersonalizationEntry; readonly status: "saved" }>> {
+  return request(\`/api/v1/settings/personalization/\${encodeURIComponent(section)}/\${encodeURIComponent(id)}\`, { method: "PATCH", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function deletePersonalizationEntry(section: PersonalizationSection, id: string, expectedUpdatedAt: string, replacementId?: string, workspaceId?: string): Promise<ApiResult<{ readonly id: string; readonly status: "deleted" }>> {
+  const query = new URLSearchParams({ expectedUpdatedAt });
+  if (replacementId) query.set("replacementId", replacementId);
+  return request(\`/api/v1/settings/personalization/\${encodeURIComponent(section)}/\${encodeURIComponent(id)}?\${query}\`, { method: "DELETE", headers: workspaceHeader(workspaceId) });
 }
 
 export function listManagedMembers(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly members: readonly ManagedMember[] }>> {

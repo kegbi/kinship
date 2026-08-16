@@ -104,6 +104,31 @@ describe("APP-002C protected application shell", () => {
       "Workspace settings unavailable",
     );
   });
+
+  it("renders a whole-route forbidden state for direct personalization access", async () => {
+    shellMarkup();
+    document.body.dataset.pageId = "settings.personalization";
+    document.querySelector("#protected-shell")?.insertAdjacentHTML(
+      "beforeend",
+      "<main data-requires-workspace-admin>Personalization controls</main>",
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        ...(session() as Record<string, unknown>),
+        member: { id: "member", role: "member" },
+      })),
+    );
+
+    await mountApplicationShell();
+
+    expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
+      .toBe(true);
+    expect(document.querySelector("#access-state")?.textContent).toContain(
+      "Personalization unavailable",
+    );
+    expect(document.body.textContent).not.toContain("Personalization controls");
+  });
   it("reveals one active workspace and signs out without browser token storage", async () => {
     shellMarkup();
     const fetchMock = vi.fn()

@@ -216,6 +216,7 @@ flows:
 
   - id: WORKSPACE-003
     title: Configure profile modules and controlled vocabularies
+    deliveryStatus: delivered
     priority: P1
     actor: workspace-admin
     trigger: An administrator opens a personalization section.
@@ -239,7 +240,7 @@ flows:
     moduleIds: [people, planning, workspaces]
     permissions: [workspace.personalization.manage]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-004e.spec.ts] }
 
   - id: TODAY-001
     title: Review and act on today's relationship priorities
