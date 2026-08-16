@@ -164,8 +164,8 @@ runnable behavior cannot work without them.
 - [x] **APP-004D / `RELATIONSHIP-001` — Relationships between people.**
   - [x] Deliver directional relationship create/change behavior, uniqueness,
         permissions, and archive interactions.
-- [ ] **APP-004E / `WORKSPACE-003` — Profile modules and vocabularies.**
-  - [ ] Deliver module settings and controlled vocabularies through accepted
+- [x] **APP-004E / `WORKSPACE-003` — Profile modules and vocabularies.**
+  - [x] Deliver module settings and controlled vocabularies through accepted
         personalization section deep links, not separate CRUD routes.
 - [ ] **Phase 4 accepted:** all Slice 2 flows pass and every mutation uses its
       owning module's public application facade.

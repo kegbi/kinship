@@ -2,6 +2,8 @@ import { type Context, Hono } from "hono";
 import { z } from "zod";
 import type {
   createProtectedSessionCoordinator,
+  PersonalizationManagement,
+  PersonalizationSection,
   SettingsManagement,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
@@ -10,6 +12,7 @@ type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
 export interface SettingsHttpServices {
   readonly browserSecurity: BrowserSecurityPolicy;
+  readonly personalization: PersonalizationManagement;
   readonly protectedSessions: ProtectedSessions;
   readonly settings: SettingsManagement;
 }
@@ -55,6 +58,79 @@ const workspaceSchema = z.object({
 const memberSchema = z.object({
   role: z.enum(["owner", "admin", "member"]),
   status: z.enum(["active", "suspended"]),
+}).strict();
+const personalizationName = z.string().trim().min(1).max(200);
+const personalizationOrder = z.number().int().min(0).max(10_000);
+const personalizationDays = z.number().int().min(0).max(3650);
+const expectedUpdatedAt = z.string().datetime({ offset: true });
+const namedCreate = z.object({
+  name: personalizationName,
+  sortOrder: personalizationOrder.optional(),
+}).strict();
+const nameOnlyCreate = z.object({ name: personalizationName }).strict();
+const relationshipCreate = z.object({
+  forwardLabel: personalizationName,
+  reverseLabel: personalizationName,
+  sortOrder: personalizationOrder.optional(),
+}).strict();
+const reminderCreate = z.object({ daysBefore: personalizationDays }).strict();
+const atLeastOneUpdate = <T extends z.ZodRawShape>(shape: T) =>
+  z.object({ expectedUpdatedAt, ...shape }).strict().refine(
+    (value) => Object.keys(value).length > 1,
+  );
+const namedUpdate = atLeastOneUpdate({
+  isActive: z.boolean().optional(),
+  name: personalizationName.optional(),
+  sortOrder: personalizationOrder.optional(),
+});
+const genderUpdate = atLeastOneUpdate({
+  isActive: z.boolean().optional(),
+  isDefault: z.literal(true).optional(),
+  name: personalizationName.optional(),
+  sortOrder: personalizationOrder.optional(),
+});
+const nameOnlyUpdate = atLeastOneUpdate({
+  name: personalizationName.optional(),
+});
+const relationshipUpdate = atLeastOneUpdate({
+  forwardLabel: personalizationName.optional(),
+  isActive: z.boolean().optional(),
+  reverseLabel: personalizationName.optional(),
+  sortOrder: personalizationOrder.optional(),
+}).refine(
+  (value) =>
+    (value.forwardLabel === undefined) === (value.reverseLabel === undefined),
+);
+const reminderUpdate = atLeastOneUpdate({
+  daysBefore: personalizationDays.optional(),
+  isActive: z.boolean().optional(),
+});
+const personalizationCreateSchema = (section: PersonalizationSection) => {
+  if (section === "relationship-types") return relationshipCreate;
+  if (section === "reminder-rules") return reminderCreate;
+  if (section === "contact-labels" || section === "tags") {
+    return nameOnlyCreate;
+  }
+  if (section === "emotion-options" || section === "pet-categories") {
+    return z.never();
+  }
+  return namedCreate;
+};
+const personalizationUpdateSchema = (section: PersonalizationSection) => {
+  if (section === "gender-options") return genderUpdate;
+  if (section === "contact-labels" || section === "tags") {
+    return nameOnlyUpdate;
+  }
+  if (section === "relationship-types") return relationshipUpdate;
+  if (section === "reminder-rules") return reminderUpdate;
+  if (section === "emotion-options" || section === "pet-categories") {
+    return z.never();
+  }
+  return namedUpdate;
+};
+const personalizationDeleteSchema = z.object({
+  expectedUpdatedAt: z.string().datetime({ offset: true }),
+  replacementId: z.string().uuid().optional(),
 }).strict();
 
 function problem(
@@ -532,5 +608,269 @@ export function createSettingsRoutes(services: SettingsHttpServices): Hono {
         "That member could not be updated.",
       );
   });
+  const section = (context: Context) => {
+    const value = context.req.param("section");
+    return value && services.personalization.isSection(value)
+      ? value
+      : undefined;
+  };
+  const personalizationProblem = (
+    context: Context,
+    result: { readonly status: string; readonly referenceCount?: number },
+  ): Response => {
+    switch (result.status) {
+      case "forbidden":
+        return problem(
+          context,
+          403,
+          "personalization_forbidden",
+          "Personalization forbidden",
+          "Only an active workspace owner or admin may manage personalization.",
+        );
+      case "not-found":
+        return problem(
+          context,
+          404,
+          "personalization_not_found",
+          "Option unavailable",
+          "That option does not belong to this active workspace.",
+        );
+      case "stale":
+        return problem(
+          context,
+          409,
+          "personalization_stale",
+          "Option changed",
+          "Reload this section before applying another change.",
+        );
+      case "conflict":
+        return problem(
+          context,
+          409,
+          "personalization_duplicate",
+          "Name already used",
+          "Choose a unique name in this workspace.",
+        );
+      case "replacement-required":
+        return problem(
+          context,
+          409,
+          "personalization_replacement_required",
+          "Replacement required",
+          `${
+            result.referenceCount ?? 0
+          } references must be moved before this option can be deleted.`,
+        );
+      case "replacement-conflict":
+        return problem(
+          context,
+          409,
+          "personalization_replacement_conflict",
+          "Replacement conflicts with existing history",
+          "Some records already use both the source and replacement options. Resolve the duplicate primary or relationship history before replacing this option.",
+        );
+      case "required-default":
+        return problem(
+          context,
+          409,
+          "personalization_required_default",
+          "Required option",
+          "This required or seeded option can be disabled where supported, but cannot be deleted.",
+        );
+      case "invalid":
+        return problem(
+          context,
+          400,
+          "validation_failed",
+          "Invalid personalization change",
+          "That change is not supported by this section.",
+        );
+      default:
+        return problem(
+          context,
+          503,
+          "personalization_unavailable",
+          "Personalization unavailable",
+          "Personalization could not be updated.",
+        );
+    }
+  };
+  routes.get("/api/v1/settings/personalization/:section", async (context) => {
+    const selected = section(context);
+    if (!selected) {
+      return problem(
+        context,
+        404,
+        "personalization_section_not_found",
+        "Section unavailable",
+        "Use an accepted personalization section link.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) return authenticationRequired(context);
+    const result = await services.personalization.list(resolved.actor, selected)
+      .catch(() => undefined);
+    return result?.status === "ready"
+      ? privateJson(context, {
+        capabilities: result.capabilities,
+        entries: result.entries,
+        readOnly: result.readOnly,
+        section: selected,
+        status: "ready",
+      })
+      : personalizationProblem(context, result ?? { status: "unavailable" });
+  });
+  routes.post("/api/v1/settings/personalization/:section", async (context) => {
+    const forbidden = requireOrigin(context, services.browserSecurity);
+    if (forbidden) return forbidden;
+    const selected = section(context);
+    const parsed = selected
+      ? personalizationCreateSchema(selected).safeParse(
+        await context.req.json().catch(() => undefined),
+      )
+      : undefined;
+    if (!selected || !parsed?.success) {
+      return problem(
+        context,
+        400,
+        "validation_failed",
+        "Invalid personalization option",
+        "Provide an accepted section, unique name, and valid order.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) return authenticationRequired(context);
+    const data = parsed.data as {
+      readonly daysBefore?: number;
+      readonly forwardLabel?: string;
+      readonly name?: string;
+      readonly reverseLabel?: string;
+      readonly sortOrder?: number;
+    };
+    const result = await services.personalization.mutate(
+      resolved.actor,
+      selected,
+      {
+        action: "create",
+        ...(data.daysBefore === undefined
+          ? {}
+          : { daysBefore: data.daysBefore }),
+        ...(data.forwardLabel === undefined
+          ? {}
+          : { forwardLabel: data.forwardLabel }),
+        ...(data.name === undefined ? {} : { name: data.name }),
+        ...(data.reverseLabel === undefined
+          ? {}
+          : { reverseLabel: data.reverseLabel }),
+        sortOrder: data.sortOrder ?? 0,
+      },
+    ).catch(() => undefined);
+    return result?.status === "saved"
+      ? privateJson(context, result)
+      : personalizationProblem(context, result ?? { status: "unavailable" });
+  });
+  routes.patch(
+    "/api/v1/settings/personalization/:section/:id",
+    async (context) => {
+      const forbidden = requireOrigin(context, services.browserSecurity);
+      if (forbidden) return forbidden;
+      const selected = section(context);
+      const id = z.string().uuid().safeParse(context.req.param("id"));
+      const parsed = selected
+        ? personalizationUpdateSchema(selected).safeParse(
+          await context.req.json().catch(() => undefined),
+        )
+        : undefined;
+      if (!selected || !id.success || !parsed?.success) {
+        return problem(
+          context,
+          400,
+          "validation_failed",
+          "Invalid personalization option",
+          "Reload the option and provide valid values.",
+        );
+      }
+      const resolved = await actor(context, services);
+      if (!resolved) return authenticationRequired(context);
+      const data = parsed.data as {
+        readonly daysBefore?: number;
+        readonly expectedUpdatedAt: string;
+        readonly forwardLabel?: string;
+        readonly isActive?: boolean;
+        readonly isDefault?: true;
+        readonly name?: string;
+        readonly reverseLabel?: string;
+        readonly sortOrder?: number;
+      };
+      const result = await services.personalization.mutate(
+        resolved.actor,
+        selected,
+        {
+          action: "update",
+          expectedUpdatedAt: data.expectedUpdatedAt,
+          id: id.data,
+          ...(data.isActive === undefined ? {} : { isActive: data.isActive }),
+          ...(data.isDefault === undefined
+            ? {}
+            : { isDefault: data.isDefault }),
+          ...(data.name === undefined ? {} : { name: data.name }),
+          ...(data.daysBefore === undefined
+            ? {}
+            : { daysBefore: data.daysBefore }),
+          ...(data.forwardLabel === undefined
+            ? {}
+            : { forwardLabel: data.forwardLabel }),
+          ...(data.reverseLabel === undefined
+            ? {}
+            : { reverseLabel: data.reverseLabel }),
+          ...(data.sortOrder === undefined
+            ? {}
+            : { sortOrder: data.sortOrder }),
+        },
+      ).catch(() => undefined);
+      return result?.status === "saved"
+        ? privateJson(context, result)
+        : personalizationProblem(context, result ?? { status: "unavailable" });
+    },
+  );
+  routes.delete(
+    "/api/v1/settings/personalization/:section/:id",
+    async (context) => {
+      const forbidden = requireOrigin(context, services.browserSecurity);
+      if (forbidden) return forbidden;
+      const selected = section(context);
+      const id = z.string().uuid().safeParse(context.req.param("id"));
+      const parsed = personalizationDeleteSchema.safeParse({
+        expectedUpdatedAt: context.req.query("expectedUpdatedAt"),
+        replacementId: context.req.query("replacementId"),
+      });
+      if (!selected || !id.success || !parsed.success) {
+        return problem(
+          context,
+          400,
+          "validation_failed",
+          "Invalid personalization deletion",
+          "Reload the option and choose a valid replacement when required.",
+        );
+      }
+      const resolved = await actor(context, services);
+      if (!resolved) return authenticationRequired(context);
+      const result = await services.personalization.mutate(
+        resolved.actor,
+        selected,
+        {
+          action: "delete",
+          expectedUpdatedAt: parsed.data.expectedUpdatedAt,
+          id: id.data,
+          ...(parsed.data.replacementId
+            ? { replacementId: parsed.data.replacementId }
+            : {}),
+        },
+      ).catch(() => undefined);
+      return result?.status === "deleted"
+        ? privateJson(context, result)
+        : personalizationProblem(context, result ?? { status: "unavailable" });
+    },
+  );
   return routes;
 }

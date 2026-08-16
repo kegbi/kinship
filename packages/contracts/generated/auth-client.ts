@@ -177,6 +177,110 @@ export interface ManagedMember {
   readonly status: "active" | "suspended";
 }
 
+export type PersonalizationSection = "profile-modules" | "gender-options" | "contact-method-types" | "contact-labels" | "activity-types" | "emotion-options" | "life-event-types" | "relationship-types" | "pet-categories" | "reminder-rules" | "tags";
+
+type PersonalizationAtLeastOne<T, K extends keyof T = keyof T> = K extends keyof T ? Required<Pick<T, K>> & Partial<Omit<T, K>> : never;
+
+export interface PersonalizationNamedCreateInput {
+  readonly name: string;
+  readonly sortOrder?: number;
+}
+
+export interface PersonalizationNameOnlyCreateInput {
+  readonly name: string;
+}
+
+export interface PersonalizationRelationshipCreateInput {
+  readonly forwardLabel: string;
+  readonly reverseLabel: string;
+  readonly sortOrder?: number;
+}
+
+export interface PersonalizationReminderCreateInput {
+  readonly daysBefore: number;
+}
+
+export type PersonalizationNamedUpdateInput = { readonly expectedUpdatedAt: string } & PersonalizationAtLeastOne<{
+  readonly isActive: boolean;
+  readonly name: string;
+  readonly sortOrder: number;
+}>;
+
+export type PersonalizationGenderUpdateInput = { readonly expectedUpdatedAt: string } & PersonalizationAtLeastOne<{
+  readonly isActive: boolean;
+  readonly isDefault: true;
+  readonly name: string;
+  readonly sortOrder: number;
+}>;
+
+export interface PersonalizationNameOnlyUpdateInput {
+  readonly expectedUpdatedAt: string;
+  readonly name: string;
+}
+
+export type PersonalizationRelationshipUpdateInput = { readonly expectedUpdatedAt: string } & (
+  | {
+    readonly forwardLabel: string;
+    readonly isActive?: boolean;
+    readonly reverseLabel: string;
+    readonly sortOrder?: number;
+  }
+  | ({ readonly forwardLabel?: never; readonly reverseLabel?: never } & PersonalizationAtLeastOne<{
+    readonly isActive: boolean;
+    readonly sortOrder: number;
+  }>)
+);
+
+export type PersonalizationReminderUpdateInput = { readonly expectedUpdatedAt: string } & PersonalizationAtLeastOne<{
+  readonly daysBefore: number;
+  readonly isActive: boolean;
+}>;
+
+export interface PersonalizationCreateInputBySection {
+  readonly "profile-modules": PersonalizationNamedCreateInput;
+  readonly "gender-options": PersonalizationNamedCreateInput;
+  readonly "contact-method-types": PersonalizationNamedCreateInput;
+  readonly "contact-labels": PersonalizationNameOnlyCreateInput;
+  readonly "activity-types": PersonalizationNamedCreateInput;
+  readonly "emotion-options": never;
+  readonly "life-event-types": PersonalizationNamedCreateInput;
+  readonly "relationship-types": PersonalizationRelationshipCreateInput;
+  readonly "pet-categories": never;
+  readonly "reminder-rules": PersonalizationReminderCreateInput;
+  readonly tags: PersonalizationNameOnlyCreateInput;
+}
+
+export interface PersonalizationUpdateInputBySection {
+  readonly "profile-modules": PersonalizationNamedUpdateInput;
+  readonly "gender-options": PersonalizationGenderUpdateInput;
+  readonly "contact-method-types": PersonalizationNamedUpdateInput;
+  readonly "contact-labels": PersonalizationNameOnlyUpdateInput;
+  readonly "activity-types": PersonalizationNamedUpdateInput;
+  readonly "emotion-options": never;
+  readonly "life-event-types": PersonalizationNamedUpdateInput;
+  readonly "relationship-types": PersonalizationRelationshipUpdateInput;
+  readonly "pet-categories": never;
+  readonly "reminder-rules": PersonalizationReminderUpdateInput;
+  readonly tags: PersonalizationNameOnlyUpdateInput;
+}
+
+export interface PersonalizationEntry {
+  readonly capabilities: { readonly delete: boolean; readonly disable: boolean; readonly editValue: boolean; readonly rename: boolean; readonly reorder: boolean; readonly replace: boolean; readonly setDefault: boolean };
+  readonly canDelete: boolean;
+  readonly daysBefore?: number;
+  readonly forwardLabel?: string;
+  readonly id: string;
+  readonly isActive: boolean;
+  readonly isDefault: boolean;
+  readonly kind: "named" | "relationship-type" | "reminder-rule";
+  readonly name: string;
+  readonly readOnly: boolean;
+  readonly referenceCount: number;
+  readonly reverseLabel?: string;
+  readonly sortOrder: number;
+  readonly updatedAt: string;
+}
+
 function workspaceHeader(workspaceId?: string): HeadersInit | undefined {
   return workspaceId ? { "X-Workspace-Id": workspaceId } : undefined;
 }
@@ -211,6 +315,24 @@ export function getWorkspaceSettings(workspaceId?: string): Promise<ApiResult<{ 
 
 export function updateWorkspaceSettings(input: WorkspaceSettings, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly workspace: WorkspaceSettings }>> {
   return request("/api/v1/settings/workspace", { method: "PUT", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function listPersonalizationEntries(section: PersonalizationSection, workspaceId?: string): Promise<ApiResult<{ readonly capabilities: { readonly create: boolean; readonly editValue: boolean }; readonly entries: readonly PersonalizationEntry[]; readonly readOnly: boolean; readonly section: PersonalizationSection; readonly status: "ready" }>> {
+  return request(`/api/v1/settings/personalization/${encodeURIComponent(section)}`, { headers: workspaceHeader(workspaceId) });
+}
+
+export function createPersonalizationEntry<S extends PersonalizationSection>(section: S, input: PersonalizationCreateInputBySection[S], workspaceId?: string): Promise<ApiResult<{ readonly entry: PersonalizationEntry; readonly status: "saved" }>> {
+  return request(`/api/v1/settings/personalization/${encodeURIComponent(section)}`, { method: "POST", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function updatePersonalizationEntry<S extends PersonalizationSection>(section: S, id: string, input: PersonalizationUpdateInputBySection[S], workspaceId?: string): Promise<ApiResult<{ readonly entry: PersonalizationEntry; readonly status: "saved" }>> {
+  return request(`/api/v1/settings/personalization/${encodeURIComponent(section)}/${encodeURIComponent(id)}`, { method: "PATCH", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function deletePersonalizationEntry(section: PersonalizationSection, id: string, expectedUpdatedAt: string, replacementId?: string, workspaceId?: string): Promise<ApiResult<{ readonly id: string; readonly status: "deleted" }>> {
+  const query = new URLSearchParams({ expectedUpdatedAt });
+  if (replacementId) query.set("replacementId", replacementId);
+  return request(`/api/v1/settings/personalization/${encodeURIComponent(section)}/${encodeURIComponent(id)}?${query}`, { method: "DELETE", headers: workspaceHeader(workspaceId) });
 }
 
 export function listManagedMembers(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly members: readonly ManagedMember[] }>> {

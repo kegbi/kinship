@@ -18,6 +18,7 @@ import {
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import {
   type AuthenticationResponseEqualizer,
+  createPersonalizationManagement,
   createProtectedSessionCoordinator,
   createVerificationDeliveryRetry,
   PostgresActiveWorkspaceResolver,
@@ -25,6 +26,7 @@ import {
   PostgresRegistrationTransaction,
   PostgresRelationshipWorkspaceBoundary,
   PostgresWorkspaceInvitations,
+  PostgresWorkspacePersonalization,
   PostgresWorkspaceRegistration,
   PostgresWorkspaceSettings,
 } from "../../packages/backend/modules/workspaces/public.ts";
@@ -75,17 +77,25 @@ import {
   createProfileFactManagement,
   type ImportantDateManagement,
   PostgresImportantDateRepository,
+  PostgresPeoplePersonalizationReferences,
   PostgresPeopleRepository,
   PostgresPeopleTransaction,
   PostgresPersonLifecycleRepository,
   PostgresProfileFactRepository,
   PostgresRelationshipPersonBoundary,
+  PostgresTagPersonalization,
 } from "../../packages/backend/modules/people/public.ts";
-import { PostgresPersonDateReminderPublisher } from "../../packages/backend/modules/planning/public.ts";
+import {
+  PostgresPersonDateReminderPublisher,
+  PostgresReminderRulePersonalization,
+} from "../../packages/backend/modules/planning/public.ts";
+import { PostgresInteractionPersonalizationReferences } from "../../packages/backend/modules/interactions/public.ts";
+import { PostgresJournalPersonalizationReferences } from "../../packages/backend/modules/journal/public.ts";
 import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
 import { createRelationshipRoutes } from "./relationships.ts";
 import {
   createRelationshipManagement,
+  PostgresRelationshipPersonalizationReferences,
   PostgresRelationshipRepository,
   type RelationshipManagement,
 } from "../../packages/backend/modules/relationships/public.ts";
@@ -105,6 +115,7 @@ import {
   createAuthenticationResponseEqualizer,
   DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
 } from "./authentication_response.ts";
+import { PersonalizationRepositoryRouter } from "./personalization_repository.ts";
 
 export interface ApiServices extends RegistrationHttpServices {
   readonly directory?: PeopleDirectory;
@@ -114,6 +125,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly passwordRecovery?: AuthenticationHttpServices["passwordRecovery"];
   readonly protectedSessions?: AuthenticationHttpServices["protectedSessions"];
   readonly settings?: SettingsHttpServices["settings"];
+  readonly personalization?: SettingsHttpServices["personalization"];
   readonly people?: PeopleHttpServices["people"];
   readonly profile?: PersonProfile;
   readonly relationships?: RelationshipManagement;
@@ -209,12 +221,13 @@ export function createApiApp(services?: ApiServices): Hono {
           }),
         );
       }
-      if (services.settings) {
+      if (services.settings && services.personalization) {
         api.route(
           "/",
           createSettingsRoutes({
             browserSecurity: services.browserSecurity,
             protectedSessions: services.protectedSessions,
+            personalization: services.personalization,
             settings: services.settings,
           }),
         );
@@ -408,6 +421,21 @@ export function createConfiguredApiApp(
     transaction,
     workspace: new PostgresWorkspaceSettings(),
   });
+  const workspacePersonalization = new PostgresWorkspacePersonalization();
+  const personalization = createPersonalizationManagement({
+    audit: new PostgresSettingsAudit(),
+    clock,
+    repository: new PersonalizationRepositoryRouter(
+      workspacePersonalization,
+      new PostgresTagPersonalization(),
+      new PostgresReminderRulePersonalization(),
+      new PostgresPeoplePersonalizationReferences(),
+      new PostgresRelationshipPersonalizationReferences(),
+      new PostgresInteractionPersonalizationReferences(),
+      new PostgresJournalPersonalizationReferences(),
+    ),
+    transaction,
+  });
   const peopleTransaction = new PostgresPeopleTransaction(connection.db);
   const peopleManagement = createPeopleManagement({
     audit: new PostgresPersonCreatedAudit(),
@@ -471,6 +499,7 @@ export function createConfiguredApiApp(
     profileFacts,
     relationships,
     protectedSessions,
+    personalization,
     settings,
     tagOptions,
     register: registration,

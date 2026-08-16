@@ -544,12 +544,13 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
       }
     } else if (command.section === "tags") {
       const value = command.value as TagsFact;
-      const valid = await sql<{ readonly valid: boolean }>`
-        select count(*)::int = ${value.tagIds.length} as valid from crm.tags
+      const valid = await sql<{ readonly id: string }>`
+        select id::text from crm.tags
         where workspace_id = ${command.workspaceId}::uuid
           and id = any(${value.tagIds}::uuid[])
+        order by id for key share
       `.execute(database);
-      if (valid.rows[0]?.valid !== true) return undefined;
+      if (valid.rows.length !== value.tagIds.length) return undefined;
       await sql`delete from crm.person_tags where person_id = ${command.personId}::uuid`
         .execute(database);
       await sql`insert into crm.person_tags (person_id, tag_id)

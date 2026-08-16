@@ -1,0 +1,26 @@
+---
+import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
+import { PERSONALIZATION_SECTIONS } from "../../../lib/personalization.ts";
+export const prerender = true;
+---
+
+<ApplicationLayout current="settings" description="Manage active workspace profile modules and controlled vocabularies." pageId="settings.personalization" title="Personalization — Kinship">
+  <main id="main-content" class="page-frame settings-page personalization-page" tabindex="-1" data-requires-workspace-admin>
+    <header class="settings-heading"><div><p class="eyebrow">Workspace settings</p><h1>Personalization</h1><p>Manage one workspace-owned profile section at a time. Disabling a module never deletes person history.</p></div><a class="button-link secondary-link" href="/app/settings">All settings</a></header>
+    <div class="personalization-layout">
+      <nav class="personalization-nav" aria-label="Personalization sections">
+        {PERSONALIZATION_SECTIONS.map(({ id, label }) => <a href={`/app/settings/personalization?section=${id}`} data-personalization-section={id}>{label}</a>)}
+      </nav>
+      <section class="personalization-content" aria-labelledby="personalization-heading">
+        <h2 id="personalization-heading" tabindex="-1">Profile modules</h2>
+        <p>Names must be unique in this workspace. Impact counts are shown before replacement, disabling, or deletion.</p>
+        <form id="personalization-create" class="personalization-create"><label>New option name<input name="name" maxlength="200" required /></label><button type="submit">Create option</button></form>
+        <p id="personalization-dirty" class="inline-status" role="status" aria-live="polite">All changes saved.</p>
+        <p id="personalization-status" class="inline-status" role="status" tabindex="-1" aria-live="polite">Loading workspace personalization…</p>
+        <ul id="personalization-list" class="personalization-list" aria-label="Personalization options"></ul>
+      </section>
+    </div>
+  </main>
+</ApplicationLayout>
+
+<script>import { mountPersonalization } from "../../../lib/personalization.ts"; void mountPersonalization();</script>

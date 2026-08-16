@@ -18,7 +18,7 @@ const categories = [
     items: [
       ["General", "Workspace identity and shared defaults", "workspace general identity defaults", "/app/settings/workspace"],
       ["Members", "Roles, active members, and invitations", "members roles invitations", "/app/settings/members"],
-      ["Personalization", "Profile modules and controlled vocabularies", "personalization vocabularies tags relationship activity"],
+      ["Personalization", "Profile modules and controlled vocabularies", "personalization vocabularies tags relationship activity", "/app/settings/personalization?section=profile-modules"],
     ],
   },
   {
@@ -78,7 +78,7 @@ const categories = [
             </header>
             <div class="settings-card-grid">
               {category.items.map(([title, description, search, href]) => (
-                <article class="settings-card" data-settings-item data-search={`${category.title} ${title} ${search}`} data-requires-workspace-admin={title === "Members" || title === "General" ? "true" : undefined}>
+                <article class="settings-card" data-settings-item data-search={`${category.title} ${title} ${search}`} data-requires-workspace-admin={title === "Members" || title === "General" || title === "Personalization" ? "true" : undefined}>
                   <div><h3>{title}</h3><p>{description}</p></div>
                   {href ? <a class="planned-label settings-card-link" href={href}>Open</a> : <span class="planned-label">Planned</span>}
                 </article>

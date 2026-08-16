@@ -691,6 +691,88 @@ summary:focus-visible,
   max-width: 64rem;
 }
 
+.personalization-layout {
+  display: grid;
+  grid-template-columns: minmax(13rem, 16rem) minmax(0, 52rem);
+  gap: 2rem;
+  align-items: start;
+}
+
+.personalization-nav {
+  position: sticky;
+  top: 1rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.personalization-nav a {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0.65rem 0.8rem;
+  border-radius: 0.7rem;
+  color: var(--ink-muted);
+  text-decoration: none;
+}
+
+.personalization-nav a[aria-current="page"] {
+  color: var(--ink);
+  background: var(--surface-raised);
+  box-shadow: inset 3px 0 var(--accent);
+}
+
+.personalization-content,
+.personalization-row {
+  min-width: 0;
+}
+
+.personalization-create,
+.personalization-entry-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.personalization-create {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  margin: 1.25rem 0;
+}
+
+.personalization-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.personalization-row {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--surface-raised);
+}
+
+.personalization-entry-form {
+  grid-template-columns: minmax(10rem, 1fr) 7rem;
+}
+
+.personalization-entry-form p,
+.personalization-actions {
+  grid-column: 1 / -1;
+}
+
+.personalization-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.personalization-actions button,
+.personalization-actions select,
+.personalization-create button {
+  min-height: 44px;
+}
+
 .settings-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1767,6 +1849,26 @@ summary:focus-visible,
   .settings-page {
     width: calc(100% - 1rem);
     padding-top: 2rem;
+  }
+
+  .personalization-layout {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .personalization-nav {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .personalization-create,
+  .personalization-entry-form {
+    grid-template-columns: 1fr;
+  }
+
+  .personalization-entry-form p,
+  .personalization-actions {
+    grid-column: auto;
   }
 
   .page-heading,
