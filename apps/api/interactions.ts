@@ -1,6 +1,11 @@
 import { type Context, Hono } from "hono";
 import { z } from "zod";
-import type { InteractionManagement } from "../../packages/backend/modules/interactions/public.ts";
+import type {
+  CommunicationManagement,
+  InteractionManagement,
+  RecordCommunicationInput,
+  RecordInteractionInput,
+} from "../../packages/backend/modules/interactions/public.ts";
 import type { ActivityReport } from "../../packages/backend/read-models/activity-report/public.ts";
 import type { TodayInteractions } from "../../packages/backend/read-models/today/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
@@ -11,7 +16,7 @@ type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface InteractionHttpServices {
   readonly activityReport: ActivityReport;
   readonly browserSecurity: BrowserSecurityPolicy;
-  readonly interactions: InteractionManagement;
+  readonly interactions: InteractionManagement & CommunicationManagement;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
   readonly today: TodayInteractions;
 }
@@ -34,7 +39,36 @@ const noteSchema = z.object({
   personId: id,
   requestId: id,
 }).strict();
-const inputSchema = z.discriminatedUnion("kind", [activitySchema, noteSchema]);
+const callSchema = z.object({
+  calledAt: z.iso.datetime({ offset: true }),
+  contactWasCaller: z.boolean(),
+  content: z.string().trim().min(1).max(10_000).optional(),
+  emotionIds: z.array(id).max(20).optional(),
+  kind: z.literal("call"),
+  personId: id,
+  requestId: id,
+}).strict();
+const messageSchema = z.object({
+  content: z.string().trim().min(1).max(10_000),
+  direction: z.enum(["inbound", "outbound"]),
+  writtenAt: z.iso.datetime({ offset: true }),
+}).strict();
+const conversationSchema = z.object({
+  channelTypeId: id,
+  contactMethodId: id.optional(),
+  happenedAt: z.iso.datetime({ offset: true }),
+  kind: z.literal("conversation"),
+  messages: z.array(messageSchema).max(50).optional(),
+  personId: id,
+  requestId: id,
+  title: z.string().trim().min(1).max(500).optional(),
+}).strict();
+const inputSchema = z.discriminatedUnion("kind", [
+  activitySchema,
+  noteSchema,
+  callSchema,
+  conversationSchema,
+]);
 const reportQuery = z.object({
   cursor: z.string().max(2_000).optional(),
   kind: z.enum(["activity", "note"]).optional(),
@@ -194,7 +228,7 @@ export function createInteractionRoutes(
         400,
         "interaction_request_invalid",
         "Invalid interaction",
-        "Use supported activity or note fields and canonical identifiers.",
+        "Use supported interaction fields and canonical identifiers.",
       );
     }
     const resolved = await actor(context, services);
@@ -214,7 +248,8 @@ export function createInteractionRoutes(
         requestId: input.data.requestId,
         summary: input.data.summary,
       }
-      : {
+      : input.data.kind === "note"
+      ? {
         body: input.data.body,
         ...(input.data.isFavorited === undefined
           ? {}
@@ -222,9 +257,40 @@ export function createInteractionRoutes(
         kind: "note" as const,
         personId: input.data.personId,
         requestId: input.data.requestId,
+      }
+      : input.data.kind === "call"
+      ? {
+        calledAt: input.data.calledAt,
+        contactWasCaller: input.data.contactWasCaller,
+        ...(input.data.content ? { content: input.data.content } : {}),
+        ...(input.data.emotionIds ? { emotionIds: input.data.emotionIds } : {}),
+        kind: "call" as const,
+        personId: input.data.personId,
+        requestId: input.data.requestId,
+      }
+      : {
+        channelTypeId: input.data.channelTypeId,
+        ...(input.data.contactMethodId
+          ? { contactMethodId: input.data.contactMethodId }
+          : {}),
+        happenedAt: input.data.happenedAt,
+        kind: "conversation" as const,
+        ...(input.data.messages ? { messages: input.data.messages } : {}),
+        personId: input.data.personId,
+        requestId: input.data.requestId,
+        ...(input.data.title ? { title: input.data.title } : {}),
       };
-    const result = await services.interactions.record(resolved, normalized)
-      .catch(() => undefined);
+    const result =
+      await (input.data.kind === "activity" || input.data.kind === "note"
+        ? services.interactions.record(
+          resolved,
+          normalized as RecordInteractionInput,
+        )
+        : services.interactions.recordCommunication(
+          resolved,
+          normalized as RecordCommunicationInput,
+        ))
+        .catch(() => undefined);
     if (!result) {
       return problem(
         context,
@@ -237,6 +303,56 @@ export function createInteractionRoutes(
     if (result.status !== "created") return mutationFailure(context, result);
     context.header("Cache-Control", "private, no-store");
     return context.json(result, 201);
+  });
+
+  routes.get("/api/v1/communication-options", async (context) => {
+    const resolved = await actor(context, services);
+    if (!resolved) return authenticationRequired(context);
+    const result = await services.interactions.communicationOptions(resolved)
+      .catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "communication_options_unavailable",
+        "Communication options unavailable",
+        "Try again before recording communication.",
+      );
+    }
+    if (result.status !== "ready") return mutationFailure(context, result);
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
+
+  routes.get("/api/v1/people/:personId/communications", async (context) => {
+    const personId = id.safeParse(context.req.param("personId"));
+    if (!personId.success) {
+      return problem(
+        context,
+        400,
+        "communication_query_invalid",
+        "Invalid communication query",
+        "Use a canonical person identifier.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) return authenticationRequired(context);
+    const result = await services.interactions.listCommunications(
+      resolved,
+      personId.data,
+    ).catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "communications_unavailable",
+        "Communication unavailable",
+        "Saved communication was not changed.",
+      );
+    }
+    if (result.status !== "ready") return mutationFailure(context, result);
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
   });
 
   routes.get("/api/v1/interaction-options", async (context) => {

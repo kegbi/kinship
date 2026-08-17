@@ -702,6 +702,20 @@ Deno.test("[APP-003C] OpenAPI describes the canonical workspace summary", () => 
       (schemas as Readonly<Record<string, ObjectSchema>>).PersonReady!,
       representative,
     ) &&
+      acceptsObjectInstance(
+        schemas as Readonly<Record<string, ObjectSchema>>,
+        (schemas as Readonly<Record<string, ObjectSchema>>).PersonReady!,
+        {
+          ...representative,
+          person: {
+            ...representative.person,
+            profileSections: [
+              { id: "calls", status: "ready" },
+              { id: "conversations", status: "ready" },
+            ],
+          },
+        },
+      ) &&
       !acceptsObjectInstance(
         schemas as Readonly<Record<string, ObjectSchema>>,
         (schemas as Readonly<Record<string, ObjectSchema>>).PersonReady!,
@@ -709,18 +723,19 @@ Deno.test("[APP-003C] OpenAPI describes the canonical workspace summary", () => 
           ...representative,
           person: {
             ...representative.person,
-            profileSections: [{ id: "calls", status: "ready" }],
+            profileSections: [{ id: "life-events", status: "ready" }],
           },
         },
       ),
     "representative person response does not enforce profile section IDs",
   );
   const relationshipsSection: PersonProfileSectionId = "relationships";
-  // @ts-expect-error unsupported profile sections remain unavailable.
-  const unsupportedSection: PersonProfileSectionId = "calls";
+  const callsSection: PersonProfileSectionId = "calls";
+  // @ts-expect-error life events remain unavailable in the profile read model.
+  const unsupportedSection: PersonProfileSectionId = "life-events";
   assert(
     relationshipsSection === "relationships" &&
-      String(unsupportedSection) === "calls",
+      callsSection === "calls" && String(unsupportedSection) === "life-events",
     "generated profile-section type fixtures were not evaluated",
   );
 });

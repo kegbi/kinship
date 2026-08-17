@@ -1,4 +1,7 @@
-import type { InteractionManagement } from "../../packages/backend/modules/interactions/public.ts";
+import type {
+  CommunicationManagement,
+  InteractionManagement,
+} from "../../packages/backend/modules/interactions/public.ts";
 import type { ActivityReport } from "../../packages/backend/read-models/activity-report/public.ts";
 import type { TodayInteractions } from "../../packages/backend/read-models/today/public.ts";
 import { createInteractionRoutes } from "./interactions.ts";
@@ -19,7 +22,9 @@ const actor = {
   workspaceName: "Circle",
 };
 
-function services(overrides: Partial<InteractionManagement> = {}) {
+type Interactions = InteractionManagement & CommunicationManagement;
+
+function services(overrides: Partial<Interactions> = {}) {
   const record = {
     activityType: "Shared meal",
     createdAt: "2026-08-17T12:30:00.000Z",
@@ -44,6 +49,14 @@ function services(overrides: Partial<InteractionManagement> = {}) {
     } as ActivityReport,
     browserSecurity: { origin: "http://localhost", secureCookie: false },
     interactions: {
+      communicationOptions: () =>
+        Promise.resolve({
+          availability: { call: true, conversation: true },
+          channelTypes: [],
+          emotions: [],
+          status: "ready",
+        }),
+      listCommunications: () => Promise.resolve({ items: [], status: "ready" }),
       options: () =>
         Promise.resolve({
           activityTypes: [],
@@ -52,8 +65,21 @@ function services(overrides: Partial<InteractionManagement> = {}) {
           status: "ready",
         }),
       record: () => Promise.resolve({ record, status: "created" }),
+      recordCommunication: () =>
+        Promise.resolve({
+          record: {
+            calledAt: "2026-08-16T18:15:00.000Z",
+            contactWasCaller: true,
+            createdAt: "2026-08-17T12:30:00.000Z",
+            emotions: [],
+            id: requestId,
+            kind: "call",
+            person: { id: personId, name: "Ada Lovelace" },
+          },
+          status: "created",
+        }),
       ...overrides,
-    } as InteractionManagement,
+    } as Interactions,
     protectedSessions: { resolve: () => Promise.resolve(actor) },
     today: {
       getFavoriteNotes: () =>
@@ -133,6 +159,69 @@ Deno.test("INTERACTION-001 HTTP records strict activities and exposes read-only 
     method: "POST",
   });
   assert(extra.status === 400, "APP-005B call fields were accepted");
+});
+
+Deno.test("INTERACTION-002 HTTP records calls/conversations and exposes the person projection", async () => {
+  const received: unknown[] = [];
+  const app = createInteractionRoutes(services({
+    listCommunications: () =>
+      Promise.resolve({
+        items: [{
+          channelType: { id: requestId, name: "Email" },
+          createdAt: "2026-08-17T12:30:00.000Z",
+          happenedAt: "2026-08-16T18:15:00.000Z",
+          id: requestId,
+          kind: "conversation",
+          messages: [],
+          person: { id: personId, name: "Ada Lovelace" },
+        }],
+        status: "ready",
+      }),
+    recordCommunication: (_actor, input) => {
+      received.push(input);
+      return services().interactions.recordCommunication(_actor, input);
+    },
+  }));
+  const call = await app.request("http://localhost/api/v1/interactions", {
+    body: JSON.stringify({
+      calledAt: "2026-08-16T18:15:00.000Z",
+      contactWasCaller: true,
+      kind: "call",
+      personId,
+      requestId,
+    }),
+    headers,
+    method: "POST",
+  });
+  const conversation = await app.request(
+    "http://localhost/api/v1/interactions",
+    {
+      body: JSON.stringify({
+        channelTypeId: requestId,
+        happenedAt: "2026-08-16T18:15:00.000Z",
+        kind: "conversation",
+        messages: [],
+        personId,
+        requestId,
+      }),
+      headers,
+      method: "POST",
+    },
+  );
+  const projection = await app.request(
+    `http://localhost/api/v1/people/${personId}/communications`,
+    { headers },
+  );
+  const options = await app.request(
+    "http://localhost/api/v1/communication-options",
+    { headers },
+  );
+  assert(
+    call.status === 201 && conversation.status === 201 &&
+      projection.status === 200 && options.status === 200,
+    "communication HTTP boundary failed",
+  );
+  assert(received.length === 2, "communication inputs were not forwarded");
 });
 
 Deno.test("INTERACTION-001 HTTP maps tenant, archive, session, origin, and outage states", async () => {

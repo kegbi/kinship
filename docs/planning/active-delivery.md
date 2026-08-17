@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 5 — Interactions And History**
-- Current leaf: **APP-005B / `INTERACTION-002` — Calls and conversations**
+- Current leaf: **APP-005C / `GOVERNANCE-002` — History and authorized audit**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -175,8 +175,8 @@ runnable behavior cannot work without them.
 - [x] **APP-005A / `INTERACTION-001` — Activities and notes.**
   - [x] Deliver quick capture and person-workspace logging/review with
         participants and emotions needed by the accepted flow.
-- [ ] **APP-005B / `INTERACTION-002` — Calls and conversations.**
-  - [ ] Deliver calls, conversations/messages, person linkage, and accepted
+- [x] **APP-005B / `INTERACTION-002` — Calls and conversations.**
+  - [x] Deliver calls, conversations/messages, person linkage, and accepted
         communication states.
 - [ ] **APP-005C / `GOVERNANCE-002` — History and authorized audit.**
   - [ ] Deliver the remaining person-history and authorized audit-history

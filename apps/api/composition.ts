@@ -37,6 +37,7 @@ import {
 import { SmtpVerificationMail } from "../../packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail.ts";
 import {
   PostgresAuthenticationAudit,
+  PostgresCommunicationAudit,
   PostgresImportantDateAudit,
   PostgresInteractionAudit,
   PostgresInvitationAudit,
@@ -92,8 +93,11 @@ import {
   PostgresReminderRulePersonalization,
 } from "../../packages/backend/modules/planning/public.ts";
 import {
+  type CommunicationManagement,
+  createCommunicationManagement,
   createInteractionManagement,
   type InteractionManagement,
+  PostgresCommunicationRepository,
   PostgresInteractionPersonalizationReferences,
   PostgresInteractionRepository,
 } from "../../packages/backend/modules/interactions/public.ts";
@@ -141,7 +145,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly directory?: PeopleDirectory;
   readonly invitations?: InvitationHttpServices["invitations"];
   readonly importantDates?: ImportantDateManagement;
-  readonly interactions?: InteractionManagement;
+  readonly interactions?: InteractionManagement & CommunicationManagement;
   readonly profileFacts?: PeopleHttpServices["profileFacts"];
   readonly passwordRecovery?: AuthenticationHttpServices["passwordRecovery"];
   readonly protectedSessions?: AuthenticationHttpServices["protectedSessions"];
@@ -514,14 +518,26 @@ export function createConfiguredApiApp(
     transaction: peopleTransaction,
     workspace: new PostgresRelationshipWorkspaceBoundary(),
   });
-  const interactions = createInteractionManagement({
-    audit: new PostgresInteractionAudit(),
-    clock,
-    people: new PostgresRelationshipPersonBoundary(),
-    repository: new PostgresInteractionRepository(),
-    transaction: peopleTransaction,
-    workspace: new PostgresInteractionWorkspaceBoundary(),
-  });
+  const interactionWorkspace = new PostgresInteractionWorkspaceBoundary();
+  const interactionPeople = new PostgresRelationshipPersonBoundary();
+  const interactions = {
+    ...createInteractionManagement({
+      audit: new PostgresInteractionAudit(),
+      clock,
+      people: interactionPeople,
+      repository: new PostgresInteractionRepository(),
+      transaction: peopleTransaction,
+      workspace: interactionWorkspace,
+    }),
+    ...createCommunicationManagement({
+      audit: new PostgresCommunicationAudit(),
+      clock,
+      people: interactionPeople,
+      repository: new PostgresCommunicationRepository(),
+      transaction: peopleTransaction,
+      workspace: interactionWorkspace,
+    }),
+  };
   const people = { ...peopleManagement, ...peopleLifecycle };
   const directoryRepository = new PostgresPeopleDirectoryRepository(
     connection.db,

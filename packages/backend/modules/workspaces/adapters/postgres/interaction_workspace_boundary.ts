@@ -71,6 +71,116 @@ function option(row: OptionRow): WorkspaceInteractionOption {
 
 export class PostgresInteractionWorkspaceBoundary
   implements InteractionWorkspaceBoundary {
+  async inspectCommunication(
+    command: Parameters<
+      InteractionWorkspaceBoundary["inspectCommunication"]
+    >[0],
+  ): Promise<
+    Awaited<ReturnType<InteractionWorkspaceBoundary["inspectCommunication"]>>
+  > {
+    const database = databaseFromSession(command.transaction);
+    const context = await sql<{ readonly hidden: boolean }>`
+      select exists (
+        select 1 from crm.workspace_profile_modules module
+        where module.workspace_id = workspace.id
+          and module.key = ${
+      command.kind === "call" ? "calls" : "conversations"
+    }
+          and module.is_active = false
+      ) as hidden
+      from crm.users account
+      join crm.workspace_members member on member.user_id = account.id
+      join crm.workspaces workspace on workspace.id = member.workspace_id
+      where account.id = ${command.userId}::uuid
+        and account.status = 'active' and account.deleted_at is null
+        and member.id = ${command.memberId}::uuid
+        and member.workspace_id = ${command.workspaceId}::uuid
+        and member.role = ${command.role}
+        and member.role in ('owner', 'admin', 'member')
+        and member.status = 'active' and member.left_at is null
+        and workspace.status = 'active' and workspace.deleted_at is null
+      ${command.lock ? sql`for update of account, member, workspace` : sql``}
+    `.execute(database);
+    if (!context.rows[0]) return { status: "forbidden" };
+    if (context.rows[0].hidden) return { status: "hidden" };
+    const channelType = command.channelTypeId
+      ? (await sql<OptionRow>`
+        select id::text, coalesce(nullif(name, ''), 'Communication') as name
+        from crm.contact_method_types
+        where id = ${command.channelTypeId}::uuid
+          and workspace_id = ${command.workspaceId}::uuid and is_archived = false
+        ${command.lock ? sql`for key share` : sql``}
+      `.execute(database)).rows[0]
+      : undefined;
+    if (command.channelTypeId && !channelType) return { status: "not-found" };
+    const ids = [...new Set(command.emotionIds)].sort();
+    const emotions = ids.length === 0 ? [] : (await sql<OptionRow>`
+      select id::text, name from crm.emotion_options
+      where id in (${sql.join(ids.map((id) => sql`${id}::uuid`))})
+        and is_active = true
+      order by id
+      ${command.lock ? sql`for key share` : sql``}
+    `.execute(database)).rows.map(option);
+    if (emotions.length !== ids.length) return { status: "not-found" };
+    return {
+      ...(channelType ? { channelType: option(channelType) } : {}),
+      emotions,
+      status: "ready",
+    };
+  }
+
+  async communicationOptions(
+    command: Parameters<
+      InteractionWorkspaceBoundary["communicationOptions"]
+    >[0],
+  ): Promise<
+    Awaited<ReturnType<InteractionWorkspaceBoundary["communicationOptions"]>>
+  > {
+    const database = databaseFromSession(command.transaction);
+    const context = await sql<{
+      readonly calls_hidden: boolean;
+      readonly conversations_hidden: boolean;
+    }>`
+      select exists (select 1 from crm.workspace_profile_modules module
+        where module.workspace_id = workspace.id and module.key = 'calls'
+          and module.is_active = false) as calls_hidden,
+        exists (select 1 from crm.workspace_profile_modules module
+        where module.workspace_id = workspace.id and module.key = 'conversations'
+          and module.is_active = false) as conversations_hidden
+      from crm.users account
+      join crm.workspace_members member on member.user_id = account.id
+      join crm.workspaces workspace on workspace.id = member.workspace_id
+      where account.id = ${command.userId}::uuid
+        and account.status = 'active' and account.deleted_at is null
+        and member.id = ${command.memberId}::uuid
+        and member.workspace_id = ${command.workspaceId}::uuid
+        and member.role = ${command.role}
+        and member.status = 'active' and member.left_at is null
+        and workspace.status = 'active' and workspace.deleted_at is null
+    `.execute(database);
+    const visibility = context.rows[0];
+    if (!visibility) return { status: "forbidden" };
+    const [channels, emotions] = await Promise.all([
+      sql<
+        OptionRow
+      >`select id::text, coalesce(nullif(name, ''), 'Communication') as name
+        from crm.contact_method_types
+        where workspace_id = ${command.workspaceId}::uuid and is_archived = false
+        order by sort_order, lower(name), id limit 100`.execute(database),
+      sql<OptionRow>`select id::text, name from crm.emotion_options
+        where is_active = true order by sort_order, lower(name), id limit 100`
+        .execute(database),
+    ]);
+    return {
+      availability: {
+        call: !visibility.calls_hidden,
+        conversation: !visibility.conversations_hidden,
+      },
+      channelTypes: channels.rows.map(option),
+      emotions: emotions.rows.map(option),
+      status: "ready",
+    };
+  }
   async authorize(
     command: Parameters<InteractionWorkspaceBoundary["authorize"]>[0],
   ): Promise<Awaited<ReturnType<InteractionWorkspaceBoundary["authorize"]>>> {
@@ -116,6 +226,72 @@ export class PostgresInteractionWorkspaceBoundary
     return {
       ...(activityType ? { activityType: option(activityType) } : {}),
       emotions,
+    };
+  }
+
+  async describeCommunication(
+    command: Parameters<
+      InteractionWorkspaceBoundary["describeCommunication"]
+    >[0],
+  ): Promise<
+    Awaited<ReturnType<InteractionWorkspaceBoundary["describeCommunication"]>>
+  > {
+    const database = databaseFromSession(command.transaction);
+    const channelType = command.channelTypeId
+      ? (await sql<OptionRow>`
+        select id::text, coalesce(nullif(name, ''), 'Communication') as name
+        from crm.contact_method_types
+        where id = ${command.channelTypeId}::uuid
+          and workspace_id = ${command.workspaceId}::uuid
+      `.execute(database)).rows[0]
+      : undefined;
+    const ids = [...new Set(command.emotionIds)].sort();
+    const emotions = ids.length === 0 ? [] : (await sql<OptionRow>`
+      select id::text, name from crm.emotion_options
+      where id in (${sql.join(ids.map((id) => sql`${id}::uuid`))})
+      order by id
+    `.execute(database)).rows.map(option);
+    return {
+      ...(channelType ? { channelType: option(channelType) } : {}),
+      emotions,
+    };
+  }
+
+  async describeCommunicationReferences(
+    command: Parameters<
+      InteractionWorkspaceBoundary["describeCommunicationReferences"]
+    >[0],
+  ): Promise<
+    Awaited<
+      ReturnType<
+        InteractionWorkspaceBoundary["describeCommunicationReferences"]
+      >
+    >
+  > {
+    const database = databaseFromSession(command.transaction);
+    const channelIds = [...new Set(command.channelTypeIds)].sort().slice(0, 50);
+    const emotionIds = [...new Set(command.emotionIds)].sort().slice(0, 1_000);
+    const [channels, emotions] = await Promise.all([
+      channelIds.length === 0
+        ? Promise.resolve({ rows: [] as OptionRow[] })
+        : sql<OptionRow>`
+          select id::text, coalesce(nullif(name, ''), 'Communication') as name
+          from crm.contact_method_types
+          where workspace_id = ${command.workspaceId}::uuid
+            and id in (${sql.join(channelIds.map((id) => sql`${id}::uuid`))})
+          order by id
+        `.execute(database),
+      emotionIds.length === 0
+        ? Promise.resolve({ rows: [] as OptionRow[] })
+        : sql<OptionRow>`
+          select id::text, name from crm.emotion_options
+          where id in (${sql.join(emotionIds.map((id) => sql`${id}::uuid`))})
+          order by id
+        `.execute(database),
+    ]);
+    return {
+      channelTypes: channels.rows.map(option),
+      emotions: emotions.rows.map(option),
     };
   }
 

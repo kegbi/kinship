@@ -20,6 +20,7 @@ interface PersonProfileRow {
   readonly is_partial: boolean | null;
   readonly is_self: boolean | null;
   readonly is_starred: boolean | null;
+  readonly last_contact_at: string | null;
   readonly middle_name: string | null;
   readonly nickname: string | null;
   readonly profile_sections: readonly PersonProfileSection[];
@@ -47,6 +48,7 @@ function identity(row: PersonProfileRow): PersonProfileIdentity | undefined {
     isPartial: row.is_partial,
     isSelf: row.is_self,
     isStarred: row.is_starred,
+    ...(row.last_contact_at ? { lastContactAt: row.last_contact_at } : {}),
     ...(row.middle_name ? { middleName: row.middle_name } : {}),
     ...(row.nickname ? { nickname: row.nickname } : {}),
     profileSections: row.profile_sections,
@@ -73,7 +75,8 @@ export class PostgresPersonProfileRepository
         coalesce(member.self_person_id = person.id, false) as is_self,
         coalesce(tag_summary.tag_count, 0)::int as tag_count,
         coalesce(tag_preview.tags, '[]'::jsonb) as tags
-        , coalesce(profile_sections.sections, '[]'::jsonb) as profile_sections
+        , coalesce(profile_sections.sections, '[]'::jsonb) as profile_sections,
+        last_contact.last_contact_at
       from crm.users account
       join crm.workspace_members member on member.user_id = account.id
       join crm.workspaces workspace on workspace.id = member.workspace_id
@@ -84,6 +87,20 @@ export class PostgresPersonProfileRepository
       left join crm.gender_options gender
         on gender.id = person.gender_option_id
         and gender.workspace_id = workspace.id
+      left join lateral (
+        select to_char(max(contacted_at) at time zone 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as last_contact_at
+        from (
+          select called_at as contacted_at from crm.calls
+          where workspace_id = workspace.id and person_id = person.id
+          union all
+          select greatest(thread.happened_at, coalesce(max(message.written_at), thread.happened_at))
+          from crm.conversation_threads thread
+          left join crm.messages message on message.conversation_id = thread.id
+          where thread.workspace_id = workspace.id and thread.person_id = person.id
+          group by thread.id, thread.happened_at
+        ) contact
+      ) last_contact on true
       left join lateral (
         select count(*)::int as tag_count
         from crm.person_tags counted_link
@@ -114,7 +131,8 @@ export class PostgresPersonProfileRepository
         from (values
           ('contact-methods', 1), ('addresses', 2), ('first-meeting', 3),
           ('relationships', 4), ('work', 5), ('food-preferences', 6),
-          ('pets', 7), ('tags', 8), ('notes', 9), ('activities', 10)
+          ('pets', 7), ('tags', 8), ('notes', 9), ('activities', 10),
+          ('conversations', 11), ('calls', 12)
         ) available(id, sort_order)
         left join crm.workspace_profile_modules module
           on module.workspace_id = workspace.id and module.key = available.id

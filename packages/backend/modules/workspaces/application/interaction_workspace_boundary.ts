@@ -31,6 +31,28 @@ export interface InteractionWorkspaceBoundary {
     readonly activityType?: WorkspaceInteractionOption;
     readonly emotions: readonly WorkspaceInteractionOption[];
   }>;
+  describeCommunication(
+    command: {
+      readonly channelTypeId?: string;
+      readonly emotionIds: readonly string[];
+      readonly transaction: InteractionWorkspaceTransaction;
+      readonly workspaceId: string;
+    },
+  ): Promise<{
+    readonly channelType?: WorkspaceInteractionOption;
+    readonly emotions: readonly WorkspaceInteractionOption[];
+  }>;
+  describeCommunicationReferences(
+    command: {
+      readonly channelTypeIds: readonly string[];
+      readonly emotionIds: readonly string[];
+      readonly transaction: InteractionWorkspaceTransaction;
+      readonly workspaceId: string;
+    },
+  ): Promise<{
+    readonly channelTypes: readonly WorkspaceInteractionOption[];
+    readonly emotions: readonly WorkspaceInteractionOption[];
+  }>;
   inspect(
     command: InteractionWorkspaceActor & {
       readonly activityTypeId?: string;
@@ -69,5 +91,37 @@ export interface InteractionWorkspaceBoundary {
       readonly status: "ready";
     }
     | { readonly status: "forbidden" | "stale-cursor" }
+  >;
+  inspectCommunication(
+    command: InteractionWorkspaceActor & {
+      readonly channelTypeId?: string;
+      readonly emotionIds: readonly string[];
+      readonly kind: "call" | "conversation";
+      readonly lock: boolean;
+      readonly transaction: InteractionWorkspaceTransaction;
+    },
+  ): Promise<
+    | {
+      readonly channelType?: WorkspaceInteractionOption;
+      readonly emotions: readonly WorkspaceInteractionOption[];
+      readonly status: "ready";
+    }
+    | { readonly status: "forbidden" | "hidden" | "not-found" }
+  >;
+  communicationOptions(
+    command: InteractionWorkspaceActor & {
+      readonly transaction: InteractionWorkspaceTransaction;
+    },
+  ): Promise<
+    | {
+      readonly availability: {
+        readonly call: boolean;
+        readonly conversation: boolean;
+      };
+      readonly channelTypes: readonly WorkspaceInteractionOption[];
+      readonly emotions: readonly WorkspaceInteractionOption[];
+      readonly status: "ready";
+    }
+    | { readonly status: "forbidden" }
   >;
 }
