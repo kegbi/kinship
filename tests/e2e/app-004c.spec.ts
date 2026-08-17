@@ -1,6 +1,7 @@
 import {
   type APIRequestContext,
   expect,
+  type Locator,
   type Page,
   test,
 } from "@playwright/test";
@@ -126,6 +127,18 @@ async function expectAccessible(page: Page): Promise<void> {
   ).toEqual([]);
 }
 
+async function openLocalEditor(
+  trigger: Locator,
+  editor: Locator,
+): Promise<void> {
+  await expect(trigger).toHaveCount(1);
+  await expect(editor).toHaveCount(1);
+  await trigger.focus();
+  await expect(trigger).toBeFocused();
+  await trigger.press("Enter");
+  await expect(editor).toBeVisible();
+}
+
 test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
   annotation: { type: "flow", description: "PEOPLE-006" },
 }, async ({ browserName, page, request }) => {
@@ -143,6 +156,7 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
   const petCategoryId = randomUUID();
   const tagId = randomUUID();
   const introducerId = randomUUID();
+  const organizationId = randomUUID();
   databaseSql(`
     insert into crm.contact_method_types (id, workspace_id, name, kind)
     values ('${typeId}'::uuid, '${workspaceId}'::uuid, 'Email', 'email');
@@ -152,6 +166,12 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
     values ('${petCategoryId}'::uuid, 'Cat ${petCategoryId}', true);
     insert into crm.tags (id, workspace_id, name, slug)
     values ('${tagId}'::uuid, '${workspaceId}'::uuid, 'Friend', 'friend-${tagId}');
+    insert into crm.organizations (id, workspace_id, name)
+    values ('${organizationId}'::uuid, '${workspaceId}'::uuid, 'Analytical Engines');
+    insert into crm.organizations (workspace_id, name)
+    select '${workspaceId}'::uuid,
+      '000 Organization ' || lpad(series::text, 3, '0')
+    from generate_series(1, 55) series;
     insert into crm.people (id, workspace_id, given_name, family_name)
     values ('${introducerId}'::uuid, '${workspaceId}'::uuid, 'Charles', 'Babbage');
   `);
@@ -193,18 +213,23 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
       calls.push(`${outgoing.method()} ${new URL(outgoing.url()).pathname}`);
     }
   });
-  await contacts.getByRole("button", { name: "Add contact methods" }).click();
-  const contactType = contacts.locator('select[name="typeId"]');
+  const contactEditor = contacts.locator("form[data-profile-fact-form]");
+  await openLocalEditor(
+    contacts.getByRole("button", { name: "Add contact methods" }),
+    contactEditor,
+  );
+  const contactType = contactEditor.locator('select[name="typeId"]');
   await expect(contactType).toBeFocused();
   await expect.poll(() => calls).toEqual([
     `GET /api/v1/people/${profilePath.split("/").at(-1)}/facts/contact-methods`,
   ]);
   await contactType.selectOption(typeId);
-  await contacts.getByLabel("Contact value").fill("ada@example.test");
-  await contacts.getByLabel("Contact labels").selectOption([labelId]);
-  await contacts.getByLabel("Primary for this contact type").check();
+  await contactEditor.getByLabel("Contact value").fill("ada@example.test");
+  await contactEditor.getByLabel("Contact labels").selectOption([labelId]);
+  await contactEditor.getByLabel("Primary for this contact type").check();
   calls.length = 0;
-  await contacts.getByRole("button", { name: "Save profile fact" }).click();
+  await contactEditor.getByRole("button", { name: "Save profile fact" })
+    .click();
   await expect(contacts.getByText("Profile fact saved.")).toBeFocused();
   await expect(contacts).toContainText("Email: ada@example.test");
   await expect.poll(() => calls).toEqual([
@@ -215,63 +240,110 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
   ]);
 
   const address = page.locator("#profile-section-addresses");
-  await address.getByRole("button", { name: "Add addresses" }).click();
-  await address.getByLabel("Address name").fill("Home");
-  await address.getByLabel("Street").fill("1 Analytical Engine Way");
-  await address.getByLabel("City").fill("London");
-  await address.locator('select[name="labelIds"]').selectOption([labelId]);
-  await address.getByLabel("Primary address").check();
-  await address.getByRole("button", { name: "Save profile fact" }).click();
+  const addressEditor = address.locator("form[data-profile-fact-form]");
+  await openLocalEditor(
+    address.getByRole("button", { name: "Add addresses" }),
+    addressEditor,
+  );
+  await addressEditor.getByLabel("Address name").fill("Home");
+  await addressEditor.getByLabel("Street").fill("1 Analytical Engine Way");
+  await addressEditor.getByLabel("City").fill("London");
+  await addressEditor.locator('select[name="labelIds"]').selectOption([
+    labelId,
+  ]);
+  await addressEditor.getByLabel("Primary address").check();
+  await addressEditor.getByRole("button", { name: "Save profile fact" })
+    .click();
   await expect(address).toContainText("Home, 1 Analytical Engine Way, London");
 
   const firstMeeting = page.locator("#profile-section-first-meeting");
-  await firstMeeting.getByRole("button", { name: "Add first meeting" }).click();
-  await firstMeeting.getByLabel("Search people").fill("Charles");
-  await firstMeeting.getByRole("button", { name: "Search people" }).click();
-  await firstMeeting.getByLabel("Introduced by").selectOption(introducerId);
-  await firstMeeting.getByLabel("Where or how you first met").fill(
+  const firstMeetingEditor = firstMeeting.locator(
+    "form[data-profile-fact-form]",
+  );
+  await openLocalEditor(
+    firstMeeting.getByRole("button", { name: "Add first meeting" }),
+    firstMeetingEditor,
+  );
+  await firstMeetingEditor.getByLabel("Search people").fill("Charles");
+  await firstMeetingEditor.getByRole("button", { name: "Search people" })
+    .click();
+  await firstMeetingEditor.getByLabel("Introduced by").selectOption(
+    introducerId,
+  );
+  await firstMeetingEditor.getByLabel("Where or how you first met").fill(
     "London salon",
   );
-  await firstMeeting.getByLabel("First meeting story").fill(
+  await firstMeetingEditor.getByLabel("First meeting story").fill(
     "Introduced while discussing mathematics",
   );
-  await firstMeeting.getByRole("button", { name: "Save profile fact" }).click();
+  await firstMeetingEditor.getByRole("button", { name: "Save profile fact" })
+    .click();
   await expect(firstMeeting).toContainText(
     "London salon — Introduced while discussing mathematics",
   );
 
   const work = page.locator("#profile-section-work");
-  await work.getByRole("button", { name: "Add work" }).click();
-  await work.getByLabel("Role or title").fill("Mathematician");
-  await work.getByLabel("Organization").fill("Analytical Engines");
-  await work.getByLabel("Start date").fill("2026-01-02");
-  await work.getByLabel("End date").fill("2026-01-01");
-  await work.getByRole("button", { name: "Save profile fact" }).click();
-  await expect(work.getByText("End date must be on or after the start date."))
+  const workEditor = work.locator("form[data-profile-fact-form]");
+  await openLocalEditor(
+    work.getByRole("button", { name: "Add work" }),
+    workEditor,
+  );
+  await workEditor.getByLabel("Role or title").fill("Mathematician");
+  const organization = workEditor.getByLabel("Existing organization");
+  expect(await organization.locator("option").count()).toBeLessThanOrEqual(51);
+  await expect(organization.locator(`option[value="${organizationId}"]`))
+    .toHaveCount(0);
+  await workEditor.getByLabel("Search organizations").fill("Analytical");
+  await workEditor.getByRole("button", { name: "Search organizations" })
+    .click();
+  await expect(organization.locator(`option[value="${organizationId}"]`))
+    .toHaveCount(1);
+  await organization.selectOption(
+    organizationId,
+  );
+  await workEditor.getByLabel("Start date").fill("2026-01-02");
+  await workEditor.getByLabel("End date").fill("2026-01-01");
+  await workEditor.getByRole("button", { name: "Save profile fact" }).click();
+  await expect(
+    workEditor.getByText("End date must be on or after the start date."),
+  )
     .toBeVisible();
-  await expect(work.getByLabel("End date")).toBeFocused();
-  await work.getByLabel("End date").fill("2026-12-31");
-  await work.getByRole("button", { name: "Save profile fact" }).click();
+  await expect(workEditor.getByLabel("End date")).toBeFocused();
+  await workEditor.getByLabel("End date").fill("2026-12-31");
+  await workEditor.getByRole("button", { name: "Save profile fact" }).click();
   await expect(work).toContainText("Mathematician at Analytical Engines");
 
-  await page.getByRole("button", { name: "Edit tags" }).click();
-  await page.getByLabel("Assigned tags").selectOption([tagId]);
-  await page.getByRole("button", { name: "Save profile fact" }).click();
+  const tags = page.locator('[data-profile-fact-section="tags"]');
+  const tagEditor = tags.locator("form[data-profile-fact-form]");
+  await openLocalEditor(
+    tags.getByRole("button", { name: "Edit tags" }),
+    tagEditor,
+  );
+  await tagEditor.getByLabel("Assigned tags").selectOption([tagId]);
+  await tagEditor.getByRole("button", { name: "Save profile fact" }).click();
   await expect(page.locator("#person-profile-tags")).toContainText("Friend");
 
   const pets = page.locator("#profile-section-pets");
-  await pets.getByRole("button", { name: "Add pets" }).click();
-  await pets.getByLabel("Pet name").fill("Byron");
-  await pets.getByLabel("Pet category").selectOption(petCategoryId);
-  await pets.getByRole("button", { name: "Save profile fact" }).click();
+  const petsEditor = pets.locator("form[data-profile-fact-form]");
+  await openLocalEditor(
+    pets.getByRole("button", { name: "Add pets" }),
+    petsEditor,
+  );
+  await petsEditor.getByLabel("Pet name").fill("Byron");
+  await petsEditor.getByLabel("Pet category").selectOption(petCategoryId);
+  await petsEditor.getByRole("button", { name: "Save profile fact" }).click();
   await expect(pets).toContainText("Byron · Cat");
 
   const food = page.locator("#profile-section-food-preferences");
-  await food.getByRole("button", { name: "Add food preferences" }).click();
-  await food.getByLabel("Food, allergy, and dietary preferences").fill(
+  const foodEditor = food.locator("form[data-profile-fact-form]");
+  await openLocalEditor(
+    food.getByRole("button", { name: "Add food preferences" }),
+    foodEditor,
+  );
+  await foodEditor.getByLabel("Food, allergy, and dietary preferences").fill(
     "Tea; no shellfish",
   );
-  await food.getByRole("button", { name: "Save profile fact" }).click();
+  await foodEditor.getByRole("button", { name: "Save profile fact" }).click();
   await expect(food).toContainText("Tea; no shellfish");
   await food.getByRole("button", { name: "Clear food preferences" }).click();
   await food.getByRole("button", {
@@ -284,11 +356,14 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
   ).toHaveCount(0);
   await expect(food.getByRole("button", { name: "Add food preferences" }))
     .toBeVisible();
-  await food.getByRole("button", { name: "Add food preferences" }).click();
-  await food.getByLabel("Food, allergy, and dietary preferences").fill(
+  await openLocalEditor(
+    food.getByRole("button", { name: "Add food preferences" }),
+    foodEditor,
+  );
+  await foodEditor.getByLabel("Food, allergy, and dietary preferences").fill(
     "Tea; no shellfish",
   );
-  await food.getByRole("button", { name: "Save profile fact" }).click();
+  await foodEditor.getByRole("button", { name: "Save profile fact" }).click();
   await expectAccessible(page);
 
   await page.reload();
@@ -296,6 +371,18 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
   await expect(address).toContainText("Analytical Engine Way");
   await expect(firstMeeting).toContainText("London salon");
   await expect(work).toContainText("Analytical Engines");
+  await openLocalEditor(
+    work.getByRole("button", {
+      name: "Edit Mathematician at Analytical Engines",
+    }),
+    workEditor,
+  );
+  await expect(workEditor.getByLabel("Existing organization"))
+    .toHaveValue(organizationId);
+  await expect(
+    workEditor.locator(`option[value="${organizationId}"]`),
+  ).toHaveText("Analytical Engines");
+  await workEditor.getByRole("button", { name: "Cancel" }).click();
   await expect(pets).toContainText("Byron");
   await expect(food).toContainText("no shellfish");
   expect(

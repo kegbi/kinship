@@ -56,6 +56,85 @@ afterEach(() => {
 });
 
 describe("PEOPLE-006 profile-fact sections", () => {
+  it("selects an existing workspace organization from the local work editor", async () => {
+    document.body.innerHTML = `
+      <section data-profile-fact-section="work">
+        <p data-profile-fact-state></p><ul data-profile-fact-list></ul>
+        <button data-profile-fact-add>Add work</button>
+        <form data-profile-fact-form></form>
+      </section>`;
+    const organizationId = "00000000-0000-4000-8000-000000000777";
+    const savedBodies: Record<string, unknown>[] = [];
+    const fetchMock = vi.fn(
+      (resource: string | URL | Request, init?: RequestInit) => {
+        void resource;
+        if (init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+          savedBodies.push(body);
+          return response({
+            personUpdatedAt: "2026-08-16T12:00:00.000001Z",
+            record: {
+              id: "00000000-0000-4000-8000-000000000778",
+              section: "work",
+              updatedAt: "2026-08-16T12:00:00.000001Z",
+              value: body,
+            },
+            status: "saved",
+          });
+        }
+        return response({
+          options: [{
+            id: organizationId,
+            kind: "organization",
+            name: "Analytical Engines",
+          }],
+          personUpdatedAt: revision,
+          records: [],
+          status: "ready",
+        });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountProfileFacts(personId, workspaceId, false, revision);
+    const organization = document.querySelector<HTMLSelectElement>(
+      '[name="organizationId"]',
+    );
+    expect(organization).not.toBeNull();
+    organization!.value = organizationId;
+    document.querySelector<HTMLButtonElement>("[data-profile-fact-add]")!
+      .click();
+    await vi.waitFor(() => {
+      expect(organization?.options).toHaveLength(2);
+      expect(
+        document.querySelector<HTMLButtonElement>('button[type="submit"]')
+          ?.disabled,
+      ).toBe(false);
+    });
+    const newOrganization = document.querySelector<HTMLInputElement>(
+      '[name="organizationName"]',
+    )!;
+    organization!.value = organizationId;
+    newOrganization.value = "Difference Engines";
+    newOrganization.dispatchEvent(new Event("input"));
+    expect(organization!.value).toBe("");
+    newOrganization.value = "Difference Engines";
+    organization!.value = organizationId;
+    organization!.dispatchEvent(new Event("change"));
+    expect(newOrganization.value).toBe("");
+    (document.querySelector('[name="title"]') as HTMLInputElement).value =
+      "Mathematician";
+    document.querySelector<HTMLFormElement>("form")!.requestSubmit();
+
+    await vi.waitFor(() => expect(savedBodies).toHaveLength(1));
+    expect(savedBodies[0]).toMatchObject({
+      organizationId,
+      section: "work",
+      title: "Mathematician",
+    });
+    expect(savedBodies[0]).not.toHaveProperty("organizationName");
+  });
+
   it("propagates tag and food revisions to every mounted consumer", async () => {
     document.body.innerHTML = `
       <ul id="person-profile-tags"></ul>

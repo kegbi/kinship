@@ -1,6 +1,7 @@
 import {
   createProfileFactManagement,
   type ProfileFactAudit,
+  type ProfileFactDependencies,
   type ProfileFactOption,
   type ProfileFactRepository,
   type ProfileFactWorkspaceBoundary,
@@ -18,6 +19,19 @@ const actor = {
 };
 const personId = "10000000-0000-4000-8000-000000000004";
 const transaction = { opaque: { test: true } };
+
+function createTestProfileFactManagement(
+  dependencies:
+    & Omit<ProfileFactDependencies, "organizations">
+    & Partial<Pick<ProfileFactDependencies, "organizations">>,
+) {
+  return createProfileFactManagement({
+    organizations: {
+      inspect: () => Promise.resolve({ options: [], status: "ready" }),
+    },
+    ...dependencies,
+  });
+}
 
 Deno.test("PEOPLE-006 separates create from locked update targets", async () => {
   const revision = "2026-08-16T12:00:00.000000Z";
@@ -67,7 +81,7 @@ Deno.test("PEOPLE-006 separates create from locked update targets", async () => 
       });
     },
   } as unknown as ProfileFactRepository;
-  const facts = createProfileFactManagement({
+  const facts = createTestProfileFactManagement({
     audit: {
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve(crypto.randomUUID()),
@@ -120,7 +134,7 @@ Deno.test("PEOPLE-006 clears food preferences with revision and audit", async ()
     lockFact: () => Promise.resolve(before),
     save: () => Promise.resolve(undefined),
   };
-  const facts = createProfileFactManagement({
+  const facts = createTestProfileFactManagement({
     audit: {
       assertPostcondition: () => Promise.resolve(),
       record: () => {
@@ -170,7 +184,7 @@ Deno.test("PEOPLE-006 rejects empty food saves before persistence", async () => 
       return Promise.resolve(undefined);
     },
   };
-  const facts = createProfileFactManagement({
+  const facts = createTestProfileFactManagement({
     audit: {
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve(crypto.randomUUID()),
@@ -243,7 +257,7 @@ Deno.test("PEOPLE-006 hidden profile facts retain data and do not audit a write"
       return Promise.resolve(crypto.randomUUID());
     },
   };
-  const facts = createProfileFactManagement({
+  const facts = createTestProfileFactManagement({
     audit,
     clock: { now: () => new Date("2026-08-16T12:00:00Z") },
     ids: { create: () => crypto.randomUUID() },
@@ -301,7 +315,7 @@ Deno.test("PEOPLE-006 advances one shared person revision across fact mutations"
     lockContext: () =>
       Promise.resolve({ personUpdatedAt: currentRevision, status: "ready" }),
   };
-  const facts = createProfileFactManagement({
+  const facts = createTestProfileFactManagement({
     audit: {
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve(crypto.randomUUID()),
@@ -360,7 +374,7 @@ Deno.test("PEOPLE-006 validates work ranges and introducers before persistence",
       return Promise.resolve(undefined);
     },
   };
-  const facts = createProfileFactManagement({
+  const facts = createTestProfileFactManagement({
     audit: {
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve(crypto.randomUUID()),
@@ -437,7 +451,7 @@ Deno.test("PEOPLE-006 fact reads are bounded by revision-stable continuation", a
       Promise.resolve({ personUpdatedAt: revision, status: "ready" }),
     save: () => Promise.resolve(undefined),
   };
-  const facts = createProfileFactManagement({
+  const facts = createTestProfileFactManagement({
     audit: {
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve(crypto.randomUUID()),
@@ -501,7 +515,7 @@ Deno.test("PEOPLE-006 hydrates every selected vocabulary descriptor without a gl
     };
   });
   const selectedCommands: readonly string[][] = [];
-  const facts = createProfileFactManagement({
+  const facts = createTestProfileFactManagement({
     audit: {
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve(crypto.randomUUID()),
@@ -556,6 +570,72 @@ Deno.test("PEOPLE-006 hydrates every selected vocabulary descriptor without a gl
   );
 });
 
+Deno.test("PEOPLE-006 hydrates the selected workspace organization for work edits", async () => {
+  const revision = "2026-08-16T12:00:00.000000Z";
+  const organizationId = "10000000-0000-4000-8000-000000000777";
+  const selectedCommands: string[][] = [];
+  const facts = createTestProfileFactManagement({
+    audit: {
+      assertPostcondition: () => Promise.resolve(),
+      record: () => Promise.resolve(crypto.randomUUID()),
+    },
+    clock: { now: () => new Date() },
+    ids: { create: () => crypto.randomUUID() },
+    organizations: {
+      inspect: (command) => {
+        if (command.selectedOptionIds?.length) {
+          selectedCommands.push([...command.selectedOptionIds]);
+        }
+        return Promise.resolve({
+          options: command.selectedOptionIds?.includes(organizationId)
+            ? [{
+              id: organizationId,
+              kind: "organization" as const,
+              name: "Analytical Engines",
+            }]
+            : [],
+          status: "ready" as const,
+        });
+      },
+    },
+    repository: {
+      assertPostcondition: () => Promise.resolve(),
+      delete: () => Promise.resolve(undefined),
+      inspectContext: () =>
+        Promise.resolve({ personUpdatedAt: revision, status: "ready" }),
+      list: () =>
+        Promise.resolve([{
+          id: "10000000-0000-4000-8000-000000000778",
+          section: "work" as const,
+          updatedAt: revision,
+          value: {
+            isCurrent: true,
+            organizationId,
+            organizationName: "Analytical Engines",
+            title: "Mathematician",
+          },
+        }]),
+      lockFact: () => Promise.resolve(undefined),
+      lockContext: () =>
+        Promise.resolve({ personUpdatedAt: revision, status: "ready" }),
+      save: () => Promise.resolve(undefined),
+    },
+    transaction: { run: (work) => work(transaction) },
+    workspace: {
+      inspect: () => Promise.resolve({ options: [], status: "ready" }),
+    },
+  });
+
+  const result = await facts.list(actor, personId, "work");
+  assert(result.status === "ready", "work facts are ready");
+  assert(
+    selectedCommands[0]?.[0] === organizationId &&
+      result.records[0]?.referencesResolved === true &&
+      result.records[0]?.selectedOptions?.[0]?.kind === "organization",
+    "the selected tenant organization remains editable by stable identity",
+  );
+});
+
 Deno.test("PEOPLE-006 tag facts hydrate every assigned descriptor in one repository call", async () => {
   const revision = "2026-08-16T12:00:00.000000Z";
   const tagIds = Array.from(
@@ -585,7 +665,7 @@ Deno.test("PEOPLE-006 tag facts hydrate every assigned descriptor in one reposit
       Promise.resolve({ personUpdatedAt: revision, status: "ready" }),
     save: () => Promise.resolve(undefined),
   };
-  const facts = createProfileFactManagement({
+  const facts = createTestProfileFactManagement({
     audit: {
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve(crypto.randomUUID()),
@@ -634,7 +714,7 @@ Deno.test("PEOPLE-006 workspace options use bounded search-stable continuation",
       Promise.resolve({ personUpdatedAt: revision, status: "ready" }),
     save: () => Promise.resolve(undefined),
   };
-  const facts = createProfileFactManagement({
+  const facts = createTestProfileFactManagement({
     audit: {
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve(crypto.randomUUID()),

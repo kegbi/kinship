@@ -398,6 +398,7 @@ flows:
 
   - id: PEOPLE-006
     title: Maintain person profile facts within enabled sections
+    deliveryStatus: delivered
     priority: P1
     actor: crm-writer
     trigger: The member edits contact methods, addresses, work, tags, pets, or other profile facts.
@@ -418,7 +419,7 @@ flows:
     moduleIds: [people, workspaces]
     permissions: [people.write]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-004c.spec.ts] }
 
   - id: RELATIONSHIP-001
     title: Create or change a relationship between people

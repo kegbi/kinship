@@ -7076,6 +7076,7 @@
             "enum": [
               "contact-label",
               "contact-type",
+              "organization",
               "pet-category"
             ]
           },

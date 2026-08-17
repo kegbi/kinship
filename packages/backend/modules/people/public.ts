@@ -18,6 +18,7 @@ export type {
   ProfileFactManagement,
   ProfileFactMutationResult,
   ProfileFactOption,
+  ProfileFactOrganizationBoundary,
   ProfileFactRecord,
   ProfileFactRepository,
   ProfileFactSection,
@@ -90,6 +91,7 @@ export {
 export { PostgresPersonLifecycleRepository } from "./adapters/postgres/person_lifecycle_repository.ts";
 export { PostgresImportantDateRepository } from "./adapters/postgres/important_date_repository.ts";
 export { PostgresProfileFactRepository } from "./adapters/postgres/profile_fact_repository.ts";
+export { PostgresProfileFactOrganizations } from "./adapters/postgres/profile_fact_organizations.ts";
 export { PostgresRelationshipPersonBoundary } from "./adapters/postgres/relationship_person_boundary.ts";
 export type {
   RelationshipPersonBoundary,

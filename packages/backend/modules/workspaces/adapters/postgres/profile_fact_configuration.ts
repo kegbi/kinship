@@ -29,7 +29,10 @@ interface InspectionCommand {
 
 interface Option {
   readonly id: string;
-  readonly kind?: "contact-label" | "contact-type" | "pet-category";
+  readonly kind?:
+    | "contact-label"
+    | "contact-type"
+    | "pet-category";
   readonly name: string;
 }
 

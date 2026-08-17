@@ -11,6 +11,11 @@ export type ProfileFactSection =
 
 export interface ProfileFactOption {
   readonly id: string;
+  readonly kind?:
+    | "contact-label"
+    | "contact-type"
+    | "organization"
+    | "pet-category";
   readonly name: string;
 }
 
@@ -94,20 +99,28 @@ export interface ProfileFactOptionAnchor {
   readonly secondary: string;
 }
 
+export type ProfileFactInspectionCommand = PeopleActor & {
+  readonly includeOptions?: boolean;
+  readonly section: ProfileFactSection;
+  readonly lock?: boolean;
+  readonly optionAfter?: ProfileFactOptionAnchor;
+  readonly optionLimit?: number;
+  readonly optionSearch?: string;
+  readonly selectedOptionIds?: readonly string[];
+  readonly selectedOnly?: boolean;
+  readonly transaction: PeopleTransaction;
+  readonly value?: ProfileFactValue;
+};
+
 export interface ProfileFactWorkspaceBoundary {
   inspect(
-    command: PeopleActor & {
-      readonly includeOptions?: boolean;
-      readonly section: ProfileFactSection;
-      readonly lock?: boolean;
-      readonly optionAfter?: ProfileFactOptionAnchor;
-      readonly optionLimit?: number;
-      readonly optionSearch?: string;
-      readonly selectedOptionIds?: readonly string[];
-      readonly selectedOnly?: boolean;
-      readonly transaction: PeopleTransaction;
-      readonly value?: ProfileFactValue;
-    },
+    command: ProfileFactInspectionCommand,
+  ): Promise<ProfileFactWorkspaceInspection>;
+}
+
+export interface ProfileFactOrganizationBoundary {
+  inspect(
+    command: ProfileFactInspectionCommand,
   ): Promise<ProfileFactWorkspaceInspection>;
 }
 
@@ -238,11 +251,25 @@ export interface ProfileFactDependencies {
   readonly audit: ProfileFactAudit;
   readonly clock: { now(): Date };
   readonly ids: { create(): string };
+  readonly organizations: ProfileFactOrganizationBoundary;
   readonly repository: ProfileFactRepository;
   readonly transaction: {
     run<T>(work: (transaction: PeopleTransaction) => Promise<T>): Promise<T>;
   };
   readonly workspace: ProfileFactWorkspaceBoundary;
+}
+
+async function inspectConfiguration(
+  dependencies: Pick<ProfileFactDependencies, "organizations" | "workspace">,
+  command: ProfileFactInspectionCommand,
+): Promise<ProfileFactWorkspaceInspection> {
+  const workspace = await dependencies.workspace.inspect(command);
+  if (
+    workspace.status !== "ready" || command.section !== "work" ||
+    (command.includeOptions !== true && command.value === undefined &&
+      !command.selectedOptionIds?.length)
+  ) return workspace;
+  return dependencies.organizations.inspect(command);
 }
 
 export type ProfileFactListResult =
@@ -618,7 +645,7 @@ export function createProfileFactManagement(
             transaction,
           }))
       ) return { status: "invalid-reference" };
-      const configuration = await dependencies.workspace.inspect({
+      const configuration = await inspectConfiguration(dependencies, {
         ...actor,
         lock: true,
         section,
@@ -718,7 +745,7 @@ export function createProfileFactManagement(
             transaction,
           })
         ) return { status: "stale-cursor" };
-        const configuration = await dependencies.workspace.inspect({
+        const configuration = await inspectConfiguration(dependencies, {
           ...actor,
           includeOptions: input.includeOptions === true,
           lock: false,
@@ -763,17 +790,19 @@ export function createProfileFactManagement(
             const value = record.value as {
               readonly categoryId?: string;
               readonly labelIds?: readonly string[];
+              readonly organizationId?: string;
               readonly typeId?: string;
             };
             return [
               ...(value.typeId ? [value.typeId] : []),
               ...(value.categoryId ? [value.categoryId] : []),
+              ...(value.organizationId ? [value.organizationId] : []),
               ...(value.labelIds ?? []).slice(0, 20),
             ];
           })),
         ];
         const selectedInspection = selectedOptionIds.length
-          ? await dependencies.workspace.inspect({
+          ? await inspectConfiguration(dependencies, {
             ...actor,
             includeOptions: true,
             lock: false,
@@ -795,11 +824,13 @@ export function createProfileFactManagement(
           const value = record.value as {
             readonly categoryId?: string;
             readonly labelIds?: readonly string[];
+            readonly organizationId?: string;
             readonly typeId?: string;
           };
           const referenceIds = [
             ...(value.typeId ? [value.typeId] : []),
             ...(value.categoryId ? [value.categoryId] : []),
+            ...(value.organizationId ? [value.organizationId] : []),
             ...(value.labelIds ?? []).slice(0, 20),
           ];
           const selectedOptions = referenceIds.flatMap((id) => {
@@ -908,7 +939,7 @@ export function createProfileFactManagement(
         if (context.personUpdatedAt !== expectedPersonUpdatedAt) {
           return { status: "stale" };
         }
-        const configuration = await dependencies.workspace.inspect({
+        const configuration = await inspectConfiguration(dependencies, {
           ...actor,
           lock: true,
           section,

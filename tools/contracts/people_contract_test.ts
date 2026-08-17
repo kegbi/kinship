@@ -893,6 +893,7 @@ Deno.test("PEOPLE-006 OpenAPI exposes strict section-scoped profile facts", () =
   }).schemas;
   const input = schemas.ProfileFactCreateInput;
   const updateInput = schemas.ProfileFactUpdateInput;
+  const optionKind = schemas.ProfileFactOption?.properties?.kind;
   assert(
     input?.oneOf?.length === 7,
     "profile-fact input is a discriminated union of seven closed sections",
@@ -900,6 +901,10 @@ Deno.test("PEOPLE-006 OpenAPI exposes strict section-scoped profile facts", () =
   assert(
     updateInput?.oneOf?.length === 7,
     "profile-fact updates use a separate discriminated union",
+  );
+  assert(
+    optionKind?.enum?.includes("organization") === true,
+    "work organization choices are a first-class profile option kind",
   );
   const petCreate = {
     expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
@@ -934,7 +939,12 @@ Deno.test("PEOPLE-006 OpenAPI exposes strict section-scoped profile facts", () =
       { section: "food-preferences", foodPreferences: "Tea" },
       { section: "pets", name: "Byron", notes: "A quiet companion" },
       { section: "tags", tagIds: [] },
-      { section: "work", isCurrent: true, title: "Engineer" },
+      {
+        section: "work",
+        isCurrent: true,
+        organizationId: "00000000-0000-4000-8000-000000000350",
+        title: "Engineer",
+      },
     ].every((value) =>
       acceptsObjectInstance(schemas, input, {
         ...value,
