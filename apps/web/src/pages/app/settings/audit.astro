@@ -1,0 +1,44 @@
+---
+import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
+export const prerender = true;
+---
+
+<ApplicationLayout
+  current="settings"
+  description="Review redacted audit history for the active workspace."
+  pageId="settings.audit"
+  title="Audit history — Kinship"
+>
+  <main id="main-content" class="page-frame audit-history-page" tabindex="-1">
+    <header class="settings-heading">
+      <div>
+        <p class="eyebrow">Workspace data · <span data-workspace-name></span></p>
+        <h1 data-audit-heading>Audit history</h1>
+        <p>Owner and administrator access is authorized separately. Sensitive values are never displayed.</p>
+      </div>
+      <a class="button-link secondary-link" href="/app/settings">All settings</a>
+    </header>
+    <form data-audit-filters class="audit-filters" method="get">
+      <label>Person ID <input name="personId" type="text" autocomplete="off" /></label>
+      <label>Actor member ID <input name="actorMemberId" type="text" autocomplete="off" /></label>
+      <label>Action <input name="action" type="search" maxlength="200" placeholder="people.person-updated" /></label>
+      <label>From <input name="from" type="datetime-local" /></label>
+      <label>Before <input name="to" type="datetime-local" /></label>
+      <div class="form-actions">
+        <button class="button-primary" type="submit">Apply filters</button>
+        <button data-audit-clear class="button-secondary" type="button">Clear filters</button>
+      </div>
+    </form>
+    <p data-audit-state class="section-state" role="status" aria-live="polite">Loading audit history…</p>
+    <ol data-audit-list class="audit-event-list" aria-label="Audit events in immutable newest-first order"></ol>
+    <div class="form-actions">
+      <button data-audit-more class="button-secondary" type="button" hidden>Load older events</button>
+      <button data-audit-retry class="button-secondary" type="button" hidden>Retry audit history</button>
+    </div>
+  </main>
+</ApplicationLayout>
+
+<script>
+  import { mountAuditHistory } from "../../../lib/audit-history.ts";
+  void mountAuditHistory();
+</script>

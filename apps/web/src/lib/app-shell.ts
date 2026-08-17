@@ -95,22 +95,41 @@ function renderRouteForbidden(elements: ShellElements): void {
     "settings.workspace";
   const personalization = document.body.dataset.pageId ===
     "settings.personalization";
+  const auditHistory = document.body.dataset.pageId === "people.audit" ||
+    document.body.dataset.pageId === "settings.audit";
   heading.textContent = workspaceSettings
     ? "Workspace settings unavailable"
     : personalization
     ? "Personalization unavailable"
+    : auditHistory
+    ? "Audit history unavailable"
     : "You don’t have access to Members";
   const copy = document.createElement("p");
   copy.textContent = workspaceSettings
     ? "Only workspace owners and admins can manage workspace identity and defaults."
     : personalization
     ? "Only workspace owners and admins can manage workspace personalization."
+    : auditHistory
+    ? "Only workspace owners and admins can review audit history."
     : "Only workspace owners and admins can view members and invitations.";
   const link = document.createElement("a");
   link.className = "button-link";
-  link.href = "/app/settings";
-  link.textContent = "Return to settings";
-  elements.access.append(heading, copy, link);
+  link.href = document.body.dataset.pageId === "people.audit"
+    ? "/app/people"
+    : "/app/settings";
+  link.textContent = document.body.dataset.pageId === "people.audit"
+    ? "Return to people"
+    : "Return to settings";
+  const main = document.createElement("main");
+  main.id = "forbidden-main-content";
+  main.tabIndex = -1;
+  main.append(heading, copy, link);
+  elements.access.append(main);
+  const skipLink = document.querySelector<HTMLAnchorElement>(".skip-link");
+  if (skipLink) {
+    skipLink.href = "#forbidden-main-content";
+    skipLink.addEventListener("click", () => main.focus());
+  }
   elements.access.focus();
 }
 
@@ -200,7 +219,9 @@ export async function mountApplicationShell(
   if (
     (document.body.dataset.pageId === "settings.members" ||
       document.body.dataset.pageId === "settings.workspace" ||
-      document.body.dataset.pageId === "settings.personalization") &&
+      document.body.dataset.pageId === "settings.personalization" ||
+      document.body.dataset.pageId === "people.audit" ||
+      document.body.dataset.pageId === "settings.audit") &&
     !isWorkspaceAdmin
   ) {
     renderRouteForbidden(elements);

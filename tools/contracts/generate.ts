@@ -965,6 +965,122 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
         },
       },
+      "/api/v1/audit-events": {
+        get: {
+          operationId: "listWorkspaceAudit",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            workspaceParameter,
+            {
+              name: "personId",
+              in: "query",
+              schema: { type: "string", format: "uuid" },
+            },
+            {
+              name: "actorMemberId",
+              in: "query",
+              schema: { type: "string", format: "uuid" },
+            },
+            {
+              name: "action",
+              in: "query",
+              schema: { type: "string", minLength: 1, maxLength: 200 },
+            },
+            {
+              name: "from",
+              in: "query",
+              schema: { type: "string", format: "date-time" },
+            },
+            {
+              name: "to",
+              in: "query",
+              schema: { type: "string", format: "date-time" },
+            },
+            {
+              name: "cursor",
+              in: "query",
+              schema: { type: "string", maxLength: 2_000 },
+            },
+            {
+              name: "limit",
+              in: "query",
+              schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Authorized redacted workspace audit history",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/AuditHistory" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/audit": {
+        get: {
+          operationId: "listPersonAudit",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            workspaceParameter,
+            personIdParameter,
+            {
+              name: "actorMemberId",
+              in: "query",
+              schema: { type: "string", format: "uuid" },
+            },
+            {
+              name: "action",
+              in: "query",
+              schema: { type: "string", minLength: 1, maxLength: 200 },
+            },
+            {
+              name: "from",
+              in: "query",
+              schema: { type: "string", format: "date-time" },
+            },
+            {
+              name: "to",
+              in: "query",
+              schema: { type: "string", format: "date-time" },
+            },
+            {
+              name: "cursor",
+              in: "query",
+              schema: { type: "string", maxLength: 2_000 },
+            },
+            {
+              name: "limit",
+              in: "query",
+              schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Authorized redacted person audit history",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/AuditHistory" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
       "/api/v1/today/favorite-notes": {
         get: {
           operationId: "getTodayFavoriteNotes",
@@ -2836,6 +2952,148 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        AuditDateDetail: {
+          type: "object",
+          required: ["isYearApproximate", "precision"],
+          properties: {
+            isYearApproximate: { type: "boolean" },
+            precision: {
+              enum: [
+                "day",
+                "full",
+                "month",
+                "month_day",
+                "unknown",
+                "year",
+                "year_month",
+              ],
+            },
+          },
+          additionalProperties: false,
+        },
+        AuditTransitionDetail: {
+          oneOf: [
+            { type: "null" },
+            {
+              enum: ["active", "archived", "deleted"],
+            },
+            { $ref: "#/components/schemas/AuditDateDetail" },
+          ],
+        },
+        AuditEvent: {
+          type: "object",
+          required: [
+            "action",
+            "actor",
+            "details",
+            "id",
+            "occurredAt",
+            "redacted",
+            "subject",
+          ],
+          properties: {
+            action: { type: "string" },
+            actor: {
+              type: "object",
+              required: ["name"],
+              properties: {
+                id: { type: "string", format: "uuid" },
+                name: { type: "string" },
+              },
+              additionalProperties: false,
+            },
+            details: {
+              type: "object",
+              properties: {
+                action: {
+                  enum: [
+                    "create",
+                    "delete",
+                    "save",
+                    "update",
+                  ],
+                },
+                current: { type: "boolean" },
+                from: {
+                  $ref: "#/components/schemas/AuditTransitionDetail",
+                },
+                fromPersonId: { type: "string", format: "uuid" },
+                isPartial: { type: "boolean" },
+                kind: { enum: ["activity", "call", "conversation", "note"] },
+                participantIds: {
+                  type: "array",
+                  maxItems: 50,
+                  items: { type: "string", format: "uuid" },
+                },
+                personId: { type: "string", format: "uuid" },
+                relationshipTypeId: { type: "string", format: "uuid" },
+                role: { enum: ["admin", "member", "owner"] },
+                section: {
+                  enum: [
+                    "activity-types",
+                    "addresses",
+                    "contact-labels",
+                    "contact-method-types",
+                    "contact-methods",
+                    "emotion-options",
+                    "first-meeting",
+                    "food-preferences",
+                    "gender-options",
+                    "identity-summary",
+                    "life-event-types",
+                    "pet-categories",
+                    "pets",
+                    "profile-modules",
+                    "relationship-types",
+                    "reminder-rules",
+                    "security",
+                    "tags",
+                    "work",
+                  ],
+                },
+                status: {
+                  enum: [
+                    "active",
+                    "suspended",
+                  ],
+                },
+                to: {
+                  $ref: "#/components/schemas/AuditTransitionDetail",
+                },
+                toPersonId: { type: "string", format: "uuid" },
+              },
+              additionalProperties: false,
+            },
+            id: { type: "string", format: "uuid" },
+            occurredAt: { type: "string", format: "date-time" },
+            person: { $ref: "#/components/schemas/InteractionParticipant" },
+            redacted: { type: "boolean" },
+            subject: {
+              type: "object",
+              properties: {
+                id: { type: "string", format: "uuid" },
+                type: { type: "string" },
+              },
+              additionalProperties: false,
+            },
+          },
+          additionalProperties: false,
+        },
+        AuditHistory: {
+          type: "object",
+          required: ["items", "status"],
+          properties: {
+            items: {
+              type: "array",
+              maxItems: 50,
+              items: { $ref: "#/components/schemas/AuditEvent" },
+            },
+            nextCursor: { type: "string" },
+            person: { $ref: "#/components/schemas/InteractionParticipant" },
+            status: { enum: ["archived", "ready"] },
+          },
+          additionalProperties: false,
+        },
         TodayFavoriteNotes: {
           type: "object",
           required: ["items", "status"],
@@ -4611,6 +4869,41 @@ export interface ActivityReport {
   readonly status: "archived" | "ready";
 }
 
+export interface AuditDateDetail {
+  readonly isYearApproximate: boolean;
+  readonly precision: "day" | "full" | "month" | "month_day" | "unknown" | "year" | "year_month";
+}
+
+export type AuditDetail = boolean | string | null | readonly string[] | AuditDateDetail;
+
+export interface AuditEvent {
+  readonly action: string;
+  readonly actor: { readonly id?: string; readonly name: string };
+  readonly details: Readonly<Record<string, AuditDetail>>;
+  readonly id: string;
+  readonly occurredAt: string;
+  readonly person?: InteractionParticipant;
+  readonly redacted: boolean;
+  readonly subject: { readonly id?: string; readonly type?: string };
+}
+
+export interface AuditHistory {
+  readonly items: readonly AuditEvent[];
+  readonly nextCursor?: string;
+  readonly person?: InteractionParticipant;
+  readonly status: "archived" | "ready";
+}
+
+export interface AuditHistoryInput {
+  readonly action?: string;
+  readonly actorMemberId?: string;
+  readonly cursor?: string;
+  readonly from?: string;
+  readonly limit?: number;
+  readonly personId?: string;
+  readonly to?: string;
+}
+
 export interface TodayFavoriteNotes {
   readonly items: readonly Extract<Interaction, { readonly kind: "note" }>[];
   readonly status: "ready";
@@ -4979,6 +5272,26 @@ export function getActivityReport(personId: string, input: { readonly cursor?: s
   if (input.year) query.set("year", String(input.year));
   const suffix = query.size ? \`?\${query.toString()}\` : "";
   return request(\`/api/v1/people/\${encodeURIComponent(personId)}/activity-report\${suffix}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+function auditQuery(input: AuditHistoryInput): string {
+  const query = new URLSearchParams();
+  if (input.action) query.set("action", input.action);
+  if (input.actorMemberId) query.set("actorMemberId", input.actorMemberId);
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.from) query.set("from", input.from);
+  if (input.limit) query.set("limit", String(input.limit));
+  if (input.personId) query.set("personId", input.personId);
+  if (input.to) query.set("to", input.to);
+  return query.size ? \`?\${query.toString()}\` : "";
+}
+
+export function listWorkspaceAudit(input: AuditHistoryInput = {}, workspaceId?: string): Promise<ApiResult<AuditHistory>> {
+  return request(\`/api/v1/audit-events\${auditQuery(input)}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listPersonAudit(personId: string, input: Omit<AuditHistoryInput, "personId"> = {}, workspaceId?: string): Promise<ApiResult<AuditHistory>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/audit\${auditQuery(input)}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
 export function getTodayFavoriteNotes(workspaceId?: string): Promise<ApiResult<TodayFavoriteNotes>> {

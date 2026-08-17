@@ -66,6 +66,87 @@ afterEach(() => {
 });
 
 describe("APP-002C protected application shell", () => {
+  it.each(["people.audit", "settings.audit"])(
+    "renders an audit-specific whole-route forbidden state for members on %s",
+    async (pageId) => {
+      shellMarkup();
+      document.body.dataset.pageId = pageId;
+      document.querySelector("#protected-shell")?.insertAdjacentHTML(
+        "beforeend",
+        "<main>Privileged audit filters</main>",
+      );
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(response({
+          ...(session() as Record<string, unknown>),
+          member: { id: "member", role: "member" },
+        })),
+      );
+
+      await mountApplicationShell();
+
+      expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
+        .toBe(true);
+      expect(document.querySelector("#access-state")?.textContent).toContain(
+        "Audit history unavailable",
+      );
+      expect(document.querySelector("#access-state")?.hasAttribute("hidden"))
+        .toBe(false);
+      expect(document.querySelector("#access-state main")).not.toBeNull();
+    },
+  );
+
+  it.each(["owner", "admin"])(
+    "allows the server-resolved %s role to enter an audit route",
+    async (role) => {
+      shellMarkup();
+      document.body.dataset.pageId = "settings.audit";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(response({
+          ...(session() as Record<string, unknown>),
+          member: { id: "administrator", role },
+        })),
+      );
+
+      await mountApplicationShell();
+
+      expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
+        .toBe(false);
+      expect(document.querySelector("#access-state")?.hasAttribute("hidden"))
+        .toBe(true);
+    },
+  );
+
+  it("retargets the skip link to the visible forbidden main", async () => {
+    shellMarkup();
+    document.body.dataset.pageId = "settings.audit";
+    document.querySelector("#protected-shell")?.insertAdjacentHTML(
+      "beforeend",
+      '<main id="main-content" tabindex="-1">Audit filters</main>',
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        ...(session() as Record<string, unknown>),
+        member: { id: "member", role: "member" },
+      })),
+    );
+
+    await mountApplicationShell();
+
+    const skip = document.querySelector<HTMLAnchorElement>(".skip-link")!;
+    skip.click();
+    const target = document.querySelector<HTMLElement>(skip.hash);
+    expect(skip.hash).toBe("#forbidden-main-content");
+    expect(target?.closest("#access-state")).not.toBeNull();
+    expect(target?.tabIndex).toBe(-1);
+    expect(document.querySelectorAll("#forbidden-main-content")).toHaveLength(
+      1,
+    );
+    expect(document.activeElement).toBe(target);
+  });
+
   it("hides admin navigation and renders a whole-route forbidden state for members", async () => {
     shellMarkup();
     document.body.dataset.pageId = "settings.members";

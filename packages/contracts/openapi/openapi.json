@@ -2175,6 +2175,313 @@
         }
       }
     },
+    "/api/v1/audit-events": {
+      "get": {
+        "operationId": "listWorkspaceAudit",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "personId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "actorMemberId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized redacted workspace audit history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{personId}/audit": {
+      "get": {
+        "operationId": "listPersonAudit",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "personId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "actorMemberId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized redacted person audit history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/today/favorite-notes": {
       "get": {
         "operationId": "getTodayFavoriteNotes",
@@ -7688,6 +7995,231 @@
             "maxItems": 50,
             "items": {
               "$ref": "#/components/schemas/ActivityOrNoteInteraction"
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          },
+          "person": {
+            "$ref": "#/components/schemas/InteractionParticipant"
+          },
+          "status": {
+            "enum": [
+              "archived",
+              "ready"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "AuditDateDetail": {
+        "type": "object",
+        "required": [
+          "isYearApproximate",
+          "precision"
+        ],
+        "properties": {
+          "isYearApproximate": {
+            "type": "boolean"
+          },
+          "precision": {
+            "enum": [
+              "day",
+              "full",
+              "month",
+              "month_day",
+              "unknown",
+              "year",
+              "year_month"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "AuditTransitionDetail": {
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "enum": [
+              "active",
+              "archived",
+              "deleted"
+            ]
+          },
+          {
+            "$ref": "#/components/schemas/AuditDateDetail"
+          }
+        ]
+      },
+      "AuditEvent": {
+        "type": "object",
+        "required": [
+          "action",
+          "actor",
+          "details",
+          "id",
+          "occurredAt",
+          "redacted",
+          "subject"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "details": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "enum": [
+                  "create",
+                  "delete",
+                  "save",
+                  "update"
+                ]
+              },
+              "current": {
+                "type": "boolean"
+              },
+              "from": {
+                "$ref": "#/components/schemas/AuditTransitionDetail"
+              },
+              "fromPersonId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "isPartial": {
+                "type": "boolean"
+              },
+              "kind": {
+                "enum": [
+                  "activity",
+                  "call",
+                  "conversation",
+                  "note"
+                ]
+              },
+              "participantIds": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "personId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "relationshipTypeId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "role": {
+                "enum": [
+                  "admin",
+                  "member",
+                  "owner"
+                ]
+              },
+              "section": {
+                "enum": [
+                  "activity-types",
+                  "addresses",
+                  "contact-labels",
+                  "contact-method-types",
+                  "contact-methods",
+                  "emotion-options",
+                  "first-meeting",
+                  "food-preferences",
+                  "gender-options",
+                  "identity-summary",
+                  "life-event-types",
+                  "pet-categories",
+                  "pets",
+                  "profile-modules",
+                  "relationship-types",
+                  "reminder-rules",
+                  "security",
+                  "tags",
+                  "work"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "suspended"
+                ]
+              },
+              "to": {
+                "$ref": "#/components/schemas/AuditTransitionDetail"
+              },
+              "toPersonId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "additionalProperties": false
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "person": {
+            "$ref": "#/components/schemas/InteractionParticipant"
+          },
+          "redacted": {
+            "type": "boolean"
+          },
+          "subject": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "AuditHistory": {
+        "type": "object",
+        "required": [
+          "items",
+          "status"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/AuditEvent"
             }
           },
           "nextCursor": {

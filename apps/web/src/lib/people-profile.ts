@@ -15,6 +15,7 @@ import { mountProfileFacts } from "./profile-facts.ts";
 import { mountRelationships } from "./relationships.ts";
 import { mountPersonInteractions } from "./interactions.ts";
 import { mountCommunications } from "./communications.ts";
+import { mountPersonAuditSummary } from "./audit-history.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
@@ -717,6 +718,7 @@ export async function mountPeopleProfile(): Promise<void> {
         ) === true,
       },
     ),
+    mountPersonAuditSummary(id, session.session.workspace.id),
   ]);
   reconcileSectionLocation(profile);
 }

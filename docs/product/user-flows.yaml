@@ -754,6 +754,7 @@ flows:
 
   - id: GOVERNANCE-002
     title: Review authorized audit history
+    deliveryStatus: delivered
     priority: P1
     actor: audit-reader
     trigger: An authorized member opens person or workspace audit history.
@@ -775,7 +776,7 @@ flows:
     moduleIds: [governance, people, workspaces]
     permissions: [audit.read]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-005c.spec.ts] }
 
   - id: BILLING-001
     title: Manage optional workspace billing

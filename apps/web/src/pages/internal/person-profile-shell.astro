@@ -429,6 +429,32 @@ const profileFactSections = new Set<string>([
                 <form data-profile-fact-form class="profile-fact-form" hidden novalidate></form>
               </section>
             )
+            : id === "audit-summary"
+            ? (
+              <section
+                id="profile-section-audit-summary"
+                class="profile-section-card audit-summary-card"
+                data-profile-section="audit-summary"
+                data-person-audit-summary
+                data-section-state="loading"
+                tabindex="-1"
+                aria-labelledby="profile-section-audit-summary-heading"
+              >
+                <header class="profile-section-heading">
+                  <div>
+                    <p class="section-kicker">Administrative history</p>
+                    <h2 id="profile-section-audit-summary-heading">Audit summary</h2>
+                  </div>
+                  <span data-person-audit-badge class="state-badge">Loading</span>
+                </header>
+                <p data-person-audit-state class="section-state" role="status" aria-live="polite">Loading authorized audit summary…</p>
+                <ol data-person-audit-list class="audit-event-list" aria-label="Recent authorized person audit events"></ol>
+                <div class="form-actions">
+                  <a data-person-audit-link class="button-secondary" href="/app/people" hidden>Open full audit history</a>
+                  <button data-person-audit-retry class="button-secondary" type="button" hidden>Retry audit summary</button>
+                </div>
+              </section>
+            )
             : (
               <section
                 id={`profile-section-${id}`}

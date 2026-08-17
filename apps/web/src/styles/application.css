@@ -952,6 +952,60 @@ summary:focus-visible,
   gap: 0.35rem;
 }
 
+.audit-history-page {
+  max-width: 1120px;
+}
+
+.audit-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.85rem;
+  padding: 1rem;
+  margin: 1rem 0;
+  border: 1px solid var(--line, #d8d2c5);
+  border-radius: 1rem;
+  background: var(--surface, #fffdf8);
+}
+
+.audit-filters label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 700;
+}
+
+.audit-filters .form-actions {
+  grid-column: 1 / -1;
+}
+
+.audit-event-list {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+
+.audit-event {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 1px solid var(--line, #d8d2c5);
+  border-radius: 0.85rem;
+  background: var(--surface, #fffdf8);
+}
+
+.audit-event p {
+  margin: 0;
+}
+
+.audit-event time {
+  color: var(--muted, #625f58);
+  font-size: 0.9rem;
+}
+
+.audit-event .state-badge {
+  justify-self: start;
+}
+
 @media (max-width: 42rem) {
   .interaction-capture-dialog {
     width: calc(100% - 1rem);
