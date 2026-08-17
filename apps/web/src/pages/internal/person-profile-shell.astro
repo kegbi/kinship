@@ -310,6 +310,55 @@ const profileFactSections = new Set<string>([
                 </form>
               </section>
             )
+            : id === "activities" || id === "notes"
+            ? (
+              <section
+                id={`profile-section-${id}`}
+                class="profile-section-card interaction-section-card"
+                data-profile-section={id}
+                data-section-state="loading"
+                tabindex="-1"
+                aria-labelledby={`profile-section-${id}-heading`}
+              >
+                <header class="profile-section-heading">
+                  <div>
+                    <p class="section-kicker">Shared context</p>
+                    <h2 id={`profile-section-${id}-heading`}>{title}</h2>
+                  </div>
+                  <span class="state-badge calm">Available</span>
+                </header>
+                <p
+                  id={id === "activities" ? "person-activities-state" : "person-notes-state"}
+                  class="section-state"
+                  role="status"
+                  aria-live="polite"
+                >Loading {title.toLowerCase()}…</p>
+                <ul
+                  id={id === "activities" ? "person-activities-list" : "person-notes-list"}
+                  class="interaction-list"
+                  aria-label={`Recent ${title.toLowerCase()}`}
+                ></ul>
+                <button
+                  id={id === "activities" ? "person-activities-retry" : "person-notes-retry"}
+                  class="button-secondary"
+                  type="button"
+                  aria-controls={id === "activities" ? "person-activities-list" : "person-notes-list"}
+                  hidden
+                >Retry {title.toLowerCase()}</button>
+                <div class="form-actions">
+                  <button
+                    class="button-primary"
+                    data-person-interaction-capture
+                    data-quick-capture
+                    data-interaction-intended-kind={id === "activities" ? "activity" : "note"}
+                    type="button"
+                  >{id === "activities" ? "Log activity" : "Add note"}</button>
+                  {id === "activities" && (
+                    <a class="button-secondary" data-activity-report-link href="/app/people">Open activity report</a>
+                  )}
+                </div>
+              </section>
+            )
             : profileFactSections.has(id)
             ? (
               <section

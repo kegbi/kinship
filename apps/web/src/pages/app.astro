@@ -51,14 +51,23 @@ export const prerender = true;
       <p>Recently opened people will appear here once the People workspace is available.</p>
     </section>
 
-    <section class="today-section" aria-labelledby="favorite-notes-heading">
-      <div class="section-heading"><h2 id="favorite-notes-heading">Favorite notes</h2><span class="state-badge calm">No notes yet</span></div>
-      <p>Favorite reference notes stay secondary and will disappear cleanly when empty.</p>
+    <section id="today-favorite-notes-region" class="today-section" aria-labelledby="favorite-notes-heading">
+      <div class="section-heading"><h2 id="favorite-notes-heading">Favorite notes</h2><span class="state-badge calm">Reference</span></div>
+      <p id="today-favorite-notes-state" class="section-state" aria-live="polite">Loading favorite notes…</p>
+      <ul id="today-favorite-notes" class="interaction-list" aria-label="Favorite notes"></ul>
+      <button id="today-favorite-notes-retry" class="button-secondary" type="button" hidden>Retry favorite notes</button>
     </section>
 
-    <section class="today-section" aria-labelledby="activity-heading">
-      <div class="section-heading"><h2 id="activity-heading">Recent activity</h2><span class="state-badge calm">No activity yet</span></div>
-      <p>Your chronological activity projection will appear here without mixing unrelated datasets into tabs.</p>
+    <section id="today-recent-activity-region" class="today-section" aria-labelledby="activity-heading">
+      <div class="section-heading"><h2 id="activity-heading">Recent activity</h2><span class="state-badge calm">Latest 20</span></div>
+      <p id="today-recent-activity-state" class="section-state" aria-live="polite">Loading recent activity…</p>
+      <ul id="today-recent-activity" class="interaction-list" aria-label="Recent activities and notes"></ul>
+      <button id="today-recent-activity-retry" class="button-secondary" type="button" hidden>Retry recent activity</button>
     </section>
   </main>
 </ApplicationLayout>
+
+<script>
+  import { mountTodayInteractions } from "../lib/interactions.ts";
+  void mountTodayInteractions();
+</script>

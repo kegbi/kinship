@@ -212,10 +212,14 @@ test(
     await expect(page.locator("[data-profile-section]")).toHaveCount(22);
     await expect(
       page.locator('[data-profile-section][data-section-state="unavailable"]'),
-    ).toHaveCount(13);
+    ).toHaveCount(11);
     await expect(page.locator("#profile-section-relationships"))
       .toHaveAttribute("data-section-state", "ready");
     await expect(page.locator("#profile-section-important-dates"))
+      .toHaveAttribute("data-section-state", "ready");
+    await expect(page.locator("#profile-section-activities"))
+      .toHaveAttribute("data-section-state", "ready");
+    await expect(page.locator("#profile-section-notes"))
       .toHaveAttribute("data-section-state", "ready");
     await expect(page.locator("#profile-section-documents")).toHaveAttribute(
       "data-load-mode",
@@ -227,7 +231,11 @@ test(
     ).toHaveAttribute("aria-current", "location");
     await expect(
       page.locator(`a[href^="/app/people/${personId}/"]`),
-    ).toHaveCount(0);
+    ).toHaveCount(1);
+    await expect(page.locator("[data-activity-report-link]")).toHaveAttribute(
+      "href",
+      `/app/people/${personId}/activity-report`,
+    );
     await page.unroute(profilePattern);
     await expectAccessible(page);
 

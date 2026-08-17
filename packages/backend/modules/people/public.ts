@@ -94,6 +94,9 @@ export { PostgresProfileFactRepository } from "./adapters/postgres/profile_fact_
 export { PostgresProfileFactOrganizations } from "./adapters/postgres/profile_fact_organizations.ts";
 export { PostgresRelationshipPersonBoundary } from "./adapters/postgres/relationship_person_boundary.ts";
 export type {
+  InteractionPersonBoundary,
+} from "./application/interaction_person_boundary.ts";
+export type {
   RelationshipPersonBoundary,
   RelationshipPersonInspection,
   RelationshipPersonSummary,

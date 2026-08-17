@@ -258,6 +258,9 @@ async function keyboardSignOut(page: Page): Promise<void> {
   await expect(page.getByRole("link", { name: "People", exact: true }))
     .toBeFocused();
   await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "Quick capture" }))
+    .toBeFocused();
+  await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Add person" })).toBeFocused();
   await page.keyboard.press("Tab");
   const menuToggle = page.getByRole("button", { name: "Open member menu" });

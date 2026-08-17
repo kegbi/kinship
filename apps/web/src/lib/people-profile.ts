@@ -13,6 +13,7 @@ import { resolveWorkspaceSession } from "./workspace-context.ts";
 import { mountImportantDates } from "./important-dates.ts";
 import { mountProfileFacts } from "./profile-facts.ts";
 import { mountRelationships } from "./relationships.ts";
+import { mountPersonInteractions } from "./interactions.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
@@ -221,7 +222,7 @@ function section(id: string | null): HTMLElement | undefined {
 
 function focusSection(id: string | null): boolean {
   const target = section(id);
-  if (!target) return false;
+  if (!target || target.hidden) return false;
   for (
     const link of document.querySelectorAll<HTMLAnchorElement>(
       "[data-section-link]",
@@ -681,5 +682,19 @@ export async function mountPeopleProfile(): Promise<void> {
       ) === true,
       result.value.person.updatedAt,
     ),
+    mountPersonInteractions(
+      id,
+      session.session.workspace.id,
+      result.value.status === "archived",
+      {
+        activities: result.value.person.profileSections?.some((section) =>
+          section.id === "activities" && section.status === "hidden"
+        ) === true,
+        notes: result.value.person.profileSections?.some((section) =>
+          section.id === "notes" && section.status === "hidden"
+        ) === true,
+      },
+    ),
   ]);
+  reconcileSectionLocation(profile);
 }

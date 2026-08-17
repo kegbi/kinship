@@ -38,6 +38,7 @@ import { SmtpVerificationMail } from "../../packages/backend/modules/workspaces/
 import {
   PostgresAuthenticationAudit,
   PostgresImportantDateAudit,
+  PostgresInteractionAudit,
   PostgresInvitationAudit,
   PostgresPersonCreatedAudit,
   PostgresPersonLifecycleAudit,
@@ -90,10 +91,16 @@ import {
   PostgresPersonDateReminderPublisher,
   PostgresReminderRulePersonalization,
 } from "../../packages/backend/modules/planning/public.ts";
-import { PostgresInteractionPersonalizationReferences } from "../../packages/backend/modules/interactions/public.ts";
+import {
+  createInteractionManagement,
+  type InteractionManagement,
+  PostgresInteractionPersonalizationReferences,
+  PostgresInteractionRepository,
+} from "../../packages/backend/modules/interactions/public.ts";
 import { PostgresJournalPersonalizationReferences } from "../../packages/backend/modules/journal/public.ts";
 import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
 import { createRelationshipRoutes } from "./relationships.ts";
+import { createInteractionRoutes } from "./interactions.ts";
 import {
   createRelationshipManagement,
   PostgresRelationshipPersonalizationReferences,
@@ -117,11 +124,24 @@ import {
   DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
 } from "./authentication_response.ts";
 import { PersonalizationRepositoryRouter } from "./personalization_repository.ts";
+import { PostgresInteractionWorkspaceBoundary } from "../../packages/backend/modules/workspaces/public.ts";
+import {
+  type ActivityReport,
+  createActivityReport,
+  PostgresActivityReportRepository,
+} from "../../packages/backend/read-models/activity-report/public.ts";
+import {
+  createTodayInteractions,
+  PostgresTodayInteractionsRepository,
+  type TodayInteractions,
+} from "../../packages/backend/read-models/today/public.ts";
 
 export interface ApiServices extends RegistrationHttpServices {
+  readonly activityReport?: ActivityReport;
   readonly directory?: PeopleDirectory;
   readonly invitations?: InvitationHttpServices["invitations"];
   readonly importantDates?: ImportantDateManagement;
+  readonly interactions?: InteractionManagement;
   readonly profileFacts?: PeopleHttpServices["profileFacts"];
   readonly passwordRecovery?: AuthenticationHttpServices["passwordRecovery"];
   readonly protectedSessions?: AuthenticationHttpServices["protectedSessions"];
@@ -131,6 +151,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly profile?: PersonProfile;
   readonly relationships?: RelationshipManagement;
   readonly tagOptions?: PeopleTagOptions;
+  readonly today?: TodayInteractions;
   readonly readiness?: () => Promise<boolean>;
 }
 
@@ -263,6 +284,21 @@ export function createApiApp(services?: ApiServices): Hono {
           browserSecurity: services.browserSecurity,
           protectedSessions: services.protectedSessions,
           relationships: services.relationships,
+        }),
+      );
+    }
+    if (
+      services.activityReport && services.interactions &&
+      services.protectedSessions && services.today
+    ) {
+      api.route(
+        "/",
+        createInteractionRoutes({
+          activityReport: services.activityReport,
+          browserSecurity: services.browserSecurity,
+          interactions: services.interactions,
+          protectedSessions: services.protectedSessions,
+          today: services.today,
         }),
       );
     }
@@ -478,6 +514,14 @@ export function createConfiguredApiApp(
     transaction: peopleTransaction,
     workspace: new PostgresRelationshipWorkspaceBoundary(),
   });
+  const interactions = createInteractionManagement({
+    audit: new PostgresInteractionAudit(),
+    clock,
+    people: new PostgresRelationshipPersonBoundary(),
+    repository: new PostgresInteractionRepository(),
+    transaction: peopleTransaction,
+    workspace: new PostgresInteractionWorkspaceBoundary(),
+  });
   const people = { ...peopleManagement, ...peopleLifecycle };
   const directoryRepository = new PostgresPeopleDirectoryRepository(
     connection.db,
@@ -489,12 +533,20 @@ export function createConfiguredApiApp(
   const profile = createPersonProfile({
     repository: new PostgresPersonProfileRepository(connection.db),
   });
+  const activityReport = createActivityReport({
+    repository: new PostgresActivityReportRepository(connection.db),
+  });
+  const today = createTodayInteractions({
+    repository: new PostgresTodayInteractionsRepository(connection.db),
+  });
   const app = createApiApp({
+    activityReport,
     browserSecurity: policy,
     directory,
     hasher,
     invitations,
     importantDates,
+    interactions,
     passwordRecovery,
     people,
     profile,
@@ -504,6 +556,7 @@ export function createConfiguredApiApp(
     personalization,
     settings,
     tagOptions,
+    today,
     register: registration,
     retryVerificationDelivery: createVerificationDeliveryRetry(
       registrationDependencies,

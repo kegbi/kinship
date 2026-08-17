@@ -14,10 +14,12 @@ export interface PersonProfileTag {
 
 export interface PersonProfileSection {
   readonly id:
+    | "activities"
     | "addresses"
     | "contact-methods"
     | "first-meeting"
     | "food-preferences"
+    | "notes"
     | "pets"
     | "relationships"
     | "tags"

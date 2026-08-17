@@ -449,6 +449,7 @@ flows:
 
   - id: INTERACTION-001
     title: Log and review an activity or note
+    deliveryStatus: delivered
     priority: P0
     actor: crm-writer
     trigger: The member records an interaction from quick capture or a person workspace.
@@ -469,7 +470,7 @@ flows:
     moduleIds: [people, interactions]
     permissions: [interactions.write]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-005a.spec.ts] }
 
   - id: INTERACTION-002
     title: Log a call or conversation
