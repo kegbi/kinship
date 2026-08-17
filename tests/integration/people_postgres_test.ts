@@ -15,6 +15,7 @@ import {
   PostgresPeopleRepository,
   PostgresPeopleTransaction,
   PostgresPersonLifecycleRepository,
+  PostgresProfileFactOrganizations,
   PostgresProfileFactRepository,
   PostgresRelationshipPersonBoundary,
 } from "../../packages/backend/modules/people/public.ts";
@@ -70,6 +71,7 @@ const profileFacts = createProfileFactManagement({
   audit: new PostgresProfileFactAudit(),
   clock: { now: () => new Date() },
   ids: { create: () => crypto.randomUUID() },
+  organizations: new PostgresProfileFactOrganizations(),
   repository: new PostgresProfileFactRepository(),
   transaction: new PostgresPeopleTransaction(peopleConnection.db),
   workspace: new PostgresProfileFactConfiguration(),
@@ -3128,6 +3130,7 @@ Deno.test({
     const petCategoryId = crypto.randomUUID();
     const tagId = crypto.randomUUID();
     const foreignTagId = crypto.randomUUID();
+    const foreignOrganizationId = crypto.randomUUID();
     await sql`
       insert into crm.contact_method_types (id, workspace_id, name, is_archived)
       values (${typeId}, ${owner.workspaceId}, 'Email', false),
@@ -3153,6 +3156,20 @@ Deno.test({
       insert into crm.tags (id, workspace_id, name, slug)
       values (${tagId}, ${owner.workspaceId}, 'Friend', ${`friend-${tagId}`}),
         (${foreignTagId}, ${foreign.workspaceId}, 'Private', ${`private-${foreignTagId}`})
+    `;
+    await sql`
+      insert into crm.organizations (id, workspace_id, name)
+      values (${foreignOrganizationId}, ${foreign.workspaceId}, 'Private Engines')
+    `;
+    const boundedOrganizations = await sql<{
+      readonly id: string;
+      readonly name: string;
+    }[]>`
+      insert into crm.organizations (workspace_id, name)
+      select ${owner.workspaceId}::uuid,
+        'Bounded organization ' || lpad(series::text, 3, '0')
+      from generate_series(1, 74) series
+      returning id::text, name
     `;
     const assignedTagRows = await sql<{ readonly id: string }[]>`
       insert into crm.tags (workspace_id, name, slug)
@@ -3310,6 +3327,114 @@ Deno.test({
       const listed = await request(section, "GET");
       assert(listed.status === 200, `${section} refreshes independently`);
     }
+    const organizationOptions = await request(
+      "work?includeOptions=true&optionSearch=analytical",
+      "GET",
+    );
+    const organizationOptionsBody = await organizationOptions.json() as {
+      readonly options: readonly {
+        readonly id: string;
+        readonly kind?: string;
+        readonly name: string;
+      }[];
+    };
+    const foreignOrganizationOptions = await request(
+      "work?includeOptions=true&optionSearch=private",
+      "GET",
+    );
+    assert(
+      organizationOptions.status === 200 &&
+        organizationOptionsBody.options.length === 1 &&
+        organizationOptionsBody.options[0]?.kind === "organization" &&
+        organizationOptionsBody.options[0]?.name === "Analytical Engines" &&
+        foreignOrganizationOptions.status === 200 &&
+        (await foreignOrganizationOptions.json() as {
+            readonly options: readonly unknown[];
+          }).options.length === 0,
+      "work options expose only searchable organizations from the active workspace",
+    );
+    const workOptionPage = async (search: string, cursor?: string) => {
+      const response = await request(
+        `work?includeOptions=true&optionSearch=${encodeURIComponent(search)}${
+          cursor ? `&optionCursor=${encodeURIComponent(cursor)}` : ""
+        }`,
+        "GET",
+      );
+      return {
+        body: await response.json() as {
+          readonly nextOptionsCursor?: string;
+          readonly options?: readonly {
+            readonly id: string;
+            readonly kind?: string;
+            readonly name: string;
+          }[];
+        },
+        status: response.status,
+      };
+    };
+    const boundedFirst = await workOptionPage(
+      "  BoUnDeD OrGaNiZaTiOn  ",
+    );
+    const boundedContinuation = await workOptionPage(
+      "bounded organization",
+      boundedFirst.body.nextOptionsCursor,
+    );
+    const boundedIds = [
+      ...(boundedFirst.body.options ?? []),
+      ...(boundedContinuation.body.options ?? []),
+    ].map((option) => option.id);
+    const mismatchedOrganizationSearch = await workOptionPage(
+      "other organization",
+      boundedFirst.body.nextOptionsCursor,
+    );
+    const anchor = boundedFirst.body.options?.at(-1);
+    assert(anchor, "the first organization page exposes its keyset anchor");
+    await sql`
+      update crm.organizations set name = 'Changed organization anchor'
+      where id = ${anchor.id}::uuid and workspace_id = ${owner.workspaceId}
+    `;
+    const staleOrganizationCursor = await workOptionPage(
+      "bounded organization",
+      boundedFirst.body.nextOptionsCursor,
+    );
+    const hydratedWork = await request("work", "GET");
+    const hydratedWorkBody = await hydratedWork.json() as {
+      readonly records: readonly {
+        readonly referencesResolved?: boolean;
+        readonly selectedOptions?: readonly {
+          readonly id: string;
+          readonly kind?: string;
+          readonly name: string;
+        }[];
+        readonly value: { readonly organizationId?: string };
+      }[];
+    };
+    const savedWork = hydratedWorkBody.records[0];
+    assert(
+      boundedOrganizations.length === 74 && boundedFirst.status === 200 &&
+        boundedFirst.body.options?.length === 50 &&
+        boundedFirst.body.nextOptionsCursor &&
+        boundedContinuation.status === 200 &&
+        boundedContinuation.body.options?.length === 24 &&
+        !boundedContinuation.body.nextOptionsCursor &&
+        boundedIds.length === 74 && new Set(boundedIds).size === 74 &&
+        mismatchedOrganizationSearch.status === 409 &&
+        staleOrganizationCursor.status === 409 && hydratedWork.status === 200 &&
+        savedWork?.referencesResolved === true &&
+        savedWork.selectedOptions?.length === 1 &&
+        savedWork.selectedOptions[0]?.kind === "organization" &&
+        savedWork.selectedOptions[0]?.id === savedWork.value.organizationId &&
+        savedWork.selectedOptions[0]?.name === "Analytical Engines",
+      `People-owned organization options are bounded, search-bound, tenant-safe, and hydrated: ${
+        JSON.stringify({
+          continuation: boundedContinuation.status,
+          first: boundedFirst.body.options?.length,
+          hydrated: savedWork,
+          stale: staleOrganizationCursor.status,
+          total: boundedIds.length,
+        })
+      }`,
+    );
     const foodProof = () =>
       sql<{
         readonly audit_count: number;
@@ -3568,9 +3693,16 @@ Deno.test({
       id: personId,
       tagIds: [foreignTagId],
     });
+    const foreignOrganization = await request("work", "PUT", {
+      expectedPersonUpdatedAt: personRevision,
+      isCurrent: false,
+      organizationId: foreignOrganizationId,
+      title: "Private analyst",
+    });
     assert(
-      disabledType.status === 400 && foreignTag.status === 409,
-      "disabled and cross-workspace links persist nothing",
+      disabledType.status === 400 && foreignTag.status === 409 &&
+        foreignOrganization.status === 400,
+      "disabled and cross-workspace vocabulary or organization links persist nothing",
     );
     const selfIntroducer = await request("first-meeting", "PUT", {
       expectedPersonUpdatedAt: personRevision,

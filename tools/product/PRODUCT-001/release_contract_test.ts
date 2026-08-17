@@ -328,6 +328,7 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
     ["PEOPLE-002", "tests/e2e/app-003b.spec.ts"],
     ["PEOPLE-004", "tests/e2e/app-004a.spec.ts"],
     ["PEOPLE-005", "tests/e2e/app-004b.spec.ts"],
+    ["PEOPLE-006", "tests/e2e/app-004c.spec.ts"],
     ["RELATIONSHIP-001", "tests/e2e/app-004d.spec.ts"],
   ]);
   for (const flow of flows) {

@@ -539,7 +539,7 @@ export type ProfileFactSectionId = "addresses" | "contact-methods" | "first-meet
 export type PersonProfileSectionId = ProfileFactSectionId | "relationships";
 export interface ProfileFactOption {
   readonly id: string;
-  readonly kind?: "contact-label" | "contact-type" | "pet-category";
+  readonly kind?: "contact-label" | "contact-type" | "organization" | "pet-category";
   readonly name: string;
 }
 export interface AddressFact {

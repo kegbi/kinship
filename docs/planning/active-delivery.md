@@ -10,8 +10,8 @@ prerequisite queues.
 
 ## Cursor
 
-- Current phase: **Phase 4 — Profile Facts And Relationships**
-- Current leaf: **APP-004C / `PEOPLE-006` — Complete enabled profile facts**
+- Current phase: **Phase 5 — Interactions And History**
+- Current leaf: **APP-005A / `INTERACTION-001` — Activities and notes**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -157,8 +157,8 @@ runnable behavior cannot work without them.
 - [x] **APP-004B / `PEOPLE-005` — Important and partial dates.**
   - [x] Deliver birthday, first meeting, death, and custom partial-date behavior
         without inventing precision.
-- [ ] **APP-004C / `PEOPLE-006` — Complete enabled profile facts.**
-  - [ ] Deliver contact methods, addresses, work, organizations, tags, pets,
+- [x] **APP-004C / `PEOPLE-006` — Complete enabled profile facts.**
+  - [x] Deliver contact methods, addresses, work, organizations, tags, pets,
         food preferences, and other accepted enabled sections as local workspace
         actions.
 - [x] **APP-004D / `RELATIONSHIP-001` — Relationships between people.**
@@ -167,7 +167,7 @@ runnable behavior cannot work without them.
 - [x] **APP-004E / `WORKSPACE-003` — Profile modules and vocabularies.**
   - [x] Deliver module settings and controlled vocabularies through accepted
         personalization section deep links, not separate CRUD routes.
-- [ ] **Phase 4 accepted:** all Slice 2 flows pass and every mutation uses its
+- [x] **Phase 4 accepted:** all Slice 2 flows pass and every mutation uses its
       owning module's public application facade.
 
 ## Phase 5 — Interactions And History

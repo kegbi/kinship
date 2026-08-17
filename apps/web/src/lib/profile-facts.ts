@@ -220,7 +220,21 @@ function buildForm(
   } else if (section === "work") {
     form.append(
       input("Role or title", "title", "text", true, 200),
-      input("Organization", "organizationName", "text", false, 200),
+      select(
+        "Existing organization",
+        "organizationId",
+        options.filter((option) => option.kind === "organization"),
+      ),
+      input("New organization", "organizationName", "text", false, 200),
+      input(
+        "Search organizations",
+        "profileOptionSearch",
+        "search",
+        false,
+        200,
+      ),
+      actionButton("Search organizations", "profileOptionSearch"),
+      actionButton("Load more organizations", "profileOptionMore"),
       input("Start date", "startOn", "date"),
       input("End date", "endOn", "date"),
       checkbox("Current role", "isCurrent"),
@@ -324,6 +338,10 @@ function fill(form: HTMLFormElement, record?: ProfileFactRecord): void {
   form.reset();
   if (!record) return;
   for (const [name, value] of Object.entries(record.value)) {
+    if (
+      record.section === "work" && name === "organizationName" &&
+      record.value.organizationId
+    ) continue;
     setValue(form, name, value);
   }
 }
@@ -495,7 +513,10 @@ function formInput(
     } as ProfileFactCreateInputBySection["first-meeting"];
   }
   if (section === "work") {
-    const organizationName = optional("organizationName");
+    const organizationId = optional("organizationId");
+    const organizationName = organizationId
+      ? undefined
+      : optional("organizationName");
     const startOn = optional("startOn");
     const endOn = optional("endOn");
     const description = optional("description");
@@ -504,6 +525,7 @@ function formInput(
       section: "work",
       title: textValue("title"),
       isCurrent: data.get("isCurrent") === "on",
+      ...(organizationId ? { organizationId } : {}),
       ...(organizationName ? { organizationName } : {}),
       ...(startOn ? { startOn } : {}),
       ...(endOn ? { endOn } : {}),
@@ -912,7 +934,7 @@ export async function mountProfileFacts(
         tagSelection = capture;
       }
     }
-    if (["contact-methods", "addresses", "pets"].includes(section)) {
+    if (["contact-methods", "addresses", "pets", "work"].includes(section)) {
       const search = target.form.elements.namedItem("profileOptionSearch");
       const searchButton = target.form.querySelector<HTMLButtonElement>(
         "[data-profile-option-search]",
@@ -927,6 +949,8 @@ export async function mountProfileFacts(
         ? ["typeId", "labelIds"]
         : section === "addresses"
         ? ["labelIds"]
+        : section === "work"
+        ? ["organizationId"]
         : ["categoryId"];
       if (
         search instanceof HTMLInputElement && searchButton && moreButton &&
@@ -980,6 +1004,8 @@ export async function mountProfileFacts(
               ? "contact-type"
               : name === "categoryId"
               ? "pet-category"
+              : name === "organizationId"
+              ? "organization"
               : "contact-label";
             const page = result.value.options.filter((option) =>
               option.kind === kind
@@ -1023,6 +1049,8 @@ export async function mountProfileFacts(
               ? "contact-type"
               : name === "categoryId"
               ? "pet-category"
+              : name === "organizationId"
+              ? "organization"
               : "contact-label";
             replaceOptions(
               control,
@@ -1032,6 +1060,25 @@ export async function mountProfileFacts(
           }
           return true;
         };
+        if (section === "work") {
+          const organization = target.form.elements.namedItem(
+            "organizationId",
+          );
+          const newOrganization = target.form.elements.namedItem(
+            "organizationName",
+          );
+          if (
+            organization instanceof HTMLSelectElement &&
+            newOrganization instanceof HTMLInputElement
+          ) {
+            organization.addEventListener("change", () => {
+              if (organization.value) newOrganization.value = "";
+            });
+            newOrganization.addEventListener("input", () => {
+              if (newOrganization.value.trim()) organization.value = "";
+            });
+          }
+        }
       }
     }
     if (section === "tags") {
