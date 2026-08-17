@@ -498,6 +498,41 @@ export interface ActivityReport {
   readonly status: "archived" | "ready";
 }
 
+export interface AuditDateDetail {
+  readonly isYearApproximate: boolean;
+  readonly precision: "day" | "full" | "month" | "month_day" | "unknown" | "year" | "year_month";
+}
+
+export type AuditDetail = boolean | string | null | readonly string[] | AuditDateDetail;
+
+export interface AuditEvent {
+  readonly action: string;
+  readonly actor: { readonly id?: string; readonly name: string };
+  readonly details: Readonly<Record<string, AuditDetail>>;
+  readonly id: string;
+  readonly occurredAt: string;
+  readonly person?: InteractionParticipant;
+  readonly redacted: boolean;
+  readonly subject: { readonly id?: string; readonly type?: string };
+}
+
+export interface AuditHistory {
+  readonly items: readonly AuditEvent[];
+  readonly nextCursor?: string;
+  readonly person?: InteractionParticipant;
+  readonly status: "archived" | "ready";
+}
+
+export interface AuditHistoryInput {
+  readonly action?: string;
+  readonly actorMemberId?: string;
+  readonly cursor?: string;
+  readonly from?: string;
+  readonly limit?: number;
+  readonly personId?: string;
+  readonly to?: string;
+}
+
 export interface TodayFavoriteNotes {
   readonly items: readonly Extract<Interaction, { readonly kind: "note" }>[];
   readonly status: "ready";
@@ -866,6 +901,26 @@ export function getActivityReport(personId: string, input: { readonly cursor?: s
   if (input.year) query.set("year", String(input.year));
   const suffix = query.size ? `?${query.toString()}` : "";
   return request(`/api/v1/people/${encodeURIComponent(personId)}/activity-report${suffix}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+function auditQuery(input: AuditHistoryInput): string {
+  const query = new URLSearchParams();
+  if (input.action) query.set("action", input.action);
+  if (input.actorMemberId) query.set("actorMemberId", input.actorMemberId);
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.from) query.set("from", input.from);
+  if (input.limit) query.set("limit", String(input.limit));
+  if (input.personId) query.set("personId", input.personId);
+  if (input.to) query.set("to", input.to);
+  return query.size ? `?${query.toString()}` : "";
+}
+
+export function listWorkspaceAudit(input: AuditHistoryInput = {}, workspaceId?: string): Promise<ApiResult<AuditHistory>> {
+  return request(`/api/v1/audit-events${auditQuery(input)}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listPersonAudit(personId: string, input: Omit<AuditHistoryInput, "personId"> = {}, workspaceId?: string): Promise<ApiResult<AuditHistory>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/audit${auditQuery(input)}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
 export function getTodayFavoriteNotes(workspaceId?: string): Promise<ApiResult<TodayFavoriteNotes>> {

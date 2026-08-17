@@ -10,8 +10,8 @@ prerequisite queues.
 
 ## Cursor
 
-- Current phase: **Phase 5 — Interactions And History**
-- Current leaf: **APP-005C / `GOVERNANCE-002` — History and authorized audit**
+- Current phase: **Phase 6 — Today, Tasks, Reminders, And Workers**
+- Current leaf: **APP-006A / `PLANNING-001` — Tasks**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -178,11 +178,11 @@ runnable behavior cannot work without them.
 - [x] **APP-005B / `INTERACTION-002` — Calls and conversations.**
   - [x] Deliver calls, conversations/messages, person linkage, and accepted
         communication states.
-- [ ] **APP-005C / `GOVERNANCE-002` — History and authorized audit.**
-  - [ ] Deliver the remaining person-history and authorized audit-history
+- [x] **APP-005C / `GOVERNANCE-002` — History and authorized audit.**
+  - [x] Deliver the remaining person-history and authorized audit-history
         surfaces while proving read composition cannot perform cross-module
         writes.
-- [ ] **Phase 5 accepted:** Slice 3 interaction/history flows pass with
+- [x] **Phase 5 accepted:** Slice 3 interaction/history flows pass with
       tenant-safe projections and authorized audit access.
 
 ## Phase 6 — Today, Tasks, Reminders, And Workers

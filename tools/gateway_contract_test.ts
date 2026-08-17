@@ -10,6 +10,7 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
     gatewayImage,
     profileShell,
     activityReportShell,
+    auditShell,
     web,
   ] = await Promise
     .all([
@@ -26,6 +27,12 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
       Deno.readTextFile(
         new URL(
           "../apps/web/src/pages/internal/activity-report-shell.astro",
+          import.meta.url,
+        ),
+      ).catch(() => ""),
+      Deno.readTextFile(
+        new URL(
+          "../apps/web/src/pages/internal/person-audit-shell.astro",
           import.meta.url,
         ),
       ).catch(() => ""),
@@ -154,10 +161,15 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
   assert(
     profileShell.includes("export const prerender = true") &&
       activityReportShell.includes("export const prerender = true") &&
+      auditShell.includes("export const prerender = true") &&
       gateway.includes(
         "try_files /internal/activity-report-shell/index.html =404",
       ) &&
       gateway.includes("location = /internal/activity-report-shell") &&
+      gateway.includes(
+        "try_files /internal/person-audit-shell/index.html =404",
+      ) &&
+      gateway.includes("location = /internal/person-audit-shell") &&
       gatewayImage.includes(
         "COPY --from=build --chown=nginx:nginx /app/apps/web/dist/client /usr/share/nginx/html",
       ),

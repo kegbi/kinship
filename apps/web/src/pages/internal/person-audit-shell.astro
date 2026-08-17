@@ -1,0 +1,48 @@
+---
+import ApplicationLayout from "../../layouts/ApplicationLayout.astro";
+export const prerender = true;
+---
+
+<ApplicationLayout
+  current="people"
+  description="Review authorized redacted history for one person."
+  pageId="people.audit"
+  title="Person audit history — Kinship"
+>
+  <main id="main-content" class="page-frame audit-history-page" tabindex="-1">
+    <header class="page-heading">
+      <div>
+        <p class="eyebrow">Person administration · <span data-workspace-name></span></p>
+        <h1 data-audit-heading tabindex="-1">Loading person audit history…</h1>
+        <p>Archived people remain readable. Sensitive values stay redacted.</p>
+      </div>
+    </header>
+    <nav aria-label="Person audit navigation">
+      <a data-person-audit-back class="profile-back-link" href="/app/people">← Back to person</a>
+    </nav>
+    <form data-audit-filters class="audit-filters" method="get">
+      <label>Actor member ID <input name="actorMemberId" type="text" autocomplete="off" /></label>
+      <label>Action <input name="action" type="search" maxlength="200" placeholder="people.person-updated" /></label>
+      <label>From <input name="from" type="datetime-local" /></label>
+      <label>Before <input name="to" type="datetime-local" /></label>
+      <div class="form-actions">
+        <button class="button-primary" type="submit">Apply filters</button>
+        <button data-audit-clear class="button-secondary" type="button">Clear filters</button>
+      </div>
+    </form>
+    <p data-audit-state class="section-state" role="status" aria-live="polite">Loading audit history…</p>
+    <ol data-audit-list class="audit-event-list" aria-label="Person audit events in immutable newest-first order"></ol>
+    <div class="form-actions">
+      <button data-audit-more class="button-secondary" type="button" hidden>Load older events</button>
+      <button data-audit-retry class="button-secondary" type="button" hidden>Retry audit history</button>
+    </div>
+  </main>
+</ApplicationLayout>
+
+<script>
+  import { mountAuditHistory } from "../../lib/audit-history.ts";
+  const personId = /^\/app\/people\/([0-9a-f-]{36})\/audit\/?$/i.exec(location.pathname)?.[1];
+  const back = document.querySelector<HTMLAnchorElement>("[data-person-audit-back]");
+  if (back && personId) back.href = `/app/people/${encodeURIComponent(personId)}?section=audit-summary`;
+  void mountAuditHistory(personId);
+</script>

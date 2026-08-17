@@ -139,9 +139,16 @@ import {
   PostgresTodayInteractionsRepository,
   type TodayInteractions,
 } from "../../packages/backend/read-models/today/public.ts";
+import {
+  type AuditHistory,
+  createAuditHistory,
+  PostgresAuditHistoryRepository,
+} from "../../packages/backend/read-models/audit-history/public.ts";
+import { createGovernanceRoutes } from "./governance.ts";
 
 export interface ApiServices extends RegistrationHttpServices {
   readonly activityReport?: ActivityReport;
+  readonly auditHistory?: AuditHistory;
   readonly directory?: PeopleDirectory;
   readonly invitations?: InvitationHttpServices["invitations"];
   readonly importantDates?: ImportantDateManagement;
@@ -303,6 +310,15 @@ export function createApiApp(services?: ApiServices): Hono {
           interactions: services.interactions,
           protectedSessions: services.protectedSessions,
           today: services.today,
+        }),
+      );
+    }
+    if (services.auditHistory && services.protectedSessions) {
+      api.route(
+        "/",
+        createGovernanceRoutes({
+          auditHistory: services.auditHistory,
+          protectedSessions: services.protectedSessions,
         }),
       );
     }
@@ -552,11 +568,16 @@ export function createConfiguredApiApp(
   const activityReport = createActivityReport({
     repository: new PostgresActivityReportRepository(connection.db),
   });
+  const auditHistory = createAuditHistory({
+    cursorKeyset: subjectKeyset,
+    repository: new PostgresAuditHistoryRepository(connection.db),
+  });
   const today = createTodayInteractions({
     repository: new PostgresTodayInteractionsRepository(connection.db),
   });
   const app = createApiApp({
     activityReport,
+    auditHistory,
     browserSecurity: policy,
     directory,
     hasher,
