@@ -1,8 +1,8 @@
 import {
+  type ActivityOrNoteInteraction,
   getActivityReport,
   getTodayFavoriteNotes,
   getTodayRecentActivity,
-  type Interaction,
   listInteractionOptions,
   listPeople,
   recordInteraction,
@@ -547,7 +547,7 @@ export async function mountInteractionCapture(): Promise<void> {
   }, { signal });
 }
 
-function renderInteraction(entry: Interaction): HTMLLIElement {
+function renderInteraction(entry: ActivityOrNoteInteraction): HTMLLIElement {
   const item = document.createElement("li");
   item.className = "interaction-item";
   const heading = document.createElement("strong");

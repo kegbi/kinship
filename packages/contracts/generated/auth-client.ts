@@ -358,6 +358,7 @@ export interface PersonProfileIdentity extends PersonIdentity {
   readonly isDeceased: boolean;
   readonly isSelf: boolean;
   readonly isStarred: boolean;
+  readonly lastContactAt?: string;
   readonly profileSections?: readonly { readonly id: PersonProfileSectionId; readonly status: "hidden" | "ready" }[];
   readonly tagCount: number;
   readonly tags: readonly PeopleDirectoryTag[];
@@ -412,6 +413,27 @@ export type Interaction =
     readonly kind: "note";
     readonly person?: InteractionParticipant;
     readonly participants?: readonly [InteractionParticipant];
+  }
+  | {
+    readonly calledAt: string;
+    readonly contactWasCaller: boolean;
+    readonly content?: string;
+    readonly createdAt: string;
+    readonly emotions: readonly InteractionOption[];
+    readonly id: string;
+    readonly kind: "call";
+    readonly person: InteractionParticipant;
+  }
+  | {
+    readonly channelType?: InteractionOption;
+    readonly contactMethod?: { readonly id: string; readonly value: string };
+    readonly createdAt: string;
+    readonly happenedAt: string;
+    readonly id: string;
+    readonly kind: "conversation";
+    readonly messages: readonly { readonly content: string; readonly direction: "inbound" | "outbound"; readonly id: string; readonly writtenAt: string }[];
+    readonly person: InteractionParticipant;
+    readonly title?: string;
   };
 
 export type InteractionInput =
@@ -431,10 +453,46 @@ export type InteractionInput =
     readonly kind: "note";
     readonly personId: string;
     readonly requestId: string;
+  }
+  | {
+    readonly calledAt: string;
+    readonly contactWasCaller: boolean;
+    readonly content?: string;
+    readonly emotionIds?: readonly string[];
+    readonly kind: "call";
+    readonly personId: string;
+    readonly requestId: string;
+  }
+  | {
+    readonly channelTypeId: string;
+    readonly contactMethodId?: string;
+    readonly happenedAt: string;
+    readonly kind: "conversation";
+    readonly messages?: readonly { readonly content: string; readonly direction: "inbound" | "outbound"; readonly writtenAt: string }[];
+    readonly personId: string;
+    readonly requestId: string;
+    readonly title?: string;
   };
 
+export type ActivityOrNoteInteraction = Extract<
+  Interaction,
+  { readonly kind: "activity" | "note" }
+>;
+
+export interface CommunicationOptions {
+  readonly availability: { readonly call: boolean; readonly conversation: boolean };
+  readonly channelTypes: readonly InteractionOption[];
+  readonly emotions: readonly InteractionOption[];
+  readonly status: "ready";
+}
+
+export interface CommunicationList {
+  readonly items: readonly Extract<Interaction, { readonly kind: "call" | "conversation" }>[];
+  readonly status: "ready";
+}
+
 export interface ActivityReport {
-  readonly items: readonly Interaction[];
+  readonly items: readonly ActivityOrNoteInteraction[];
   readonly nextCursor?: string;
   readonly person: InteractionParticipant;
   readonly status: "archived" | "ready";
@@ -446,7 +504,7 @@ export interface TodayFavoriteNotes {
 }
 
 export interface TodayRecentActivity {
-  readonly items: readonly Interaction[];
+  readonly items: readonly ActivityOrNoteInteraction[];
   readonly status: "ready";
 }
 
@@ -604,7 +662,7 @@ export interface PeopleTagOptionsPage {
 }
 
 export type ProfileFactSectionId = "addresses" | "contact-methods" | "first-meeting" | "food-preferences" | "pets" | "tags" | "work";
-export type PersonProfileSectionId = ProfileFactSectionId | "activities" | "notes" | "relationships";
+export type PersonProfileSectionId = ProfileFactSectionId | "activities" | "calls" | "conversations" | "notes" | "relationships";
 export interface ProfileFactOption {
   readonly id: string;
   readonly kind?: "contact-label" | "contact-type" | "organization" | "pet-category";
@@ -790,6 +848,14 @@ export function listInteractionOptions(input: { readonly activityTypeCursor?: st
   if (input.limit) query.set("limit", String(input.limit));
   const suffix = query.size ? `?${query.toString()}` : "";
   return request(`/api/v1/interaction-options${suffix}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listCommunicationOptions(workspaceId?: string): Promise<ApiResult<CommunicationOptions>> {
+  return request("/api/v1/communication-options", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listPersonCommunications(personId: string, workspaceId?: string): Promise<ApiResult<CommunicationList>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/communications`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
 export function getActivityReport(personId: string, input: { readonly cursor?: string; readonly kind?: "activity" | "note"; readonly limit?: number; readonly year?: number } = {}, workspaceId?: string): Promise<ApiResult<ActivityReport>> {

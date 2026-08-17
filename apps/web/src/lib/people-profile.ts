@@ -14,6 +14,7 @@ import { mountImportantDates } from "./important-dates.ts";
 import { mountProfileFacts } from "./profile-facts.ts";
 import { mountRelationships } from "./relationships.ts";
 import { mountPersonInteractions } from "./interactions.ts";
+import { mountCommunications } from "./communications.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
@@ -332,6 +333,14 @@ function renderReady(
   profile.self.hidden = !person.isSelf;
   profile.archived.hidden = status !== "archived";
   profile.due.textContent = dueInformation.detail;
+  const lastContact = document.querySelector<HTMLElement>(
+    "[data-profile-last-contact]",
+  );
+  if (lastContact) {
+    lastContact.textContent = person.lastContactAt
+      ? new Date(person.lastContactAt).toLocaleString()
+      : "None recorded";
+  }
   renderTags(profile.tags, person);
   profile.tags.hidden =
     person.profileSections?.some((section) =>
@@ -692,6 +701,19 @@ export async function mountPeopleProfile(): Promise<void> {
         ) === true,
         notes: result.value.person.profileSections?.some((section) =>
           section.id === "notes" && section.status === "hidden"
+        ) === true,
+      },
+    ),
+    mountCommunications(
+      id,
+      session.session.workspace.id,
+      result.value.status === "archived",
+      {
+        calls: result.value.person.profileSections?.some((section) =>
+          section.id === "calls" && section.status === "hidden"
+        ) === true,
+        conversations: result.value.person.profileSections?.some((section) =>
+          section.id === "conversations" && section.status === "hidden"
         ) === true,
       },
     ),

@@ -1679,7 +1679,7 @@
         },
         "responses": {
           "201": {
-            "description": "Activity or note persisted atomically",
+            "description": "Interaction or communication persisted atomically",
             "content": {
               "application/json": {
                 "schema": {
@@ -1855,6 +1855,163 @@
             }
           },
           "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/communication-options": {
+      "get": {
+        "operationId": "listCommunicationOptions",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active communication channels, emotions, and availability",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationOptions"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{personId}/communications": {
+      "get": {
+        "operationId": "listPersonCommunications",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "personId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenant-scoped person communication history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
             "description": "RFC 9457 problem details",
             "content": {
               "application/problem+json": {
@@ -6632,6 +6789,10 @@
           "isStarred": {
             "type": "boolean"
           },
+          "lastContactAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "middleName": {
             "type": "string"
           },
@@ -6991,7 +7152,160 @@
         },
         "additionalProperties": false
       },
+      "CallInteraction": {
+        "type": "object",
+        "required": [
+          "calledAt",
+          "contactWasCaller",
+          "createdAt",
+          "emotions",
+          "id",
+          "kind",
+          "person"
+        ],
+        "properties": {
+          "calledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "contactWasCaller": {
+            "type": "boolean"
+          },
+          "content": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "emotions": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/InteractionOption"
+            }
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "const": "call"
+          },
+          "person": {
+            "$ref": "#/components/schemas/InteractionParticipant"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommunicationMessage": {
+        "type": "object",
+        "required": [
+          "content",
+          "direction",
+          "id",
+          "writtenAt"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "direction": {
+            "enum": [
+              "inbound",
+              "outbound"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "writtenAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConversationInteraction": {
+        "type": "object",
+        "required": [
+          "createdAt",
+          "happenedAt",
+          "id",
+          "kind",
+          "messages",
+          "person"
+        ],
+        "properties": {
+          "channelType": {
+            "$ref": "#/components/schemas/InteractionOption"
+          },
+          "contactMethod": {
+            "type": "object",
+            "required": [
+              "id",
+              "value"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "happenedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "const": "conversation"
+          },
+          "messages": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/CommunicationMessage"
+            }
+          },
+          "person": {
+            "$ref": "#/components/schemas/InteractionParticipant"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "Interaction": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ActivityInteraction"
+          },
+          {
+            "$ref": "#/components/schemas/NoteInteraction"
+          },
+          {
+            "$ref": "#/components/schemas/CallInteraction"
+          },
+          {
+            "$ref": "#/components/schemas/ConversationInteraction"
+          }
+        ]
+      },
+      "ActivityOrNoteInteraction": {
         "oneOf": [
           {
             "$ref": "#/components/schemas/ActivityInteraction"
@@ -7089,6 +7403,123 @@
         },
         "additionalProperties": false
       },
+      "CallInteractionInput": {
+        "type": "object",
+        "required": [
+          "calledAt",
+          "contactWasCaller",
+          "kind",
+          "personId",
+          "requestId"
+        ],
+        "properties": {
+          "calledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "contactWasCaller": {
+            "type": "boolean"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "emotionIds": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "kind": {
+            "const": "call"
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client retry key mapped deterministically to a distinct workspace-scoped aggregate identifier; it is not the returned record id."
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConversationInteractionInput": {
+        "type": "object",
+        "required": [
+          "channelTypeId",
+          "happenedAt",
+          "kind",
+          "personId",
+          "requestId"
+        ],
+        "properties": {
+          "channelTypeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "contactMethodId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "happenedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "const": "conversation"
+          },
+          "messages": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "required": [
+                "content",
+                "direction",
+                "writtenAt"
+              ],
+              "properties": {
+                "content": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 10000
+                },
+                "direction": {
+                  "enum": [
+                    "inbound",
+                    "outbound"
+                  ]
+                },
+                "writtenAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client retry key mapped deterministically to a distinct workspace-scoped aggregate identifier; it is not the returned record id."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "additionalProperties": false
+      },
       "InteractionInput": {
         "oneOf": [
           {
@@ -7096,6 +7527,12 @@
           },
           {
             "$ref": "#/components/schemas/NoteInteractionInput"
+          },
+          {
+            "$ref": "#/components/schemas/CallInteractionInput"
+          },
+          {
+            "$ref": "#/components/schemas/ConversationInteractionInput"
           }
         ]
       },
@@ -7166,6 +7603,78 @@
         },
         "additionalProperties": false
       },
+      "CommunicationOptions": {
+        "type": "object",
+        "required": [
+          "availability",
+          "channelTypes",
+          "emotions",
+          "status"
+        ],
+        "properties": {
+          "availability": {
+            "type": "object",
+            "required": [
+              "call",
+              "conversation"
+            ],
+            "properties": {
+              "call": {
+                "type": "boolean"
+              },
+              "conversation": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "channelTypes": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/InteractionOption"
+            }
+          },
+          "emotions": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/InteractionOption"
+            }
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommunicationList": {
+        "type": "object",
+        "required": [
+          "items",
+          "status"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/CallInteraction"
+                },
+                {
+                  "$ref": "#/components/schemas/ConversationInteraction"
+                }
+              ]
+            }
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "additionalProperties": false
+      },
       "ActivityReport": {
         "type": "object",
         "required": [
@@ -7178,7 +7687,7 @@
             "type": "array",
             "maxItems": 50,
             "items": {
-              "$ref": "#/components/schemas/Interaction"
+              "$ref": "#/components/schemas/ActivityOrNoteInteraction"
             }
           },
           "nextCursor": {
@@ -7227,7 +7736,7 @@
             "type": "array",
             "maxItems": 20,
             "items": {
-              "$ref": "#/components/schemas/Interaction"
+              "$ref": "#/components/schemas/ActivityOrNoteInteraction"
             }
           },
           "status": {
@@ -7921,7 +8430,9 @@
         "enum": [
           "activities",
           "addresses",
+          "calls",
           "contact-methods",
+          "conversations",
           "first-meeting",
           "food-preferences",
           "notes",

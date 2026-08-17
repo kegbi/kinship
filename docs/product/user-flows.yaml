@@ -474,6 +474,7 @@ flows:
 
   - id: INTERACTION-002
     title: Log a call or conversation
+    deliveryStatus: delivered
     priority: P1
     actor: crm-writer
     trigger: The member records communication with a person.
@@ -494,7 +495,7 @@ flows:
     moduleIds: [people, interactions]
     permissions: [interactions.write]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-005b.spec.ts] }
 
   - id: PLANNING-001
     title: Create and complete a task

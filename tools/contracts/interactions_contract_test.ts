@@ -1,5 +1,10 @@
 import { buildOpenApiDocument } from "./generate.ts";
-import type { InteractionInput } from "../../packages/contracts/generated/auth-client.ts";
+import type {
+  ActivityReport,
+  Interaction,
+  InteractionInput,
+  TodayRecentActivity,
+} from "../../packages/contracts/generated/auth-client.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -13,9 +18,11 @@ Deno.test("INTERACTION-001 OpenAPI versions strict mutation and projection bound
         Record<string, {
           readonly additionalProperties?: boolean;
           readonly oneOf?: readonly unknown[];
+          readonly required?: readonly string[];
           readonly properties?: Readonly<
             Record<string, {
               readonly description?: string;
+              readonly items?: { readonly $ref?: string };
               readonly maxItems?: number;
               readonly minItems?: number;
             }>
@@ -28,7 +35,9 @@ Deno.test("INTERACTION-001 OpenAPI versions strict mutation and projection bound
     const path of [
       "/api/v1/interactions",
       "/api/v1/interaction-options",
+      "/api/v1/communication-options",
       "/api/v1/people/{personId}/activity-report",
+      "/api/v1/people/{personId}/communications",
       "/api/v1/today/favorite-notes",
       "/api/v1/today/recent-activity",
     ]
@@ -53,12 +62,28 @@ Deno.test("INTERACTION-001 OpenAPI versions strict mutation and projection bound
     );
   }
   assert(
-    document.components.schemas.InteractionInput?.oneOf?.length === 2 &&
+    document.components.schemas.InteractionInput?.oneOf?.length === 4 &&
       document.components.schemas.ActivityInteractionInput
           ?.additionalProperties === false &&
       document.components.schemas.NoteInteractionInput
           ?.additionalProperties === false,
     "activity/note mutation inputs are not a closed union",
+  );
+  assert(
+    document.components.schemas.ActivityOrNoteInteraction?.oneOf?.length ===
+        2 &&
+      document.components.schemas.ActivityReport?.properties?.items?.items
+          ?.$ref ===
+        "#/components/schemas/ActivityOrNoteInteraction" &&
+      document.components.schemas.TodayRecentActivity?.properties?.items?.items
+          ?.$ref === "#/components/schemas/ActivityOrNoteInteraction",
+    "activity report and Today recent activity lost their precise projection union",
+  );
+  assert(
+    document.components.schemas.ConversationInteraction?.required?.includes(
+      "channelType",
+    ) === false,
+    "historical conversations still require a channel that canonical data may clear",
   );
   const operation = (path: string) =>
     document.paths[path] as {
@@ -101,12 +126,33 @@ Deno.test("INTERACTION-001 OpenAPI versions strict mutation and projection bound
     summary: "Dinner",
   };
   const call: InteractionInput = {
-    // @ts-expect-error APP-005A does not admit APP-005B calls.
+    calledAt: "2026-08-16T18:15:00.000Z",
+    contactWasCaller: true,
     kind: "call",
+    personId: crypto.randomUUID(),
+    requestId: crypto.randomUUID(),
   };
   assert(
     activity.kind === "activity" && String(call.kind) === "call",
     "compile fixtures lost",
+  );
+  const callProjection = {
+    calledAt: "2026-08-16T18:15:00.000Z",
+    contactWasCaller: true,
+    createdAt: "2026-08-16T18:15:00.000Z",
+    emotions: [],
+    id: crypto.randomUUID(),
+    kind: "call" as const,
+    person: { id: crypto.randomUUID(), name: "Ada" },
+  } satisfies Extract<Interaction, { readonly kind: "call" }>;
+  // @ts-expect-error activity reports contain only activity/note projections
+  const invalidReportItem: ActivityReport["items"][number] = callProjection;
+  // @ts-expect-error Today recent activity contains only activity/note projections
+  const invalidRecentItem: TodayRecentActivity["items"][number] =
+    callProjection;
+  assert(
+    Boolean(invalidReportItem) && Boolean(invalidRecentItem),
+    "compile-only precision fixtures lost",
   );
   const activityParticipants = document.components.schemas.ActivityInteraction
     ?.properties?.participants;

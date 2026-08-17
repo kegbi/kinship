@@ -1,9 +1,69 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
-import type { RelationshipPersonBoundary } from "../../public.ts";
+import type {
+  InteractionPersonBoundary,
+  RelationshipPersonBoundary,
+} from "../../public.ts";
 
 export class PostgresRelationshipPersonBoundary
-  implements RelationshipPersonBoundary {
+  implements InteractionPersonBoundary {
+  async describeContactMethods(
+    command: Parameters<
+      InteractionPersonBoundary["describeContactMethods"]
+    >[0],
+  ): Promise<
+    Awaited<ReturnType<InteractionPersonBoundary["describeContactMethods"]>>
+  > {
+    const ids = [...new Set(command.contactMethodIds)].slice(0, 50);
+    if (ids.length === 0) return [];
+    const result = await sql<{
+      readonly id: string;
+      readonly type_id: string;
+      readonly value: string;
+    }>`
+      select method.id::text, method.type_id::text, method.value
+      from crm.person_contact_methods method
+      join crm.people person on person.id = method.person_id
+      where method.id in (${sql.join(ids.map((id) => sql`${id}::uuid`))})
+        and method.person_id = ${command.personId}::uuid
+        and person.workspace_id = ${command.workspaceId}::uuid
+        and person.deleted_at is null
+      order by method.id
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows.map((row) => ({
+      id: row.id,
+      typeId: row.type_id,
+      value: row.value,
+    }));
+  }
+
+  async inspectContactMethod(
+    command: Parameters<InteractionPersonBoundary["inspectContactMethod"]>[0],
+  ): Promise<
+    Awaited<ReturnType<InteractionPersonBoundary["inspectContactMethod"]>>
+  > {
+    const result = await sql<{
+      readonly id: string;
+      readonly type_id: string;
+      readonly value: string;
+    }>`
+      select method.id::text, method.type_id::text, method.value
+      from crm.person_contact_methods method
+      join crm.people person on person.id = method.person_id
+      where method.id = ${command.contactMethodId}::uuid
+        and method.person_id = ${command.personId}::uuid
+        and person.workspace_id = ${command.workspaceId}::uuid
+        and person.deleted_at is null
+      for key share of method, person
+    `.execute(databaseFromSession(command.transaction));
+    const row = result.rows[0];
+    return row
+      ? {
+        contactMethod: { id: row.id, typeId: row.type_id, value: row.value },
+        status: "ready",
+      }
+      : { status: "not-found" };
+  }
   async inspect(
     command: Parameters<RelationshipPersonBoundary["inspect"]>[0],
   ): Promise<Awaited<ReturnType<RelationshipPersonBoundary["inspect"]>>> {

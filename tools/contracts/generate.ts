@@ -818,7 +818,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           responses: {
             "201": {
-              description: "Activity or note persisted atomically",
+              description: "Interaction or communication persisted atomically",
               content: {
                 "application/json": {
                   schema: { $ref: "#/components/schemas/InteractionCreated" },
@@ -872,6 +872,49 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             "401": problem,
             "403": problem,
             "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/communication-options": {
+        get: {
+          operationId: "listCommunicationOptions",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter],
+          responses: {
+            "200": {
+              description:
+                "Active communication channels, emotions, and availability",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/CommunicationOptions" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/communications": {
+        get: {
+          operationId: "listPersonCommunications",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter, personIdParameter],
+          responses: {
+            "200": {
+              description: "Tenant-scoped person communication history",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/CommunicationList" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
             "503": problem,
           },
         },
@@ -2286,6 +2329,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             isPartial: { type: "boolean" },
             isSelf: { type: "boolean" },
             isStarred: { type: "boolean" },
+            lastContactAt: { type: "string", format: "date-time" },
             middleName: { type: "string" },
             nickname: { type: "string" },
             profileSections: {
@@ -2478,7 +2522,88 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        CallInteraction: {
+          type: "object",
+          required: [
+            "calledAt",
+            "contactWasCaller",
+            "createdAt",
+            "emotions",
+            "id",
+            "kind",
+            "person",
+          ],
+          properties: {
+            calledAt: { type: "string", format: "date-time" },
+            contactWasCaller: { type: "boolean" },
+            content: { type: "string" },
+            createdAt: { type: "string", format: "date-time" },
+            emotions: {
+              type: "array",
+              maxItems: 20,
+              items: { $ref: "#/components/schemas/InteractionOption" },
+            },
+            id: { type: "string", format: "uuid" },
+            kind: { const: "call" },
+            person: { $ref: "#/components/schemas/InteractionParticipant" },
+          },
+          additionalProperties: false,
+        },
+        CommunicationMessage: {
+          type: "object",
+          required: ["content", "direction", "id", "writtenAt"],
+          properties: {
+            content: { type: "string" },
+            direction: { enum: ["inbound", "outbound"] },
+            id: { type: "string", format: "uuid" },
+            writtenAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
+        ConversationInteraction: {
+          type: "object",
+          required: [
+            "createdAt",
+            "happenedAt",
+            "id",
+            "kind",
+            "messages",
+            "person",
+          ],
+          properties: {
+            channelType: { $ref: "#/components/schemas/InteractionOption" },
+            contactMethod: {
+              type: "object",
+              required: ["id", "value"],
+              properties: {
+                id: { type: "string", format: "uuid" },
+                value: { type: "string" },
+              },
+              additionalProperties: false,
+            },
+            createdAt: { type: "string", format: "date-time" },
+            happenedAt: { type: "string", format: "date-time" },
+            id: { type: "string", format: "uuid" },
+            kind: { const: "conversation" },
+            messages: {
+              type: "array",
+              maxItems: 50,
+              items: { $ref: "#/components/schemas/CommunicationMessage" },
+            },
+            person: { $ref: "#/components/schemas/InteractionParticipant" },
+            title: { type: "string" },
+          },
+          additionalProperties: false,
+        },
         Interaction: {
+          oneOf: [
+            { $ref: "#/components/schemas/ActivityInteraction" },
+            { $ref: "#/components/schemas/NoteInteraction" },
+            { $ref: "#/components/schemas/CallInteraction" },
+            { $ref: "#/components/schemas/ConversationInteraction" },
+          ],
+        },
+        ActivityOrNoteInteraction: {
           oneOf: [
             { $ref: "#/components/schemas/ActivityInteraction" },
             { $ref: "#/components/schemas/NoteInteraction" },
@@ -2536,10 +2661,80 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        CallInteractionInput: {
+          type: "object",
+          required: [
+            "calledAt",
+            "contactWasCaller",
+            "kind",
+            "personId",
+            "requestId",
+          ],
+          properties: {
+            calledAt: { type: "string", format: "date-time" },
+            contactWasCaller: { type: "boolean" },
+            content: { type: "string", minLength: 1, maxLength: 10_000 },
+            emotionIds: {
+              type: "array",
+              maxItems: 20,
+              items: { type: "string", format: "uuid" },
+            },
+            kind: { const: "call" },
+            personId: { type: "string", format: "uuid" },
+            requestId: {
+              type: "string",
+              format: "uuid",
+              description:
+                "Client retry key mapped deterministically to a distinct workspace-scoped aggregate identifier; it is not the returned record id.",
+            },
+          },
+          additionalProperties: false,
+        },
+        ConversationInteractionInput: {
+          type: "object",
+          required: [
+            "channelTypeId",
+            "happenedAt",
+            "kind",
+            "personId",
+            "requestId",
+          ],
+          properties: {
+            channelTypeId: { type: "string", format: "uuid" },
+            contactMethodId: { type: "string", format: "uuid" },
+            happenedAt: { type: "string", format: "date-time" },
+            kind: { const: "conversation" },
+            messages: {
+              type: "array",
+              maxItems: 50,
+              items: {
+                type: "object",
+                required: ["content", "direction", "writtenAt"],
+                properties: {
+                  content: { type: "string", minLength: 1, maxLength: 10_000 },
+                  direction: { enum: ["inbound", "outbound"] },
+                  writtenAt: { type: "string", format: "date-time" },
+                },
+                additionalProperties: false,
+              },
+            },
+            personId: { type: "string", format: "uuid" },
+            requestId: {
+              type: "string",
+              format: "uuid",
+              description:
+                "Client retry key mapped deterministically to a distinct workspace-scoped aggregate identifier; it is not the returned record id.",
+            },
+            title: { type: "string", minLength: 1, maxLength: 500 },
+          },
+          additionalProperties: false,
+        },
         InteractionInput: {
           oneOf: [
             { $ref: "#/components/schemas/ActivityInteractionInput" },
             { $ref: "#/components/schemas/NoteInteractionInput" },
+            { $ref: "#/components/schemas/CallInteractionInput" },
+            { $ref: "#/components/schemas/ConversationInteractionInput" },
           ],
         },
         InteractionCreated: {
@@ -2580,6 +2775,50 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        CommunicationOptions: {
+          type: "object",
+          required: ["availability", "channelTypes", "emotions", "status"],
+          properties: {
+            availability: {
+              type: "object",
+              required: ["call", "conversation"],
+              properties: {
+                call: { type: "boolean" },
+                conversation: { type: "boolean" },
+              },
+              additionalProperties: false,
+            },
+            channelTypes: {
+              type: "array",
+              maxItems: 100,
+              items: { $ref: "#/components/schemas/InteractionOption" },
+            },
+            emotions: {
+              type: "array",
+              maxItems: 100,
+              items: { $ref: "#/components/schemas/InteractionOption" },
+            },
+            status: { const: "ready" },
+          },
+          additionalProperties: false,
+        },
+        CommunicationList: {
+          type: "object",
+          required: ["items", "status"],
+          properties: {
+            items: {
+              type: "array",
+              maxItems: 50,
+              items: {
+                oneOf: [{ $ref: "#/components/schemas/CallInteraction" }, {
+                  $ref: "#/components/schemas/ConversationInteraction",
+                }],
+              },
+            },
+            status: { const: "ready" },
+          },
+          additionalProperties: false,
+        },
         ActivityReport: {
           type: "object",
           required: ["items", "person", "status"],
@@ -2587,7 +2826,9 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             items: {
               type: "array",
               maxItems: 50,
-              items: { $ref: "#/components/schemas/Interaction" },
+              items: {
+                $ref: "#/components/schemas/ActivityOrNoteInteraction",
+              },
             },
             nextCursor: { type: "string" },
             person: { $ref: "#/components/schemas/InteractionParticipant" },
@@ -2615,7 +2856,9 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             items: {
               type: "array",
               maxItems: 20,
-              items: { $ref: "#/components/schemas/Interaction" },
+              items: {
+                $ref: "#/components/schemas/ActivityOrNoteInteraction",
+              },
             },
             status: { const: "ready" },
           },
@@ -2865,7 +3108,9 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           enum: [
             "activities",
             "addresses",
+            "calls",
             "contact-methods",
+            "conversations",
             "first-meeting",
             "food-preferences",
             "notes",
@@ -4226,6 +4471,7 @@ export interface PersonProfileIdentity extends PersonIdentity {
   readonly isDeceased: boolean;
   readonly isSelf: boolean;
   readonly isStarred: boolean;
+  readonly lastContactAt?: string;
   readonly profileSections?: readonly { readonly id: PersonProfileSectionId; readonly status: "hidden" | "ready" }[];
   readonly tagCount: number;
   readonly tags: readonly PeopleDirectoryTag[];
@@ -4280,6 +4526,27 @@ export type Interaction =
     readonly kind: "note";
     readonly person?: InteractionParticipant;
     readonly participants?: readonly [InteractionParticipant];
+  }
+  | {
+    readonly calledAt: string;
+    readonly contactWasCaller: boolean;
+    readonly content?: string;
+    readonly createdAt: string;
+    readonly emotions: readonly InteractionOption[];
+    readonly id: string;
+    readonly kind: "call";
+    readonly person: InteractionParticipant;
+  }
+  | {
+    readonly channelType?: InteractionOption;
+    readonly contactMethod?: { readonly id: string; readonly value: string };
+    readonly createdAt: string;
+    readonly happenedAt: string;
+    readonly id: string;
+    readonly kind: "conversation";
+    readonly messages: readonly { readonly content: string; readonly direction: "inbound" | "outbound"; readonly id: string; readonly writtenAt: string }[];
+    readonly person: InteractionParticipant;
+    readonly title?: string;
   };
 
 export type InteractionInput =
@@ -4299,10 +4566,46 @@ export type InteractionInput =
     readonly kind: "note";
     readonly personId: string;
     readonly requestId: string;
+  }
+  | {
+    readonly calledAt: string;
+    readonly contactWasCaller: boolean;
+    readonly content?: string;
+    readonly emotionIds?: readonly string[];
+    readonly kind: "call";
+    readonly personId: string;
+    readonly requestId: string;
+  }
+  | {
+    readonly channelTypeId: string;
+    readonly contactMethodId?: string;
+    readonly happenedAt: string;
+    readonly kind: "conversation";
+    readonly messages?: readonly { readonly content: string; readonly direction: "inbound" | "outbound"; readonly writtenAt: string }[];
+    readonly personId: string;
+    readonly requestId: string;
+    readonly title?: string;
   };
 
+export type ActivityOrNoteInteraction = Extract<
+  Interaction,
+  { readonly kind: "activity" | "note" }
+>;
+
+export interface CommunicationOptions {
+  readonly availability: { readonly call: boolean; readonly conversation: boolean };
+  readonly channelTypes: readonly InteractionOption[];
+  readonly emotions: readonly InteractionOption[];
+  readonly status: "ready";
+}
+
+export interface CommunicationList {
+  readonly items: readonly Extract<Interaction, { readonly kind: "call" | "conversation" }>[];
+  readonly status: "ready";
+}
+
 export interface ActivityReport {
-  readonly items: readonly Interaction[];
+  readonly items: readonly ActivityOrNoteInteraction[];
   readonly nextCursor?: string;
   readonly person: InteractionParticipant;
   readonly status: "archived" | "ready";
@@ -4314,7 +4617,7 @@ export interface TodayFavoriteNotes {
 }
 
 export interface TodayRecentActivity {
-  readonly items: readonly Interaction[];
+  readonly items: readonly ActivityOrNoteInteraction[];
   readonly status: "ready";
 }
 
@@ -4472,7 +4775,7 @@ export interface PeopleTagOptionsPage {
 }
 
 export type ProfileFactSectionId = "addresses" | "contact-methods" | "first-meeting" | "food-preferences" | "pets" | "tags" | "work";
-export type PersonProfileSectionId = ProfileFactSectionId | "activities" | "notes" | "relationships";
+export type PersonProfileSectionId = ProfileFactSectionId | "activities" | "calls" | "conversations" | "notes" | "relationships";
 export interface ProfileFactOption {
   readonly id: string;
   readonly kind?: "contact-label" | "contact-type" | "organization" | "pet-category";
@@ -4658,6 +4961,14 @@ export function listInteractionOptions(input: { readonly activityTypeCursor?: st
   if (input.limit) query.set("limit", String(input.limit));
   const suffix = query.size ? \`?\${query.toString()}\` : "";
   return request(\`/api/v1/interaction-options\${suffix}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listCommunicationOptions(workspaceId?: string): Promise<ApiResult<CommunicationOptions>> {
+  return request("/api/v1/communication-options", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listPersonCommunications(personId: string, workspaceId?: string): Promise<ApiResult<CommunicationList>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/communications\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
 export function getActivityReport(personId: string, input: { readonly cursor?: string; readonly kind?: "activity" | "note"; readonly limit?: number; readonly year?: number } = {}, workspaceId?: string): Promise<ApiResult<ActivityReport>> {

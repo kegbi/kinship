@@ -17,6 +17,8 @@ export interface PersonProfileSection {
     | "activities"
     | "addresses"
     | "contact-methods"
+    | "calls"
+    | "conversations"
     | "first-meeting"
     | "food-preferences"
     | "notes"
@@ -37,6 +39,7 @@ export interface PersonProfileIdentity {
   readonly isPartial: boolean;
   readonly isSelf: boolean;
   readonly isStarred: boolean;
+  readonly lastContactAt?: string;
   readonly middleName?: string;
   readonly nickname?: string;
   readonly profileSections?: readonly PersonProfileSection[];
