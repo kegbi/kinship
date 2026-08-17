@@ -1,0 +1,43 @@
+---
+import ApplicationLayout from "../../layouts/ApplicationLayout.astro";
+export const prerender = true;
+---
+
+<ApplicationLayout
+  current="people"
+  description="Review activities and notes for one person."
+  pageId="people.activity-report"
+  title="Activity report — Kinship"
+>
+  <main id="main-content" class="page-frame" tabindex="-1">
+    <header class="page-heading">
+      <div>
+        <p class="eyebrow">Person activity report · <span data-workspace-name></span></p>
+        <h1 id="activity-report-heading" tabindex="-1">Loading activity report…</h1>
+      </div>
+      <button class="button-primary" data-quick-capture type="button">Record interaction</button>
+    </header>
+    <nav aria-label="Person report navigation">
+      <a id="activity-report-back" class="profile-back-link" href="/app/people">← Back to person</a>
+    </nav>
+    <form class="activity-report-filter" method="get">
+      <label>Year <input name="year" type="number" min="1" max="9999" inputmode="numeric" /></label>
+      <button class="button-secondary" type="submit">Filter report</button>
+      <a href="?">Clear year</a>
+    </form>
+    <p id="activity-report-state" class="section-state" role="status" aria-live="polite">Loading activities and notes…</p>
+    <ol id="activity-report-list" class="interaction-list" aria-label="Activities and notes in reverse chronological order"></ol>
+    <button id="activity-report-more" class="button-secondary" type="button" hidden>Load more</button>
+  </main>
+</ApplicationLayout>
+
+<script>
+  import { mountActivityReport } from "../../lib/interactions.ts";
+  const personId = /^\/app\/people\/([0-9a-f-]{36})\/activity-report\/?$/i.exec(location.pathname)?.[1];
+  const back = document.querySelector<HTMLAnchorElement>("#activity-report-back");
+  if (back && personId) back.href = `/app/people/${encodeURIComponent(personId)}?section=activities`;
+  const year = new URLSearchParams(location.search).get("year");
+  const input = document.querySelector<HTMLInputElement>('[name="year"]');
+  if (input && year) input.value = year;
+  void mountActivityReport(personId);
+</script>

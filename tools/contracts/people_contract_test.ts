@@ -709,7 +709,7 @@ Deno.test("[APP-003C] OpenAPI describes the canonical workspace summary", () => 
           ...representative,
           person: {
             ...representative.person,
-            profileSections: [{ id: "notes", status: "ready" }],
+            profileSections: [{ id: "calls", status: "ready" }],
           },
         },
       ),
@@ -717,10 +717,10 @@ Deno.test("[APP-003C] OpenAPI describes the canonical workspace summary", () => 
   );
   const relationshipsSection: PersonProfileSectionId = "relationships";
   // @ts-expect-error unsupported profile sections remain unavailable.
-  const unsupportedSection: PersonProfileSectionId = "notes";
+  const unsupportedSection: PersonProfileSectionId = "calls";
   assert(
     relationshipsSection === "relationships" &&
-      String(unsupportedSection) === "notes",
+      String(unsupportedSection) === "calls",
     "generated profile-section type fixtures were not evaluated",
   );
 });

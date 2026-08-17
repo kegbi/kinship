@@ -65,6 +65,25 @@ function markup(path = `/app/people/${personId}`): void {
     </section>`;
 }
 
+function interactionSectionMarkup(): void {
+  document.querySelector("#person-profile-sections")?.insertAdjacentHTML(
+    "beforeend",
+    `<li><a href="?section=activities" data-section-link="activities">Activities</a></li>
+     <li><a href="?section=notes" data-section-link="notes">Notes</a></li>`,
+  );
+  document.querySelector("#person-profile-ready")?.insertAdjacentHTML(
+    "beforeend",
+    `<section data-profile-section="activities" tabindex="-1">
+       <p id="person-activities-state"></p><ul id="person-activities-list"></ul>
+       <button id="person-activities-retry" type="button" hidden>Retry activities</button>
+     </section>
+     <section data-profile-section="notes" tabindex="-1">
+       <p id="person-notes-state"></p><ul id="person-notes-list"></ul>
+       <button id="person-notes-retry" type="button" hidden>Retry notes</button>
+     </section>`,
+  );
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   sessionStorage.clear();
@@ -262,6 +281,61 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(document.querySelectorAll("[data-section-link][aria-current]"))
       .toHaveLength(0);
     expect(document.activeElement).toBe(heading);
+  });
+
+  it("INTERACTION-001 reconciles hidden interaction deep links before initial and history focus", async () => {
+    markup(`/app/people/${personId}?section=activities`);
+    interactionSectionMarkup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockResolvedValueOnce(response({
+          dueInformation: {
+            detail: "No due information.",
+            status: "unavailable",
+          },
+          person: {
+            givenName: "Ada",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            profileSections: [
+              { id: "activities", status: "hidden" },
+              { id: "notes", status: "hidden" },
+            ],
+            tagCount: 0,
+            tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
+          },
+          status: "ready",
+        })),
+    );
+
+    await mountPeopleProfile();
+    const heading = document.querySelector("#person-profile-name");
+    expect(document.activeElement).toBe(heading);
+    expect(document.querySelectorAll("[data-section-link][aria-current]"))
+      .toHaveLength(0);
+
+    history.pushState({}, "", `?section=notes`);
+    history.pushState({}, "", `?section=documents`);
+    globalThis.dispatchEvent(new PopStateEvent("popstate"));
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-profile-section="documents"]'),
+    );
+    history.back();
+    await vi.waitFor(() => expect(location.search).toBe("?section=notes"));
+    expect(document.activeElement).toBe(heading);
+    expect(document.querySelectorAll("[data-section-link][aria-current]"))
+      .toHaveLength(0);
+    history.forward();
+    await vi.waitFor(() => expect(location.search).toBe("?section=documents"));
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-profile-section="documents"]'),
+    );
   });
 
   it("renders explicit not-found, forbidden, and unavailable states", async () => {

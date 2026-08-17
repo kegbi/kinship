@@ -3,7 +3,15 @@ function assert(condition: unknown, message: string): asserts condition {
 }
 
 Deno.test("production-like Compose exposes only the gateway application entry", async () => {
-  const [base, test, gateway, gatewayImage, profileShell, web] = await Promise
+  const [
+    base,
+    test,
+    gateway,
+    gatewayImage,
+    profileShell,
+    activityReportShell,
+    web,
+  ] = await Promise
     .all([
       Deno.readTextFile(new URL("../compose.yaml", import.meta.url)),
       Deno.readTextFile(new URL("../compose.test.yaml", import.meta.url)),
@@ -12,6 +20,12 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
       Deno.readTextFile(
         new URL(
           "../apps/web/src/pages/internal/person-profile-shell.astro",
+          import.meta.url,
+        ),
+      ).catch(() => ""),
+      Deno.readTextFile(
+        new URL(
+          "../apps/web/src/pages/internal/activity-report-shell.astro",
           import.meta.url,
         ),
       ).catch(() => ""),
@@ -121,9 +135,11 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
       gateway.includes("error_page 404 /404.html"),
     "gateway directly serves extensionless prerendered and fingerprinted assets",
   );
-  const profileLocation = gateway.match(
-    /location ~ "\^\/app\/people\/[\s\S]*?\n {4}\}/,
-  )?.[0] ?? "";
+  const profileLocation = [...gateway.matchAll(
+    /location ~ "\^\/app\/people\/[^\"]+" \{[\s\S]*?\n {4}\}/g,
+  )].map((match) => match[0]).find((location) =>
+    location.includes("/internal/person-profile-shell/index.html")
+  ) ?? "";
   assert(
     profileLocation.includes(
       "try_files /internal/person-profile-shell/index.html =404",
@@ -137,10 +153,15 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
   );
   assert(
     profileShell.includes("export const prerender = true") &&
+      activityReportShell.includes("export const prerender = true") &&
+      gateway.includes(
+        "try_files /internal/activity-report-shell/index.html =404",
+      ) &&
+      gateway.includes("location = /internal/activity-report-shell") &&
       gatewayImage.includes(
         "COPY --from=build --chown=nginx:nginx /app/apps/web/dist/client /usr/share/nginx/html",
       ),
-    "the gateway image receives the prerendered reusable profile shell artifact",
+    "the gateway image receives both prerendered reusable person shell artifacts",
   );
   const invitationLocation = gateway.match(
     /location ~ \^\/invite\/\[\^\/\]\+\$ \{[\s\S]*?\n {4}\}/,

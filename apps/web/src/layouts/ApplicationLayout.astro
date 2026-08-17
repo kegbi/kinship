@@ -8,6 +8,7 @@ interface Props {
     | "app.today"
     | "people.archived"
     | "people.create"
+    | "people.activity-report"
     | "people.index"
     | "people.profile"
     | "settings.index"
@@ -60,6 +61,7 @@ const { current, description, pageId, title } = Astro.props;
           </nav>
 
           <div class="global-actions" aria-label="Workspace actions">
+            <button class="add-action" data-quick-capture type="button">Quick capture</button>
             <a class="add-action" href="/app/people/new" tabindex="0">Add person</a>
             <div class="member-menu" role="group" aria-label="Member menu">
               <button id="member-menu-toggle" type="button" aria-label="Open member menu" aria-expanded="false" aria-controls="member-popover">Member menu</button>
@@ -81,11 +83,63 @@ const { current, description, pageId, title } = Astro.props;
         </div>
       </header>
       <slot />
+
+      <dialog id="interaction-capture-dialog" class="interaction-capture-dialog" aria-labelledby="interaction-capture-heading">
+        <form id="interaction-capture-form" method="dialog" novalidate>
+          <header>
+            <p class="section-kicker">Quick capture</p>
+            <h2 id="interaction-capture-heading">Record an activity or note</h2>
+          </header>
+          <label>
+            What are you recording?
+            <select name="kind">
+              <option value="activity">Activity</option>
+              <option value="note">Note</option>
+            </select>
+          </label>
+          <label for="interaction-participant-search">Search participants</label>
+          <input id="interaction-participant-search" name="participantSearch" type="search" maxlength="200" placeholder="Search people" autocomplete="off" />
+          <label for="interaction-participants">Participants</label>
+          <select id="interaction-participants" name="participantIds" multiple required size="5" aria-describedby="interaction-participants-hint"></select>
+          <button data-participants-more class="button-secondary" type="button" hidden>Load more people</button>
+          <p id="interaction-participants-hint" class="form-hint">Choose up to 50 people. Notes belong to one selected person.</p>
+          <label data-interaction-occurrence>
+            When it happened
+            <input name="happenedAt" type="datetime-local" required aria-describedby="interaction-happened-at-error" />
+          </label>
+          <small id="interaction-happened-at-error" class="field-error"></small>
+          <div data-interaction-kind="activity">
+            <label>Summary <input name="summary" maxlength="500" required /></label>
+            <label for="interaction-activity-type-search">Search activity types</label>
+            <input id="interaction-activity-type-search" name="activityTypeSearch" type="search" maxlength="100" placeholder="Search categories" autocomplete="off" />
+            <label for="interaction-activity-type">Activity type</label>
+            <select id="interaction-activity-type" name="activityTypeId"><option value="">No category</option></select>
+            <button data-activity-types-more class="button-secondary" type="button" hidden>Load more categories</button>
+            <label>Details (optional) <textarea name="description" maxlength="10000" rows="4"></textarea></label>
+            <label for="interaction-emotion-search">Search emotions</label>
+            <input id="interaction-emotion-search" name="emotionSearch" type="search" maxlength="100" placeholder="Search emotions" autocomplete="off" />
+            <label for="interaction-emotions">Emotions (optional)</label>
+            <select id="interaction-emotions" name="emotionIds" multiple size="4"></select>
+            <button data-emotions-more class="button-secondary" type="button" hidden>Load more emotions</button>
+          </div>
+          <div data-interaction-kind="note" hidden>
+            <label>Note <textarea name="body" maxlength="10000" rows="5"></textarea></label>
+            <label class="checkbox-row"><input name="isFavorited" type="checkbox" /> Keep this note in Today favorites</label>
+          </div>
+          <p id="interaction-capture-status" class="section-state" role="status" aria-live="polite"></p>
+          <div class="form-actions">
+            <button class="button-primary" type="submit">Save interaction</button>
+            <button data-interaction-cancel type="button">Cancel</button>
+          </div>
+        </form>
+      </dialog>
     </div>
   </body>
 </html>
 
 <script>
   import { mountApplicationShell } from "../lib/app-shell.ts";
+  import { mountInteractionCapture } from "../lib/interactions.ts";
   void mountApplicationShell();
+  void mountInteractionCapture();
 </script>

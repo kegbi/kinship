@@ -803,6 +803,167 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
         },
       },
+      "/api/v1/interactions": {
+        post: {
+          operationId: "recordInteraction",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/InteractionInput" },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "Activity or note persisted atomically",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/InteractionCreated" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/interaction-options": {
+        get: {
+          operationId: "listInteractionOptions",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            workspaceParameter,
+            ...[
+              "activityTypeCursor",
+              "activityTypeSearch",
+              "emotionCursor",
+              "emotionSearch",
+            ].map((name) => ({
+              name,
+              in: "query",
+              schema: {
+                type: "string",
+                maxLength: name.endsWith("Cursor") ? 2_000 : 100,
+              },
+            })),
+            {
+              name: "limit",
+              in: "query",
+              schema: { type: "integer", minimum: 1, maximum: 20, default: 20 },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Bounded active activity types and emotions",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/InteractionOptions" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/activity-report": {
+        get: {
+          operationId: "getActivityReport",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            workspaceParameter,
+            personIdParameter,
+            {
+              name: "cursor",
+              in: "query",
+              schema: { type: "string", maxLength: 2_000 },
+            },
+            {
+              name: "kind",
+              in: "query",
+              schema: { type: "string", enum: ["activity", "note"] },
+            },
+            {
+              name: "year",
+              in: "query",
+              schema: { type: "integer", minimum: 1, maximum: 9999 },
+            },
+            {
+              name: "limit",
+              in: "query",
+              schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Tenant-scoped person activity report",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ActivityReport" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/today/favorite-notes": {
+        get: {
+          operationId: "getTodayFavoriteNotes",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter],
+          responses: {
+            "200": {
+              description: "Read-only favorite-note Today region",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/TodayFavoriteNotes" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/today/recent-activity": {
+        get: {
+          operationId: "getTodayRecentActivity",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter],
+          responses: {
+            "200": {
+              description: "Read-only recent-activity Today region",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/TodayRecentActivity",
+                  },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+      },
       "/api/v1/people/{personId}/relationships": {
         get: {
           operationId: "listRelationships",
@@ -2249,6 +2410,217 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        InteractionOption: {
+          type: "object",
+          required: ["id", "name"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            name: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        InteractionParticipant: {
+          type: "object",
+          required: ["id", "name"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            name: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        ActivityInteraction: {
+          type: "object",
+          required: [
+            "emotions",
+            "happenedAt",
+            "id",
+            "kind",
+            "participants",
+            "summary",
+          ],
+          properties: {
+            activityType: { type: "string" },
+            createdAt: { type: "string", format: "date-time" },
+            description: { type: "string" },
+            emotions: {
+              type: "array",
+              maxItems: 20,
+              items: { $ref: "#/components/schemas/InteractionOption" },
+            },
+            happenedAt: { type: "string", format: "date-time" },
+            id: { type: "string", format: "uuid" },
+            kind: { const: "activity" },
+            participants: {
+              type: "array",
+              maxItems: 50,
+              items: { $ref: "#/components/schemas/InteractionParticipant" },
+            },
+            summary: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        NoteInteraction: {
+          type: "object",
+          required: ["body", "createdAt", "id", "isFavorited", "kind"],
+          properties: {
+            body: { type: "string" },
+            createdAt: { type: "string", format: "date-time" },
+            id: { type: "string", format: "uuid" },
+            isFavorited: { type: "boolean" },
+            kind: { const: "note" },
+            person: { $ref: "#/components/schemas/InteractionParticipant" },
+            participants: {
+              type: "array",
+              minItems: 1,
+              maxItems: 1,
+              items: { $ref: "#/components/schemas/InteractionParticipant" },
+            },
+          },
+          additionalProperties: false,
+        },
+        Interaction: {
+          oneOf: [
+            { $ref: "#/components/schemas/ActivityInteraction" },
+            { $ref: "#/components/schemas/NoteInteraction" },
+          ],
+        },
+        ActivityInteractionInput: {
+          type: "object",
+          required: [
+            "happenedAt",
+            "kind",
+            "participantIds",
+            "requestId",
+            "summary",
+          ],
+          properties: {
+            activityTypeId: { type: "string", format: "uuid" },
+            description: { type: "string", minLength: 1, maxLength: 10_000 },
+            emotionIds: {
+              type: "array",
+              maxItems: 20,
+              items: { type: "string", format: "uuid" },
+            },
+            happenedAt: { type: "string", format: "date-time" },
+            kind: { const: "activity" },
+            participantIds: {
+              type: "array",
+              minItems: 1,
+              maxItems: 50,
+              items: { type: "string", format: "uuid" },
+            },
+            requestId: {
+              type: "string",
+              format: "uuid",
+              description:
+                "Client retry key mapped deterministically to a distinct workspace-scoped aggregate identifier; it is not the returned record id.",
+            },
+            summary: { type: "string", minLength: 1, maxLength: 500 },
+          },
+          additionalProperties: false,
+        },
+        NoteInteractionInput: {
+          type: "object",
+          required: ["body", "kind", "personId", "requestId"],
+          properties: {
+            body: { type: "string", minLength: 1, maxLength: 10_000 },
+            isFavorited: { type: "boolean" },
+            kind: { const: "note" },
+            personId: { type: "string", format: "uuid" },
+            requestId: {
+              type: "string",
+              format: "uuid",
+              description:
+                "Client retry key mapped deterministically to a distinct workspace-scoped aggregate identifier; it is not the returned record id.",
+            },
+          },
+          additionalProperties: false,
+        },
+        InteractionInput: {
+          oneOf: [
+            { $ref: "#/components/schemas/ActivityInteractionInput" },
+            { $ref: "#/components/schemas/NoteInteractionInput" },
+          ],
+        },
+        InteractionCreated: {
+          type: "object",
+          required: ["record", "status"],
+          properties: {
+            record: { $ref: "#/components/schemas/Interaction" },
+            status: { const: "created" },
+          },
+          additionalProperties: false,
+        },
+        InteractionOptions: {
+          type: "object",
+          required: ["activityTypes", "availability", "emotions", "status"],
+          properties: {
+            activityTypes: {
+              type: "array",
+              maxItems: 20,
+              items: { $ref: "#/components/schemas/InteractionOption" },
+            },
+            activityTypesNextCursor: { type: "string" },
+            availability: {
+              type: "object",
+              required: ["activity", "note"],
+              properties: {
+                activity: { type: "boolean" },
+                note: { type: "boolean" },
+              },
+              additionalProperties: false,
+            },
+            emotions: {
+              type: "array",
+              maxItems: 20,
+              items: { $ref: "#/components/schemas/InteractionOption" },
+            },
+            emotionsNextCursor: { type: "string" },
+            status: { const: "ready" },
+          },
+          additionalProperties: false,
+        },
+        ActivityReport: {
+          type: "object",
+          required: ["items", "person", "status"],
+          properties: {
+            items: {
+              type: "array",
+              maxItems: 50,
+              items: { $ref: "#/components/schemas/Interaction" },
+            },
+            nextCursor: { type: "string" },
+            person: { $ref: "#/components/schemas/InteractionParticipant" },
+            status: { enum: ["archived", "ready"] },
+          },
+          additionalProperties: false,
+        },
+        TodayFavoriteNotes: {
+          type: "object",
+          required: ["items", "status"],
+          properties: {
+            items: {
+              type: "array",
+              maxItems: 8,
+              items: { $ref: "#/components/schemas/NoteInteraction" },
+            },
+            status: { const: "ready" },
+          },
+          additionalProperties: false,
+        },
+        TodayRecentActivity: {
+          type: "object",
+          required: ["items", "status"],
+          properties: {
+            items: {
+              type: "array",
+              maxItems: 20,
+              items: { $ref: "#/components/schemas/Interaction" },
+            },
+            status: { const: "ready" },
+          },
+          additionalProperties: false,
+        },
         RelationshipType: {
           type: "object",
           required: ["archived", "forwardLabel", "id", "reverseLabel"],
@@ -2491,10 +2863,12 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
         PersonProfileSectionId: {
           type: "string",
           enum: [
+            "activities",
             "addresses",
             "contact-methods",
             "first-meeting",
             "food-preferences",
+            "notes",
             "pets",
             "relationships",
             "tags",
@@ -3876,6 +4250,74 @@ export interface PersonTransitionInput {
   readonly expectedUpdatedAt: string;
 }
 
+export interface InteractionOption {
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface InteractionParticipant {
+  readonly id: string;
+  readonly name: string;
+}
+
+export type Interaction =
+  | {
+    readonly activityType?: string;
+    readonly createdAt?: string;
+    readonly description?: string;
+    readonly emotions: readonly InteractionOption[];
+    readonly happenedAt: string;
+    readonly id: string;
+    readonly kind: "activity";
+    readonly participants: readonly InteractionParticipant[];
+    readonly summary: string;
+  }
+  | {
+    readonly body: string;
+    readonly createdAt: string;
+    readonly id: string;
+    readonly isFavorited: boolean;
+    readonly kind: "note";
+    readonly person?: InteractionParticipant;
+    readonly participants?: readonly [InteractionParticipant];
+  };
+
+export type InteractionInput =
+  | {
+    readonly activityTypeId?: string;
+    readonly description?: string;
+    readonly emotionIds?: readonly string[];
+    readonly happenedAt: string;
+    readonly kind: "activity";
+    readonly participantIds: readonly string[];
+    readonly requestId: string;
+    readonly summary: string;
+  }
+  | {
+    readonly body: string;
+    readonly isFavorited?: boolean;
+    readonly kind: "note";
+    readonly personId: string;
+    readonly requestId: string;
+  };
+
+export interface ActivityReport {
+  readonly items: readonly Interaction[];
+  readonly nextCursor?: string;
+  readonly person: InteractionParticipant;
+  readonly status: "archived" | "ready";
+}
+
+export interface TodayFavoriteNotes {
+  readonly items: readonly Extract<Interaction, { readonly kind: "note" }>[];
+  readonly status: "ready";
+}
+
+export interface TodayRecentActivity {
+  readonly items: readonly Interaction[];
+  readonly status: "ready";
+}
+
 export interface RelationshipType {
   readonly archived: boolean;
   readonly forwardLabel: string;
@@ -4030,7 +4472,7 @@ export interface PeopleTagOptionsPage {
 }
 
 export type ProfileFactSectionId = "addresses" | "contact-methods" | "first-meeting" | "food-preferences" | "pets" | "tags" | "work";
-export type PersonProfileSectionId = ProfileFactSectionId | "relationships";
+export type PersonProfileSectionId = ProfileFactSectionId | "activities" | "notes" | "relationships";
 export interface ProfileFactOption {
   readonly id: string;
   readonly kind?: "contact-label" | "contact-type" | "organization" | "pet-category";
@@ -4201,6 +4643,39 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
 
 export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
   return request(\`/api/v1/people/\${encodeURIComponent(personId)}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function recordInteraction(input: InteractionInput, workspaceId?: string): Promise<ApiResult<{ readonly record: Interaction; readonly status: "created" }>> {
+  return request("/api/v1/interactions", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function listInteractionOptions(input: { readonly activityTypeCursor?: string; readonly activityTypeSearch?: string; readonly emotionCursor?: string; readonly emotionSearch?: string; readonly limit?: number } = {}, workspaceId?: string): Promise<ApiResult<{ readonly activityTypes: readonly InteractionOption[]; readonly activityTypesNextCursor?: string; readonly availability: { readonly activity: boolean; readonly note: boolean }; readonly emotions: readonly InteractionOption[]; readonly emotionsNextCursor?: string; readonly status: "ready" }>> {
+  const query = new URLSearchParams();
+  if (input.activityTypeCursor) query.set("activityTypeCursor", input.activityTypeCursor);
+  if (input.activityTypeSearch) query.set("activityTypeSearch", input.activityTypeSearch);
+  if (input.emotionCursor) query.set("emotionCursor", input.emotionCursor);
+  if (input.emotionSearch) query.set("emotionSearch", input.emotionSearch);
+  if (input.limit) query.set("limit", String(input.limit));
+  const suffix = query.size ? \`?\${query.toString()}\` : "";
+  return request(\`/api/v1/interaction-options\${suffix}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function getActivityReport(personId: string, input: { readonly cursor?: string; readonly kind?: "activity" | "note"; readonly limit?: number; readonly year?: number } = {}, workspaceId?: string): Promise<ApiResult<ActivityReport>> {
+  const query = new URLSearchParams();
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.kind) query.set("kind", input.kind);
+  if (input.limit) query.set("limit", String(input.limit));
+  if (input.year) query.set("year", String(input.year));
+  const suffix = query.size ? \`?\${query.toString()}\` : "";
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/activity-report\${suffix}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function getTodayFavoriteNotes(workspaceId?: string): Promise<ApiResult<TodayFavoriteNotes>> {
+  return request("/api/v1/today/favorite-notes", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function getTodayRecentActivity(workspaceId?: string): Promise<ApiResult<TodayRecentActivity>> {
+  return request("/api/v1/today/recent-activity", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
 export function listRelationshipTypes(input: { readonly cursor?: string; readonly search?: string; readonly selected?: readonly string[] } = {}, workspaceId?: string): Promise<ApiResult<{ readonly nextCursor?: string; readonly options: readonly RelationshipType[]; readonly selected: readonly RelationshipType[]; readonly status: "hidden" | "ready" }>> {

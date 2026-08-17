@@ -382,6 +382,74 @@ export interface PersonTransitionInput {
   readonly expectedUpdatedAt: string;
 }
 
+export interface InteractionOption {
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface InteractionParticipant {
+  readonly id: string;
+  readonly name: string;
+}
+
+export type Interaction =
+  | {
+    readonly activityType?: string;
+    readonly createdAt?: string;
+    readonly description?: string;
+    readonly emotions: readonly InteractionOption[];
+    readonly happenedAt: string;
+    readonly id: string;
+    readonly kind: "activity";
+    readonly participants: readonly InteractionParticipant[];
+    readonly summary: string;
+  }
+  | {
+    readonly body: string;
+    readonly createdAt: string;
+    readonly id: string;
+    readonly isFavorited: boolean;
+    readonly kind: "note";
+    readonly person?: InteractionParticipant;
+    readonly participants?: readonly [InteractionParticipant];
+  };
+
+export type InteractionInput =
+  | {
+    readonly activityTypeId?: string;
+    readonly description?: string;
+    readonly emotionIds?: readonly string[];
+    readonly happenedAt: string;
+    readonly kind: "activity";
+    readonly participantIds: readonly string[];
+    readonly requestId: string;
+    readonly summary: string;
+  }
+  | {
+    readonly body: string;
+    readonly isFavorited?: boolean;
+    readonly kind: "note";
+    readonly personId: string;
+    readonly requestId: string;
+  };
+
+export interface ActivityReport {
+  readonly items: readonly Interaction[];
+  readonly nextCursor?: string;
+  readonly person: InteractionParticipant;
+  readonly status: "archived" | "ready";
+}
+
+export interface TodayFavoriteNotes {
+  readonly items: readonly Extract<Interaction, { readonly kind: "note" }>[];
+  readonly status: "ready";
+}
+
+export interface TodayRecentActivity {
+  readonly items: readonly Interaction[];
+  readonly status: "ready";
+}
+
 export interface RelationshipType {
   readonly archived: boolean;
   readonly forwardLabel: string;
@@ -536,7 +604,7 @@ export interface PeopleTagOptionsPage {
 }
 
 export type ProfileFactSectionId = "addresses" | "contact-methods" | "first-meeting" | "food-preferences" | "pets" | "tags" | "work";
-export type PersonProfileSectionId = ProfileFactSectionId | "relationships";
+export type PersonProfileSectionId = ProfileFactSectionId | "activities" | "notes" | "relationships";
 export interface ProfileFactOption {
   readonly id: string;
   readonly kind?: "contact-label" | "contact-type" | "organization" | "pet-category";
@@ -707,6 +775,39 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
 
 export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
   return request(`/api/v1/people/${encodeURIComponent(personId)}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function recordInteraction(input: InteractionInput, workspaceId?: string): Promise<ApiResult<{ readonly record: Interaction; readonly status: "created" }>> {
+  return request("/api/v1/interactions", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function listInteractionOptions(input: { readonly activityTypeCursor?: string; readonly activityTypeSearch?: string; readonly emotionCursor?: string; readonly emotionSearch?: string; readonly limit?: number } = {}, workspaceId?: string): Promise<ApiResult<{ readonly activityTypes: readonly InteractionOption[]; readonly activityTypesNextCursor?: string; readonly availability: { readonly activity: boolean; readonly note: boolean }; readonly emotions: readonly InteractionOption[]; readonly emotionsNextCursor?: string; readonly status: "ready" }>> {
+  const query = new URLSearchParams();
+  if (input.activityTypeCursor) query.set("activityTypeCursor", input.activityTypeCursor);
+  if (input.activityTypeSearch) query.set("activityTypeSearch", input.activityTypeSearch);
+  if (input.emotionCursor) query.set("emotionCursor", input.emotionCursor);
+  if (input.emotionSearch) query.set("emotionSearch", input.emotionSearch);
+  if (input.limit) query.set("limit", String(input.limit));
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return request(`/api/v1/interaction-options${suffix}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function getActivityReport(personId: string, input: { readonly cursor?: string; readonly kind?: "activity" | "note"; readonly limit?: number; readonly year?: number } = {}, workspaceId?: string): Promise<ApiResult<ActivityReport>> {
+  const query = new URLSearchParams();
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.kind) query.set("kind", input.kind);
+  if (input.limit) query.set("limit", String(input.limit));
+  if (input.year) query.set("year", String(input.year));
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/activity-report${suffix}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function getTodayFavoriteNotes(workspaceId?: string): Promise<ApiResult<TodayFavoriteNotes>> {
+  return request("/api/v1/today/favorite-notes", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function getTodayRecentActivity(workspaceId?: string): Promise<ApiResult<TodayRecentActivity>> {
+  return request("/api/v1/today/recent-activity", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
 export function listRelationshipTypes(input: { readonly cursor?: string; readonly search?: string; readonly selected?: readonly string[] } = {}, workspaceId?: string): Promise<ApiResult<{ readonly nextCursor?: string; readonly options: readonly RelationshipType[]; readonly selected: readonly RelationshipType[]; readonly status: "hidden" | "ready" }>> {

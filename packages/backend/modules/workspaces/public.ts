@@ -91,6 +91,13 @@ export type {
   WorkspaceRelationshipTypePage,
   WorkspaceRelationshipTypeRecord,
 } from "./application/relationship_workspace_boundary.ts";
+export { PostgresInteractionWorkspaceBoundary } from "./adapters/postgres/interaction_workspace_boundary.ts";
+export type {
+  InteractionWorkspaceActor,
+  InteractionWorkspaceBoundary,
+  InteractionWorkspaceTransaction,
+  WorkspaceInteractionOption,
+} from "./application/interaction_workspace_boundary.ts";
 export type {
   ActiveWorkspaceContext,
   ActiveWorkspaceResolver,

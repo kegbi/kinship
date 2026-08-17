@@ -155,6 +155,16 @@ test(
 
     await page.getByRole("button", { name: "Archive person" }).click();
     await expect(page.getByText("Archived person · read-only")).toBeVisible();
+    const logActivity = page.locator(
+      '#profile-section-activities [data-person-interaction-capture][data-interaction-intended-kind="activity"]',
+    );
+    const addNote = page.locator(
+      '#profile-section-notes [data-person-interaction-capture][data-interaction-intended-kind="note"]',
+    );
+    await expect(logActivity).toBeHidden();
+    await expect(logActivity).toBeDisabled();
+    await expect(addNote).toBeHidden();
+    await expect(addNote).toBeDisabled();
     await expect(page.getByRole("button", { name: "Edit person" }))
       .toBeHidden();
     await expect(page.locator("#person-lifecycle-status")).toContainText(
@@ -174,6 +184,10 @@ test(
     await expect(page).toHaveURL(new RegExp(`${personPath}$`));
     await page.getByRole("button", { name: "Restore person" }).click();
     await expect(page.getByText("Archived person · read-only")).toBeHidden();
+    await expect(logActivity).toBeVisible();
+    await expect(logActivity).toBeEnabled();
+    await expect(addNote).toBeVisible();
+    await expect(addNote).toBeEnabled();
     await expect(page.locator("#person-lifecycle-status")).toContainText(
       "They now appear in People",
     );

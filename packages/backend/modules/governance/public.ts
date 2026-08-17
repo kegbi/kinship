@@ -15,3 +15,4 @@ export { PostgresPersonLifecycleAudit } from "./adapters/postgres/person_lifecyc
 export { PostgresImportantDateAudit } from "./adapters/postgres/important_date_audit.ts";
 export { PostgresProfileFactAudit } from "./adapters/postgres/profile_fact_audit.ts";
 export { PostgresRelationshipAudit } from "./adapters/postgres/relationship_audit.ts";
+export { PostgresInteractionAudit } from "./adapters/postgres/interaction_audit.ts";

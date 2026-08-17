@@ -202,6 +202,10 @@ test(
     await expect(page.getByRole("heading", { name: "Gender options" }))
       .toBeFocused();
     await page.getByRole("link", { name: "Profile modules" }).click();
+    await expect(page).toHaveURL(/section=profile-modules/);
+    await expect(
+      page.getByRole("heading", { name: "Profile modules", exact: true }),
+    ).toBeVisible();
 
     await create.getByLabel("New option name").fill("Tags");
     await create.getByRole("button", { name: "Create option" }).click();
@@ -261,6 +265,9 @@ test(
       "Option updated.",
     );
     await page.getByRole("link", { name: "Tags", exact: true }).click();
+    await expect(page).toHaveURL(/section=tags/);
+    await expect(page.getByRole("heading", { name: "Tags", exact: true }))
+      .toBeVisible();
 
     await create.getByLabel("New option name").fill("Close friends");
     await create.getByRole("button", { name: "Create option" }).click();
