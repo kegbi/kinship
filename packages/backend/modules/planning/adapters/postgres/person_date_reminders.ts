@@ -182,9 +182,9 @@ export class PostgresPersonDateReminderPublisher
       ), delivery_candidates as (
         select calendar_candidates.*,
           (
-            (occurs_on + default_reminder_time)
+            ((occurs_on - days_before) + default_reminder_time)
               at time zone timezone_name
-          ) - make_interval(days => days_before) as deliver_at
+          ) as deliver_at
         from calendar_candidates
         where extract(month from occurs_on)::int = ${command.after.month}
       ), next_delivery as (
@@ -200,11 +200,11 @@ export class PostgresPersonDateReminderPublisher
       )
       select ${activeReminderId}::uuid, next_delivery.member_id,
         next_delivery.occurs_on, next_delivery.deliver_at,
-        next_delivery.days_before, 'email', 'pending', ${title(command)},
+        next_delivery.days_before, 'in_app', 'pending', ${title(command)},
         ${command.occurredAt}::timestamptz,
         ${command.occurredAt}::timestamptz
       from next_delivery
-      on conflict (reminder_id, member_id, deliver_at, channel) do nothing
+      on conflict do nothing
     `.execute(database);
     await sql`
       update crm.reminders set anchor_on = coalesce(

@@ -21,3 +21,5 @@ in an ADR written before scaffolding.
 - [`0003-migration-runner-spike.md`](0003-migration-runner-spike.md)
 - [`0004-onboarding-invitation-and-atomic-audit-coordination.md`](0004-onboarding-invitation-and-atomic-audit-coordination.md)
   — `accepted`
+- [`0005-durable-reminder-delivery-and-cadence-coordination.md`](0005-durable-reminder-delivery-and-cadence-coordination.md)
+  — `accepted`

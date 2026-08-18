@@ -212,7 +212,7 @@ test(
     await expect(page.locator("[data-profile-section]")).toHaveCount(22);
     await expect(
       page.locator('[data-profile-section][data-section-state="unavailable"]'),
-    ).toHaveCount(11);
+    ).toHaveCount(5);
     await expect(page.locator("#profile-section-relationships"))
       .toHaveAttribute("data-section-state", "ready");
     await expect(page.locator("#profile-section-important-dates"))
@@ -231,7 +231,7 @@ test(
     ).toHaveAttribute("aria-current", "location");
     await expect(
       page.locator(`a[href^="/app/people/${personId}/"]`),
-    ).toHaveCount(1);
+    ).toHaveCount(2);
     await expect(page.locator("[data-activity-report-link]")).toHaveAttribute(
       "href",
       `/app/people/${personId}/activity-report`,

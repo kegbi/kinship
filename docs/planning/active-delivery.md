@@ -11,8 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 6 — Today, Tasks, Reminders, And Workers**
-- Current leaf: **APP-006B / `PLANNING-002` — Reminders and stay-in-touch
-  cadence**
+- Current leaf: **APP-006C / `TODAY-001` — Action-oriented Today**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -191,8 +190,8 @@ runnable behavior cannot work without them.
 - [x] **APP-006A / `PLANNING-001` — Tasks.**
   - [x] Deliver global and person tasks, create/change/complete behavior, and
         local person-workspace actions.
-- [ ] **APP-006B / `PLANNING-002` — Reminders and stay-in-touch cadence.**
-  - [ ] Deliver reminder/cadence scheduling, occurrence generation, timezone/DST
+- [x] **APP-006B / `PLANNING-002` — Reminders and stay-in-touch cadence.**
+  - [x] Deliver reminder/cadence scheduling, occurrence generation, timezone/DST
         behavior, duplicate-safe delivery, and user-visible failure states.
 - [ ] **APP-006C / `TODAY-001` — Action-oriented Today.**
   - [ ] Deliver the accepted semantic order: attention queue, people due for

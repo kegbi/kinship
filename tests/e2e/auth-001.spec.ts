@@ -105,10 +105,10 @@ test("[AUTH-001] creates and verifies the first workspace", {
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
     "Welcome, Ada.",
   );
-  await expect(page.getByRole("status")).toContainText(
+  await expect(page.locator("#shell-status")).toContainText(
     "Analytical circle is ready",
   );
-  await expect(page.getByRole("status")).toContainText("verified owner");
+  await expect(page.locator("#shell-status")).toContainText("verified owner");
   await expectAccessible(page);
 
   await page.goto(`/auth/verify-email?token=${encodeURIComponent(token)}`);
@@ -268,7 +268,9 @@ test("[AUTH-001] renders malicious owner and workspace names as text", {
   await page.goto(`/auth/verify-email?token=${encodeURIComponent(token)}`);
   await expect(page).toHaveURL(/\/app$/);
   await expect(page.getByRole("heading", { level: 1 })).toContainText(payload);
-  await expect(page.getByRole("status")).toContainText(`${payload} is ready`);
+  await expect(page.locator("#shell-status")).toContainText(
+    `${payload} is ready`,
+  );
   await expect(page.locator("#entry-status img, #entry-status script"))
     .toHaveCount(0);
   expect(await page.evaluate(() => "__kinshipXss" in window)).toBe(false);

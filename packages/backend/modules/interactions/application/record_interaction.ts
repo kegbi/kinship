@@ -367,6 +367,7 @@ export function createInteractionManagement(dependencies: {
   readonly audit: InteractionAudit;
   readonly clock: { now(): Date };
   readonly people: InteractionPersonBoundary;
+  readonly publisher?: InteractionRecordedPublisher;
   readonly repository: InteractionRepository;
   readonly transaction: {
     run<T>(work: (transaction: PeopleTransaction) => Promise<T>): Promise<T>;
@@ -601,10 +602,29 @@ export function createInteractionManagement(dependencies: {
           ...auditCommand,
           auditId,
         });
+        if (record.kind === "activity") {
+          await dependencies.publisher?.interactionRecorded({
+            happenedAt: record.happenedAt,
+            memberId: canonicalActor.memberId,
+            personIds: record.participants.map((person) => person.id),
+            transaction,
+            workspaceId: canonicalActor.workspaceId,
+          });
+        }
         return { record, status: "created" as const };
       });
     },
   };
+}
+
+export interface InteractionRecordedPublisher {
+  interactionRecorded(event: {
+    readonly happenedAt: string;
+    readonly memberId: string;
+    readonly personIds: readonly string[];
+    readonly transaction: PeopleTransaction;
+    readonly workspaceId: string;
+  }): Promise<void>;
 }
 
 export type InteractionManagement = ReturnType<

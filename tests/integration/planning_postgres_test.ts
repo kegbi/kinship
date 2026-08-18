@@ -4,6 +4,18 @@ import {
   createConfiguredApiApp,
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
+import { PostgresReminderAudit } from "../../packages/backend/modules/governance/public.ts";
+import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/public.ts";
+import {
+  createReminderDeliveryWorker,
+  InAppReminderDelivery,
+  PostgresInAppReminderEffectStore,
+  PostgresReminderDeliveryRepository,
+  PostgresReminderRepository,
+  type ReminderDeliveryProvider,
+} from "../../packages/backend/modules/planning/public.ts";
+import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import * as generatedPlanningClient from "../../packages/contracts/generated/auth-client.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -18,11 +30,58 @@ const configured = createConfiguredApiApp(
   mail,
   browserSecurityPolicy("test", "http://localhost"),
 );
+const deliveryConnection = connectDatabase(databaseUrl);
+const deliveryRepository = new PostgresReminderDeliveryRepository(
+  deliveryConnection.db,
+);
+const deliveryTransaction = new PostgresPeopleTransaction(
+  deliveryConnection.db,
+);
 const password = "correct horse battery staple";
+
+class DurableFakeProvider implements ReminderDeliveryProvider {
+  readonly effects = new Map<string, string>();
+  throwAfterNextEffect = false;
+
+  async deliver(command: Parameters<ReminderDeliveryProvider["deliver"]>[0]) {
+    const existing = this.effects.get(command.idempotencyKey);
+    if (existing) {
+      return {
+        receipt: existing,
+        status: "confirmed" as const,
+      };
+    }
+    const receipt = `fake:${command.occurrenceId}`;
+    this.effects.set(command.idempotencyKey, receipt);
+    await sql`
+      update crm.reminder_occurrences set provider_receipt = ${receipt},
+        provider_result_state = 'confirmed', provider_effect_at = now(),
+        visible_at = now(), updated_at = now()
+      where id = ${command.occurrenceId}::uuid
+        and provider_idempotency_key = ${command.idempotencyKey}
+    `;
+    if (this.throwAfterNextEffect) {
+      this.throwAfterNextEffect = false;
+      throw new Error("effect committed before timeout");
+    }
+    return { receipt, status: "confirmed" as const };
+  }
+
+  reconcile(command: Parameters<ReminderDeliveryProvider["reconcile"]>[0]) {
+    const receipt = this.effects.get(command.idempotencyKey);
+    return Promise.resolve(
+      receipt
+        ? { receipt, status: "confirmed" as const }
+        : { code: "not-found", status: "transient" as const },
+    );
+  }
+}
 
 interface Fixture {
   readonly cookie: string;
   readonly memberId: string;
+  readonly role: "admin" | "member" | "owner";
+  readonly userId: string;
   readonly workspaceId: string;
 }
 
@@ -75,7 +134,17 @@ async function register(
   };
   const cookie = signed.headers.get("set-cookie")?.split(";")[0];
   assert(signed.status === 200 && cookie, "planning fixture signs in");
-  return { cookie, memberId: body.member.id, workspaceId: body.workspace.id };
+  const [identity] = await sql<{ readonly id: string }[]>`
+    select id::text from crm.users where email = ${email}
+  `;
+  assert(identity, "planning fixture identity exists");
+  return {
+    cookie,
+    memberId: body.member.id,
+    role: "owner",
+    userId: identity.id,
+    workspaceId: body.workspace.id,
+  };
 }
 
 function request(
@@ -813,6 +882,2443 @@ Deno.test("PLANNING-001 PostgreSQL keeps soft-deleted person links unavailable a
   );
 });
 
+interface CreatedReminder {
+  readonly reminder: {
+    readonly id: string;
+    readonly nextOccurrence?: {
+      readonly deliverAt: string;
+      readonly id: string;
+      readonly occursOn: string;
+    };
+  };
+}
+
+async function createReminder(
+  fixture: Fixture,
+  personId: string,
+  title: string,
+): Promise<CreatedReminder["reminder"]> {
+  const anchor = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  const created = await request(fixture, "/api/v1/reminders", "POST", {
+    anchorOn: anchor,
+    personId,
+    recurrenceInterval: 1,
+    recurrenceUnit: "none",
+    requestId: crypto.randomUUID(),
+    sendTime: "09:00",
+    title,
+  });
+  const body = await created.json() as CreatedReminder;
+  assert(
+    created.status === 201 && body.reminder.nextOccurrence,
+    `${title} reminder created: ${JSON.stringify(body)}`,
+  );
+  return body.reminder;
+}
+
+Deno.test("PLANNING-002 PostgreSQL keeps reminder delivery, tenancy, cadence, and audit replay-safe", async () => {
+  const suffix = crypto.randomUUID();
+  const fixture = await register(
+    `reminder-${suffix}@example.test`,
+    "Reminder planning",
+  );
+  const foreign = await register(
+    `reminder-foreign-${suffix}@example.test`,
+    "Foreign reminders",
+  );
+  const personId = await createPerson(fixture, "Reminder person");
+  const otherPersonId = await createPerson(fixture, "Other reminder person");
+  const foreignPersonId = await createPerson(foreign, "Foreign person");
+  const forbidden = await request(fixture, "/api/v1/reminders", "POST", {
+    anchorOn: new Date(Date.now() + 86_400_000).toISOString().slice(0, 10),
+    personId: foreignPersonId,
+    recurrenceInterval: 1,
+    recurrenceUnit: "none",
+    requestId: crypto.randomUUID(),
+    sendTime: "09:00",
+    title: "Cross tenant",
+  });
+  assert(
+    forbidden.status === 404,
+    "cross-workspace reminder person was accepted",
+  );
+
+  const cadenceRequestId = crypto.randomUUID();
+  const cadencePayload = {
+    intervalCount: 1,
+    intervalUnit: "month",
+    personId,
+    requestId: cadenceRequestId,
+  };
+  const cadence = await request(
+    fixture,
+    "/api/v1/stay-in-touch-cadences",
+    "POST",
+    cadencePayload,
+  );
+  assert(cadence.status === 201, "stay-in-touch cadence created");
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/stay-in-touch-cadences",
+      "POST",
+      cadencePayload,
+    )).status === 201,
+    "same cadence request did not replay",
+  );
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/stay-in-touch-cadences",
+      "POST",
+      { ...cadencePayload, intervalCount: 2 },
+    )).status === 409,
+    "changed cadence request replay was accepted",
+  );
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/stay-in-touch-cadences",
+      "POST",
+      { ...cadencePayload, personId: otherPersonId },
+    )).status === 409,
+    "cross-person cadence request reuse was accepted",
+  );
+  const [cadenceAudit] = await sql<{ readonly count: number }[]>`
+    select count(*)::int as count from crm.audit_events
+    where workspace_id = ${fixture.workspaceId}::uuid
+      and action = 'planning.reminder-cadence-created'
+  `;
+  assert(cadenceAudit?.count === 1, "cadence replay duplicated audit evidence");
+  const [cadenceBefore] = await sql<{
+    last_contacted_at: string | null;
+    next_due_at: string;
+    updated_at: string;
+  }[]>`
+    select last_contacted_at::text, next_due_at::text, updated_at::text
+    from crm.stay_in_touch_cadences where person_id = ${personId}::uuid
+  `;
+  assert(cadenceBefore, "cadence persistence missing");
+  const oldActivity = {
+    happenedAt: new Date(Date.now() - 86_400_000).toISOString(),
+    kind: "activity",
+    participantIds: [personId],
+    requestId: crypto.randomUUID(),
+    summary: "Older imported contact",
+  };
+  assert(
+    (await request(fixture, "/api/v1/interactions", "POST", oldActivity))
+      .status === 201,
+    "older activity recorded",
+  );
+  const [afterOld] = await sql<{
+    last_contacted_at: string | null;
+    next_due_at: string;
+    updated_at: string;
+  }[]>`
+    select last_contacted_at::text, next_due_at::text, updated_at::text
+    from crm.stay_in_touch_cadences where person_id = ${personId}::uuid
+  `;
+  assert(
+    afterOld?.last_contacted_at === cadenceBefore.last_contacted_at &&
+      afterOld?.next_due_at === cadenceBefore.next_due_at &&
+      afterOld?.updated_at === cadenceBefore.updated_at,
+    "older interaction regressed cadence",
+  );
+  const newerHappenedAt = new Date(Date.now() + 3_600_000).toISOString();
+  const newerActivity = {
+    happenedAt: newerHappenedAt,
+    kind: "activity",
+    participantIds: [personId],
+    requestId: crypto.randomUUID(),
+    summary: "Current contact",
+  };
+  assert(
+    (await request(fixture, "/api/v1/interactions", "POST", newerActivity))
+      .status === 201,
+    "newer activity recorded",
+  );
+  const [afterNew] = await sql<{
+    last_contacted_at: string | null;
+    next_due_at: string;
+    updated_at: string;
+  }[]>`
+    select last_contacted_at::text, next_due_at::text, updated_at::text
+    from crm.stay_in_touch_cadences where person_id = ${personId}::uuid
+  `;
+  const replayActivity = {
+    ...newerActivity,
+    requestId: crypto.randomUUID(),
+  };
+  assert(
+    (await request(fixture, "/api/v1/interactions", "POST", replayActivity))
+      .status === 201,
+    "equivalent contact replay recorded",
+  );
+  const [afterReplay] = await sql<{
+    last_contacted_at: string | null;
+    next_due_at: string;
+    updated_at: string;
+  }[]>`
+    select last_contacted_at::text, next_due_at::text, updated_at::text
+    from crm.stay_in_touch_cadences where person_id = ${personId}::uuid
+  `;
+  assert(
+    afterNew !== undefined && afterReplay !== undefined &&
+      afterNew.last_contacted_at !== null &&
+      Date.parse(afterNew.last_contacted_at) === Date.parse(newerHappenedAt) &&
+      afterReplay?.next_due_at === afterNew.next_due_at &&
+      afterReplay.updated_at === afterNew.updated_at,
+    `new/replayed interaction did not advance cadence monotonically: ${
+      JSON.stringify({ afterNew, afterReplay, newerHappenedAt })
+    }`,
+  );
+
+  const provider = new DurableFakeProvider();
+  const worker = createReminderDeliveryWorker({
+    audit: new PostgresReminderAudit(),
+    clock: { now: () => new Date() },
+    provider,
+    repository: deliveryRepository,
+    transaction: deliveryTransaction,
+  });
+  const ambiguous = await createReminder(fixture, personId, "Ambiguous effect");
+  const ambiguousOccurrence = ambiguous.nextOccurrence!.id;
+  const inheritedTimezone = await request(
+    fixture,
+    "/api/v1/settings/workspace",
+    "PUT",
+    {
+      defaultLocale: "en",
+      defaultReminderTime: "09:00",
+      defaultTimezone: "Europe/Belgrade",
+      name: "Reminder workspace",
+    },
+  );
+  const [inheritedRegenerated] = await sql<{ readonly deliver_at: string }[]>`
+    select deliver_at::text from crm.reminder_occurrences
+    where id = ${ambiguousOccurrence}::uuid
+  `;
+  assert(
+    inheritedTimezone.status === 200 && inheritedRegenerated &&
+      Date.parse(inheritedRegenerated.deliver_at) !==
+        Date.parse(ambiguous.nextOccurrence!.deliverAt),
+    "workspace default timezone did not regenerate inherited occurrence",
+  );
+  const changedTimezone = await request(
+    fixture,
+    "/api/v1/settings/preferences",
+    "PUT",
+    {
+      contactNameOrder: "given_family_nickname",
+      contactSortOrder: "given_name_asc",
+      fluidLayout: false,
+      locale: "en",
+      measurementSystem: "metric",
+      temperatureScale: "celsius",
+      timezone: "America/New_York",
+    },
+  );
+  const [regenerated] = await sql<{ readonly deliver_at: string }[]>`
+    select deliver_at::text from crm.reminder_occurrences
+    where id = ${ambiguousOccurrence}::uuid
+  `;
+  assert(
+    changedTimezone.status === 200 && regenerated &&
+      Date.parse(regenerated.deliver_at) !==
+        Date.parse(ambiguous.nextOccurrence!.deliverAt),
+    "effective timezone change did not regenerate the future occurrence",
+  );
+  const explicitDeliverAt = regenerated.deliver_at;
+  const changedDefaultWithOverride = await request(
+    fixture,
+    "/api/v1/settings/workspace",
+    "PUT",
+    {
+      defaultLocale: "en",
+      defaultReminderTime: "09:00",
+      defaultTimezone: "Asia/Tokyo",
+      name: "Reminder workspace",
+    },
+  );
+  const [afterDefaultWithOverride] = await sql<
+    { readonly deliver_at: string }[]
+  >`
+    select deliver_at::text from crm.reminder_occurrences
+    where id = ${ambiguousOccurrence}::uuid
+  `;
+  assert(
+    changedDefaultWithOverride.status === 200 &&
+      afterDefaultWithOverride?.deliver_at === explicitDeliverAt,
+    "workspace default changed an explicit member timezone occurrence",
+  );
+  await sql`
+    update crm.reminder_occurrences set deliver_at = now() - interval '1 minute'
+    where id = ${ambiguousOccurrence}::uuid
+  `;
+  provider.throwAfterNextEffect = true;
+  const first = await worker.tick({
+    maxAttempts: 3,
+    owner: "integration-a",
+    retryBaseMilliseconds: 1_000,
+  });
+  assert(
+    first.claimed === 1 && first.results[0]?.status === "retry",
+    "ambiguous effect did not enter retry",
+  );
+  await sql`
+    update crm.reminder_occurrences set next_attempt_at = now() - interval '1 second'
+    where id = ${ambiguousOccurrence}::uuid
+  `;
+  const reconciled = await worker.tick({
+    maxAttempts: 3,
+    owner: "integration-b",
+  });
+  assert(
+    reconciled.claimed === 1 && reconciled.results[0]?.status === "sent",
+    "ambiguous effect did not reconcile",
+  );
+
+  const duplicate = await createReminder(
+    fixture,
+    personId,
+    "Duplicate workers",
+  );
+  await sql`
+    update crm.reminder_occurrences set deliver_at = now() - interval '1 minute'
+    where id = ${duplicate.nextOccurrence!.id}::uuid
+  `;
+  const concurrent = await Promise.all([
+    worker.tick({ owner: "integration-c" }),
+    worker.tick({ owner: "integration-d" }),
+  ]);
+  assert(
+    concurrent.reduce((sum, result) => sum + result.claimed, 0) === 1,
+    "duplicate workers claimed one occurrence twice",
+  );
+
+  const unsupported = await createReminder(fixture, personId, "Legacy email");
+  await sql`
+    update crm.reminder_occurrences set channel = 'email',
+      deliver_at = now() - interval '1 minute'
+    where id = ${unsupported.nextOccurrence!.id}::uuid
+  `;
+  const unsupportedClaims = await deliveryRepository.claimDue({
+    leaseExpiresAt: new Date(Date.now() + 30_000),
+    limit: 10,
+    now: new Date(),
+    owner: "unsupported-channel-check",
+  });
+  assert(
+    unsupportedClaims.every((claim) =>
+      claim.id !== unsupported.nextOccurrence!.id
+    ),
+    "unsupported email occurrence was claimed",
+  );
+
+  const crash = await createReminder(fixture, personId, "Process death");
+  const crashOccurrence = crash.nextOccurrence!.id;
+  await sql`
+    update crm.reminder_occurrences set deliver_at = now() - interval '1 minute'
+    where id = ${crashOccurrence}::uuid
+  `;
+  const [crashedClaim] = await deliveryRepository.claimDue({
+    leaseExpiresAt: new Date(Date.now() + 30_000),
+    limit: 1,
+    now: new Date(),
+    owner: "crashed-worker",
+  });
+  assert(
+    crashedClaim?.id === crashOccurrence,
+    "crashed process did not claim expected occurrence",
+  );
+  const durableEffects = new PostgresInAppReminderEffectStore(
+    deliveryConnection.db,
+    { now: () => new Date() },
+  );
+  const durableProvider = new InAppReminderDelivery(durableEffects);
+  await durableProvider.deliver({
+    idempotencyKey: crashedClaim.providerIdempotencyKey,
+    occurrenceId: crashedClaim.id,
+  });
+  const [effectBeforeFinalize] = await sql<{
+    readonly provider_effect_at: string | null;
+    readonly provider_receipt: string | null;
+    readonly provider_result_state: string;
+    readonly status: string;
+    readonly visible_at: string | null;
+  }[]>`
+    select status, provider_result_state, provider_receipt,
+      provider_effect_at::text, visible_at::text
+    from crm.reminder_occurrences where id = ${crashOccurrence}::uuid
+  `;
+  assert(
+    effectBeforeFinalize?.status === "claimed" &&
+      effectBeforeFinalize.provider_result_state === "confirmed" &&
+      effectBeforeFinalize.provider_receipt !== null &&
+      effectBeforeFinalize.provider_effect_at !== null &&
+      effectBeforeFinalize.visible_at !== null,
+    "in-app effect was not durable and visible before worker finalization",
+  );
+  const visiblePerson = await request(
+    fixture,
+    `/api/v1/people/${personId}/reminders`,
+  );
+  const visiblePersonBody = await visiblePerson.json() as {
+    readonly reminders: readonly {
+      readonly nextOccurrence?: {
+        readonly id: string;
+        readonly status: string;
+        readonly visibleAt?: string;
+      };
+    }[];
+  };
+  const visibleToday = await request(fixture, "/api/v1/today/reminders");
+  const visibleTodayBody = await visibleToday.json() as {
+    readonly reminders: readonly {
+      readonly id: string;
+      readonly status: string;
+      readonly visibleAt?: string;
+    }[];
+  };
+  assert(
+    visiblePerson.status === 200 &&
+      visiblePersonBody.reminders.some((item) =>
+        item.nextOccurrence?.id === crashOccurrence &&
+        item.nextOccurrence.status === "claimed" &&
+        item.nextOccurrence.visibleAt
+      ) && visibleToday.status === 200 &&
+      visibleTodayBody.reminders.some((item) =>
+        item.id === crashOccurrence && item.status === "claimed" &&
+        item.visibleAt
+      ),
+    `confirmed visible effect was hidden before worker finalization: ${
+      JSON.stringify({ visiblePersonBody, visibleTodayBody })
+    }`,
+  );
+  await sql`
+    update crm.reminder_occurrences set lease_expires_at = now() - interval '1 second'
+    where id = ${crashOccurrence}::uuid
+  `;
+  const durableWorker = createReminderDeliveryWorker({
+    audit: new PostgresReminderAudit(),
+    clock: { now: () => new Date() },
+    provider: durableProvider,
+    repository: deliveryRepository,
+    transaction: deliveryTransaction,
+  });
+  const recovered = await durableWorker.tick({ owner: "integration-recovery" });
+  assert(
+    recovered.claimed === 1 && recovered.results[0]?.status === "sent",
+    "expired lease did not recover after process death",
+  );
+
+  const deliveryProof = await sql<{
+    audits: number;
+    attempts: number;
+    status: string;
+    visible_effects: number;
+  }[]>`
+    select occurrence.attempt_count as attempts, occurrence.status,
+      case when occurrence.provider_effect_at is not null and occurrence.visible_at is not null then 1 else 0 end as visible_effects,
+      (select count(*)::int from crm.audit_events audit
+       where audit.subject_id = occurrence.id
+         and audit.action = 'planning.reminder-delivered') as audits
+    from crm.reminder_occurrences occurrence
+    where occurrence.id = ${crashOccurrence}::uuid
+  `;
+  assert(
+    deliveryProof[0]?.status === "sent" && deliveryProof[0].attempts === 2 &&
+      deliveryProof[0].audits === 1 && deliveryProof[0].visible_effects === 1 &&
+      provider.effects.size === 2,
+    `delivery replay proof failed: ${
+      JSON.stringify(deliveryProof[0])
+    }, effects=${provider.effects.size}`,
+  );
+  const today = await request(fixture, "/api/v1/today/reminders");
+  const todayBody = await today.json() as {
+    readonly reminders: readonly {
+      readonly id: string;
+      readonly status: string;
+      readonly visibleAt?: string;
+    }[];
+  };
+  assert(
+    today.status === 200 &&
+      todayBody.reminders.some((item) =>
+        item.id === crashOccurrence && item.status === "sent" && item.visibleAt
+      ),
+    "Today did not expose delivered in-app state",
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL replenishes ninth occurrence and enforces delivery lifecycle", async () => {
+  const suffix = crypto.randomUUID();
+  const fixture = await register(
+    `reminder-rolling-${suffix}@example.test`,
+    "Rolling reminders",
+  );
+  const personId = await createPerson(fixture, "Rolling person");
+  assert(
+    (await request(fixture, "/api/v1/settings/workspace", "PUT", {
+      defaultLocale: "en",
+      defaultReminderTime: "02:30",
+      defaultTimezone: "Europe/Belgrade",
+      name: "Rolling reminders",
+    })).status === 200,
+    "rolling fixture timezone saved",
+  );
+  const created = await request(fixture, "/api/v1/reminders", "POST", {
+    anchorOn: "2026-10-20",
+    personId,
+    recurrenceInterval: 1,
+    recurrenceUnit: "day",
+    requestId: crypto.randomUUID(),
+    sendTime: "02:30",
+    title: "DST rolling reminder",
+  });
+  const createdBody = await created.json() as CreatedReminder;
+  const reminderId = createdBody.reminder.id;
+  assert(created.status === 201, "rolling reminder created");
+  await sql`
+    update crm.reminder_occurrences set status = 'sent', sent_at = deliver_at,
+      provider_receipt = 'seed-receipt', provider_result_state = 'confirmed',
+      provider_effect_at = deliver_at, visible_at = deliver_at
+    where reminder_id = ${reminderId}::uuid and occurs_on = '2026-10-20'::date
+  `;
+  const rollingWorker = createReminderDeliveryWorker({
+    audit: new PostgresReminderAudit(),
+    clock: { now: () => new Date("2026-10-20T03:00:00Z") },
+    provider: new DurableFakeProvider(),
+    repository: deliveryRepository,
+    transaction: deliveryTransaction,
+  });
+  await Promise.all([
+    rollingWorker.tick({ owner: "rolling-a" }),
+    rollingWorker.tick({ owner: "rolling-b" }),
+  ]);
+  await rollingWorker.tick({ owner: "rolling-replay" });
+  const [rolling] = await sql<{
+    readonly count: number;
+    readonly distinct_count: number;
+    readonly ninth_at: string | null;
+  }[]>`
+    select count(*)::int as count,
+      count(distinct (deliver_at, channel))::int as distinct_count,
+      max(deliver_at)::text as ninth_at
+    from crm.reminder_occurrences where reminder_id = ${reminderId}::uuid
+  `;
+  assert(
+    rolling?.count === 9 && rolling.distinct_count === 9 &&
+      rolling.ninth_at !== null &&
+      Date.parse(rolling.ninth_at) === Date.parse("2026-10-28T01:30:00Z"),
+    `rolling generation stopped or duplicated: ${JSON.stringify(rolling)}`,
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL excludes inactive delivery lifecycles", async () => {
+  const suffix = crypto.randomUUID();
+  const fixture = await register(
+    `reminder-lifecycle-${suffix}@example.test`,
+    "Reminder lifecycle",
+  );
+  const personId = await createPerson(fixture, "Lifecycle person");
+  const archiveReminder = await createReminder(
+    fixture,
+    personId,
+    "Archived lifecycle",
+  );
+  await sql`
+    update crm.reminder_occurrences set deliver_at = now() - interval '1 minute'
+    where id = ${archiveReminder.nextOccurrence!.id}::uuid
+  `;
+  await sql`update crm.people set archived_at = now() where id = ${personId}::uuid`;
+  const archivedClaims = await deliveryRepository.claimDue({
+    leaseExpiresAt: new Date(Date.now() + 30_000),
+    limit: 100,
+    now: new Date(),
+    owner: "archived-lifecycle",
+  });
+  assert(
+    archivedClaims.every((item) =>
+      item.id !== archiveReminder.nextOccurrence!.id
+    ),
+    "archived person reminder was claimable",
+  );
+  await sql`
+    update crm.people set archived_at = null, deleted_at = now()
+    where id = ${personId}::uuid
+  `;
+  const deletedClaims = await deliveryRepository.claimDue({
+    leaseExpiresAt: new Date(Date.now() + 30_000),
+    limit: 100,
+    now: new Date(),
+    owner: "deleted-lifecycle",
+  });
+  assert(
+    deletedClaims.every((item) =>
+      item.id !== archiveReminder.nextOccurrence!.id
+    ),
+    "deleted person reminder was claimable",
+  );
+  await sql`update crm.people set deleted_at = null where id = ${personId}::uuid`;
+  await sql`
+    update crm.workspace_members set status = 'left', left_at = now()
+    where id = ${fixture.memberId}::uuid
+  `;
+  const departedClaims = await deliveryRepository.claimDue({
+    leaseExpiresAt: new Date(Date.now() + 30_000),
+    limit: 100,
+    now: new Date(),
+    owner: "departed-lifecycle",
+  });
+  assert(
+    departedClaims.every((item) =>
+      item.id !== archiveReminder.nextOccurrence!.id
+    ),
+    "departed member reminder was claimable",
+  );
+  await sql`
+    update crm.workspace_members set status = 'active', left_at = null
+    where id = ${fixture.memberId}::uuid
+  `;
+  await sql`
+    update crm.workspaces set status = 'suspended'
+    where id = ${fixture.workspaceId}::uuid
+  `;
+  const inactiveWorkspaceClaims = await deliveryRepository.claimDue({
+    leaseExpiresAt: new Date(Date.now() + 30_000),
+    limit: 100,
+    now: new Date(),
+    owner: "workspace-lifecycle",
+  });
+  assert(
+    inactiveWorkspaceClaims.every((item) =>
+      item.id !== archiveReminder.nextOccurrence!.id
+    ),
+    "inactive workspace reminder was claimable",
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL scopes and retains cadence request history", async () => {
+  const suffix = crypto.randomUUID();
+  const fixture = await register(
+    `reminder-history-${suffix}@example.test`,
+    "Reminder history",
+  );
+  const foreign = await register(
+    `reminder-history-foreign-${suffix}@example.test`,
+    "Foreign reminder history",
+  );
+  const personId = await createPerson(fixture, "History person");
+  const foreignPersonId = await createPerson(foreign, "Foreign history person");
+  const requestA = crypto.randomUUID();
+  const requestB = crypto.randomUUID();
+  const payloadA = {
+    intervalCount: 1,
+    intervalUnit: "month",
+    personId,
+    requestId: requestA,
+  };
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/stay-in-touch-cadences",
+      "POST",
+      payloadA,
+    )).status === 201,
+    "first cadence request accepted",
+  );
+  assert(
+    (await request(foreign, "/api/v1/stay-in-touch-cadences", "POST", {
+      ...payloadA,
+      personId: foreignPersonId,
+    })).status === 201,
+    "same cadence request UUID was not workspace scoped",
+  );
+  assert(
+    (await request(fixture, "/api/v1/stay-in-touch-cadences", "POST", {
+      ...payloadA,
+      intervalCount: 2,
+      requestId: requestB,
+    })).status === 201,
+    "second cadence request accepted",
+  );
+  const replayA = await request(
+    fixture,
+    "/api/v1/stay-in-touch-cadences",
+    "POST",
+    payloadA,
+  );
+  const [cadenceState] = await sql<{ readonly interval_count: number }[]>`
+    select interval_count from crm.stay_in_touch_cadences
+    where person_id = ${personId}::uuid
+  `;
+  assert(
+    replayA.status === 201 && cadenceState?.interval_count === 2,
+    `A-B-replay-A mutated cadence: ${JSON.stringify(cadenceState)}`,
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL projects one relevant occurrence from bounded history", async () => {
+  const suffix = crypto.randomUUID();
+  const fixture = await register(
+    `reminder-projection-${suffix}@example.test`,
+    "Reminder projection",
+  );
+  const personId = await createPerson(fixture, "Projection person");
+  const reminder = await createReminder(
+    fixture,
+    personId,
+    "Relevant occurrence",
+  );
+  const occurrenceId = reminder.nextOccurrence!.id;
+  await sql`
+    update crm.reminder_occurrences set deliver_at = now() + interval '1 day'
+    where id = ${occurrenceId}::uuid
+  `;
+  await sql`
+    insert into crm.reminder_occurrences (
+      reminder_id, member_id, occurs_on, deliver_at, channel, status,
+      sent_at, title_snapshot, body_snapshot, provider_receipt,
+      provider_result_state, provider_effect_at, visible_at
+    )
+    select reminder_id, member_id, (current_date - generated)::date,
+      now() - generated * interval '1 day', channel, 'sent',
+      now() - generated * interval '1 day', title_snapshot, body_snapshot,
+      'history-' || generated::text, 'confirmed',
+      now() - generated * interval '1 day',
+      now() - generated * interval '1 day'
+    from crm.reminder_occurrences cross join generate_series(1, 150) generated
+    where id = ${occurrenceId}::uuid
+  `;
+  const personResponse = await request(
+    fixture,
+    `/api/v1/people/${personId}/reminders`,
+  );
+  const personBody = await personResponse.json() as {
+    readonly reminders: readonly {
+      readonly id: string;
+      readonly nextOccurrence?: { readonly id: string };
+    }[];
+  };
+  const todayResponse = await request(fixture, "/api/v1/today/reminders");
+  const todayBody = await todayResponse.json() as {
+    readonly reminders: readonly {
+      readonly id: string;
+      readonly title: string;
+    }[];
+  };
+  assert(
+    personResponse.status === 200 &&
+      personBody.reminders.find((item) => item.id === reminder.id)
+          ?.nextOccurrence?.id === occurrenceId &&
+      todayResponse.status === 200 &&
+      todayBody.reminders.filter((item) => item.title === "Relevant occurrence")
+          .length === 1 &&
+      todayBody.reminders.length < 100,
+    `stale sent history dominated or expanded reminder projections: ${
+      JSON.stringify({
+        personBody,
+        relevantToday: todayBody.reminders.filter((item) =>
+          item.title === "Relevant occurrence"
+        ),
+        todayCount: todayBody.reminders.length,
+      })
+    }`,
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL timezone regeneration preserves actionability and attempts", async () => {
+  const suffix = crypto.randomUUID();
+  const fixture = await register(
+    `reminder-timezone-${suffix}@example.test`,
+    "Timezone reminders",
+  );
+  const personId = await createPerson(fixture, "Timezone person");
+  const pastZone = "Pacific/Kiritimati";
+  const futureZone = "America/Adak";
+  const futureLocal = Temporal.Now.instant().add({ hours: 10 })
+    .toZonedDateTimeISO(futureZone).toPlainDateTime();
+  const occursOn = futureLocal.toPlainDate().toString();
+  const sendTime = `${String(futureLocal.hour).padStart(2, "0")}:${
+    String(futureLocal.minute).padStart(2, "0")
+  }`;
+  const preferencePayload = (timezone?: string) => ({
+    contactNameOrder: "given_family_nickname",
+    contactSortOrder: "given_name_asc",
+    fluidLayout: false,
+    locale: "en",
+    measurementSystem: "metric",
+    temperatureScale: "celsius",
+    ...(timezone ? { timezone } : {}),
+  });
+  const workspacePayload = (timezone: string) => ({
+    defaultLocale: "en",
+    defaultReminderTime: "09:00",
+    defaultTimezone: timezone,
+    name: "Timezone reminders",
+  });
+  const state = async (occurrenceId: string) => {
+    const [row] = await sql<{
+      readonly attempt_count: number;
+      readonly deliver_at: string;
+      readonly error: string | null;
+      readonly last_attempt_at: string | null;
+      readonly next_attempt_at: string | null;
+      readonly provider_result_state: string;
+      readonly status: string;
+    }[]>`
+      select attempt_count, deliver_at::text, error,
+        last_attempt_at::text, next_attempt_at::text,
+        provider_result_state, status
+      from crm.reminder_occurrences where id = ${occurrenceId}::uuid
+    `;
+    assert(row, `occurrence ${occurrenceId} missing`);
+    return row;
+  };
+  const preparePending = async (
+    reminderId: string,
+    occurrenceId: string,
+    timezone: string,
+  ) => {
+    await sql`
+      update crm.reminders set send_time = ${sendTime}::time, updated_at = now()
+      where id = ${reminderId}::uuid
+    `;
+    await sql`
+      update crm.reminder_occurrences set
+        occurs_on = ${occursOn}::date,
+        deliver_at = (${occursOn}::date + ${sendTime}::time)
+          at time zone ${timezone},
+        status = 'pending', attempt_count = 0, last_attempt_at = null,
+        next_attempt_at = null, claim_token = null, claim_owner = null,
+        lease_expires_at = null, provider_result_state = 'unattempted',
+        provider_receipt = null, provider_effect_at = null, visible_at = null,
+        sent_at = null, error = null, updated_at = now()
+      where id = ${occurrenceId}::uuid
+    `;
+  };
+  const worker = createReminderDeliveryWorker({
+    audit: new PostgresReminderAudit(),
+    clock: { now: () => new Date() },
+    provider: new InAppReminderDelivery(
+      new PostgresInAppReminderEffectStore(deliveryConnection.db, {
+        now: () => new Date(),
+      }),
+    ),
+    repository: deliveryRepository,
+    transaction: deliveryTransaction,
+  });
+
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/settings/preferences",
+      "PUT",
+      preferencePayload(pastZone),
+    )).status === 200,
+    "initial member timezone saved",
+  );
+  const memberReminder = await createReminder(
+    fixture,
+    personId,
+    "Member timezone direction",
+  );
+  const attemptedReminder = await createReminder(
+    fixture,
+    personId,
+    "Attempted timezone state",
+  );
+  await preparePending(
+    memberReminder.id,
+    memberReminder.nextOccurrence!.id,
+    pastZone,
+  );
+  await sql`
+    update crm.reminder_occurrences set status = 'retry', attempt_count = 1,
+      last_attempt_at = now(), next_attempt_at = now() + interval '2 days',
+      deliver_at = now() + interval '1 day', error = 'keep-retry',
+      provider_result_state = 'ambiguous', updated_at = now()
+    where id = ${attemptedReminder.nextOccurrence!.id}::uuid
+  `;
+  const attemptedBefore = await state(attemptedReminder.nextOccurrence!.id);
+
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/settings/preferences",
+      "PUT",
+      preferencePayload(futureZone),
+    )).status === 200,
+    "member timezone moved toward future",
+  );
+  const memberFuture = await state(memberReminder.nextOccurrence!.id);
+  assert(
+    memberFuture.status === "pending" &&
+      Date.parse(memberFuture.deliver_at) > Date.now(),
+    `past member occurrence was not moved into the future: ${
+      JSON.stringify(memberFuture)
+    }`,
+  );
+  assert(
+    JSON.stringify(await state(attemptedReminder.nextOccurrence!.id)) ===
+      JSON.stringify(attemptedBefore),
+    "member timezone change reset attempted retry/ambiguous state",
+  );
+  assert(
+    (await worker.tick({ owner: "member-future" })).claimed === 0,
+    "future-regenerated member occurrence was claimed early",
+  );
+
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/settings/preferences",
+      "PUT",
+      preferencePayload(pastZone),
+    )).status === 200,
+    "member timezone moved toward past",
+  );
+  const memberPast = await state(memberReminder.nextOccurrence!.id);
+  assert(
+    memberPast.status === "pending" &&
+      Date.parse(memberPast.deliver_at) <= Date.now(),
+    `future member occurrence lost past-due actionability: ${
+      JSON.stringify(memberPast)
+    }`,
+  );
+  const memberDelivery = await worker.tick({ owner: "member-past" });
+  assert(
+    memberDelivery.claimed === 1 &&
+      memberDelivery.results[0]?.id === memberReminder.nextOccurrence!.id,
+    "past-regenerated member occurrence was not actionable",
+  );
+
+  assert(
+    (await request(
+          fixture,
+          "/api/v1/settings/preferences",
+          "PUT",
+          preferencePayload(),
+        )).status === 200 &&
+      (await request(
+          fixture,
+          "/api/v1/settings/workspace",
+          "PUT",
+          workspacePayload(pastZone),
+        )).status === 200,
+    "inherited workspace timezone prepared",
+  );
+  const workspaceReminder = await createReminder(
+    fixture,
+    personId,
+    "Workspace timezone direction",
+  );
+  await preparePending(
+    workspaceReminder.id,
+    workspaceReminder.nextOccurrence!.id,
+    pastZone,
+  );
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/settings/workspace",
+      "PUT",
+      workspacePayload(futureZone),
+    )).status === 200,
+    "workspace timezone moved toward future",
+  );
+  const workspaceFuture = await state(workspaceReminder.nextOccurrence!.id);
+  assert(
+    workspaceFuture.status === "pending" &&
+      Date.parse(workspaceFuture.deliver_at) > Date.now() &&
+      (await worker.tick({ owner: "workspace-future" })).claimed === 0,
+    `past inherited occurrence was claimable after moving future: ${
+      JSON.stringify(workspaceFuture)
+    }`,
+  );
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/settings/workspace",
+      "PUT",
+      workspacePayload(pastZone),
+    )).status === 200,
+    "workspace timezone moved toward past",
+  );
+  const workspacePast = await state(workspaceReminder.nextOccurrence!.id);
+  const workspaceDelivery = await worker.tick({ owner: "workspace-past" });
+  assert(
+    workspacePast.status === "pending" &&
+      Date.parse(workspacePast.deliver_at) <= Date.now() &&
+      workspaceDelivery.claimed === 1 &&
+      workspaceDelivery.results[0]?.id === workspaceReminder.nextOccurrence!.id,
+    `future inherited occurrence lost actionability: ${
+      JSON.stringify({ workspacePast, workspaceDelivery })
+    }`,
+  );
+  assert(
+    JSON.stringify(await state(attemptedReminder.nextOccurrence!.id)) ===
+      JSON.stringify(attemptedBefore),
+    "workspace timezone change reset attempted retry/ambiguous state",
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL keeps one stable calendar identity across timezone replenishment", async () => {
+  const suffix = crypto.randomUUID();
+  const fixture = await register(
+    `reminder-identity-${suffix}@example.test`,
+    "Identity reminders",
+  );
+  const personId = await createPerson(fixture, "Identity person");
+  const pastZone = "Pacific/Kiritimati";
+  const futureZone = "America/Adak";
+  const preferencePayload = (timezone?: string) => ({
+    contactNameOrder: "given_family_nickname",
+    contactSortOrder: "given_name_asc",
+    fluidLayout: false,
+    locale: "en",
+    measurementSystem: "metric",
+    temperatureScale: "celsius",
+    ...(timezone ? { timezone } : {}),
+  });
+  const workspacePayload = (timezone: string) => ({
+    defaultLocale: "en",
+    defaultReminderTime: "09:00",
+    defaultTimezone: timezone,
+    name: "Identity reminders",
+  });
+  const createDaily = async (title: string) => {
+    const response = await request(fixture, "/api/v1/reminders", "POST", {
+      anchorOn: new Date(Date.now() + 86_400_000).toISOString().slice(0, 10),
+      personId,
+      recurrenceInterval: 1,
+      recurrenceUnit: "day",
+      requestId: crypto.randomUUID(),
+      sendTime: "09:00",
+      title,
+    });
+    const body = await response.json() as CreatedReminder;
+    assert(response.status === 201 && body.reminder.nextOccurrence, title);
+    return body.reminder;
+  };
+  const markRetry = (occurrenceId: string) =>
+    sql`
+    update crm.reminder_occurrences set status = 'retry', attempt_count = 1,
+      last_attempt_at = now(), next_attempt_at = now() + interval '1 day',
+      provider_result_state = 'ambiguous', error = 'preserve-attempt',
+      updated_at = now()
+    where id = ${occurrenceId}::uuid
+  `;
+  const identityCount = async (reminderId: string, occursOn: string) => {
+    const [row] = await sql<{ readonly count: number }[]>`
+      select count(*)::int as count from crm.reminder_occurrences
+      where reminder_id = ${reminderId}::uuid
+        and member_id = ${fixture.memberId}::uuid
+        and occurs_on = ${occursOn}::date and channel = 'in_app'
+    `;
+    return row?.count ?? 0;
+  };
+  const managementRepository = new PostgresReminderRepository();
+  const worker = createReminderDeliveryWorker({
+    audit: new PostgresReminderAudit(),
+    clock: { now: () => new Date() },
+    provider: new InAppReminderDelivery(
+      new PostgresInAppReminderEffectStore(deliveryConnection.db, {
+        now: () => new Date(),
+      }),
+    ),
+    repository: deliveryRepository,
+    transaction: deliveryTransaction,
+  });
+
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/settings/preferences",
+      "PUT",
+      preferencePayload(pastZone),
+    )).status === 200,
+    "member identity timezone prepared",
+  );
+  const memberReminder = await createDaily("Member stable identity");
+  const memberOccurrence = memberReminder.nextOccurrence!;
+  await markRetry(memberOccurrence.id);
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/settings/preferences",
+      "PUT",
+      preferencePayload(futureZone),
+    )).status === 200,
+    "member identity timezone changed",
+  );
+  await Promise.all([
+    deliveryTransaction.run((transaction) =>
+      managementRepository.regenerateForTimezone({
+        memberId: fixture.memberId,
+        now: new Date(),
+        role: fixture.role,
+        timezone: futureZone,
+        transaction,
+        userId: fixture.userId,
+        workspaceId: fixture.workspaceId,
+      })
+    ),
+    deliveryRepository.replenish({ now: new Date() }),
+  ]);
+  assert(
+    await identityCount(memberReminder.id, memberOccurrence.occursOn) === 1,
+    "member timezone replenishment duplicated one calendar occurrence",
+  );
+  await sql`
+    update crm.reminder_occurrences set deliver_at = now() - interval '1 minute',
+      next_attempt_at = now() - interval '1 second'
+    where reminder_id = ${memberReminder.id}::uuid
+      and occurs_on = ${memberOccurrence.occursOn}::date
+  `;
+  assert(
+    (await worker.tick({ maxAttempts: 1, owner: "member-identity" }))
+      .claimed ===
+      1,
+    "member calendar identity was claimed more than once",
+  );
+
+  assert(
+    (await request(
+          fixture,
+          "/api/v1/settings/preferences",
+          "PUT",
+          preferencePayload(),
+        )).status === 200 &&
+      (await request(
+          fixture,
+          "/api/v1/settings/workspace",
+          "PUT",
+          workspacePayload(pastZone),
+        )).status === 200,
+    "workspace identity timezone prepared",
+  );
+  const workspaceReminder = await createDaily("Workspace stable identity");
+  const workspaceOccurrence = workspaceReminder.nextOccurrence!;
+  await markRetry(workspaceOccurrence.id);
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/settings/workspace",
+      "PUT",
+      workspacePayload(futureZone),
+    )).status === 200,
+    "workspace identity timezone changed",
+  );
+  await Promise.all([
+    deliveryTransaction.run((transaction) =>
+      managementRepository.regenerateForWorkspaceTimezone({
+        now: new Date(),
+        timezone: futureZone,
+        transaction,
+        workspaceId: fixture.workspaceId,
+      })
+    ),
+    deliveryRepository.replenish({ now: new Date() }),
+  ]);
+  assert(
+    await identityCount(workspaceReminder.id, workspaceOccurrence.occursOn) ===
+      1,
+    "workspace timezone replenishment duplicated one calendar occurrence",
+  );
+  await sql`
+    update crm.reminder_occurrences set deliver_at = now() - interval '1 minute',
+      next_attempt_at = now() - interval '1 second'
+    where reminder_id = ${workspaceReminder.id}::uuid
+      and occurs_on = ${workspaceOccurrence.occursOn}::date
+  `;
+  assert(
+    (await worker.tick({ maxAttempts: 1, owner: "workspace-identity" }))
+      .claimed === 1,
+    "workspace calendar identity was claimed more than once",
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL regeneration cannot overwrite a concurrent claim", async () => {
+  const suffix = crypto.randomUUID();
+  const fixture = await register(
+    `reminder-race-${suffix}@example.test`,
+    "Race reminders",
+  );
+  const personId = await createPerson(fixture, "Race person");
+  const preferencePayload = (timezone?: string) => ({
+    contactNameOrder: "given_family_nickname",
+    contactSortOrder: "given_name_asc",
+    fluidLayout: false,
+    locale: "en",
+    measurementSystem: "metric",
+    temperatureScale: "celsius",
+    ...(timezone ? { timezone } : {}),
+  });
+  const workspacePayload = (timezone: string) => ({
+    defaultLocale: "en",
+    defaultReminderTime: "09:00",
+    defaultTimezone: timezone,
+    name: "Race reminders",
+  });
+  const waitForClaimBlock = async (
+    signal: AbortSignal,
+    claimBackendPid: number,
+  ) => {
+    for (let attempt = 0; attempt < 1_000; attempt += 1) {
+      if (signal.aborted) return "cancelled" as const;
+      const [row] = await sql<{ readonly waiting: boolean }[]>`
+        select exists (
+          select 1 from pg_stat_activity
+          where pid <> pg_backend_pid() and state = 'active'
+            and ${claimBackendPid}::int = any(pg_blocking_pids(pid))
+        ) as waiting
+      `;
+      if (row?.waiting) return "lock" as const;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    return "timeout" as const;
+  };
+  const race = async (
+    occurrenceId: string,
+    changeTimezone: () => Promise<Response>,
+  ) => {
+    await sql`
+      update crm.reminder_occurrences set status = 'pending', attempt_count = 0,
+        provider_result_state = 'unattempted', deliver_at = now() + interval '30 days',
+        last_attempt_at = null, next_attempt_at = null, claim_token = null,
+        claim_owner = null, lease_expires_at = null, error = null,
+        updated_at = now()
+      where id = ${occurrenceId}::uuid
+    `;
+    const [before] = await sql<{ readonly deliver_at: string }[]>`
+      select deliver_at::text from crm.reminder_occurrences
+      where id = ${occurrenceId}::uuid
+    `;
+    assert(before, "race occurrence missing");
+    let locked!: () => void;
+    const lockReady = new Promise<void>((resolve) => locked = resolve);
+    let release!: () => void;
+    const releaseLock = new Promise<void>((resolve) => release = resolve);
+    let claimBackendPid = 0;
+    const claim = sql.begin(async (transaction) => {
+      const [backend] = await transaction<{ readonly pid: number }[]>`
+        select pg_backend_pid()::int as pid
+      `;
+      assert(backend, "claim backend PID missing");
+      claimBackendPid = backend.pid;
+      await transaction`
+        update crm.reminder_occurrences set status = 'claimed',
+          attempt_count = 1, last_attempt_at = now(),
+          claim_token = gen_random_uuid(), claim_owner = 'race-worker',
+          lease_expires_at = now() + interval '1 minute', updated_at = now()
+        where id = ${occurrenceId}::uuid
+      `;
+      locked();
+      await releaseLock;
+    });
+    await lockReady;
+    const changing = changeTimezone();
+    const observationController = new AbortController();
+    const first = await Promise.race([
+      changing.then((response) => ({
+        branch: "completed" as const,
+        response,
+      })),
+      waitForClaimBlock(observationController.signal, claimBackendPid).then(
+        (branch) => ({ branch }),
+      ),
+    ]);
+    observationController.abort();
+    try {
+      if (first.branch === "timeout" || first.branch === "cancelled") {
+        throw new Error(
+          "regeneration stayed active without the exact claim backend blocker",
+        );
+      }
+    } finally {
+      release();
+    }
+    const [, response] = await Promise.all([
+      claim,
+      first.branch === "completed" ? Promise.resolve(first.response) : changing,
+    ]);
+    const [after] = await sql<{
+      readonly attempt_count: number;
+      readonly deliver_at: string;
+      readonly status: string;
+    }[]>`
+      select attempt_count, deliver_at::text, status
+      from crm.reminder_occurrences where id = ${occurrenceId}::uuid
+    `;
+    assert(
+      response.status === 200 && after?.status === "claimed" &&
+        after.attempt_count === 1 && after.deliver_at === before.deliver_at,
+      `regeneration overwrote a concurrent claim: ${
+        JSON.stringify({ after, before })
+      }`,
+    );
+  };
+
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/settings/preferences",
+      "PUT",
+      preferencePayload("Pacific/Kiritimati"),
+    )).status === 200,
+    "member race timezone prepared",
+  );
+  const memberReminder = await createReminder(fixture, personId, "Member race");
+  await race(memberReminder.nextOccurrence!.id, () =>
+    request(
+      fixture,
+      "/api/v1/settings/preferences",
+      "PUT",
+      preferencePayload("America/Adak"),
+    ));
+
+  assert(
+    (await request(
+          fixture,
+          "/api/v1/settings/preferences",
+          "PUT",
+          preferencePayload(),
+        )).status === 200 &&
+      (await request(
+          fixture,
+          "/api/v1/settings/workspace",
+          "PUT",
+          workspacePayload("Pacific/Kiritimati"),
+        )).status === 200,
+    "workspace race timezone prepared",
+  );
+  const workspaceReminder = await createReminder(
+    fixture,
+    personId,
+    "Workspace race",
+  );
+  await race(workspaceReminder.nextOccurrence!.id, () =>
+    request(
+      fixture,
+      "/api/v1/settings/workspace",
+      "PUT",
+      workspacePayload("America/Adak"),
+    ));
+});
+
+Deno.test("PLANNING-002 PostgreSQL important dates publish one deliverable in-app occurrence", async () => {
+  const fixture = await register(
+    `important-date-reminder-${crypto.randomUUID()}@example.test`,
+    "Important-date reminders",
+  );
+  const personId = await createPerson(fixture, "Important date person");
+  assert(
+    (await request(fixture, "/api/v1/settings/workspace", "PUT", {
+      defaultLocale: "en",
+      defaultReminderTime: "12:00",
+      defaultTimezone: "UTC",
+      name: "Important-date reminders",
+    })).status === 200,
+    "important-date reminder settings saved",
+  );
+  const date = new Date(Date.now() + 7 * 86_400_000);
+  const created = await request(
+    fixture,
+    `/api/v1/people/${personId}/dates`,
+    "POST",
+    {
+      day: date.getUTCDate(),
+      isAgeBased: false,
+      isYearApproximate: false,
+      kind: "custom",
+      label: "Deliverable anniversary",
+      month: date.getUTCMonth() + 1,
+      precision: "month_day",
+    },
+  );
+  assert(created.status === 201, "important date created");
+  const [occurrence] = await sql<{
+    readonly channel: string;
+    readonly id: string;
+  }[]>`
+    select occurrence.id::text, occurrence.channel
+    from crm.reminder_occurrences occurrence
+    join crm.reminders reminder on reminder.id = occurrence.reminder_id
+    where reminder.person_id = ${personId}::uuid
+      and reminder.target_kind = 'person_date'
+      and occurrence.member_id = ${fixture.memberId}::uuid
+  `;
+  assert(
+    occurrence?.channel === "in_app",
+    `important-date publisher created unsupported channel: ${occurrence?.channel}`,
+  );
+  await sql`
+    update crm.reminder_occurrences set deliver_at = now() - interval '1 minute'
+    where id = ${occurrence.id}::uuid
+  `;
+  await sql`
+    insert into crm.reminder_occurrences (
+      reminder_id, member_id, occurs_on, deliver_at, channel, status,
+      title_snapshot, created_at, updated_at
+    )
+    select reminder_id, member_id, occurs_on,
+      now() - interval '1 minute', 'email', 'pending',
+      title_snapshot, now(), now()
+    from crm.reminder_occurrences where id = ${occurrence.id}::uuid
+  `;
+  const provider = new InAppReminderDelivery(
+    new PostgresInAppReminderEffectStore(
+      deliveryConnection.db,
+      { now: () => new Date() },
+    ),
+  );
+  const worker = createReminderDeliveryWorker({
+    audit: new PostgresReminderAudit(),
+    clock: { now: () => new Date() },
+    provider,
+    repository: deliveryRepository,
+    transaction: deliveryTransaction,
+  });
+  const delivered = await worker.tick({ owner: "important-date-worker" });
+  const rows = await sql<
+    { readonly channel: string; readonly status: string }[]
+  >`
+    select channel, status from crm.reminder_occurrences
+    where reminder_id = (
+      select reminder_id from crm.reminder_occurrences
+      where id = ${occurrence.id}::uuid
+    ) order by channel
+  `;
+  assert(
+    delivered.claimed === 1 &&
+      rows.some((row) => row.channel === "in_app" && row.status === "sent") &&
+      rows.some((row) => row.channel === "email" && row.status === "pending"),
+    `important-date delivery or legacy-channel safety failed: ${
+      JSON.stringify({ delivered, rows })
+    }`,
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL uses workspace send time for null overrides", async () => {
+  const fixture = await register(
+    `default-send-time-${crypto.randomUUID()}@example.test`,
+    "Default reminder time",
+  );
+  const personId = await createPerson(fixture, "Default-time person");
+  const workspaceSettings = (timezone: string) => ({
+    defaultLocale: "en",
+    defaultReminderTime: "15:45",
+    defaultTimezone: timezone,
+    name: "Default reminder time",
+  });
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/settings/workspace",
+      "PUT",
+      workspaceSettings("UTC"),
+    )).status === 200,
+    "default reminder time saved",
+  );
+  const anchorOn = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  const created = await request(fixture, "/api/v1/reminders", "POST", {
+    anchorOn,
+    personId,
+    recurrenceInterval: 1,
+    recurrenceUnit: "day",
+    requestId: crypto.randomUUID(),
+    sendTime: "09:00",
+    title: "Inherited send time",
+  });
+  const body = await created.json() as CreatedReminder;
+  assert(created.status === 201, "default-time reminder created");
+  await sql`
+    update crm.reminders set send_time = null
+    where id = ${body.reminder.id}::uuid
+  `;
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/settings/workspace",
+      "PUT",
+      workspaceSettings("Europe/Belgrade"),
+    )).status === 200,
+    "workspace timezone regenerated null-override reminder",
+  );
+  const [workspaceProof] = await sql<{ readonly local_time: string }[]>`
+    select to_char(deliver_at at time zone 'Europe/Belgrade', 'HH24:MI') local_time
+    from crm.reminder_occurrences
+    where reminder_id = ${body.reminder.id}::uuid
+    order by occurs_on limit 1
+  `;
+  assert(
+    workspaceProof?.local_time === "15:45",
+    `workspace regeneration ignored default send time: ${
+      JSON.stringify(workspaceProof)
+    }`,
+  );
+  assert(
+    (await request(fixture, "/api/v1/settings/preferences", "PUT", {
+      contactNameOrder: "given_family_nickname",
+      contactSortOrder: "given_name_asc",
+      fluidLayout: false,
+      locale: "en",
+      measurementSystem: "metric",
+      temperatureScale: "celsius",
+      timezone: "America/New_York",
+    })).status === 200,
+    "member timezone regenerated null-override reminder",
+  );
+  const [memberProof] = await sql<{
+    readonly last_occurs_on: string;
+    readonly local_time: string;
+  }[]>`
+    select max(occurs_on)::text last_occurs_on,
+      min(to_char(deliver_at at time zone 'America/New_York', 'HH24:MI')) local_time
+    from crm.reminder_occurrences
+    where reminder_id = ${body.reminder.id}::uuid
+  `;
+  assert(
+    memberProof?.local_time === "15:45",
+    `member regeneration ignored default send time: ${
+      JSON.stringify(memberProof)
+    }`,
+  );
+  const replenishFrom = new Date(`${memberProof.last_occurs_on}T23:59:59Z`);
+  await deliveryRepository.replenish({ now: replenishFrom });
+  const [rollingProof] = await sql<{ readonly valid: boolean }[]>`
+    select bool_and(
+      to_char(deliver_at at time zone 'America/New_York', 'HH24:MI') = '15:45'
+    ) as valid
+    from crm.reminder_occurrences
+    where reminder_id = ${body.reminder.id}::uuid
+      and occurs_on > ${memberProof.last_occurs_on}::date
+  `;
+  assert(
+    rollingProof?.valid === true,
+    `rolling replenishment ignored default send time: ${
+      JSON.stringify(rollingProof)
+    }`,
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL person reminder projection is member-scoped", async () => {
+  const fixture = await register(
+    `member-scope-${crypto.randomUUID()}@example.test`,
+    "Member-scoped reminders",
+  );
+  const other = await register(
+    `member-scope-other-${crypto.randomUUID()}@example.test`,
+    "Other member workspace",
+  );
+  const personId = await createPerson(fixture, "Scoped reminder person");
+  const reminder = await createReminder(fixture, personId, "Scoped reminder");
+  const [membership] = await sql<{ readonly id: string }[]>`
+    insert into crm.workspace_members (
+      workspace_id, user_id, role, status, joined_at, created_at, updated_at
+    ) values (
+      ${fixture.workspaceId}::uuid, ${other.userId}::uuid, 'member', 'active',
+      now(), now(), now()
+    ) returning id::text
+  `;
+  assert(membership, "secondary membership created");
+  const [foreignOccurrence] = await sql<{ readonly id: string }[]>`
+    insert into crm.reminder_occurrences (
+      reminder_id, member_id, occurs_on, deliver_at, channel, status,
+      attempt_count, provider_result_state, error, title_snapshot,
+      created_at, updated_at
+    )
+    select reminder_id, ${membership.id}::uuid, occurs_on,
+      deliver_at - interval '1 day', channel, 'manual_attention', 1,
+      'rejected', 'other member failure', title_snapshot, now(), now()
+    from crm.reminder_occurrences where id = ${
+    reminder.nextOccurrence!.id
+  }::uuid
+    returning id::text
+  `;
+  assert(foreignOccurrence, "secondary member occurrence created");
+  const listed = await request(
+    fixture,
+    `/api/v1/people/${personId}/reminders`,
+  );
+  const listedBody = await listed.json() as {
+    readonly reminders: readonly {
+      readonly nextOccurrence?: {
+        readonly id: string;
+        readonly status: string;
+      };
+    }[];
+  };
+  assert(
+    listed.status === 200 &&
+      listedBody.reminders[0]?.nextOccurrence?.id ===
+        reminder.nextOccurrence!.id &&
+      listedBody.reminders[0]?.nextOccurrence?.status === "pending",
+    `person reminder leaked another member state: ${
+      JSON.stringify(listedBody)
+    }`,
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL preserves every important-date lead rule through rolling delivery", async () => {
+  const fixture = await register(
+    `important-date-leads-${crypto.randomUUID()}@example.test`,
+    "Important-date lead rules",
+  );
+  const personId = await createPerson(fixture, "Multiple lead person");
+  await sql`
+    insert into crm.reminder_rules (workspace_id, days_before)
+    values (${fixture.workspaceId}::uuid, 0), (${fixture.workspaceId}::uuid, 7)
+  `;
+  const event = new Date(Date.now() + 30 * 86_400_000);
+  const created = await request(
+    fixture,
+    `/api/v1/people/${personId}/dates`,
+    "POST",
+    {
+      day: event.getUTCDate(),
+      isAgeBased: false,
+      isYearApproximate: false,
+      kind: "custom",
+      label: "Two lead anniversary",
+      month: event.getUTCMonth() + 1,
+      precision: "month_day",
+    },
+  );
+  assert(created.status === 201, "important date with two rules created");
+  const initial = await sql<{
+    readonly deliver_on: string;
+    readonly id: string;
+    readonly lead_time_days: number;
+    readonly occurs_on: string;
+    readonly reminder_id: string;
+  }[]>`
+    select occurrence.id::text, occurrence.reminder_id::text,
+      occurrence.occurs_on::text, occurrence.lead_time_days,
+      (occurrence.deliver_at at time zone 'UTC')::date::text as deliver_on
+    from crm.reminder_occurrences occurrence
+    join crm.reminders reminder on reminder.id = occurrence.reminder_id
+    where reminder.person_id = ${personId}::uuid
+      and reminder.target_kind = 'person_date'
+      and occurrence.member_id = ${fixture.memberId}::uuid
+    order by occurrence.lead_time_days
+  `;
+  assert(
+    initial.length === 2 && initial[0]?.lead_time_days === 0 &&
+      initial[1]?.lead_time_days === 7 &&
+      initial[0].occurs_on === initial[1].occurs_on &&
+      Temporal.PlainDate.from(initial[1].deliver_on).until(
+          Temporal.PlainDate.from(initial[0].deliver_on),
+        ).days === 7,
+    `important-date lead identities collapsed: ${JSON.stringify(initial)}`,
+  );
+  const reminderId = initial[0].reminder_id;
+  const firstOccursOn = initial[0].occurs_on;
+  const replenishAt = new Date(`${firstOccursOn}T23:59:59Z`);
+  await Promise.all([
+    deliveryRepository.replenish({ now: replenishAt }),
+    deliveryRepository.replenish({ now: replenishAt }),
+  ]);
+  const rolling = await sql<{
+    readonly count: number;
+    readonly lead_time_days: number;
+  }[]>`
+    select lead_time_days, count(*)::int as count
+    from crm.reminder_occurrences
+    where reminder_id = ${reminderId}::uuid
+      and member_id = ${fixture.memberId}::uuid
+      and occurs_on > ${firstOccursOn}::date
+    group by lead_time_days order by lead_time_days
+  `;
+  assert(
+    rolling.length === 2 && rolling[0]?.lead_time_days === 0 &&
+      rolling[1]?.lead_time_days === 7 &&
+      rolling[0].count === rolling[1].count && rolling[0].count > 0,
+    `rolling generation lost or duplicated a lead rule: ${
+      JSON.stringify(rolling)
+    }`,
+  );
+  await sql`
+    update crm.reminder_occurrences set deliver_at = now() - interval '1 minute'
+    where id in (${initial[0].id}::uuid, ${initial[1].id}::uuid)
+  `;
+  const worker = createReminderDeliveryWorker({
+    audit: new PostgresReminderAudit(),
+    clock: { now: () => new Date() },
+    provider: new InAppReminderDelivery(
+      new PostgresInAppReminderEffectStore(deliveryConnection.db, {
+        now: () => new Date(),
+      }),
+    ),
+    repository: deliveryRepository,
+    transaction: deliveryTransaction,
+  });
+  await worker.tick({ limit: 100, owner: "important-date-leads" });
+  const [delivered] = await sql<{ readonly count: number }[]>`
+    select count(*)::int as count from crm.reminder_occurrences
+    where id in (${initial[0].id}::uuid, ${initial[1].id}::uuid)
+      and status = 'sent' and provider_effect_at is not null
+  `;
+  assert(
+    delivered?.count === 2,
+    "both important-date lead rules were not delivered once",
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL serializes horizon generation with effective timezone changes", async () => {
+  const fixture = await register(
+    `horizon-timezone-${crypto.randomUUID()}@example.test`,
+    "Horizon timezone",
+  );
+  const personId = await createPerson(fixture, "Horizon person");
+  const preferences = (timezone?: string) => ({
+    contactNameOrder: "given_family_nickname",
+    contactSortOrder: "given_name_asc",
+    fluidLayout: false,
+    locale: "en",
+    measurementSystem: "metric",
+    temperatureScale: "celsius",
+    ...(timezone ? { timezone } : {}),
+  });
+  const workspace = (timezone: string) => ({
+    defaultLocale: "en",
+    defaultReminderTime: "09:00",
+    defaultTimezone: timezone,
+    name: "Horizon timezone",
+  });
+  const createDaily = async (title: string) => {
+    const response = await request(fixture, "/api/v1/reminders", "POST", {
+      anchorOn: new Date(Date.now() + 86_400_000).toISOString().slice(0, 10),
+      personId,
+      recurrenceInterval: 1,
+      recurrenceUnit: "day",
+      requestId: crypto.randomUUID(),
+      sendTime: "09:00",
+      title,
+    });
+    const body = await response.json() as CreatedReminder;
+    assert(response.status === 201, `${title} created`);
+    return body.reminder.id;
+  };
+  const lastOccursOn = async (reminderId: string) => {
+    const [row] = await sql<{ readonly occurs_on: string }[]>`
+      select max(occurs_on)::text as occurs_on from crm.reminder_occurrences
+      where reminder_id = ${reminderId}::uuid
+    `;
+    assert(row?.occurs_on, "horizon fixture occurrence missing");
+    return row.occurs_on;
+  };
+  const proveSerialized = async (
+    reminderId: string,
+    newTimezone: string,
+    holdChange: (release: Promise<void>, changed: () => void) => Promise<void>,
+  ) => {
+    const previousLast = await lastOccursOn(reminderId);
+    let changed!: () => void;
+    const changedReady = new Promise<void>((resolve) => changed = resolve);
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => release = resolve);
+    const changing = holdChange(released, changed);
+    await changedReady;
+    const replenishing = deliveryRepository.replenish({
+      now: new Date(`${previousLast}T23:59:59Z`),
+    });
+    const completedWhileUncommitted = await Promise.race([
+      replenishing.then(() => true),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 250)),
+    ]);
+    release();
+    await Promise.all([changing, replenishing]);
+    assert(
+      !completedWhileUncommitted,
+      "horizon generation persisted an uncommitted old timezone",
+    );
+    const [proof] = await sql<{ readonly valid: boolean }[]>`
+      select bool_and(
+        to_char(deliver_at at time zone ${newTimezone}, 'HH24:MI') = '09:00'
+      ) as valid
+      from crm.reminder_occurrences
+      where reminder_id = ${reminderId}::uuid
+        and occurs_on > ${previousLast}::date
+    `;
+    assert(
+      proof?.valid === true,
+      `new horizon used stale timezone: ${JSON.stringify(proof)}`,
+    );
+  };
+
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/settings/preferences",
+      "PUT",
+      preferences("Pacific/Kiritimati"),
+    )).status === 200,
+    "member horizon timezone prepared",
+  );
+  const memberReminder = await createDaily("Member horizon lock");
+  await proveSerialized(
+    memberReminder,
+    "America/Adak",
+    (release, changed) =>
+      sql.begin(async (transaction) => {
+        await transaction`
+          update crm.member_preferences set timezone = 'America/Adak'
+          where member_id = ${fixture.memberId}::uuid
+        `;
+        changed();
+        await release;
+      }),
+  );
+
+  assert(
+    (await request(
+          fixture,
+          "/api/v1/settings/preferences",
+          "PUT",
+          preferences(),
+        )).status === 200 &&
+      (await request(
+          fixture,
+          "/api/v1/settings/workspace",
+          "PUT",
+          workspace("Pacific/Kiritimati"),
+        )).status === 200,
+    "inherited horizon timezone prepared",
+  );
+  const workspaceReminder = await createDaily("Workspace horizon lock");
+  await proveSerialized(
+    workspaceReminder,
+    "America/Adak",
+    (release, changed) =>
+      sql.begin(async (transaction) => {
+        await transaction`
+          update crm.workspace_settings set default_timezone = 'America/Adak'
+          where workspace_id = ${fixture.workspaceId}::uuid
+        `;
+        changed();
+        await release;
+      }),
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL regenerates inherited send time without resetting attempts", async () => {
+  const fixture = await register(
+    `default-time-change-${crypto.randomUUID()}@example.test`,
+    "Default time change",
+  );
+  const personId = await createPerson(fixture, "Default-time regeneration");
+  const workspace = (defaultReminderTime: string) => ({
+    defaultLocale: "en",
+    defaultReminderTime,
+    defaultTimezone: "UTC",
+    name: "Default time change",
+  });
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/settings/workspace",
+      "PUT",
+      workspace("09:00"),
+    )).status === 200,
+    "initial default reminder time saved",
+  );
+  const pending = await createReminder(
+    fixture,
+    personId,
+    "Pending inherited time",
+  );
+  const attempted = await createReminder(
+    fixture,
+    personId,
+    "Attempted inherited time",
+  );
+  await sql`
+    update crm.reminders set send_time = null
+    where id in (${pending.id}::uuid, ${attempted.id}::uuid)
+  `;
+  await sql`
+    update crm.reminder_occurrences set status = 'retry', attempt_count = 1,
+      provider_result_state = 'ambiguous', last_attempt_at = now(),
+      next_attempt_at = now() + interval '1 day', error = 'preserve-attempt'
+    where id = ${attempted.nextOccurrence!.id}::uuid
+  `;
+  const [attemptedBefore] = await sql<{
+    readonly attempt_count: number;
+    readonly deliver_at: string;
+    readonly status: string;
+  }[]>`
+    select attempt_count, deliver_at::text, status
+    from crm.reminder_occurrences where id = ${
+    attempted.nextOccurrence!.id
+  }::uuid
+  `;
+  assert(
+    (await request(
+      fixture,
+      "/api/v1/settings/workspace",
+      "PUT",
+      workspace("15:45"),
+    )).status === 200,
+    "default reminder time changed",
+  );
+  const [pendingAfter] = await sql<{ readonly local_time: string }[]>`
+    select to_char(deliver_at at time zone 'UTC', 'HH24:MI') as local_time
+    from crm.reminder_occurrences where id = ${pending.nextOccurrence!.id}::uuid
+  `;
+  const [attemptedAfter] = await sql<{
+    readonly attempt_count: number;
+    readonly deliver_at: string;
+    readonly status: string;
+  }[]>`
+    select attempt_count, deliver_at::text, status
+    from crm.reminder_occurrences where id = ${
+    attempted.nextOccurrence!.id
+  }::uuid
+  `;
+  assert(
+    pendingAfter?.local_time === "15:45",
+    `default-time-only change did not regenerate pending work: ${
+      JSON.stringify(pendingAfter)
+    }`,
+  );
+  assert(
+    JSON.stringify(attemptedAfter) === JSON.stringify(attemptedBefore),
+    "default-time-only change reset attempted work",
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL validates an archived Today response at runtime", async () => {
+  const fixture = await register(
+    `today-runtime-${crypto.randomUUID()}@example.test`,
+    "Today runtime contract",
+  );
+  const personId = await createPerson(fixture, "Archived Today person");
+  const reminder = await createReminder(
+    fixture,
+    personId,
+    "Archived Today reminder",
+  );
+  await sql`update crm.people set archived_at = now() where id = ${personId}::uuid`;
+  const response = await request(fixture, "/api/v1/today/reminders");
+  const body = await response.json();
+  const parse = (generatedPlanningClient as unknown as {
+    readonly parseTodayReminders?: (value: unknown) => unknown;
+  }).parseTodayReminders;
+  assert(
+    response.status === 200,
+    `archived Today HTTP response failed: ${JSON.stringify(body)}`,
+  );
+  assert(
+    typeof parse === "function",
+    "generated Today runtime validator missing",
+  );
+  const validated = parse(body) as {
+    readonly reminders: readonly {
+      readonly id: string;
+      readonly person: { readonly archived: boolean; readonly id: string };
+    }[];
+  };
+  const item = validated.reminders.find((entry) =>
+    entry.id === reminder.nextOccurrence!.id
+  );
+  assert(
+    item?.person.id === personId && item.person.archived === true,
+    `archived Today response did not validate: ${JSON.stringify(body)}`,
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL reactivates future one-time and recurring reminders truthfully", async () => {
+  const fixture = await register(
+    `reminder-reactivation-${crypto.randomUUID()}@example.test`,
+    "Reminder reactivation",
+  );
+  const personId = await createPerson(fixture, "Reactivation person");
+  const futureAnchor = new Date(Date.now() + 2 * 86_400_000).toISOString()
+    .slice(0, 10);
+  const createDefinition = async (
+    title: string,
+    recurrenceUnit: "day" | "none",
+    anchorOn = futureAnchor,
+  ) => {
+    const response = await request(fixture, "/api/v1/reminders", "POST", {
+      anchorOn,
+      personId,
+      recurrenceInterval: 1,
+      recurrenceUnit,
+      requestId: crypto.randomUUID(),
+      sendTime: "09:00",
+      title,
+    });
+    const body = await response.json() as CreatedReminder;
+    assert(response.status === 201, `${title} creation failed`);
+    return body.reminder;
+  };
+  const worker = createReminderDeliveryWorker({
+    audit: new PostgresReminderAudit(),
+    clock: { now: () => new Date() },
+    provider: new DurableFakeProvider(),
+    repository: deliveryRepository,
+    transaction: deliveryTransaction,
+  });
+
+  for (
+    const [title, recurrenceUnit] of [
+      ["Reactivated one-time", "none"],
+      ["Reactivated recurring", "day"],
+    ] as const
+  ) {
+    const reminder = await createDefinition(title, recurrenceUnit);
+    const originalOccurrence = reminder.nextOccurrence;
+    assert(originalOccurrence, `${title} did not generate future work`);
+    assert(
+      (await request(
+        fixture,
+        `/api/v1/reminders/${reminder.id}/active`,
+        "PUT",
+        { active: false },
+      )).status === 200,
+      `${title} disable failed`,
+    );
+    const enabled = await request(
+      fixture,
+      `/api/v1/reminders/${reminder.id}/active`,
+      "PUT",
+      { active: true },
+    );
+    const enabledBody = await enabled.json() as {
+      readonly reminder?: {
+        readonly isActive: boolean;
+        readonly nextOccurrence?: {
+          readonly id: string;
+          readonly status: string;
+        };
+      };
+    };
+    assert(
+      enabled.status === 200 && enabledBody.reminder?.isActive === true &&
+        enabledBody.reminder.nextOccurrence?.id === originalOccurrence.id &&
+        enabledBody.reminder.nextOccurrence.status === "pending",
+      `${title} public active:true response was not truthful: ${
+        JSON.stringify(enabledBody)
+      }`,
+    );
+    const [reactivated] = await sql<{
+      readonly id: string;
+      readonly status: string;
+    }[]>`
+      select id::text, status from crm.reminder_occurrences
+      where reminder_id = ${reminder.id}::uuid
+        and occurs_on = ${originalOccurrence.occursOn}::date
+      order by id limit 1
+    `;
+    assert(
+      reactivated?.id === originalOccurrence.id &&
+        reactivated.status === "pending",
+      `${title} did not reactivate its stable occurrence: ${
+        JSON.stringify(reactivated)
+      }`,
+    );
+    await sql`
+      update crm.reminder_occurrences set deliver_at = now() - interval '1 minute'
+      where id = ${originalOccurrence.id}::uuid
+    `;
+    const delivered = await worker.tick({
+      owner: `reactivate-${recurrenceUnit}`,
+    });
+    const [final] = await sql<{ readonly status: string }[]>`
+      select status from crm.reminder_occurrences
+      where id = ${originalOccurrence.id}::uuid
+    `;
+    assert(
+      delivered.results.some((result) =>
+        result.id === originalOccurrence.id && result.status === "sent"
+      ) && final?.status === "sent",
+      `${title} active:true did not restore delivery`,
+    );
+  }
+
+  const pastAnchor = new Date(Date.now() - 10 * 86_400_000).toISOString()
+    .slice(0, 10);
+  const past = await createDefinition("Past one-time", "none", pastAnchor);
+  assert(!past.nextOccurrence, "past one-time reminder claimed ancient work");
+  assert(
+    (await request(
+          fixture,
+          `/api/v1/reminders/${past.id}/active`,
+          "PUT",
+          { active: false },
+        )).status === 200 &&
+      (await request(
+          fixture,
+          `/api/v1/reminders/${past.id}/active`,
+          "PUT",
+          { active: true },
+        )).status === 200,
+    "past one-time reminder state change failed",
+  );
+  const [pastCount] = await sql<{ readonly count: number }[]>`
+    select count(*)::int as count from crm.reminder_occurrences
+    where reminder_id = ${past.id}::uuid
+  `;
+  assert(
+    pastCount?.count === 0,
+    "reactivation silently scheduled an ancient one-time occurrence",
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL preserves an in-flight durable effect across disable", async () => {
+  const fixture = await register(
+    `reminder-disable-race-${crypto.randomUUID()}@example.test`,
+    "Reminder disable race",
+  );
+  const personId = await createPerson(fixture, "Disable race person");
+  const reminder = await createReminder(
+    fixture,
+    personId,
+    "Disable after effect",
+  );
+  const occurrenceId = reminder.nextOccurrence!.id;
+  await sql`
+    update crm.reminder_occurrences set deliver_at = now() - interval '1 minute'
+    where id = ${occurrenceId}::uuid
+  `;
+  const durable = new InAppReminderDelivery(
+    new PostgresInAppReminderEffectStore(deliveryConnection.db, {
+      now: () => new Date(),
+    }),
+  );
+  let observedEffect!: () => void;
+  const effectRecorded = new Promise<void>((resolve) => {
+    observedEffect = resolve;
+  });
+  let resumeDelivery!: () => void;
+  const deliveryReleased = new Promise<void>((resolve) => {
+    resumeDelivery = resolve;
+  });
+  const barrierProvider: ReminderDeliveryProvider = {
+    async deliver(command) {
+      const result = await durable.deliver(command);
+      observedEffect();
+      await deliveryReleased;
+      return result;
+    },
+    reconcile: (command) => durable.reconcile(command),
+  };
+  const worker = createReminderDeliveryWorker({
+    audit: new PostgresReminderAudit(),
+    clock: { now: () => new Date() },
+    provider: barrierProvider,
+    repository: deliveryRepository,
+    transaction: deliveryTransaction,
+  });
+  const tick = worker.tick({ limit: 1, owner: "disable-effect-race" });
+  await Promise.race([
+    effectRecorded,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("provider effect barrier timed out")),
+        5_000,
+      )
+    ),
+  ]);
+  const [beforeDisable] = await sql<{
+    readonly claim_token: string | null;
+    readonly provider_effect_at: string | null;
+    readonly status: string;
+  }[]>`
+    select claim_token::text, provider_effect_at::text, status
+    from crm.reminder_occurrences where id = ${occurrenceId}::uuid
+  `;
+  const disabled = await request(
+    fixture,
+    `/api/v1/reminders/${reminder.id}/active`,
+    "PUT",
+    { active: false },
+  );
+  resumeDelivery();
+  const result = await tick;
+  const [afterFinalize] = await sql<{
+    readonly audits: number;
+    readonly provider_effect_at: string | null;
+    readonly status: string;
+    readonly visible_at: string | null;
+  }[]>`
+    select occurrence.status, occurrence.provider_effect_at::text,
+      occurrence.visible_at::text,
+      (select count(*)::int from crm.audit_events audit
+       where audit.subject_id = occurrence.id
+         and audit.action = 'planning.reminder-delivered') as audits
+    from crm.reminder_occurrences occurrence
+    where occurrence.id = ${occurrenceId}::uuid
+  `;
+  const today = await request(fixture, "/api/v1/today/reminders");
+  const todayBody = await today.json() as {
+    readonly reminders: readonly {
+      readonly id: string;
+      readonly status: string;
+      readonly visibleAt?: string;
+    }[];
+  };
+  assert(
+    beforeDisable?.status === "claimed" && beforeDisable.claim_token !== null &&
+      beforeDisable.provider_effect_at !== null,
+    `durable effect was not observed in-flight: ${
+      JSON.stringify(beforeDisable)
+    }`,
+  );
+  assert(
+    disabled.status === 200 && result.results[0]?.status === "sent" &&
+      afterFinalize?.status === "sent" &&
+      afterFinalize.provider_effect_at !== null &&
+      afterFinalize.visible_at !== null && afterFinalize.audits === 1,
+    `disable invalidated durable effect finalization: ${
+      JSON.stringify({ afterFinalize, result })
+    }`,
+  );
+  assert(
+    today.status === 200 &&
+      todayBody.reminders.some((item) =>
+        item.id === occurrenceId && item.status === "sent" && item.visibleAt
+      ),
+    "disabled definition hid its single confirmed in-app effect",
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL recovers an expired confirmed claim after disable", async () => {
+  const fixture = await register(
+    `reminder-disabled-recovery-${crypto.randomUUID()}@example.test`,
+    "Disabled reminder recovery",
+  );
+  const personId = await createPerson(fixture, "Disabled recovery person");
+  const anchorOn = new Date(Date.now() + 86_400_000).toISOString().slice(
+    0,
+    10,
+  );
+  const created = await request(fixture, "/api/v1/reminders", "POST", {
+    anchorOn,
+    personId,
+    recurrenceInterval: 1,
+    recurrenceUnit: "day",
+    requestId: crypto.randomUUID(),
+    sendTime: "09:00",
+    title: "Recover after disable",
+  });
+  const createdBody = await created.json() as CreatedReminder;
+  const reminder = createdBody.reminder;
+  const occurrenceId = reminder.nextOccurrence?.id;
+  assert(
+    created.status === 201 && occurrenceId,
+    "recurring recovery reminder missing",
+  );
+  await sql`
+    update crm.reminder_occurrences set deliver_at = now() - interval '1 minute'
+    where id = ${occurrenceId}::uuid
+  `;
+  const [claim] = await deliveryRepository.claimDue({
+    leaseExpiresAt: new Date(Date.now() + 30_000),
+    limit: 1,
+    now: new Date(),
+    owner: "dies-before-finalize",
+  });
+  assert(claim?.id === occurrenceId, "recovery occurrence was not claimed");
+  const durable = new InAppReminderDelivery(
+    new PostgresInAppReminderEffectStore(deliveryConnection.db, {
+      now: () => new Date(),
+    }),
+  );
+  const delivered = await durable.deliver({
+    idempotencyKey: claim.providerIdempotencyKey,
+    occurrenceId: claim.id,
+  });
+  assert(delivered.status === "confirmed", "durable effect was not recorded");
+  assert(
+    (await request(
+      fixture,
+      `/api/v1/reminders/${reminder.id}/active`,
+      "PUT",
+      { active: false },
+    )).status === 200,
+    "claimed reminder disable failed",
+  );
+  await sql`
+    update crm.reminder_occurrences set lease_expires_at = now() - interval '1 second'
+    where id = ${occurrenceId}::uuid
+  `;
+  const recoveryWorker = createReminderDeliveryWorker({
+    audit: new PostgresReminderAudit(),
+    clock: { now: () => new Date() },
+    provider: durable,
+    repository: deliveryRepository,
+    transaction: deliveryTransaction,
+  });
+  const recovered = await recoveryWorker.tick({
+    limit: 20,
+    owner: "disabled-reconciliation",
+  });
+  const [proof] = await sql<{
+    readonly audits: number;
+    readonly effects: number;
+    readonly inactive_new_work: number;
+    readonly sent: number;
+  }[]>`
+    select
+      count(*) filter (where occurrence.status = 'sent')::int as sent,
+      count(*) filter (where occurrence.provider_effect_at is not null)::int as effects,
+      count(*) filter (where occurrence.status in ('pending','retry','claimed'))::int as inactive_new_work,
+      (select count(*)::int from crm.audit_events audit
+       where audit.subject_id = ${occurrenceId}::uuid
+         and audit.action = 'planning.reminder-delivered') as audits
+    from crm.reminder_occurrences occurrence
+    where occurrence.reminder_id = ${reminder.id}::uuid
+  `;
+  const today = await request(fixture, "/api/v1/today/reminders");
+  const todayBody = await today.json() as {
+    readonly reminders: readonly {
+      readonly id: string;
+      readonly status: string;
+      readonly visibleAt?: string;
+    }[];
+  };
+  assert(
+    recovered.claimed === 1 && recovered.results[0]?.id === occurrenceId &&
+      recovered.results[0].status === "sent" && proof?.sent === 1 &&
+      proof.effects === 1 && proof.audits === 1 &&
+      proof.inactive_new_work === 0,
+    `disabled confirmed claim did not reconcile exactly once: ${
+      JSON.stringify({ proof, recovered })
+    }`,
+  );
+  assert(
+    today.status === 200 &&
+      todayBody.reminders.some((item) =>
+        item.id === occurrenceId && item.status === "sent" && item.visibleAt
+      ),
+    "recovered disabled effect was not visible on Today",
+  );
+});
+
+Deno.test("PLANNING-002 PostgreSQL cancels an expired unattempted claim after disable", async () => {
+  const fixture = await register(
+    `reminder-disabled-unattempted-${crypto.randomUUID()}@example.test`,
+    "Disabled unattempted reminder",
+  );
+  const personId = await createPerson(fixture, "Disabled unattempted person");
+  const reminder = await createReminder(
+    fixture,
+    personId,
+    "Cancel expired unattempted claim",
+  );
+  const occurrenceId = reminder.nextOccurrence!.id;
+  await sql`
+    update crm.reminder_occurrences set deliver_at = now() - interval '1 minute'
+    where id = ${occurrenceId}::uuid
+  `;
+  const [claim] = await deliveryRepository.claimDue({
+    leaseExpiresAt: new Date(Date.now() + 30_000),
+    limit: 1,
+    now: new Date(),
+    owner: "dies-before-provider-effect",
+  });
+  assert(claim?.id === occurrenceId, "unattempted occurrence was not claimed");
+  assert(
+    (await request(
+      fixture,
+      `/api/v1/reminders/${reminder.id}/active`,
+      "PUT",
+      { active: false },
+    )).status === 200,
+    "unattempted claimed reminder disable failed",
+  );
+  await sql`
+    update crm.reminder_occurrences set lease_expires_at = now() - interval '1 second'
+    where id = ${occurrenceId}::uuid
+  `;
+
+  const durable = new InAppReminderDelivery(
+    new PostgresInAppReminderEffectStore(deliveryConnection.db, {
+      now: () => new Date(),
+    }),
+  );
+  let releaseStaleEffect!: () => void;
+  const staleEffectReleased = new Promise<void>((resolve) => {
+    releaseStaleEffect = resolve;
+  });
+  let observeStaleProcess!: () => void;
+  const staleProcessObserved = new Promise<void>((resolve) => {
+    observeStaleProcess = resolve;
+  });
+  const staleEffect = (async () => {
+    observeStaleProcess();
+    await staleEffectReleased;
+    return await durable.deliver({
+      idempotencyKey: claim.providerIdempotencyKey,
+      occurrenceId: claim.id,
+    });
+  })();
+  await staleProcessObserved;
+
+  const maintenanceWorker = createReminderDeliveryWorker({
+    audit: new PostgresReminderAudit(),
+    clock: { now: () => new Date() },
+    provider: durable,
+    repository: deliveryRepository,
+    transaction: deliveryTransaction,
+  });
+  const maintained = await maintenanceWorker.tick({
+    limit: 20,
+    owner: "disabled-unattempted-maintenance",
+  });
+  releaseStaleEffect();
+  const staleEffectResult = await staleEffect;
+  const staleFinalize = await deliveryTransaction.run(async (transaction) =>
+    await deliveryRepository.finalize({
+      claimToken: claim.claimToken,
+      error: "stale-process-finalize",
+      id: claim.id,
+      now: new Date(),
+      providerResultState: "rejected",
+      status: "failed",
+      transaction,
+    })
+  );
+  const [proof] = await sql<{
+    readonly audits: number;
+    readonly claim_owner: string | null;
+    readonly claim_token: string | null;
+    readonly effects: number;
+    readonly lease_expires_at: string | null;
+    readonly status: string;
+  }[]>`
+    select occurrence.status, occurrence.claim_token::text,
+      occurrence.claim_owner, occurrence.lease_expires_at::text,
+      (occurrence.provider_effect_at is not null)::int as effects,
+      (select count(*)::int from crm.audit_events audit
+       where audit.subject_id = occurrence.id
+         and audit.action = 'planning.reminder-delivered') as audits
+    from crm.reminder_occurrences occurrence
+    where occurrence.id = ${occurrenceId}::uuid
+  `;
+  assert(
+    maintained.claimed === 0 && proof?.status === "cancelled" &&
+      proof.claim_token === null && proof.claim_owner === null &&
+      proof.lease_expires_at === null && proof.effects === 0 &&
+      proof.audits === 0,
+    `expired unattempted disabled claim was not cleaned safely: ${
+      JSON.stringify({ maintained, proof })
+    }`,
+  );
+  assert(
+    staleEffectResult.status === "rejected" && staleFinalize === false,
+    `stale process retained effect/finalize authority: ${
+      JSON.stringify({ staleEffectResult, staleFinalize })
+    }`,
+  );
+});
+
 Deno.test({
   name: "PLANNING-001 PostgreSQL resources close",
   sanitizeOps: false,
@@ -820,5 +3326,6 @@ Deno.test({
   async fn() {
     await sql.end();
     await configured.close();
+    await deliveryConnection.destroy();
   },
 });

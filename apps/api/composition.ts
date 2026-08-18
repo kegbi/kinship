@@ -29,6 +29,7 @@ import {
   PostgresWorkspacePersonalization,
   PostgresWorkspaceRegistration,
   PostgresWorkspaceSettings,
+  type SettingsPlanningPublisher,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import {
   createFirstWorkspaceRegistration,
@@ -46,6 +47,7 @@ import {
   PostgresProfileFactAudit,
   PostgresRegistrationAudit,
   PostgresRelationshipAudit,
+  PostgresReminderAudit,
   PostgresSettingsAudit,
   PostgresTaskAudit,
 } from "../../packages/backend/modules/governance/public.ts";
@@ -90,10 +92,14 @@ import {
   PostgresTagPersonalization,
 } from "../../packages/backend/modules/people/public.ts";
 import {
+  createReminderManagement,
   createTaskManagement,
   PostgresPersonDateReminderPublisher,
+  PostgresReminderRepository,
   PostgresReminderRulePersonalization,
+  PostgresReminderWorkspaceBoundary,
   PostgresTaskRepository,
+  type ReminderManagement,
   type TaskManagement,
 } from "../../packages/backend/modules/planning/public.ts";
 import {
@@ -140,10 +146,13 @@ import {
 } from "../../packages/backend/read-models/activity-report/public.ts";
 import {
   createTodayInteractions,
+  createTodayReminders,
   createTodayTasks,
   PostgresTodayInteractionsRepository,
+  PostgresTodayRemindersRepository,
   PostgresTodayTasksRepository,
   type TodayInteractions,
+  type TodayReminders,
   type TodayTasks,
 } from "../../packages/backend/read-models/today/public.ts";
 import {
@@ -169,10 +178,12 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly people?: PeopleHttpServices["people"];
   readonly profile?: PersonProfile;
   readonly relationships?: RelationshipManagement;
+  readonly reminders?: ReminderManagement;
   readonly tagOptions?: PeopleTagOptions;
   readonly tasks?: TaskManagement;
   readonly today?: TodayInteractions;
   readonly todayTasks?: TodayTasks;
+  readonly todayReminders?: TodayReminders;
   readonly readiness?: () => Promise<boolean>;
 }
 
@@ -338,7 +349,11 @@ export function createApiApp(services?: ApiServices): Hono {
         createPlanningRoutes({
           browserSecurity: services.browserSecurity,
           protectedSessions: services.protectedSessions,
+          ...(services.reminders ? { reminders: services.reminders } : {}),
           tasks: services.tasks,
+          ...(services.todayReminders
+            ? { todayReminders: services.todayReminders }
+            : {}),
           todayTasks: services.todayTasks,
         }),
       );
@@ -491,11 +506,28 @@ export function createConfiguredApiApp(
     tokens,
     transaction,
   });
+  const settingsPlanningPublisher: {
+    current?: SettingsPlanningPublisher;
+  } = {};
   const settings = createSettingsManagement({
     audit: new PostgresSettingsAudit(),
     clock,
     identity: new PostgresIdentityAccountSettings(tokens),
     identityDisplay: invitationIdentity,
+    planningPublisher: {
+      timezoneChanged: (actor, settingsTransaction) =>
+        settingsPlanningPublisher.current?.timezoneChanged(
+          actor,
+          settingsTransaction,
+        ) ??
+          Promise.resolve(),
+      workspaceTimezoneChanged: (actor, timezone, settingsTransaction) =>
+        settingsPlanningPublisher.current?.workspaceTimezoneChanged(
+          actor,
+          timezone,
+          settingsTransaction,
+        ) ?? Promise.resolve(),
+    },
     transaction,
     workspace: new PostgresWorkspaceSettings(),
   });
@@ -557,11 +589,21 @@ export function createConfiguredApiApp(
   });
   const interactionWorkspace = new PostgresInteractionWorkspaceBoundary();
   const interactionPeople = new PostgresRelationshipPersonBoundary();
+  const reminders = createReminderManagement({
+    audit: new PostgresReminderAudit(),
+    clock,
+    people: interactionPeople,
+    repository: new PostgresReminderRepository(),
+    transaction: peopleTransaction,
+    workspace: new PostgresReminderWorkspaceBoundary(),
+  });
+  settingsPlanningPublisher.current = reminders;
   const interactions = {
     ...createInteractionManagement({
       audit: new PostgresInteractionAudit(),
       clock,
       people: interactionPeople,
+      publisher: reminders,
       repository: new PostgresInteractionRepository(),
       transaction: peopleTransaction,
       workspace: interactionWorkspace,
@@ -570,6 +612,7 @@ export function createConfiguredApiApp(
       audit: new PostgresCommunicationAudit(),
       clock,
       people: interactionPeople,
+      publisher: reminders,
       repository: new PostgresCommunicationRepository(),
       transaction: peopleTransaction,
       workspace: interactionWorkspace,
@@ -609,6 +652,10 @@ export function createConfiguredApiApp(
     clock,
     repository: new PostgresTodayTasksRepository(connection.db),
   });
+  const todayReminders = createTodayReminders({
+    clock,
+    repository: new PostgresTodayRemindersRepository(connection.db),
+  });
   const app = createApiApp({
     activityReport,
     auditHistory,
@@ -623,12 +670,14 @@ export function createConfiguredApiApp(
     profile,
     profileFacts,
     relationships,
+    reminders,
     protectedSessions,
     personalization,
     settings,
     tagOptions,
     tasks,
     today,
+    todayReminders,
     todayTasks,
     register: registration,
     retryVerificationDelivery: createVerificationDeliveryRetry(

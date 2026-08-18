@@ -23,6 +23,7 @@ export type {
   InteractionOption,
   InteractionParticipant,
   InteractionRecord,
+  InteractionRecordedPublisher,
   InteractionRepository,
   InteractionWorkspaceBoundary,
   NoteRecord,

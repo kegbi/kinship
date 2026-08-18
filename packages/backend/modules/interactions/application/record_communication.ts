@@ -7,6 +7,7 @@ import type {
   InteractionWorkspaceBoundary,
   WorkspaceInteractionOption,
 } from "../../workspaces/public.ts";
+import type { InteractionRecordedPublisher } from "./record_interaction.ts";
 
 export interface CommunicationMessage {
   readonly content: string;
@@ -337,6 +338,7 @@ export function createCommunicationManagement(dependencies: {
   readonly audit: CommunicationAudit;
   readonly clock: { now(): Date };
   readonly people: InteractionPersonBoundary;
+  readonly publisher?: InteractionRecordedPublisher;
   readonly repository: CommunicationRepository;
   readonly transaction: {
     run<T>(work: (transaction: PeopleTransaction) => Promise<T>): Promise<T>;
@@ -685,6 +687,15 @@ export function createCommunicationManagement(dependencies: {
         await dependencies.audit.assertPostcondition({
           ...auditCommand,
           auditId,
+        });
+        await dependencies.publisher?.interactionRecorded({
+          happenedAt: record.kind === "call"
+            ? record.calledAt
+            : record.happenedAt,
+          memberId: canonicalActor.memberId,
+          personIds: [record.person.id],
+          transaction,
+          workspaceId: canonicalActor.workspaceId,
         });
         return { record, status: "created" as const };
       });

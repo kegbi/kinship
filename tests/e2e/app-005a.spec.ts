@@ -119,7 +119,7 @@ test(
       ))!,
     );
     const emotions = capture.getByLabel("Emotions (optional)");
-    await expect(emotions.locator("option")).toHaveCount(0);
+    await expect(emotions).toBeEnabled();
     for (const name of ["Ada Lovelace", "Grace Hopper", beyondName]) {
       await participantSearch.fill(name);
       await participantSearch.press("Tab");

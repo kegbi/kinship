@@ -1,5 +1,11 @@
-import type { TaskManagement } from "../../packages/backend/modules/planning/public.ts";
-import type { TodayTasks } from "../../packages/backend/read-models/today/public.ts";
+import type {
+  ReminderManagement,
+  TaskManagement,
+} from "../../packages/backend/modules/planning/public.ts";
+import type {
+  TodayReminders,
+  TodayTasks,
+} from "../../packages/backend/read-models/today/public.ts";
 import { createPlanningRoutes } from "./planning.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -220,5 +226,170 @@ Deno.test("PLANNING-001 HTTP forwards task continuation and rejects stale cursor
   assert(
     stale.status === 409 && staleBody.code === "task_cursor_stale",
     "stale task cursor was not explicit",
+  );
+});
+
+Deno.test("PLANNING-002 HTTP creates and lists reminders/cadences and exposes Today state", async () => {
+  const reminder = {
+    anchorOn: "2026-10-25",
+    createdAt: "2026-08-18T10:00:00.000000Z",
+    id: crypto.randomUUID(),
+    isActive: true,
+    nextOccurrence: {
+      attemptCount: 0,
+      deliverAt: "2026-10-25T00:30:00.000000Z",
+      id: crypto.randomUUID(),
+      occursOn: "2026-10-25",
+      status: "pending" as const,
+    },
+    personId,
+    recurrenceInterval: 1,
+    recurrenceUnit: "year" as const,
+    sendTime: "02:30:00",
+    title: "Birthday call",
+    updatedAt: "2026-08-18T10:00:00.000000Z",
+  };
+  const cadence = {
+    id: crypto.randomUUID(),
+    intervalCount: 1,
+    intervalUnit: "month" as const,
+    isActive: true,
+    nextDueAt: "2026-09-18T10:00:00.000000Z",
+    personId,
+    updatedAt: "2026-08-18T10:00:00.000000Z",
+  };
+  const reminders = {
+    createCadence: () =>
+      Promise.resolve({ cadence, status: "created" as const }),
+    createReminder: () =>
+      Promise.resolve({ reminder, status: "created" as const }),
+    interactionRecorded: () => Promise.resolve(),
+    listPerson: () =>
+      Promise.resolve({
+        cadences: [cadence],
+        reminders: [reminder],
+        status: "ready" as const,
+      }),
+    setActive: () =>
+      Promise.resolve({
+        reminder: { ...reminder, isActive: false },
+        status: "saved" as const,
+      }),
+    timezoneChanged: () => Promise.resolve(),
+    workspaceTimezoneChanged: () => Promise.resolve(),
+  } as ReminderManagement;
+  const app = createPlanningRoutes({
+    ...services(),
+    reminders,
+    todayReminders: {
+      get: () =>
+        Promise.resolve({
+          cadences: [],
+          reminders: [],
+          status: "ready" as const,
+          timezone: "Europe/Belgrade",
+        }),
+    } as TodayReminders,
+  });
+  const created = await app.request("http://localhost/api/v1/reminders", {
+    body: JSON.stringify({
+      anchorOn: reminder.anchorOn,
+      personId,
+      recurrenceInterval: 1,
+      recurrenceUnit: "year",
+      requestId: crypto.randomUUID(),
+      sendTime: "02:30",
+      title: reminder.title,
+    }),
+    headers,
+    method: "POST",
+  });
+  const cadenceResponse = await app.request(
+    "http://localhost/api/v1/stay-in-touch-cadences",
+    {
+      body: JSON.stringify({
+        intervalCount: 1,
+        intervalUnit: "month",
+        personId,
+        requestId: crypto.randomUUID(),
+      }),
+      headers,
+      method: "POST",
+    },
+  );
+  const listed = await app.request(
+    `http://localhost/api/v1/people/${personId}/reminders`,
+    { headers },
+  );
+  const today = await app.request("http://localhost/api/v1/today/reminders", {
+    headers,
+  });
+  const disabled = await app.request(
+    `http://localhost/api/v1/reminders/${reminder.id}/active`,
+    {
+      body: JSON.stringify({ active: false }),
+      headers,
+      method: "PUT",
+    },
+  );
+  assert(
+    created.status === 201 && cadenceResponse.status === 201,
+    "reminder or cadence create failed",
+  );
+  assert(
+    listed.status === 200 && today.status === 200 && disabled.status === 200,
+    "reminder projections or disable failed",
+  );
+});
+
+Deno.test("PLANNING-002 HTTP preserves origin, archive, and independent outage boundaries", async () => {
+  const reminders = {
+    createCadence: () =>
+      Promise.resolve({ status: "archived-write-rejected" as const }),
+    createReminder: () =>
+      Promise.resolve({ status: "archived-write-rejected" as const }),
+    interactionRecorded: () => Promise.resolve(),
+    listPerson: () => Promise.reject(new Error("offline")),
+    setActive: () => Promise.resolve({ status: "not-found" as const }),
+  } as unknown as ReminderManagement;
+  const app = createPlanningRoutes({ ...services(), reminders });
+  const archived = await app.request("http://localhost/api/v1/reminders", {
+    body: JSON.stringify({
+      anchorOn: "2026-10-25",
+      personId,
+      recurrenceInterval: 1,
+      recurrenceUnit: "year",
+      requestId: crypto.randomUUID(),
+      sendTime: "02:30",
+      title: "Birthday call",
+    }),
+    headers,
+    method: "POST",
+  });
+  const badOrigin = await app.request(
+    "http://localhost/api/v1/stay-in-touch-cadences",
+    {
+      body: JSON.stringify({
+        intervalCount: 1,
+        intervalUnit: "month",
+        personId,
+        requestId: crypto.randomUUID(),
+      }),
+      headers: { ...headers, origin: "http://attacker.test" },
+      method: "POST",
+    },
+  );
+  const outage = await app.request(
+    `http://localhost/api/v1/people/${personId}/reminders`,
+    { headers },
+  );
+  const tasks = await app.request("http://localhost/api/v1/tasks", { headers });
+  assert(
+    archived.status === 409 && badOrigin.status === 403,
+    "reminder write boundary failed",
+  );
+  assert(
+    outage.status === 503 && tasks.status === 200,
+    "reminder outage blanked another planning region",
   );
 });

@@ -36,6 +36,7 @@ export type {
   SettingsAudit,
   SettingsManagement,
   SettingsManagementDependencies,
+  SettingsPlanningPublisher,
   SettingsTransaction,
   WorkspaceConfiguration,
   WorkspaceMemberRecord,

@@ -2,9 +2,13 @@ import { type Context, Hono } from "hono";
 import { z } from "zod";
 import type {
   ChangeTaskInput,
+  ReminderManagement,
   TaskManagement,
 } from "../../packages/backend/modules/planning/public.ts";
-import type { TodayTasks } from "../../packages/backend/read-models/today/public.ts";
+import type {
+  TodayReminders,
+  TodayTasks,
+} from "../../packages/backend/read-models/today/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
 
@@ -13,8 +17,10 @@ type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface PlanningHttpServices {
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
+  readonly reminders?: ReminderManagement;
   readonly tasks: TaskManagement;
   readonly todayTasks: TodayTasks;
+  readonly todayReminders?: TodayReminders;
 }
 
 const id = z.uuid();
@@ -46,6 +52,22 @@ const listSchema = z.object({
   personId: id.optional(),
   status: z.enum(["cancelled", "completed", "open"]).optional(),
 }).strict();
+const reminderSchema = z.object({
+  anchorOn: z.iso.date(),
+  personId: id,
+  recurrenceInterval: z.number().int().min(1).max(100),
+  recurrenceUnit: z.enum(["none", "day", "week", "month", "year"]),
+  requestId: id,
+  sendTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/),
+  title: z.string().trim().min(1).max(500),
+}).strict();
+const cadenceSchema = z.object({
+  intervalCount: z.number().int().min(1).max(100),
+  intervalUnit: z.enum(["day", "week", "month", "year"]),
+  personId: id,
+  requestId: id,
+}).strict();
+const activeSchema = z.object({ active: z.boolean() }).strict();
 
 function problem(
   context: Context,
@@ -178,6 +200,59 @@ function mutationFailure(
   );
 }
 
+function reminderFailure(
+  context: Context,
+  result: {
+    readonly errors?: Readonly<Record<string, string>>;
+    readonly status: string;
+  },
+) {
+  if (result.status === "forbidden") {
+    return problem(
+      context,
+      403,
+      "reminders_forbidden",
+      "Reminders unavailable",
+      "Your active membership no longer permits this action.",
+    );
+  }
+  if (result.status === "not-found") {
+    return problem(
+      context,
+      404,
+      "reminder_not_found",
+      "Reminder unavailable",
+      "The reminder or person does not exist in the active workspace.",
+    );
+  }
+  if (result.status === "archived-write-rejected") {
+    return problem(
+      context,
+      409,
+      "archived_write_rejected",
+      "Archived person is read-only",
+      "Restore the person before changing reminders.",
+    );
+  }
+  if (result.status === "idempotency-conflict") {
+    return problem(
+      context,
+      409,
+      "reminder_request_conflict",
+      "Request identifier already used",
+      "Use a new request identifier when reminder fields change.",
+    );
+  }
+  return problem(
+    context,
+    400,
+    "reminder_validation_failed",
+    "Invalid reminder",
+    "Review the calendar reminder fields.",
+    result.errors,
+  );
+}
+
 function validOrigin(context: Context, services: PlanningHttpServices) {
   return context.req.header("Origin") === services.browserSecurity.origin;
 }
@@ -194,6 +269,195 @@ function originFailure(context: Context) {
 
 export function createPlanningRoutes(services: PlanningHttpServices): Hono {
   const routes = new Hono();
+  routes.get("/api/v1/people/:personId/reminders", async (context) => {
+    if (!services.reminders) {
+      return problem(
+        context,
+        503,
+        "reminders_unavailable",
+        "Reminders unavailable",
+        "Other person sections remain available.",
+      );
+    }
+    const personId = id.safeParse(context.req.param("personId"));
+    if (!personId.success) {
+      return problem(
+        context,
+        400,
+        "reminder_query_invalid",
+        "Invalid reminder query",
+        "Use a canonical person identifier.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) return authenticationRequired(context);
+    const result = await services.reminders.listPerson(resolved, personId.data)
+      .catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "reminders_unavailable",
+        "Reminders unavailable",
+        "Other person sections remain available.",
+      );
+    }
+    if (result.status !== "ready") return reminderFailure(context, result);
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
+  routes.post("/api/v1/reminders", async (context) => {
+    if (!services.reminders) {
+      return problem(
+        context,
+        503,
+        "reminders_unavailable",
+        "Reminders unavailable",
+        "Nothing was saved.",
+      );
+    }
+    if (!validOrigin(context, services)) return originFailure(context);
+    const input = reminderSchema.safeParse(
+      await context.req.json().catch(() => undefined),
+    );
+    if (!input.success) {
+      return problem(
+        context,
+        400,
+        "reminder_request_invalid",
+        "Invalid reminder",
+        "Use supported calendar fields and canonical identifiers.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) return authenticationRequired(context);
+    const result = await services.reminders.createReminder(resolved, input.data)
+      .catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "reminders_unavailable",
+        "Reminders unavailable",
+        "Nothing was saved.",
+      );
+    }
+    if (result.status !== "created") return reminderFailure(context, result);
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result, 201);
+  });
+  routes.post("/api/v1/stay-in-touch-cadences", async (context) => {
+    if (!services.reminders) {
+      return problem(
+        context,
+        503,
+        "reminders_unavailable",
+        "Reminders unavailable",
+        "Nothing was saved.",
+      );
+    }
+    if (!validOrigin(context, services)) return originFailure(context);
+    const input = cadenceSchema.safeParse(
+      await context.req.json().catch(() => undefined),
+    );
+    if (!input.success) {
+      return problem(
+        context,
+        400,
+        "cadence_request_invalid",
+        "Invalid stay-in-touch cadence",
+        "Use a supported calendar interval.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) return authenticationRequired(context);
+    const result = await services.reminders.createCadence(resolved, input.data)
+      .catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "reminders_unavailable",
+        "Reminders unavailable",
+        "Nothing was saved.",
+      );
+    }
+    if (result.status !== "created") return reminderFailure(context, result);
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result, 201);
+  });
+  routes.put("/api/v1/reminders/:reminderId/active", async (context) => {
+    if (!services.reminders) {
+      return problem(
+        context,
+        503,
+        "reminders_unavailable",
+        "Reminders unavailable",
+        "Nothing was changed.",
+      );
+    }
+    if (!validOrigin(context, services)) return originFailure(context);
+    const reminderId = id.safeParse(context.req.param("reminderId"));
+    const input = activeSchema.safeParse(
+      await context.req.json().catch(() => undefined),
+    );
+    if (!reminderId.success || !input.success) {
+      return problem(
+        context,
+        400,
+        "reminder_request_invalid",
+        "Invalid reminder",
+        "Use a canonical reminder and explicit active state.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) return authenticationRequired(context);
+    const result = await services.reminders.setActive(
+      resolved,
+      reminderId.data,
+      input.data.active,
+    ).catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "reminders_unavailable",
+        "Reminders unavailable",
+        "Nothing was changed.",
+      );
+    }
+    if (result.status !== "saved") return reminderFailure(context, result);
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
+  routes.get("/api/v1/today/reminders", async (context) => {
+    if (!services.todayReminders) {
+      return problem(
+        context,
+        503,
+        "today_reminders_unavailable",
+        "Reminder region unavailable",
+        "Other Today regions remain available.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) return authenticationRequired(context);
+    const result = await services.todayReminders.get(resolved).catch(() =>
+      undefined
+    );
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "today_reminders_unavailable",
+        "Reminder region unavailable",
+        "Other Today regions remain available.",
+      );
+    }
+    if (result.status !== "ready") return reminderFailure(context, result);
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
   routes.get("/api/v1/tasks", async (context) => {
     const input = listSchema.safeParse(context.req.query());
     if (!input.success) {

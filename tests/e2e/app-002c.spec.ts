@@ -132,6 +132,9 @@ async function keyboardReachMemberMenuToggle(page: Page): Promise<void> {
   await expect(page.getByRole("link", { name: "People", exact: true }))
     .toBeFocused();
   await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Tasks", exact: true }))
+    .toBeFocused();
+  await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Quick capture" }))
     .toBeFocused();
   await page.keyboard.press("Tab");
@@ -187,13 +190,15 @@ test(
     await expect(addPerson).toBeVisible();
     await expect(addPerson).toHaveAttribute("href", "/app/people/new");
     await expect(page.getByLabel("Active workspace")).toBeHidden();
-    await expect(page.getByText("TODAY-001")).toBeVisible();
+    await expect(page.getByText(/complete cross-module attention ordering/))
+      .toBeVisible();
     await expect(page.locator(".success-loop > li")).toHaveCount(3);
     expect(await page.locator("main h1, main h2").allTextContents()).toEqual([
       "Welcome back.",
       "Needs attention",
       "People to reconnect",
-      "Upcoming",
+      "Upcoming tasks",
+      "Reminders",
       "Recently viewed people",
       "Favorite notes",
       "Recent activity",
@@ -272,7 +277,7 @@ test(
     await page.keyboard.press("Tab");
     await expect(switcher).toBeFocused();
     await switcher.selectOption(secondWorkspaceId);
-    await expect(page.getByRole("status")).toContainText(
+    await expect(page.locator("#shell-status")).toContainText(
       "Community circle is ready",
     );
     await expect(switcher).toHaveValue(secondWorkspaceId);
@@ -291,7 +296,7 @@ test(
     await switcher.focus();
     await expect(switcher).toBeFocused();
     await switcher.selectOption(originalWorkspaceId!);
-    await expect(page.getByRole("status")).toContainText(
+    await expect(page.locator("#shell-status")).toContainText(
       "current workspace was not changed",
     );
     await expect(switcher).toHaveValue(secondWorkspaceId);
@@ -332,7 +337,7 @@ test(
     const signOutButton = page.getByRole("button", { name: "Sign out" });
     await keyboardReachSignOut(page);
     await page.keyboard.press("Enter");
-    await expect(page.getByRole("status")).toContainText(
+    await expect(page.locator("#shell-status")).toContainText(
       "could not be revoked",
     );
     await expect(signOutButton).toBeFocused();

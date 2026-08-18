@@ -19,15 +19,19 @@ CREATE TEMP TABLE expected_field_catalog (
   change_reason text
 );
 
-\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v5.csv' WITH (FORMAT csv, HEADER true)
+\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v6.csv' WITH (FORMAT csv, HEADER true)
 
 DO $$
 DECLARE
   actual_count bigint;
 BEGIN
+  IF to_regclass('crm.stay_in_touch_cadence_requests') IS NULL THEN
+    RAISE EXCEPTION 'missing durable cadence request history table';
+  END IF;
+
   SELECT count(*) INTO actual_count FROM expected_field_catalog;
-  IF actual_count <> 814 THEN
-    RAISE EXCEPTION 'field catalog row count: expected 814, got %', actual_count;
+  IF actual_count <> 832 THEN
+    RAISE EXCEPTION 'field catalog row count: expected 832, got %', actual_count;
   END IF;
 
   IF EXISTS (
@@ -111,6 +115,15 @@ BEGIN
     AND (NOT indexes.indisvalid OR NOT indexes.indisready);
   IF actual_count <> 0 THEN
     RAISE EXCEPTION 'invalid or unready canonical indexes: %', actual_count;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_indexes
+    WHERE schemaname = 'crm'
+      AND indexname = 'reminder_occurrences_unique_delivery'
+      AND indexdef LIKE '%(reminder_id, member_id, occurs_on, channel, COALESCE(lead_time_days, ''-1''::integer))%'
+  ) THEN
+    RAISE EXCEPTION 'stable calendar reminder occurrence identity index missing';
   END IF;
 
   SELECT count(*) INTO actual_count

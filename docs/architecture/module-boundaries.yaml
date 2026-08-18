@@ -1,6 +1,6 @@
 schemaVersion: 1
 decisionStatus: accepted
-schemaSource: personal-crm-schema/v5/personal_crm_schema_v5.sql
+schemaSource: personal-crm-schema/v6/personal_crm_schema_v6.sql
 
 sharedKernel:
   path: packages/backend/shared-kernel
@@ -185,6 +185,7 @@ modules:
       - reminders
       - reminder_occurrences
       - stay_in_touch_cadences
+      - stay_in_touch_cadence_requests
     publicEntryPoints: [packages/backend/modules/planning/public.ts]
     allowedModuleDependencies: [people, workspaces]
     publishes: [
@@ -193,6 +194,7 @@ modules:
       planning.reminder-delivered,
     ]
     consumes: [
+      interactions.interaction-recorded,
       people.person-date-updated,
       people.person-updated,
       workspace.configuration-changed,

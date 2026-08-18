@@ -111,6 +111,18 @@ export interface SettingsAudit {
   }): Promise<void>;
 }
 
+export interface SettingsPlanningPublisher {
+  timezoneChanged(
+    actor: SettingsActor,
+    transaction: SettingsTransaction,
+  ): Promise<void>;
+  workspaceTimezoneChanged(
+    actor: SettingsActor,
+    timezone: string,
+    transaction: SettingsTransaction,
+  ): Promise<void>;
+}
+
 export interface SettingsManagementDependencies {
   readonly audit: SettingsAudit;
   readonly clock: { now(): Date };
@@ -119,6 +131,7 @@ export interface SettingsManagementDependencies {
     InvitationIdentityFacade,
     "listIdentityDisplaySummaries"
   >;
+  readonly planningPublisher?: SettingsPlanningPublisher;
   readonly transaction: {
     run<T>(work: (transaction: SettingsTransaction) => Promise<T>): Promise<T>;
   };
@@ -207,6 +220,10 @@ export function createSettingsManagement(
       ),
     updatePreferences: (actor: SettingsActor, input: MemberPreferences) =>
       dependencies.transaction.run(async (transaction) => {
+        const previous = await dependencies.workspace.getPreferences({
+          ...actor,
+          transaction,
+        });
         const preferences = await dependencies.workspace.updatePreferences({
           ...actor,
           ...input,
@@ -223,6 +240,12 @@ export function createSettingsManagement(
           "workspace_member",
           actor.memberId,
         );
+        if (previous?.timezone !== preferences.timezone) {
+          await dependencies.planningPublisher?.timezoneChanged(
+            actor,
+            transaction,
+          );
+        }
         return { preferences, status: "ready" as const };
       }),
     listSessions: (
@@ -267,6 +290,10 @@ export function createSettingsManagement(
       ),
     updateWorkspace: (actor: SettingsActor, input: WorkspaceConfiguration) =>
       dependencies.transaction.run(async (transaction) => {
+        const previous = await dependencies.workspace.getWorkspace({
+          ...actor,
+          transaction,
+        });
         const result = await dependencies.workspace.updateWorkspace({
           ...actor,
           ...input,
@@ -280,6 +307,17 @@ export function createSettingsManagement(
           "workspace",
           actor.workspaceId,
         );
+        if (
+          typeof previous !== "string" &&
+          (previous?.defaultTimezone !== result.defaultTimezone ||
+            previous?.defaultReminderTime !== result.defaultReminderTime)
+        ) {
+          await dependencies.planningPublisher?.workspaceTimezoneChanged(
+            actor,
+            result.defaultTimezone ?? "UTC",
+            transaction,
+          );
+        }
         return result;
       }),
     listMembers: (actor: SettingsActor) =>
