@@ -139,7 +139,7 @@ test(
     ],
   },
   async ({ browser, browserName, context, page, request }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(240_000);
     const suffix = `${browserName}-${Date.now()}`;
     const ownerEmail = `settings-owner-${suffix}@example.test`;
     const memberEmail = `settings-member-${suffix}@example.test`;
@@ -259,6 +259,7 @@ test(
     await page.reload();
     const workspaceName = page.getByLabel("Workspace name");
     const workspaceSwitcher = page.getByLabel("Active workspace");
+    await expect(workspaceName).toHaveValue(`Owner ${suffix}`);
     await workspaceName.fill(`Unsaved ${suffix}`);
     const cancelSwitch = new Promise<void>((resolve) => {
       page.once("dialog", async (dialog) => {

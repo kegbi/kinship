@@ -258,6 +258,9 @@ async function keyboardSignOut(page: Page): Promise<void> {
   await expect(page.getByRole("link", { name: "People", exact: true }))
     .toBeFocused();
   await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Tasks", exact: true }))
+    .toBeFocused();
+  await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Quick capture" }))
     .toBeFocused();
   await page.keyboard.press("Tab");
@@ -321,7 +324,9 @@ test(
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
       "Welcome back.",
     );
-    await expect(page.getByRole("status")).toContainText("protected session");
+    await expect(page.locator("#shell-status")).toContainText(
+      "protected session",
+    );
     await expectAccessible(page);
     const firstCookie = (await context.cookies()).find((item) =>
       item.name === "kinship_session"

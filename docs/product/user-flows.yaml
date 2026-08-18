@@ -523,6 +523,7 @@ flows:
 
   - id: PLANNING-002
     title: Schedule and deliver a reminder
+    deliveryStatus: delivered
     priority: P0
     actor: crm-writer
     trigger: The member creates a reminder or stay-in-touch cadence.
@@ -545,7 +546,7 @@ flows:
     moduleIds: [people, planning, operations]
     permissions: [reminders.write, reminder-delivery.execute]
     testLayers: [unit, integration, schema, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-006b.spec.ts] }
 
   - id: FILES-001
     title: Attach and retrieve a person file

@@ -84,6 +84,26 @@ function interactionSectionMarkup(): void {
   );
 }
 
+function reminderSectionMarkup(): void {
+  document.querySelector("#person-profile-sections")?.insertAdjacentHTML(
+    "beforeend",
+    `<a href="?section=reminders" data-section-link="reminders">Reminders</a>`,
+  );
+  document.querySelector("#person-profile-ready")?.insertAdjacentHTML(
+    "beforeend",
+    `<section data-profile-section="reminders" tabindex="-1">
+       <form data-reminder-form>
+         <input name="title"><button type="submit">Save reminder</button>
+       </form>
+     </section>
+     <section data-person-audit-summary>
+       <p data-person-audit-state></p><span data-person-audit-badge></span>
+       <ol data-person-audit-list></ol><a data-person-audit-link></a>
+       <button data-person-audit-retry type="button">Retry audit</button>
+     </section>`,
+  );
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   sessionStorage.clear();
@@ -226,6 +246,58 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(document.activeElement).toBe(
       document.querySelector("#profile-section-photos"),
     );
+  });
+
+  it("PLANNING-002 does not steal reminder form focus after delayed profile reconciliation", async () => {
+    markup(`/app/people/${personId}?section=reminders`);
+    reminderSectionMarkup();
+    let resolveReminders!: (response: Response) => void;
+    const delayedReminders = new Promise<Response>((resolve) => {
+      resolveReminders = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockResolvedValueOnce(response({
+          dueInformation: {
+            detail: "No due information.",
+            status: "unavailable",
+          },
+          person: {
+            givenName: "Ada",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            tagCount: 0,
+            tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
+          },
+          status: "ready",
+        }))
+        .mockReturnValueOnce(delayedReminders),
+    );
+
+    const mounting = mountPeopleProfile();
+    await vi.waitFor(() =>
+      expect(document.querySelector("[data-person-audit-state]")?.textContent)
+        .toContain("Loading")
+    );
+    const title = document.querySelector<HTMLInputElement>(
+      '[data-reminder-form] [name="title"]',
+    )!;
+    title.focus();
+    title.value = "Keep this draft";
+    resolveReminders(response({
+      items: [],
+      status: "ready",
+    }));
+    await mounting;
+
+    expect(document.activeElement).toBe(title);
+    expect(title.value).toBe("Keep this draft");
   });
 
   it("[APP-003C] reconciles queryless and invalid section history", async () => {

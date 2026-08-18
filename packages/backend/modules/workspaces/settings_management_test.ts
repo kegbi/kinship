@@ -85,6 +85,16 @@ function fixture(
         );
       },
     },
+    planningPublisher: {
+      timezoneChanged() {
+        effects.push("planning:member-timezone");
+        return Promise.resolve();
+      },
+      workspaceTimezoneChanged(_actor, timezone) {
+        effects.push(`planning:workspace-timezone:${timezone}`);
+        return Promise.resolve();
+      },
+    },
     transaction: {
       async run(work) {
         effects.push("tx:begin");
@@ -98,7 +108,12 @@ function fixture(
         throw new Error("unused");
       },
       getWorkspace() {
-        throw new Error("unused");
+        return Promise.resolve({
+          defaultLocale: "en",
+          defaultReminderTime: "09:00",
+          defaultTimezone: "UTC",
+          name: "Old name",
+        });
       },
       listMembers() {
         effects.push("workspace:list");
@@ -131,13 +146,59 @@ function fixture(
       updatePreferences() {
         throw new Error("unused");
       },
-      updateWorkspace() {
-        throw new Error("unused");
+      updateWorkspace(command) {
+        return Promise.resolve({
+          defaultLocale: command.defaultLocale,
+          defaultReminderTime: command.defaultReminderTime,
+          ...(command.defaultTimezone
+            ? { defaultTimezone: command.defaultTimezone }
+            : {}),
+          name: command.name,
+          ...(command.slug ? { slug: command.slug } : {}),
+        });
       },
     },
   };
   return { effects, service: createSettingsManagement(dependencies) };
 }
+
+Deno.test("PLANNING-002 workspace default timezone regenerates inherited reminder instants", async () => {
+  const { effects, service } = fixture();
+  const result = await service.updateWorkspace(actor, {
+    defaultLocale: "en",
+    defaultReminderTime: "09:00",
+    defaultTimezone: "Europe/Belgrade",
+    name: "Trusted circle",
+  });
+  assert(
+    typeof result !== "string" && result !== undefined,
+    "workspace update succeeds",
+  );
+  assert(
+    effects.join(",") ===
+      "tx:begin,audit:workspace.configuration-changed,planning:workspace-timezone:Europe/Belgrade,tx:commit",
+    `workspace timezone coordination is atomic: ${effects.join(",")}`,
+  );
+});
+
+Deno.test("PLANNING-002 workspace default reminder time regenerates inherited instants", async () => {
+  const { effects, service } = fixture();
+  const result = await service.updateWorkspace(actor, {
+    defaultLocale: "en",
+    defaultReminderTime: "15:45",
+    defaultTimezone: "UTC",
+    name: "Trusted circle",
+  });
+  assert(
+    typeof result !== "string" && result !== undefined,
+    "workspace default-time update succeeds",
+  );
+  assert(
+    effects.join(",") ===
+      "tx:begin,audit:workspace.configuration-changed,planning:workspace-timezone:UTC,tx:commit",
+    `workspace default-time coordination is atomic: ${effects.join(",")}`,
+  );
+});
 
 Deno.test("AUTH-004 changes the current identity and records governance atomically", async () => {
   const { effects, service } = fixture();

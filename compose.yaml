@@ -26,7 +26,7 @@ services:
       "run",
       "--allow-env=DATABASE_URL,PGHOST,PGPORT,PGUSERNAME,PGUSER,PGDATABASE,PGPASSWORD,PGMAX,PGSSL,PGSSLNEGOTIATION,PGIDLE_TIMEOUT,PGCONNECT_TIMEOUT,PGMAX_LIFETIME,PGMAX_PIPELINE,PGBACKOFF,PGKEEP_ALIVE,PGPREPARE,PGDEBUG,PGFETCH_TYPES,PGPUBLICATIONS,PGAPPNAME,PGTARGETSESSIONATTRS,PGTARGET_SESSION_ATTRS",
       "--allow-net=postgres:5432",
-      "--allow-read=/app/personal-crm-schema/v1,/app/personal-crm-schema/v2,/app/personal-crm-schema/v3,/app/personal-crm-schema/v4,/app/personal-crm-schema/v5",
+      "--allow-read=/app/personal-crm-schema/v1,/app/personal-crm-schema/v2,/app/personal-crm-schema/v3,/app/personal-crm-schema/v4,/app/personal-crm-schema/v5,/app/personal-crm-schema/v6",
       "tools/migrations/main.ts",
     ]
     environment:
@@ -93,6 +93,31 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=16m
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: [
+      "deno",
+      "run",
+      "--allow-env=DATABASE_URL,PGHOST,PGPORT,PGUSERNAME,PGUSER,PGDATABASE,PGPASSWORD,PGMAX,PGSSL,PGSSLNEGOTIATION,PGIDLE_TIMEOUT,PGCONNECT_TIMEOUT,PGMAX_LIFETIME,PGMAX_PIPELINE,PGBACKOFF,PGKEEP_ALIVE,PGPREPARE,PGDEBUG,PGFETCH_TYPES,PGPUBLICATIONS,PGAPPNAME,PGTARGETSESSIONATTRS,PGTARGET_SESSION_ATTRS,WORKER_INSTANCE_ID",
+      "--allow-net=postgres:5432",
+      "apps/worker/main.ts",
+    ]
+    environment:
+      PGDATABASE: ${POSTGRES_DB:-kinship}
+      PGHOST: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER:-kinship}
+      WORKER_INSTANCE_ID: ${WORKER_INSTANCE_ID:-kinship-worker}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    read_only: true
+    restart: unless-stopped
+    stop_grace_period: 10s
 
   web:
     build:

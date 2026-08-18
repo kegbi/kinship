@@ -3035,6 +3035,513 @@
         }
       }
     },
+    "/api/v1/people/{personId}/reminders": {
+      "get": {
+        "operationId": "listPersonReminders",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "personId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Person reminder and cadence section",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonReminders"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reminders": {
+      "post": {
+        "operationId": "createReminder",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "description": "Must exactly match the configured public web origin.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReminderCreateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Calendar reminder created with unique future occurrences",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stay-in-touch-cadences": {
+      "post": {
+        "operationId": "createStayInTouchCadence",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "description": "Must exactly match the configured public web origin.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CadenceCreateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Stay-in-touch cadence created or changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CadenceCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reminders/{reminderId}/active": {
+      "put": {
+        "operationId": "setReminderActive",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "description": "Must exactly match the configured public web origin.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "reminderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "active"
+                ],
+                "properties": {
+                  "active": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reminder active state changed; safe unattempted work is cancelled when disabled, in-flight delivery is preserved, and future work is regenerated when re-enabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderSaved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/today/reminders": {
+      "get": {
+        "operationId": "getTodayReminders",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Independent Today reminder and cadence regions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodayReminders"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/today/favorite-notes": {
       "get": {
         "operationId": "getTodayFavoriteNotes",
@@ -9058,6 +9565,461 @@
           },
           "status": {
             "const": "ready"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReminderOccurrence": {
+        "type": "object",
+        "required": [
+          "attemptCount",
+          "deliverAt",
+          "id",
+          "occursOn",
+          "status"
+        ],
+        "properties": {
+          "attemptCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deliverAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "occursOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "providerEffectAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "claimed",
+              "retry",
+              "sent",
+              "skipped",
+              "failed",
+              "cancelled",
+              "manual_attention"
+            ]
+          },
+          "visibleAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Reminder": {
+        "type": "object",
+        "required": [
+          "anchorOn",
+          "createdAt",
+          "id",
+          "isActive",
+          "personId",
+          "recurrenceInterval",
+          "recurrenceUnit",
+          "sendTime",
+          "title",
+          "updatedAt"
+        ],
+        "properties": {
+          "anchorOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "nextOccurrence": {
+            "$ref": "#/components/schemas/ReminderOccurrence"
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recurrenceInterval": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "recurrenceUnit": {
+            "enum": [
+              "none",
+              "day",
+              "week",
+              "month",
+              "year"
+            ]
+          },
+          "sendTime": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "StayInTouchCadence": {
+        "type": "object",
+        "required": [
+          "id",
+          "intervalCount",
+          "intervalUnit",
+          "isActive",
+          "nextDueAt",
+          "personId",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "intervalCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "intervalUnit": {
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "year"
+            ]
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "lastContactedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "nextDueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReminderCreateInput": {
+        "type": "object",
+        "required": [
+          "anchorOn",
+          "personId",
+          "recurrenceInterval",
+          "recurrenceUnit",
+          "requestId",
+          "sendTime",
+          "title"
+        ],
+        "properties": {
+          "anchorOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recurrenceInterval": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "recurrenceUnit": {
+            "enum": [
+              "none",
+              "day",
+              "week",
+              "month",
+              "year"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sendTime": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d)?$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "additionalProperties": false
+      },
+      "CadenceCreateInput": {
+        "type": "object",
+        "required": [
+          "intervalCount",
+          "intervalUnit",
+          "personId",
+          "requestId"
+        ],
+        "properties": {
+          "intervalCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "intervalUnit": {
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "year"
+            ]
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReminderCreated": {
+        "type": "object",
+        "required": [
+          "reminder",
+          "status"
+        ],
+        "properties": {
+          "reminder": {
+            "$ref": "#/components/schemas/Reminder"
+          },
+          "status": {
+            "const": "created"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReminderSaved": {
+        "type": "object",
+        "required": [
+          "reminder",
+          "status"
+        ],
+        "properties": {
+          "reminder": {
+            "$ref": "#/components/schemas/Reminder"
+          },
+          "status": {
+            "const": "saved"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CadenceCreated": {
+        "type": "object",
+        "required": [
+          "cadence",
+          "status"
+        ],
+        "properties": {
+          "cadence": {
+            "$ref": "#/components/schemas/StayInTouchCadence"
+          },
+          "status": {
+            "const": "created"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PersonReminders": {
+        "type": "object",
+        "required": [
+          "cadences",
+          "reminders",
+          "status"
+        ],
+        "properties": {
+          "cadences": {
+            "type": "array",
+            "maxItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/StayInTouchCadence"
+            }
+          },
+          "reminders": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/Reminder"
+            }
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TodayReminderPerson": {
+        "type": "object",
+        "required": [
+          "archived",
+          "id",
+          "name"
+        ],
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TodayReminderItem": {
+        "type": "object",
+        "required": [
+          "attemptCount",
+          "deliverAt",
+          "id",
+          "person",
+          "status",
+          "title"
+        ],
+        "properties": {
+          "attemptCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deliverAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "person": {
+            "$ref": "#/components/schemas/TodayReminderPerson"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "claimed",
+              "retry",
+              "sent",
+              "failed",
+              "manual_attention"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "visibleAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TodayCadenceItem": {
+        "type": "object",
+        "required": [
+          "dueAt",
+          "id",
+          "person"
+        ],
+        "properties": {
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lastContactedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "person": {
+            "$ref": "#/components/schemas/TodayReminderPerson"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TodayReminders": {
+        "type": "object",
+        "required": [
+          "cadences",
+          "reminders",
+          "status",
+          "timezone"
+        ],
+        "properties": {
+          "cadences": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/TodayCadenceItem"
+            }
+          },
+          "reminders": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/TodayReminderItem"
+            }
+          },
+          "status": {
+            "const": "ready"
+          },
+          "timezone": {
+            "type": "string"
           }
         },
         "additionalProperties": false

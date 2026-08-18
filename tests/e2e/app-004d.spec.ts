@@ -170,6 +170,8 @@ test(
 
     await page.goto(targetPath);
     await page.getByRole("button", { name: "Archive person" }).click();
+    await expect(page.locator("#profile-section-relationships"))
+      .toHaveAttribute("data-section-state", "read-only");
     await page.goto(sourcePath);
     await section.getByRole("button", {
       name: "Save relationship with Charles Babbage",

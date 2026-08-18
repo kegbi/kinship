@@ -436,6 +436,70 @@ const profileFactSections = new Set<string>([
                 </div>
               </section>
             )
+            : id === "reminders"
+            ? (
+              <section
+                id="profile-section-reminders"
+                class="profile-section-card"
+                data-profile-section="reminders"
+                data-section-state="loading"
+                tabindex="-1"
+                aria-labelledby="profile-section-reminders-heading"
+              >
+                <header class="profile-section-heading">
+                  <div><p class="section-kicker">Calendar planning</p><h2 id="profile-section-reminders-heading">Reminders</h2></div>
+                  <span class="state-badge calm">Calendar recurrence</span>
+                </header>
+                <p data-reminder-state class="section-state" role="status" aria-live="polite">Loading reminders…</p>
+                <ul data-reminder-list class="task-list" aria-label="Person reminders"></ul>
+                <form data-reminder-form class="profile-fact-form" novalidate>
+                  <label>Title <input name="title" maxlength="500" required /></label>
+                  <label>First date <input name="anchorOn" type="date" required /></label>
+                  <label>Send time <input name="sendTime" type="time" value="09:00" required /></label>
+                  <label>Repeat
+                    <select name="recurrenceUnit">
+                      <option value="none">Once</option>
+                      <option value="day">Daily</option>
+                      <option value="week">Weekly</option>
+                      <option value="month">Monthly</option>
+                      <option value="year">Yearly</option>
+                    </select>
+                  </label>
+                  <label>Every <input name="recurrenceInterval" type="number" min="1" max="100" value="1" required /></label>
+                  <div class="form-actions"><button class="button-primary" type="submit">Save reminder</button></div>
+                </form>
+              </section>
+            )
+            : id === "stay-in-touch"
+            ? (
+              <section
+                id="profile-section-stay-in-touch"
+                class="profile-section-card"
+                data-profile-section="stay-in-touch"
+                data-section-state="loading"
+                tabindex="-1"
+                aria-labelledby="profile-section-stay-in-touch-heading"
+              >
+                <header class="profile-section-heading">
+                  <div><p class="section-kicker">Relationship rhythm</p><h2 id="profile-section-stay-in-touch-heading">Stay in touch</h2></div>
+                  <span class="state-badge calm">Contact cadence</span>
+                </header>
+                <p data-cadence-state class="section-state" role="status" aria-live="polite">Loading stay-in-touch cadence…</p>
+                <ul data-cadence-list class="task-list" aria-label="Stay-in-touch cadence"></ul>
+                <form data-cadence-form class="profile-fact-form" novalidate>
+                  <label>Reconnect every <input name="intervalCount" type="number" min="1" max="100" value="1" required /></label>
+                  <label>Calendar unit
+                    <select name="intervalUnit">
+                      <option value="week">Week</option>
+                      <option value="month">Month</option>
+                      <option value="year">Year</option>
+                      <option value="day">Day</option>
+                    </select>
+                  </label>
+                  <div class="form-actions"><button class="button-primary" type="submit">Save cadence</button></div>
+                </form>
+              </section>
+            )
             : profileFactSections.has(id)
             ? (
               <section

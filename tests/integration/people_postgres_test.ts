@@ -2882,7 +2882,10 @@ Deno.test({
     assert(annualReminder, "annual custom date owns a reminder definition");
     await sql`
       update crm.reminder_occurrences
-      set status = 'sent', sent_at = now(), updated_at = now()
+      set status = 'sent', sent_at = now(),
+        provider_receipt = 'people-005-history:' || id::text,
+        provider_result_state = 'confirmed', provider_effect_at = now(),
+        visible_at = now(), updated_at = now()
       where reminder_id = ${annualReminder.id}
     `;
     const deletedAnnual = await importantDateRequest(

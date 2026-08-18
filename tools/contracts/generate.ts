@@ -45,6 +45,12 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
     required: true,
     schema: { type: "string", format: "uuid" },
   };
+  const reminderIdParameter = {
+    name: "reminderId",
+    in: "path",
+    required: true,
+    schema: { type: "string", format: "uuid" },
+  };
   const personMutation = (
     operationId: string,
     input: string,
@@ -1239,6 +1245,151 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
               content: {
                 "application/json": {
                   schema: { $ref: "#/components/schemas/TodayTasks" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/reminders": {
+        get: {
+          operationId: "listPersonReminders",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter, personIdParameter],
+          responses: {
+            "200": {
+              description: "Person reminder and cadence section",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/PersonReminders" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/reminders": {
+        post: {
+          operationId: "createReminder",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ReminderCreateInput" },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description:
+                "Calendar reminder created with unique future occurrences",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ReminderCreated" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/stay-in-touch-cadences": {
+        post: {
+          operationId: "createStayInTouchCadence",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/CadenceCreateInput" },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "Stay-in-touch cadence created or changed",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/CadenceCreated" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/reminders/{reminderId}/active": {
+        put: {
+          operationId: "setReminderActive",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            originParameter,
+            workspaceParameter,
+            reminderIdParameter,
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["active"],
+                  properties: { active: { type: "boolean" } },
+                  additionalProperties: false,
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description:
+                "Reminder active state changed; safe unattempted work is cancelled when disabled, in-flight delivery is preserved, and future work is regenerated when re-enabled",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ReminderSaved" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/today/reminders": {
+        get: {
+          operationId: "getTodayReminders",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter],
+          responses: {
+            "200": {
+              description: "Independent Today reminder and cadence regions",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/TodayReminders" },
                 },
               },
             },
@@ -3401,6 +3552,236 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        ReminderOccurrence: {
+          type: "object",
+          required: ["attemptCount", "deliverAt", "id", "occursOn", "status"],
+          properties: {
+            attemptCount: { type: "integer", minimum: 0 },
+            deliverAt: { type: "string", format: "date-time" },
+            error: { type: "string" },
+            id: { type: "string", format: "uuid" },
+            occursOn: { type: "string", format: "date" },
+            providerEffectAt: { type: "string", format: "date-time" },
+            sentAt: { type: "string", format: "date-time" },
+            status: {
+              enum: [
+                "pending",
+                "claimed",
+                "retry",
+                "sent",
+                "skipped",
+                "failed",
+                "cancelled",
+                "manual_attention",
+              ],
+            },
+            visibleAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
+        Reminder: {
+          type: "object",
+          required: [
+            "anchorOn",
+            "createdAt",
+            "id",
+            "isActive",
+            "personId",
+            "recurrenceInterval",
+            "recurrenceUnit",
+            "sendTime",
+            "title",
+            "updatedAt",
+          ],
+          properties: {
+            anchorOn: { type: "string", format: "date" },
+            createdAt: { type: "string", format: "date-time" },
+            id: { type: "string", format: "uuid" },
+            isActive: { type: "boolean" },
+            nextOccurrence: { $ref: "#/components/schemas/ReminderOccurrence" },
+            personId: { type: "string", format: "uuid" },
+            recurrenceInterval: { type: "integer", minimum: 1, maximum: 100 },
+            recurrenceUnit: { enum: ["none", "day", "week", "month", "year"] },
+            sendTime: { type: "string" },
+            title: { type: "string" },
+            updatedAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
+        StayInTouchCadence: {
+          type: "object",
+          required: [
+            "id",
+            "intervalCount",
+            "intervalUnit",
+            "isActive",
+            "nextDueAt",
+            "personId",
+            "updatedAt",
+          ],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            intervalCount: { type: "integer", minimum: 1, maximum: 100 },
+            intervalUnit: { enum: ["day", "week", "month", "year"] },
+            isActive: { type: "boolean" },
+            lastContactedAt: { type: "string", format: "date-time" },
+            nextDueAt: { type: "string", format: "date-time" },
+            personId: { type: "string", format: "uuid" },
+            updatedAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
+        ReminderCreateInput: {
+          type: "object",
+          required: [
+            "anchorOn",
+            "personId",
+            "recurrenceInterval",
+            "recurrenceUnit",
+            "requestId",
+            "sendTime",
+            "title",
+          ],
+          properties: {
+            anchorOn: { type: "string", format: "date" },
+            personId: { type: "string", format: "uuid" },
+            recurrenceInterval: { type: "integer", minimum: 1, maximum: 100 },
+            recurrenceUnit: { enum: ["none", "day", "week", "month", "year"] },
+            requestId: { type: "string", format: "uuid" },
+            sendTime: {
+              type: "string",
+              pattern: "^([01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d)?$",
+            },
+            title: { type: "string", minLength: 1, maxLength: 500 },
+          },
+          additionalProperties: false,
+        },
+        CadenceCreateInput: {
+          type: "object",
+          required: ["intervalCount", "intervalUnit", "personId", "requestId"],
+          properties: {
+            intervalCount: { type: "integer", minimum: 1, maximum: 100 },
+            intervalUnit: { enum: ["day", "week", "month", "year"] },
+            personId: { type: "string", format: "uuid" },
+            requestId: { type: "string", format: "uuid" },
+          },
+          additionalProperties: false,
+        },
+        ReminderCreated: {
+          type: "object",
+          required: ["reminder", "status"],
+          properties: {
+            reminder: { $ref: "#/components/schemas/Reminder" },
+            status: { const: "created" },
+          },
+          additionalProperties: false,
+        },
+        ReminderSaved: {
+          type: "object",
+          required: ["reminder", "status"],
+          properties: {
+            reminder: { $ref: "#/components/schemas/Reminder" },
+            status: { const: "saved" },
+          },
+          additionalProperties: false,
+        },
+        CadenceCreated: {
+          type: "object",
+          required: ["cadence", "status"],
+          properties: {
+            cadence: { $ref: "#/components/schemas/StayInTouchCadence" },
+            status: { const: "created" },
+          },
+          additionalProperties: false,
+        },
+        PersonReminders: {
+          type: "object",
+          required: ["cadences", "reminders", "status"],
+          properties: {
+            cadences: {
+              type: "array",
+              maxItems: 1,
+              items: { $ref: "#/components/schemas/StayInTouchCadence" },
+            },
+            reminders: {
+              type: "array",
+              maxItems: 100,
+              items: { $ref: "#/components/schemas/Reminder" },
+            },
+            status: { const: "ready" },
+          },
+          additionalProperties: false,
+        },
+        TodayReminderPerson: {
+          type: "object",
+          required: ["archived", "id", "name"],
+          properties: {
+            archived: { type: "boolean" },
+            id: { type: "string", format: "uuid" },
+            name: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        TodayReminderItem: {
+          type: "object",
+          required: [
+            "attemptCount",
+            "deliverAt",
+            "id",
+            "person",
+            "status",
+            "title",
+          ],
+          properties: {
+            attemptCount: { type: "integer", minimum: 0 },
+            deliverAt: { type: "string", format: "date-time" },
+            id: { type: "string", format: "uuid" },
+            person: { $ref: "#/components/schemas/TodayReminderPerson" },
+            status: {
+              enum: [
+                "pending",
+                "claimed",
+                "retry",
+                "sent",
+                "failed",
+                "manual_attention",
+              ],
+            },
+            title: { type: "string" },
+            visibleAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
+        TodayCadenceItem: {
+          type: "object",
+          required: ["dueAt", "id", "person"],
+          properties: {
+            dueAt: { type: "string", format: "date-time" },
+            id: { type: "string", format: "uuid" },
+            lastContactedAt: { type: "string", format: "date-time" },
+            person: { $ref: "#/components/schemas/TodayReminderPerson" },
+          },
+          additionalProperties: false,
+        },
+        TodayReminders: {
+          type: "object",
+          required: ["cadences", "reminders", "status", "timezone"],
+          properties: {
+            cadences: {
+              type: "array",
+              maxItems: 100,
+              items: { $ref: "#/components/schemas/TodayCadenceItem" },
+            },
+            reminders: {
+              type: "array",
+              maxItems: 100,
+              items: { $ref: "#/components/schemas/TodayReminderItem" },
+            },
+            status: { const: "ready" },
+            timezone: { type: "string" },
+          },
+          additionalProperties: false,
+        },
         TodayFavoriteNotes: {
           type: "object",
           required: ["items", "status"],
@@ -5266,6 +5647,70 @@ export interface TaskList {
   readonly status: "ready";
 }
 
+export type ReminderOccurrenceStatus = "pending" | "claimed" | "retry" | "sent" | "skipped" | "failed" | "cancelled" | "manual_attention";
+export interface ReminderOccurrence { readonly attemptCount: number; readonly deliverAt: string; readonly error?: string; readonly id: string; readonly occursOn: string; readonly providerEffectAt?: string; readonly sentAt?: string; readonly status: ReminderOccurrenceStatus; readonly visibleAt?: string; }
+export interface Reminder { readonly anchorOn: string; readonly createdAt: string; readonly id: string; readonly isActive: boolean; readonly nextOccurrence?: ReminderOccurrence; readonly personId: string; readonly recurrenceInterval: number; readonly recurrenceUnit: "none" | "day" | "week" | "month" | "year"; readonly sendTime: string; readonly title: string; readonly updatedAt: string; }
+export interface StayInTouchCadence { readonly id: string; readonly intervalCount: number; readonly intervalUnit: "day" | "week" | "month" | "year"; readonly isActive: boolean; readonly lastContactedAt?: string; readonly nextDueAt: string; readonly personId: string; readonly updatedAt: string; }
+export interface ReminderCreateInput { readonly anchorOn: string; readonly personId: string; readonly recurrenceInterval: number; readonly recurrenceUnit: Reminder["recurrenceUnit"]; readonly requestId: string; readonly sendTime: string; readonly title: string; }
+export interface CadenceCreateInput { readonly intervalCount: number; readonly intervalUnit: StayInTouchCadence["intervalUnit"]; readonly personId: string; readonly requestId: string; }
+export interface PersonReminders { readonly cadences: readonly StayInTouchCadence[]; readonly reminders: readonly Reminder[]; readonly status: "ready"; }
+export interface TodayReminderPerson { readonly archived: boolean; readonly id: string; readonly name: string; }
+export interface TodayReminderItem { readonly attemptCount: number; readonly deliverAt: string; readonly id: string; readonly person: TodayReminderPerson; readonly status: "pending" | "claimed" | "retry" | "sent" | "failed" | "manual_attention"; readonly title: string; readonly visibleAt?: string; }
+export interface TodayCadenceItem { readonly dueAt: string; readonly id: string; readonly lastContactedAt?: string; readonly person: TodayReminderPerson; }
+export interface TodayReminders { readonly cadences: readonly TodayCadenceItem[]; readonly reminders: readonly TodayReminderItem[]; readonly status: "ready"; readonly timezone: string; }
+
+const todayReminderUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-58][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const todayRfc3339Instant = /^(\\d{4})-(\\d{2})-(\\d{2})[Tt](\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d+)?([Zz]|[+-](\\d{2}):(\\d{2}))$/;
+function exactTodayRecord(value: unknown, required: readonly string[], optional: readonly string[] = []): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  const allowed = new Set([...required, ...optional]);
+  return required.every((key) => Object.prototype.hasOwnProperty.call(record, key)) &&
+    Object.keys(record).every((key) => allowed.has(key));
+}
+function validTodayPerson(value: unknown): value is TodayReminderPerson {
+  return exactTodayRecord(value, ["archived", "id", "name"]) &&
+    typeof value.archived === "boolean" && typeof value.id === "string" &&
+    todayReminderUuid.test(value.id) && typeof value.name === "string";
+}
+function validTodayInstant(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = todayRfc3339Instant.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] ?? 0;
+  const offsetHour = match[8] === undefined ? 0 : Number(match[8]);
+  const offsetMinute = match[9] === undefined ? 0 : Number(match[9]);
+  return day >= 1 && day <= daysInMonth && hour <= 23 && minute <= 59 && second <= 59 &&
+    offsetHour <= 23 && offsetMinute <= 59 && Number.isFinite(Date.parse(value));
+}
+export function parseTodayReminders(value: unknown): TodayReminders {
+  const valid = exactTodayRecord(value, ["cadences", "reminders", "status", "timezone"]) &&
+    value.status === "ready" && typeof value.timezone === "string" && value.timezone.length > 0 &&
+    Array.isArray(value.reminders) && value.reminders.length <= 100 &&
+    value.reminders.every((item) =>
+      exactTodayRecord(item, ["attemptCount", "deliverAt", "id", "person", "status", "title"], ["visibleAt"]) &&
+      typeof item.attemptCount === "number" && Number.isInteger(item.attemptCount) && item.attemptCount >= 0 &&
+      validTodayInstant(item.deliverAt) && typeof item.id === "string" && todayReminderUuid.test(item.id) &&
+      validTodayPerson(item.person) && ["pending", "claimed", "retry", "sent", "failed", "manual_attention"].includes(String(item.status)) &&
+      typeof item.title === "string" && (item.visibleAt === undefined || validTodayInstant(item.visibleAt))
+    ) &&
+    Array.isArray(value.cadences) && value.cadences.length <= 100 &&
+    value.cadences.every((item) =>
+      exactTodayRecord(item, ["dueAt", "id", "person"], ["lastContactedAt"]) &&
+      validTodayInstant(item.dueAt) && typeof item.id === "string" && todayReminderUuid.test(item.id) &&
+      validTodayPerson(item.person) && (item.lastContactedAt === undefined || validTodayInstant(item.lastContactedAt))
+    );
+  if (!valid) throw new TypeError("Invalid Today reminders response.");
+  return value as unknown as TodayReminders;
+}
+
 export interface RelationshipType {
   readonly archived: boolean;
   readonly forwardLabel: string;
@@ -5678,6 +6123,28 @@ export function setTaskCompletion(taskId: string, completed: boolean, workspaceI
 
 export function getTodayTasks(workspaceId?: string): Promise<ApiResult<TaskList>> {
   return request("/api/v1/today/tasks", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listPersonReminders(personId: string, workspaceId?: string): Promise<ApiResult<PersonReminders>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/reminders\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function createReminder(input: ReminderCreateInput, workspaceId?: string): Promise<ApiResult<{ readonly reminder: Reminder; readonly status: "created" }>> {
+  return request("/api/v1/reminders", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function createStayInTouchCadence(input: CadenceCreateInput, workspaceId?: string): Promise<ApiResult<{ readonly cadence: StayInTouchCadence; readonly status: "created" }>> {
+  return request("/api/v1/stay-in-touch-cadences", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function setReminderActive(reminderId: string, active: boolean, workspaceId?: string): Promise<ApiResult<{ readonly reminder: Reminder; readonly status: "saved" }>> {
+  return request(\`/api/v1/reminders/\${encodeURIComponent(reminderId)}/active\`, { method: "PUT", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify({ active }) });
+}
+
+export function getTodayReminders(workspaceId?: string): Promise<ApiResult<TodayReminders>> {
+  return request<unknown>("/api/v1/today/reminders", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined }).then((result): ApiResult<TodayReminders> =>
+    result.ok ? { ok: true, value: parseTodayReminders(result.value) } : result
+  );
 }
 
 export function listRelationshipTypes(input: { readonly cursor?: string; readonly search?: string; readonly selected?: readonly string[] } = {}, workspaceId?: string): Promise<ApiResult<{ readonly nextCursor?: string; readonly options: readonly RelationshipType[]; readonly selected: readonly RelationshipType[]; readonly status: "hidden" | "ready" }>> {

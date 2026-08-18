@@ -16,7 +16,7 @@ export const prerender = true;
         <h1 id="today-heading">Opening your workspace…</h1>
         <time data-today-date></time>
       </div>
-      <p class="honesty-note">Due tasks are available now. Reminders, cadence, and the complete attention ordering remain in their accepted delivery leaves.</p>
+      <p class="honesty-note">Due tasks, reminders, and stay-in-touch cadence are available now. The complete cross-module attention ordering remains in its accepted delivery leaf.</p>
     </header>
 
     <section class="today-section attention-section" aria-labelledby="attention-heading">
@@ -31,14 +31,15 @@ export const prerender = true;
       <ol class="success-loop">
         <li><strong>Add a person or start an import.</strong><span>People creation and import arrive in their cataloged delivery slices.</span></li>
         <li><strong>Record the first interaction or note.</strong><span>Keep the context you want to remember.</span></li>
-        <li><strong>Create a task, reminder, or stay-in-touch cadence.</strong><span>That work will later appear in the complete Today queue.</span></li>
+        <li><strong>Create a task, reminder, or stay-in-touch cadence.</strong><span>Planning work appears in the independent Today regions below.</span></li>
       </ol>
       <p class="projection-note">Task completion here uses the same planning action as the person and global task surfaces.</p>
     </section>
 
     <section class="today-section" aria-labelledby="reconnect-heading">
-      <div class="section-heading"><h2 id="reconnect-heading">People to reconnect</h2><span class="state-badge calm">Not available yet</span></div>
-      <p>Cadence-aware suggestions will appear after People and stay-in-touch behavior are delivered.</p>
+      <div class="section-heading"><h2 id="reconnect-heading">People to reconnect</h2><span class="state-badge calm">Stay-in-touch cadence</span></div>
+      <p id="today-cadences-state" class="section-state" role="status" aria-live="polite">Loading reconnect suggestions…</p>
+      <ul id="today-cadences-list" class="task-list" aria-label="People due for contact"></ul>
     </section>
 
     <section class="today-section" aria-labelledby="upcoming-heading">
@@ -46,6 +47,13 @@ export const prerender = true;
       <p id="today-tasks-state" class="section-state" role="status" aria-live="polite">Loading due tasks…</p>
       <ul id="today-tasks-list" class="task-list" aria-label="Due tasks"></ul>
       <div class="form-actions"><button id="today-tasks-retry" class="button-secondary" type="button" hidden>Retry due tasks</button><a class="button-secondary" href="/app/tasks">Open all tasks</a></div>
+    </section>
+
+    <section class="today-section" aria-labelledby="reminders-heading">
+      <div class="section-heading"><h2 id="reminders-heading">Reminders</h2><span class="state-badge calm">Delivery state</span></div>
+      <p id="today-reminders-state" class="section-state" role="status" aria-live="polite">Loading reminders…</p>
+      <ul id="today-reminders-list" class="task-list" aria-label="Reminder delivery states"></ul>
+      <button id="today-reminders-retry" class="button-secondary" type="button" hidden>Retry reminders</button>
     </section>
 
     <section class="today-section" aria-labelledby="recent-people-heading">
@@ -71,7 +79,9 @@ export const prerender = true;
 
 <script>
   import { mountTodayInteractions } from "../lib/interactions.ts";
+  import { mountTodayReminders } from "../lib/reminders.ts";
   import { mountTodayTasks } from "../lib/tasks.ts";
   void mountTodayInteractions();
+  void mountTodayReminders();
   void mountTodayTasks();
 </script>

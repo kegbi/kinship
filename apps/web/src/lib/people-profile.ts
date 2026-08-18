@@ -17,6 +17,7 @@ import { mountPersonInteractions } from "./interactions.ts";
 import { mountCommunications } from "./communications.ts";
 import { mountPersonAuditSummary } from "./audit-history.ts";
 import { mountTaskSurface } from "./tasks.ts";
+import { mountPersonReminders } from "./reminders.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
@@ -223,7 +224,18 @@ function section(id: string | null): HTMLElement | undefined {
     .find((candidate) => candidate.dataset.profileSection === id);
 }
 
-function focusSection(id: string | null): boolean {
+function hasMeaningfulInteractiveFocus(): boolean {
+  const active = document.activeElement;
+  return active instanceof HTMLElement && active.isConnected &&
+    active.matches(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [contenteditable="true"]',
+    );
+}
+
+function focusSection(
+  id: string | null,
+  preserveInteractiveFocus = false,
+): boolean {
   const target = section(id);
   if (!target || target.hidden) return false;
   for (
@@ -237,6 +249,7 @@ function focusSection(id: string | null): boolean {
       link.removeAttribute("aria-current");
     }
   }
+  if (preserveInteractiveFocus && hasMeaningfulInteractiveFocus()) return true;
   target.scrollIntoView?.({ block: "start" });
   target.focus({ preventScroll: true });
   return true;
@@ -246,8 +259,11 @@ function currentSection(): string | null {
   return new URLSearchParams(globalThis.location.search).get("section");
 }
 
-function reconcileSectionLocation(profile: ProfileElements): void {
-  if (focusSection(currentSection())) return;
+function reconcileSectionLocation(
+  profile: ProfileElements,
+  preserveInteractiveFocus = false,
+): void {
+  if (focusSection(currentSection(), preserveInteractiveFocus)) return;
   for (
     const link of document.querySelectorAll<HTMLAnchorElement>(
       "[data-section-link]",
@@ -255,6 +271,7 @@ function reconcileSectionLocation(profile: ProfileElements): void {
   ) {
     link.removeAttribute("aria-current");
   }
+  if (preserveInteractiveFocus && hasMeaningfulInteractiveFocus()) return;
   profile.heading.focus({ preventScroll: true });
 }
 
@@ -714,6 +731,11 @@ export async function mountPeopleProfile(): Promise<void> {
       personId: id,
       workspaceId: session.session.workspace.id,
     }),
+    mountPersonReminders({
+      archived: result.value.status === "archived",
+      personId: id,
+      workspaceId: session.session.workspace.id,
+    }),
     mountCommunications(
       id,
       session.session.workspace.id,
@@ -729,5 +751,5 @@ export async function mountPeopleProfile(): Promise<void> {
     ),
     mountPersonAuditSummary(id, session.session.workspace.id),
   ]);
-  reconcileSectionLocation(profile);
+  reconcileSectionLocation(profile, true);
 }

@@ -65,6 +65,12 @@ and DG-06D covers the full destructive-lifecycle coordinator. Each gate closes
 independently, and every edge must exist in `module-boundaries.yaml` before code
 relies on it.
 
+DG-05 and DG-06B are accepted for PLANNING-002 by ADR 0005. Durable reminder
+delivery uses canonical schema v6 and the bounded idempotent `in_app` provider;
+planning consumes `interactions.interaction-recorded` through public facades
+with monotonic calendar cadence updates. Generic worker supervision and other
+providers remain outside this closure.
+
 All Monica/source-format parsers, mappings, and reconciliation fixtures belong
 to `import-export`. Each target module exposes an explicit public,
 authorization-preserving import command; source-format types never enter its
@@ -112,24 +118,24 @@ gate.
 The accountable roles below must be replaced by named people at implementation
 kickoff. A gate without a named owner and accepted artifact remains open.
 
-| Gate   | Owner                                                    | Status                                                | Decision artifact                                                                                                |
-| ------ | -------------------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| DG-01  | Architecture owner                                       | Open                                                  | ADR 0001 plus synchronized technology/Compose/configuration/observability contracts                              |
-| DG-02  | Database/platform owner                                  | Open                                                  | ADR 0003 result; synchronized schema bundle if metadata persists                                                 |
-| DG-03  | Identity/security owner                                  | Open                                                  | ADR 0002 accept/reject result and compatibility evidence                                                         |
-| DG-04  | Backend/API owner                                        | Open                                                  | Pinned compatibility report, manifests/lockfiles, and generation contract                                        |
-| DG-05  | Worker/data-lifecycle owner                              | Open                                                  | Durable-execution design, failure matrix, and synchronized schema bundle if required                             |
-| DG-06A | Architecture, identity, workspace, and governance owners | Open                                                  | Onboarding/invitation/audit transaction record and any manifest/ADR amendment                                    |
-| DG-06B | Architecture, interactions, and planning owners          | Open                                                  | Interaction-to-planning event/coordination decision and manifest amendment                                       |
-| DG-06C | Architecture, people, files, and gifts owners            | Open                                                  | Avatar/gift file-ownership and compensation decision                                                             |
-| DG-06D | Architecture, lifecycle, and affected module owners      | Open                                                  | Reset/delete participation, transaction, and cleanup decision                                                    |
-| DG-07  | Product owner                                            | Partially closed by PRODUCT-001; follow-up gates open | Accepted bounded release amendment; later product artifacts for each deferred gap                                |
-| DG-08  | Product, privacy, and security owners                    | Open                                                  | AI capability/privacy contract and architecture decision                                                         |
-| DG-09  | Import/product/security owners                           | Open                                                  | Import support and credential policy; synchronized mapping/schema bundle if changed                              |
-| DG-10  | Security, product/performance, and operations owners     | Open                                                  | Security verification profile, MVP capacity/budget record, then production SLO/provider/retention/runbook record |
-| DG-11  | Security/data-governance owner                           | Open                                                  | Deletion-audit retention decision and schema/ledger contract                                                     |
-| DG-12  | Platform/security owner                                  | Open                                                  | Gateway decision, pinned image/config contract, and TLS test proof                                               |
-| DG-13  | Platform/security owner                                  | Open                                                  | CI provider/trust decision, permissions map, immutable-step policy, and required-check map                       |
+| Gate   | Owner                                                    | Status                                                             | Decision artifact                                                                                                |
+| ------ | -------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| DG-01  | Architecture owner                                       | Open                                                               | ADR 0001 plus synchronized technology/Compose/configuration/observability contracts                              |
+| DG-02  | Database/platform owner                                  | Open                                                               | ADR 0003 result; synchronized schema bundle if metadata persists                                                 |
+| DG-03  | Identity/security owner                                  | Open                                                               | ADR 0002 accept/reject result and compatibility evidence                                                         |
+| DG-04  | Backend/API owner                                        | Open                                                               | Pinned compatibility report, manifests/lockfiles, and generation contract                                        |
+| DG-05  | Worker/data-lifecycle owner                              | Accepted for reminder delivery; later workloads retain checkpoints | ADR 0005, schema v6, and PLANNING-002 failure matrix                                                             |
+| DG-06A | Architecture, identity, workspace, and governance owners | Open                                                               | Onboarding/invitation/audit transaction record and any manifest/ADR amendment                                    |
+| DG-06B | Architecture, interactions, and planning owners          | Accepted                                                           | ADR 0005 and `interactions.interaction-recorded` manifest edge                                                   |
+| DG-06C | Architecture, people, files, and gifts owners            | Open                                                               | Avatar/gift file-ownership and compensation decision                                                             |
+| DG-06D | Architecture, lifecycle, and affected module owners      | Open                                                               | Reset/delete participation, transaction, and cleanup decision                                                    |
+| DG-07  | Product owner                                            | Partially closed by PRODUCT-001; follow-up gates open              | Accepted bounded release amendment; later product artifacts for each deferred gap                                |
+| DG-08  | Product, privacy, and security owners                    | Open                                                               | AI capability/privacy contract and architecture decision                                                         |
+| DG-09  | Import/product/security owners                           | Open                                                               | Import support and credential policy; synchronized mapping/schema bundle if changed                              |
+| DG-10  | Security, product/performance, and operations owners     | Open                                                               | Security verification profile, MVP capacity/budget record, then production SLO/provider/retention/runbook record |
+| DG-11  | Security/data-governance owner                           | Open                                                               | Deletion-audit retention decision and schema/ledger contract                                                     |
+| DG-12  | Platform/security owner                                  | Open                                                               | Gateway decision, pinned image/config contract, and TLS test proof                                               |
+| DG-13  | Platform/security owner                                  | Open                                                               | CI provider/trust decision, permissions map, immutable-step policy, and required-check map                       |
 
 ## Slice 0: Prove The Foundation
 

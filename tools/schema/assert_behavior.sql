@@ -280,7 +280,7 @@ BEGIN
       created_reminder_id,
       member_a,
       DATE '2027-08-09',
-      TIMESTAMPTZ '2027-08-08 12:00:00+00',
+      TIMESTAMPTZ '2027-08-08 13:00:00+00',
       'email'
     );
     RAISE EXCEPTION 'reminder occurrence uniqueness was not enforced';
@@ -304,7 +304,7 @@ BEGIN
     'email',
     'Regenerated reminder'
   )
-  ON CONFLICT (reminder_id, member_id, deliver_at, channel)
+  ON CONFLICT (reminder_id, member_id, occurs_on, channel, (COALESCE(lead_time_days, -1)))
   DO UPDATE SET
     occurs_on = EXCLUDED.occurs_on,
     title_snapshot = EXCLUDED.title_snapshot;
@@ -314,11 +314,39 @@ BEGIN
   FROM reminder_occurrences
   WHERE reminder_id = created_reminder_id
     AND member_id = member_a
-    AND deliver_at = TIMESTAMPTZ '2027-08-08 12:00:00+00'
+    AND occurs_on = DATE '2027-08-09'
     AND channel = 'email';
   IF row_count <> 1 OR stored_value <> 'Regenerated reminder' THEN
     RAISE EXCEPTION 'reminder occurrence regeneration was not idempotent';
   END IF;
+
+  BEGIN
+    UPDATE reminder_occurrences SET status = 'claimed'
+    WHERE reminder_id = created_reminder_id;
+    RAISE EXCEPTION 'claim without ownership and lease was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  UPDATE reminder_occurrences SET status = 'claimed',
+    claim_token = gen_random_uuid(), claim_owner = 'schema-test',
+    lease_expires_at = now() + interval '30 seconds', attempt_count = 1
+  WHERE reminder_id = created_reminder_id;
+
+  BEGIN
+    UPDATE reminder_occurrences SET status = 'sent', claim_token = null,
+      claim_owner = null, lease_expires_at = null
+    WHERE reminder_id = created_reminder_id;
+    RAISE EXCEPTION 'sent occurrence without confirmed receipt was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  UPDATE reminder_occurrences SET status = 'sent', sent_at = now(),
+    claim_token = null, claim_owner = null, lease_expires_at = null,
+    provider_receipt = 'schema-receipt', provider_result_state = 'confirmed',
+    provider_effect_at = now(), visible_at = now()
+  WHERE reminder_id = created_reminder_id;
 
   IF member_b IS NULL OR workspace_b IS NULL THEN
     RAISE EXCEPTION 'secondary workspace fixture was not created';
