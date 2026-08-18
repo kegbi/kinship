@@ -113,7 +113,8 @@ async function assertProjectAbsent(
 async function main(): Promise<void> {
   const task = Deno.args[0];
   if (
-    task !== "test:integration:direct" && task !== "test:coverage:api:direct"
+    task !== "test:integration:direct" && task !== "test:coverage:api:direct" &&
+    task !== "test:coverage:planning:direct"
   ) {
     throw new Error("Expected an allowlisted direct PostgreSQL gate task.");
   }

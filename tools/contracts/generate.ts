@@ -39,6 +39,12 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
     required: true,
     schema: { type: "string", format: "uuid" },
   };
+  const taskIdParameter = {
+    name: "taskId",
+    in: "path",
+    required: true,
+    schema: { type: "string", format: "uuid" },
+  };
   const personMutation = (
     operationId: string,
     input: string,
@@ -893,6 +899,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             },
             "401": problem,
             "403": problem,
+            "409": problem,
             "503": problem,
           },
         },
@@ -1077,6 +1084,166 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             "403": problem,
             "404": problem,
             "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/tasks": {
+        get: {
+          operationId: "listTasks",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            workspaceParameter,
+            {
+              name: "cursor",
+              in: "query",
+              schema: { type: "string", maxLength: 2_000 },
+            },
+            {
+              name: "personId",
+              in: "query",
+              schema: { type: "string", format: "uuid" },
+            },
+            {
+              name: "status",
+              in: "query",
+              schema: { enum: ["cancelled", "completed", "open"] },
+            },
+            {
+              name: "limit",
+              in: "query",
+              schema: {
+                type: "integer",
+                minimum: 1,
+                maximum: 100,
+                default: 100,
+              },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Bounded tenant-scoped task list",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/TaskList" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+        post: {
+          operationId: "createTask",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/TaskCreateInput" },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "Task created idempotently",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/TaskCreated" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/tasks/{taskId}": {
+        patch: {
+          operationId: "changeTask",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, taskIdParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/TaskChangeInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Task changed or already equal",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/TaskChanged" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/tasks/{taskId}/completion": {
+        put: {
+          operationId: "setTaskCompletion",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, taskIdParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/TaskCompletionInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Idempotent task completion state",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/TaskChanged" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/today/tasks": {
+        get: {
+          operationId: "getTodayTasks",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter],
+          responses: {
+            "200": {
+              description: "Read-only due-task Today region",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/TodayTasks" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
             "503": problem,
           },
         },
@@ -3007,8 +3174,12 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
               properties: {
                 action: {
                   enum: [
+                    "changed",
+                    "completed",
                     "create",
+                    "created",
                     "delete",
+                    "reopened",
                     "save",
                     "update",
                   ],
@@ -3054,6 +3225,9 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
                 status: {
                   enum: [
                     "active",
+                    "cancelled",
+                    "completed",
+                    "open",
                     "suspended",
                   ],
                 },
@@ -3091,6 +3265,139 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             nextCursor: { type: "string" },
             person: { $ref: "#/components/schemas/InteractionParticipant" },
             status: { enum: ["archived", "ready"] },
+          },
+          additionalProperties: false,
+        },
+        TaskPerson: {
+          type: "object",
+          required: ["archived", "id", "name"],
+          properties: {
+            archived: { type: "boolean" },
+            id: { type: "string", format: "uuid" },
+            name: { type: "string" },
+            unavailable: { type: "boolean" },
+          },
+          additionalProperties: false,
+        },
+        Task: {
+          type: "object",
+          required: ["createdAt", "id", "status", "title", "updatedAt"],
+          properties: {
+            completedAt: { type: "string", format: "date-time" },
+            completedByMemberId: { type: "string", format: "uuid" },
+            createdAt: { type: "string", format: "date-time" },
+            createdByMemberId: { type: "string", format: "uuid" },
+            description: { type: "string" },
+            dueAt: { type: "string", format: "date-time" },
+            id: { type: "string", format: "uuid" },
+            person: { $ref: "#/components/schemas/TaskPerson" },
+            status: { enum: ["cancelled", "completed", "open"] },
+            title: { type: "string" },
+            updatedAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
+        TaskList: {
+          type: "object",
+          required: ["items", "status"],
+          properties: {
+            items: {
+              type: "array",
+              maxItems: 100,
+              items: { $ref: "#/components/schemas/Task" },
+            },
+            nextCursor: { type: "string" },
+            status: { const: "ready" },
+          },
+          additionalProperties: false,
+        },
+        TaskCreateInput: {
+          type: "object",
+          required: ["requestId", "title"],
+          properties: {
+            description: {
+              type: "string",
+              minLength: 1,
+              maxLength: 10000,
+              pattern: "\\S",
+            },
+            dueAt: { type: "string", format: "date-time" },
+            personId: { type: "string", format: "uuid" },
+            requestId: { type: "string", format: "uuid" },
+            title: {
+              type: "string",
+              minLength: 1,
+              maxLength: 500,
+              pattern: "\\S",
+            },
+          },
+          additionalProperties: false,
+        },
+        TaskChangeInput: {
+          type: "object",
+          required: ["expectedUpdatedAt"],
+          properties: {
+            description: {
+              anyOf: [{
+                type: "string",
+                minLength: 1,
+                maxLength: 10000,
+                pattern: "\\S",
+              }, { type: "null" }],
+            },
+            dueAt: {
+              anyOf: [{ type: "string", format: "date-time" }, {
+                type: "null",
+              }],
+            },
+            expectedUpdatedAt: { type: "string", format: "date-time" },
+            personId: {
+              anyOf: [{ type: "string", format: "uuid" }, { type: "null" }],
+            },
+            status: { enum: ["cancelled", "open"] },
+            title: {
+              type: "string",
+              minLength: 1,
+              maxLength: 500,
+              pattern: "\\S",
+            },
+          },
+          additionalProperties: false,
+        },
+        TaskCompletionInput: {
+          type: "object",
+          required: ["completed"],
+          properties: { completed: { type: "boolean" } },
+          additionalProperties: false,
+        },
+        TaskCreated: {
+          type: "object",
+          required: ["status", "task"],
+          properties: {
+            status: { const: "created" },
+            task: { $ref: "#/components/schemas/Task" },
+          },
+          additionalProperties: false,
+        },
+        TaskChanged: {
+          type: "object",
+          required: ["status", "task"],
+          properties: {
+            status: { enum: ["saved", "unchanged"] },
+            task: { $ref: "#/components/schemas/Task" },
+          },
+          additionalProperties: false,
+        },
+        TodayTasks: {
+          type: "object",
+          required: ["items", "status"],
+          properties: {
+            items: {
+              type: "array",
+              maxItems: 20,
+              items: { $ref: "#/components/schemas/Task" },
+            },
+            status: { const: "ready" },
           },
           additionalProperties: false,
         },
@@ -3374,6 +3681,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             "notes",
             "pets",
             "relationships",
+            "tasks",
             "tags",
             "work",
           ],
@@ -4914,6 +5222,50 @@ export interface TodayRecentActivity {
   readonly status: "ready";
 }
 
+export interface TaskPerson {
+  readonly archived: boolean;
+  readonly id: string;
+  readonly name: string;
+  readonly unavailable?: boolean;
+}
+
+export interface Task {
+  readonly completedAt?: string;
+  readonly completedByMemberId?: string;
+  readonly createdAt: string;
+  readonly createdByMemberId?: string;
+  readonly description?: string;
+  readonly dueAt?: string;
+  readonly id: string;
+  readonly person?: TaskPerson;
+  readonly status: "cancelled" | "completed" | "open";
+  readonly title: string;
+  readonly updatedAt: string;
+}
+
+export interface TaskCreateInput {
+  readonly description?: string;
+  readonly dueAt?: string;
+  readonly personId?: string;
+  readonly requestId: string;
+  readonly title: string;
+}
+
+export interface TaskChangeInput {
+  readonly description?: string | null;
+  readonly dueAt?: string | null;
+  readonly expectedUpdatedAt: string;
+  readonly personId?: string | null;
+  readonly status?: "cancelled" | "open";
+  readonly title?: string;
+}
+
+export interface TaskList {
+  readonly items: readonly Task[];
+  readonly nextCursor?: string;
+  readonly status: "ready";
+}
+
 export interface RelationshipType {
   readonly archived: boolean;
   readonly forwardLabel: string;
@@ -5068,7 +5420,7 @@ export interface PeopleTagOptionsPage {
 }
 
 export type ProfileFactSectionId = "addresses" | "contact-methods" | "first-meeting" | "food-preferences" | "pets" | "tags" | "work";
-export type PersonProfileSectionId = ProfileFactSectionId | "activities" | "calls" | "conversations" | "notes" | "relationships";
+export type PersonProfileSectionId = ProfileFactSectionId | "activities" | "calls" | "conversations" | "notes" | "relationships" | "tasks";
 export interface ProfileFactOption {
   readonly id: string;
   readonly kind?: "contact-label" | "contact-type" | "organization" | "pet-category";
@@ -5300,6 +5652,32 @@ export function getTodayFavoriteNotes(workspaceId?: string): Promise<ApiResult<T
 
 export function getTodayRecentActivity(workspaceId?: string): Promise<ApiResult<TodayRecentActivity>> {
   return request("/api/v1/today/recent-activity", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listTasks(input: { readonly cursor?: string; readonly limit?: number; readonly personId?: string; readonly status?: Task["status"] } = {}, workspaceId?: string): Promise<ApiResult<TaskList>> {
+  const query = new URLSearchParams();
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.limit) query.set("limit", String(input.limit));
+  if (input.personId) query.set("personId", input.personId);
+  if (input.status) query.set("status", input.status);
+  const suffix = query.size ? \`?\${query.toString()}\` : "";
+  return request(\`/api/v1/tasks\${suffix}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function createTask(input: TaskCreateInput, workspaceId?: string): Promise<ApiResult<{ readonly status: "created"; readonly task: Task }>> {
+  return request("/api/v1/tasks", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function changeTask(taskId: string, input: TaskChangeInput, workspaceId?: string): Promise<ApiResult<{ readonly status: "saved" | "unchanged"; readonly task: Task }>> {
+  return request(\`/api/v1/tasks/\${encodeURIComponent(taskId)}\`, { method: "PATCH", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function setTaskCompletion(taskId: string, completed: boolean, workspaceId?: string): Promise<ApiResult<{ readonly status: "saved" | "unchanged"; readonly task: Task }>> {
+  return request(\`/api/v1/tasks/\${encodeURIComponent(taskId)}/completion\`, { method: "PUT", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify({ completed }) });
+}
+
+export function getTodayTasks(workspaceId?: string): Promise<ApiResult<TaskList>> {
+  return request("/api/v1/today/tasks", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
 export function listRelationshipTypes(input: { readonly cursor?: string; readonly search?: string; readonly selected?: readonly string[] } = {}, workspaceId?: string): Promise<ApiResult<{ readonly nextCursor?: string; readonly options: readonly RelationshipType[]; readonly selected: readonly RelationshipType[]; readonly status: "hidden" | "ready" }>> {

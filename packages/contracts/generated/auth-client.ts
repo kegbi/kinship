@@ -543,6 +543,50 @@ export interface TodayRecentActivity {
   readonly status: "ready";
 }
 
+export interface TaskPerson {
+  readonly archived: boolean;
+  readonly id: string;
+  readonly name: string;
+  readonly unavailable?: boolean;
+}
+
+export interface Task {
+  readonly completedAt?: string;
+  readonly completedByMemberId?: string;
+  readonly createdAt: string;
+  readonly createdByMemberId?: string;
+  readonly description?: string;
+  readonly dueAt?: string;
+  readonly id: string;
+  readonly person?: TaskPerson;
+  readonly status: "cancelled" | "completed" | "open";
+  readonly title: string;
+  readonly updatedAt: string;
+}
+
+export interface TaskCreateInput {
+  readonly description?: string;
+  readonly dueAt?: string;
+  readonly personId?: string;
+  readonly requestId: string;
+  readonly title: string;
+}
+
+export interface TaskChangeInput {
+  readonly description?: string | null;
+  readonly dueAt?: string | null;
+  readonly expectedUpdatedAt: string;
+  readonly personId?: string | null;
+  readonly status?: "cancelled" | "open";
+  readonly title?: string;
+}
+
+export interface TaskList {
+  readonly items: readonly Task[];
+  readonly nextCursor?: string;
+  readonly status: "ready";
+}
+
 export interface RelationshipType {
   readonly archived: boolean;
   readonly forwardLabel: string;
@@ -697,7 +741,7 @@ export interface PeopleTagOptionsPage {
 }
 
 export type ProfileFactSectionId = "addresses" | "contact-methods" | "first-meeting" | "food-preferences" | "pets" | "tags" | "work";
-export type PersonProfileSectionId = ProfileFactSectionId | "activities" | "calls" | "conversations" | "notes" | "relationships";
+export type PersonProfileSectionId = ProfileFactSectionId | "activities" | "calls" | "conversations" | "notes" | "relationships" | "tasks";
 export interface ProfileFactOption {
   readonly id: string;
   readonly kind?: "contact-label" | "contact-type" | "organization" | "pet-category";
@@ -929,6 +973,32 @@ export function getTodayFavoriteNotes(workspaceId?: string): Promise<ApiResult<T
 
 export function getTodayRecentActivity(workspaceId?: string): Promise<ApiResult<TodayRecentActivity>> {
   return request("/api/v1/today/recent-activity", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listTasks(input: { readonly cursor?: string; readonly limit?: number; readonly personId?: string; readonly status?: Task["status"] } = {}, workspaceId?: string): Promise<ApiResult<TaskList>> {
+  const query = new URLSearchParams();
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.limit) query.set("limit", String(input.limit));
+  if (input.personId) query.set("personId", input.personId);
+  if (input.status) query.set("status", input.status);
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return request(`/api/v1/tasks${suffix}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function createTask(input: TaskCreateInput, workspaceId?: string): Promise<ApiResult<{ readonly status: "created"; readonly task: Task }>> {
+  return request("/api/v1/tasks", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function changeTask(taskId: string, input: TaskChangeInput, workspaceId?: string): Promise<ApiResult<{ readonly status: "saved" | "unchanged"; readonly task: Task }>> {
+  return request(`/api/v1/tasks/${encodeURIComponent(taskId)}`, { method: "PATCH", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function setTaskCompletion(taskId: string, completed: boolean, workspaceId?: string): Promise<ApiResult<{ readonly status: "saved" | "unchanged"; readonly task: Task }>> {
+  return request(`/api/v1/tasks/${encodeURIComponent(taskId)}/completion`, { method: "PUT", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify({ completed }) });
+}
+
+export function getTodayTasks(workspaceId?: string): Promise<ApiResult<TaskList>> {
+  return request("/api/v1/today/tasks", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
 export function listRelationshipTypes(input: { readonly cursor?: string; readonly search?: string; readonly selected?: readonly string[] } = {}, workspaceId?: string): Promise<ApiResult<{ readonly nextCursor?: string; readonly options: readonly RelationshipType[]; readonly selected: readonly RelationshipType[]; readonly status: "hidden" | "ready" }>> {

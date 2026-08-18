@@ -16,6 +16,7 @@ import { mountRelationships } from "./relationships.ts";
 import { mountPersonInteractions } from "./interactions.ts";
 import { mountCommunications } from "./communications.ts";
 import { mountPersonAuditSummary } from "./audit-history.ts";
+import { mountTaskSurface } from "./tasks.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
@@ -705,6 +706,14 @@ export async function mountPeopleProfile(): Promise<void> {
         ) === true,
       },
     ),
+    mountTaskSurface({
+      archived: result.value.status === "archived",
+      hidden: result.value.person.profileSections?.some((section) =>
+        section.id === "tasks" && section.status === "hidden"
+      ) === true,
+      personId: id,
+      workspaceId: session.session.workspace.id,
+    }),
     mountCommunications(
       id,
       session.session.workspace.id,

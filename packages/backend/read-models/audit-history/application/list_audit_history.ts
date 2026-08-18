@@ -74,6 +74,13 @@ const COMMUNICATION_KIND_VALUES = new Set(["call", "conversation"]);
 const INTERACTION_KIND_VALUES = new Set(["activity", "note"]);
 const LIFECYCLE_VALUES = new Set(["active", "archived", "deleted"]);
 const PROFILE_ACTION_VALUES = new Set(["delete", "save"]);
+const TASK_ACTION_VALUES = new Set([
+  "changed",
+  "completed",
+  "created",
+  "reopened",
+]);
+const TASK_STATUS_VALUES = new Set(["cancelled", "completed", "open"]);
 const PERSONALIZATION_SECTION_VALUES = new Set([
   "activity-types",
   "contact-labels",
@@ -229,6 +236,10 @@ function sanitizeDetail(
   if (eventAction === "relationships.relationship-changed") {
     if (key === "action") return enumDetail(value, CHANGE_ACTION_VALUES);
     if (RELATIONSHIP_UUID_KEYS.has(key)) return uuidDetail(value);
+  }
+  if (eventAction === "planning.task-created-or-state-changed") {
+    if (key === "action") return enumDetail(value, TASK_ACTION_VALUES);
+    if (key === "status") return enumDetail(value, TASK_STATUS_VALUES);
   }
   if (eventAction === "identity.session-revoked" && key === "current") {
     return booleanDetail(value);

@@ -108,7 +108,7 @@ pages:
     rendering: static-shell-islands
     owner: web
     readModel: today
-    flowIds: [TODAY-001, PLANNING-002, INTERACTION-001]
+    flowIds: [TODAY-001, PLANNING-001, PLANNING-002, INTERACTION-001]
     sections:
       - attention-queue
       - people-due-for-contact
@@ -233,6 +233,7 @@ pages:
     sections:
       - open
       - completed
+      - cancelled
       - person-filter
 
   - id: journal.index

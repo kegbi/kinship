@@ -17,3 +17,4 @@ export { PostgresProfileFactAudit } from "./adapters/postgres/profile_fact_audit
 export { PostgresRelationshipAudit } from "./adapters/postgres/relationship_audit.ts";
 export { PostgresInteractionAudit } from "./adapters/postgres/interaction_audit.ts";
 export { PostgresCommunicationAudit } from "./adapters/postgres/communication_audit.ts";
+export { PostgresTaskAudit } from "./adapters/postgres/task_audit.ts";

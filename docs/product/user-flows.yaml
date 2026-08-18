@@ -499,6 +499,7 @@ flows:
 
   - id: PLANNING-001
     title: Create and complete a task
+    deliveryStatus: delivered
     priority: P0
     actor: crm-writer
     trigger: The member creates or changes a task.
@@ -518,7 +519,7 @@ flows:
     moduleIds: [people, planning]
     permissions: [tasks.write]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-006a.spec.ts] }
 
   - id: PLANNING-002
     title: Schedule and deliver a reminder

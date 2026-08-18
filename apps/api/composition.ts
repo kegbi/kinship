@@ -47,6 +47,7 @@ import {
   PostgresRegistrationAudit,
   PostgresRelationshipAudit,
   PostgresSettingsAudit,
+  PostgresTaskAudit,
 } from "../../packages/backend/modules/governance/public.ts";
 import { createWorkspaceInvitationCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import {
@@ -89,8 +90,11 @@ import {
   PostgresTagPersonalization,
 } from "../../packages/backend/modules/people/public.ts";
 import {
+  createTaskManagement,
   PostgresPersonDateReminderPublisher,
   PostgresReminderRulePersonalization,
+  PostgresTaskRepository,
+  type TaskManagement,
 } from "../../packages/backend/modules/planning/public.ts";
 import {
   type CommunicationManagement,
@@ -136,8 +140,11 @@ import {
 } from "../../packages/backend/read-models/activity-report/public.ts";
 import {
   createTodayInteractions,
+  createTodayTasks,
   PostgresTodayInteractionsRepository,
+  PostgresTodayTasksRepository,
   type TodayInteractions,
+  type TodayTasks,
 } from "../../packages/backend/read-models/today/public.ts";
 import {
   type AuditHistory,
@@ -145,6 +152,7 @@ import {
   PostgresAuditHistoryRepository,
 } from "../../packages/backend/read-models/audit-history/public.ts";
 import { createGovernanceRoutes } from "./governance.ts";
+import { createPlanningRoutes } from "./planning.ts";
 
 export interface ApiServices extends RegistrationHttpServices {
   readonly activityReport?: ActivityReport;
@@ -162,7 +170,9 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly profile?: PersonProfile;
   readonly relationships?: RelationshipManagement;
   readonly tagOptions?: PeopleTagOptions;
+  readonly tasks?: TaskManagement;
   readonly today?: TodayInteractions;
+  readonly todayTasks?: TodayTasks;
   readonly readiness?: () => Promise<boolean>;
 }
 
@@ -319,6 +329,17 @@ export function createApiApp(services?: ApiServices): Hono {
         createGovernanceRoutes({
           auditHistory: services.auditHistory,
           protectedSessions: services.protectedSessions,
+        }),
+      );
+    }
+    if (services.protectedSessions && services.tasks && services.todayTasks) {
+      api.route(
+        "/",
+        createPlanningRoutes({
+          browserSecurity: services.browserSecurity,
+          protectedSessions: services.protectedSessions,
+          tasks: services.tasks,
+          todayTasks: services.todayTasks,
         }),
       );
     }
@@ -554,6 +575,15 @@ export function createConfiguredApiApp(
       workspace: interactionWorkspace,
     }),
   };
+  const tasks = createTaskManagement({
+    audit: new PostgresTaskAudit(),
+    clock,
+    cursorKeyset: subjectKeyset,
+    people: interactionPeople,
+    repository: new PostgresTaskRepository(),
+    transaction: peopleTransaction,
+    workspace: interactionWorkspace,
+  });
   const people = { ...peopleManagement, ...peopleLifecycle };
   const directoryRepository = new PostgresPeopleDirectoryRepository(
     connection.db,
@@ -575,6 +605,10 @@ export function createConfiguredApiApp(
   const today = createTodayInteractions({
     repository: new PostgresTodayInteractionsRepository(connection.db),
   });
+  const todayTasks = createTodayTasks({
+    clock,
+    repository: new PostgresTodayTasksRepository(connection.db),
+  });
   const app = createApiApp({
     activityReport,
     auditHistory,
@@ -593,7 +627,9 @@ export function createConfiguredApiApp(
     personalization,
     settings,
     tagOptions,
+    tasks,
     today,
+    todayTasks,
     register: registration,
     retryVerificationDelivery: createVerificationDeliveryRetry(
       registrationDependencies,
