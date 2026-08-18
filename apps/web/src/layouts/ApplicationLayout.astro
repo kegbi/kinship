@@ -2,7 +2,7 @@
 import "../styles/application.css";
 
 interface Props {
-  readonly current: "people" | "settings" | "today";
+  readonly current: "people" | "settings" | "tasks" | "today";
   readonly description: string;
   readonly pageId:
     | "app.today"
@@ -19,7 +19,8 @@ interface Props {
     | "settings.preferences"
     | "settings.profile"
     | "settings.security"
-    | "settings.workspace";
+    | "settings.workspace"
+    | "tasks.index";
   readonly title: string;
 }
 
@@ -58,7 +59,7 @@ const { current, description, pageId, title } = Astro.props;
           <nav class="primary-nav" aria-label="Primary navigation">
             <a href="/app" tabindex="0" aria-current={current === "today" ? "page" : undefined}>Today</a>
             <a href="/app/people" tabindex="0" aria-current={current === "people" ? "page" : undefined}>People</a>
-            <span class="future-nav" aria-disabled="true">Tasks <small>Planned</small></span>
+            <a href="/app/tasks" tabindex="0" aria-current={current === "tasks" ? "page" : undefined}>Tasks</a>
             <span class="future-nav" aria-disabled="true">Journal <small>Planned</small></span>
           </nav>
 

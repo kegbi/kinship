@@ -403,6 +403,39 @@ const profileFactSections = new Set<string>([
                 </div>
               </section>
             )
+            : id === "tasks"
+            ? (
+              <section
+                id="profile-section-tasks"
+                class="profile-section-card tasks-section-card"
+                data-profile-section="tasks"
+                data-section-state="loading"
+                tabindex="-1"
+                aria-labelledby="profile-section-tasks-heading"
+              >
+                <header class="profile-section-heading">
+                  <div><p class="section-kicker">Person planning</p><h2 id="profile-section-tasks-heading">Tasks</h2></div>
+                  <span class="state-badge calm">Open and completed</span>
+                </header>
+                <p data-task-state class="section-state" role="status" aria-live="polite">Loading tasks…</p>
+                <button data-task-retry class="button-secondary" type="button" hidden>Retry tasks</button>
+                <button data-task-add class="button-primary" type="button" hidden>Add task</button>
+                <form data-task-form class="profile-fact-form task-form" hidden novalidate>
+                  <label>Title <input name="title" maxlength="500" required /></label>
+                  <label>Description (optional) <textarea name="description" maxlength="10000" rows="3"></textarea></label>
+                  <label>Due time (optional) <input name="dueAt" type="datetime-local" /></label>
+                  <label>State <select name="status"><option value="open">Open</option><option value="cancelled">Cancelled</option></select></label>
+                  <p data-task-form-state class="section-state" role="status" aria-live="polite"></p>
+                  <div class="form-actions"><button class="button-primary" type="submit">Save task</button><button data-task-cancel type="button">Cancel</button></div>
+                </form>
+                <div class="task-columns">
+                  <div><h3>Open</h3><ul data-task-open-list class="task-list" aria-label="Open person tasks"></ul></div>
+                  <div><h3>Completed</h3><ul data-task-completed-list class="task-list" aria-label="Completed person tasks"></ul></div>
+                  <div><h3>Cancelled</h3><ul data-task-cancelled-list class="task-list" aria-label="Cancelled person tasks"></ul></div>
+                  <button data-task-more class="button-secondary" type="button" hidden>Load more tasks</button>
+                </div>
+              </section>
+            )
             : profileFactSections.has(id)
             ? (
               <section

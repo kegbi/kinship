@@ -24,6 +24,7 @@ export interface PersonProfileSection {
     | "notes"
     | "pets"
     | "relationships"
+    | "tasks"
     | "tags"
     | "work";
   readonly status: "hidden" | "ready";

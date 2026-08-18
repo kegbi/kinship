@@ -132,7 +132,7 @@ export class PostgresPersonProfileRepository
           ('contact-methods', 1), ('addresses', 2), ('first-meeting', 3),
           ('relationships', 4), ('work', 5), ('food-preferences', 6),
           ('pets', 7), ('tags', 8), ('notes', 9), ('activities', 10),
-          ('conversations', 11), ('calls', 12)
+          ('conversations', 11), ('calls', 12), ('tasks', 13)
         ) available(id, sort_order)
         left join crm.workspace_profile_modules module
           on module.workspace_id = workspace.id and module.key = available.id
