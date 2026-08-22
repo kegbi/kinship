@@ -290,6 +290,23 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
       [name]: { type: "string", minLength: 1, pattern: "\\S" },
     },
   });
+  const todayAttentionItem = (
+    kind: string,
+    required: readonly string[],
+    properties: Readonly<Record<string, unknown>> = {},
+  ) => ({
+    type: "object",
+    required: ["dueAt", "id", "kind", ...required, "title"],
+    properties: {
+      dueAt: { type: "string", format: "date-time" },
+      id: { type: "string", format: "uuid" },
+      kind: { const: kind },
+      person: { $ref: "#/components/schemas/TodayAttentionPerson" },
+      ...properties,
+      title: { type: "string" },
+    },
+    additionalProperties: false,
+  });
   return {
     openapi: "3.1.0",
     info: { title: "Kinship API", version: "1.0.0" },
@@ -1245,6 +1262,27 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
               content: {
                 "application/json": {
                   schema: { $ref: "#/components/schemas/TodayTasks" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/today/attention": {
+        get: {
+          operationId: "getTodayAttention",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter],
+          responses: {
+            "200": {
+              description:
+                "Unified member-local Today attention and upcoming projection",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/TodayAttention" },
                 },
               },
             },
@@ -3552,6 +3590,92 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        TodayAttentionPerson: {
+          type: "object",
+          required: ["archived", "id", "name"],
+          properties: {
+            archived: { type: "boolean" },
+            id: { type: "string", format: "uuid" },
+            name: { type: "string" },
+            unavailable: { type: "boolean" },
+          },
+          additionalProperties: false,
+        },
+        TodayTaskAttentionItem: todayAttentionItem("task", []),
+        TodayReminderAttentionItem: todayAttentionItem(
+          "reminder",
+          ["occursOn", "reminderStatus"],
+          {
+            occursOn: { type: "string", format: "date" },
+            reminderStatus: {
+              enum: ["failed", "manual_attention", "pending", "retry"],
+            },
+          },
+        ),
+        TodayImportantDateAttentionItem: todayAttentionItem(
+          "important-date",
+          ["occursOn", "reminderStatus"],
+          {
+            occursOn: { type: "string", format: "date" },
+            reminderStatus: {
+              enum: ["failed", "manual_attention", "pending", "retry"],
+            },
+          },
+        ),
+        TodayLifeEventAttentionItem: todayAttentionItem(
+          "life-event",
+          ["occursOn", "reminderStatus"],
+          {
+            occursOn: { type: "string", format: "date" },
+            reminderStatus: {
+              enum: ["failed", "manual_attention", "pending", "retry"],
+            },
+          },
+        ),
+        TodayCadenceAttentionItem: todayAttentionItem(
+          "cadence",
+          ["person"],
+          {
+            lastContactedAt: { type: "string", format: "date-time" },
+          },
+        ),
+        TodayAttentionItem: {
+          oneOf: [
+            { $ref: "#/components/schemas/TodayTaskAttentionItem" },
+            { $ref: "#/components/schemas/TodayReminderAttentionItem" },
+            { $ref: "#/components/schemas/TodayImportantDateAttentionItem" },
+            { $ref: "#/components/schemas/TodayLifeEventAttentionItem" },
+            { $ref: "#/components/schemas/TodayCadenceAttentionItem" },
+          ],
+        },
+        TodayAttentionGroup: {
+          type: "object",
+          required: ["nextSevenDays", "overdue", "today"],
+          properties: Object.fromEntries(
+            ["nextSevenDays", "overdue", "today"].map((name) => [name, {
+              type: "array",
+              maxItems: 20,
+              items: { $ref: "#/components/schemas/TodayAttentionItem" },
+            }]),
+          ),
+          additionalProperties: false,
+        },
+        TodayAttention: {
+          type: "object",
+          required: ["attention", "date", "status", "timezone", "upcoming"],
+          properties: {
+            attention: { $ref: "#/components/schemas/TodayAttentionGroup" },
+            date: { type: "string", format: "date" },
+            status: { const: "ready" },
+            timezone: { type: "string", minLength: 1 },
+            upcoming: {
+              type: "array",
+              maxItems: 30,
+              items: { $ref: "#/components/schemas/TodayAttentionItem" },
+            },
+          },
+          additionalProperties: false,
+        },
         ReminderOccurrence: {
           type: "object",
           required: ["attemptCount", "deliverAt", "id", "occursOn", "status"],
@@ -3736,6 +3860,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             attemptCount: { type: "integer", minimum: 0 },
             deliverAt: { type: "string", format: "date-time" },
             id: { type: "string", format: "uuid" },
+            nextAttemptAt: { type: "string", format: "date-time" },
             person: { $ref: "#/components/schemas/TodayReminderPerson" },
             status: {
               enum: [
@@ -3750,6 +3875,26 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             title: { type: "string" },
             visibleAt: { type: "string", format: "date-time" },
           },
+          oneOf: [
+            {
+              required: ["nextAttemptAt"],
+              properties: { status: { const: "retry" } },
+            },
+            {
+              not: { required: ["nextAttemptAt"] },
+              properties: {
+                status: {
+                  enum: [
+                    "pending",
+                    "claimed",
+                    "sent",
+                    "failed",
+                    "manual_attention",
+                  ],
+                },
+              },
+            },
+          ],
           additionalProperties: false,
         },
         TodayCadenceItem: {
@@ -5654,8 +5799,19 @@ export interface StayInTouchCadence { readonly id: string; readonly intervalCoun
 export interface ReminderCreateInput { readonly anchorOn: string; readonly personId: string; readonly recurrenceInterval: number; readonly recurrenceUnit: Reminder["recurrenceUnit"]; readonly requestId: string; readonly sendTime: string; readonly title: string; }
 export interface CadenceCreateInput { readonly intervalCount: number; readonly intervalUnit: StayInTouchCadence["intervalUnit"]; readonly personId: string; readonly requestId: string; }
 export interface PersonReminders { readonly cadences: readonly StayInTouchCadence[]; readonly reminders: readonly Reminder[]; readonly status: "ready"; }
+export interface TodayAttentionPerson { readonly archived: boolean; readonly id: string; readonly name: string; readonly unavailable?: boolean; }
+export type TodayAttentionItem =
+  | { readonly dueAt: string; readonly id: string; readonly kind: "task"; readonly person?: TodayAttentionPerson; readonly title: string }
+  | { readonly dueAt: string; readonly id: string; readonly kind: "reminder"; readonly occursOn: string; readonly person?: TodayAttentionPerson; readonly reminderStatus: "failed" | "manual_attention" | "pending" | "retry"; readonly title: string }
+  | { readonly dueAt: string; readonly id: string; readonly kind: "important-date"; readonly occursOn: string; readonly person?: TodayAttentionPerson; readonly reminderStatus: "failed" | "manual_attention" | "pending" | "retry"; readonly title: string }
+  | { readonly dueAt: string; readonly id: string; readonly kind: "life-event"; readonly occursOn: string; readonly person?: TodayAttentionPerson; readonly reminderStatus: "failed" | "manual_attention" | "pending" | "retry"; readonly title: string }
+  | { readonly dueAt: string; readonly id: string; readonly kind: "cadence"; readonly lastContactedAt?: string; readonly person: TodayAttentionPerson; readonly title: string };
+export interface TodayAttention { readonly attention: { readonly nextSevenDays: readonly TodayAttentionItem[]; readonly overdue: readonly TodayAttentionItem[]; readonly today: readonly TodayAttentionItem[] }; readonly date: string; readonly status: "ready"; readonly timezone: string; readonly upcoming: readonly TodayAttentionItem[]; }
 export interface TodayReminderPerson { readonly archived: boolean; readonly id: string; readonly name: string; }
-export interface TodayReminderItem { readonly attemptCount: number; readonly deliverAt: string; readonly id: string; readonly person: TodayReminderPerson; readonly status: "pending" | "claimed" | "retry" | "sent" | "failed" | "manual_attention"; readonly title: string; readonly visibleAt?: string; }
+interface TodayReminderBase { readonly attemptCount: number; readonly deliverAt: string; readonly id: string; readonly person: TodayReminderPerson; readonly title: string; readonly visibleAt?: string; }
+export type TodayReminderItem =
+  | (TodayReminderBase & { readonly nextAttemptAt: string; readonly status: "retry" })
+  | (TodayReminderBase & { readonly nextAttemptAt?: never; readonly status: "pending" | "claimed" | "sent" | "failed" | "manual_attention" });
 export interface TodayCadenceItem { readonly dueAt: string; readonly id: string; readonly lastContactedAt?: string; readonly person: TodayReminderPerson; }
 export interface TodayReminders { readonly cadences: readonly TodayCadenceItem[]; readonly reminders: readonly TodayReminderItem[]; readonly status: "ready"; readonly timezone: string; }
 
@@ -5690,15 +5846,25 @@ function validTodayInstant(value: unknown): value is string {
   return day >= 1 && day <= daysInMonth && hour <= 23 && minute <= 59 && second <= 59 &&
     offsetHour <= 23 && offsetMinute <= 59 && Number.isFinite(Date.parse(value));
 }
+function validTodayTimezone(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0) return false;
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: value }).format(0);
+    return true;
+  } catch {
+    return false;
+  }
+}
 export function parseTodayReminders(value: unknown): TodayReminders {
   const valid = exactTodayRecord(value, ["cadences", "reminders", "status", "timezone"]) &&
-    value.status === "ready" && typeof value.timezone === "string" && value.timezone.length > 0 &&
+    value.status === "ready" && validTodayTimezone(value.timezone) &&
     Array.isArray(value.reminders) && value.reminders.length <= 100 &&
     value.reminders.every((item) =>
-      exactTodayRecord(item, ["attemptCount", "deliverAt", "id", "person", "status", "title"], ["visibleAt"]) &&
+      exactTodayRecord(item, ["attemptCount", "deliverAt", "id", "person", "status", "title"], ["nextAttemptAt", "visibleAt"]) &&
       typeof item.attemptCount === "number" && Number.isInteger(item.attemptCount) && item.attemptCount >= 0 &&
       validTodayInstant(item.deliverAt) && typeof item.id === "string" && todayReminderUuid.test(item.id) &&
       validTodayPerson(item.person) && ["pending", "claimed", "retry", "sent", "failed", "manual_attention"].includes(String(item.status)) &&
+      (item.status === "retry" ? validTodayInstant(item.nextAttemptAt) : item.nextAttemptAt === undefined) &&
       typeof item.title === "string" && (item.visibleAt === undefined || validTodayInstant(item.visibleAt))
     ) &&
     Array.isArray(value.cadences) && value.cadences.length <= 100 &&
@@ -5709,6 +5875,37 @@ export function parseTodayReminders(value: unknown): TodayReminders {
     );
   if (!valid) throw new TypeError("Invalid Today reminders response.");
   return value as unknown as TodayReminders;
+}
+
+function validTodayAttentionPerson(value: unknown): value is TodayAttentionPerson {
+  return exactTodayRecord(value, ["archived", "id", "name"], ["unavailable"]) &&
+    typeof value.archived === "boolean" && typeof value.id === "string" && todayReminderUuid.test(value.id) &&
+    typeof value.name === "string" && (value.unavailable === undefined || typeof value.unavailable === "boolean");
+}
+function validTodayDate(value: unknown): value is string {
+  return typeof value === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(value) &&
+    Number.isFinite(Date.parse(value + "T00:00:00Z")) && new Date(value + "T00:00:00Z").toISOString().startsWith(value);
+}
+function validTodayAttentionItem(value: unknown): value is TodayAttentionItem {
+  const base = ["dueAt", "id", "kind", "title"];
+  if (!exactTodayRecord(value, base, ["lastContactedAt", "occursOn", "person", "reminderStatus"])) return false;
+  if (!validTodayInstant(value.dueAt) || typeof value.id !== "string" || !todayReminderUuid.test(value.id) || typeof value.title !== "string") return false;
+  if (value.person !== undefined && !validTodayAttentionPerson(value.person)) return false;
+  if (value.kind === "task") return exactTodayRecord(value, base, ["person"]);
+  if (value.kind === "important-date" || value.kind === "life-event" || value.kind === "reminder") return exactTodayRecord(value, [...base, "occursOn", "reminderStatus"], ["person"]) && validTodayDate(value.occursOn) &&
+    ["failed", "manual_attention", "pending", "retry"].includes(String(value.reminderStatus));
+  return value.kind === "cadence" && exactTodayRecord(value, [...base, "person"], ["lastContactedAt"]) && validTodayAttentionPerson(value.person) &&
+    (value.lastContactedAt === undefined || validTodayInstant(value.lastContactedAt));
+}
+export function parseTodayAttention(value: unknown): TodayAttention {
+  const validGroup = (group: unknown) => exactTodayRecord(group, ["nextSevenDays", "overdue", "today"]) &&
+    [group.nextSevenDays, group.overdue, group.today].every((items) =>
+      Array.isArray(items) && items.length <= 20 && items.every(validTodayAttentionItem));
+  const valid = exactTodayRecord(value, ["attention", "date", "status", "timezone", "upcoming"]) &&
+    value.status === "ready" && validTodayDate(value.date) && validTodayTimezone(value.timezone) &&
+    validGroup(value.attention) && Array.isArray(value.upcoming) && value.upcoming.length <= 30 && value.upcoming.every(validTodayAttentionItem);
+  if (!valid) throw new TypeError("Invalid Today attention response.");
+  return value as unknown as TodayAttention;
 }
 
 export interface RelationshipType {
@@ -6144,6 +6341,12 @@ export function setReminderActive(reminderId: string, active: boolean, workspace
 export function getTodayReminders(workspaceId?: string): Promise<ApiResult<TodayReminders>> {
   return request<unknown>("/api/v1/today/reminders", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined }).then((result): ApiResult<TodayReminders> =>
     result.ok ? { ok: true, value: parseTodayReminders(result.value) } : result
+  );
+}
+
+export function getTodayAttention(workspaceId?: string): Promise<ApiResult<TodayAttention>> {
+  return request<unknown>("/api/v1/today/attention", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined }).then((result): ApiResult<TodayAttention> =>
+    result.ok ? { ok: true, value: parseTodayAttention(result.value) } : result
   );
 }
 

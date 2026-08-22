@@ -10,6 +10,8 @@ import {
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 
+let todayRemindersAbort: AbortController | undefined;
+
 function formValue(form: HTMLFormElement, name: string): string {
   return String(new FormData(form).get(name) ?? "").trim();
 }
@@ -217,10 +219,22 @@ export async function mountPersonReminders(options: {
   await load();
 }
 
-function todayReminder(item: TodayReminderItem): HTMLLIElement {
+function formatToday(value: string, timezone: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: timezone,
+  }).format(new Date(value));
+}
+
+function todayReminder(
+  item: TodayReminderItem,
+  timezone: string,
+): HTMLLIElement {
   const row = document.createElement("li");
   row.className = `reminder-item reminder-${item.status}`;
   const link = document.createElement("a");
+  link.className = "today-touch-target";
   link.href = `/app/people/${
     encodeURIComponent(item.person.id)
   }?section=reminders`;
@@ -231,21 +245,35 @@ function todayReminder(item: TodayReminderItem): HTMLLIElement {
     : item.status === "failed"
     ? "Delivery failed"
     : item.visibleAt
-    ? `Notification visible · ${new Date(item.visibleAt).toLocaleString()}`
-    : `${item.status} · ${new Date(item.deliverAt).toLocaleString()}`;
+    ? `Notification visible · ${formatToday(item.visibleAt, timezone)}`
+    : item.status === "pending"
+    ? `Scheduled for ${formatToday(item.deliverAt, timezone)}`
+    : item.status === "retry"
+    ? `Retry scheduled for ${formatToday(item.nextAttemptAt, timezone)}`
+    : item.status === "claimed"
+    ? "Delivery in progress"
+    : `Delivered · ${formatToday(item.deliverAt, timezone)}`;
   row.append(link, state);
   return row;
 }
 
-function todayCadence(item: TodayCadenceItem): HTMLLIElement {
+function todayCadence(
+  item: TodayCadenceItem,
+  timezone: string,
+): HTMLLIElement {
   const row = document.createElement("li");
   const link = document.createElement("a");
+  link.className = "today-touch-target";
   link.href = `/app/people/${
     encodeURIComponent(item.person.id)
   }?section=stay-in-touch`;
   link.textContent = item.person.name;
   const state = document.createElement("p");
-  state.textContent = `Reconnect by ${new Date(item.dueAt).toLocaleString()}`;
+  state.textContent = `Reconnect by ${formatToday(item.dueAt, timezone)} · ${
+    item.lastContactedAt
+      ? `Last contact ${formatToday(item.lastContactedAt, timezone)}`
+      : "No contact recorded"
+  }${item.person.archived ? " · archived" : ""}`;
   row.append(link, state);
   return row;
 }
@@ -269,22 +297,58 @@ export async function mountTodayReminders(): Promise<void> {
   if (
     !reminderState || !reminderList || !cadenceState || !cadenceList || !retry
   ) return;
-  const load = async () => {
+  todayRemindersAbort?.abort();
+  const abort = new AbortController();
+  todayRemindersAbort = abort;
+  let generation = 0;
+  const finishFocus = (restoreFocus: boolean) => {
+    if (!restoreFocus) return;
+    reminderState.tabIndex = -1;
+    reminderState.focus();
+  };
+  const fail = (restoreFocus: boolean) => {
+    reminderState.textContent =
+      "Reminder state is unavailable. Other Today regions remain available.";
+    cadenceState.textContent = "Reconnect suggestions are unavailable.";
+    retry.hidden = false;
+    finishFocus(restoreFocus);
+  };
+  const load = async (restoreFocus = false) => {
+    const current = ++generation;
+    reminderState.textContent = "Loading reminder state…";
+    cadenceState.textContent = "Loading reconnect suggestions…";
+    retry.hidden = true;
     const session = await resolveWorkspaceSession();
-    if (session.status !== "ready") return;
+    if (abort.signal.aborted || current !== generation) return;
+    if (session.status !== "ready") {
+      fail(restoreFocus);
+      return;
+    }
     const result = await getTodayReminders(session.session.workspace.id).catch(
       () => undefined,
     );
+    if (abort.signal.aborted || current !== generation) return;
     if (!result?.ok) {
-      reminderState.textContent =
-        "Reminder state is unavailable. Other Today regions remain available.";
-      cadenceState.textContent = "Reconnect suggestions are unavailable.";
-      retry.hidden = false;
+      fail(restoreFocus);
       return;
     }
+    let reminderRows: readonly HTMLLIElement[];
+    let cadenceRows: readonly HTMLLIElement[];
+    try {
+      reminderRows = result.value.reminders.map((item) =>
+        todayReminder(item, result.value.timezone)
+      );
+      cadenceRows = result.value.cadences.map((item) =>
+        todayCadence(item, result.value.timezone)
+      );
+    } catch {
+      fail(restoreFocus);
+      return;
+    }
+    if (abort.signal.aborted || current !== generation) return;
     retry.hidden = true;
-    reminderList.replaceChildren(...result.value.reminders.map(todayReminder));
-    cadenceList.replaceChildren(...result.value.cadences.map(todayCadence));
+    reminderList.replaceChildren(...reminderRows);
+    cadenceList.replaceChildren(...cadenceRows);
     reminderState.textContent = result.value.reminders.length
       ? `${result.value.reminders.length} reminder state${
         result.value.reminders.length === 1 ? "" : "s"
@@ -293,7 +357,10 @@ export async function mountTodayReminders(): Promise<void> {
     cadenceState.textContent = result.value.cadences.length
       ? `${result.value.cadences.length} people to reconnect with.`
       : "No one is due for contact.";
+    finishFocus(restoreFocus);
   };
-  retry.addEventListener("click", () => void load());
+  retry.addEventListener("click", () => void load(true), {
+    signal: abort.signal,
+  });
   await load();
 }

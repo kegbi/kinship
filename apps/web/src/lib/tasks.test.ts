@@ -1,7 +1,14 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { mountTaskSurface, mountTodayTasks } from "./tasks.ts";
+
+const applicationCss = readFileSync(
+  "apps/web/src/styles/application.css",
+  "utf8",
+);
+const todayPage = readFileSync("apps/web/src/pages/app.astro", "utf8");
 
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -52,8 +59,44 @@ function surfaceMarkup(global = false): void {
     <ul data-task-open-list></ul><ul data-task-completed-list></ul><ul data-task-cancelled-list></ul><button data-task-more>Load more tasks</button>`;
 }
 
+function todayMarkup(): void {
+  document.body.innerHTML =
+    `<time data-today-date>Loading date…</time><p id="today-attention-state"></p><button id="today-attention-retry" class="today-touch-target" type="button" hidden>Retry</button><div id="today-onboarding" hidden></div><ul id="today-overdue-list"></ul><ul id="today-due-today-list"></ul><ul id="today-next-seven-list"></ul><p id="today-upcoming-state"></p><ul id="today-upcoming-list"></ul><button id="today-upcoming-retry" class="today-touch-target" type="button" hidden>Retry upcoming</button><p id="secondary">Preserved</p>`;
+}
+
+function attention(
+  overdue: readonly unknown[] = [],
+  upcoming: readonly unknown[] = [],
+) {
+  return {
+    attention: { nextSevenDays: [], overdue, today: [] },
+    date: "2026-08-18",
+    status: "ready",
+    timezone: "Europe/Belgrade",
+    upcoming,
+  };
+}
+
+function todayFetch(...results: Array<Response | Promise<Response>>) {
+  let index = 0;
+  return vi.fn((input: string | URL | Request, init?: RequestInit) =>
+    String(input).includes("/session")
+      ? Promise.resolve(response(session))
+      : init?.method === "PUT"
+      ? Promise.resolve(response({ status: "saved", task }))
+      : Promise.resolve(results[index++])
+  );
+}
+
+function deferredResponse() {
+  let resolve!: (value: Response) => void;
+  const promise = new Promise<Response>((done) => resolve = done);
+  return { promise, resolve };
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  document.head.innerHTML = "";
   document.body.innerHTML = "";
   sessionStorage.clear();
 });
@@ -432,72 +475,764 @@ describe("PLANNING-001 task browser behavior", () => {
     expect(body.personId).toBe(personId);
   });
 
-  it("isolates Today task errors and completes due tasks", async () => {
-    document.body.innerHTML =
-      `<p id="today-tasks-state"></p><ul id="today-tasks-list"></ul><button id="today-tasks-retry" hidden>Retry</button>`;
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response(session))
-      .mockResolvedValueOnce(response({ items: [task], status: "ready" }))
-      .mockResolvedValueOnce(
-        response({ status: "saved", task: { ...task, status: "completed" } }),
-      )
-      .mockResolvedValueOnce(response(session))
-      .mockResolvedValueOnce(response({ items: [], status: "ready" }));
+  it("renders and completes one coherent server-clock Today snapshot", async () => {
+    todayMarkup();
+    document.body.style.width = "320px";
+    const dueAt = "2026-03-08T06:30:00.000Z";
+    const longTitle = "T".repeat(500);
+    const unavailableLongTitle = "U".repeat(500);
+    const active = {
+      dueAt,
+      id: task.id,
+      kind: "task",
+      person: task.person,
+      title: task.title,
+    };
+    const items = [
+      active,
+      {
+        ...active,
+        id: crypto.randomUUID(),
+        person: { ...task.person, archived: true },
+        title: "Archived",
+      },
+      {
+        ...active,
+        id: crypto.randomUUID(),
+        person: { ...task.person, unavailable: true },
+        title: "Unavailable",
+      },
+      {
+        ...active,
+        id: crypto.randomUUID(),
+        person: { ...task.person, unavailable: true },
+        title: unavailableLongTitle,
+      },
+      {
+        ...active,
+        id: crypto.randomUUID(),
+        person: undefined,
+        title: "Workspace",
+      },
+      {
+        ...active,
+        id: crypto.randomUUID(),
+        kind: "reminder",
+        occursOn: "2026-03-08",
+        reminderStatus: "pending",
+        title: "Direct reminder",
+      },
+      {
+        ...active,
+        id: crypto.randomUUID(),
+        kind: "important-date",
+        occursOn: "2026-03-08",
+        reminderStatus: "pending",
+        title: "Birthday",
+      },
+      {
+        ...active,
+        id: crypto.randomUUID(),
+        kind: "life-event",
+        occursOn: "2026-03-08",
+        reminderStatus: "pending",
+        title: "Moved home",
+      },
+      {
+        ...active,
+        id: crypto.randomUUID(),
+        kind: "reminder",
+        occursOn: "2026-03-08",
+        person: undefined,
+        reminderStatus: "pending",
+        title: "Imported personless reminder",
+      },
+      {
+        ...active,
+        id: crypto.randomUUID(),
+        kind: "important-date",
+        occursOn: "2026-03-08",
+        person: undefined,
+        reminderStatus: "pending",
+        title: "Imported personless date",
+      },
+      {
+        ...active,
+        id: crypto.randomUUID(),
+        title: longTitle,
+      },
+    ];
+    const cadences = [
+      {
+        ...active,
+        id: crypto.randomUUID(),
+        kind: "cadence",
+        lastContactedAt: dueAt,
+        title: "Contacted",
+      },
+      {
+        ...active,
+        id: crypto.randomUUID(),
+        kind: "cadence",
+        person: { ...task.person, archived: true },
+        title: "Never contacted",
+      },
+    ];
+    const fetchMock = todayFetch(
+      response({
+        ...attention([...items, ...cadences], [...items, ...cadences]),
+        date: "2026-03-07",
+        timezone: "America/New_York",
+      }),
+      response({
+        ...attention(),
+        date: "2026-03-07",
+        timezone: "America/New_York",
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     await mountTodayTasks();
-    expect(document.querySelector("#today-tasks-list")?.textContent).toContain(
-      "Call Ada",
-    );
-    document.querySelector<HTMLButtonElement>("#today-tasks-list button")!
-      .click();
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response(session))
-        .mockResolvedValueOnce(
-          response({
-            code: "offline",
-            detail: "Offline",
-            status: 503,
-            title: "Offline",
-            type: "about:blank",
-          }, 503),
+    const snapshotCalls = () =>
+      fetchMock.mock.calls.filter((call) =>
+        String(call[0]).includes("/today/attention")
+      );
+    const row = (selector: string, title: string) =>
+      [...document.querySelectorAll<HTMLElement>(`${selector} li`)]
+        .find((item) => item.textContent?.includes(title))!;
+    expect(snapshotCalls()).toHaveLength(1);
+    for (const selector of ["#today-overdue-list", "#today-upcoming-list"]) {
+      expect(
+        row(selector, task.title).querySelector("a")?.getAttribute("href"),
+      ).toBe(
+        `/app/people/${personId}?section=tasks`,
+      );
+      expect(
+        row(selector, "Archived").querySelector("a")?.getAttribute("href"),
+      ).toBe(
+        `/app/people/${personId}?section=tasks`,
+      );
+      expect(row(selector, "Unavailable").textContent).toContain(
+        "Ada Lovelace",
+      );
+      expect(row(selector, "Unavailable").querySelector("a,button")).toBeNull();
+      expect(
+        row(selector, "Workspace").querySelector("a")?.getAttribute("href"),
+      ).toBe("/app/tasks");
+      expect(
+        row(selector, "Direct reminder").querySelector("a")?.getAttribute(
+          "href",
         ),
+      ).toContain("?section=reminders");
+      expect(
+        row(selector, "Birthday").querySelector("a")?.getAttribute("href"),
+      ).toContain("?section=important-dates");
+      expect(
+        row(selector, "Moved home").querySelector("a")?.getAttribute("href"),
+      ).toContain("?section=life-events");
+      expect(
+        row(selector, "Contacted").querySelector("a")?.getAttribute("href"),
+      ).toContain("?section=stay-in-touch");
+      for (
+        const title of [
+          "Imported personless reminder",
+          "Imported personless date",
+        ]
+      ) {
+        const personless = row(selector, title);
+        expect(personless.querySelector("a,button")).toBeNull();
+        expect(personless.querySelector(".attention-title")?.tagName).toBe(
+          "P",
+        );
+      }
+    }
+    expect(row("#today-overdue-list", "Contacted").textContent).toContain(
+      "Last contact",
     );
-    await mountTodayTasks();
-    expect(document.querySelector("#today-tasks-state")?.textContent).toContain(
-      "Other Today regions",
+    expect(row("#today-overdue-list", "Never contacted").textContent).toContain(
+      "No contact recorded",
     );
+    const style = document.createElement("style");
+    style.textContent = applicationCss;
+    document.head.append(style);
+    const targets = [
+      document.querySelector<HTMLElement>("#today-attention-retry")!,
+      document.querySelector<HTMLElement>("#today-upcoming-retry")!,
+      ...document.querySelectorAll<HTMLElement>(
+        "#today-overdue-list a, #today-upcoming-list a",
+      ),
+    ];
+    for (const target of targets) {
+      const computed = getComputedStyle(target);
+      expect(target.classList).toContain("today-touch-target");
+      expect(computed.minHeight).toBe("44px");
+      expect(computed.minWidth).toBe("44px");
+      expect(computed.maxInlineSize).toBe("100%");
+      expect(computed.width).not.toBe("100%");
+    }
+    const longLink = row("#today-overdue-list", longTitle)
+      .querySelector<HTMLAnchorElement>("a")!;
+    const longStyle = getComputedStyle(longLink);
+    expect(longLink.textContent).toHaveLength(500);
+    expect(longLink.tabIndex).toBe(0);
+    expect(longLink.classList).toContain("attention-title");
+    expect(longStyle.display).toBe("inline-flex");
+    expect(longStyle.whiteSpace).toBe("normal");
+    expect(longStyle.overflowWrap).toBe("anywhere");
+    for (const selector of ["#today-overdue-list", "#today-upcoming-list"]) {
+      const unavailableTitle = row(selector, unavailableLongTitle)
+        .querySelector<HTMLElement>(".attention-title")!;
+      const unavailableStyle = getComputedStyle(unavailableTitle);
+      expect(unavailableTitle.tagName).toBe("P");
+      expect(unavailableTitle.textContent).toHaveLength(500);
+      expect(unavailableTitle.querySelector("a,button")).toBeNull();
+      expect(unavailableTitle.classList).not.toContain("today-touch-target");
+      expect(unavailableTitle.tabIndex).toBe(-1);
+      expect(unavailableStyle.maxInlineSize).toBe("100%");
+      expect(unavailableStyle.whiteSpace).toBe("normal");
+      expect(unavailableStyle.overflowWrap).toBe("anywhere");
+      expect(unavailableStyle.minHeight).not.toBe("44px");
+      expect(unavailableStyle.minWidth).not.toBe("44px");
+    }
+    const ordinaryHeading = document.createElement("h3");
+    ordinaryHeading.textContent = "Ordinary heading";
+    document.body.append(ordinaryHeading);
+    expect(ordinaryHeading.classList).not.toContain("today-touch-target");
+    expect(getComputedStyle(ordinaryHeading).maxInlineSize).not.toBe("100%");
     expect(
-      document.querySelector<HTMLButtonElement>("#today-tasks-retry")?.hidden,
-    ).toBe(false);
+      targets.slice(0, 2).every((target) =>
+        target instanceof HTMLButtonElement && target.type === "button" &&
+        target.hidden
+      ),
+    ).toBe(true);
+    expect(todayPage.match(/today-touch-target/g)).toHaveLength(6);
+    expect(
+      document.querySelector("[data-today-date]")?.getAttribute("datetime"),
+    ).toBe("2026-03-07");
+    expect(document.body.textContent).toContain(
+      new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "America/New_York",
+      }).format(new Date(dueAt)),
+    );
+    document.querySelector<HTMLButtonElement>("#today-overdue-list button")!
+      .click();
+    await vi.waitFor(() =>
+      expect(document.activeElement?.id).toBe("today-attention-state")
+    );
+    expect(snapshotCalls()).toHaveLength(2);
+    expect(document.querySelectorAll(".attention-item")).toHaveLength(0);
+    expect(document.querySelector("#secondary")?.textContent).toBe("Preserved");
+    expect(applicationCss).toMatch(
+      /\.form-actions button\s*\{[^}]*min-height:\s*46px/s,
+    );
   });
 
-  it("keeps an unavailable Today person link visible and read-only", async () => {
-    document.body.innerHTML =
-      `<p id="today-tasks-state"></p><ul id="today-tasks-list"></ul><button id="today-tasks-retry" hidden>Retry</button>`;
-    const unavailable = {
-      ...task,
-      dueAt: "2026-08-20T09:00:30.123456Z",
-      person: {
-        archived: false,
-        id: personId,
-        name: "Deleted/Unavailable person",
-        unavailable: true,
-      },
+  it("settles an invalid runtime timezone honestly and preserves the last good date", async () => {
+    todayMarkup();
+    const good = attention([{
+      dueAt: task.dueAt,
+      id: task.id,
+      kind: "task",
+      person: task.person,
+      title: task.title,
+    }]);
+    const invalid = { ...good, timezone: "Definitely/Not_A_Zone" };
+    vi.stubGlobal(
+      "fetch",
+      todayFetch(response(invalid), response(good), response(invalid)),
+    );
+
+    await mountTodayTasks();
+    const date = document.querySelector<HTMLTimeElement>("[data-today-date]")!;
+    expect(date.textContent).toBe("Date unavailable");
+    expect(date.hasAttribute("datetime")).toBe(false);
+    expect(document.querySelectorAll(".attention-item")).toHaveLength(0);
+    expect(
+      document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+        .hidden,
+    ).toBe(false);
+
+    document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+      .click();
+    await vi.waitFor(() => expect(date.dateTime).toBe(good.date));
+    const lastGoodText = date.textContent;
+    expect(document.querySelectorAll(".attention-item")).toHaveLength(1);
+
+    document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+          .hidden,
+      ).toBe(false)
+    );
+    expect(date.dateTime).toBe(good.date);
+    expect(date.textContent).toBe(lastGoodText);
+    expect(document.querySelectorAll(".attention-item")).toHaveLength(1);
+  });
+
+  it("settles the Today date when the initial workspace session is unavailable", async () => {
+    todayMarkup();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({}, 503)));
+    await mountTodayTasks();
+    const date = document.querySelector<HTMLTimeElement>("[data-today-date]")!;
+    expect(date.textContent).toBe("Date unavailable");
+    expect(date.hasAttribute("datetime")).toBe(false);
+    expect(document.body.textContent).not.toContain("Loading");
+  });
+
+  it("keeps the last coherent snapshot when Intl formatting fails after validation", async () => {
+    todayMarkup();
+    const preserved = attention([{
+      dueAt: task.dueAt,
+      id: task.id,
+      kind: "task",
+      person: task.person,
+      title: "Preserved task",
+    }]);
+    const newer = attention([{
+      dueAt: task.dueAt,
+      id: crypto.randomUUID(),
+      kind: "task",
+      title: "Must not partially render",
+    }]);
+    vi.stubGlobal(
+      "fetch",
+      todayFetch(response(preserved), response(newer)),
+    );
+    await mountTodayTasks();
+    const date = document.querySelector<HTMLTimeElement>("[data-today-date]")!;
+    const lastDate = date.textContent;
+    const NativeDateTimeFormat = Intl.DateTimeFormat;
+    let calls = 0;
+    vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
+      (function (
+        locales?: Intl.LocalesArgument,
+        options?: Intl.DateTimeFormatOptions,
+      ) {
+        calls += 1;
+        if (calls === 2) throw new RangeError("formatter unavailable");
+        return new NativeDateTimeFormat(locales, options);
+      }) as typeof Intl.DateTimeFormat,
+    );
+
+    document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+          .hidden,
+      ).toBe(false)
+    );
+    expect(document.body.textContent).toContain("Preserved task");
+    expect(document.body.textContent).not.toContain(
+      "Must not partially render",
+    );
+    expect(date.textContent).toBe(lastDate);
+    expect(date.dateTime).toBe(preserved.date);
+  });
+
+  it("serializes Today completion across failure, success, and a later failure", async () => {
+    todayMarkup();
+    const first = deferredResponse();
+    const second = deferredResponse();
+    const third = deferredResponse();
+    const firstTask = {
+      dueAt: task.dueAt,
+      id: task.id,
+      kind: "task",
+      title: "First task",
     };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response(session))
-      .mockResolvedValueOnce(
-        response({ items: [unavailable], status: "ready" }),
-      );
+    const secondTask = {
+      ...firstTask,
+      id: crypto.randomUUID(),
+      title: "Second task",
+    };
+    const mutations = [first.promise, second.promise, third.promise];
+    const snapshots = [
+      response(attention([firstTask, secondTask])),
+      response(attention([firstTask])),
+    ];
+    let mutationIndex = 0;
+    let snapshotIndex = 0;
+    const fetchMock = vi.fn((
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) =>
+      String(input).includes("/session")
+        ? Promise.resolve(response(session))
+        : init?.method === "PUT"
+        ? mutations[mutationIndex++]!
+        : Promise.resolve(snapshots[snapshotIndex++]!)
+    );
     vi.stubGlobal("fetch", fetchMock);
     await mountTodayTasks();
-    const item = document.querySelector<HTMLElement>("#today-tasks-list li")!;
-    expect(item.textContent).toContain("Deleted/Unavailable person");
-    expect(item.querySelector("button")).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const button = (title: string) =>
+      [...document.querySelectorAll<HTMLElement>("#today-overdue-list li")]
+        .find((item) => item.textContent?.includes(title))!
+        .querySelector<HTMLButtonElement>("button")!;
+    const mutationCalls = () =>
+      fetchMock.mock.calls.filter((call) => call[1]?.method === "PUT").length;
+
+    const firstButton = button("First task");
+    const secondButton = button("Second task");
+    firstButton.click();
+    expect([firstButton.disabled, secondButton.disabled]).toEqual([true, true]);
+    secondButton.click();
+    firstButton.click();
+    expect(mutationCalls()).toBe(1);
+    first.resolve(response({}, 503));
+    await vi.waitFor(() => expect(firstButton.disabled).toBe(false));
+    expect(secondButton.disabled).toBe(false);
+    expect(document.activeElement).toBe(firstButton);
+
+    secondButton.click();
+    secondButton.click();
+    expect(mutationCalls()).toBe(2);
+    expect([firstButton.disabled, secondButton.disabled]).toEqual([true, true]);
+    second.resolve(response({ status: "saved", task }));
+    await vi.waitFor(() =>
+      expect(document.body.textContent).not.toContain("Second task")
+    );
+    expect(mutationCalls()).toBe(2);
+    expect(
+      fetchMock.mock.calls.filter((call) =>
+        String(call[0]).includes("/today/attention")
+      ),
+    ).toHaveLength(2);
+    expect(button("First task").disabled).toBe(false);
+    expect(document.activeElement?.id).toBe("today-attention-state");
+
+    const liveFirst = button("First task");
+    liveFirst.click();
+    liveFirst.click();
+    expect(mutationCalls()).toBe(3);
+    third.resolve(response({}, 503));
+    await vi.waitFor(() => expect(liveFirst.disabled).toBe(false));
+    expect(document.activeElement).toBe(liveFirst);
+  });
+
+  it("keeps completion ownership through a degraded refresh and then releases it", async () => {
+    todayMarkup();
+    const mutation = deferredResponse();
+    const nextMutation = deferredResponse();
+    const refresh = deferredResponse();
+    const firstTask = {
+      dueAt: task.dueAt,
+      id: task.id,
+      kind: "task",
+      title: "Completed stale task",
+    };
+    const secondTask = {
+      ...firstTask,
+      id: crypto.randomUUID(),
+      title: "Other live task",
+    };
+    const mutations = [mutation.promise, nextMutation.promise];
+    const snapshots = [
+      Promise.resolve(response(attention([firstTask, secondTask]))),
+      refresh.promise,
+      Promise.resolve(response(attention([firstTask, secondTask]))),
+    ];
+    let mutationIndex = 0;
+    let snapshotIndex = 0;
+    const fetchMock = vi.fn((
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) =>
+      String(input).includes("/session")
+        ? Promise.resolve(response(session))
+        : init?.method === "PUT"
+        ? mutations[mutationIndex++]!
+        : snapshots[snapshotIndex++]!
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await mountTodayTasks();
+    const rows = () => [
+      ...document.querySelectorAll<HTMLElement>("#today-overdue-list li"),
+    ];
+    const button = (title: string) =>
+      rows().find((item) => item.textContent?.includes(title))!
+        .querySelector<HTMLButtonElement>("button")!;
+    const snapshotCalls = () =>
+      fetchMock.mock.calls.filter((call) =>
+        String(call[0]).includes("/today/attention")
+      ).length;
+    const staleButton = button("Completed stale task");
+    const otherButton = button("Other live task");
+    staleButton.click();
+    expect([staleButton.disabled, otherButton.disabled]).toEqual([true, true]);
+    expect(
+      document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+        .hidden,
+    )
+      .toBe(true);
+    mutation.resolve(response({ status: "saved", task }));
+    await vi.waitFor(() => expect(snapshotCalls()).toBe(2));
+    document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+      .click();
+    await Promise.resolve();
+    expect(snapshotCalls()).toBe(2);
+    expect([staleButton.disabled, otherButton.disabled]).toEqual([true, true]);
+    refresh.resolve(response({}, 503));
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+          .hidden,
+      )
+        .toBe(false)
+    );
+    expect(staleButton.disabled).toBe(true);
+    expect(otherButton.disabled).toBe(false);
+    expect(document.activeElement?.id).toBe("today-attention-state");
+    otherButton.click();
+    expect(
+      fetchMock.mock.calls.filter((call) => call[1]?.method === "PUT"),
+    ).toHaveLength(2);
+    nextMutation.resolve(response({}, 503));
+    await vi.waitFor(() => expect(otherButton.disabled).toBe(false));
+    expect(staleButton.disabled).toBe(true);
+    expect(document.activeElement).toBe(otherButton);
+  });
+
+  it("makes an obsolete pending completion inert after remount", async () => {
+    todayMarkup();
+    const obsolete = deferredResponse();
+    const oldTask = {
+      dueAt: task.dueAt,
+      id: task.id,
+      kind: "task",
+      title: "Obsolete task",
+    };
+    const currentTask = {
+      ...oldTask,
+      id: crypto.randomUUID(),
+      title: "Current task",
+    };
+    const snapshots = [
+      response(attention([oldTask])),
+      response(attention([currentTask])),
+    ];
+    let snapshotIndex = 0;
+    const fetchMock = vi.fn((
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) =>
+      String(input).includes("/session")
+        ? Promise.resolve(response(session))
+        : init?.method === "PUT"
+        ? obsolete.promise
+        : Promise.resolve(snapshots[snapshotIndex++]!)
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await mountTodayTasks();
+    document.querySelector<HTMLButtonElement>("#today-overdue-list button")!
+      .click();
+    await mountTodayTasks();
+    obsolete.resolve(response({}, 503));
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain("Current task")
+    );
+    expect(document.body.textContent).not.toContain("Obsolete task");
+    expect(document.body.textContent).not.toMatch(/could not be completed/i);
+    expect(document.activeElement?.id).not.toBe("today-attention-state");
+  });
+
+  it("keeps region retry failures isolated and refreshes both on success", async () => {
+    todayMarkup();
+    const preserved = {
+      dueAt: task.dueAt,
+      id: task.id,
+      kind: "task",
+      title: "Preserved",
+    };
+    const refreshed = { ...preserved, title: "Refreshed" };
+    const fetchMock = todayFetch(
+      response(attention([preserved], [preserved])),
+      response({}, 503),
+      response(attention([refreshed], [refreshed])),
+      response({}, 503),
+      response(attention([preserved], [preserved])),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await mountTodayTasks();
+    document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+      .click();
+    await vi.waitFor(() =>
+      expect(document.querySelector("#today-attention-state")?.textContent)
+        .toMatch(/could not be loaded/i)
+    );
+    expect(document.querySelector("#today-upcoming-state")?.textContent)
+      .toMatch(/1 upcoming item/i);
+    document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+      .click();
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain("Refreshed")
+    );
+    expect(document.activeElement?.id).toBe("today-attention-state");
+    document.querySelector<HTMLButtonElement>("#today-upcoming-retry")!.click();
+    await vi.waitFor(() =>
+      expect(document.querySelector("#today-upcoming-state")?.textContent)
+        .toMatch(/could not be loaded/i)
+    );
+    expect(document.querySelector("#today-overdue-list")?.textContent)
+      .toContain("Refreshed");
+    document.querySelector<HTMLButtonElement>("#today-upcoming-retry")!.click();
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain("Preserved")
+    );
+    expect(document.activeElement?.id).toBe("today-upcoming-state");
+  });
+
+  it("uses one generation to discard stale retries from either region", async () => {
+    todayMarkup();
+    let release!: (value: Response) => void;
+    const stale = new Promise<Response>((resolve) => release = resolve);
+    const current = {
+      dueAt: task.dueAt,
+      id: task.id,
+      kind: "task",
+      title: "Current",
+    };
+    const fetchMock = todayFetch(
+      response(attention()),
+      stale,
+      response(attention([current], [current])),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await mountTodayTasks();
+    document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter((call) =>
+          String(call[0]).includes("/today/attention")
+        ),
+      ).toHaveLength(2)
+    );
+    document.querySelector<HTMLButtonElement>("#today-upcoming-retry")!.click();
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain("Current")
+    );
+    release(response(attention(
+      [{ ...current, title: "Stale" }],
+      [{ ...current, title: "Stale" }],
+    )));
+    await vi.waitFor(() =>
+      expect(document.body.textContent).not.toContain("Stale")
+    );
+    expect(document.querySelector("#today-overdue-list")?.textContent)
+      .toContain("Current");
+    expect(document.querySelector("#today-upcoming-list")?.textContent)
+      .toContain("Current");
+  });
+
+  it.each(
+    [
+      ["attention", "upcoming", false, false],
+      ["attention", "upcoming", false, true],
+      ["attention", "upcoming", true, false],
+      ["upcoming", "attention", false, false],
+    ] as const,
+  )(
+    "restores superseded %s state when the newer %s retry succeeds=%s fails=%s",
+    async (olderRegion, newerRegion, olderSucceeds, newerSucceeds) => {
+      todayMarkup();
+      const older = deferredResponse();
+      const newer = deferredResponse();
+      const current = {
+        dueAt: task.dueAt,
+        id: task.id,
+        kind: "task",
+        title: "Current",
+      };
+      const fetchMock = todayFetch(
+        response({}, 503),
+        older.promise,
+        newer.promise,
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      await mountTodayTasks();
+      const retry = (region: string) =>
+        document.querySelector<HTMLButtonElement>(`#today-${region}-retry`)!;
+      const snapshotCount = () =>
+        fetchMock.mock.calls.filter((call) =>
+          String(call[0]).includes("/today/attention")
+        ).length;
+      retry(olderRegion).click();
+      await vi.waitFor(() => expect(snapshotCount()).toBe(2));
+      retry(newerRegion).click();
+      await vi.waitFor(() => expect(snapshotCount()).toBe(3));
+      older.resolve(
+        olderSucceeds
+          ? response(attention([current], [current]))
+          : response({}, 503),
+      );
+      newer.resolve(
+        newerSucceeds
+          ? response(attention([current], [current]))
+          : response({}, 503),
+      );
+      await vi.waitFor(() =>
+        expect(document.body.textContent).not.toMatch(
+          /Loading (relationship|upcoming)/,
+        )
+      );
+      if (newerSucceeds) {
+        expect(document.querySelector("#today-overdue-list")?.textContent)
+          .toContain("Current");
+        expect(document.querySelector("#today-upcoming-list")?.textContent)
+          .toContain("Current");
+      } else {
+        expect(document.querySelector("#today-attention-state")?.textContent)
+          .toMatch(/could not be loaded/i);
+        expect(document.querySelector("#today-upcoming-state")?.textContent)
+          .toMatch(/could not be loaded/i);
+        expect(retry("attention").hidden).toBe(false);
+        expect(retry("upcoming").hidden).toBe(false);
+      }
+    },
+  );
+
+  it("does not restore an obsolete retry after a remount abort", async () => {
+    todayMarkup();
+    const obsolete = deferredResponse();
+    const current = {
+      dueAt: task.dueAt,
+      id: task.id,
+      kind: "task",
+      title: "Current remount",
+    };
+    const fetchMock = todayFetch(
+      response({}, 503),
+      obsolete.promise,
+      response({
+        ...attention([current], [current]),
+        date: "2026-08-19",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await mountTodayTasks();
+    document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+      .click();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    await mountTodayTasks();
+    obsolete.resolve(response({
+      ...attention(),
+      date: "2026-08-17",
+    }));
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain("Current remount")
+    );
+    expect(document.body.textContent).not.toMatch(/could not be loaded/i);
+    expect(
+      document.querySelector<HTMLTimeElement>("[data-today-date]")?.dateTime,
+    ).toBe("2026-08-19");
+    expect(
+      document.querySelector<HTMLButtonElement>("#today-attention-retry")
+        ?.hidden,
+    )
+      .toBe(true);
   });
 });

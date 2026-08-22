@@ -18,3 +18,14 @@ export type {
   TodayRemindersRepository,
 } from "./application/get_today_reminders.ts";
 export { PostgresTodayRemindersRepository } from "./adapters/postgres/today_reminders_repository.ts";
+export {
+  createTodayAttention,
+  todayAttentionWindow,
+} from "./application/get_today_attention.ts";
+export type {
+  TodayAttention,
+  TodayAttentionItem,
+  TodayAttentionPerson,
+  TodayAttentionRepository,
+} from "./application/get_today_attention.ts";
+export { PostgresTodayAttentionRepository } from "./adapters/postgres/today_attention_repository.ts";

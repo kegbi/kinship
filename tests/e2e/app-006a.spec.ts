@@ -162,12 +162,12 @@ test(
     await expect(reopenedTask).toBeVisible();
 
     await page.goto("/app");
-    await expect(page.locator("#today-tasks-list li", {
+    await expect(page.locator("#today-next-seven-list li", {
       hasText: "Call Ada after completion",
     }))
       .toBeVisible();
     await expect(
-      page.locator("#today-tasks-list li", { hasText: "Review shared notes" }),
+      page.locator(".attention-groups li", { hasText: "Review shared notes" }),
     ).toHaveCount(0);
 
     await page.addScriptTag({ content: axe.source });

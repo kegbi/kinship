@@ -145,12 +145,15 @@ import {
   PostgresActivityReportRepository,
 } from "../../packages/backend/read-models/activity-report/public.ts";
 import {
+  createTodayAttention,
   createTodayInteractions,
   createTodayReminders,
   createTodayTasks,
+  PostgresTodayAttentionRepository,
   PostgresTodayInteractionsRepository,
   PostgresTodayRemindersRepository,
   PostgresTodayTasksRepository,
+  type TodayAttention,
   type TodayInteractions,
   type TodayReminders,
   type TodayTasks,
@@ -182,6 +185,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly tagOptions?: PeopleTagOptions;
   readonly tasks?: TaskManagement;
   readonly today?: TodayInteractions;
+  readonly todayAttention?: TodayAttention;
   readonly todayTasks?: TodayTasks;
   readonly todayReminders?: TodayReminders;
   readonly readiness?: () => Promise<boolean>;
@@ -351,6 +355,9 @@ export function createApiApp(services?: ApiServices): Hono {
           protectedSessions: services.protectedSessions,
           ...(services.reminders ? { reminders: services.reminders } : {}),
           tasks: services.tasks,
+          ...(services.todayAttention
+            ? { todayAttention: services.todayAttention }
+            : {}),
           ...(services.todayReminders
             ? { todayReminders: services.todayReminders }
             : {}),
@@ -648,6 +655,10 @@ export function createConfiguredApiApp(
   const today = createTodayInteractions({
     repository: new PostgresTodayInteractionsRepository(connection.db),
   });
+  const todayAttention = createTodayAttention({
+    clock,
+    repository: new PostgresTodayAttentionRepository(connection.db),
+  });
   const todayTasks = createTodayTasks({
     clock,
     repository: new PostgresTodayTasksRepository(connection.db),
@@ -677,6 +688,7 @@ export function createConfiguredApiApp(
     tagOptions,
     tasks,
     today,
+    todayAttention,
     todayReminders,
     todayTasks,
     register: registration,

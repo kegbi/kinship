@@ -1,7 +1,13 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { mountPersonReminders, mountTodayReminders } from "./reminders.ts";
+
+const applicationCss = readFileSync(
+  "apps/web/src/styles/application.css",
+  "utf8",
+);
 
 const workspaceId = "00000000-0000-4000-8000-000000000003";
 const personId = "00000000-0000-4000-8000-000000000100";
@@ -24,7 +30,7 @@ function personMarkup(): void {
 
 function todayMarkup(): void {
   document.body.innerHTML = `
-    <p id="today-reminders-state"></p><ul id="today-reminders-list"></ul><button id="today-reminders-retry" hidden>Retry</button>
+    <p id="today-reminders-state"></p><ul id="today-reminders-list"></ul><button id="today-reminders-retry" class="today-touch-target" type="button" hidden>Retry</button>
     <p id="today-cadences-state"></p><ul id="today-cadences-list"></ul>`;
   sessionStorage.setItem(
     "kinship.workspace.session",
@@ -58,8 +64,76 @@ const reminder = {
   updatedAt: "2026-08-18T10:00:00.000Z",
 };
 
+const session = {
+  member: { id: "member", role: "member" },
+  principal: { userId: "user" },
+  status: "authenticated",
+  workspace: { id: workspaceId, name: "Circle" },
+  workspaces: [{ id: workspaceId, name: "Circle" }],
+};
+
+function todaySnapshot(title = "Call Ada") {
+  return {
+    cadences: [{
+      dueAt: "2026-08-18T08:00:00.000Z",
+      id: "00000000-0000-4000-8000-000000000903",
+      person: { archived: false, id: personId, name: "Ada Lovelace" },
+    }],
+    reminders: [{
+      attemptCount: 0,
+      deliverAt: "2026-08-18T08:00:00.000Z",
+      id: reminderId,
+      person: { archived: false, id: personId, name: "Ada Lovelace" },
+      status: "pending",
+      title,
+    }],
+    status: "ready",
+    timezone: "Europe/Belgrade",
+  };
+}
+
+function todayFetch(...snapshots: Array<Response | Promise<Response>>) {
+  let index = 0;
+  return vi.fn((input: string | URL | Request) =>
+    String(input).includes("/session")
+      ? Promise.resolve(response(session))
+      : Promise.resolve(snapshots[index++])
+  );
+}
+
+function deferredResponse() {
+  let resolve!: (value: Response) => void;
+  const promise = new Promise<Response>((done) => resolve = done);
+  return { promise, resolve };
+}
+
+function observedResponse(body: unknown, status = 200) {
+  const value = response(body, status);
+  let consumed!: () => void;
+  const consumedPromise = new Promise<void>((done) => consumed = done);
+  const json = value.json.bind(value);
+  Object.defineProperty(value, "json", {
+    value: async () => {
+      const parsed = await json();
+      consumed();
+      return parsed;
+    },
+  });
+  return { consumed: consumedPromise, value };
+}
+
+async function settleResponse(
+  deferred: ReturnType<typeof deferredResponse>,
+  observed: ReturnType<typeof observedResponse>,
+): Promise<void> {
+  deferred.resolve(observed.value);
+  await observed.consumed;
+  for (let turn = 0; turn < 6; turn += 1) await Promise.resolve();
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  document.head.innerHTML = "";
   document.body.innerHTML = "";
   sessionStorage.clear();
 });
@@ -178,8 +252,227 @@ describe("PLANNING-002 reminder browser behavior", () => {
       .toHaveLength(0);
   });
 
+  it.each(["unavailable", "access-lost"])(
+    "ends initial Today loading when the session is %s",
+    async (sessionState) => {
+      todayMarkup();
+      vi.stubGlobal(
+        "fetch",
+        sessionState === "unavailable"
+          ? vi.fn().mockRejectedValue(new Error("offline"))
+          : vi.fn().mockResolvedValue(
+            response({ code: "session_invalid", status: 401 }, 401),
+          ),
+      );
+
+      await mountTodayReminders();
+
+      expect(document.querySelector("#today-reminders-state")?.textContent)
+        .toMatch(/unavailable/i);
+      expect(document.querySelector("#today-cadences-state")?.textContent)
+        .toMatch(/unavailable/i);
+      expect(document.body.textContent).not.toContain("Loading");
+      expect(
+        document.querySelector<HTMLButtonElement>("#today-reminders-retry")
+          ?.hidden,
+      ).toBe(false);
+    },
+  );
+
+  it.each(
+    [
+      [false, true],
+      [true, false],
+    ] as const,
+  )(
+    "keeps the newer retry atomic when older-success=%s newer-success=%s",
+    async (olderSucceeds, newerSucceeds) => {
+      todayMarkup();
+      const older = deferredResponse();
+      const newer = deferredResponse();
+      const fetchMock = todayFetch(
+        response({}, 503),
+        older.promise,
+        newer.promise,
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      await mountTodayReminders();
+      const retry = document.querySelector<HTMLButtonElement>(
+        "#today-reminders-retry",
+      )!;
+      const states = () => [
+        document.querySelector("#today-reminders-state")?.textContent,
+        document.querySelector("#today-cadences-state")?.textContent,
+      ];
+      const snapshotCount = () =>
+        fetchMock.mock.calls.filter((call) =>
+          String(call[0]).includes("/today/reminders")
+        ).length;
+      expect(states().every((value) => value?.includes("unavailable"))).toBe(
+        true,
+      );
+      expect(retry.hidden).toBe(false);
+
+      retry.focus();
+      retry.click();
+      expect(states()).toEqual([
+        "Loading reminder state…",
+        "Loading reconnect suggestions…",
+      ]);
+      expect(retry.hidden).toBe(true);
+      await vi.waitFor(() => expect(snapshotCount()).toBe(2));
+      retry.click();
+      expect(states()).toEqual([
+        "Loading reminder state…",
+        "Loading reconnect suggestions…",
+      ]);
+      await vi.waitFor(() => expect(snapshotCount()).toBe(3));
+
+      await settleResponse(
+        newer,
+        newerSucceeds
+          ? observedResponse(todaySnapshot("Newer"))
+          : observedResponse({}, 503),
+      );
+      expect(states()[0]).toMatch(
+        newerSucceeds ? /1 reminder state/ : /unavailable/,
+      );
+      expect(document.activeElement?.id).toBe("today-reminders-state");
+      await settleResponse(
+        older,
+        olderSucceeds
+          ? observedResponse(todaySnapshot("Older"))
+          : observedResponse({}, 503),
+      );
+      expect(states()[0]).toMatch(
+        newerSucceeds ? /1 reminder state/ : /unavailable/,
+      );
+      expect(states()[1]).toMatch(newerSucceeds ? /1 people/ : /unavailable/);
+      expect(document.body.textContent).not.toContain("Older");
+      expect(retry.hidden).toBe(newerSucceeds);
+    },
+  );
+
+  it("preserves stale content and restores focus when a retry fails", async () => {
+    todayMarkup();
+    const pending = deferredResponse();
+    const fetchMock = todayFetch(
+      response(todaySnapshot("Preserved")),
+      pending.promise,
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await mountTodayReminders();
+    const retry = document.querySelector<HTMLButtonElement>(
+      "#today-reminders-retry",
+    )!;
+    retry.focus();
+    retry.click();
+    expect(document.body.textContent).toContain("Preserved");
+    expect(document.querySelector("#today-reminders-state")?.textContent)
+      .toBe("Loading reminder state…");
+    expect(retry.hidden).toBe(true);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    await settleResponse(pending, observedResponse({}, 503));
+    expect(retry.hidden).toBe(false);
+    expect(document.body.textContent).toContain("Preserved");
+    expect(document.activeElement?.id).toBe("today-reminders-state");
+  });
+
+  it("rejects an invalid runtime timezone without partially replacing reminder state", async () => {
+    todayMarkup();
+    const invalid = {
+      ...todaySnapshot("Must not render"),
+      timezone: "Definitely/Not_A_Zone",
+    };
+    const fetchMock = todayFetch(
+      response(todaySnapshot("Preserved")),
+      response(invalid),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await mountTodayReminders();
+    const retry = document.querySelector<HTMLButtonElement>(
+      "#today-reminders-retry",
+    )!;
+    retry.click();
+    await vi.waitFor(() => expect(retry.hidden).toBe(false));
+    expect(document.body.textContent).toContain("Preserved");
+    expect(document.body.textContent).not.toContain("Must not render");
+    expect(document.querySelector("#today-reminders-state")?.textContent)
+      .toMatch(/unavailable/i);
+  });
+
+  it("keeps both reminder regions atomic when Intl fails after validation", async () => {
+    todayMarkup();
+    const fetchMock = todayFetch(
+      response(todaySnapshot("Preserved")),
+      response(todaySnapshot("Must not partially render")),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await mountTodayReminders();
+    const NativeDateTimeFormat = Intl.DateTimeFormat;
+    let calls = 0;
+    vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
+      (function (
+        locales?: Intl.LocalesArgument,
+        options?: Intl.DateTimeFormatOptions,
+      ) {
+        calls += 1;
+        if (calls === 3) throw new RangeError("formatter unavailable");
+        return new NativeDateTimeFormat(locales, options);
+      }) as typeof Intl.DateTimeFormat,
+    );
+    const retry = document.querySelector<HTMLButtonElement>(
+      "#today-reminders-retry",
+    )!;
+    retry.click();
+    await vi.waitFor(() => expect(retry.hidden).toBe(false));
+    expect(document.body.textContent).toContain("Preserved");
+    expect(document.body.textContent).not.toContain(
+      "Must not partially render",
+    );
+    expect(document.querySelector("#today-reminders-state")?.textContent)
+      .toMatch(/unavailable/i);
+    expect(document.querySelector("#today-cadences-state")?.textContent)
+      .toMatch(/unavailable/i);
+  });
+
+  it("makes a pending old mount inert after remount", async () => {
+    todayMarkup();
+    const obsolete = deferredResponse();
+    const fetchMock = todayFetch(
+      obsolete.promise,
+      response(todaySnapshot("Current mount")),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const oldMount = mountTodayReminders();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await mountTodayReminders();
+    obsolete.resolve(response({}, 503));
+    await oldMount;
+    expect(document.body.textContent).toContain("Current mount");
+    expect(document.body.textContent).not.toMatch(/unavailable/i);
+    expect(
+      document.querySelector<HTMLButtonElement>("#today-reminders-retry")
+        ?.hidden,
+    ).toBe(true);
+  });
+
   it("shows manual-attention delivery and independent cadence state on Today", async () => {
     todayMarkup();
+    const extra = ["pending", "claimed", "retry", "failed"].map((
+      status,
+      index,
+    ) => ({
+      attemptCount: index,
+      deliverAt: "2026-08-18T08:00:00.000Z",
+      id: crypto.randomUUID(),
+      ...(status === "retry"
+        ? { nextAttemptAt: "2026-08-20T10:00:00.000Z" }
+        : {}),
+      person: { archived: false, id: personId, name: "Ada Lovelace" },
+      status,
+      title: `${status} reminder`,
+    }));
     vi.stubGlobal(
       "fetch",
       vi.fn()
@@ -194,9 +487,14 @@ describe("PLANNING-002 reminder browser behavior", () => {
           cadences: [{
             dueAt: "2026-08-18T08:00:00.000Z",
             id: "00000000-0000-4000-8000-000000000903",
+            lastContactedAt: "2026-08-17T08:00:00.000Z",
             person: { archived: false, id: personId, name: "Ada Lovelace" },
+          }, {
+            dueAt: "2026-08-18T09:00:00.000Z",
+            id: "00000000-0000-4000-8000-000000000904",
+            person: { archived: true, id: personId, name: "Grace Hopper" },
           }],
-          reminders: [{
+          reminders: [...extra, {
             attemptCount: 3,
             deliverAt: "2026-08-18T08:00:00.000Z",
             id: reminderId,
@@ -213,15 +511,79 @@ describe("PLANNING-002 reminder browser behavior", () => {
             visibleAt: "2026-08-18T09:00:01.000Z",
           }],
           status: "ready",
-          timezone: "Europe/Belgrade",
+          timezone: "America/New_York",
         })),
     );
     await mountTodayReminders();
-    expect(document.querySelector("#today-reminders-list")?.textContent)
-      .toContain("Delivery needs manual attention");
-    expect(document.querySelector("#today-reminders-list")?.textContent)
-      .toContain("Notification visible");
-    expect(document.querySelector("#today-cadences-list")?.textContent)
-      .toContain("Ada Lovelace");
+    const reminderList = document.querySelector("#today-reminders-list")!;
+    for (
+      const status of [
+        ...extra.map((item) => item.status),
+        "sent",
+        "manual_attention",
+      ]
+    ) {
+      expect(reminderList.querySelector(`.reminder-${status}`)).not.toBeNull();
+    }
+    expect(
+      [
+        "Scheduled for",
+        "Retry scheduled",
+        "Delivery failed",
+        "Delivery needs manual attention",
+        "Notification visible",
+      ].every((text) => reminderList.textContent?.includes(text)),
+    ).toBe(true);
+    const format = (value: string) =>
+      new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "America/New_York",
+      }).format(new Date(value));
+    expect(reminderList.textContent).toContain(
+      format("2026-08-18T09:00:01.000Z"),
+    );
+    const retryRow = reminderList.querySelector(".reminder-retry")!;
+    expect(retryRow.textContent).toContain(
+      format("2026-08-20T10:00:00.000Z"),
+    );
+    expect(retryRow.textContent).not.toContain(
+      format("2026-08-18T08:00:00.000Z"),
+    );
+    expect(reminderList.querySelector(".reminder-cancelled,.reminder-skipped"))
+      .toBeNull();
+    const cadenceList = document.querySelector("#today-cadences-list")!;
+    expect(
+      ["Last contact", "No contact recorded", "archived"].every((text) =>
+        cadenceList.textContent?.includes(text)
+      ),
+    ).toBe(true);
+    expect(cadenceList.textContent).toContain(
+      format("2026-08-17T08:00:00.000Z"),
+    );
+    const style = document.createElement("style");
+    style.textContent = applicationCss;
+    document.head.append(style);
+    const retry = document.querySelector<HTMLButtonElement>(
+      "#today-reminders-retry",
+    )!;
+    const links = [
+      reminderList.querySelector<HTMLAnchorElement>("a")!,
+      cadenceList.querySelector<HTMLAnchorElement>("a")!,
+    ];
+    expect(retry.hidden).toBe(true);
+    expect(retry.type).toBe("button");
+    for (const link of links) {
+      const computed = getComputedStyle(link);
+      expect(link.classList).toContain("today-touch-target");
+      expect(link.tabIndex).toBe(0);
+      expect(link.getAttribute("href")).toMatch(/^\/app\/people\//);
+      expect(computed.minHeight).toBe("44px");
+      expect(computed.minWidth).toBe("44px");
+      expect(computed.maxInlineSize).toBe("100%");
+      expect(computed.whiteSpace).toBe("normal");
+      expect(computed.overflowWrap).toBe("anywhere");
+      expect(computed.width).not.toBe("100%");
+    }
   });
 });

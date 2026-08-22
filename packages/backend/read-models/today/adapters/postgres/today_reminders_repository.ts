@@ -10,6 +10,7 @@ interface ReminderRow {
   readonly attempt_count: number;
   readonly deliver_at: string;
   readonly id: string;
+  readonly next_attempt_at: string | null;
   readonly person_id: string;
   readonly person_archived: boolean;
   readonly person_name: string;
@@ -52,7 +53,8 @@ export class PostgresTodayRemindersRepository
       sql<ReminderRow>`
         with ranked as (
           select occurrence.id, occurrence.attempt_count,
-            occurrence.deliver_at, occurrence.status,
+            occurrence.deliver_at, occurrence.next_attempt_at,
+            occurrence.status,
             coalesce(occurrence.title_snapshot, reminder.title, 'Reminder') as title,
             occurrence.visible_at, person.id as person_id,
             person.archived_at is not null as person_archived,
@@ -61,11 +63,16 @@ export class PostgresTodayRemindersRepository
               case occurrence.status when 'manual_attention' then 0
                 when 'failed' then 1 else 2 end,
               case when occurrence.status not in ('manual_attention','failed')
-                  and occurrence.deliver_at >= ${command.now}::timestamptz
+                  and (case when occurrence.status = 'retry'
+                    then occurrence.next_attempt_at else occurrence.deliver_at end)
+                    >= ${command.now}::timestamptz
                 then 0 else 1 end,
               case when occurrence.status not in ('manual_attention','failed')
-                  and occurrence.deliver_at >= ${command.now}::timestamptz
-                then occurrence.deliver_at end,
+                  and (case when occurrence.status = 'retry'
+                    then occurrence.next_attempt_at else occurrence.deliver_at end)
+                    >= ${command.now}::timestamptz
+                then case when occurrence.status = 'retry'
+                  then occurrence.next_attempt_at else occurrence.deliver_at end end,
               occurrence.deliver_at desc, occurrence.id) as relevance
           from crm.reminder_occurrences occurrence
           join crm.reminders reminder on reminder.id = occurrence.reminder_id
@@ -76,14 +83,18 @@ export class PostgresTodayRemindersRepository
             and person.deleted_at is null
             and occurrence.member_id = ${command.memberId}::uuid
             and occurrence.status in ('pending','claimed','retry','sent','failed','manual_attention')
+            and (occurrence.status <> 'retry' or occurrence.next_attempt_at is not null)
             and (occurrence.status <> 'claimed' or occurrence.visible_at is not null)
             and (occurrence.status in ('failed','manual_attention')
-              or occurrence.deliver_at < ${command.now}::timestamptz + interval '30 days')
+              or (case when occurrence.status = 'retry'
+                then occurrence.next_attempt_at else occurrence.deliver_at end)
+                < ${command.now}::timestamptz + interval '30 days')
             and (occurrence.status <> 'sent'
               or occurrence.deliver_at >= ${command.now}::timestamptz - interval '90 days')
         )
         select occurrence.id::text, occurrence.attempt_count,
           to_char(occurrence.deliver_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as deliver_at,
+          to_char(occurrence.next_attempt_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as next_attempt_at,
           occurrence.status, occurrence.title,
           to_char(occurrence.visible_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as visible_at,
           occurrence.person_id::text, occurrence.person_archived,
@@ -91,7 +102,9 @@ export class PostgresTodayRemindersRepository
         from ranked occurrence where occurrence.relevance = 1
         order by case occurrence.status when 'manual_attention' then 0 when 'failed' then 1
           when 'retry' then 2 when 'pending' then 3 else 4 end,
-          occurrence.deliver_at, occurrence.person_id, occurrence.id limit 100
+          case when occurrence.status = 'retry' then occurrence.next_attempt_at
+            else occurrence.deliver_at end,
+          occurrence.person_id, occurrence.id limit 100
       `.execute(this.database),
       sql<CadenceRow>`
         select cadence.id::text, person.id::text as person_id,
@@ -121,19 +134,23 @@ export class PostgresTodayRemindersRepository
           name: row.person_name,
         },
       })),
-      reminders: reminders.rows.map((row): TodayReminderItem => ({
-        attemptCount: row.attempt_count,
-        deliverAt: row.deliver_at,
-        id: row.id,
-        person: {
-          archived: row.person_archived,
-          id: row.person_id,
-          name: row.person_name,
-        },
-        status: row.status,
-        title: row.title,
-        ...(row.visible_at ? { visibleAt: row.visible_at } : {}),
-      })),
+      reminders: reminders.rows.map((row): TodayReminderItem => {
+        const item = {
+          attemptCount: row.attempt_count,
+          deliverAt: row.deliver_at,
+          id: row.id,
+          person: {
+            archived: row.person_archived,
+            id: row.person_id,
+            name: row.person_name,
+          },
+          title: row.title,
+          ...(row.visible_at ? { visibleAt: row.visible_at } : {}),
+        };
+        return row.status === "retry"
+          ? { ...item, nextAttemptAt: row.next_attempt_at!, status: row.status }
+          : { ...item, status: row.status };
+      }),
       status: "ready" as const,
       timezone,
     };

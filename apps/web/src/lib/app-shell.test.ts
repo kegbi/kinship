@@ -17,7 +17,7 @@ function shellMarkup(): void {
     <section id="access-state" role="status">Checking</section>
     <div id="protected-shell" hidden>
       <h1 id="today-heading">Opening</h1>
-      <time data-today-date></time>
+      <time data-today-date>Loading date…</time>
       <span data-workspace-name></span>
       <div id="workspace-switcher-container" hidden>
         <label for="workspace-switcher">Active workspace</label>
@@ -237,9 +237,8 @@ describe("APP-002C protected application shell", () => {
     expect(document.querySelector("#today-heading")?.textContent).toBe(
       "Welcome back.",
     );
-    expect(document.querySelector("time")?.getAttribute("datetime")).toMatch(
-      /^\d{4}-\d{2}-\d{2}$/,
-    );
+    expect(document.querySelector("time")?.getAttribute("datetime")).toBeNull();
+    expect(document.querySelector("time")?.textContent).toBe("Loading date…");
     document.querySelector<HTMLButtonElement>("#member-menu-toggle")?.click();
     expect(document.querySelector("#member-popover")?.hasAttribute("hidden"))
       .toBe(false);

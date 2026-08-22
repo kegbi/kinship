@@ -6,6 +6,7 @@ import type {
   TaskManagement,
 } from "../../packages/backend/modules/planning/public.ts";
 import type {
+  TodayAttention,
   TodayReminders,
   TodayTasks,
 } from "../../packages/backend/read-models/today/public.ts";
@@ -19,6 +20,7 @@ export interface PlanningHttpServices {
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
   readonly reminders?: ReminderManagement;
   readonly tasks: TaskManagement;
+  readonly todayAttention?: TodayAttention;
   readonly todayTasks: TodayTasks;
   readonly todayReminders?: TodayReminders;
 }
@@ -269,6 +271,25 @@ function originFailure(context: Context) {
 
 export function createPlanningRoutes(services: PlanningHttpServices): Hono {
   const routes = new Hono();
+  routes.get("/api/v1/today/attention", async (context) => {
+    const resolved = await actor(context, services);
+    if (!resolved) return authenticationRequired(context);
+    const result = await services.todayAttention?.get(resolved).catch(() =>
+      undefined
+    );
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "today_attention_unavailable",
+        "Attention unavailable",
+        "Other Today regions remain available. Retry the attention queue.",
+      );
+    }
+    if (result.status !== "ready") return mutationFailure(context, result);
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
   routes.get("/api/v1/people/:personId/reminders", async (context) => {
     if (!services.reminders) {
       return problem(

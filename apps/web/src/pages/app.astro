@@ -14,25 +14,31 @@ export const prerender = true;
       <div>
         <p class="eyebrow">Today · <span data-workspace-name></span></p>
         <h1 id="today-heading">Opening your workspace…</h1>
-        <time data-today-date></time>
+        <time data-today-date>Loading date…</time>
       </div>
-      <p class="honesty-note">Due tasks, reminders, and stay-in-touch cadence are available now. The complete cross-module attention ordering remains in its accepted delivery leaf.</p>
+      <p class="honesty-note">Tasks, reminders, important dates, and stay-in-touch cadence are ordered in your effective time zone.</p>
     </header>
 
     <section class="today-section attention-section" aria-labelledby="attention-heading">
       <div class="section-heading">
         <div>
-          <p class="section-kicker">First success</p>
+          <p class="section-kicker">Current priorities</p>
           <h2 id="attention-heading">Needs attention</h2>
         </div>
-        <span class="state-badge">Getting started</span>
+        <span class="state-badge">Overdue · today · next 7 days</span>
       </div>
-      <p>Build the context that will make Kinship useful. Complete these three steps in order:</p>
-      <ol class="success-loop">
+      <p id="today-attention-state" class="section-state" role="status" aria-live="polite">Loading relationship priorities…</p>
+      <div class="attention-groups">
+        <section aria-labelledby="today-overdue-heading"><h3 id="today-overdue-heading">Overdue</h3><ul id="today-overdue-list" class="task-list"></ul></section>
+        <section aria-labelledby="today-due-heading"><h3 id="today-due-heading">Today</h3><ul id="today-due-today-list" class="task-list"></ul></section>
+        <section aria-labelledby="today-next-seven-heading"><h3 id="today-next-seven-heading">Next 7 days</h3><ul id="today-next-seven-list" class="task-list"></ul></section>
+      </div>
+      <div id="today-onboarding" hidden><p>Build the context that will make Kinship useful:</p><ol class="success-loop">
         <li><strong>Add a person or start an import.</strong><span>People creation and import arrive in their cataloged delivery slices.</span></li>
         <li><strong>Record the first interaction or note.</strong><span>Keep the context you want to remember.</span></li>
-        <li><strong>Create a task, reminder, or stay-in-touch cadence.</strong><span>Planning work appears in the independent Today regions below.</span></li>
-      </ol>
+        <li><strong>Create a task, reminder, or stay-in-touch cadence.</strong><span>Planning work appears here when it becomes due.</span></li>
+      </ol></div>
+      <button id="today-attention-retry" class="button-secondary today-touch-target" type="button" hidden>Retry attention</button>
       <p class="projection-note">Task completion here uses the same planning action as the person and global task surfaces.</p>
     </section>
 
@@ -40,20 +46,19 @@ export const prerender = true;
       <div class="section-heading"><h2 id="reconnect-heading">People to reconnect</h2><span class="state-badge calm">Stay-in-touch cadence</span></div>
       <p id="today-cadences-state" class="section-state" role="status" aria-live="polite">Loading reconnect suggestions…</p>
       <ul id="today-cadences-list" class="task-list" aria-label="People due for contact"></ul>
+      <div class="reminder-delivery-state" aria-labelledby="reminder-delivery-heading">
+        <h3 id="reminder-delivery-heading">Reminder delivery state</h3>
+        <p id="today-reminders-state" class="section-state" role="status" aria-live="polite">Loading reminder state…</p>
+        <ul id="today-reminders-list" class="task-list" aria-label="Reminder delivery states"></ul>
+      </div>
+      <button id="today-reminders-retry" class="button-secondary today-touch-target" type="button" hidden>Retry reconnect suggestions</button>
     </section>
 
     <section class="today-section" aria-labelledby="upcoming-heading">
-      <div class="section-heading"><h2 id="upcoming-heading">Upcoming tasks</h2><span class="state-badge calm">Next 30 days</span></div>
-      <p id="today-tasks-state" class="section-state" role="status" aria-live="polite">Loading due tasks…</p>
-      <ul id="today-tasks-list" class="task-list" aria-label="Due tasks"></ul>
-      <div class="form-actions"><button id="today-tasks-retry" class="button-secondary" type="button" hidden>Retry due tasks</button><a class="button-secondary" href="/app/tasks">Open all tasks</a></div>
-    </section>
-
-    <section class="today-section" aria-labelledby="reminders-heading">
-      <div class="section-heading"><h2 id="reminders-heading">Reminders</h2><span class="state-badge calm">Delivery state</span></div>
-      <p id="today-reminders-state" class="section-state" role="status" aria-live="polite">Loading reminders…</p>
-      <ul id="today-reminders-list" class="task-list" aria-label="Reminder delivery states"></ul>
-      <button id="today-reminders-retry" class="button-secondary" type="button" hidden>Retry reminders</button>
+      <div class="section-heading"><h2 id="upcoming-heading">Upcoming</h2><span class="state-badge calm">Remainder through 30 days</span></div>
+      <p id="today-upcoming-state" class="section-state" role="status" aria-live="polite">Loading upcoming work…</p>
+      <ul id="today-upcoming-list" class="task-list" aria-label="Upcoming relationship work"></ul>
+      <div class="form-actions"><button id="today-upcoming-retry" class="button-secondary today-touch-target" type="button" hidden>Retry upcoming</button><a class="button-secondary today-touch-target" href="/app/tasks">Open all tasks</a></div>
     </section>
 
     <section class="today-section" aria-labelledby="recent-people-heading">
@@ -65,14 +70,14 @@ export const prerender = true;
       <div class="section-heading"><h2 id="favorite-notes-heading">Favorite notes</h2><span class="state-badge calm">Reference</span></div>
       <p id="today-favorite-notes-state" class="section-state" aria-live="polite">Loading favorite notes…</p>
       <ul id="today-favorite-notes" class="interaction-list" aria-label="Favorite notes"></ul>
-      <button id="today-favorite-notes-retry" class="button-secondary" type="button" hidden>Retry favorite notes</button>
+      <button id="today-favorite-notes-retry" class="button-secondary today-touch-target" type="button" hidden>Retry favorite notes</button>
     </section>
 
     <section id="today-recent-activity-region" class="today-section" aria-labelledby="activity-heading">
       <div class="section-heading"><h2 id="activity-heading">Recent activity</h2><span class="state-badge calm">Latest 20</span></div>
       <p id="today-recent-activity-state" class="section-state" aria-live="polite">Loading recent activity…</p>
       <ul id="today-recent-activity" class="interaction-list" aria-label="Recent activities and notes"></ul>
-      <button id="today-recent-activity-retry" class="button-secondary" type="button" hidden>Retry recent activity</button>
+      <button id="today-recent-activity-retry" class="button-secondary today-touch-target" type="button" hidden>Retry recent activity</button>
     </section>
   </main>
 </ApplicationLayout>
@@ -80,8 +85,8 @@ export const prerender = true;
 <script>
   import { mountTodayInteractions } from "../lib/interactions.ts";
   import { mountTodayReminders } from "../lib/reminders.ts";
-  import { mountTodayTasks } from "../lib/tasks.ts";
+  import { mountTodayAttention } from "../lib/tasks.ts";
   void mountTodayInteractions();
   void mountTodayReminders();
-  void mountTodayTasks();
+  void mountTodayAttention();
 </script>

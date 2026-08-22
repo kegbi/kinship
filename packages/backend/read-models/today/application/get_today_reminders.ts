@@ -1,6 +1,6 @@
 import type { PeopleActor } from "../../../modules/people/public.ts";
 
-export interface TodayReminderItem {
+interface TodayReminderBase {
   readonly attemptCount: number;
   readonly deliverAt: string;
   readonly id: string;
@@ -9,16 +9,24 @@ export interface TodayReminderItem {
     readonly id: string;
     readonly name: string;
   };
-  readonly status:
-    | "claimed"
-    | "failed"
-    | "manual_attention"
-    | "pending"
-    | "retry"
-    | "sent";
   readonly title: string;
   readonly visibleAt?: string;
 }
+
+export type TodayReminderItem =
+  | (TodayReminderBase & {
+    readonly nextAttemptAt: string;
+    readonly status: "retry";
+  })
+  | (TodayReminderBase & {
+    readonly nextAttemptAt?: never;
+    readonly status:
+      | "claimed"
+      | "failed"
+      | "manual_attention"
+      | "pending"
+      | "sent";
+  });
 
 export interface TodayCadenceItem {
   readonly dueAt: string;
