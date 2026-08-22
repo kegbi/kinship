@@ -20,9 +20,11 @@ import {
   type AuthenticationResponseEqualizer,
   createPersonalizationManagement,
   createProtectedSessionCoordinator,
+  createRecentPeopleManagement,
   createVerificationDeliveryRetry,
   PostgresActiveWorkspaceResolver,
   PostgresProfileFactConfiguration,
+  PostgresRecentPeopleRepository,
   PostgresRegistrationTransaction,
   PostgresRelationshipWorkspaceBoundary,
   PostgresWorkspaceInvitations,
@@ -147,14 +149,17 @@ import {
 import {
   createTodayAttention,
   createTodayInteractions,
+  createTodayRecentPeople,
   createTodayReminders,
   createTodayTasks,
   PostgresTodayAttentionRepository,
   PostgresTodayInteractionsRepository,
+  PostgresTodayRecentPeopleRepository,
   PostgresTodayRemindersRepository,
   PostgresTodayTasksRepository,
   type TodayAttention,
   type TodayInteractions,
+  type TodayRecentPeople,
   type TodayReminders,
   type TodayTasks,
 } from "../../packages/backend/read-models/today/public.ts";
@@ -179,6 +184,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly settings?: SettingsHttpServices["settings"];
   readonly personalization?: SettingsHttpServices["personalization"];
   readonly people?: PeopleHttpServices["people"];
+  readonly recentPeople?: PeopleHttpServices["recentPeople"];
   readonly profile?: PersonProfile;
   readonly relationships?: RelationshipManagement;
   readonly reminders?: ReminderManagement;
@@ -188,6 +194,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly todayAttention?: TodayAttention;
   readonly todayTasks?: TodayTasks;
   readonly todayReminders?: TodayReminders;
+  readonly todayRecentPeople?: TodayRecentPeople;
   readonly readiness?: () => Promise<boolean>;
 }
 
@@ -309,7 +316,13 @@ export function createApiApp(services?: ApiServices): Hono {
           people: services.people,
           profile: services.profile,
           protectedSessions: services.protectedSessions,
+          ...(services.recentPeople
+            ? { recentPeople: services.recentPeople }
+            : {}),
           tagOptions: services.tagOptions,
+          ...(services.todayRecentPeople
+            ? { todayRecentPeople: services.todayRecentPeople }
+            : {}),
         }),
       );
     }
@@ -554,12 +567,17 @@ export function createConfiguredApiApp(
     transaction,
   });
   const peopleTransaction = new PostgresPeopleTransaction(connection.db);
+  const peopleRepository = new PostgresPeopleRepository();
   const peopleManagement = createPeopleManagement({
     audit: new PostgresPersonCreatedAudit(),
     clock,
     ids,
-    repository: new PostgresPeopleRepository(),
+    repository: peopleRepository,
     transaction: peopleTransaction,
+  });
+  const recentPeople = createRecentPeopleManagement({
+    repository: new PostgresRecentPeopleRepository(),
+    transaction,
   });
   const peopleLifecycle = createPersonLifecycle({
     audit: new PostgresPersonLifecycleAudit(),
@@ -667,6 +685,9 @@ export function createConfiguredApiApp(
     clock,
     repository: new PostgresTodayRemindersRepository(connection.db),
   });
+  const todayRecentPeople = createTodayRecentPeople({
+    repository: new PostgresTodayRecentPeopleRepository(connection.db),
+  });
   const app = createApiApp({
     activityReport,
     auditHistory,
@@ -680,6 +701,7 @@ export function createConfiguredApiApp(
     people,
     profile,
     profileFacts,
+    recentPeople,
     relationships,
     reminders,
     protectedSessions,
@@ -690,6 +712,7 @@ export function createConfiguredApiApp(
     today,
     todayAttention,
     todayReminders,
+    todayRecentPeople,
     todayTasks,
     register: registration,
     retryVerificationDelivery: createVerificationDeliveryRetry(

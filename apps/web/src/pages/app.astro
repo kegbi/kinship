@@ -61,9 +61,11 @@ export const prerender = true;
       <div class="form-actions"><button id="today-upcoming-retry" class="button-secondary today-touch-target" type="button" hidden>Retry upcoming</button><a class="button-secondary today-touch-target" href="/app/tasks">Open all tasks</a></div>
     </section>
 
-    <section class="today-section" aria-labelledby="recent-people-heading">
-      <div class="section-heading"><h2 id="recent-people-heading">Recently viewed people</h2><span class="state-badge calm">No people yet</span></div>
-      <p>Recently opened people will appear here once the People workspace is available.</p>
+    <section id="today-recent-people-region" class="today-section" aria-labelledby="recent-people-heading" data-region-state="loading">
+      <div class="section-heading"><h2 id="recent-people-heading">Recently viewed people</h2><span id="today-recent-people-badge" class="state-badge calm">Loading</span></div>
+      <p id="today-recent-people-state" class="section-state" role="status" aria-live="polite" tabindex="-1">Loading recently viewed people…</p>
+      <ul id="today-recent-people-list" class="task-list" aria-label="Recently viewed people"></ul>
+      <button id="today-recent-people-retry" class="button-secondary today-touch-target" type="button" hidden>Retry recent people</button>
     </section>
 
     <section id="today-favorite-notes-region" class="today-section" aria-labelledby="favorite-notes-heading">
@@ -86,7 +88,9 @@ export const prerender = true;
   import { mountTodayInteractions } from "../lib/interactions.ts";
   import { mountTodayReminders } from "../lib/reminders.ts";
   import { mountTodayAttention } from "../lib/tasks.ts";
+  import { mountTodayRecentPeople } from "../lib/today-recent-people.ts";
   void mountTodayInteractions();
   void mountTodayReminders();
   void mountTodayAttention();
+  void mountTodayRecentPeople();
 </script>

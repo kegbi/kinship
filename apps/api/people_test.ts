@@ -5,8 +5,10 @@ import type {
   PersonLifecycle,
   ProfileFactManagement,
 } from "../../packages/backend/modules/people/public.ts";
+import type { RecentPeopleManagement } from "../../packages/backend/modules/workspaces/public.ts";
 import { createPeopleDirectory } from "../../packages/backend/read-models/people-directory/public.ts";
 import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
+import type { TodayRecentPeople } from "../../packages/backend/read-models/today/public.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -84,6 +86,8 @@ function services(
   },
   importantDates?: ImportantDateManagement,
   profileFacts?: ProfileFactManagement,
+  recentPeople?: RecentPeopleManagement,
+  todayRecentPeople?: TodayRecentPeople,
 ): PeopleHttpServices {
   return {
     browserSecurity: {
@@ -93,6 +97,7 @@ function services(
     directory,
     ...(importantDates ? { importantDates } : {}),
     ...(profileFacts ? { profileFacts } : {}),
+    ...(recentPeople ? { recentPeople } : {}),
     people: {
       archive: () => Promise.reject(new Error("must not archive")),
       delete: () => Promise.reject(new Error("must not delete")),
@@ -105,7 +110,13 @@ function services(
     profile,
     protectedSessions: { resolve: () => Promise.resolve(actor) },
     tagOptions,
+    ...(todayRecentPeople ? { todayRecentPeople } : {}),
   };
+}
+
+function todayRoutes(overrides: Partial<PeopleHttpServices>) {
+  const base = services({ create: () => Promise.reject(new Error("unused")) });
+  return createPeopleRoutes({ ...base, ...overrides });
 }
 
 Deno.test("PEOPLE-006 HTTP refreshes one strict profile-fact section", async () => {
@@ -1354,5 +1365,111 @@ Deno.test("PEOPLE-004 HTTP maps lifecycle conflicts without leaking dependencies
       },
     );
     assert(response.status === scenario.expected, "lifecycle result maps");
+  }
+});
+
+Deno.test("TODAY-001 HTTP records a resolved profile view only through explicit origin POST", async () => {
+  const personId = "00000000-0000-4000-8000-000000000100";
+  const effects: string[] = [];
+  const app = todayRoutes({
+    profile: {
+      get(resolved, id) {
+        effects.push(`profile:${resolved.workspaceId}:${id}`);
+        return Promise.resolve({ status: "ready" } as never);
+      },
+    },
+    recentPeople: {
+      record(resolved, id) {
+        effects.push(`workspace:${resolved.workspaceId}:${id}`);
+        return Promise.resolve({ status: "recorded" });
+      },
+    },
+  });
+  const missingOrigin = await app.request(
+    `http://localhost/api/v1/people/${personId}/view`,
+    { headers: { Cookie: "kinship_session=token" }, method: "POST" },
+  );
+  assert(
+    missingOrigin.status === 403 && effects.length === 0,
+    "origin denial reached use case",
+  );
+
+  const malformedBody = await app.request(
+    `http://localhost/api/v1/people/${personId}/view`,
+    { body: "{}", headers, method: "POST" },
+  );
+  assert(
+    malformedBody.status === 400 && effects.length === 0,
+    "no-body contract was not strict",
+  );
+
+  const response = await app.request(
+    `http://localhost/api/v1/people/${personId}/view`,
+    { headers, method: "POST" },
+  );
+  assert(
+    response.status === 200 &&
+      (await response.json() as { readonly status: string }).status ===
+        "recorded",
+    "profile view was not accepted without a body",
+  );
+  assert(
+    effects.join(",") ===
+      `profile:${actor.workspaceId}:${personId},workspace:${actor.workspaceId}:${personId}`,
+    "profile tenant resolution did not precede the owning workspaces write",
+  );
+  assert(
+    response.headers.get("cache-control") === "private, no-store",
+    "write response was cacheable",
+  );
+});
+
+Deno.test("TODAY-001 HTTP returns bounded recent people and safe failure states", async () => {
+  const recent = [{
+    archived: true,
+    id: "00000000-0000-4000-8000-000000000100",
+    name: "Ada Lovelace",
+  }];
+  const ready = todayRoutes({
+    todayRecentPeople: {
+      get: () => Promise.resolve({ people: recent, status: "ready" }),
+    },
+  });
+  const response = await ready.request(
+    "http://localhost/api/v1/today/recent-people",
+    { headers },
+  );
+  const body = await response.json() as { readonly people: readonly unknown[] };
+  assert(
+    response.status === 200 && body.people.length === 1,
+    "recent people response missing",
+  );
+  assert(
+    response.headers.get("cache-control") === "private, no-store",
+    "recent people was cacheable",
+  );
+
+  for (
+    const scenario of [
+      {
+        expected: 403,
+        get: () => Promise.resolve({ status: "forbidden" as const }),
+      },
+      { expected: 503, get: () => Promise.reject(new Error("private detail")) },
+    ]
+  ) {
+    const app = todayRoutes({ todayRecentPeople: { get: scenario.get } });
+    const failed = await app.request(
+      "http://localhost/api/v1/today/recent-people",
+      { headers },
+    );
+    assert(
+      failed.status === scenario.expected,
+      "recent people failure mapped unsafely",
+    );
+    assert(
+      !(await failed.text()).includes("private detail"),
+      "dependency detail leaked",
+    );
   }
 });

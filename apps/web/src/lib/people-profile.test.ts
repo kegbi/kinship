@@ -114,6 +114,11 @@ afterEach(() => {
 describe("PEOPLE-001 canonical person identity shell", () => {
   it("loads a partial identity through the generated active-workspace client", async () => {
     markup();
+    reminderSectionMarkup();
+    let releaseSecondary!: (value: Response) => void;
+    const pendingSecondary = new Promise<Response>((resolve) => {
+      releaseSecondary = resolve;
+    });
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response(session))
       .mockResolvedValueOnce(response({
@@ -134,9 +139,27 @@ describe("PEOPLE-001 canonical person identity shell", () => {
           updatedAt: "2026-08-15T08:00:00.000Z",
         },
         status: "ready",
-      }));
+      }))
+      .mockImplementation((url, init) =>
+        init?.method === "POST" && String(url).endsWith("/view")
+          ? Promise.reject(new Error("recording unavailable"))
+          : pendingSecondary
+      );
     vi.stubGlobal("fetch", fetchMock);
-    await mountPeopleProfile();
+    const mounting = mountPeopleProfile();
+    await vi.waitFor(() => {
+      expect(
+        document.querySelector<HTMLElement>("#person-profile-ready")?.hidden,
+      )
+        .toBe(false);
+    });
+    expect(
+      fetchMock.mock.calls.some(([url, init]) =>
+        init?.method === "POST" && String(url).endsWith("/view")
+      ),
+    ).toBe(true);
+    releaseSecondary(undefined as never);
+    await mounting;
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
       `/api/v1/people/${personId}`,
     );
@@ -160,6 +183,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         "hidden",
       ),
     ).toBe(false);
+    expect(fetchMock.mock.calls[2]?.[1]?.method).toBe("POST");
   });
 
   it("PEOPLE-006 hides the visible tag surface for a disabled module", async () => {
@@ -277,7 +301,14 @@ describe("PEOPLE-001 canonical person identity shell", () => {
           },
           status: "ready",
         }))
-        .mockReturnValueOnce(delayedReminders),
+        .mockImplementation((url, init) => {
+          if (init?.method === "POST" && String(url).endsWith("/view")) {
+            return Promise.resolve(response({ status: "recorded" }));
+          }
+          return String(url).includes("/audit")
+            ? delayedReminders
+            : Promise.resolve(undefined as never);
+        }),
     );
 
     const mounting = mountPeopleProfile();
@@ -419,17 +450,23 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       ]
     ) {
       markup();
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockResolvedValueOnce(
+          response({ status: state.status }, state.status),
+        );
       vi.stubGlobal(
         "fetch",
-        vi.fn()
-          .mockResolvedValueOnce(response(session))
-          .mockResolvedValueOnce(
-            response({ status: state.status }, state.status),
-          ),
+        fetchMock,
       );
       await mountPeopleProfile();
       expect(document.querySelector("#person-profile-state h1")?.textContent)
         .toBe(state.heading);
+      expect(
+        fetchMock.mock.calls.some(([url, init]) =>
+          init?.method === "POST" && String(url).endsWith("/view")
+        ),
+      ).toBe(false);
     }
 
     markup("/app/people/not-a-person");
@@ -446,28 +483,29 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("distinguishes an archived canonical person as read-only", async () => {
     markup();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(session))
+      .mockResolvedValueOnce(response({
+        dueInformation: {
+          detail: "Due information will become available with planning.",
+          status: "unavailable",
+        },
+        person: {
+          givenName: "Harriet",
+          id: personId,
+          isDeceased: false,
+          isPartial: false,
+          isSelf: false,
+          isStarred: false,
+          tagCount: 0,
+          tags: [],
+          updatedAt: "2026-08-15T08:00:00.000Z",
+        },
+        status: "archived",
+      }));
     vi.stubGlobal(
       "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response(session))
-        .mockResolvedValueOnce(response({
-          dueInformation: {
-            detail: "Due information will become available with planning.",
-            status: "unavailable",
-          },
-          person: {
-            givenName: "Harriet",
-            id: personId,
-            isDeceased: false,
-            isPartial: false,
-            isSelf: false,
-            isStarred: false,
-            tagCount: 0,
-            tags: [],
-            updatedAt: "2026-08-15T08:00:00.000Z",
-          },
-          status: "archived",
-        })),
+      fetchMock,
     );
     await mountPeopleProfile();
     expect(
@@ -475,6 +513,11 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         "hidden",
       ),
     ).toBe(false);
+    expect(
+      fetchMock.mock.calls.some(([url, init]) =>
+        init?.method === "POST" && String(url).endsWith("/view")
+      ),
+    ).toBe(true);
   });
 
   it("[PEOPLE-004] edits, archives, restores, and cancels explicit deletion", async () => {
@@ -515,6 +558,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response(session))
       .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response({ status: "recorded" }))
       .mockResolvedValueOnce(response({ person: edited, status: "updated" }))
       .mockResolvedValueOnce(response({ person: archived, status: "archived" }))
       .mockResolvedValueOnce(response({ person: restored, status: "restored" }))
@@ -544,7 +588,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       expect(document.querySelector("#person-profile-name")?.textContent)
         .toBe("Ada Byron")
     );
-    expect(fetchMock.mock.calls[2]?.[1]?.method).toBe("PATCH");
+    expect(fetchMock.mock.calls[3]?.[1]?.method).toBe("PATCH");
 
     const factRevision = "2026-08-15T09:00:00.000001Z";
     document.dispatchEvent(
@@ -557,7 +601,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       expect(document.querySelector<HTMLElement>("#person-restore")?.hidden)
         .toBe(false)
     );
-    expect(JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body))).toEqual({
+    expect(JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body))).toEqual({
       expectedUpdatedAt: factRevision,
     });
     expect(document.querySelector<HTMLElement>("#person-edit-open")?.hidden)
@@ -619,6 +663,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response(session))
       .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response({ status: "recorded" }))
       .mockResolvedValueOnce(response({
         impact: {
           confirmation: "DELETE Ada Lovelace",
@@ -701,6 +746,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response(session))
       .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response({ status: "recorded" }))
       .mockResolvedValueOnce(response({
         detail: "This person changed elsewhere. Reload and try again.",
         status: 409,

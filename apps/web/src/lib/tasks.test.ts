@@ -704,7 +704,7 @@ describe("PLANNING-001 task browser behavior", () => {
         target.hidden
       ),
     ).toBe(true);
-    expect(todayPage.match(/today-touch-target/g)).toHaveLength(6);
+    expect(todayPage.match(/today-touch-target/g)).toHaveLength(7);
     expect(
       document.querySelector("[data-today-date]")?.getAttribute("datetime"),
     ).toBe("2026-03-07");
