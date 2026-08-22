@@ -3,6 +3,7 @@ import {
   getActivityReport,
   getTodayFavoriteNotes,
   getTodayRecentActivity,
+  type InteractionInput,
   listInteractionOptions,
   listPeople,
   recordInteraction,
@@ -14,6 +15,17 @@ import {
 
 const INTERACTION_CREATED_EVENT = "kinship:interaction-created";
 let captureAbort: AbortController | undefined;
+let captureForm: HTMLFormElement | undefined;
+type CaptureInput = Extract<
+  InteractionInput,
+  { readonly kind: "activity" | "note" }
+>;
+type CaptureIntent = {
+  readonly input: CaptureInput;
+  readonly workspaceId: string;
+  phase: "pending" | "ambiguous";
+};
+let captureIntent: CaptureIntent | undefined;
 let todayAbort: AbortController | undefined;
 let reportAbort: AbortController | undefined;
 let personAbort: AbortController | undefined;
@@ -87,9 +99,14 @@ export async function mountInteractionCapture(): Promise<void> {
     "[data-quick-capture]",
   )];
   if (!dialog || !form || !status || openers.length === 0) return;
+  if (
+    captureIntent && captureForm === form && captureAbort &&
+    !captureAbort.signal.aborted
+  ) return;
   captureAbort?.abort();
   const abort = new AbortController();
   captureAbort = abort;
+  captureForm = form;
   const signal = abort.signal;
   const fields = form.elements;
   const kind = fields.namedItem("kind") as HTMLSelectElement;
@@ -187,7 +204,7 @@ export async function mountInteractionCapture(): Promise<void> {
   }, { signal });
   form.addEventListener("input", () => dirty = true, { signal });
   globalThis.addEventListener(WORKSPACE_CHANGE_REQUEST_EVENT, (event) => {
-    if (dirty || saving) event.preventDefault();
+    if (dirty || saving || captureIntent) event.preventDefault();
   }, { signal });
 
   const session = await resolveWorkspaceSession();
@@ -260,6 +277,34 @@ export async function mountInteractionCapture(): Promise<void> {
   setKind();
 
   let activeOpener: HTMLButtonElement | undefined;
+  const openerAvailable = (opener: HTMLButtonElement): boolean => {
+    const intended = opener.dataset.interactionIntendedKind as
+      | "activity"
+      | "note"
+      | undefined;
+    return !opener.hidden &&
+      (intended
+        ? availability[intended]
+        : availability.activity || availability.note);
+  };
+  const setIntentLock = (phase?: CaptureIntent["phase"]) => {
+    for (const control of [...form.elements]) {
+      (control as HTMLButtonElement | HTMLInputElement | HTMLSelectElement)
+        .disabled = Boolean(phase);
+    }
+    for (const opener of openers) {
+      opener.disabled = Boolean(phase) || !openerAvailable(opener);
+    }
+    if (phase === "ambiguous") submit.disabled = false;
+    if (!phase) {
+      for (const entry of kind.options) {
+        entry.disabled = entry.value === "activity"
+          ? !availability.activity
+          : !availability.note;
+      }
+      setKind();
+    }
+  };
   const resetDraft = () => {
     form.reset();
     renderOptionPage(participants, initialPeople);
@@ -294,7 +339,7 @@ export async function mountInteractionCapture(): Promise<void> {
     setKind();
   };
   const dismissCapture = () => {
-    if (saving) return;
+    if (saving || captureIntent) return;
     if (dirty && !globalThis.confirm("Discard this unsaved interaction?")) {
       return;
     }
@@ -408,7 +453,7 @@ export async function mountInteractionCapture(): Promise<void> {
     opener: HTMLButtonElement,
     intended: "activity" | "note" | undefined,
   ) => {
-    if (opener.disabled) return;
+    if (opener.disabled || captureIntent) return;
     if (
       dialog.open && activeOpener === opener &&
       (!intended || kind.value === intended)
@@ -440,10 +485,7 @@ export async function mountInteractionCapture(): Promise<void> {
       if (!event.repeat) openCapture(opener, intended);
     }, { signal });
     opener.dataset.interactionCaptureReady = "true";
-    opener.disabled = Boolean(opener.hidden) ||
-      (intended
-        ? !availability[intended]
-        : !availability.activity && !availability.note);
+    opener.disabled = !openerAvailable(opener);
   }
   form.querySelector<HTMLButtonElement>("[data-interaction-cancel]")
     ?.addEventListener("click", dismissCapture, { signal });
@@ -452,9 +494,60 @@ export async function mountInteractionCapture(): Promise<void> {
     dismissCapture();
   }, { signal });
 
+  const persistIntent = async (intent: CaptureIntent) => {
+    saving = true;
+    intent.phase = "pending";
+    setIntentLock("pending");
+    status.textContent = "Saving interaction…";
+    try {
+      const result = await recordInteraction(intent.input, intent.workspaceId);
+      if (captureIntent !== intent) return;
+      if (!result.ok) {
+        if (result.problem.status >= 500) {
+          intent.phase = "ambiguous";
+          status.textContent =
+            "The save outcome is uncertain. Retry this exact interaction.";
+          return;
+        }
+        captureIntent = undefined;
+        requestId = crypto.randomUUID();
+        status.textContent = result.problem.detail;
+        submit.focus();
+        return;
+      }
+      captureIntent = undefined;
+      dirty = false;
+      requestId = crypto.randomUUID();
+      status.textContent = result.value.record.kind === "note"
+        ? "Note saved."
+        : "Activity saved.";
+      globalThis.dispatchEvent(
+        new CustomEvent(INTERACTION_CREATED_EVENT, {
+          detail: result.value.record,
+        }),
+      );
+    } catch {
+      if (captureIntent === intent) {
+        intent.phase = "ambiguous";
+        status.textContent =
+          "The save outcome is uncertain. Retry this exact interaction.";
+      }
+    } finally {
+      saving = false;
+      setIntentLock(captureIntent === intent ? intent.phase : undefined);
+      submit.focus();
+    }
+  };
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (saving) return;
+    if (captureIntent) {
+      if (captureIntent.phase === "ambiguous") {
+        await persistIntent(captureIntent);
+      }
+      return;
+    }
     if (
       (kind.value === "activity" && !availability.activity) ||
       (kind.value === "note" && !availability.note)
@@ -490,60 +583,45 @@ export async function mountInteractionCapture(): Promise<void> {
     }
     happenedAt.removeAttribute("aria-invalid");
     if (happenedAtError) happenedAtError.textContent = "";
-    saving = true;
-    submit.disabled = true;
-    status.textContent = "Saving interaction…";
-    try {
-      const input = kind.value === "note"
-        ? {
-          body: (fields.namedItem("body") as HTMLTextAreaElement).value,
-          isFavorited: (fields.namedItem("isFavorited") as HTMLInputElement)
-            .checked,
-          kind: "note" as const,
-          personId: selectedParticipants[0]!,
-          requestId,
-        }
-        : {
-          ...(activityType.value ? { activityTypeId: activityType.value } : {}),
-          ...((fields.namedItem("description") as HTMLTextAreaElement).value
-            ? {
-              description:
-                (fields.namedItem("description") as HTMLTextAreaElement)
-                  .value,
-            }
-            : {}),
-          emotionIds: [...emotionIds.selectedOptions].map((entry) =>
-            entry.value
-          ),
-          happenedAt: occurrenceDate!.toISOString(),
-          kind: "activity" as const,
-          participantIds: selectedParticipants,
-          requestId,
-          summary: (fields.namedItem("summary") as HTMLInputElement).value,
-        };
-      const result = await recordInteraction(input, workspaceId);
-      if (!result.ok) {
-        status.textContent = result.problem.detail;
-        submit.focus();
-        return;
+    const input: CaptureInput = kind.value === "note"
+      ? {
+        body: (fields.namedItem("body") as HTMLTextAreaElement).value,
+        isFavorited: (fields.namedItem("isFavorited") as HTMLInputElement)
+          .checked,
+        kind: "note" as const,
+        personId: selectedParticipants[0]!,
+        requestId,
       }
-      dirty = false;
-      requestId = crypto.randomUUID();
-      status.textContent = result.value.record.kind === "note"
-        ? "Note saved."
-        : "Activity saved.";
-      globalThis.dispatchEvent(
-        new CustomEvent(INTERACTION_CREATED_EVENT, {
-          detail: result.value.record,
-        }),
-      );
-    } catch {
-      status.textContent = "The interaction could not be saved. Try again.";
-      submit.focus();
-    } finally {
-      saving = false;
-      submit.disabled = false;
-    }
+      : {
+        ...(activityType.value ? { activityTypeId: activityType.value } : {}),
+        ...((fields.namedItem("description") as HTMLTextAreaElement).value
+          ? {
+            description:
+              (fields.namedItem("description") as HTMLTextAreaElement)
+                .value,
+          }
+          : {}),
+        emotionIds: [...emotionIds.selectedOptions].map((entry) => entry.value),
+        happenedAt: occurrenceDate!.toISOString(),
+        kind: "activity" as const,
+        participantIds: selectedParticipants,
+        requestId,
+        summary: (fields.namedItem("summary") as HTMLInputElement).value,
+      };
+    const frozenInput = input.kind === "activity"
+      ? Object.freeze({
+        ...input,
+        emotionIds: Object.freeze([...(input.emotionIds ?? [])]),
+        participantIds: Object.freeze([...input.participantIds]),
+      })
+      : Object.freeze({ ...input });
+    const intent: CaptureIntent = {
+      input: frozenInput,
+      phase: "pending",
+      workspaceId,
+    };
+    captureIntent = intent;
+    await persistIntent(intent);
   }, { signal });
 }
 

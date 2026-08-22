@@ -58,6 +58,63 @@ function captureMarkup(): void {
     </dialog>`;
 }
 
+function readyPeople() {
+  return response({
+    lifecycle: "active",
+    people: [{
+      givenName: "Ada",
+      id: personId,
+      isPartial: false,
+      isStarred: false,
+      lifecycle: "active",
+      tagCount: 0,
+      tags: [],
+    }],
+    status: "ready",
+  });
+}
+
+function readyInteractionOptions() {
+  return response({
+    activityTypes: [],
+    availability: { activity: true, note: true },
+    emotions: [],
+    status: "ready",
+  });
+}
+
+function savedActivity(status = 201) {
+  return response({
+    record: {
+      emotions: [],
+      happenedAt: "2026-08-16T18:15:00.000Z",
+      id: "activity",
+      kind: "activity",
+      participants: [{ id: personId, name: "Ada" }],
+      summary: "Immutable intent",
+    },
+    status: "created",
+  }, status);
+}
+
+async function prepareActivityCapture(fetchMock: ReturnType<typeof vi.fn>) {
+  vi.stubGlobal("fetch", fetchMock);
+  await mountInteractionCapture();
+  const form = document.querySelector<HTMLFormElement>(
+    "#interaction-capture-form",
+  )!;
+  document.querySelector<HTMLButtonElement>(
+    '[data-interaction-intended-kind="activity"]',
+  )!.click();
+  (form.elements.namedItem("participantIds") as HTMLSelectElement).options[0]!
+    .selected = true;
+  (form.elements.namedItem("happenedAt") as HTMLInputElement).value =
+    "2026-08-16T18:15";
+  (form.elements.namedItem("summary") as HTMLInputElement).value =
+    "Immutable intent";
+  return form;
+}
+
 function todayMarkup(): void {
   document.body.innerHTML = `
     <section id="today-favorite-notes-region" aria-labelledby="favorite-notes-heading">
@@ -525,6 +582,135 @@ describe("INTERACTION-001 browser behavior", () => {
     );
     expect(dialog.open).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("keeps one pending capture owner through remounts and settles accepted once", async () => {
+    captureMarkup();
+    let releaseSave!: (value: Response) => void;
+    const save = new Promise<Response>((resolve) => releaseSave = resolve);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(session()))
+      .mockResolvedValueOnce(readyPeople())
+      .mockResolvedValueOnce(readyInteractionOptions())
+      .mockReturnValueOnce(save)
+      .mockResolvedValueOnce(response(session()))
+      .mockResolvedValueOnce(readyPeople())
+      .mockResolvedValueOnce(readyInteractionOptions());
+    const created = vi.fn();
+    globalThis.addEventListener("kinship:interaction-created", created);
+    const form = await prepareActivityCapture(fetchMock);
+    form.dispatchEvent(
+      new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    await mountInteractionCapture();
+    await mountInteractionCapture();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(
+      [...document.querySelectorAll<HTMLButtonElement>("[data-quick-capture]")]
+        .every((button) => button.disabled),
+    ).toBe(true);
+    form.dispatchEvent(
+      new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+    );
+    document.querySelector<HTMLButtonElement>("[data-interaction-cancel]")!
+      .click();
+    document.querySelector<HTMLButtonElement>(
+      '[data-interaction-intended-kind="note"]',
+    )!.click();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(globalThis.dispatchEvent(
+      new CustomEvent(
+        "kinship:workspace-change-request",
+        { cancelable: true },
+      ),
+    )).toBe(false);
+    releaseSave(savedActivity());
+    await vi.waitFor(() => expect(created).toHaveBeenCalledOnce());
+    expect(document.querySelector("#interaction-capture-status")?.textContent)
+      .toContain("Activity saved");
+    await mountInteractionCapture();
+    expect(fetchMock).toHaveBeenCalledTimes(7);
+    expect(created).toHaveBeenCalledOnce();
+    globalThis.removeEventListener("kinship:interaction-created", created);
+  });
+
+  it("replays an ambiguous remounted capture with its exact frozen intent", async () => {
+    captureMarkup();
+    let rejectSave!: (reason?: unknown) => void;
+    const save = new Promise<Response>((_resolve, reject) =>
+      rejectSave = reject
+    );
+    let releaseReplay!: (value: Response) => void;
+    const replay = new Promise<Response>((resolve) => releaseReplay = resolve);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(session()))
+      .mockResolvedValueOnce(readyPeople())
+      .mockResolvedValueOnce(readyInteractionOptions())
+      .mockReturnValueOnce(save)
+      .mockReturnValueOnce(replay)
+      .mockResolvedValueOnce(response({
+        code: "archived_write_rejected",
+        detail: "Restore the person first.",
+        status: 409,
+        title: "Archived person is read-only",
+        type: "about:blank",
+      }, 409))
+      .mockResolvedValueOnce(response(session()))
+      .mockResolvedValueOnce(readyPeople())
+      .mockResolvedValueOnce(readyInteractionOptions());
+    const created = vi.fn();
+    globalThis.addEventListener("kinship:interaction-created", created);
+    const form = await prepareActivityCapture(fetchMock);
+    form.dispatchEvent(
+      new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    const first = JSON.parse(String(fetchMock.mock.calls[3]![1]?.body));
+    await mountInteractionCapture();
+    rejectSave(new Error("connection lost after dispatch"));
+    await vi.waitFor(() =>
+      expect(document.querySelector("#interaction-capture-status")?.textContent)
+        .toContain("outcome is uncertain")
+    );
+    expect(created).not.toHaveBeenCalled();
+    expect((form.elements.namedItem("summary") as HTMLInputElement).disabled)
+      .toBe(true);
+    expect(globalThis.dispatchEvent(
+      new CustomEvent(
+        "kinship:workspace-change-request",
+        { cancelable: true },
+      ),
+    )).toBe(false);
+    (form.elements.namedItem("summary") as HTMLInputElement).value = "Changed";
+    form.dispatchEvent(
+      new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    const second = JSON.parse(String(fetchMock.mock.calls[4]![1]?.body));
+    expect(second).toEqual(first);
+    form.dispatchEvent(
+      new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    releaseReplay(savedActivity(200));
+    await vi.waitFor(() => expect(created).toHaveBeenCalledOnce());
+    form.dispatchEvent(
+      new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() =>
+      expect(document.querySelector("#interaction-capture-status")?.textContent)
+        .toContain("Restore the person")
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[5]![1]?.body)).requestId)
+      .not.toBe(first.requestId);
+    expect(created).toHaveBeenCalledOnce();
+    expect((form.elements.namedItem("summary") as HTMLInputElement).disabled)
+      .toBe(false);
+    await mountInteractionCapture();
+    expect(fetchMock).toHaveBeenCalledTimes(9);
+    expect(created).toHaveBeenCalledOnce();
+    globalThis.removeEventListener("kinship:interaction-created", created);
   });
 
   it("searches bounded participant and vocabulary pages beyond the first page", async () => {
@@ -2328,6 +2514,7 @@ describe("INTERACTION-001 browser behavior", () => {
       new SubmitEvent("submit", { bubbles: true, cancelable: true }),
     );
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    const firstAttempt = JSON.parse(String(fetchMock.mock.calls[3]![1]?.body));
     await vi.waitFor(() =>
       expect(
         (form.querySelector("button[type=submit]") as HTMLButtonElement)
@@ -2340,9 +2527,12 @@ describe("INTERACTION-001 browser behavior", () => {
       new SubmitEvent("submit", { bubbles: true, cancelable: true }),
     );
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    expect(JSON.parse(String(fetchMock.mock.calls[4]![1]?.body))).toEqual(
+      firstAttempt,
+    );
     await vi.waitFor(() =>
       expect(document.querySelector("#interaction-capture-status")?.textContent)
-        .toContain("could not be saved")
+        .toContain("outcome is uncertain")
     );
   });
 });
