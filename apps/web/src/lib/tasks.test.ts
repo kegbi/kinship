@@ -1254,113 +1254,207 @@ describe("PLANNING-001 task browser behavior", () => {
     expect(document.activeElement?.id).toBe("today-upcoming-state");
   });
 
-  it("uses one generation to discard stale retries from either region", async () => {
-    todayMarkup();
-    let release!: (value: Response) => void;
-    const stale = new Promise<Response>((resolve) => release = resolve);
-    const current = {
-      dueAt: task.dueAt,
-      id: task.id,
-      kind: "task",
-      title: "Current",
-    };
-    const fetchMock = todayFetch(
-      response(attention()),
-      stale,
-      response(attention([current], [current])),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    await mountTodayTasks();
-    document.querySelector<HTMLButtonElement>("#today-attention-retry")!
-      .click();
-    await vi.waitFor(() =>
-      expect(
-        fetchMock.mock.calls.filter((call) =>
-          String(call[0]).includes("/today/attention")
-        ),
-      ).toHaveLength(2)
-    );
-    document.querySelector<HTMLButtonElement>("#today-upcoming-retry")!.click();
-    await vi.waitFor(() =>
-      expect(document.body.textContent).toContain("Current")
-    );
-    release(response(attention(
-      [{ ...current, title: "Stale" }],
-      [{ ...current, title: "Stale" }],
-    )));
-    await vi.waitFor(() =>
-      expect(document.body.textContent).not.toContain("Stale")
-    );
-    expect(document.querySelector("#today-overdue-list")?.textContent)
-      .toContain("Current");
-    expect(document.querySelector("#today-upcoming-list")?.textContent)
-      .toContain("Current");
-  });
-
   it.each(
     [
-      ["attention", "upcoming", false, false],
-      ["attention", "upcoming", false, true],
-      ["attention", "upcoming", true, false],
-      ["upcoming", "attention", false, false],
+      ["attention", "upcoming", "first", true, true],
+      ["attention", "upcoming", "second", false, true],
+      ["upcoming", "attention", "first", false, true],
+      ["upcoming", "attention", "second", false, false],
     ] as const,
   )(
-    "restores superseded %s state when the newer %s retry succeeds=%s fails=%s",
-    async (olderRegion, newerRegion, olderSucceeds, newerSucceeds) => {
+    "settles independent %s then %s retries (%s first, success %s/%s)",
+    async (
+      firstRegion,
+      secondRegion,
+      settles,
+      firstSucceeds,
+      secondSucceeds,
+    ) => {
       todayMarkup();
-      const older = deferredResponse();
-      const newer = deferredResponse();
-      const current = {
+      const first = deferredResponse();
+      const second = deferredResponse();
+      const base = {
         dueAt: task.dueAt,
-        id: task.id,
+        id: crypto.randomUUID(),
         kind: "task",
-        title: "Current",
+        title: "Base",
       };
       const fetchMock = todayFetch(
-        response({}, 503),
-        older.promise,
-        newer.promise,
+        response(attention(
+          [{ ...base, title: "Attention base" }],
+          [{ ...base, title: "Upcoming base" }],
+        )),
+        first.promise,
+        second.promise,
       );
       vi.stubGlobal("fetch", fetchMock);
       await mountTodayTasks();
       const retry = (region: string) =>
         document.querySelector<HTMLButtonElement>(`#today-${region}-retry`)!;
-      const snapshotCount = () =>
-        fetchMock.mock.calls.filter((call) =>
-          String(call[0]).includes("/today/attention")
-        ).length;
-      retry(olderRegion).click();
-      await vi.waitFor(() => expect(snapshotCount()).toBe(2));
-      retry(newerRegion).click();
-      await vi.waitFor(() => expect(snapshotCount()).toBe(3));
-      older.resolve(
-        olderSucceeds
-          ? response(attention([current], [current]))
-          : response({}, 503),
+      const list = (region: string) =>
+        document.querySelector(
+          region === "attention"
+            ? "#today-overdue-list"
+            : "#today-upcoming-list",
+        )!;
+      const result = (label: string, succeeds: boolean) =>
+        succeeds
+          ? response(attention(
+            [{ ...base, title: `Attention ${label}` }],
+            [{ ...base, title: `Upcoming ${label}` }],
+          ))
+          : response({}, 503);
+      retry(firstRegion).click();
+      retry(secondRegion).click();
+      const resolutions = settles === "first"
+        ? [[first, firstRegion, "first", firstSucceeds], [
+          second,
+          secondRegion,
+          "second",
+          secondSucceeds,
+        ]] as const
+        : [[second, secondRegion, "second", secondSucceeds], [
+          first,
+          firstRegion,
+          "first",
+          firstSucceeds,
+        ]] as const;
+      for (const [pending, region, label, succeeds] of resolutions) {
+        pending.resolve(result(label, succeeds));
+        await vi.waitFor(() =>
+          expect(document.querySelector(`#today-${region}-state`)?.textContent)
+            .not.toMatch(/Loading/i)
+        );
+      }
+      for (
+        const [region, label, succeeds] of [
+          [firstRegion, "first", firstSucceeds],
+          [secondRegion, "second", secondSucceeds],
+        ] as const
+      ) {
+        expect(list(region).textContent).toContain(
+          succeeds
+            ? `${region === "attention" ? "Attention" : "Upcoming"} ${label}`
+            : `${region === "attention" ? "Attention" : "Upcoming"} base`,
+        );
+        expect(retry(region).hidden).toBe(succeeds);
+      }
+      expect(document.activeElement?.id).toBe(
+        `today-${secondRegion}-state`,
       );
-      newer.resolve(
-        newerSucceeds
-          ? response(attention([current], [current]))
-          : response({}, 503),
+    },
+  );
+
+  it("keeps the newest successful server date across independent settlement order", async () => {
+    todayMarkup();
+    const older = deferredResponse();
+    const newer = deferredResponse();
+    vi.stubGlobal(
+      "fetch",
+      todayFetch(response(attention()), older.promise, newer.promise),
+    );
+    await mountTodayTasks();
+    document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+      .click();
+    document.querySelector<HTMLButtonElement>("#today-upcoming-retry")!.click();
+    newer.resolve(response({ ...attention(), date: "2026-08-20" }));
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector<HTMLTimeElement>("[data-today-date]")?.dateTime,
+      )
+        .toBe("2026-08-20")
+    );
+    older.resolve(response({ ...attention(), date: "2026-08-19" }));
+    await vi.waitFor(() =>
+      expect(document.querySelector("#today-attention-state")?.textContent)
+        .not.toMatch(/Loading/i)
+    );
+    expect(
+      document.querySelector<HTMLTimeElement>("[data-today-date]")?.dateTime,
+    )
+      .toBe("2026-08-20");
+  });
+
+  it.each([200, 503])(
+    "makes a superseded combined completion refresh (%s) inert",
+    async (combinedStatus) => {
+      todayMarkup();
+      const mutation = deferredResponse();
+      const combined = deferredResponse();
+      const regional = deferredResponse();
+      const current = {
+        dueAt: task.dueAt,
+        id: task.id,
+        kind: "task",
+        title: "Confirmed but stale",
+      };
+      const isolatedWorkspaceId = combinedStatus === 200
+        ? "00000000-0000-4000-8000-000000000005"
+        : "00000000-0000-4000-8000-000000000006";
+      const isolatedSession = {
+        ...session,
+        workspace: { id: isolatedWorkspaceId, name: "Isolated" },
+        workspaces: [{ id: isolatedWorkspaceId, name: "Isolated" }],
+      };
+      // A route-aware fixture keeps the mutation and projection interleaving explicit.
+      let projection = 0;
+      const fetchMock = vi.fn((
+        input: string | URL | Request,
+        init?: RequestInit,
+      ) =>
+        String(input).includes("/session")
+          ? Promise.resolve(response(isolatedSession))
+          : init?.method === "PUT"
+          ? mutation.promise
+          : [
+            Promise.resolve(response(attention([current], [current]))),
+            combined.promise,
+            regional.promise,
+          ][projection++]!
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      await mountTodayTasks();
+      document.querySelector<HTMLButtonElement>("[data-today-complete]")!
+        .click();
+      mutation.resolve(response({ status: "saved", task }));
+      await vi.waitFor(() =>
+        expect(
+          fetchMock.mock.calls.filter((call) =>
+            String(call[0]).includes("/today/attention")
+          ),
+        ).toHaveLength(2)
+      );
+      document.querySelector<HTMLButtonElement>("#today-upcoming-retry")!
+        .click();
+      regional.resolve(response({
+        ...attention([current], [{ ...current, title: "Current upcoming" }]),
+        date: "2026-08-20",
+      }));
+      await vi.waitFor(() =>
+        expect(document.querySelector("#today-upcoming-list")?.textContent)
+          .toContain("Current upcoming")
+      );
+      combined.resolve(
+        combinedStatus === 200
+          ? response({ ...attention(), date: "2026-08-19" })
+          : response({}, combinedStatus),
       );
       await vi.waitFor(() =>
         expect(document.body.textContent).not.toMatch(
           /Loading (relationship|upcoming)/,
         )
       );
-      if (newerSucceeds) {
-        expect(document.querySelector("#today-overdue-list")?.textContent)
-          .toContain("Current");
-        expect(document.querySelector("#today-upcoming-list")?.textContent)
-          .toContain("Current");
-      } else {
-        expect(document.querySelector("#today-attention-state")?.textContent)
-          .toMatch(/could not be loaded/i);
-        expect(document.querySelector("#today-upcoming-state")?.textContent)
-          .toMatch(/could not be loaded/i);
-        expect(retry("attention").hidden).toBe(false);
-        expect(retry("upcoming").hidden).toBe(false);
-      }
+      expect(document.querySelector("#today-overdue-list")?.textContent)
+        .toContain("Confirmed but stale");
+      expect(document.querySelector("#today-upcoming-list")?.textContent)
+        .toContain("Current upcoming");
+      expect(document.querySelector("#today-attention-state")?.textContent)
+        .toMatch(/completion is confirmed/i);
+      expect(
+        document.querySelector<HTMLTimeElement>("[data-today-date]")?.dateTime,
+      )
+        .toBe("2026-08-20");
+      expect(document.activeElement?.id).toBe("today-upcoming-state");
     },
   );
 

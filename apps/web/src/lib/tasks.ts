@@ -528,29 +528,51 @@ export async function mountTodayAttention(): Promise<void> {
   const abort = new AbortController();
   todayAbort = abort;
   const epoch = ++todayEpoch;
-  let generation = 0;
-  let renderedGeneration = 0;
   let workspaceId: string | undefined;
-  let attentionSummary = "";
-  const stages = new Map<number, {
-    readonly actionableTaskIds: ReadonlySet<string>;
-    readonly attentionRows: Readonly<
-      Record<
-        keyof typeof lists,
-        readonly HTMLLIElement[]
-      >
-    >;
-    readonly attentionText: string;
-    readonly snapshot: TodayAttention;
-    readonly todayText: string;
-    readonly upcomingRows: readonly HTMLLIElement[];
-    readonly upcomingText: string;
-  }>();
   type Trigger = "attention" | "initial" | "upcoming";
+  type Region = Exclude<Trigger, "initial">;
+  type Operation = {
+    cancelled: boolean;
+    readonly id: number;
+    readonly regions: readonly Region[];
+  };
+  type AttentionTerminal = {
+    readonly actionableTaskIds: readonly string[];
+    readonly items: TodayAttention["attention"];
+    readonly status: string;
+    readonly timezone: string;
+    readonly value: boolean;
+    readonly retryHidden: boolean;
+  };
+  type UpcomingTerminal = {
+    readonly items: TodayAttention["upcoming"];
+    readonly status: string;
+    readonly timezone: string;
+    readonly value: boolean;
+    readonly retryHidden: boolean;
+  };
+  let attentionTerminal: AttentionTerminal = {
+    actionableTaskIds: [],
+    items: { nextSevenDays: [], overdue: [], today: [] },
+    retryHidden: true,
+    status: "",
+    timezone: "UTC",
+    value: false,
+  };
+  let upcomingTerminal: UpcomingTerminal = {
+    items: [],
+    retryHidden: true,
+    status: "",
+    timezone: "UTC",
+    value: false,
+  };
+  let operationId = 0;
+  let contextOperationId = 0;
+  let dateOperationId = 0;
+  let focusOperationId = 0;
+  const regionOwners = new Map<Region, Operation>();
   const statusFor = (trigger: Trigger) =>
     trigger === "upcoming" ? upcomingState : state;
-  const retryFor = (trigger: Trigger) =>
-    trigger === "upcoming" ? upcomingRetry : retry;
   const format = (value: string, timezone: string) =>
     new Intl.DateTimeFormat(undefined, {
       dateStyle: "medium",
@@ -569,7 +591,20 @@ export async function mountTodayAttention(): Promise<void> {
     for (const list of Object.values(lists)) list!.replaceChildren();
     upcomingList.replaceChildren();
     onboarding.hidden = true;
-    attentionSummary = "";
+    attentionTerminal = {
+      ...attentionTerminal,
+      actionableTaskIds: [],
+      items: { nextSevenDays: [], overdue: [], today: [] },
+      status: "",
+      value: false,
+    };
+    upcomingTerminal = {
+      ...upcomingTerminal,
+      items: [],
+      status: "",
+      value: false,
+    };
+    dateOperationId = 0;
     settleUnavailableDate();
   };
   const destination = (item: TodayAttentionItem) => {
@@ -602,9 +637,10 @@ export async function mountTodayAttention(): Promise<void> {
     return element;
   };
   const present = (focus?: FocusToken) => {
-    if (!workspaceId) return;
-    const owner = completionOwners.get(workspaceId);
-    const failure = completionFailures.get(workspaceId);
+    const owner = workspaceId ? completionOwners.get(workspaceId) : undefined;
+    const failure = workspaceId
+      ? completionFailures.get(workspaceId)
+      : undefined;
     const controls = [...document.querySelectorAll<HTMLButtonElement>(
       "button[data-today-complete]",
     )];
@@ -612,7 +648,17 @@ export async function mountTodayAttention(): Promise<void> {
     const exact = failure
       ? controls.find((control) => control.dataset.taskId === failure.taskId)
       : undefined;
-    const summary = attentionSummary ||
+    state.textContent = regionOwners.has("attention")
+      ? "Loading relationship priorities…"
+      : attentionTerminal.status;
+    retry.hidden = regionOwners.has("attention") ||
+      attentionTerminal.retryHidden;
+    upcomingState.textContent = regionOwners.has("upcoming")
+      ? "Loading upcoming work…"
+      : upcomingTerminal.status;
+    upcomingRetry.hidden = regionOwners.has("upcoming") ||
+      upcomingTerminal.retryHidden;
+    const summary = attentionTerminal.status ||
       "Relationship priorities are unchanged.";
     if (owner?.phase === "pending") {
       state.textContent = "Completing task…";
@@ -622,13 +668,13 @@ export async function mountTodayAttention(): Promise<void> {
       state.textContent =
         `${summary} Task completion is confirmed; the projection has not caught up.`;
       retry.hidden = false;
-      upcomingRetry.hidden = upcomingRetryStates.get(workspaceId)!;
+      upcomingRetry.hidden = upcomingRetryStates.get(workspaceId ?? "") ?? true;
     } else if (failure) {
       state.textContent = `${summary} Task could not be completed. ${
         exact ? "Retry Complete." : "Retry the attention projection."
       }`;
       retry.hidden = exact !== undefined;
-      upcomingRetry.hidden = upcomingRetryStates.get(workspaceId)!;
+      upcomingRetry.hidden = upcomingRetryStates.get(workspaceId ?? "") ?? true;
     }
     if (
       !focus || focus.epoch !== epoch || currentTodaySurface?.epoch !== epoch
@@ -642,60 +688,72 @@ export async function mountTodayAttention(): Promise<void> {
     if (target === state || target === upcomingState) target.tabIndex = -1;
     target.focus();
   };
-  const refresh = async (trigger: Trigger, focus?: FocusToken) => {
-    const current = ++generation;
-    const initiatingRegions = trigger === "initial"
-      ? [{ retry, status: state }, {
-        retry: upcomingRetry,
-        status: upcomingState,
-      }]
-      : [{ retry: retryFor(trigger), status: statusFor(trigger) }];
-    const prior = initiatingRegions.map(({ retry, status }) => ({
-      retry,
-      retryHidden: retry.hidden,
-      status,
-      text: status.textContent,
-    }));
-    const superseded = () => {
-      if (abort.signal.aborted) return true;
-      if (current === generation) return false;
-      if (renderedGeneration <= current) {
-        for (const previous of prior) {
-          previous.status.textContent = previous.text;
-          previous.retry.hidden = previous.retryHidden;
-        }
-        present();
-      }
-      return true;
+  const cancel = (operation: Operation) => {
+    operation.cancelled = true;
+    for (const region of operation.regions) {
+      if (regionOwners.get(region) === operation) regionOwners.delete(region);
+    }
+  };
+  const begin = (trigger: Trigger, focus?: FocusToken): Operation => {
+    const regions: readonly Region[] = trigger === "initial"
+      ? ["attention", "upcoming"]
+      : [trigger];
+    for (
+      const prior of new Set(regions.map((region) => regionOwners.get(region)))
+    ) {
+      if (prior) cancel(prior);
+    }
+    const operation: Operation = {
+      cancelled: false,
+      id: ++operationId,
+      regions,
     };
-    for (const { status } of initiatingRegions) {
-      status.textContent = status === state
-        ? "Loading relationship priorities…"
-        : "Loading upcoming work…";
-    }
-    if (trigger === "initial") {
-      retry.hidden = true;
-      upcomingRetry.hidden = true;
-    } else {
-      retryFor(trigger).hidden = true;
-    }
+    for (const region of regions) regionOwners.set(region, operation);
+    if (focus) focusOperationId = operation.id;
     present();
+    return operation;
+  };
+  const owns = (operation: Operation) =>
+    !abort.signal.aborted && !operation.cancelled &&
+    operation.regions.every((region) => regionOwners.get(region) === operation);
+  const settle = (operation: Operation, focus?: FocusToken) => {
+    cancel(operation);
+    present(focus && focusOperationId === operation.id ? focus : undefined);
+  };
+  const refresh = async (trigger: Trigger, focus?: FocusToken) => {
+    const operation = begin(trigger, focus);
     const session = await resolveWorkspaceSession();
-    if (superseded()) return false;
+    if (!owns(operation)) return false;
     const activeWorkspaceId = session.status === "ready"
       ? session.session.workspace.id
       : undefined;
-    if (!activeWorkspaceId) {
+    const activePrincipalId = session.status === "ready"
+      ? session.session.principal.userId
+      : undefined;
+    const contextChanged = workspaceId !== activeWorkspaceId ||
+      (activePrincipalId !== undefined &&
+        todayPrincipalId !== activePrincipalId);
+    if (contextChanged && operation.id < contextOperationId) {
+      settle(operation);
+      return false;
+    }
+    contextOperationId = Math.max(contextOperationId, operation.id);
+    if (contextChanged) {
+      for (const candidate of new Set(regionOwners.values())) {
+        if (candidate !== operation) cancel(candidate);
+      }
       clearProjection();
-    } else {
+      workspaceId = activeWorkspaceId;
+      surface.workspaceId = activeWorkspaceId;
+    }
+    if (activeWorkspaceId) {
       const ready = session as Extract<typeof session, { status: "ready" }>;
-      const principalId = ready.session.principal.userId;
-      if (todayPrincipalId !== principalId) {
+      if (todayPrincipalId !== activePrincipalId) {
         completionOwners.clear();
         completionFailures.clear();
         projectionSequences.clear();
         upcomingRetryStates.clear();
-        todayPrincipalId = principalId;
+        todayPrincipalId = activePrincipalId;
       }
       const memberships = new Set([
         activeWorkspaceId,
@@ -713,11 +771,6 @@ export async function mountTodayAttention(): Promise<void> {
           if (!memberships.has(id)) store.delete(id);
         }
       }
-      if (workspaceId !== activeWorkspaceId) {
-        clearProjection();
-        workspaceId = activeWorkspaceId;
-        surface.workspaceId = activeWorkspaceId;
-      }
     }
     present();
     const projectionSequence = activeWorkspaceId
@@ -729,24 +782,29 @@ export async function mountTodayAttention(): Promise<void> {
     const result = activeWorkspaceId
       ? await getTodayAttention(activeWorkspaceId).catch(() => undefined)
       : undefined;
-    if (superseded()) return false;
+    if (!owns(operation)) return false;
     if (!activeWorkspaceId || !result?.ok) {
-      for (const { status } of initiatingRegions) {
-        status.textContent = status === state
-          ? "Attention could not be loaded. Other Today regions remain available."
-          : "Upcoming work could not be loaded. Needs attention is unchanged.";
+      if (operation.regions.includes("attention")) {
+        attentionTerminal = {
+          ...attentionTerminal,
+          retryHidden: false,
+          status:
+            "Attention could not be loaded. Other Today regions remain available.",
+        };
       }
-      if (trigger === "initial") {
-        retry.hidden = false;
-        upcomingRetry.hidden = false;
-      } else {
-        retryFor(trigger).hidden = false;
+      if (operation.regions.includes("upcoming")) {
+        upcomingTerminal = {
+          ...upcomingTerminal,
+          retryHidden: false,
+          status:
+            "Upcoming work could not be loaded. Needs attention is unchanged.",
+        };
       }
-      if (activeWorkspaceId && trigger !== "attention") {
-        upcomingRetryStates.set(activeWorkspaceId, !!upcomingRetry.hidden);
+      if (activeWorkspaceId && operation.regions.includes("upcoming")) {
+        upcomingRetryStates.set(activeWorkspaceId, false);
       }
-      present(focus);
       settleUnavailableDate();
+      settle(operation, focus);
       return false;
     }
     const snapshot = result.value;
@@ -793,10 +851,6 @@ export async function mountTodayAttention(): Promise<void> {
       globalThis.dispatchEvent(new CustomEvent(TASK_CHANGED_EVENT));
       if (currentTodaySurface?.workspaceId === activeWorkspaceId) {
         await currentTodaySurface.refresh("initial", focusToken);
-        if (
-          currentTodaySurface?.workspaceId === activeWorkspaceId &&
-          currentTodaySurface.epoch === focusToken.epoch
-        ) currentTodaySurface.present(focusToken);
       }
     };
     const attentionRow = (item: TodayAttentionItem) => {
@@ -848,99 +902,111 @@ export async function mountTodayAttention(): Promise<void> {
       return element;
     };
     try {
-      const attentionRows = {
-        nextSevenDays: snapshot.attention.nextSevenDays.map(attentionRow),
-        overdue: snapshot.attention.overdue.map(attentionRow),
-        today: snapshot.attention.today.map(attentionRow),
+      const attentionCount = Object.values(snapshot.attention).flat().length;
+      const upcomingCount = snapshot.upcoming.length;
+      const stagedAttention: AttentionTerminal | undefined =
+        operation.regions.includes("attention")
+          ? {
+            actionableTaskIds: Object.values(snapshot.attention).flat().filter(
+              (item) =>
+                item.kind === "task" && !item.person?.archived &&
+                !item.person?.unavailable,
+            ).map((item) => item.id),
+            items: snapshot.attention,
+            retryHidden: true,
+            status: attentionCount === 0
+              ? "All clear. No relationship work needs attention."
+              : `${attentionCount} relationship priorit${
+                attentionCount === 1 ? "y" : "ies"
+              }.`,
+            timezone: snapshot.timezone,
+            value: true,
+          }
+          : undefined;
+      const stagedUpcoming: UpcomingTerminal | undefined =
+        operation.regions.includes("upcoming")
+          ? {
+            items: snapshot.upcoming,
+            retryHidden: true,
+            status: upcomingCount
+              ? `${upcomingCount} upcoming item${
+                upcomingCount === 1 ? "" : "s"
+              }.`
+              : "No upcoming relationship work in the next 30 days.",
+            timezone: snapshot.timezone,
+            value: true,
+          }
+          : undefined;
+      const attentionRows = stagedAttention && {
+        nextSevenDays: stagedAttention.items.nextSevenDays.map(attentionRow),
+        overdue: stagedAttention.items.overdue.map(attentionRow),
+        today: stagedAttention.items.today.map(attentionRow),
       };
-      const upcomingRows = snapshot.upcoming.map(upcomingRow);
+      const upcomingRows = stagedUpcoming?.items.map(upcomingRow);
+      new Intl.DateTimeFormat(undefined, {
+        timeZone: snapshot.timezone,
+      }).format(new Date(`${snapshot.date}T12:00:00Z`));
       const todayText = new Intl.DateTimeFormat(undefined, {
         dateStyle: "full",
         timeZone: "UTC",
       }).format(new Date(`${snapshot.date}T12:00:00Z`));
-      const attentionCount = Object.values(snapshot.attention).flat().length;
-      const upcomingCount = snapshot.upcoming.length;
-      stages.set(current, {
-        actionableTaskIds: new Set(
-          Object.values(snapshot.attention).flat().filter((item) =>
-            item.kind === "task" && !item.person?.archived &&
-            !item.person?.unavailable
-          ).map((item) => item.id),
-        ),
-        attentionRows,
-        attentionText: attentionCount === 0
-          ? "All clear. No relationship work needs attention."
-          : `${attentionCount} relationship priorit${
-            attentionCount === 1 ? "y" : "ies"
-          }.`,
-        snapshot,
-        todayText,
-        upcomingRows,
-        upcomingText: upcomingCount
-          ? `${upcomingCount} upcoming item${upcomingCount === 1 ? "" : "s"}.`
-          : "No upcoming relationship work in the next 30 days.",
-      });
+      if (!owns(operation)) return false;
+      if (stagedAttention && attentionRows) {
+        attentionTerminal = stagedAttention;
+        for (const key of Object.keys(lists) as (keyof typeof lists)[]) {
+          lists[key]!.replaceChildren(...attentionRows[key]);
+        }
+        const owner = completionOwners.get(activeWorkspaceId);
+        const failure = completionFailures.get(activeWorkspaceId);
+        if (
+          owner?.phase === "confirmed" &&
+          projectionSequence > owner.afterProjectionSequence &&
+          !stagedAttention.actionableTaskIds.includes(owner.taskId)
+        ) completionOwners.delete(activeWorkspaceId);
+        if (
+          failure && projectionSequence > failure.afterProjectionSequence &&
+          !stagedAttention.actionableTaskIds.includes(failure.taskId)
+        ) completionFailures.delete(activeWorkspaceId);
+      }
+      if (stagedUpcoming && upcomingRows) {
+        upcomingTerminal = stagedUpcoming;
+        upcomingList.replaceChildren(...upcomingRows);
+        upcomingRetryStates.set(activeWorkspaceId, true);
+      }
+      onboarding.hidden = !attentionTerminal.value ||
+        !upcomingTerminal.value ||
+        Object.values(attentionTerminal.items).flat().length +
+              upcomingTerminal.items.length !== 0;
+      if (operation.id > dateOperationId && todayDate) {
+        dateOperationId = operation.id;
+        todayDate.dateTime = snapshot.date;
+        todayDate.textContent = todayText;
+      }
+      settle(operation, focus);
+      return true;
     } catch {
-      for (const { status } of initiatingRegions) {
-        status.textContent = status === state
-          ? "Attention could not be loaded. Other Today regions remain available."
-          : "Upcoming work could not be loaded. Needs attention is unchanged.";
+      if (!owns(operation)) return false;
+      if (operation.regions.includes("attention")) {
+        attentionTerminal = {
+          ...attentionTerminal,
+          retryHidden: false,
+          status:
+            "Attention could not be loaded. Other Today regions remain available.",
+        };
       }
-      if (trigger === "initial") {
-        retry.hidden = false;
-        upcomingRetry.hidden = false;
-      } else {
-        retryFor(trigger).hidden = false;
-      }
-      if (trigger !== "attention") {
-        upcomingRetryStates.set(activeWorkspaceId, !!upcomingRetry.hidden);
+      if (operation.regions.includes("upcoming")) {
+        upcomingTerminal = {
+          ...upcomingTerminal,
+          retryHidden: false,
+          status:
+            "Upcoming work could not be loaded. Needs attention is unchanged.",
+        };
+        upcomingRetryStates.set(activeWorkspaceId, false);
       }
       settleUnavailableDate();
-      present(focus);
+      settle(operation, focus);
       return false;
     }
-    if (superseded()) {
-      stages.delete(current);
-      return false;
-    }
-    const stage = stages.get(current)!;
-    renderedGeneration = current;
-    for (const key of Object.keys(lists) as (keyof typeof lists)[]) {
-      lists[key]!.replaceChildren(...stage.attentionRows[key]);
-    }
-    upcomingList.replaceChildren(...stage.upcomingRows);
-    const attentionCount = Object.values(stage.snapshot.attention).flat()
-      .length;
-    const upcomingCount = stage.snapshot.upcoming.length;
-    onboarding.hidden = attentionCount + upcomingCount !== 0;
-    attentionSummary = stage.attentionText;
-    state.textContent = stage.attentionText;
-    upcomingState.textContent = stage.upcomingText;
-    retry.hidden = true;
-    upcomingRetry.hidden = true;
-    upcomingRetryStates.set(activeWorkspaceId, true);
-    if (todayDate) {
-      todayDate.dateTime = stage.snapshot.date;
-      todayDate.textContent = stage.todayText;
-    }
-    const owner = completionOwners.get(activeWorkspaceId);
-    const failure = completionFailures.get(activeWorkspaceId);
-    if (
-      owner?.phase === "confirmed" &&
-      projectionSequence > owner.afterProjectionSequence &&
-      !stage.actionableTaskIds.has(owner.taskId)
-    ) {
-      completionOwners.delete(activeWorkspaceId);
-    }
-    if (
-      failure && projectionSequence > failure.afterProjectionSequence &&
-      !stage.actionableTaskIds.has(failure.taskId)
-    ) {
-      completionFailures.delete(activeWorkspaceId);
-    }
-    stages.delete(current);
-    present(focus);
-    return true;
   };
   retry.addEventListener(
     "click",
