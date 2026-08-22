@@ -11,6 +11,7 @@ import {
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 
 let todayRemindersAbort: AbortController | undefined;
+const TODAY_RECONNECT_RECORDED_EVENT = "kinship:today-reconnect-recorded";
 
 function formValue(form: HTMLFormElement, name: string): string {
   return String(new FormData(form).get(name) ?? "").trim();
@@ -262,6 +263,10 @@ function todayCadence(
   timezone: string,
 ): HTMLLIElement {
   const row = document.createElement("li");
+  if (!item.person) {
+    row.textContent = "Reconnect person unavailable";
+    return row;
+  }
   const link = document.createElement("a");
   link.className = "today-touch-target";
   link.href = `/app/people/${
@@ -275,10 +280,24 @@ function todayCadence(
       : "No contact recorded"
   }${item.person.archived ? " · archived" : ""}`;
   row.append(link, state);
+  if (!item.person.archived) {
+    const capture = document.createElement("button");
+    capture.type = "button";
+    capture.className = "button-secondary today-touch-target";
+    capture.disabled = true;
+    capture.dataset.quickCapture = "";
+    capture.dataset.todayReconnectCapture = "";
+    capture.dataset.interactionCaptureReady = "false";
+    capture.dataset.interactionIntendedKind = "activity";
+    capture.dataset.interactionPersonId = item.person.id;
+    capture.textContent = "Log interaction";
+    row.append(capture);
+  }
   return row;
 }
 
 export async function mountTodayReminders(): Promise<void> {
+  todayRemindersAbort?.abort();
   const reminderState = document.querySelector<HTMLElement>(
     "#today-reminders-state",
   );
@@ -291,76 +310,118 @@ export async function mountTodayReminders(): Promise<void> {
   const cadenceList = document.querySelector<HTMLUListElement>(
     "#today-cadences-list",
   );
-  const retry = document.querySelector<HTMLButtonElement>(
+  const reminderRetry = document.querySelector<HTMLButtonElement>(
     "#today-reminders-retry",
   );
+  const cadenceRetry = document.querySelector<HTMLButtonElement>(
+    "#today-cadences-retry",
+  );
   if (
-    !reminderState || !reminderList || !cadenceState || !cadenceList || !retry
+    !reminderState || !reminderList || !cadenceState || !cadenceList ||
+    !reminderRetry || !cadenceRetry
   ) return;
-  todayRemindersAbort?.abort();
   const abort = new AbortController();
   todayRemindersAbort = abort;
-  let generation = 0;
-  const finishFocus = (restoreFocus: boolean) => {
+  let reminderGeneration = 0;
+  let cadenceGeneration = 0;
+  type LoadScope = "cadence" | "full" | "reminder";
+  const focusState = (target: HTMLElement, restoreFocus: boolean) => {
     if (!restoreFocus) return;
-    reminderState.tabIndex = -1;
-    reminderState.focus();
+    target.tabIndex = -1;
+    target.focus();
   };
-  const fail = (restoreFocus: boolean) => {
+  const failReminder = (restoreFocus: boolean) => {
     reminderState.textContent =
       "Reminder state is unavailable. Other Today regions remain available.";
-    cadenceState.textContent = "Reconnect suggestions are unavailable.";
-    retry.hidden = false;
-    finishFocus(restoreFocus);
+    reminderRetry.hidden = false;
+    focusState(reminderState, restoreFocus);
   };
-  const load = async (restoreFocus = false) => {
-    const current = ++generation;
-    reminderState.textContent = "Loading reminder state…";
-    cadenceState.textContent = "Loading reconnect suggestions…";
-    retry.hidden = true;
+  const failCadence = (restoreFocus: boolean) => {
+    cadenceState.textContent = "Reconnect suggestions are unavailable.";
+    cadenceRetry.hidden = false;
+    focusState(cadenceState, restoreFocus);
+  };
+  const load = async (
+    scope: LoadScope,
+    restoreFocus = false,
+  ) => {
+    const ownsReminder = scope !== "cadence";
+    const ownsCadence = scope !== "reminder";
+    const reminderCurrent = ownsReminder ? ++reminderGeneration : 0;
+    const cadenceCurrent = ownsCadence ? ++cadenceGeneration : 0;
+    if (ownsReminder) {
+      reminderState.textContent = "Loading reminder state…";
+      reminderRetry.hidden = true;
+    }
+    if (ownsCadence) {
+      cadenceState.textContent = "Loading reconnect suggestions…";
+      cadenceRetry.hidden = true;
+    }
     const session = await resolveWorkspaceSession();
-    if (abort.signal.aborted || current !== generation) return;
+    if (abort.signal.aborted) return;
     if (session.status !== "ready") {
-      fail(restoreFocus);
+      if (ownsReminder && reminderCurrent === reminderGeneration) {
+        failReminder(restoreFocus);
+      }
+      if (ownsCadence && cadenceCurrent === cadenceGeneration) {
+        failCadence(restoreFocus);
+      }
       return;
     }
     const result = await getTodayReminders(session.session.workspace.id).catch(
       () => undefined,
     );
-    if (abort.signal.aborted || current !== generation) return;
+    if (abort.signal.aborted) return;
     if (!result?.ok) {
-      fail(restoreFocus);
+      if (ownsReminder && reminderCurrent === reminderGeneration) {
+        failReminder(restoreFocus);
+      }
+      if (ownsCadence && cadenceCurrent === cadenceGeneration) {
+        failCadence(restoreFocus);
+      }
       return;
     }
-    let reminderRows: readonly HTMLLIElement[];
-    let cadenceRows: readonly HTMLLIElement[];
-    try {
-      reminderRows = result.value.reminders.map((item) =>
-        todayReminder(item, result.value.timezone)
-      );
-      cadenceRows = result.value.cadences.map((item) =>
-        todayCadence(item, result.value.timezone)
-      );
-    } catch {
-      fail(restoreFocus);
-      return;
+    if (ownsReminder && reminderCurrent === reminderGeneration) {
+      try {
+        const rows = result.value.reminders.map((item) =>
+          todayReminder(item, result.value.timezone)
+        );
+        reminderRetry.hidden = true;
+        reminderList.replaceChildren(...rows);
+        reminderState.textContent = result.value.reminders.length
+          ? `${result.value.reminders.length} reminder state${
+            result.value.reminders.length === 1 ? "" : "s"
+          }.`
+          : "No reminders in the next 30 days.";
+        focusState(reminderState, restoreFocus);
+      } catch {
+        failReminder(restoreFocus);
+      }
     }
-    if (abort.signal.aborted || current !== generation) return;
-    retry.hidden = true;
-    reminderList.replaceChildren(...reminderRows);
-    cadenceList.replaceChildren(...cadenceRows);
-    reminderState.textContent = result.value.reminders.length
-      ? `${result.value.reminders.length} reminder state${
-        result.value.reminders.length === 1 ? "" : "s"
-      }.`
-      : "No reminders in the next 30 days.";
-    cadenceState.textContent = result.value.cadences.length
-      ? `${result.value.cadences.length} people to reconnect with.`
-      : "No one is due for contact.";
-    finishFocus(restoreFocus);
+    if (ownsCadence && cadenceCurrent === cadenceGeneration) {
+      try {
+        const rows = result.value.cadences.map((item) =>
+          todayCadence(item, result.value.timezone)
+        );
+        cadenceRetry.hidden = true;
+        cadenceList.replaceChildren(...rows);
+        cadenceState.textContent = result.value.cadences.length
+          ? `${result.value.cadences.length} people to reconnect with.`
+          : "No one is due for contact.";
+        focusState(cadenceState, restoreFocus);
+      } catch {
+        failCadence(restoreFocus);
+      }
+    }
   };
-  retry.addEventListener("click", () => void load(true), {
+  reminderRetry.addEventListener("click", () => void load("reminder", true), {
     signal: abort.signal,
   });
-  await load();
+  cadenceRetry.addEventListener("click", () => void load("cadence", true), {
+    signal: abort.signal,
+  });
+  globalThis.addEventListener(TODAY_RECONNECT_RECORDED_EVENT, () => {
+    void load("cadence", true);
+  }, { signal: abort.signal });
+  await load("full");
 }

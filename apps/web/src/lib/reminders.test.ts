@@ -31,7 +31,7 @@ function personMarkup(): void {
 function todayMarkup(): void {
   document.body.innerHTML = `
     <p id="today-reminders-state"></p><ul id="today-reminders-list"></ul><button id="today-reminders-retry" class="today-touch-target" type="button" hidden>Retry</button>
-    <p id="today-cadences-state"></p><ul id="today-cadences-list"></ul>`;
+    <p id="today-cadences-state"></p><ul id="today-cadences-list"></ul><button id="today-cadences-retry" class="today-touch-target" type="button" hidden>Retry cadence</button>`;
   sessionStorage.setItem(
     "kinship.workspace.session",
     JSON.stringify({
@@ -135,6 +135,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   document.head.innerHTML = "";
   document.body.innerHTML = "";
+  void mountTodayReminders();
   sessionStorage.clear();
 });
 
@@ -317,14 +318,14 @@ describe("PLANNING-002 reminder browser behavior", () => {
       retry.click();
       expect(states()).toEqual([
         "Loading reminder state…",
-        "Loading reconnect suggestions…",
+        "Reconnect suggestions are unavailable.",
       ]);
       expect(retry.hidden).toBe(true);
       await vi.waitFor(() => expect(snapshotCount()).toBe(2));
       retry.click();
       expect(states()).toEqual([
         "Loading reminder state…",
-        "Loading reconnect suggestions…",
+        "Reconnect suggestions are unavailable.",
       ]);
       await vi.waitFor(() => expect(snapshotCount()).toBe(3));
 
@@ -347,7 +348,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
       expect(states()[0]).toMatch(
         newerSucceeds ? /1 reminder state/ : /unavailable/,
       );
-      expect(states()[1]).toMatch(newerSucceeds ? /1 people/ : /unavailable/);
+      expect(states()[1]).toMatch(/unavailable/);
       expect(document.body.textContent).not.toContain("Older");
       expect(retry.hidden).toBe(newerSucceeds);
     },
@@ -365,17 +366,36 @@ describe("PLANNING-002 reminder browser behavior", () => {
     const retry = document.querySelector<HTMLButtonElement>(
       "#today-reminders-retry",
     )!;
+    const cadenceList = document.querySelector<HTMLUListElement>(
+      "#today-cadences-list",
+    )!;
+    const cadenceState = document.querySelector<HTMLElement>(
+      "#today-cadences-state",
+    )!;
+    const cadenceRetry = document.querySelector<HTMLButtonElement>(
+      "#today-cadences-retry",
+    )!;
+    const cadenceNode = cadenceList.firstElementChild;
+    const cadenceText = cadenceState.textContent;
+    const cadenceRetryHidden = cadenceRetry.hidden;
+    const expectCadenceUnchanged = () => {
+      expect(cadenceList.firstElementChild).toBe(cadenceNode);
+      expect(cadenceState.textContent).toBe(cadenceText);
+      expect(cadenceRetry.hidden).toBe(cadenceRetryHidden);
+    };
     retry.focus();
     retry.click();
     expect(document.body.textContent).toContain("Preserved");
     expect(document.querySelector("#today-reminders-state")?.textContent)
       .toBe("Loading reminder state…");
     expect(retry.hidden).toBe(true);
+    expectCadenceUnchanged();
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
     await settleResponse(pending, observedResponse({}, 503));
     expect(retry.hidden).toBe(false);
     expect(document.body.textContent).toContain("Preserved");
     expect(document.activeElement?.id).toBe("today-reminders-state");
+    expectCadenceUnchanged();
   });
 
   it("rejects an invalid runtime timezone without partially replacing reminder state", async () => {
@@ -401,7 +421,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
       .toMatch(/unavailable/i);
   });
 
-  it("keeps both reminder regions atomic when Intl fails after validation", async () => {
+  it("isolates a Reminder rendering failure from the cadence region", async () => {
     todayMarkup();
     const fetchMock = todayFetch(
       response(todaySnapshot("Preserved")),
@@ -417,7 +437,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
         options?: Intl.DateTimeFormatOptions,
       ) {
         calls += 1;
-        if (calls === 3) throw new RangeError("formatter unavailable");
+        if (calls === 1) throw new RangeError("formatter unavailable");
         return new NativeDateTimeFormat(locales, options);
       }) as typeof Intl.DateTimeFormat,
     );
@@ -433,7 +453,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
     expect(document.querySelector("#today-reminders-state")?.textContent)
       .toMatch(/unavailable/i);
     expect(document.querySelector("#today-cadences-state")?.textContent)
-      .toMatch(/unavailable/i);
+      .toMatch(/1 people/i);
   });
 
   it("makes a pending old mount inert after remount", async () => {
@@ -585,5 +605,146 @@ describe("PLANNING-002 reminder browser behavior", () => {
       expect(computed.overflowWrap).toBe("anywhere");
       expect(computed.width).not.toBe("100%");
     }
+    const cadenceRows = [...cadenceList.children];
+    const reconnect = cadenceRows[0]?.querySelector<HTMLButtonElement>(
+      "[data-today-reconnect-capture]",
+    );
+    expect(reconnect?.textContent).toBe("Log interaction");
+    expect(reconnect?.dataset.interactionPersonId).toBe(personId);
+    expect(reconnect?.dataset.interactionIntendedKind).toBe("activity");
+    expect(reconnect?.classList).toContain("today-touch-target");
+    expect(getComputedStyle(reconnect!).minHeight).toBe("44px");
+    expect(getComputedStyle(reconnect!).minWidth).toBe("44px");
+    expect(cadenceRows[1]?.querySelector("button")).toBeNull();
+  });
+
+  it("gives cadence its own recovery owner while preserving exact Reminder state", async () => {
+    todayMarkup();
+    const initial = todaySnapshot("Preserved reminder");
+    const oldEvent = deferredResponse();
+    const retryFailure = deferredResponse();
+    const retrySuccess = deferredResponse();
+    const fetchMock = todayFetch(
+      response(initial),
+      oldEvent.promise,
+      response({}, 503),
+      retryFailure.promise,
+      retrySuccess.promise,
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await mountTodayReminders();
+    const reminderList = document.querySelector<HTMLUListElement>(
+      "#today-reminders-list",
+    )!;
+    const reminderState = document.querySelector<HTMLElement>(
+      "#today-reminders-state",
+    )!;
+    const reminderRetry = document.querySelector<HTMLButtonElement>(
+      "#today-reminders-retry",
+    )!;
+    const cadenceState = document.querySelector<HTMLElement>(
+      "#today-cadences-state",
+    )!;
+    const cadenceRetry = document.querySelector<HTMLButtonElement>(
+      "#today-cadences-retry",
+    )!;
+    const reminderNode = reminderList.firstElementChild;
+    const reminderText = reminderState.textContent;
+    const reminderRetryHidden = reminderRetry.hidden;
+    const assertReminderPreserved = () => {
+      expect(reminderList.firstElementChild).toBe(reminderNode);
+      expect(reminderState.textContent).toBe(reminderText);
+      expect(reminderRetry.hidden).toBe(reminderRetryHidden);
+    };
+
+    globalThis.dispatchEvent(
+      new CustomEvent("kinship:today-reconnect-recorded"),
+    );
+    await vi.waitFor(() =>
+      expect(cadenceState.textContent).toContain("Loading")
+    );
+    assertReminderPreserved();
+    globalThis.dispatchEvent(
+      new CustomEvent("kinship:today-reconnect-recorded"),
+    );
+    await vi.waitFor(() =>
+      expect(cadenceState.textContent).toMatch(/unavailable/i)
+    );
+    expect(cadenceRetry.hidden).toBe(false);
+    assertReminderPreserved();
+
+    cadenceRetry.click();
+    await vi.waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter((call) =>
+          String(call[0]).includes("/today/reminders")
+        ),
+      ).toHaveLength(4)
+    );
+    retryFailure.resolve(response({}, 503));
+    await vi.waitFor(() => expect(cadenceRetry.hidden).toBe(false));
+    expect(cadenceState.textContent).toMatch(/unavailable/i);
+    assertReminderPreserved();
+
+    cadenceRetry.click();
+    await vi.waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter((call) =>
+          String(call[0]).includes("/today/reminders")
+        ),
+      ).toHaveLength(5)
+    );
+    retrySuccess.resolve(response({ ...initial, cadences: [] }));
+    await vi.waitFor(() =>
+      expect(cadenceState.textContent).toBe("No one is due for contact.")
+    );
+    expect(cadenceRetry.hidden).toBe(true);
+    expect(document.activeElement).toBe(cadenceState);
+    assertReminderPreserved();
+
+    oldEvent.resolve(response({
+      ...initial,
+      cadences: [{
+        ...initial.cadences[0],
+        person: { archived: false, id: personId, name: "Obsolete person" },
+      }],
+      reminders: [{ ...initial.reminders[0], title: "Obsolete reminder" }],
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(document.body.textContent).not.toContain("Obsolete");
+    assertReminderPreserved();
+  });
+
+  it("makes pending initial owners inert across remount and receives reconnect events before initial completion", async () => {
+    todayMarkup();
+    const oldInitial = deferredResponse();
+    const newInitial = deferredResponse();
+    const event = deferredResponse();
+    const fetchMock = todayFetch(
+      oldInitial.promise,
+      newInitial.promise,
+      event.promise,
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const oldMount = mountTodayReminders();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const newMount = mountTodayReminders();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    globalThis.dispatchEvent(
+      new CustomEvent("kinship:today-reconnect-recorded"),
+    );
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(6));
+    event.resolve(response({ ...todaySnapshot(), cadences: [] }));
+    await vi.waitFor(() =>
+      expect(document.querySelector("#today-cadences-state")?.textContent)
+        .toBe("No one is due for contact.")
+    );
+    newInitial.resolve(response(todaySnapshot("Must not commit")));
+    oldInitial.resolve(response(todaySnapshot("Obsolete mount")));
+    await Promise.all([oldMount, newMount]);
+    expect(document.body.textContent).toContain("Must not commit");
+    expect(document.body.textContent).not.toContain("Obsolete mount");
+    expect(document.querySelector("#today-cadences-state")?.textContent)
+      .toBe("No one is due for contact.");
   });
 });
