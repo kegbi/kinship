@@ -7,6 +7,7 @@ import {
   setTaskCompletion,
   type Task,
   type TaskChangeInput,
+  type TodayAttention,
   type TodayAttentionItem,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
@@ -14,6 +15,36 @@ import { resolveWorkspaceSession } from "./workspace-context.ts";
 export const TASK_CHANGED_EVENT = "kinship:task-changed";
 let surfaceAbort: AbortController | undefined;
 let todayAbort: AbortController | undefined;
+type CompletionOwner = {
+  readonly taskId: string;
+  phase: "confirmed" | "pending";
+  afterProjectionSequence: number;
+};
+type CompletionFailure = {
+  readonly taskId: string;
+  readonly afterProjectionSequence: number;
+};
+type FocusToken = {
+  readonly epoch: number;
+  readonly region: "attention" | "upcoming";
+  readonly taskId?: string;
+};
+type TodaySurface = {
+  readonly epoch: number;
+  refresh: (
+    trigger: "attention" | "initial" | "upcoming",
+    focus?: FocusToken,
+  ) => Promise<boolean>;
+  present: (focus?: FocusToken) => void;
+  workspaceId: string | undefined;
+};
+const completionOwners = new Map<string, CompletionOwner>();
+const completionFailures = new Map<string, CompletionFailure>();
+const projectionSequences = new Map<string, number>();
+const upcomingRetryStates = new Map<string, boolean>();
+let todayPrincipalId: string | undefined;
+let todayEpoch = 0;
+let currentTodaySurface: TodaySurface | undefined;
 
 function dueText(value: string | undefined): string {
   if (!value) return "No due time";
@@ -496,16 +527,25 @@ export async function mountTodayAttention(): Promise<void> {
   todayAbort?.abort();
   const abort = new AbortController();
   todayAbort = abort;
+  const epoch = ++todayEpoch;
   let generation = 0;
   let renderedGeneration = 0;
-  let completionOwner:
-    | {
-      readonly button: HTMLButtonElement;
-      readonly retryHidden: boolean;
-      readonly upcomingRetryHidden: boolean;
-    }
-    | undefined;
-  const completedStale = new WeakSet<HTMLButtonElement>();
+  let workspaceId: string | undefined;
+  let attentionSummary = "";
+  const stages = new Map<number, {
+    readonly actionableTaskIds: ReadonlySet<string>;
+    readonly attentionRows: Readonly<
+      Record<
+        keyof typeof lists,
+        readonly HTMLLIElement[]
+      >
+    >;
+    readonly attentionText: string;
+    readonly snapshot: TodayAttention;
+    readonly todayText: string;
+    readonly upcomingRows: readonly HTMLLIElement[];
+    readonly upcomingText: string;
+  }>();
   type Trigger = "attention" | "initial" | "upcoming";
   const statusFor = (trigger: Trigger) =>
     trigger === "upcoming" ? upcomingState : state;
@@ -524,6 +564,13 @@ export async function mountTodayAttention(): Promise<void> {
     if (!todayDate || todayDate.hasAttribute("datetime")) return;
     todayDate.removeAttribute("datetime");
     todayDate.textContent = "Date unavailable";
+  };
+  const clearProjection = () => {
+    for (const list of Object.values(lists)) list!.replaceChildren();
+    upcomingList.replaceChildren();
+    onboarding.hidden = true;
+    attentionSummary = "";
+    settleUnavailableDate();
   };
   const destination = (item: TodayAttentionItem) => {
     if (item.person?.unavailable) return undefined;
@@ -554,7 +601,48 @@ export async function mountTodayAttention(): Promise<void> {
     }
     return element;
   };
-  const refresh = async (trigger: Trigger, restoreFocus = false) => {
+  const present = (focus?: FocusToken) => {
+    if (!workspaceId) return;
+    const owner = completionOwners.get(workspaceId);
+    const failure = completionFailures.get(workspaceId);
+    const controls = [...document.querySelectorAll<HTMLButtonElement>(
+      "button[data-today-complete]",
+    )];
+    for (const control of controls) control.disabled = owner !== undefined;
+    const exact = failure
+      ? controls.find((control) => control.dataset.taskId === failure.taskId)
+      : undefined;
+    const summary = attentionSummary ||
+      "Relationship priorities are unchanged.";
+    if (owner?.phase === "pending") {
+      state.textContent = "Completing task…";
+      retry.hidden = true;
+      upcomingRetry.hidden = true;
+    } else if (owner) {
+      state.textContent =
+        `${summary} Task completion is confirmed; the projection has not caught up.`;
+      retry.hidden = false;
+      upcomingRetry.hidden = upcomingRetryStates.get(workspaceId)!;
+    } else if (failure) {
+      state.textContent = `${summary} Task could not be completed. ${
+        exact ? "Retry Complete." : "Retry the attention projection."
+      }`;
+      retry.hidden = exact !== undefined;
+      upcomingRetry.hidden = upcomingRetryStates.get(workspaceId)!;
+    }
+    if (
+      !focus || focus.epoch !== epoch || currentTodaySurface?.epoch !== epoch
+    ) return;
+    const focusTarget = focus.taskId
+      ? controls.find((control) =>
+        control.dataset.taskId === focus.taskId && !control.disabled
+      )
+      : undefined;
+    const target = focusTarget ?? statusFor(focus.region);
+    if (target === state || target === upcomingState) target.tabIndex = -1;
+    target.focus();
+  };
+  const refresh = async (trigger: Trigger, focus?: FocusToken) => {
     const current = ++generation;
     const initiatingRegions = trigger === "initial"
       ? [{ retry, status: state }, {
@@ -576,6 +664,7 @@ export async function mountTodayAttention(): Promise<void> {
           previous.status.textContent = previous.text;
           previous.retry.hidden = previous.retryHidden;
         }
+        present();
       }
       return true;
     };
@@ -590,16 +679,58 @@ export async function mountTodayAttention(): Promise<void> {
     } else {
       retryFor(trigger).hidden = true;
     }
+    present();
     const session = await resolveWorkspaceSession();
     if (superseded()) return false;
-    const workspaceId = session.status === "ready"
+    const activeWorkspaceId = session.status === "ready"
       ? session.session.workspace.id
       : undefined;
-    const result = workspaceId
-      ? await getTodayAttention(workspaceId).catch(() => undefined)
+    if (!activeWorkspaceId) {
+      clearProjection();
+    } else {
+      const ready = session as Extract<typeof session, { status: "ready" }>;
+      const principalId = ready.session.principal.userId;
+      if (todayPrincipalId !== principalId) {
+        completionOwners.clear();
+        completionFailures.clear();
+        projectionSequences.clear();
+        upcomingRetryStates.clear();
+        todayPrincipalId = principalId;
+      }
+      const memberships = new Set([
+        activeWorkspaceId,
+        ...ready.session.workspaces.map((candidate) => candidate.id),
+      ]);
+      for (
+        const store of [
+          completionOwners,
+          completionFailures,
+          projectionSequences,
+          upcomingRetryStates,
+        ]
+      ) {
+        for (const id of store.keys()) {
+          if (!memberships.has(id)) store.delete(id);
+        }
+      }
+      if (workspaceId !== activeWorkspaceId) {
+        clearProjection();
+        workspaceId = activeWorkspaceId;
+        surface.workspaceId = activeWorkspaceId;
+      }
+    }
+    present();
+    const projectionSequence = activeWorkspaceId
+      ? (projectionSequences.get(activeWorkspaceId) ?? 0) + 1
+      : 0;
+    if (activeWorkspaceId) {
+      projectionSequences.set(activeWorkspaceId, projectionSequence);
+    }
+    const result = activeWorkspaceId
+      ? await getTodayAttention(activeWorkspaceId).catch(() => undefined)
       : undefined;
     if (superseded()) return false;
-    if (!workspaceId || !result?.ok) {
+    if (!activeWorkspaceId || !result?.ok) {
       for (const { status } of initiatingRegions) {
         status.textContent = status === state
           ? "Attention could not be loaded. Other Today regions remain available."
@@ -611,69 +742,62 @@ export async function mountTodayAttention(): Promise<void> {
       } else {
         retryFor(trigger).hidden = false;
       }
-      if (restoreFocus) {
-        const status = statusFor(trigger);
-        status.tabIndex = -1;
-        status.focus();
+      if (activeWorkspaceId && trigger !== "attention") {
+        upcomingRetryStates.set(activeWorkspaceId, !!upcomingRetry.hidden);
       }
+      present(focus);
       settleUnavailableDate();
       return false;
     }
     const snapshot = result.value;
     const complete = async (
       item: Extract<TodayAttentionItem, { kind: "task" }>,
-      button: HTMLButtonElement,
     ) => {
-      if (completionOwner) return;
-      const owner = {
-        button,
-        retryHidden: retry.hidden === true,
-        upcomingRetryHidden: upcomingRetry.hidden === true,
+      if (completionOwners.has(activeWorkspaceId)) return;
+      completionFailures.delete(activeWorkspaceId);
+      const owner: CompletionOwner = {
+        afterProjectionSequence: projectionSequences.get(activeWorkspaceId) ??
+          0,
+        phase: "pending",
+        taskId: item.id,
       };
-      completionOwner = owner;
-      for (
-        const control of document.querySelectorAll<HTMLButtonElement>(
-          "button[data-today-complete]",
-        )
-      ) control.disabled = true;
-      retry.hidden = true;
-      upcomingRetry.hidden = true;
-      state.textContent = "Completing task…";
+      completionOwners.set(activeWorkspaceId, owner);
+      const focusToken: FocusToken = {
+        epoch,
+        region: "attention",
+        taskId: item.id,
+      };
+      present();
       const changed = await setTaskCompletion(
         item.id,
         true,
-        workspaceId,
+        activeWorkspaceId,
       ).catch(() => undefined);
-      if (abort.signal.aborted || completionOwner !== owner) return;
+      if (completionOwners.get(activeWorkspaceId) !== owner) return;
       if (!changed?.ok) {
-        completionOwner = undefined;
-        state.textContent =
-          "Task could not be completed. Nothing else changed.";
-        retry.hidden = owner.retryHidden;
-        upcomingRetry.hidden = owner.upcomingRetryHidden;
-        for (
-          const control of document.querySelectorAll<HTMLButtonElement>(
-            "button[data-today-complete]",
-          )
-        ) control.disabled = completedStale.has(control);
-        if (button.isConnected) button.focus();
-        else {
-          state.tabIndex = -1;
-          state.focus();
+        completionOwners.delete(activeWorkspaceId);
+        completionFailures.set(activeWorkspaceId, {
+          afterProjectionSequence: projectionSequences.get(activeWorkspaceId) ??
+            0,
+          taskId: item.id,
+        });
+        if (currentTodaySurface?.workspaceId === activeWorkspaceId) {
+          currentTodaySurface.present(focusToken);
         }
         return;
       }
+      owner.phase = "confirmed";
+      owner.afterProjectionSequence = projectionSequences.get(
+        activeWorkspaceId,
+      ) ?? 0;
       globalThis.dispatchEvent(new CustomEvent(TASK_CHANGED_EVENT));
-      const refreshed = await refresh("attention", true);
-      if (abort.signal.aborted || completionOwner !== owner) return;
-      completionOwner = undefined;
-      upcomingRetry.hidden = refreshed ? true : owner.upcomingRetryHidden;
-      if (!refreshed) completedStale.add(button);
-      for (
-        const control of document.querySelectorAll<HTMLButtonElement>(
-          "button[data-today-complete]",
-        )
-      ) control.disabled = completedStale.has(control);
+      if (currentTodaySurface?.workspaceId === activeWorkspaceId) {
+        await currentTodaySurface.refresh("initial", focusToken);
+        if (
+          currentTodaySurface?.workspaceId === activeWorkspaceId &&
+          currentTodaySurface.epoch === focusToken.epoch
+        ) currentTodaySurface.present(focusToken);
+      }
     };
     const attentionRow = (item: TodayAttentionItem) => {
       const element = document.createElement("li");
@@ -703,9 +827,10 @@ export async function mountTodayAttention(): Promise<void> {
         button.type = "button";
         button.className = "button-secondary";
         button.dataset.todayComplete = "";
-        button.disabled = completionOwner !== undefined;
+        button.dataset.taskId = item.id;
+        button.disabled = completionOwners.has(activeWorkspaceId);
         button.textContent = "Complete";
-        button.addEventListener("click", () => void complete(item, button));
+        button.addEventListener("click", () => void complete(item));
         actions.append(button);
         element.append(actions);
       }
@@ -722,22 +847,39 @@ export async function mountTodayAttention(): Promise<void> {
       element.append(heading, meta);
       return element;
     };
-    let attentionRows:
-      | Readonly<Record<keyof typeof lists, readonly HTMLLIElement[]>>
-      | undefined;
-    let upcomingRows: readonly HTMLLIElement[] | undefined;
-    let todayText: string | undefined;
     try {
-      attentionRows = {
+      const attentionRows = {
         nextSevenDays: snapshot.attention.nextSevenDays.map(attentionRow),
         overdue: snapshot.attention.overdue.map(attentionRow),
         today: snapshot.attention.today.map(attentionRow),
       };
-      upcomingRows = snapshot.upcoming.map(upcomingRow);
-      todayText = new Intl.DateTimeFormat(undefined, {
+      const upcomingRows = snapshot.upcoming.map(upcomingRow);
+      const todayText = new Intl.DateTimeFormat(undefined, {
         dateStyle: "full",
         timeZone: "UTC",
       }).format(new Date(`${snapshot.date}T12:00:00Z`));
+      const attentionCount = Object.values(snapshot.attention).flat().length;
+      const upcomingCount = snapshot.upcoming.length;
+      stages.set(current, {
+        actionableTaskIds: new Set(
+          Object.values(snapshot.attention).flat().filter((item) =>
+            item.kind === "task" && !item.person?.archived &&
+            !item.person?.unavailable
+          ).map((item) => item.id),
+        ),
+        attentionRows,
+        attentionText: attentionCount === 0
+          ? "All clear. No relationship work needs attention."
+          : `${attentionCount} relationship priorit${
+            attentionCount === 1 ? "y" : "ies"
+          }.`,
+        snapshot,
+        todayText,
+        upcomingRows,
+        upcomingText: upcomingCount
+          ? `${upcomingCount} upcoming item${upcomingCount === 1 ? "" : "s"}.`
+          : "No upcoming relationship work in the next 30 days.",
+      });
     } catch {
       for (const { status } of initiatingRegions) {
         status.textContent = status === state
@@ -750,60 +892,82 @@ export async function mountTodayAttention(): Promise<void> {
       } else {
         retryFor(trigger).hidden = false;
       }
-      settleUnavailableDate();
-      if (restoreFocus) {
-        const status = statusFor(trigger);
-        status.tabIndex = -1;
-        status.focus();
+      if (trigger !== "attention") {
+        upcomingRetryStates.set(activeWorkspaceId, !!upcomingRetry.hidden);
       }
+      settleUnavailableDate();
+      present(focus);
       return false;
     }
-    if (superseded()) return false;
+    if (superseded()) {
+      stages.delete(current);
+      return false;
+    }
+    const stage = stages.get(current)!;
     renderedGeneration = current;
     for (const key of Object.keys(lists) as (keyof typeof lists)[]) {
-      lists[key]!.replaceChildren(...attentionRows[key]);
+      lists[key]!.replaceChildren(...stage.attentionRows[key]);
     }
-    upcomingList.replaceChildren(...upcomingRows);
-    const attentionCount = Object.values(snapshot.attention).flat().length;
-    const upcomingCount = snapshot.upcoming.length;
+    upcomingList.replaceChildren(...stage.upcomingRows);
+    const attentionCount = Object.values(stage.snapshot.attention).flat()
+      .length;
+    const upcomingCount = stage.snapshot.upcoming.length;
     onboarding.hidden = attentionCount + upcomingCount !== 0;
-    state.textContent = attentionCount === 0
-      ? "All clear. No relationship work needs attention."
-      : `${attentionCount} relationship priorit${
-        attentionCount === 1 ? "y" : "ies"
-      }.`;
-    upcomingState.textContent = upcomingCount
-      ? `${upcomingCount} upcoming item${upcomingCount === 1 ? "" : "s"}.`
-      : "No upcoming relationship work in the next 30 days.";
+    attentionSummary = stage.attentionText;
+    state.textContent = stage.attentionText;
+    upcomingState.textContent = stage.upcomingText;
     retry.hidden = true;
     upcomingRetry.hidden = true;
-    if (todayDate && todayText) {
-      todayDate.dateTime = snapshot.date;
-      todayDate.textContent = todayText;
+    upcomingRetryStates.set(activeWorkspaceId, true);
+    if (todayDate) {
+      todayDate.dateTime = stage.snapshot.date;
+      todayDate.textContent = stage.todayText;
     }
-    if (restoreFocus) {
-      const status = statusFor(trigger);
-      status.tabIndex = -1;
-      status.focus();
+    const owner = completionOwners.get(activeWorkspaceId);
+    const failure = completionFailures.get(activeWorkspaceId);
+    if (
+      owner?.phase === "confirmed" &&
+      projectionSequence > owner.afterProjectionSequence &&
+      !stage.actionableTaskIds.has(owner.taskId)
+    ) {
+      completionOwners.delete(activeWorkspaceId);
     }
+    if (
+      failure && projectionSequence > failure.afterProjectionSequence &&
+      !stage.actionableTaskIds.has(failure.taskId)
+    ) {
+      completionFailures.delete(activeWorkspaceId);
+    }
+    stages.delete(current);
+    present(focus);
     return true;
   };
   retry.addEventListener(
     "click",
     () => {
-      if (!completionOwner) void refresh("attention", true);
+      if (
+        !workspaceId || completionOwners.get(workspaceId)?.phase !== "pending"
+      ) {
+        void refresh("attention", { epoch, region: "attention" });
+      }
     },
     { signal: abort.signal },
   );
   upcomingRetry.addEventListener(
     "click",
     () => {
-      if (!completionOwner) void refresh("upcoming", true);
+      if (
+        !workspaceId || completionOwners.get(workspaceId)?.phase !== "pending"
+      ) {
+        void refresh("upcoming", { epoch, region: "upcoming" });
+      }
     },
     {
       signal: abort.signal,
     },
   );
+  const surface: TodaySurface = { epoch, present, refresh, workspaceId };
+  currentTodaySurface = surface;
   await refresh("initial");
 }
 
