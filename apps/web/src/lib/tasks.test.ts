@@ -758,6 +758,9 @@ describe("PLANNING-001 task browser behavior", () => {
       document.querySelector<HTMLButtonElement>("#today-attention-retry")!
         .hidden,
     ).toBe(false);
+    expect(document.getElementById("today-upcoming-retry")!.hidden).toBe(false);
+    expect(document.getElementById("today-upcoming-state")!.textContent)
+      .toMatch(/could not be loaded/i);
 
     document.querySelector<HTMLButtonElement>("#today-attention-retry")!
       .click();
@@ -885,6 +888,8 @@ describe("PLANNING-001 task browser behavior", () => {
     const secondButton = button("Second task");
     firstButton.click();
     expect([firstButton.disabled, secondButton.disabled]).toEqual([true, true]);
+    document.getElementById("today-attention-retry")!.click();
+    document.getElementById("today-upcoming-retry")!.click();
     secondButton.click();
     firstButton.click();
     expect(mutationCalls()).toBe(1);
@@ -919,10 +924,67 @@ describe("PLANNING-001 task browser behavior", () => {
     expect(document.activeElement).toBe(liveFirst);
   });
 
-  it("keeps completion ownership through a degraded refresh and then releases it", async () => {
+  it("keeps a failed completion terminal and retries the owning mutation", async () => {
+    todayMarkup();
+    const first = deferredResponse();
+    const second = deferredResponse();
+    const item = {
+      dueAt: task.dueAt,
+      id: task.id,
+      kind: "task",
+      title: "Retry this task",
+    };
+    const mutations = [first.promise, second.promise];
+    const snapshots = [
+      response(attention([item], [item])),
+      response(attention()),
+    ];
+    let mutationIndex = 0;
+    let snapshotIndex = 0;
+    const fetchMock = vi.fn((
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) =>
+      String(input).includes("/session")
+        ? Promise.resolve(response(session))
+        : init?.method === "PUT"
+        ? mutations[mutationIndex++]!
+        : Promise.resolve(snapshots[snapshotIndex++]!)
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await mountTodayTasks();
+    const complete = () =>
+      document.querySelector<HTMLButtonElement>(
+        "#today-overdue-list button[data-today-complete]",
+      )!;
+    complete().click();
+    expect(complete().disabled).toBe(true);
+    expect(document.querySelector("#today-attention-state")?.textContent)
+      .toBe("Completing task…");
+    first.resolve(response({}, 503));
+    await vi.waitFor(() => expect(complete().disabled).toBe(false));
+    expect(document.querySelector("#today-attention-state")?.textContent)
+      .toMatch(/1 relationship priority.*could not be completed/i);
+    expect(document.activeElement).toBe(complete());
+    expect(
+      document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+        .hidden,
+    ).toBe(true);
+    expect(document.getElementById("today-upcoming-retry")!.hidden).toBe(true);
+
+    complete().click();
+    second.resolve(response({ status: "saved", task }));
+    await vi.waitFor(() =>
+      expect(document.querySelectorAll(".attention-item")).toHaveLength(0)
+    );
+    expect(document.querySelector("#today-attention-state")?.textContent)
+      .toMatch(/All clear/i);
+    expect(document.activeElement?.id).toBe("today-attention-state");
+  });
+
+  it("keeps confirmed completion ownership until a causal snapshot removes it", async () => {
     todayMarkup();
     const mutation = deferredResponse();
-    const nextMutation = deferredResponse();
     const refresh = deferredResponse();
     const firstTask = {
       dueAt: task.dueAt,
@@ -935,13 +997,12 @@ describe("PLANNING-001 task browser behavior", () => {
       id: crypto.randomUUID(),
       title: "Other live task",
     };
-    const mutations = [mutation.promise, nextMutation.promise];
     const snapshots = [
       Promise.resolve(response(attention([firstTask, secondTask]))),
       refresh.promise,
       Promise.resolve(response(attention([firstTask, secondTask]))),
+      Promise.resolve(response(attention())),
     ];
-    let mutationIndex = 0;
     let snapshotIndex = 0;
     const fetchMock = vi.fn((
       input: string | URL | Request,
@@ -950,7 +1011,7 @@ describe("PLANNING-001 task browser behavior", () => {
       String(input).includes("/session")
         ? Promise.resolve(response(session))
         : init?.method === "PUT"
-        ? mutations[mutationIndex++]!
+        ? mutation.promise
         : snapshots[snapshotIndex++]!
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -983,23 +1044,28 @@ describe("PLANNING-001 task browser behavior", () => {
     expect([staleButton.disabled, otherButton.disabled]).toEqual([true, true]);
     refresh.resolve(response({}, 503));
     await vi.waitFor(() =>
-      expect(
-        document.querySelector<HTMLButtonElement>("#today-attention-retry")!
-          .hidden,
-      )
-        .toBe(false)
+      expect(document.activeElement?.id).toBe("today-attention-state")
     );
+    expect(
+      document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+        .hidden,
+    ).toBe(false);
     expect(staleButton.disabled).toBe(true);
-    expect(otherButton.disabled).toBe(false);
-    expect(document.activeElement?.id).toBe("today-attention-state");
+    expect(otherButton.disabled).toBe(true);
     otherButton.click();
     expect(
       fetchMock.mock.calls.filter((call) => call[1]?.method === "PUT"),
-    ).toHaveLength(2);
-    nextMutation.resolve(response({}, 503));
-    await vi.waitFor(() => expect(otherButton.disabled).toBe(false));
+    ).toHaveLength(1);
+    document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+      .click();
+    await vi.waitFor(() => expect(snapshotCalls()).toBe(3));
     expect(staleButton.disabled).toBe(true);
-    expect(document.activeElement).toBe(otherButton);
+    expect(otherButton.disabled).toBe(true);
+    document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+      .click();
+    await vi.waitFor(() =>
+      expect(document.querySelectorAll(".attention-item")).toHaveLength(0)
+    );
   });
 
   it("makes an obsolete pending completion inert after remount", async () => {
@@ -1018,6 +1084,7 @@ describe("PLANNING-001 task browser behavior", () => {
     };
     const snapshots = [
       response(attention([oldTask])),
+      response(attention([currentTask])),
       response(attention([currentTask])),
     ];
     let snapshotIndex = 0;
@@ -1041,8 +1108,90 @@ describe("PLANNING-001 task browser behavior", () => {
       expect(document.body.textContent).toContain("Current task")
     );
     expect(document.body.textContent).not.toContain("Obsolete task");
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toMatch(/could not be completed/i)
+    );
+    expect(
+      document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+        .hidden,
+    ).toBe(false);
+    expect(document.activeElement?.id).not.toBe("today-attention-state");
+    document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+      .click();
+    await vi.waitFor(() =>
+      expect(document.body.textContent).not.toMatch(/could not be completed/i)
+    );
+  });
+
+  it("isolates workspace failures and prunes them when the principal changes", async () => {
+    todayMarkup();
+    const otherWorkspaceId = "00000000-0000-4000-8000-000000000004";
+    const failed = deferredResponse();
+    const itemFor = (id: string, title: string) => ({
+      dueAt: task.dueAt,
+      id,
+      kind: "task",
+      title,
+    });
+    const first = itemFor(task.id, "First workspace task");
+    const second = itemFor(crypto.randomUUID(), "Second workspace task");
+    let active = {
+      ...session,
+      workspace: session.workspace,
+      workspaces: [session.workspace, {
+        id: otherWorkspaceId,
+        name: "Other",
+      }],
+    };
+    const fetchMock = vi.fn((
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) =>
+      String(input).includes("/session")
+        ? Promise.resolve(response(active))
+        : init?.method === "PUT"
+        ? failed.promise
+        : Promise.resolve(response(attention([
+          active.workspace.id === workspaceId ? first : second,
+        ])))
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await mountTodayTasks();
+    document.querySelector<HTMLButtonElement>("[data-today-complete]")!
+      .click();
+    active = {
+      ...active,
+      workspace: { id: otherWorkspaceId, name: "Other" },
+    };
+    await mountTodayTasks();
+    expect(document.body.textContent).toContain("Second workspace task");
+    expect(
+      document.querySelector<HTMLButtonElement>("[data-today-complete]")!
+        .disabled,
+    ).toBe(false);
+    failed.resolve(response({}, 503));
+    await Promise.resolve();
     expect(document.body.textContent).not.toMatch(/could not be completed/i);
     expect(document.activeElement?.id).not.toBe("today-attention-state");
+
+    active = { ...active, workspace: session.workspace };
+    await mountTodayTasks();
+    expect(document.body.textContent).toMatch(/could not be completed/i);
+    expect(document.activeElement?.id).not.toBe("today-attention-state");
+    active = {
+      ...active,
+      principal: { userId: "different-user" },
+      workspace: { id: otherWorkspaceId, name: "Other" },
+      workspaces: [{ id: otherWorkspaceId, name: "Other" }],
+    };
+    await mountTodayTasks();
+    active = {
+      ...active,
+      workspace: session.workspace,
+      workspaces: [session.workspace, active.workspace],
+    };
+    await mountTodayTasks();
+    expect(document.body.textContent).not.toMatch(/could not be completed/i);
   });
 
   it("keeps region retry failures isolated and refreshes both on success", async () => {
@@ -1084,10 +1233,24 @@ describe("PLANNING-001 task browser behavior", () => {
     );
     expect(document.querySelector("#today-overdue-list")?.textContent)
       .toContain("Refreshed");
+    fetchMock.mockResolvedValueOnce(response({}, 503));
+    document.querySelector<HTMLButtonElement>("[data-today-complete]")!
+      .click();
+    await vi.waitFor(() =>
+      expect(document.querySelector("#today-attention-state")?.textContent)
+        .toMatch(/could not be completed/i)
+    );
+    expect(document.querySelector("#today-upcoming-state")?.textContent)
+      .toMatch(/could not be loaded/i);
+    expect(document.getElementById("today-upcoming-retry")!.hidden).toBe(false);
     document.querySelector<HTMLButtonElement>("#today-upcoming-retry")!.click();
     await vi.waitFor(() =>
-      expect(document.body.textContent).toContain("Preserved")
+      expect(document.querySelector("#today-upcoming-state")?.textContent)
+        .toMatch(/1 upcoming item/i)
     );
+    expect(document.querySelector("#today-attention-state")?.textContent)
+      .toMatch(/could not be completed/i);
+    expect(document.getElementById("today-upcoming-retry")!.hidden).toBe(true);
     expect(document.activeElement?.id).toBe("today-upcoming-state");
   });
 
