@@ -1555,12 +1555,29 @@ interface CreatedReminder {
   };
 }
 
+function futureReminderAnchor(now = Temporal.Now.instant()): string {
+  return now.toZonedDateTimeISO("UTC").toPlainDate().add({ days: 2 })
+    .toString();
+}
+
+Deno.test("PLANNING-002 reminder fixture remains future at the UTC date boundary", () => {
+  const now = Temporal.Instant.from("2026-08-22T23:02:00Z");
+  const anchor = futureReminderAnchor(now);
+  const deliverAt = Temporal.ZonedDateTime.from(
+    `${anchor}T09:00[Pacific/Kiritimati]`,
+  ).toInstant();
+  assert(
+    Temporal.Instant.compare(deliverAt, now) > 0,
+    `${deliverAt} must remain future from ${now}`,
+  );
+});
+
 async function createReminder(
   fixture: Fixture,
   personId: string,
   title: string,
 ): Promise<CreatedReminder["reminder"]> {
-  const anchor = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  const anchor = futureReminderAnchor();
   const created = await request(fixture, "/api/v1/reminders", "POST", {
     anchorOn: anchor,
     personId,
