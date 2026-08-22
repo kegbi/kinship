@@ -15,6 +15,16 @@ function response(body: unknown, status = 200): Response {
   });
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, reject, resolve };
+}
+
 const workspaceId = "00000000-0000-4000-8000-000000000003";
 const personId = "00000000-0000-4000-8000-000000000100";
 const otherId = "00000000-0000-4000-8000-000000000101";
@@ -51,7 +61,7 @@ function captureMarkup(): void {
         <div data-interaction-kind="note" hidden>
           <textarea name="body"></textarea><input name="isFavorited" type="checkbox">
         </div>
-        <p id="interaction-capture-status"></p>
+        <p id="interaction-capture-status" role="status" aria-live="polite"></p>
         <button type="submit">Save interaction</button>
         <button data-interaction-cancel type="button">Cancel</button>
       </form>
@@ -81,6 +91,34 @@ function readyInteractionOptions() {
     emotions: [],
     status: "ready",
   });
+}
+
+function selectedDirectoryPerson(
+  id = otherId,
+  lifecycle: "active" | "archived" = "active",
+) {
+  return {
+    givenName: id === otherId ? "Grace" : "Ada",
+    id,
+    isPartial: false,
+    isStarred: false,
+    lifecycle,
+    tagCount: 0,
+    tags: [],
+  };
+}
+
+function reconnectOpener(id = otherId): HTMLButtonElement {
+  const opener = document.createElement("button");
+  opener.type = "button";
+  opener.disabled = true;
+  opener.dataset.quickCapture = "";
+  opener.dataset.todayReconnectCapture = "";
+  opener.dataset.interactionIntendedKind = "activity";
+  opener.dataset.interactionPersonId = id;
+  opener.textContent = "Log interaction";
+  document.body.append(opener);
+  return opener;
 }
 
 function savedActivity(status = 201) {
@@ -134,6 +172,7 @@ function todayMarkup(): void {
 afterEach(() => {
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
+  void mountTodayInteractions();
   sessionStorage.clear();
   history.replaceState({}, "", "/");
 });
@@ -149,6 +188,90 @@ describe("INTERACTION-001 browser behavior", () => {
       notes: false,
     });
     expect(document.body.textContent).toBe("");
+  });
+
+  it("refreshes only Recent for activity and both Today projections for note, including during initial load", async () => {
+    todayMarkup();
+    const favoriteInitial = deferred<Response>();
+    const recentInitial = deferred<Response>();
+    let favoriteCalls = 0;
+    let recentCalls = 0;
+    const item = (kind: "activity" | "note", label: string) =>
+      kind === "activity"
+        ? {
+          emotions: [],
+          happenedAt: "2026-08-22T10:00:00.000Z",
+          id: crypto.randomUUID(),
+          kind,
+          participants: [{ id: personId, name: "Ada" }],
+          summary: label,
+        }
+        : {
+          body: label,
+          createdAt: "2026-08-22T10:00:00.000Z",
+          id: crypto.randomUUID(),
+          isFavorited: true,
+          kind,
+          participants: [{ id: personId, name: "Ada" }],
+        };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const path = new URL(String(input), "http://localhost").pathname;
+        if (path.endsWith("/session")) {
+          return Promise.resolve(response(session()));
+        }
+        if (path.endsWith("/favorite-notes")) {
+          favoriteCalls += 1;
+          return favoriteCalls === 1
+            ? favoriteInitial.promise
+            : Promise.resolve(response({
+              items: [item("note", `Favorite ${favoriteCalls}`)],
+              status: "ready",
+            }));
+        }
+        recentCalls += 1;
+        return recentCalls === 1
+          ? recentInitial.promise
+          : Promise.resolve(response({
+            items: [item("activity", `Recent ${recentCalls}`)],
+            status: "ready",
+          }));
+      }),
+    );
+    const mounting = mountTodayInteractions();
+    await vi.waitFor(() =>
+      expect([favoriteCalls, recentCalls]).toEqual([1, 1])
+    );
+    globalThis.dispatchEvent(
+      new CustomEvent("kinship:interaction-created", {
+        detail: { kind: "activity" },
+      }),
+    );
+    await vi.waitFor(() => expect(recentCalls).toBe(2));
+    expect(favoriteCalls).toBe(1);
+    globalThis.dispatchEvent(
+      new CustomEvent("kinship:interaction-created", {
+        detail: { kind: "note" },
+      }),
+    );
+    await vi.waitFor(() =>
+      expect([favoriteCalls, recentCalls]).toEqual([2, 3])
+    );
+    favoriteInitial.resolve(response({
+      items: [item("note", "Obsolete favorite")],
+      status: "ready",
+    }));
+    recentInitial.resolve(response({
+      items: [item("activity", "Obsolete recent")],
+      status: "ready",
+    }));
+    await mounting;
+    expect(document.body.textContent).not.toContain("Obsolete");
+    expect(document.querySelector("#today-favorite-notes")?.textContent)
+      .toContain("Favorite 2");
+    expect(document.querySelector("#today-recent-activity")?.textContent)
+      .toContain("Recent 3");
   });
 
   it("keeps quick capture disabled until its bounded options are ready", async () => {
@@ -272,6 +395,13 @@ describe("INTERACTION-001 browser behavior", () => {
     expect(activityOpener.disabled).toBe(true);
     noteOpener.click();
     expect(kind.value).toBe("note");
+    const hiddenModuleReconnect = reconnectOpener();
+    await vi.waitFor(() =>
+      expect(hiddenModuleReconnect.dataset.interactionCaptureReady).toBe(
+        "true",
+      )
+    );
+    expect(hiddenModuleReconnect.disabled).toBe(true);
 
     captureMarkup();
     const activityOnly = vi.fn()
@@ -711,6 +841,236 @@ describe("INTERACTION-001 browser behavior", () => {
     expect(fetchMock).toHaveBeenCalledTimes(9);
     expect(created).toHaveBeenCalledOnce();
     globalThis.removeEventListener("kinship:interaction-created", created);
+  });
+
+  it("validates every dynamic reconnect open, owns ambiguous replay globally, and emits success once", async () => {
+    captureMarkup();
+    const firstWrite = deferred<Response>();
+    const posted: unknown[] = [];
+    let validations = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname.endsWith("/session")) {
+        return Promise.resolve(response(session()));
+      }
+      if (url.pathname.endsWith("/interaction-options")) {
+        return Promise.resolve(readyInteractionOptions());
+      }
+      if (url.pathname.endsWith("/people")) {
+        const selectedId = url.searchParams.get("selectedPersonId");
+        if (!selectedId) return Promise.resolve(readyPeople());
+        validations += 1;
+        const selected = validations === 1
+          ? selectedDirectoryPerson(otherId, "archived")
+          : validations === 2
+          ? selectedDirectoryPerson(personId)
+          : validations === 3
+          ? undefined
+          : selectedDirectoryPerson(otherId);
+        return Promise.resolve(response({
+          lifecycle: "active",
+          people: [],
+          ...(selected ? { selected } : {}),
+          status: "ready",
+        }));
+      }
+      if (url.pathname.endsWith("/interactions") && init?.method === "POST") {
+        posted.push(JSON.parse(String(init.body)));
+        return posted.length === 1
+          ? firstWrite.promise
+          : Promise.resolve(response({
+            record: {
+              emotions: [],
+              happenedAt: "2026-08-22T12:00:00.000Z",
+              id: "reconnect-activity",
+              kind: "activity",
+              participants: [{ id: otherId, name: "Grace" }],
+              summary: "Caught up",
+            },
+            status: "replayed",
+          }));
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const created = vi.fn();
+    const reconnected = vi.fn();
+    const events = new AbortController();
+    globalThis.addEventListener("kinship:interaction-created", created, {
+      signal: events.signal,
+    });
+    globalThis.addEventListener(
+      "kinship:today-reconnect-recorded",
+      reconnected,
+      {
+        signal: events.signal,
+      },
+    );
+    await mountInteractionCapture();
+    const status = document.querySelector<HTMLElement>(
+      "#interaction-capture-status",
+    )!;
+    const form = document.querySelector<HTMLFormElement>(
+      "#interaction-capture-form",
+    )!;
+    const submit = form.querySelector<HTMLButtonElement>("[type=submit]")!;
+    const cancel = form.querySelector<HTMLButtonElement>(
+      "[data-interaction-cancel]",
+    )!;
+    const malformed = reconnectOpener("not-a-uuid");
+    await vi.waitFor(() => expect(malformed.disabled).toBe(false));
+    malformed.click();
+    expect(validations).toBe(0);
+    expect(status.textContent).toMatch(/unavailable/i);
+    expect(document.activeElement).toBe(status);
+    expect(submit.disabled).toBe(true);
+    cancel.click();
+
+    const opener = reconnectOpener();
+    await vi.waitFor(() => expect(opener.disabled).toBe(false));
+    for (const count of [1, 2, 3]) {
+      opener.click();
+      await vi.waitFor(() => expect(validations).toBe(count));
+      await vi.waitFor(() =>
+        expect(status.textContent).toMatch(/unavailable/i)
+      );
+      expect(submit.disabled).toBe(true);
+      expect(document.activeElement).toBe(status);
+      cancel.click();
+      expect(document.activeElement).toBe(opener);
+    }
+    opener.click();
+    await vi.waitFor(() => expect(validations).toBe(4));
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+    const participants = form.elements.namedItem(
+      "participantIds",
+    ) as HTMLSelectElement;
+    expect([...participants.selectedOptions].map((entry) => entry.value))
+      .toEqual([otherId]);
+    const kind = form.elements.namedItem("kind") as HTMLSelectElement;
+    expect([kind.value, kind.disabled]).toEqual(["activity", true]);
+    (form.elements.namedItem("summary") as HTMLInputElement).value =
+      "Caught up";
+    (form.elements.namedItem("happenedAt") as HTMLInputElement).value =
+      "2026-08-22T12:00";
+    form.dispatchEvent(
+      new SubmitEvent("submit", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await vi.waitFor(() => expect(posted).toHaveLength(1));
+    const lateOpener = reconnectOpener(personId);
+    await vi.waitFor(() =>
+      expect(lateOpener.dataset.interactionCaptureReady).toBe("true")
+    );
+    expect(lateOpener.disabled).toBe(true);
+    lateOpener.click();
+    expect(validations).toBe(4);
+    firstWrite.reject(new Error("connection lost after dispatch"));
+    await vi.waitFor(() => expect(status.textContent).toMatch(/uncertain/i));
+    expect([created.mock.calls.length, reconnected.mock.calls.length]).toEqual([
+      0,
+      0,
+    ]);
+    await mountInteractionCapture();
+    (form.elements.namedItem("summary") as HTMLInputElement).value = "Tampered";
+    form.dispatchEvent(
+      new SubmitEvent("submit", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await vi.waitFor(() => expect(posted).toHaveLength(2));
+    expect(posted[1]).toEqual(posted[0]);
+    await vi.waitFor(() => expect(created).toHaveBeenCalledOnce());
+    expect(reconnected).toHaveBeenCalledOnce();
+    expect(reconnected.mock.calls[0]?.[0]).toMatchObject({
+      detail: { personId: otherId },
+    });
+    expect(
+      document.querySelector<HTMLDialogElement>(
+        "#interaction-capture-dialog",
+      )?.open,
+    ).toBe(false);
+    await mountInteractionCapture();
+    expect([created.mock.calls.length, reconnected.mock.calls.length]).toEqual([
+      1,
+      1,
+    ]);
+    events.abort();
+  });
+
+  it("keeps a final reconnect lifecycle rejection open and read-only until cancel and revalidation", async () => {
+    captureMarkup();
+    let validations = 0;
+    let writes = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), "http://localhost");
+        if (url.pathname.endsWith("/session")) {
+          return Promise.resolve(response(session()));
+        }
+        if (url.pathname.endsWith("/interaction-options")) {
+          return Promise.resolve(readyInteractionOptions());
+        }
+        if (url.pathname.endsWith("/people")) {
+          if (!url.searchParams.has("selectedPersonId")) {
+            return Promise.resolve(readyPeople());
+          }
+          validations += 1;
+          return Promise.resolve(response({
+            lifecycle: "active",
+            people: [],
+            selected: selectedDirectoryPerson(otherId),
+            status: "ready",
+          }));
+        }
+        if (url.pathname.endsWith("/interactions") && init?.method === "POST") {
+          writes += 1;
+          return Promise.resolve(response({
+            code: "archived_write_rejected",
+            detail:
+              "Restore every selected person before recording an interaction.",
+            status: 409,
+            title: "Archived person is read-only",
+            type: "about:blank",
+          }, 409));
+        }
+        throw new Error(`Unexpected request ${url}`);
+      }),
+    );
+    await mountInteractionCapture();
+    const opener = reconnectOpener();
+    await vi.waitFor(() => expect(opener.disabled).toBe(false));
+    opener.click();
+    const form = document.querySelector<HTMLFormElement>(
+      "#interaction-capture-form",
+    )!;
+    const submit = form.querySelector<HTMLButtonElement>("[type=submit]")!;
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+    (form.elements.namedItem("summary") as HTMLInputElement).value = "Too late";
+    (form.elements.namedItem("happenedAt") as HTMLInputElement).value =
+      "2026-08-22T12:00";
+    form.dispatchEvent(
+      new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() => expect(writes).toBe(1));
+    await vi.waitFor(() =>
+      expect(document.querySelector("#interaction-capture-status")?.textContent)
+        .toContain("Restore every selected person")
+    );
+    expect(submit.disabled).toBe(true);
+    expect(document.activeElement?.id).toBe("interaction-capture-status");
+    form.dispatchEvent(
+      new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+    );
+    expect(writes).toBe(1);
+    form.querySelector<HTMLButtonElement>("[data-interaction-cancel]")!.click();
+    opener.click();
+    await vi.waitFor(() => expect(validations).toBe(2));
+    expect(writes).toBe(1);
   });
 
   it("searches bounded participant and vocabulary pages beyond the first page", async () => {

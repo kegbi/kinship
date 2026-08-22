@@ -14,6 +14,7 @@ import {
 } from "./workspace-context.ts";
 
 const INTERACTION_CREATED_EVENT = "kinship:interaction-created";
+const TODAY_RECONNECT_RECORDED_EVENT = "kinship:today-reconnect-recorded";
 let captureAbort: AbortController | undefined;
 let captureForm: HTMLFormElement | undefined;
 type CaptureInput = Extract<
@@ -22,6 +23,7 @@ type CaptureInput = Extract<
 >;
 type CaptureIntent = {
   readonly input: CaptureInput;
+  readonly reconnectPersonId?: string;
   readonly workspaceId: string;
   phase: "pending" | "ambiguous";
 };
@@ -62,6 +64,13 @@ function displayName(person: {
 }): string {
   return [person.givenName, person.familyName].filter(Boolean).join(" ") ||
     person.nickname || "Unnamed person";
+}
+
+function canonicalUuid(value: string): string | undefined {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(value)
+    ? value.toLowerCase()
+    : undefined;
 }
 
 function renderOptionPage(
@@ -108,6 +117,28 @@ export async function mountInteractionCapture(): Promise<void> {
   captureAbort = abort;
   captureForm = form;
   const signal = abort.signal;
+  const configuredOpeners = new WeakSet<HTMLButtonElement>();
+  let configureOpener = (opener: HTMLButtonElement) => {
+    opener.disabled = true;
+    opener.dataset.interactionCaptureReady = "false";
+  };
+  const configureAddedOpeners = (node: Node) => {
+    if (!(node instanceof HTMLElement)) return;
+    if (node.matches("button[data-quick-capture]")) {
+      configureOpener(node as HTMLButtonElement);
+    }
+    node.querySelectorAll<HTMLButtonElement>("button[data-quick-capture]")
+      .forEach(configureOpener);
+  };
+  const openerObserver = new MutationObserver((records) => {
+    for (const record of records) {
+      record.addedNodes.forEach(configureAddedOpeners);
+    }
+  });
+  openerObserver.observe(document.body, { childList: true, subtree: true });
+  signal.addEventListener("abort", () => openerObserver.disconnect(), {
+    once: true,
+  });
   const fields = form.elements;
   const kind = fields.namedItem("kind") as HTMLSelectElement;
   const participants = fields.namedItem("participantIds") as HTMLSelectElement;
@@ -277,6 +308,12 @@ export async function mountInteractionCapture(): Promise<void> {
   setKind();
 
   let activeOpener: HTMLButtonElement | undefined;
+  let activeReconnectPersonId: string | undefined;
+  let reconnectDegraded = false;
+  let openGeneration = 0;
+  const currentOpeners = () => [...document.querySelectorAll<HTMLButtonElement>(
+    "button[data-quick-capture]",
+  )];
   const openerAvailable = (opener: HTMLButtonElement): boolean => {
     const intended = opener.dataset.interactionIntendedKind as
       | "activity"
@@ -292,7 +329,7 @@ export async function mountInteractionCapture(): Promise<void> {
       (control as HTMLButtonElement | HTMLInputElement | HTMLSelectElement)
         .disabled = Boolean(phase);
     }
-    for (const opener of openers) {
+    for (const opener of currentOpeners()) {
       opener.disabled = Boolean(phase) || !openerAvailable(opener);
     }
     if (phase === "ambiguous") submit.disabled = false;
@@ -302,10 +339,16 @@ export async function mountInteractionCapture(): Promise<void> {
           ? !availability.activity
           : !availability.note;
       }
+      kind.disabled = Boolean(activeReconnectPersonId) || reconnectDegraded;
       setKind();
+      submit.disabled = reconnectDegraded;
     }
   };
   const resetDraft = () => {
+    openGeneration += 1;
+    activeReconnectPersonId = undefined;
+    reconnectDegraded = false;
+    form.removeAttribute("aria-busy");
     form.reset();
     renderOptionPage(participants, initialPeople);
     renderOptionPage(
@@ -324,6 +367,7 @@ export async function mountInteractionCapture(): Promise<void> {
     if (activityTypesMore) activityTypesMore.hidden = !activityTypeCursor;
     if (emotionsMore) emotionsMore.hidden = !emotionCursor;
     kind.value = availability.activity ? "activity" : "note";
+    kind.disabled = false;
     happenedAt.value = localDateTime();
     if (preferred) {
       const selected = [...participants.options].find((entry) =>
@@ -343,9 +387,11 @@ export async function mountInteractionCapture(): Promise<void> {
     if (dirty && !globalThis.confirm("Discard this unsaved interaction?")) {
       return;
     }
+    const dismissedOpener = activeOpener;
+    activeOpener = undefined;
     setDialogOpen(dialog, false);
     resetDraft();
-    activeOpener?.focus();
+    dismissedOpener?.focus();
   };
 
   const loadPeoplePage = async (cursor?: string) => {
@@ -449,16 +495,43 @@ export async function mountInteractionCapture(): Promise<void> {
     ) void loadVocabulary("emotion", emotionCursor);
   }, { signal });
 
-  const openCapture = (
+  const selectOnly = (personId: string): boolean => {
+    const selected = [...participants.options].find((entry) =>
+      entry.value.toLowerCase() === personId
+    );
+    if (!selected) return false;
+    for (const entry of participants.options) entry.selected = false;
+    selected.selected = true;
+    return true;
+  };
+  const degradeReconnect = () => {
+    form.removeAttribute("aria-busy");
+    activeReconnectPersonId = undefined;
+    reconnectDegraded = true;
+    kind.value = "activity";
+    kind.disabled = true;
+    submit.disabled = true;
+    status.textContent =
+      "Quick capture for this person is unavailable. The reconnect list is unchanged.";
+    status.tabIndex = -1;
+    status.focus();
+  };
+  const openCapture = async (
     opener: HTMLButtonElement,
     intended: "activity" | "note" | undefined,
-  ) => {
+  ): Promise<void> => {
     if (opener.disabled || captureIntent) return;
     if (
       dialog.open && activeOpener === opener &&
       (!intended || kind.value === intended)
     ) return;
     activeOpener = opener;
+    const current = ++openGeneration;
+    activeReconnectPersonId = undefined;
+    reconnectDegraded = false;
+    form.removeAttribute("aria-busy");
+    submit.disabled = false;
+    kind.disabled = false;
     if (intended && availability[intended]) {
       kind.value = intended;
       setKind();
@@ -466,13 +539,68 @@ export async function mountInteractionCapture(): Promise<void> {
     status.textContent = "";
     setDialogOpen(dialog, true);
     kind.focus();
+    if (opener.dataset.todayReconnectCapture === undefined) return;
+    kind.value = "activity";
+    setKind();
+    const requestedPersonId = canonicalUuid(
+      opener.dataset.interactionPersonId ?? "",
+    );
+    if (!requestedPersonId) {
+      degradeReconnect();
+      return;
+    }
+    form.setAttribute("aria-busy", "true");
+    submit.disabled = true;
+    status.textContent = "Checking reconnect person…";
+    status.tabIndex = -1;
+    status.focus();
+    const selectedPage = await listPeople({
+      limit: 1,
+      selectedPersonId: requestedPersonId,
+    }, workspaceId).catch(() => undefined);
+    if (
+      signal.aborted || current !== openGeneration || activeOpener !== opener
+    ) return;
+    const selected = selectedPage?.ok ? selectedPage.value.selected : undefined;
+    if (
+      !selected || canonicalUuid(selected.id) !== requestedPersonId ||
+      selected.lifecycle !== "active"
+    ) {
+      degradeReconnect();
+      return;
+    }
+    renderOptionPage(participants, [
+      ...[...participants.options].map((entry) => ({
+        id: entry.value,
+        name: entry.textContent ?? entry.value,
+      })),
+      { id: selected.id, name: displayName(selected) },
+    ]);
+    if (!selectOnly(requestedPersonId)) {
+      degradeReconnect();
+      return;
+    }
+    form.removeAttribute("aria-busy");
+    activeReconnectPersonId = requestedPersonId;
+    kind.value = "activity";
+    kind.disabled = true;
+    setKind();
+    status.textContent = "";
+    submit.disabled = false;
+    (fields.namedItem("summary") as HTMLInputElement).focus();
   };
-  for (const opener of openers) {
+  configureOpener = (opener: HTMLButtonElement) => {
+    if (configuredOpeners.has(opener)) {
+      opener.disabled = Boolean(captureIntent) || !openerAvailable(opener);
+      opener.dataset.interactionCaptureReady = "true";
+      return;
+    }
+    configuredOpeners.add(opener);
     const intended = opener.dataset.interactionIntendedKind as
       | "activity"
       | "note"
       | undefined;
-    opener.addEventListener("click", () => openCapture(opener, intended), {
+    opener.addEventListener("click", () => void openCapture(opener, intended), {
       signal,
     });
     opener.addEventListener("keydown", (event) => {
@@ -482,10 +610,17 @@ export async function mountInteractionCapture(): Promise<void> {
         return;
       }
       event.preventDefault();
-      if (!event.repeat) openCapture(opener, intended);
+      if (!event.repeat) void openCapture(opener, intended);
     }, { signal });
     opener.dataset.interactionCaptureReady = "true";
-    opener.disabled = !openerAvailable(opener);
+    opener.disabled = Boolean(captureIntent) || !openerAvailable(opener);
+  };
+  currentOpeners().forEach(configureOpener);
+  if (captureIntent) {
+    status.textContent = captureIntent.phase === "ambiguous"
+      ? "The save outcome is uncertain. Retry this exact interaction."
+      : "Saving interaction…";
+    setIntentLock(captureIntent.phase);
   }
   form.querySelector<HTMLButtonElement>("[data-interaction-cancel]")
     ?.addEventListener("click", dismissCapture, { signal });
@@ -496,6 +631,7 @@ export async function mountInteractionCapture(): Promise<void> {
 
   const persistIntent = async (intent: CaptureIntent) => {
     saving = true;
+    let focusSubmit = true;
     intent.phase = "pending";
     setIntentLock("pending");
     status.textContent = "Saving interaction…";
@@ -512,7 +648,10 @@ export async function mountInteractionCapture(): Promise<void> {
         captureIntent = undefined;
         requestId = crypto.randomUUID();
         status.textContent = result.problem.detail;
-        submit.focus();
+        if (intent.reconnectPersonId) {
+          reconnectDegraded = true;
+          focusSubmit = false;
+        } else submit.focus();
         return;
       }
       captureIntent = undefined;
@@ -526,6 +665,21 @@ export async function mountInteractionCapture(): Promise<void> {
           detail: result.value.record,
         }),
       );
+      if (intent.reconnectPersonId) {
+        focusSubmit = false;
+        setDialogOpen(dialog, false);
+        const reconnectPersonId = intent.reconnectPersonId;
+        activeOpener = undefined;
+        resetDraft();
+        globalThis.dispatchEvent(
+          new CustomEvent(TODAY_RECONNECT_RECORDED_EVENT, {
+            detail: {
+              personId: reconnectPersonId,
+              record: result.value.record,
+            },
+          }),
+        );
+      }
     } catch {
       if (captureIntent === intent) {
         intent.phase = "ambiguous";
@@ -535,13 +689,21 @@ export async function mountInteractionCapture(): Promise<void> {
     } finally {
       saving = false;
       setIntentLock(captureIntent === intent ? intent.phase : undefined);
-      submit.focus();
+      if (reconnectDegraded) {
+        status.tabIndex = -1;
+        status.focus();
+      } else if (focusSubmit) submit.focus();
     }
   };
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (saving) return;
+    if (reconnectDegraded) {
+      status.tabIndex = -1;
+      status.focus();
+      return;
+    }
     if (captureIntent) {
       if (captureIntent.phase === "ambiguous") {
         await persistIntent(captureIntent);
@@ -618,6 +780,9 @@ export async function mountInteractionCapture(): Promise<void> {
     const intent: CaptureIntent = {
       input: frozenInput,
       phase: "pending",
+      ...(activeReconnectPersonId
+        ? { reconnectPersonId: activeReconnectPersonId }
+        : {}),
       workspaceId,
     };
     captureIntent = intent;
@@ -659,6 +824,7 @@ function renderInteraction(entry: ActivityOrNoteInteraction): HTMLLIElement {
 }
 
 export async function mountTodayInteractions(): Promise<void> {
+  todayAbort?.abort();
   const favoriteRegion = document.querySelector<HTMLElement>(
     "#today-favorite-notes-region",
   );
@@ -684,7 +850,6 @@ export async function mountTodayInteractions(): Promise<void> {
     !favoriteRegion || !favoriteState || !favorites || !favoriteRetry ||
     !recentState || !recent || !recentRetry
   ) return;
-  todayAbort?.abort();
   const abort = new AbortController();
   todayAbort = abort;
   let favoriteGeneration = 0;
@@ -753,13 +918,15 @@ export async function mountTodayInteractions(): Promise<void> {
   recentRetry.addEventListener("click", () => void loadRecent(), {
     signal: abort.signal,
   });
-  await Promise.all([loadFavorites(), loadRecent()]);
-  globalThis.addEventListener(INTERACTION_CREATED_EVENT, () => {
-    void loadFavorites();
+  globalThis.addEventListener(INTERACTION_CREATED_EVENT, (event) => {
+    const kind = (event as CustomEvent<{ readonly kind?: unknown }>).detail
+      ?.kind;
+    if (kind !== "activity") void loadFavorites();
     void loadRecent();
   }, {
     signal: abort.signal,
   });
+  await Promise.all([loadFavorites(), loadRecent()]);
 }
 
 export async function mountActivityReport(
