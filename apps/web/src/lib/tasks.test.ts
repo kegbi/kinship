@@ -94,6 +94,10 @@ function deferredResponse() {
   return { promise, resolve };
 }
 
+function reconnect(): void {
+  globalThis.dispatchEvent(new CustomEvent("kinship:today-reconnect-recorded"));
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   document.head.innerHTML = "";
@@ -1455,6 +1459,263 @@ describe("PLANNING-001 task browser behavior", () => {
       )
         .toBe("2026-08-20");
       expect(document.activeElement?.id).toBe("today-upcoming-state");
+    },
+  );
+
+  it("owns reconnect refreshes before the initial await and across remounts", async () => {
+    todayMarkup();
+    const obsoleteInitial = deferredResponse();
+    const obsoleteRemount = deferredResponse();
+    const firstReconnect = deferredResponse();
+    const remountedReconnect = deferredResponse();
+    const projections = [
+      obsoleteInitial.promise,
+      firstReconnect.promise,
+      obsoleteRemount.promise,
+      remountedReconnect.promise,
+    ];
+    let projection = 0;
+    const fetchMock = vi.fn((input: string | URL | Request) =>
+      String(input).includes("/session")
+        ? Promise.resolve(response(session))
+        : projections[projection++]!
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const projectionCalls = () =>
+      fetchMock.mock.calls.filter((call) =>
+        String(call[0]).includes("/today/attention")
+      ).length;
+
+    const mounting = mountTodayTasks();
+    await vi.waitFor(() => expect(projectionCalls()).toBe(1));
+    reconnect();
+    await vi.waitFor(() => expect(projectionCalls()).toBe(2));
+    firstReconnect.resolve(response({
+      ...attention([{
+        dueAt: task.dueAt,
+        id: task.id,
+        kind: "task",
+        title: "First reconnect",
+      }]),
+      date: "2026-08-19",
+    }));
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain("First reconnect")
+    );
+    obsoleteInitial.resolve(
+      response({ ...attention(), date: "2026-08-17" }),
+    );
+    await mounting;
+    expect(
+      document.querySelector<HTMLTimeElement>("[data-today-date]")?.dateTime,
+    )
+      .toBe("2026-08-19");
+
+    const remounting = mountTodayTasks();
+    await vi.waitFor(() => expect(projectionCalls()).toBe(3));
+    reconnect();
+    await vi.waitFor(() => expect(projectionCalls()).toBe(4));
+    remountedReconnect.resolve(response({
+      ...attention([], [{
+        dueAt: task.dueAt,
+        id: task.id,
+        kind: "task",
+        title: "Owned reconnect",
+      }]),
+      date: "2026-08-21",
+    }));
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain("Owned reconnect")
+    );
+    obsoleteRemount.resolve(
+      response({ ...attention(), date: "2026-08-16" }),
+    );
+    await remounting;
+    expect(
+      document.querySelector<HTMLTimeElement>("[data-today-date]")?.dateTime,
+    )
+      .toBe("2026-08-21");
+  });
+
+  it.each(
+    [
+      ["attention", 503, 200],
+      ["upcoming", 200, 503],
+    ] as const,
+  )(
+    "makes the newest reconnect supersede an independent %s retry (%s then %s)",
+    async (region, olderStatus, newerStatus) => {
+      todayMarkup();
+      const regional = deferredResponse();
+      const olderReconnect = deferredResponse();
+      const newerReconnect = deferredResponse();
+      const fetchMock = todayFetch(
+        response(attention([{
+          dueAt: task.dueAt,
+          id: task.id,
+          kind: "task",
+          title: "Attention base",
+        }], [{
+          dueAt: task.dueAt,
+          id: task.id,
+          kind: "task",
+          title: "Upcoming base",
+        }])),
+        regional.promise,
+        olderReconnect.promise,
+        newerReconnect.promise,
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const projectionCalls = () =>
+        fetchMock.mock.calls.filter((call) =>
+          String(call[0]).includes("/today/attention")
+        ).length;
+      await mountTodayTasks();
+      const retry = document.querySelector<HTMLButtonElement>(
+        `#today-${region}-retry`,
+      )!;
+      retry.focus();
+      retry.click();
+      await vi.waitFor(() => expect(projectionCalls()).toBe(2));
+      reconnect();
+      await vi.waitFor(() => expect(projectionCalls()).toBe(3));
+      reconnect();
+      await vi.waitFor(() => expect(projectionCalls()).toBe(4));
+      regional.resolve(response({ ...attention(), date: "2026-08-18" }));
+      const result = (status: number, label: string, date: string) =>
+        status === 200
+          ? response({
+            ...attention([{
+              dueAt: task.dueAt,
+              id: task.id,
+              kind: "task",
+              title: `Attention ${label}`,
+            }], [{
+              dueAt: task.dueAt,
+              id: task.id,
+              kind: "task",
+              title: `Upcoming ${label}`,
+            }]),
+            date,
+          })
+          : response({}, status);
+      newerReconnect.resolve(result(newerStatus, "newest", "2026-08-21"));
+      await vi.waitFor(() =>
+        expect(document.body.textContent).not.toMatch(
+          /Loading (relationship|upcoming)/,
+        )
+      );
+      olderReconnect.resolve(result(olderStatus, "obsolete", "2026-08-20"));
+      await Promise.resolve();
+      if (newerStatus === 200) {
+        expect(document.querySelector("#today-overdue-list")?.textContent)
+          .toContain("Attention newest");
+        expect(document.querySelector("#today-upcoming-list")?.textContent)
+          .toContain("Upcoming newest");
+        expect(
+          document.querySelector<HTMLTimeElement>("[data-today-date]")
+            ?.dateTime,
+        )
+          .toBe("2026-08-21");
+      } else {
+        expect(document.querySelector("#today-overdue-list")?.textContent)
+          .toContain("Attention base");
+        expect(document.querySelector("#today-upcoming-list")?.textContent)
+          .toContain("Upcoming base");
+        expect(document.getElementById("today-attention-retry")!.hidden)
+          .toBe(false);
+        expect(document.getElementById("today-upcoming-retry")!.hidden)
+          .toBe(false);
+      }
+      expect(document.activeElement).toBe(retry);
+    },
+  );
+
+  it.each(["confirmed", "failed"] as const)(
+    "preserves task completion ownership when reconnect settles while PUT is %s",
+    async (outcome) => {
+      todayMarkup();
+      const mutation = deferredResponse();
+      const reconnectRefresh = deferredResponse();
+      const completion = deferredResponse();
+      const item = {
+        dueAt: task.dueAt,
+        id: task.id,
+        kind: "task",
+        person: task.person,
+        title: "Completion owner",
+      };
+      const projections = [
+        Promise.resolve(response(attention([item], [item]))),
+        reconnectRefresh.promise,
+        completion.promise,
+      ];
+      let projection = 0;
+      const fetchMock = vi.fn((
+        input: string | URL | Request,
+        init?: RequestInit,
+      ) =>
+        String(input).includes("/session")
+          ? Promise.resolve(response(session))
+          : init?.method === "PUT"
+          ? mutation.promise
+          : projections[projection++]!
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      await mountTodayTasks();
+      const complete = document.querySelector<HTMLButtonElement>(
+        "[data-today-complete]",
+      )!;
+      complete.click();
+      document.querySelector<HTMLAnchorElement>(".attention-title")!.focus();
+      reconnect();
+      await vi.waitFor(() => expect(projection).toBe(2));
+      reconnectRefresh.resolve(response({
+        ...attention([item], [item]),
+        date: "2026-08-20",
+      }));
+      await vi.waitFor(() =>
+        expect(
+          document.querySelector<HTMLTimeElement>("[data-today-date]")
+            ?.dateTime,
+        ).toBe("2026-08-20")
+      );
+      expect(document.querySelector("#today-attention-state")?.textContent)
+        .toBe("Completing task…");
+      const liveComplete = document.querySelector<HTMLButtonElement>(
+        "[data-today-complete]",
+      )!;
+      expect(liveComplete.disabled).toBe(true);
+      expect(document.activeElement).toBe(
+        document.querySelector<HTMLAnchorElement>(".attention-title"),
+      );
+
+      mutation.resolve(
+        outcome === "confirmed"
+          ? response({ status: "saved", task })
+          : response({}, 503),
+      );
+      if (outcome === "confirmed") {
+        await vi.waitFor(() => expect(projection).toBe(3));
+        completion.resolve(response({
+          ...attention(),
+          date: "2026-08-22",
+        }));
+        await vi.waitFor(() =>
+          expect(document.querySelectorAll(".attention-item")).toHaveLength(0)
+        );
+        expect(
+          document.querySelector<HTMLTimeElement>("[data-today-date]")
+            ?.dateTime,
+        )
+          .toBe("2026-08-22");
+      } else {
+        await vi.waitFor(() =>
+          expect(document.querySelector("#today-attention-state")?.textContent)
+            .toMatch(/could not be completed/i)
+        );
+        expect(document.activeElement).toBe(liveComplete);
+      }
     },
   );
 
