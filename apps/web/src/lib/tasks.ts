@@ -633,6 +633,7 @@ export async function mountTodayAttention(): Promise<void> {
     if (href) {
       element.classList.add("today-touch-target");
       (element as HTMLAnchorElement).href = href;
+      if (item.kind === "task") element.dataset.taskId = item.id;
     }
     return element;
   };
@@ -721,6 +722,14 @@ export async function mountTodayAttention(): Promise<void> {
     present(focus && focusOperationId === operation.id ? focus : undefined);
   };
   const refresh = async (trigger: Trigger, focus?: FocusToken) => {
+    const focusedTask = trigger === "initial" && !focus &&
+        document.activeElement instanceof HTMLElement &&
+        document.activeElement.dataset.taskId
+      ? {
+        id: document.activeElement.dataset.taskId,
+        tag: document.activeElement.tagName,
+      }
+      : undefined;
     const operation = begin(trigger, focus);
     const session = await resolveWorkspaceSession();
     if (!owns(operation)) return false;
@@ -982,6 +991,13 @@ export async function mountTodayAttention(): Promise<void> {
         todayDate.dateTime = snapshot.date;
         todayDate.textContent = todayText;
       }
+      if (focusedTask) {
+        [...document.querySelectorAll<HTMLElement>("[data-task-id]")].find(
+          (control) =>
+            control.dataset.taskId === focusedTask.id &&
+            control.tagName === focusedTask.tag,
+        )?.focus();
+      }
       settle(operation, focus);
       return true;
     } catch {
@@ -1034,6 +1050,9 @@ export async function mountTodayAttention(): Promise<void> {
   );
   const surface: TodaySurface = { epoch, present, refresh, workspaceId };
   currentTodaySurface = surface;
+  globalThis.addEventListener("kinship:today-reconnect-recorded", () => {
+    void refresh("initial");
+  }, { signal: abort.signal });
   await refresh("initial");
 }
 
