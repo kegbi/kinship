@@ -99,6 +99,14 @@ export type {
   InteractionWorkspaceTransaction,
   WorkspaceInteractionOption,
 } from "./application/interaction_workspace_boundary.ts";
+export { createRecentPeopleManagement } from "./application/recent_people.ts";
+export type {
+  RecentPeopleActor,
+  RecentPeopleManagement,
+  RecentPeopleRepository,
+  RecentPeopleTransaction,
+} from "./application/recent_people.ts";
+export { PostgresRecentPeopleRepository } from "./adapters/postgres/recent_people.ts";
 export type {
   ActiveWorkspaceContext,
   ActiveWorkspaceResolver,

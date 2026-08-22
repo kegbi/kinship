@@ -7,6 +7,7 @@ import {
   type PersonIdentity,
   type PersonProfileIdentity,
   type ProblemDetails,
+  recordPersonView,
   restorePerson,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
@@ -681,6 +682,9 @@ export async function mountPeopleProfile(): Promise<void> {
     result.value.person,
     result.value.dueInformation,
     result.value.status,
+  );
+  void recordPersonView(id, session.session.workspace.id).catch(() =>
+    undefined
   );
   mountLifecycleActions(
     profile,

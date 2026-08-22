@@ -29,3 +29,10 @@ export type {
   TodayAttentionRepository,
 } from "./application/get_today_attention.ts";
 export { PostgresTodayAttentionRepository } from "./adapters/postgres/today_attention_repository.ts";
+export { createTodayRecentPeople } from "./application/get_today_recent_people.ts";
+export type {
+  TodayRecentPeople,
+  TodayRecentPeopleRepository,
+  TodayRecentPerson,
+} from "./application/get_today_recent_people.ts";
+export { PostgresTodayRecentPeopleRepository } from "./adapters/postgres/today_recent_people_repository.ts";

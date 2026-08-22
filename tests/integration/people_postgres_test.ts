@@ -4786,6 +4786,198 @@ Deno.test({
 });
 
 Deno.test({
+  name:
+    "TODAY-001 PostgreSQL recent views serialize by member and remain tenant-safe",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const fixture = await register("rv-owner@example.test", "Recent circle");
+    const foreign = await register("rv-foreign@example.test", "Other circle");
+    const add = async (owner: Fixture, givenName: string) => {
+      const created = await createPerson(owner, {
+        givenName,
+        isPartial: false,
+      });
+      const body = await created.json() as {
+        readonly person: { readonly id: string };
+      };
+      assert(created.status === 201, `${givenName} fixture creates`);
+      return body.person.id;
+    };
+    const [adaId, graceId, foreignId, deletedId] = await Promise.all([
+      add(fixture, "Ada"),
+      add(fixture, "Grace"),
+      add(foreign, "Foreign"),
+      add(fixture, "Deleted"),
+    ]);
+    const peerMemberId = crypto.randomUUID();
+    const [foreignAccount] = await sql<{ readonly userId: string }[]>`
+      select user_id::text as "userId" from crm.workspace_members
+      where id = ${foreign.memberId}::uuid
+    `;
+    assert(foreignAccount, "peer account exists");
+    await sql.begin(async (transaction) => {
+      await transaction`
+        insert into crm.workspace_members (
+          id, workspace_id, user_id, role, status, joined_at
+        ) values (
+          ${peerMemberId}, ${fixture.workspaceId}, ${foreignAccount.userId},
+          'member', 'active', now()
+        )
+      `;
+      await transaction`
+        insert into crm.member_preferences (member_id)
+        values (${peerMemberId})
+      `;
+    });
+    const peer: Fixture = {
+      cookie: foreign.cookie,
+      memberId: peerMemberId,
+      workspaceId: fixture.workspaceId,
+    };
+    await sql`
+      update crm.people set archived_at = now()
+      where id = ${adaId}::uuid and workspace_id = ${fixture.workspaceId}::uuid
+    `;
+    await sql`
+      update crm.people set deleted_at = now()
+      where id = ${deletedId}::uuid and workspace_id = ${fixture.workspaceId}::uuid
+    `;
+    await sql`
+      update crm.member_preferences
+      set ui_state = '{"dismissedWelcome":true,"recentPersonIds":"bad"}'::jsonb
+      where member_id = ${fixture.memberId}::uuid
+    `;
+    const view = (personId: string) =>
+      configured.app.request(
+        `http://localhost/api/v1/people/${personId}/view`,
+        {
+          headers: {
+            cookie: fixture.cookie,
+            origin: "http://localhost",
+            "X-Workspace-Id": fixture.workspaceId,
+          },
+          method: "POST",
+        },
+      );
+    assert((await view(foreignId)).status === 404, "foreign view is rejected");
+
+    const clientOptions = { max: 1, onnotice: () => undefined };
+    const locker = postgres(databaseUrl, clientOptions);
+    const observer = postgres(databaseUrl, clientOptions);
+    let signalLocked!: (pid: number) => void;
+    const locked = new Promise<number>((resolve) => signalLocked = resolve);
+    let releaseLocker!: () => void;
+    const release = new Promise<void>((resolve) => releaseLocker = resolve);
+    const lockerWork = locker.begin(async (transaction) => {
+      const [backend] = await transaction<{ readonly pid: number }[]>`
+        select pg_backend_pid()::int as pid
+      `;
+      assert(backend, "recent-view locker PID exists");
+      await transaction`
+        select member_id from crm.member_preferences
+        where member_id = ${fixture.memberId}::uuid for update
+      `;
+      signalLocked(backend.pid);
+      await release;
+    });
+    const lockerPid = await locked;
+    const first = view(adaId);
+    const waiters = async (blockerPid: number, expected: number) => {
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const rows = await observer<{ readonly pid: number }[]>`
+          select activity.pid::int from pg_stat_activity activity
+          where ${blockerPid}::int = any(pg_blocking_pids(activity.pid))
+            and activity.wait_event_type = 'Lock'
+          order by activity.pid
+        `;
+        if (rows.length === expected) return rows.map((row) => row.pid);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error(`expected ${expected} waiters blocked by ${blockerPid}`);
+    };
+    try {
+      const [firstPid] = await waiters(lockerPid, 1);
+      assert(firstPid, "first recent-view backend PID exists");
+      const second = view(graceId);
+      await waiters(firstPid, 1);
+      releaseLocker();
+      const responses = await Promise.all([first, second]);
+      await lockerWork;
+      assert(
+        responses.every((response) => response.status === 200),
+        "queued views commit",
+      );
+
+      const today = (owner: Fixture) =>
+        configured.app.request("http://localhost/api/v1/today/recent-people", {
+          headers: {
+            cookie: owner.cookie,
+            "X-Workspace-Id": owner.workspaceId,
+          },
+        });
+      const recent = await today(fixture);
+      const body = await recent.json() as Record<string, unknown>;
+      const people = body.people as
+        | readonly { readonly archived: boolean; readonly id: string }[]
+        | undefined;
+      const [state] = await sql<{
+        readonly stored: string;
+        readonly type: string;
+      }[]>`
+        select ui_state::text as stored, jsonb_typeof(ui_state) as type
+        from crm.member_preferences
+        where member_id = ${fixture.memberId}::uuid
+      `;
+      assert(
+        recent.status === 200 && people?.[0]?.id === graceId &&
+          people[1]?.id === adaId && people[1]?.archived === true &&
+          state?.stored.includes('"dismissedWelcome": true'),
+        `serialized ordering, archived visibility, or sparse state was lost: ${
+          JSON.stringify({ body, responseStatus: recent.status, state })
+        }`,
+      );
+      const staleId = crypto.randomUUID();
+      await sql`
+        update crm.member_preferences
+        set ui_state = jsonb_set(
+          ui_state, '{recentPersonIds}', jsonb_build_array(
+            'invalid'::text, ${staleId}::text, ${deletedId}::text,
+            ${graceId.toUpperCase()}::text, ${graceId}::text, ${adaId}::text
+          )
+        )
+        where member_id = ${fixture.memberId}::uuid
+      `;
+      const peerRecent = await today(peer);
+      const ownerAgain = await today(fixture);
+      const peerPeople = (await peerRecent.json() as {
+        readonly people: readonly { readonly id: string }[];
+      }).people;
+      const ownerPeople = (await ownerAgain.json() as {
+        readonly people: readonly { readonly id: string }[];
+      }).people;
+      assert(
+        peerPeople.length === 0 && ownerPeople[0]?.id === graceId &&
+          ownerPeople[1]?.id === adaId,
+        `same-workspace member history leaked or changed owner ordering: ${
+          JSON.stringify({ ownerPeople, peerPeople })
+        }`,
+      );
+      const foreignRecent = await today(foreign);
+      assert(
+        (await foreignRecent.json() as { readonly people: unknown[] }).people
+          .length === 0,
+        "one member's recent history leaked to another tenant",
+      );
+    } finally {
+      releaseLocker();
+      await Promise.allSettled([lockerWork]);
+      await Promise.all([locker.end(), observer.end()]);
+    }
+  },
+});
+
+Deno.test({
   name: "PEOPLE-001 PostgreSQL resources close",
   sanitizeOps: false,
   sanitizeResources: false,

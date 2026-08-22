@@ -602,6 +602,8 @@ export type TodayAttentionItem =
   | { readonly dueAt: string; readonly id: string; readonly kind: "life-event"; readonly occursOn: string; readonly person?: TodayAttentionPerson; readonly reminderStatus: "failed" | "manual_attention" | "pending" | "retry"; readonly title: string }
   | { readonly dueAt: string; readonly id: string; readonly kind: "cadence"; readonly lastContactedAt?: string; readonly person: TodayAttentionPerson; readonly title: string };
 export interface TodayAttention { readonly attention: { readonly nextSevenDays: readonly TodayAttentionItem[]; readonly overdue: readonly TodayAttentionItem[]; readonly today: readonly TodayAttentionItem[] }; readonly date: string; readonly status: "ready"; readonly timezone: string; readonly upcoming: readonly TodayAttentionItem[]; }
+export interface TodayRecentPerson { readonly archived: boolean; readonly id: string; readonly name: string; }
+export interface TodayRecentPeople { readonly people: readonly TodayRecentPerson[]; readonly status: "ready"; }
 export interface TodayReminderPerson { readonly archived: boolean; readonly id: string; readonly name: string; }
 interface TodayReminderBase { readonly attemptCount: number; readonly deliverAt: string; readonly id: string; readonly person: TodayReminderPerson; readonly title: string; readonly visibleAt?: string; }
 export type TodayReminderItem =
@@ -701,6 +703,16 @@ export function parseTodayAttention(value: unknown): TodayAttention {
     validGroup(value.attention) && Array.isArray(value.upcoming) && value.upcoming.length <= 30 && value.upcoming.every(validTodayAttentionItem);
   if (!valid) throw new TypeError("Invalid Today attention response.");
   return value as unknown as TodayAttention;
+}
+
+export function parseTodayRecentPeople(value: unknown): TodayRecentPeople {
+  const valid = exactTodayRecord(value, ["people", "status"]) && value.status === "ready" &&
+    Array.isArray(value.people) && value.people.length <= 8 && value.people.every((person) =>
+      exactTodayRecord(person, ["archived", "id", "name"]) && typeof person.archived === "boolean" &&
+      typeof person.id === "string" && todayReminderUuid.test(person.id) && typeof person.name === "string"
+    );
+  if (!valid) throw new TypeError("Invalid Today recent people response.");
+  return value as unknown as TodayRecentPeople;
 }
 
 export interface RelationshipType {
@@ -1030,6 +1042,10 @@ export function getPerson(personId: string, workspaceId?: string): Promise<ApiRe
   return request(`/api/v1/people/${encodeURIComponent(personId)}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
+export function recordPersonView(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly status: "recorded" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/view`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
 export function recordInteraction(input: InteractionInput, workspaceId?: string): Promise<ApiResult<{ readonly record: Interaction; readonly status: "created" }>> {
   return request("/api/v1/interactions", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
 }
@@ -1142,6 +1158,12 @@ export function getTodayReminders(workspaceId?: string): Promise<ApiResult<Today
 export function getTodayAttention(workspaceId?: string): Promise<ApiResult<TodayAttention>> {
   return request<unknown>("/api/v1/today/attention", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined }).then((result): ApiResult<TodayAttention> =>
     result.ok ? { ok: true, value: parseTodayAttention(result.value) } : result
+  );
+}
+
+export function getTodayRecentPeople(workspaceId?: string): Promise<ApiResult<TodayRecentPeople>> {
+  return request<unknown>("/api/v1/today/recent-people", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined }).then((result): ApiResult<TodayRecentPeople> =>
+    result.ok ? { ok: true, value: parseTodayRecentPeople(result.value) } : result
   );
 }
 

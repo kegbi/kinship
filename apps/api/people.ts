@@ -14,11 +14,15 @@ import type {
   ProfileFactUpdateInput,
 } from "../../packages/backend/modules/people/public.ts";
 import type { PersonProfile } from "../../packages/backend/read-models/person-profile/public.ts";
+import type { TodayRecentPeople } from "../../packages/backend/read-models/today/public.ts";
 import type {
   PeopleDirectory,
   PeopleTagOptions,
 } from "../../packages/backend/read-models/people-directory/public.ts";
-import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
+import type {
+  createProtectedSessionCoordinator,
+  RecentPeopleManagement,
+} from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
@@ -31,7 +35,9 @@ export interface PeopleHttpServices {
   readonly profileFacts?: ProfileFactManagement;
   readonly profile: PersonProfile;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
+  readonly recentPeople?: RecentPeopleManagement;
   readonly tagOptions: PeopleTagOptions;
+  readonly todayRecentPeople?: TodayRecentPeople;
 }
 
 const personSchema = z.object({
@@ -705,6 +711,120 @@ export function createPeopleRoutes(services: PeopleHttpServices): Hono {
       person: result.person,
       status: result.status,
     });
+  });
+  routes.post("/api/v1/people/:personId/view", async (context) => {
+    const forbidden = requireOrigin(context, services.browserSecurity);
+    if (forbidden) return forbidden;
+    const parsed = personIdSchema.safeParse(context.req.param("personId"));
+    const body = await context.req.text().catch(() => undefined);
+    if (!parsed.success || body !== "") {
+      return problem(
+        context,
+        400,
+        "person_view_invalid",
+        "Invalid person view",
+        "Use a canonical person identifier and an empty request body.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const profile = await services.profile.get(resolved, parsed.data).catch(
+      () => undefined,
+    );
+    if (!profile) {
+      return problem(
+        context,
+        503,
+        "person_view_unavailable",
+        "Person view unavailable",
+        "The person could not be resolved before updating recent history.",
+      );
+    }
+    if (profile.status === "forbidden") {
+      return problem(
+        context,
+        403,
+        "people_forbidden",
+        "Person unavailable",
+        "Your active workspace membership no longer permits this view.",
+      );
+    }
+    if (profile.status === "not-found") {
+      return problem(
+        context,
+        404,
+        "person_not_found",
+        "Person not found",
+        "No viewable person with this identifier exists in the current workspace.",
+      );
+    }
+    const result = await services.recentPeople?.record(
+      resolved,
+      parsed.data,
+    ).catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "person_view_unavailable",
+        "Person view unavailable",
+        "Recent-person history could not be updated.",
+      );
+    }
+    if (result.status === "forbidden") {
+      return problem(
+        context,
+        403,
+        "people_forbidden",
+        "Person unavailable",
+        "Your active workspace membership no longer permits this view.",
+      );
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json({ status: "recorded" });
+  });
+  routes.get("/api/v1/today/recent-people", async (context) => {
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const result = await services.todayRecentPeople?.get(resolved).catch(() =>
+      undefined
+    );
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "today_recent_people_unavailable",
+        "Recent people unavailable",
+        "Recently viewed people are temporarily unavailable.",
+      );
+    }
+    if (result.status === "forbidden") {
+      return problem(
+        context,
+        403,
+        "people_forbidden",
+        "Recent people unavailable",
+        "Your active workspace membership no longer permits this view.",
+      );
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json({ people: result.people, status: "ready" });
   });
   routes.get("/api/v1/people/:personId/facts/:section", async (context) => {
     const personId = personIdSchema.safeParse(context.req.param("personId"));
