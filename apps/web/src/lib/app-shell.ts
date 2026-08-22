@@ -292,17 +292,6 @@ export async function mountApplicationShell(
       "Your session could not be revoked. Check your connection and try again.";
     if (hadFocus) elements.signOutButton.focus();
   });
-
-  const todayDate = document.querySelector<HTMLTimeElement>(
-    "[data-today-date]",
-  );
-  if (todayDate) {
-    const now = new Date();
-    todayDate.dateTime = now.toISOString().slice(0, 10);
-    todayDate.textContent = new Intl.DateTimeFormat(undefined, {
-      dateStyle: "full",
-    }).format(now);
-  }
 }
 
 export function mountSettingsSearch(): void {

@@ -1,12 +1,13 @@
 import {
   changeTask,
   createTask,
-  getTodayTasks,
+  getTodayAttention,
   listPeople,
   listTasks,
   setTaskCompletion,
   type Task,
   type TaskChangeInput,
+  type TodayAttentionItem,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 
@@ -466,68 +467,344 @@ export async function mountTaskSurface(options: {
   await load(true);
 }
 
-export async function mountTodayTasks(): Promise<void> {
-  const state = document.querySelector<HTMLElement>("#today-tasks-state");
-  const list = document.querySelector<HTMLUListElement>("#today-tasks-list");
-  const retry = document.querySelector<HTMLButtonElement>("#today-tasks-retry");
-  if (!state || !list || !retry) return;
+export async function mountTodayAttention(): Promise<void> {
+  const state = document.querySelector<HTMLElement>("#today-attention-state");
+  const retry = document.querySelector<HTMLButtonElement>(
+    "#today-attention-retry",
+  );
+  const onboarding = document.querySelector<HTMLElement>("#today-onboarding");
+  const lists = {
+    nextSevenDays: document.querySelector<HTMLUListElement>(
+      "#today-next-seven-list",
+    ),
+    overdue: document.querySelector<HTMLUListElement>("#today-overdue-list"),
+    today: document.querySelector<HTMLUListElement>("#today-due-today-list"),
+  };
+  const upcomingState = document.querySelector<HTMLElement>(
+    "#today-upcoming-state",
+  );
+  const upcomingList = document.querySelector<HTMLUListElement>(
+    "#today-upcoming-list",
+  );
+  const upcomingRetry = document.querySelector<HTMLButtonElement>(
+    "#today-upcoming-retry",
+  );
+  if (
+    !state || !retry || !onboarding || !upcomingState || !upcomingList ||
+    !upcomingRetry || Object.values(lists).some((value) => !value)
+  ) return;
   todayAbort?.abort();
   const abort = new AbortController();
   todayAbort = abort;
   let generation = 0;
-  const load = async () => {
-    const current = ++generation;
-    state.textContent = "Loading due tasks…";
-    retry.hidden = true;
-    const session = await resolveWorkspaceSession();
-    if (abort.signal.aborted || current !== generation) return;
-    if (session.status !== "ready") {
-      state.textContent = "Due tasks are unavailable.";
-      retry.hidden = false;
-      return;
+  let renderedGeneration = 0;
+  let completionOwner:
+    | {
+      readonly button: HTMLButtonElement;
+      readonly retryHidden: boolean;
+      readonly upcomingRetryHidden: boolean;
     }
-    const result = await getTodayTasks(session.session.workspace.id).catch(() =>
-      undefined
-    );
-    if (abort.signal.aborted || current !== generation) return;
-    if (!result?.ok) {
-      state.textContent =
-        "Due tasks could not be loaded. Other Today regions are unchanged.";
-      retry.hidden = false;
-      return;
-    }
-    const complete = async (task: Task, completed: boolean) => {
-      const changed = await setTaskCompletion(
-        task.id,
-        completed,
-        session.session.workspace.id,
-      ).catch(() => undefined);
-      state.textContent = changed?.ok
-        ? "Task completed."
-        : "Task could not be completed.";
-      if (changed?.ok) {
-        globalThis.dispatchEvent(new CustomEvent(TASK_CHANGED_EVENT));
-        await load();
-      }
-    };
-    list.replaceChildren(
-      ...result.value.items.map((task) =>
-        renderTask(
-          task,
-          task.person?.archived !== true && task.person?.unavailable !== true,
-          complete,
-        )
-      ),
-    );
-    state.textContent = result.value.items.length === 0
-      ? "No tasks are due in the next 30 days."
-      : `${result.value.items.length} due task${
-        result.value.items.length === 1 ? "" : "s"
-      }.`;
+    | undefined;
+  const completedStale = new WeakSet<HTMLButtonElement>();
+  type Trigger = "attention" | "initial" | "upcoming";
+  const statusFor = (trigger: Trigger) =>
+    trigger === "upcoming" ? upcomingState : state;
+  const retryFor = (trigger: Trigger) =>
+    trigger === "upcoming" ? upcomingRetry : retry;
+  const format = (value: string, timezone: string) =>
+    new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: timezone,
+    }).format(new Date(value));
+  const todayDate = document.querySelector<HTMLTimeElement>(
+    "[data-today-date]",
+  );
+  const settleUnavailableDate = () => {
+    if (!todayDate || todayDate.hasAttribute("datetime")) return;
+    todayDate.removeAttribute("datetime");
+    todayDate.textContent = "Date unavailable";
   };
-  retry.addEventListener("click", () => void load(), { signal: abort.signal });
-  globalThis.addEventListener(TASK_CHANGED_EVENT, () => void load(), {
-    signal: abort.signal,
-  });
-  await load();
+  const destination = (item: TodayAttentionItem) => {
+    if (item.person?.unavailable) return undefined;
+    if (!item.person) return item.kind === "task" ? "/app/tasks" : undefined;
+    const section = item.kind === "task"
+      ? "tasks"
+      : item.kind === "important-date"
+      ? "important-dates"
+      : item.kind === "life-event"
+      ? "life-events"
+      : item.kind === "reminder"
+      ? "reminders"
+      : "stay-in-touch";
+    return `/app/people/${
+      encodeURIComponent(item.person.id)
+    }?section=${section}`;
+  };
+  const title = (
+    item: TodayAttentionItem,
+  ): HTMLAnchorElement | HTMLParagraphElement => {
+    const href = destination(item);
+    const element = document.createElement(href ? "a" : "p");
+    element.textContent = item.title;
+    element.className = "attention-title";
+    if (href) {
+      element.classList.add("today-touch-target");
+      (element as HTMLAnchorElement).href = href;
+    }
+    return element;
+  };
+  const refresh = async (trigger: Trigger, restoreFocus = false) => {
+    const current = ++generation;
+    const initiatingRegions = trigger === "initial"
+      ? [{ retry, status: state }, {
+        retry: upcomingRetry,
+        status: upcomingState,
+      }]
+      : [{ retry: retryFor(trigger), status: statusFor(trigger) }];
+    const prior = initiatingRegions.map(({ retry, status }) => ({
+      retry,
+      retryHidden: retry.hidden,
+      status,
+      text: status.textContent,
+    }));
+    const superseded = () => {
+      if (abort.signal.aborted) return true;
+      if (current === generation) return false;
+      if (renderedGeneration <= current) {
+        for (const previous of prior) {
+          previous.status.textContent = previous.text;
+          previous.retry.hidden = previous.retryHidden;
+        }
+      }
+      return true;
+    };
+    for (const { status } of initiatingRegions) {
+      status.textContent = status === state
+        ? "Loading relationship priorities…"
+        : "Loading upcoming work…";
+    }
+    if (trigger === "initial") {
+      retry.hidden = true;
+      upcomingRetry.hidden = true;
+    } else {
+      retryFor(trigger).hidden = true;
+    }
+    const session = await resolveWorkspaceSession();
+    if (superseded()) return false;
+    const workspaceId = session.status === "ready"
+      ? session.session.workspace.id
+      : undefined;
+    const result = workspaceId
+      ? await getTodayAttention(workspaceId).catch(() => undefined)
+      : undefined;
+    if (superseded()) return false;
+    if (!workspaceId || !result?.ok) {
+      for (const { status } of initiatingRegions) {
+        status.textContent = status === state
+          ? "Attention could not be loaded. Other Today regions remain available."
+          : "Upcoming work could not be loaded. Needs attention is unchanged.";
+      }
+      if (trigger === "initial") {
+        retry.hidden = false;
+        upcomingRetry.hidden = false;
+      } else {
+        retryFor(trigger).hidden = false;
+      }
+      if (restoreFocus) {
+        const status = statusFor(trigger);
+        status.tabIndex = -1;
+        status.focus();
+      }
+      settleUnavailableDate();
+      return false;
+    }
+    const snapshot = result.value;
+    const complete = async (
+      item: Extract<TodayAttentionItem, { kind: "task" }>,
+      button: HTMLButtonElement,
+    ) => {
+      if (completionOwner) return;
+      const owner = {
+        button,
+        retryHidden: retry.hidden === true,
+        upcomingRetryHidden: upcomingRetry.hidden === true,
+      };
+      completionOwner = owner;
+      for (
+        const control of document.querySelectorAll<HTMLButtonElement>(
+          "button[data-today-complete]",
+        )
+      ) control.disabled = true;
+      retry.hidden = true;
+      upcomingRetry.hidden = true;
+      state.textContent = "Completing task…";
+      const changed = await setTaskCompletion(
+        item.id,
+        true,
+        workspaceId,
+      ).catch(() => undefined);
+      if (abort.signal.aborted || completionOwner !== owner) return;
+      if (!changed?.ok) {
+        completionOwner = undefined;
+        state.textContent =
+          "Task could not be completed. Nothing else changed.";
+        retry.hidden = owner.retryHidden;
+        upcomingRetry.hidden = owner.upcomingRetryHidden;
+        for (
+          const control of document.querySelectorAll<HTMLButtonElement>(
+            "button[data-today-complete]",
+          )
+        ) control.disabled = completedStale.has(control);
+        if (button.isConnected) button.focus();
+        else {
+          state.tabIndex = -1;
+          state.focus();
+        }
+        return;
+      }
+      globalThis.dispatchEvent(new CustomEvent(TASK_CHANGED_EVENT));
+      const refreshed = await refresh("attention", true);
+      if (abort.signal.aborted || completionOwner !== owner) return;
+      completionOwner = undefined;
+      upcomingRetry.hidden = refreshed ? true : owner.upcomingRetryHidden;
+      if (!refreshed) completedStale.add(button);
+      for (
+        const control of document.querySelectorAll<HTMLButtonElement>(
+          "button[data-today-complete]",
+        )
+      ) control.disabled = completedStale.has(control);
+    };
+    const attentionRow = (item: TodayAttentionItem) => {
+      const element = document.createElement("li");
+      element.className = `attention-item attention-${item.kind}`;
+      const meta = document.createElement("p");
+      meta.textContent = `${item.kind === "cadence" ? "Reconnect by" : "Due"} ${
+        format(item.dueAt, snapshot.timezone)
+      }${item.person ? ` · ${item.person.name}` : ""}${
+        item.kind === "cadence"
+          ? ` · ${
+            item.lastContactedAt
+              ? `Last contact ${
+                format(item.lastContactedAt, snapshot.timezone)
+              }`
+              : "No contact recorded"
+          }${item.person.archived ? " · archived" : ""}`
+          : ""
+      }`;
+      element.append(title(item), meta);
+      if (
+        item.kind === "task" && !item.person?.archived &&
+        !item.person?.unavailable
+      ) {
+        const actions = document.createElement("div");
+        actions.className = "form-actions";
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "button-secondary";
+        button.dataset.todayComplete = "";
+        button.disabled = completionOwner !== undefined;
+        button.textContent = "Complete";
+        button.addEventListener("click", () => void complete(item, button));
+        actions.append(button);
+        element.append(actions);
+      }
+      return element;
+    };
+    const upcomingRow = (item: TodayAttentionItem) => {
+      const element = document.createElement("li");
+      element.className = `attention-item attention-${item.kind}`;
+      const heading = title(item);
+      const meta = document.createElement("p");
+      meta.textContent = `${format(item.dueAt, snapshot.timezone)}${
+        item.person ? ` · ${item.person.name}` : ""
+      }`;
+      element.append(heading, meta);
+      return element;
+    };
+    let attentionRows:
+      | Readonly<Record<keyof typeof lists, readonly HTMLLIElement[]>>
+      | undefined;
+    let upcomingRows: readonly HTMLLIElement[] | undefined;
+    let todayText: string | undefined;
+    try {
+      attentionRows = {
+        nextSevenDays: snapshot.attention.nextSevenDays.map(attentionRow),
+        overdue: snapshot.attention.overdue.map(attentionRow),
+        today: snapshot.attention.today.map(attentionRow),
+      };
+      upcomingRows = snapshot.upcoming.map(upcomingRow);
+      todayText = new Intl.DateTimeFormat(undefined, {
+        dateStyle: "full",
+        timeZone: "UTC",
+      }).format(new Date(`${snapshot.date}T12:00:00Z`));
+    } catch {
+      for (const { status } of initiatingRegions) {
+        status.textContent = status === state
+          ? "Attention could not be loaded. Other Today regions remain available."
+          : "Upcoming work could not be loaded. Needs attention is unchanged.";
+      }
+      if (trigger === "initial") {
+        retry.hidden = false;
+        upcomingRetry.hidden = false;
+      } else {
+        retryFor(trigger).hidden = false;
+      }
+      settleUnavailableDate();
+      if (restoreFocus) {
+        const status = statusFor(trigger);
+        status.tabIndex = -1;
+        status.focus();
+      }
+      return false;
+    }
+    if (superseded()) return false;
+    renderedGeneration = current;
+    for (const key of Object.keys(lists) as (keyof typeof lists)[]) {
+      lists[key]!.replaceChildren(...attentionRows[key]);
+    }
+    upcomingList.replaceChildren(...upcomingRows);
+    const attentionCount = Object.values(snapshot.attention).flat().length;
+    const upcomingCount = snapshot.upcoming.length;
+    onboarding.hidden = attentionCount + upcomingCount !== 0;
+    state.textContent = attentionCount === 0
+      ? "All clear. No relationship work needs attention."
+      : `${attentionCount} relationship priorit${
+        attentionCount === 1 ? "y" : "ies"
+      }.`;
+    upcomingState.textContent = upcomingCount
+      ? `${upcomingCount} upcoming item${upcomingCount === 1 ? "" : "s"}.`
+      : "No upcoming relationship work in the next 30 days.";
+    retry.hidden = true;
+    upcomingRetry.hidden = true;
+    if (todayDate && todayText) {
+      todayDate.dateTime = snapshot.date;
+      todayDate.textContent = todayText;
+    }
+    if (restoreFocus) {
+      const status = statusFor(trigger);
+      status.tabIndex = -1;
+      status.focus();
+    }
+    return true;
+  };
+  retry.addEventListener(
+    "click",
+    () => {
+      if (!completionOwner) void refresh("attention", true);
+    },
+    { signal: abort.signal },
+  );
+  upcomingRetry.addEventListener(
+    "click",
+    () => {
+      if (!completionOwner) void refresh("upcoming", true);
+    },
+    {
+      signal: abort.signal,
+    },
+  );
+  await refresh("initial");
 }
+
+export const mountTodayTasks = mountTodayAttention;

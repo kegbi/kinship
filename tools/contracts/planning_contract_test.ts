@@ -23,6 +23,7 @@ Deno.test("PLANNING-001 OpenAPI keeps task mutation and projection boundaries st
       readonly schemas: Readonly<
         Record<string, {
           readonly additionalProperties?: boolean;
+          readonly oneOf?: readonly unknown[];
           readonly properties?: Readonly<
             Record<string, {
               readonly type?: string;
@@ -123,6 +124,7 @@ Deno.test("PLANNING-002 OpenAPI exposes bounded reminder and cadence contracts",
       readonly schemas: Readonly<
         Record<string, {
           readonly additionalProperties?: boolean;
+          readonly oneOf?: readonly unknown[];
           readonly properties?: Readonly<
             Record<string, {
               readonly maxItems?: number;
@@ -167,7 +169,10 @@ Deno.test("PLANNING-002 OpenAPI exposes bounded reminder and cadence contracts",
       document.components.schemas.TodayReminders?.properties?.reminders
           ?.maxItems === 100 &&
       document.components.schemas.TodayReminders?.properties?.cadences
-          ?.maxItems === 100,
+          ?.maxItems === 100 &&
+      document.components.schemas.TodayReminderItem?.properties?.nextAttemptAt
+          ?.type === "string" &&
+      document.components.schemas.TodayReminderItem?.oneOf?.length === 2,
     "reminder idempotency or Today bounds are undocumented",
   );
   const todayPerson = document.components.schemas.TodayReminderPerson;
@@ -232,8 +237,31 @@ Deno.test("PLANNING-002 generated client rejects loose Today reminder responses"
     }],
   });
   for (
+    const status of [
+      "pending",
+      "claimed",
+      "sent",
+      "failed",
+      "manual_attention",
+    ]
+  ) {
+    parse({
+      ...valid,
+      reminders: [{ ...valid.reminders[0], status }],
+    });
+  }
+  parse({
+    ...valid,
+    reminders: [{
+      ...valid.reminders[0],
+      nextAttemptAt: "2026-09-18T12:00:00.000000Z",
+      status: "retry",
+    }],
+  });
+  for (
     const invalid of [
       { ...valid, timezone: undefined },
+      { ...valid, timezone: "Definitely/Not_A_Zone" },
       { ...valid, unexpected: true },
       {
         ...valid,
@@ -252,6 +280,26 @@ Deno.test("PLANNING-002 generated client rejects loose Today reminder responses"
       {
         ...valid,
         reminders: [{ ...valid.reminders[0], deliverAt: "2026-09-18" }],
+      },
+      {
+        ...valid,
+        reminders: [{ ...valid.reminders[0], status: "retry" }],
+      },
+      {
+        ...valid,
+        reminders: [{ ...valid.reminders[0], status: "cancelled" }],
+      },
+      {
+        ...valid,
+        reminders: [{ ...valid.reminders[0], status: "skipped" }],
+      },
+      {
+        ...valid,
+        reminders: [{
+          ...valid.reminders[0],
+          nextAttemptAt: "2026-09-18T12:00:00.000000Z",
+          status: "pending",
+        }],
       },
       {
         ...valid,
@@ -280,6 +328,8 @@ Deno.test("PLANNING-002 generated client rejects loose Today reminder responses"
       `loose Today response was accepted: ${JSON.stringify(invalid)}`,
     );
   }
+  parse({ ...valid, timezone: "UTC" });
+  parse({ ...valid, timezone: "America/New_York" });
 });
 
 Deno.test("PLANNING-002 generated Today request validates its HTTP response", async () => {
@@ -301,4 +351,127 @@ Deno.test("PLANNING-002 generated Today request validates its HTTP response", as
     globalThis.fetch = originalFetch;
   }
   assert(rejected, "generated Today request returned an unvalidated response");
+});
+
+Deno.test("TODAY-001 contract is closed, bounded, and runtime validated", () => {
+  const document = buildOpenApiDocument() as unknown as {
+    readonly paths: Readonly<Record<string, unknown>>;
+    readonly components: {
+      readonly schemas: Readonly<
+        Record<string, {
+          readonly additionalProperties?: boolean;
+          readonly properties?: Readonly<
+            Record<string, { readonly maxItems?: number }>
+          >;
+        }>
+      >;
+    };
+  };
+  const schemas = document.components.schemas;
+  assert(
+    Boolean(document.paths["/api/v1/today/attention"]) &&
+      schemas.TodayAttention?.additionalProperties === false &&
+      schemas.TodayAttentionGroup?.additionalProperties === false &&
+      schemas.TodayTaskAttentionItem?.additionalProperties === false &&
+      schemas.TodayReminderAttentionItem?.additionalProperties === false &&
+      schemas.TodayImportantDateAttentionItem?.additionalProperties === false &&
+      schemas.TodayLifeEventAttentionItem?.additionalProperties === false &&
+      schemas.TodayCadenceAttentionItem?.additionalProperties === false &&
+      schemas.TodayAttention?.properties?.upcoming?.maxItems === 30,
+    "Today attention OpenAPI boundary is loose or unbounded",
+  );
+  const parse = (generatedClient as unknown as {
+    readonly parseTodayAttention: (value: unknown) => unknown;
+  }).parseTodayAttention;
+  const valid = {
+    attention: {
+      nextSevenDays: [],
+      overdue: [],
+      today: [{
+        dueAt: "2026-08-18T08:00:00.000Z",
+        id: crypto.randomUUID(),
+        kind: "reminder",
+        occursOn: "2026-08-18",
+        person: { archived: false, id: crypto.randomUUID(), name: "Ada" },
+        reminderStatus: "pending",
+        title: "Call Ada",
+      }, {
+        dueAt: "2026-08-18T08:30:00.000Z",
+        id: crypto.randomUUID(),
+        kind: "life-event",
+        occursOn: "2026-08-18",
+        person: { archived: false, id: crypto.randomUUID(), name: "Ada" },
+        reminderStatus: "pending",
+        title: "Ada moved",
+      }, {
+        dueAt: "2026-08-18T09:00:00.000Z",
+        id: crypto.randomUUID(),
+        kind: "important-date",
+        occursOn: "2026-08-18",
+        person: { archived: false, id: crypto.randomUUID(), name: "Ada" },
+        reminderStatus: "pending",
+        title: "Ada's birthday",
+      }],
+    },
+    date: "2026-08-18",
+    status: "ready",
+    timezone: "Europe/Belgrade",
+    upcoming: [],
+  };
+  parse(valid);
+  for (
+    const invalid of [
+      { ...valid, extra: true },
+      {
+        ...valid,
+        attention: {
+          ...valid.attention,
+          today: [{ ...valid.attention.today[0], extra: true }],
+        },
+      },
+      {
+        ...valid,
+        attention: {
+          ...valid.attention,
+          today: [{ ...valid.attention.today[1], occursOn: undefined }],
+        },
+      },
+      {
+        ...valid,
+        attention: {
+          ...valid.attention,
+          today: [{ ...valid.attention.today[1], kind: "task" }],
+        },
+      },
+      {
+        ...valid,
+        attention: {
+          ...valid.attention,
+          today: [{
+            ...valid.attention.today[1],
+            lastContactedAt: "2026-08-17T09:00:00.000Z",
+          }],
+        },
+      },
+      { ...valid, date: "2026-02-30" },
+      { ...valid, timezone: "Definitely/Not_A_Zone" },
+      {
+        ...valid,
+        upcoming: Array.from({ length: 31 }, () => valid.attention.today[0]),
+      },
+    ]
+  ) {
+    let rejected = false;
+    try {
+      parse(invalid);
+    } catch {
+      rejected = true;
+    }
+    assert(
+      rejected,
+      `loose Today attention response accepted: ${JSON.stringify(invalid)}`,
+    );
+  }
+  parse({ ...valid, timezone: "UTC" });
+  parse({ ...valid, timezone: "America/New_York" });
 });

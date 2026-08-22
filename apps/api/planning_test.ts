@@ -3,6 +3,7 @@ import type {
   TaskManagement,
 } from "../../packages/backend/modules/planning/public.ts";
 import type {
+  TodayAttention,
   TodayReminders,
   TodayTasks,
 } from "../../packages/backend/read-models/today/public.ts";
@@ -112,6 +113,71 @@ Deno.test("PLANNING-001 HTTP creates, lists, changes, completes, and projects ta
   assert(completed.status === 200, "idempotent completion failed");
   assert(today.status === 200, "Today task projection failed");
   assert(received.length === 3, "task inputs were not forwarded");
+});
+
+Deno.test("TODAY-001 HTTP returns only a closed bounded attention projection", async () => {
+  const value = {
+    attention: {
+      nextSevenDays: [],
+      overdue: [{
+        dueAt: task.dueAt,
+        id: task.id,
+        kind: "task" as const,
+        person: task.person,
+        title: task.title,
+      }],
+      today: [{
+        dueAt: task.dueAt,
+        id: crypto.randomUUID(),
+        kind: "important-date" as const,
+        occursOn: "2026-08-18",
+        person: task.person,
+        reminderStatus: "pending" as const,
+        title: "Ada's birthday",
+      }, {
+        dueAt: task.dueAt,
+        id: crypto.randomUUID(),
+        kind: "life-event" as const,
+        occursOn: "2026-08-18",
+        person: task.person,
+        reminderStatus: "pending" as const,
+        title: "Ada moved",
+      }],
+    },
+    date: "2026-08-18",
+    status: "ready" as const,
+    timezone: "Europe/Belgrade",
+    upcoming: [],
+  };
+  const app = createPlanningRoutes({
+    ...services(),
+    todayAttention: { get: () => Promise.resolve(value) } as TodayAttention,
+  });
+  const forbiddenApp = createPlanningRoutes({
+    ...services(),
+    todayAttention: {
+      get: () => Promise.resolve({ status: "forbidden" }),
+    } as TodayAttention,
+  });
+  const ready = await app.request(
+    "http://localhost/api/v1/today/attention",
+    { headers },
+  );
+  const forbidden = await forbiddenApp.request(
+    "http://localhost/api/v1/today/attention",
+    { headers },
+  );
+  const body = await ready.json() as {
+    readonly attention?: {
+      readonly today?: readonly { readonly kind?: string }[];
+    };
+  };
+  assert(
+    ready.status === 200 && forbidden.status === 403 &&
+      body.attention?.today?.[0]?.kind === "important-date" &&
+      body.attention?.today?.[1]?.kind === "life-event",
+    `attention returned ${ready.status}/${forbidden.status}`,
+  );
 });
 
 Deno.test("PLANNING-001 HTTP maps security, archive, tenant, stale, and outage states", async () => {
@@ -285,7 +351,15 @@ Deno.test("PLANNING-002 HTTP creates and lists reminders/cadences and exposes To
       get: () =>
         Promise.resolve({
           cadences: [],
-          reminders: [],
+          reminders: [{
+            attemptCount: 1,
+            deliverAt: reminder.nextOccurrence!.deliverAt,
+            id: reminder.nextOccurrence!.id,
+            nextAttemptAt: "2026-10-25T01:30:00.000000Z",
+            person: { archived: false, id: personId, name: "Ada Lovelace" },
+            status: "retry" as const,
+            title: reminder.title,
+          }],
           status: "ready" as const,
           timezone: "Europe/Belgrade",
         }),
@@ -324,6 +398,9 @@ Deno.test("PLANNING-002 HTTP creates and lists reminders/cadences and exposes To
   const today = await app.request("http://localhost/api/v1/today/reminders", {
     headers,
   });
+  const todayBody = await today.json() as {
+    readonly reminders?: readonly { readonly nextAttemptAt?: string }[];
+  };
   const disabled = await app.request(
     `http://localhost/api/v1/reminders/${reminder.id}/active`,
     {
@@ -337,7 +414,9 @@ Deno.test("PLANNING-002 HTTP creates and lists reminders/cadences and exposes To
     "reminder or cadence create failed",
   );
   assert(
-    listed.status === 200 && today.status === 200 && disabled.status === 200,
+    listed.status === 200 && today.status === 200 && disabled.status === 200 &&
+      todayBody.reminders?.[0]?.nextAttemptAt ===
+        "2026-10-25T01:30:00.000000Z",
     "reminder projections or disable failed",
   );
 });

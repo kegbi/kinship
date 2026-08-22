@@ -3035,6 +3035,70 @@
         }
       }
     },
+    "/api/v1/today/attention": {
+      "get": {
+        "operationId": "getTodayAttention",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unified member-local Today attention and upcoming projection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodayAttention"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/people/{personId}/reminders": {
       "get": {
         "operationId": "listPersonReminders",
@@ -9569,6 +9633,307 @@
         },
         "additionalProperties": false
       },
+      "TodayAttentionPerson": {
+        "type": "object",
+        "required": [
+          "archived",
+          "id",
+          "name"
+        ],
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "unavailable": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TodayTaskAttentionItem": {
+        "type": "object",
+        "required": [
+          "dueAt",
+          "id",
+          "kind",
+          "title"
+        ],
+        "properties": {
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "const": "task"
+          },
+          "person": {
+            "$ref": "#/components/schemas/TodayAttentionPerson"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TodayReminderAttentionItem": {
+        "type": "object",
+        "required": [
+          "dueAt",
+          "id",
+          "kind",
+          "occursOn",
+          "reminderStatus",
+          "title"
+        ],
+        "properties": {
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "const": "reminder"
+          },
+          "person": {
+            "$ref": "#/components/schemas/TodayAttentionPerson"
+          },
+          "occursOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "reminderStatus": {
+            "enum": [
+              "failed",
+              "manual_attention",
+              "pending",
+              "retry"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TodayImportantDateAttentionItem": {
+        "type": "object",
+        "required": [
+          "dueAt",
+          "id",
+          "kind",
+          "occursOn",
+          "reminderStatus",
+          "title"
+        ],
+        "properties": {
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "const": "important-date"
+          },
+          "person": {
+            "$ref": "#/components/schemas/TodayAttentionPerson"
+          },
+          "occursOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "reminderStatus": {
+            "enum": [
+              "failed",
+              "manual_attention",
+              "pending",
+              "retry"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TodayLifeEventAttentionItem": {
+        "type": "object",
+        "required": [
+          "dueAt",
+          "id",
+          "kind",
+          "occursOn",
+          "reminderStatus",
+          "title"
+        ],
+        "properties": {
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "const": "life-event"
+          },
+          "person": {
+            "$ref": "#/components/schemas/TodayAttentionPerson"
+          },
+          "occursOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "reminderStatus": {
+            "enum": [
+              "failed",
+              "manual_attention",
+              "pending",
+              "retry"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TodayCadenceAttentionItem": {
+        "type": "object",
+        "required": [
+          "dueAt",
+          "id",
+          "kind",
+          "person",
+          "title"
+        ],
+        "properties": {
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "const": "cadence"
+          },
+          "person": {
+            "$ref": "#/components/schemas/TodayAttentionPerson"
+          },
+          "lastContactedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TodayAttentionItem": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/TodayTaskAttentionItem"
+          },
+          {
+            "$ref": "#/components/schemas/TodayReminderAttentionItem"
+          },
+          {
+            "$ref": "#/components/schemas/TodayImportantDateAttentionItem"
+          },
+          {
+            "$ref": "#/components/schemas/TodayLifeEventAttentionItem"
+          },
+          {
+            "$ref": "#/components/schemas/TodayCadenceAttentionItem"
+          }
+        ]
+      },
+      "TodayAttentionGroup": {
+        "type": "object",
+        "required": [
+          "nextSevenDays",
+          "overdue",
+          "today"
+        ],
+        "properties": {
+          "nextSevenDays": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/TodayAttentionItem"
+            }
+          },
+          "overdue": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/TodayAttentionItem"
+            }
+          },
+          "today": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/TodayAttentionItem"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "TodayAttention": {
+        "type": "object",
+        "required": [
+          "attention",
+          "date",
+          "status",
+          "timezone",
+          "upcoming"
+        ],
+        "properties": {
+          "attention": {
+            "$ref": "#/components/schemas/TodayAttentionGroup"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "const": "ready"
+          },
+          "timezone": {
+            "type": "string",
+            "minLength": 1
+          },
+          "upcoming": {
+            "type": "array",
+            "maxItems": 30,
+            "items": {
+              "$ref": "#/components/schemas/TodayAttentionItem"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "ReminderOccurrence": {
         "type": "object",
         "required": [
@@ -9943,6 +10308,10 @@
             "type": "string",
             "format": "uuid"
           },
+          "nextAttemptAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "person": {
             "$ref": "#/components/schemas/TodayReminderPerson"
           },
@@ -9964,6 +10333,36 @@
             "format": "date-time"
           }
         },
+        "oneOf": [
+          {
+            "required": [
+              "nextAttemptAt"
+            ],
+            "properties": {
+              "status": {
+                "const": "retry"
+              }
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "nextAttemptAt"
+              ]
+            },
+            "properties": {
+              "status": {
+                "enum": [
+                  "pending",
+                  "claimed",
+                  "sent",
+                  "failed",
+                  "manual_attention"
+                ]
+              }
+            }
+          }
+        ],
         "additionalProperties": false
       },
       "TodayCadenceItem": {

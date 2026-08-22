@@ -2134,7 +2134,19 @@ summary:focus-visible,
   padding: 0;
 }
 
-.task-item {
+.attention-groups {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-block: 1rem;
+}
+
+.attention-groups h3 {
+  margin-block: 0 0.65rem;
+}
+
+.task-item,
+.attention-item {
   background: var(--surface, #fffdf8);
   border: 1px solid var(--line, #d8d1c5);
   border-radius: 0.9rem;
@@ -2142,8 +2154,36 @@ summary:focus-visible,
 }
 
 .task-item h3,
-.task-item p {
+.task-item p,
+.attention-item .attention-title,
+.attention-item p {
   margin-block: 0 0.45rem;
+}
+
+.attention-title {
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.today-touch-target {
+  max-inline-size: 100%;
+  min-width: 44px;
+  min-height: 44px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.today-touch-target {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 0.25rem;
+}
+
+@media (max-width: 760px) {
+  .attention-groups {
+    grid-template-columns: 1fr;
+  }
 }
 
 .task-meta {

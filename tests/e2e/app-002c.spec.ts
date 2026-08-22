@@ -190,15 +190,17 @@ test(
     await expect(addPerson).toBeVisible();
     await expect(addPerson).toHaveAttribute("href", "/app/people/new");
     await expect(page.getByLabel("Active workspace")).toBeHidden();
-    await expect(page.getByText(/complete cross-module attention ordering/))
+    await expect(page.getByText(/ordered in your effective time zone/))
       .toBeVisible();
+    const todayDate = page.locator("[data-today-date]");
+    await expect(todayDate).toHaveAttribute("datetime", /^\d{4}-\d{2}-\d{2}$/);
+    await expect(todayDate).not.toHaveText("Loading date…");
     await expect(page.locator(".success-loop > li")).toHaveCount(3);
     expect(await page.locator("main h1, main h2").allTextContents()).toEqual([
       "Welcome back.",
       "Needs attention",
       "People to reconnect",
-      "Upcoming tasks",
-      "Reminders",
+      "Upcoming",
       "Recently viewed people",
       "Favorite notes",
       "Recent activity",
