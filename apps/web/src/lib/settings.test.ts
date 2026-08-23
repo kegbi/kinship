@@ -1,12 +1,19 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import {
+  mountPersonalLifecycle,
   mountPreferenceSettings,
   mountProfileSettings,
   mountSecuritySettings,
   mountWorkspaceSettings,
 } from "./settings.ts";
+
+const profilePage = readFileSync(
+  "apps/web/src/pages/app/settings/profile.astro",
+  "utf8",
+);
 
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -21,6 +28,49 @@ const session = {
   workspace: { id: "workspace", name: "Circle" },
   member: { id: "member", role: "owner" },
   workspaces: [{ id: "workspace", name: "Circle" }],
+};
+
+const lifecycleMarkup = `
+  <section id="account-lifecycle">
+    <p id="lifecycle-loading"></p>
+    <dl id="lifecycle-counts" hidden></dl>
+    <span id="lifecycle-membership-count"></span>
+    <span id="lifecycle-session-count"></span>
+    <code id="leave-confirmation-value"></code>
+    <code id="delete-confirmation-value"></code>
+    <ul id="lifecycle-memberships"></ul>
+    <p id="lifecycle-blockers" hidden></p>
+    <form id="leave-workspace-form">
+      <input name="confirmation"><input name="password" type="password"><button></button>
+    </form>
+    <form id="delete-identity-form">
+      <input name="confirmation"><input name="password" type="password"><button></button>
+    </form>
+    <p id="lifecycle-status"></p>
+  </section>`;
+
+const lifecyclePreview = {
+  activeSessionCount: 2,
+  blockingWorkspaces: [],
+  confirmations: {
+    deleteIdentity: "DELETE owner@example.test",
+    leaveWorkspace: "LEAVE Circle",
+  },
+  memberships: [{
+    finalOwner: false,
+    id: "member",
+    role: "owner",
+    status: "active",
+    workspace: { id: "workspace", name: "Circle" },
+  }, {
+    finalOwner: false,
+    id: "member-next",
+    role: "member",
+    status: "active",
+    workspace: { id: "workspace-next", name: "Friends" },
+  }],
+  retainedLegalRecords: true,
+  status: "ready",
 };
 
 afterEach(() => {
@@ -558,5 +608,163 @@ describe("WORKSPACE-001 workspace settings", () => {
     expect(document.querySelector("#settings-status")?.textContent).toMatch(
       /could not be revoked/i,
     );
+  });
+});
+
+describe("AUTH-005 personal lifecycle", () => {
+  it("labels mixed active and suspended membership impact truthfully", async () => {
+    document.body.innerHTML = lifecycleMarkup;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(response({
+        ...lifecyclePreview,
+        memberships: [lifecyclePreview.memberships[0], {
+          ...lifecyclePreview.memberships[1],
+          status: "suspended",
+        }],
+      })),
+    );
+
+    await mountPersonalLifecycle("workspace");
+
+    expect(document.querySelector("#lifecycle-membership-count")?.textContent)
+      .toBe("2");
+    expect(document.querySelector("#lifecycle-memberships")?.textContent)
+      .toMatch(/suspended/i);
+    expect(profilePage).toContain("<dt>Affected memberships</dt>");
+  });
+
+  it("shows current impact and disables actions that would orphan a workspace", async () => {
+    document.body.innerHTML = lifecycleMarkup;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(response({
+        ...lifecyclePreview,
+        blockingWorkspaces: [{ id: "workspace", name: "Circle" }],
+        memberships: [{
+          ...lifecyclePreview.memberships[0],
+          finalOwner: true,
+        }],
+      })),
+    );
+
+    await mountPersonalLifecycle("workspace");
+
+    expect(document.querySelector("#lifecycle-membership-count")?.textContent)
+      .toBe("1");
+    expect(document.querySelector("#lifecycle-session-count")?.textContent)
+      .toBe("2");
+    expect(document.querySelector("#lifecycle-memberships")?.textContent)
+      .toMatch(/final active owner/i);
+    expect(document.querySelector("#lifecycle-blockers")?.textContent)
+      .toMatch(/transfer ownership/i);
+    expect(
+      document.querySelector<HTMLButtonElement>("#leave-workspace-form button")
+        ?.disabled,
+    ).toBe(true);
+    expect(
+      document.querySelector<HTMLButtonElement>("#delete-identity-form button")
+        ?.disabled,
+    ).toBe(true);
+  });
+
+  it("reauthenticates, leaves, and selects the next valid workspace", async () => {
+    document.body.innerHTML = lifecycleMarkup;
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(lifecyclePreview))
+      .mockResolvedValueOnce(response({
+        next: "/app",
+        nextWorkspaceId: "workspace-next",
+        status: "left",
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    const navigate = vi.fn();
+    await mountPersonalLifecycle("workspace", navigate);
+    const form = document.querySelector<HTMLFormElement>(
+      "#leave-workspace-form",
+    )!;
+    (form.elements.namedItem("confirmation") as HTMLInputElement).value =
+      "LEAVE Circle";
+    (form.elements.namedItem("password") as HTMLInputElement).value =
+      "current password";
+    form.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith("/app"));
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toBe(JSON.stringify({
+      confirmation: "LEAVE Circle",
+      password: "current password",
+    }));
+    expect(sessionStorage.getItem("kinship.active-workspace")).toBe(
+      "workspace-next",
+    );
+  });
+
+  it("keeps a failed reauthentication retryable without changing navigation", async () => {
+    document.body.innerHTML = lifecycleMarkup;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(lifecyclePreview))
+        .mockResolvedValueOnce(response({
+          code: "reauthentication_required",
+          detail: "Enter your current password.",
+          status: 403,
+        }, 403)),
+    );
+    const navigate = vi.fn();
+    await mountPersonalLifecycle("workspace", navigate);
+    const form = document.querySelector<HTMLFormElement>(
+      "#delete-identity-form",
+    )!;
+    (form.elements.namedItem("confirmation") as HTMLInputElement).value =
+      "DELETE owner@example.test";
+    (form.elements.namedItem("password") as HTMLInputElement).value = "wrong";
+    form.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+
+    await vi.waitFor(() =>
+      expect(document.querySelector("#lifecycle-status")?.textContent).toMatch(
+        /current password/i,
+      )
+    );
+    expect(navigate).not.toHaveBeenCalled();
+    expect(
+      document.querySelector<HTMLButtonElement>("#delete-identity-form button")
+        ?.disabled,
+    ).toBe(false);
+  });
+
+  it("clears workspace state after confirmed personal identity deletion", async () => {
+    document.body.innerHTML = lifecycleMarkup;
+    sessionStorage.setItem("kinship.active-workspace", "workspace");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(lifecyclePreview))
+        .mockResolvedValueOnce(response({
+          next: "/auth/sign-in",
+          status: "deleted",
+        })),
+    );
+    const navigate = vi.fn();
+    await mountPersonalLifecycle("workspace", navigate);
+    const form = document.querySelector<HTMLFormElement>(
+      "#delete-identity-form",
+    )!;
+    (form.elements.namedItem("confirmation") as HTMLInputElement).value =
+      "DELETE owner@example.test";
+    (form.elements.namedItem("password") as HTMLInputElement).value =
+      "current password";
+    form.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+
+    await vi.waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith("/auth/sign-in")
+    );
+    expect(sessionStorage.getItem("kinship.active-workspace")).toBeNull();
   });
 });

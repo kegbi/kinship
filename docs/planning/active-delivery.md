@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 9 — Import, Export, And Destructive Data Lifecycle**
-- Current leaf: **APP-009C / `AUTH-005` — Personal lifecycle**
+- Current leaf: **APP-009D / `WORKSPACE-002` — Workspace reset and deletion**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -261,8 +261,8 @@ runnable behavior cannot work without them.
 - [x] **APP-009B / `EXPORT-001` — Portable exports.**
   - [x] Deliver vCard/person and workspace exports with authorization, resumable
         behavior where required, and safe artifact access.
-- [ ] **APP-009C / `AUTH-005` — Personal lifecycle.**
-  - [ ] Deliver leave-workspace and personal-identity deletion with recent auth,
+- [x] **APP-009C / `AUTH-005` — Personal lifecycle.**
+  - [x] Deliver leave-workspace and personal-identity deletion with recent auth,
         typed confirmation, impact preview, and final-owner handling.
 - [ ] **APP-009D / `WORKSPACE-002` — Workspace reset and deletion.**
   - [ ] Coordinate every delivered module, session effect, atomic database

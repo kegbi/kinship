@@ -139,6 +139,29 @@ export interface ProfileSettings {
   readonly lastName: string;
 }
 
+export interface BlockingWorkspace {
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface PersonalLifecyclePreview {
+  readonly activeSessionCount: number;
+  readonly blockingWorkspaces: readonly BlockingWorkspace[];
+  readonly confirmations: {
+    readonly deleteIdentity: string;
+    readonly leaveWorkspace: string;
+  };
+  readonly memberships: readonly {
+    readonly finalOwner: boolean;
+    readonly id: string;
+    readonly role: "owner" | "admin" | "member";
+    readonly status: "active" | "suspended";
+    readonly workspace: BlockingWorkspace;
+  }[];
+  readonly retainedLegalRecords: true;
+  readonly status: "ready";
+}
+
 export interface MemberPreferences {
   readonly contactNameOrder: "given_family_nickname" | "family_given_nickname";
   readonly contactSortOrder: "given_name_asc" | "family_name_asc";
@@ -356,6 +379,18 @@ export function getSettingsProfile(workspaceId?: string): Promise<ApiResult<{ re
 
 export function updateSettingsProfile(input: Pick<ProfileSettings, "firstName" | "lastName">, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly profile: ProfileSettings }>> {
   return request("/api/v1/settings/profile", { method: "PUT", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function getPersonalLifecyclePreview(workspaceId?: string): Promise<ApiResult<PersonalLifecyclePreview>> {
+  return request("/api/v1/settings/personal-lifecycle", { headers: workspaceHeader(workspaceId) });
+}
+
+export function leaveCurrentWorkspace(input: { readonly confirmation: string; readonly password: string }, workspaceId?: string): Promise<ApiResult<{ readonly next: "/app" | "/auth/sign-in"; readonly nextWorkspaceId?: string; readonly status: "left" }>> {
+  return request("/api/v1/settings/personal-lifecycle/leave", { method: "POST", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function deletePersonalIdentity(input: { readonly confirmation: string; readonly password: string }, workspaceId?: string): Promise<ApiResult<{ readonly next: "/auth/sign-in"; readonly status: "deleted" }>> {
+  return request("/api/v1/settings/personal-lifecycle", { method: "DELETE", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
 }
 
 export function getMemberPreferences(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: MemberPreferences }>> {

@@ -9,6 +9,7 @@ import {
   PostgresEmailVerification,
   PostgresIdentityAccountSettings,
   PostgresIdentityAuthentication,
+  PostgresIdentityPersonalLifecycle,
   PostgresIdentityRegistration,
   PostgresInvitationIdentity,
   PostgresPasswordRecoveryRepository,
@@ -19,10 +20,12 @@ import { connectDatabase } from "../../packages/backend/platform/postgres/databa
 import {
   type AuthenticationResponseEqualizer,
   createPersonalizationManagement,
+  createPersonalLifecycle,
   createProtectedSessionCoordinator,
   createRecentPeopleManagement,
   createVerificationDeliveryRetry,
   PostgresActiveWorkspaceResolver,
+  PostgresPersonalLifecycleMemberships,
   PostgresProfileFactConfiguration,
   PostgresRecentPeopleRepository,
   PostgresRegistrationTransaction,
@@ -53,6 +56,7 @@ import {
   PostgresInvitationAudit,
   PostgresJournalAudit,
   PostgresLegalAcceptanceRepository,
+  PostgresPersonalLifecycleAudit,
   PostgresPersonCreatedAudit,
   PostgresPersonLifecycleAudit,
   PostgresProfileFactAudit,
@@ -85,6 +89,10 @@ import {
   browserSecurityPolicy,
 } from "./security_config.ts";
 import { createSettingsRoutes, type SettingsHttpServices } from "./settings.ts";
+import {
+  createPersonalLifecycleRoutes,
+  type PersonalLifecycleHttpServices,
+} from "./personal_lifecycle.ts";
 import { createSettingsManagement } from "../../packages/backend/modules/workspaces/public.ts";
 import {
   createImportantDateManagement,
@@ -253,6 +261,8 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly interactions?: InteractionManagement & CommunicationManagement;
   readonly profileFacts?: PeopleHttpServices["profileFacts"];
   readonly passwordRecovery?: AuthenticationHttpServices["passwordRecovery"];
+  readonly personalLifecycle?:
+    PersonalLifecycleHttpServices["personalLifecycle"];
   readonly protectedSessions?: AuthenticationHttpServices["protectedSessions"];
   readonly settings?: SettingsHttpServices["settings"];
   readonly personalization?: SettingsHttpServices["personalization"];
@@ -378,6 +388,16 @@ export function createApiApp(services?: ApiServices): Hono {
             protectedSessions: services.protectedSessions,
             personalization: services.personalization,
             settings: services.settings,
+          }),
+        );
+      }
+      if (services.personalLifecycle) {
+        api.route(
+          "/",
+          createPersonalLifecycleRoutes({
+            browserSecurity: services.browserSecurity,
+            personalLifecycle: services.personalLifecycle,
+            protectedSessions: services.protectedSessions,
           }),
         );
       }
@@ -598,12 +618,14 @@ export function createConfiguredApiApp(
     clock,
     ids,
   );
+  const attemptBudget = new PostgresAuthenticationAttemptBudget(
+    connection.db,
+    new AuthenticationSubjectDigester(subjectKeyset),
+  );
+  const authenticationAudit = new PostgresAuthenticationAudit();
   const protectedSessions = createProtectedSessionCoordinator({
-    attemptBudget: new PostgresAuthenticationAttemptBudget(
-      connection.db,
-      new AuthenticationSubjectDigester(subjectKeyset),
-    ),
-    audit: new PostgresAuthenticationAudit(),
+    attemptBudget,
+    audit: authenticationAudit,
     clock,
     identity: authentication,
     identityEntry: verification,
@@ -695,6 +717,15 @@ export function createConfiguredApiApp(
     },
     transaction,
     workspace: new PostgresWorkspaceSettings(),
+  });
+  const personalLifecycle = createPersonalLifecycle({
+    attemptBudget,
+    audit: new PostgresPersonalLifecycleAudit(),
+    authenticationAudit,
+    clock,
+    identity: new PostgresIdentityPersonalLifecycle(hasher),
+    memberships: new PostgresPersonalLifecycleMemberships(),
+    transaction,
   });
   const workspacePersonalization = new PostgresWorkspacePersonalization();
   const personalization = createPersonalizationManagement({
@@ -934,6 +965,7 @@ export function createConfiguredApiApp(
     journalTimeline,
     legal,
     passwordRecovery,
+    personalLifecycle,
     people,
     profile,
     profileFacts,

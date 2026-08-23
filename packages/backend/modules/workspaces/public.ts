@@ -59,6 +59,17 @@ export type {
 } from "./application/invite_member.ts";
 export { PostgresWorkspaceInvitations } from "./adapters/postgres/workspace_invitations.ts";
 export { PostgresWorkspaceSettings } from "./adapters/postgres/settings_management.ts";
+export { PostgresPersonalLifecycleMemberships } from "./adapters/postgres/personal_lifecycle.ts";
+export { createPersonalLifecycle } from "./application/personal_lifecycle.ts";
+export type {
+  PersonalLifecycle,
+  PersonalLifecycleActor,
+  PersonalLifecycleAudit,
+  PersonalLifecycleDependencies,
+  PersonalLifecycleMembership,
+  PersonalLifecycleMemberships,
+  PersonalLifecycleTransaction,
+} from "./application/personal_lifecycle.ts";
 export { PostgresWorkspacePersonalization } from "./adapters/postgres/personalization.ts";
 export { PostgresWorkspaceCurrencyBoundary } from "./adapters/postgres/currency_boundary.ts";
 export type {

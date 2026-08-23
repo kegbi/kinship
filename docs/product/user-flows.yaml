@@ -125,6 +125,7 @@ flows:
 
   - id: AUTH-005
     title: Leave a workspace or delete the personal identity safely
+    deliveryStatus: delivered
     priority: P1
     actor: active-member
     trigger: The member chooses a personal account lifecycle action.
@@ -148,7 +149,7 @@ flows:
     moduleIds: [governance, identity, workspaces]
     permissions: [member.self.delete]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-009c.spec.ts] }
 
   - id: WORKSPACE-001
     title: Manage workspace settings and members

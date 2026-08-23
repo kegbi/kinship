@@ -12,6 +12,38 @@ export const prerender = true;
       <label>Last name<input name="lastName" maxlength="100" /></label>
       <button type="submit">Save changes</button><p id="settings-dirty" role="status" aria-live="polite"></p><p id="settings-status" role="status" aria-live="polite"></p>
     </form>
+    <section id="account-lifecycle" class="account-lifecycle" aria-labelledby="account-lifecycle-heading">
+      <header>
+        <p class="eyebrow">Account lifecycle</p>
+        <h2 id="account-lifecycle-heading">Memberships and personal identity</h2>
+        <p>Review the current impact before leaving this workspace or deleting your identity.</p>
+      </header>
+      <div id="lifecycle-impact" aria-live="polite">
+        <p id="lifecycle-loading">Loading current memberships and sessions…</p>
+        <dl id="lifecycle-counts" hidden>
+          <div><dt>Affected memberships</dt><dd id="lifecycle-membership-count">0</dd></div>
+          <div><dt>Active sessions</dt><dd id="lifecycle-session-count">0</dd></div>
+        </dl>
+        <ul id="lifecycle-memberships" class="member-list" aria-label="Affected memberships"></ul>
+        <p id="lifecycle-blockers" class="form-error-summary" role="alert" hidden></p>
+        <p>Legal acceptance records are retained as compliance evidence. Personal sign-in data and access are removed when your identity is deleted; workspace CRM records remain owned by their workspaces.</p>
+      </div>
+      <form id="leave-workspace-form" class="lifecycle-form">
+        <h3>Leave this workspace</h3>
+        <p>Your other memberships remain active. Type <code id="leave-confirmation-value"></code> exactly.</p>
+        <label>Leave confirmation<input name="confirmation" autocomplete="off" maxlength="300" required /></label>
+        <label>Current password<input name="password" type="password" autocomplete="current-password" maxlength="1024" required /></label>
+        <button type="submit" class="button-danger">Leave workspace</button>
+      </form>
+      <form id="delete-identity-form" class="lifecycle-form">
+        <h3>Delete personal identity</h3>
+        <p>This signs you out everywhere and ends every membership. Type <code id="delete-confirmation-value"></code> exactly, then reauthenticate.</p>
+        <label>Deletion confirmation<input name="confirmation" autocomplete="off" maxlength="300" required /></label>
+        <label>Current password<input name="password" type="password" autocomplete="current-password" maxlength="1024" required /></label>
+        <button type="submit" class="button-danger">Delete personal identity</button>
+      </form>
+      <p id="lifecycle-status" role="status" aria-live="polite"></p>
+    </section>
   </main>
 </ApplicationLayout>
-<script>import { mountProfileSettings } from "../../../lib/settings.ts"; void mountProfileSettings();</script>
+<script>import { mountPersonalLifecycle, mountProfileSettings } from "../../../lib/settings.ts"; void Promise.all([mountProfileSettings(), mountPersonalLifecycle()]);</script>
