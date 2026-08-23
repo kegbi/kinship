@@ -277,6 +277,10 @@ runnable behavior cannot work without them.
 - [x] **REL-006 — Restore the authoritative API coverage manifest.**
   - [x] Include the existing Slice 7 unit, API, contract, worker, and PostgreSQL
         tests required to measure every delivered production surface.
+- [x] **REL-007 — Serialize workspace lifecycle form initialization.**
+  - [x] Keep destructive submissions disabled until the current owner session,
+        impact preview, and submit handlers are ready in every supported
+        browser.
 - [ ] **Phase 9 accepted:** Slice 7 P0/P1 data-lifecycle flows pass and the
       catalog-derived proposed-MVP/core-feature-complete criteria are satisfied.
 
