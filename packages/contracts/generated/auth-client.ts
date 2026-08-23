@@ -1295,3 +1295,82 @@ export function getPersonDeletionImpact(personId: string, workspaceId?: string):
 export function deletePerson(personId: string, input: PersonTransitionInput & { readonly confirmation: string }, workspaceId?: string): Promise<ApiResult<{ readonly next: "/app/people"; readonly personId: string; readonly status: "deleted" }>> {
   return request(`/api/v1/people/${encodeURIComponent(personId)}`, { method: "DELETE", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
 }
+
+export type GiftStatus = "archived" | "given" | "idea" | "planned" | "received";
+export type DebtStatus = "cancelled" | "open" | "settled";
+
+export interface Gift {
+  readonly amount?: string;
+  readonly attachmentFileId?: string;
+  readonly comment?: string;
+  readonly createdAt: string;
+  readonly currencyCode?: string;
+  readonly eventAt?: string;
+  readonly id: string;
+  readonly name: string;
+  readonly personId: string;
+  readonly recipientPersonId?: string;
+  readonly status: GiftStatus;
+  readonly updatedAt: string;
+  readonly url?: string;
+}
+
+export interface Debt {
+  readonly amount: string;
+  readonly createdAt: string;
+  readonly currencyCode?: string;
+  readonly direction: "i_owe" | "they_owe";
+  readonly id: string;
+  readonly personId: string;
+  readonly reason?: string;
+  readonly settledAt?: string;
+  readonly status: DebtStatus;
+  readonly updatedAt: string;
+}
+
+export interface GiftCreateInput {
+  readonly amount?: string;
+  readonly attachmentFileId?: string;
+  readonly comment?: string;
+  readonly currencyCode?: string;
+  readonly eventAt?: string;
+  readonly name: string;
+  readonly recipientPersonId?: string;
+  readonly status: GiftStatus;
+  readonly url?: string;
+}
+
+export interface DebtCreateInput {
+  readonly amount: string;
+  readonly currencyCode: string;
+  readonly direction: "i_owe" | "they_owe";
+  readonly reason?: string;
+  readonly status: DebtStatus;
+}
+
+export interface GiftDebtList {
+  readonly debts: readonly Debt[];
+  readonly gifts: readonly Gift[];
+  readonly status: "ready";
+  readonly supportedCurrencyCodes: readonly string[];
+}
+
+export function listPersonGifts(personId: string, workspaceId?: string): Promise<ApiResult<GiftDebtList>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/gifts`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function createGift(personId: string, input: GiftCreateInput, workspaceId?: string): Promise<ApiResult<{ readonly gift: Gift; readonly status: "created" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/gifts`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function changeGiftStatus(personId: string, giftId: string, status: GiftStatus, workspaceId?: string): Promise<ApiResult<{ readonly gift: Gift; readonly status: "saved" | "unchanged" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/gifts/${encodeURIComponent(giftId)}/status`, { method: "PATCH", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify({ status }) });
+}
+
+export function createDebt(personId: string, input: DebtCreateInput, workspaceId?: string): Promise<ApiResult<{ readonly debt: Debt; readonly status: "created" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/debts`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function changeDebtStatus(personId: string, debtId: string, status: DebtStatus, workspaceId?: string): Promise<ApiResult<{ readonly debt: Debt; readonly status: "saved" | "unchanged" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/debts/${encodeURIComponent(debtId)}/status`, { method: "PATCH", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify({ status }) });
+}

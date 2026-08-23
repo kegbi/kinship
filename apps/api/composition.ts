@@ -27,6 +27,7 @@ import {
   PostgresRecentPeopleRepository,
   PostgresRegistrationTransaction,
   PostgresRelationshipWorkspaceBoundary,
+  PostgresWorkspaceCurrencyBoundary,
   PostgresWorkspaceInvitations,
   PostgresWorkspacePersonalization,
   PostgresWorkspaceRegistration,
@@ -42,6 +43,7 @@ import {
   PostgresAuthenticationAudit,
   PostgresCommunicationAudit,
   PostgresFileAudit,
+  PostgresGiftAudit,
   PostgresImportantDateAudit,
   PostgresInteractionAudit,
   PostgresInvitationAudit,
@@ -172,6 +174,7 @@ import {
 import { createGovernanceRoutes } from "./governance.ts";
 import { createPlanningRoutes } from "./planning.ts";
 import { createFileRoutes } from "./files.ts";
+import { createGiftRoutes } from "./gifts.ts";
 import {
   createObjectStorageRequestTransport,
   createPersonFileManagement,
@@ -179,10 +182,16 @@ import {
   type ObjectStorage,
   type PersonFileManagement,
   PostgresFileMetadataRepository,
+  PostgresGiftAttachmentBoundary,
   S3CompatibleObjectStorage,
   WebCryptoFileIdentifiers,
   WebCryptoObjectKeys,
 } from "../../packages/backend/modules/files/public.ts";
+import {
+  createGiftManagement,
+  type GiftManagement,
+  PostgresGiftRepository,
+} from "../../packages/backend/modules/gifts/public.ts";
 import { Client as MinioClient } from "minio";
 import { resolveObjectStorageConfiguration } from "./file_storage_config.ts";
 
@@ -191,6 +200,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly auditHistory?: AuditHistory;
   readonly directory?: PeopleDirectory;
   readonly files?: PersonFileManagement;
+  readonly gifts?: GiftManagement;
   readonly invitations?: InvitationHttpServices["invitations"];
   readonly importantDates?: ImportantDateManagement;
   readonly interactions?: InteractionManagement & CommunicationManagement;
@@ -319,6 +329,16 @@ export function createApiApp(services?: ApiServices): Hono {
           createFileRoutes({
             browserSecurity: services.browserSecurity,
             files: services.files,
+            protectedSessions: services.protectedSessions,
+          }),
+        );
+      }
+      if (services.gifts) {
+        api.route(
+          "/",
+          createGiftRoutes({
+            browserSecurity: services.browserSecurity,
+            gifts: services.gifts,
             protectedSessions: services.protectedSessions,
           }),
         );
@@ -623,6 +643,15 @@ export function createConfiguredApiApp(
     storage: objectStorage,
     transaction: peopleTransaction,
   });
+  const gifts = createGiftManagement({
+    attachments: new PostgresGiftAttachmentBoundary(),
+    audit: new PostgresGiftAudit(),
+    clock,
+    currencies: new PostgresWorkspaceCurrencyBoundary(),
+    ids: { next: () => ids.create() },
+    repository: new PostgresGiftRepository(),
+    transaction: peopleTransaction,
+  });
   const peopleRepository = new PostgresPeopleRepository();
   const peopleManagement = createPeopleManagement({
     audit: new PostgresPersonCreatedAudit(),
@@ -750,6 +779,7 @@ export function createConfiguredApiApp(
     browserSecurity: policy,
     directory,
     files,
+    gifts,
     hasher,
     invitations,
     importantDates,
