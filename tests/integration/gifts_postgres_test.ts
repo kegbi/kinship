@@ -357,6 +357,11 @@ Deno.test("[GIFTS-001] PostgreSQL gifts, attachments, debts, audit, and tenant g
   );
 });
 
-globalThis.addEventListener("unload", () => {
-  void Promise.all([configured.close(), sql.end()]);
+Deno.test({
+  name: "GIFTS-001 PostgreSQL resources close",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await Promise.all([configured.close(), sql.end()]);
+  },
 });

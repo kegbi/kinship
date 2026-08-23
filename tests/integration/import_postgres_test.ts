@@ -325,6 +325,11 @@ Deno.test("[IMPORT-001] owning-boundary failure rolls back every commit effect a
   }
 });
 
-globalThis.addEventListener("unload", () => {
-  void Promise.all([configured.close(), sql.end()]);
+Deno.test({
+  name: "IMPORT-001 PostgreSQL resources close",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await Promise.all([configured.close(), sql.end()]);
+  },
 });

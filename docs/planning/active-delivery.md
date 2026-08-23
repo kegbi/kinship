@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 9 — Import, Export, And Destructive Data Lifecycle**
-- Current leaf: **REL-005 — Bound the PEOPLE-006 full-integration hang**
+- Current leaf: **Phase 9 aggregate acceptance checkpoint**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -271,8 +271,8 @@ runnable behavior cannot work without them.
 - [x] **REL-004 — Aggregate integration object-storage authority.**
   - [x] Permit the shared integration composition to read the object-storage
         configuration required by delivered API modules.
-- [ ] **REL-005 — Bound the PEOPLE-006 full-integration hang.**
-  - [ ] Reproduce and correct the stalled profile-facts integration boundary
+- [x] **REL-005 — Bound the PEOPLE-006 full-integration hang.**
+  - [x] Reproduce and correct the stalled profile-facts integration boundary
         observed with idle PostgreSQL sessions and no Deno progress.
 - [ ] **Phase 9 accepted:** Slice 7 P0/P1 data-lifecycle flows pass and the
       catalog-derived proposed-MVP/core-feature-complete criteria are satisfied.

@@ -369,7 +369,11 @@ Deno.test("[EXPORT-001] PostgreSQL export is portable, private, and tenant-safe"
   );
 });
 
-globalThis.addEventListener(
-  "unload",
-  () => void Promise.all([configured.close(), sql.end()]),
-);
+Deno.test({
+  name: "EXPORT-001 PostgreSQL resources close",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await Promise.all([configured.close(), sql.end()]);
+  },
+});

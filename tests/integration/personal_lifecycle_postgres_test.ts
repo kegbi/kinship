@@ -942,7 +942,11 @@ Deno.test({
   },
 });
 
-globalThis.addEventListener("unload", () => {
-  void sql.end();
-  void configured.close();
+Deno.test({
+  name: "AUTH-005 PostgreSQL resources close",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await Promise.all([sql.end(), configured.close()]);
+  },
 });
