@@ -336,6 +336,10 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
     ["PLANNING-001", "tests/e2e/app-006a.spec.ts"],
     ["PLANNING-002", "tests/e2e/app-006b.spec.ts"],
     ["TODAY-001", "tests/e2e/app-006c.spec.ts"],
+    [
+      "FILES-001",
+      "tests/e2e/app-007a.spec.ts, tests/e2e/app-007c.spec.ts",
+    ],
     ["GIFTS-001", "tests/e2e/app-007b.spec.ts"],
   ]);
   for (const flow of flows) {
@@ -347,11 +351,10 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
     );
     assertIncludes(
       flow.block,
-      deliveredTestRef
-        ? `e2e: { required: true, testRefs: [${deliveredTestRef}] }`
-        : "e2e: { required: true, testRefs: [] }",
+      deliveredTestRef ? `testRefs: [${deliveredTestRef}]` : "testRefs: []",
       `${flow.id} E2E state`,
     );
+    assertIncludes(flow.block, "required: true", `${flow.id} E2E requirement`);
   }
 
   const priorityTotals = { P0: 0, P1: 0, P2: 0 };

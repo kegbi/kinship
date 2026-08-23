@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   PERSON_FILE_MAX_BYTES,
   type PersonFileManagement,
+  type StorageSettings,
 } from "../../packages/backend/modules/files/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
@@ -14,6 +15,7 @@ export interface FileHttpServices {
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly files: PersonFileManagement;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
+  readonly storageSettings?: StorageSettings;
 }
 
 const uuid = z.uuid();
@@ -222,6 +224,64 @@ function decodedHeader(value: string | undefined): string | undefined {
 
 export function createFileRoutes(services: FileHttpServices): Hono {
   const routes = new Hono();
+
+  routes.get("/api/v1/settings/storage", async (context) => {
+    const parsed = z.string().trim().max(100).optional().safeParse(
+      context.req.query("query"),
+    );
+    if (!parsed.success) {
+      return problem(
+        context,
+        400,
+        "storage_lookup_invalid",
+        "Invalid file lookup",
+        "Search terms must be 100 characters or fewer.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const result = await services.storageSettings?.get(
+      resolved,
+      parsed.data,
+    ).catch(() => ({ status: "unavailable" as const }));
+    if (result?.status === "forbidden") {
+      return problem(
+        context,
+        403,
+        "storage_settings_forbidden",
+        "Storage settings forbidden",
+        "Only an active workspace owner or administrator may view storage diagnostics.",
+      );
+    }
+    if (result?.status === "validation-error") {
+      return problem(
+        context,
+        400,
+        "storage_lookup_invalid",
+        "Invalid file lookup",
+        "Search terms must be 100 characters or fewer.",
+      );
+    }
+    if (!result || result.status !== "ready") {
+      return problem(
+        context,
+        503,
+        "storage_settings_unavailable",
+        "Storage diagnostics unavailable",
+        "Workspace storage diagnostics could not be loaded.",
+      );
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
 
   routes.post("/api/v1/people/:personId/files", async (context) => {
     const originFailure = requireOrigin(context, services.browserSecurity);

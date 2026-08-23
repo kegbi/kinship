@@ -23,12 +23,22 @@ export type {
 } from "./application/person_files.ts";
 export { PostgresFileMetadataRepository } from "./adapters/postgres/file_metadata_repository.ts";
 export { PostgresGiftAttachmentBoundary } from "./adapters/postgres/gift_attachment_boundary.ts";
+export { PostgresStorageSettingsRepository } from "./adapters/postgres/storage_settings_repository.ts";
 export {
   createObjectStorageRequestTransport,
   S3CompatibleObjectStorage,
 } from "./adapters/object_storage/s3_compatible_object_storage.ts";
 export type { ObjectStorageRequestTransport } from "./adapters/object_storage/s3_compatible_object_storage.ts";
 export { DeclaredMediaScanner } from "./adapters/scanning/declared_media_scanner.ts";
+export { createStorageSettings } from "./application/storage_settings.ts";
+export type {
+  StorageFileLookupItem,
+  StorageSettings,
+  StorageSettingsDependencies,
+  StorageSettingsRepository,
+  StorageSettingsResult,
+  StorageUsage,
+} from "./application/storage_settings.ts";
 export {
   WebCryptoFileIdentifiers,
   WebCryptoObjectKeys,

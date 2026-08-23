@@ -139,9 +139,61 @@ Deno.test("[FILES-001] MinIO is confined to development and test overlays", asyn
   const dockerfile = await Deno.readTextFile(
     new URL("../Dockerfile.api", import.meta.url),
   );
+  assert(
+    dockerfile.includes(
+      "deno install --frozen --node-modules-dir=none --entrypoint apps/api/main.ts apps/worker/main.ts tools/migrations/main.ts",
+    ),
+    "the API image dependency stage must cache every production entrypoint",
+  );
+  assert(
+    dockerfile.indexOf("USER deno") < dockerfile.indexOf("deno install"),
+    "the API image dependency cache must be readable by its runtime user",
+  );
   const tasks = await Deno.readTextFile(
     new URL("../deno.json", import.meta.url),
   );
+  const configuredTasks = (JSON.parse(tasks) as {
+    tasks?: Record<string, string>;
+  }).tasks ?? {};
+  for (const taskName of ["test:unit:api", "test:coverage:api:direct"]) {
+    assert(
+      configuredTasks[taskName]?.includes("Dockerfile.api"),
+      `${taskName} must permit the configuration contract to read Dockerfile.api`,
+    );
+  }
+  for (
+    const name of [
+      "OBJECT_STORAGE_ACCESS_KEY",
+      "OBJECT_STORAGE_BUCKET",
+      "OBJECT_STORAGE_HOST",
+      "OBJECT_STORAGE_PORT",
+      "OBJECT_STORAGE_REQUEST_TIMEOUT_MS",
+      "OBJECT_STORAGE_SECRET_KEY",
+      "OBJECT_STORAGE_USE_SSL",
+    ]
+  ) {
+    assert(
+      configuredTasks["test:coverage:api:direct"]?.includes(name),
+      `coverage API composition must permit the object-storage environment name ${name}`,
+    );
+  }
+  for (
+    const name of [
+      "READABLE_STREAM",
+      "OBJECT_STORAGE_ACCESS_KEY",
+      "OBJECT_STORAGE_BUCKET",
+      "OBJECT_STORAGE_HOST",
+      "OBJECT_STORAGE_PORT",
+      "OBJECT_STORAGE_REQUEST_TIMEOUT_MS",
+      "OBJECT_STORAGE_SECRET_KEY",
+      "OBJECT_STORAGE_USE_SSL",
+    ]
+  ) {
+    assert(
+      configuredTasks["test:coverage:planning:direct"]?.includes(name),
+      `planning coverage composition must permit the shared API environment name ${name}`,
+    );
+  }
   for (const manifest of [dockerfile, tasks]) {
     assert(
       manifest.includes("OBJECT_STORAGE_REQUEST_TIMEOUT_MS"),

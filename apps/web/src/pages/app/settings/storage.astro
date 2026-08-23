@@ -1,0 +1,49 @@
+---
+import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
+export const prerender = true;
+---
+<ApplicationLayout current="settings" description="Review authorized workspace storage usage and object state." pageId="settings.storage" title="Storage settings — Kinship">
+  <main id="main-content" class="page-frame settings-page detail-settings storage-settings-page" tabindex="-1" data-requires-workspace-admin data-storage-settings>
+    <header class="settings-heading">
+      <div><p class="eyebrow">Data settings</p><h1>Storage</h1><p>Workspace-wide file usage and provider state.</p></div>
+      <a class="button-link secondary-link" href="/app/settings">All settings</a>
+    </header>
+    <p data-storage-state class="storage-page-state" role="status" aria-live="polite"></p>
+    <button data-storage-retry class="button-secondary" type="button" hidden>Retry</button>
+
+    <div class="storage-settings-sections">
+      <section id="usage-and-limits" class="storage-settings-section" aria-labelledby="storage-usage-heading">
+        <header><p class="scope-label">Usage and limits</p><h2 id="storage-usage-heading">Workspace usage</h2></header>
+        <dl class="storage-metrics">
+          <div><dt>Files</dt><dd data-storage-total-files></dd></div>
+          <div><dt>Stored bytes</dt><dd data-storage-total-bytes></dd></div>
+          <div><dt>Maximum upload</dt><dd data-storage-limit></dd></div>
+        </dl>
+      </section>
+
+      <section id="object-state" class="storage-settings-section" aria-labelledby="object-state-heading">
+        <header><p class="scope-label">Object state</p><h2 id="object-state-heading">Provider and metadata</h2></header>
+        <dl class="storage-object-state">
+          <div><dt>Available</dt><dd data-storage-available></dd></div>
+          <div><dt>Missing</dt><dd data-storage-missing></dd></div>
+          <div><dt>Processing</dt><dd data-storage-processing></dd></div>
+          <div><dt>Quarantined</dt><dd data-storage-quarantined></dd></div>
+          <div><dt>Provider</dt><dd data-storage-provider></dd></div>
+          <div><dt>Bucket</dt><dd data-storage-bucket></dd></div>
+          <div><dt>Provider health</dt><dd data-storage-health></dd></div>
+        </dl>
+      </section>
+
+      <section id="file-lookup" class="storage-settings-section" aria-labelledby="file-lookup-heading">
+        <header><p class="scope-label">File lookup</p><h2 id="file-lookup-heading">Metadata lookup</h2></header>
+        <form data-storage-search class="storage-search-form">
+          <label for="storage-query">File ID, filename, title, or person</label>
+          <div><input id="storage-query" name="query" type="search" maxlength="100" autocomplete="off" required /><button type="submit">Search</button></div>
+        </form>
+        <p data-storage-search-state class="section-state" role="status" aria-live="polite"></p>
+        <ul data-storage-results class="storage-results" aria-label="File metadata results"></ul>
+      </section>
+    </div>
+  </main>
+</ApplicationLayout>
+<script>import { mountStorageSettings } from "../../../lib/storage-settings.ts"; void mountStorageSettings();</script>

@@ -95,12 +95,15 @@ function renderRouteForbidden(elements: ShellElements): void {
     "settings.workspace";
   const personalization = document.body.dataset.pageId ===
     "settings.personalization";
+  const storage = document.body.dataset.pageId === "settings.storage";
   const auditHistory = document.body.dataset.pageId === "people.audit" ||
     document.body.dataset.pageId === "settings.audit";
   heading.textContent = workspaceSettings
     ? "Workspace settings unavailable"
     : personalization
     ? "Personalization unavailable"
+    : storage
+    ? "Storage settings unavailable"
     : auditHistory
     ? "Audit history unavailable"
     : "You don’t have access to Members";
@@ -109,6 +112,8 @@ function renderRouteForbidden(elements: ShellElements): void {
     ? "Only workspace owners and admins can manage workspace identity and defaults."
     : personalization
     ? "Only workspace owners and admins can manage workspace personalization."
+    : storage
+    ? "Only workspace owners and admins can review workspace storage and provider health."
     : auditHistory
     ? "Only workspace owners and admins can review audit history."
     : "Only workspace owners and admins can view members and invitations.";
@@ -220,6 +225,7 @@ export async function mountApplicationShell(
     (document.body.dataset.pageId === "settings.members" ||
       document.body.dataset.pageId === "settings.workspace" ||
       document.body.dataset.pageId === "settings.personalization" ||
+      document.body.dataset.pageId === "settings.storage" ||
       document.body.dataset.pageId === "people.audit" ||
       document.body.dataset.pageId === "settings.audit") &&
     !isWorkspaceAdmin

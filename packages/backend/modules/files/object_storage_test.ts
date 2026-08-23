@@ -88,6 +88,10 @@ Deno.test("[FILES-001] object-store request transport destroys stalled sockets",
 Deno.test("[FILES-001] S3-compatible adapter creates its private bucket once and preserves bytes", async () => {
   const client = new FakeS3Client();
   const storage = new S3CompatibleObjectStorage(client, "private-files");
+  assert(
+    await storage.health() === "not-initialized",
+    "missing configured bucket is reported without mutating it",
+  );
   await storage.put({
     bytes: new Uint8Array([1, 2, 3]),
     key: "objects/opaque",
@@ -96,6 +100,10 @@ Deno.test("[FILES-001] S3-compatible adapter creates its private bucket once and
   const bytes = await storage.get({ key: "objects/opaque" });
   assert(bytes?.join(",") === "1,2,3", "stream chunks reassemble");
   assert(client.made === 1, "bucket readiness is authoritative");
+  assert(
+    await storage.health() === "available",
+    "existing configured bucket is healthy",
+  );
   await storage.remove({ key: "objects/opaque" });
   assert(
     await storage.get({ key: "objects/opaque" }) === undefined,

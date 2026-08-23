@@ -34,6 +34,10 @@ class MemoryStorage implements ObjectStorage {
     return Promise.resolve(this.objects.get(command.key));
   }
 
+  health(): Promise<"available"> {
+    return Promise.resolve("available");
+  }
+
   put(
     command: { readonly bytes: Uint8Array; readonly key: string },
   ): Promise<void> {

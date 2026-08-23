@@ -178,12 +178,16 @@ import { createGiftRoutes } from "./gifts.ts";
 import {
   createObjectStorageRequestTransport,
   createPersonFileManagement,
+  createStorageSettings,
   DeclaredMediaScanner,
   type ObjectStorage,
+  PERSON_FILE_MAX_BYTES,
   type PersonFileManagement,
   PostgresFileMetadataRepository,
   PostgresGiftAttachmentBoundary,
+  PostgresStorageSettingsRepository,
   S3CompatibleObjectStorage,
+  type StorageSettings,
   WebCryptoFileIdentifiers,
   WebCryptoObjectKeys,
 } from "../../packages/backend/modules/files/public.ts";
@@ -200,6 +204,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly auditHistory?: AuditHistory;
   readonly directory?: PeopleDirectory;
   readonly files?: PersonFileManagement;
+  readonly storageSettings?: StorageSettings;
   readonly gifts?: GiftManagement;
   readonly invitations?: InvitationHttpServices["invitations"];
   readonly importantDates?: ImportantDateManagement;
@@ -330,6 +335,9 @@ export function createApiApp(services?: ApiServices): Hono {
             browserSecurity: services.browserSecurity,
             files: services.files,
             protectedSessions: services.protectedSessions,
+            ...(services.storageSettings
+              ? { storageSettings: services.storageSettings }
+              : {}),
           }),
         );
       }
@@ -643,6 +651,13 @@ export function createConfiguredApiApp(
     storage: objectStorage,
     transaction: peopleTransaction,
   });
+  const storageSettings = createStorageSettings({
+    maximumUploadBytes: PERSON_FILE_MAX_BYTES,
+    provider: { bucket: objectStorage.bucket, name: objectStorage.provider },
+    providerHealth: () => objectStorage.health(),
+    repository: new PostgresStorageSettingsRepository(),
+    transaction: peopleTransaction,
+  });
   const gifts = createGiftManagement({
     attachments: new PostgresGiftAttachmentBoundary(),
     audit: new PostgresGiftAudit(),
@@ -779,6 +794,7 @@ export function createConfiguredApiApp(
     browserSecurity: policy,
     directory,
     files,
+    storageSettings,
     gifts,
     hasher,
     invitations,

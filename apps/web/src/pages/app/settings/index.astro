@@ -25,7 +25,7 @@ const categories = [
     title: "Data",
     description: "Operational data tools remain standalone and resumable.",
     items: [
-      ["Storage", "Usage, limits, and object status", "storage files usage limits"],
+      ["Storage", "Usage, limits, and object status", "storage files usage limits missing quarantined", "/app/settings/storage"],
       ["Import", "Import history and resumable import work", "import upload history report"],
       ["Export", "Authorized exports and downloads", "export download data"],
       ["Audit history", "Filterable workspace history", "audit history governance", "/app/settings/audit"],
@@ -78,7 +78,7 @@ const categories = [
             </header>
             <div class="settings-card-grid">
               {category.items.map(([title, description, search, href]) => (
-                <article class="settings-card" data-settings-item data-search={`${category.title} ${title} ${search}`} data-requires-workspace-admin={title === "Members" || title === "General" || title === "Personalization" || title === "Audit history" ? "true" : undefined}>
+                <article class="settings-card" data-settings-item data-search={`${category.title} ${title} ${search}`} data-requires-workspace-admin={title === "Members" || title === "General" || title === "Personalization" || title === "Storage" || title === "Audit history" ? "true" : undefined}>
                   <div><h3>{title}</h3><p>{description}</p></div>
                   {href ? <a class="planned-label settings-card-link" href={href}>Open</a> : <span class="planned-label">Planned</span>}
                 </article>

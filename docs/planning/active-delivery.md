@@ -10,8 +10,9 @@ prerequisite queues.
 
 ## Cursor
 
-- Current phase: **Phase 7 — Files, Gifts, And Debts**
-- Current leaf: **APP-007C — Workspace storage settings**
+- Current phase: **Phase 8 — Journal, Governance, And Complete Person
+  Workspace**
+- Current leaf: **APP-008A / `JOURNAL-001` — Personal journal**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -222,10 +223,10 @@ runnable behavior cannot work without them.
 - [x] **APP-007B / `GIFTS-001` — Gifts and debts.**
   - [x] Deliver gift ideas/history, gift attachments, debts, permissions, and
         person-workspace sections/actions.
-- [ ] **APP-007C — Workspace storage settings.**
-  - [ ] Deliver role-safe storage configuration without exposing workspace file
+- [x] **APP-007C — Workspace storage settings.**
+  - [x] Deliver role-safe storage configuration without exposing workspace file
         inventory to ordinary members.
-- [ ] **Phase 7 accepted:** Slice 5 flows pass, including object-store failure
+- [x] **Phase 7 accepted:** Slice 5 flows pass, including object-store failure
       and compensation behavior.
 
 ## Phase 8 — Journal, Governance, And Complete Person Workspace
