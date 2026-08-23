@@ -672,6 +672,7 @@ flows:
 
   - id: EXPORT-001
     title: Export workspace or person data
+    deliveryStatus: delivered
     priority: P0
     actor: data-admin
     trigger: The administrator requests a portable export or a member exports a vCard.
@@ -693,7 +694,7 @@ flows:
     moduleIds: [import-export, people, files]
     permissions: [data.export, people.vcard.export]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-009b.spec.ts] }
 
   - id: API-001
     title: Create and revoke an API token

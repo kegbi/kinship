@@ -33,6 +33,14 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
       "Optional requested workspace; validated against active membership.",
     schema: { type: "string", format: "uuid" },
   };
+  const workspaceQueryParameter = {
+    name: "workspaceId",
+    in: "query",
+    required: false,
+    description:
+      "Optional workspace selection for browser download links; validated against active membership.",
+    schema: { type: "string", format: "uuid" },
+  };
   const personIdParameter = {
     name: "personId",
     in: "path",
@@ -2924,6 +2932,135 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             "400": problem,
             "401": problem,
             "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/exports": {
+        get: {
+          operationId: "listExports",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter],
+          responses: {
+            "200": {
+              description: "Admin-only export history",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: ["exports"],
+                    properties: {
+                      exports: {
+                        type: "array",
+                        items: { $ref: "#/components/schemas/ExportSummary" },
+                      },
+                    },
+                    additionalProperties: false,
+                  },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+        post: {
+          operationId: "createWorkspaceExport",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          responses: {
+            "201": {
+              description: "Completed portable workspace export",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ExportSummary" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "413": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/exports/{exportId}/downloads": {
+        post: {
+          operationId: "createExportDownload",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, {
+            name: "exportId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          }],
+          responses: {
+            "201": {
+              description: "Short-lived authorized download reference",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ExportDownload" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/exports/{exportId}/download": {
+        get: {
+          operationId: "downloadExport",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter, {
+            name: "exportId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          }, {
+            name: "token",
+            in: "query",
+            required: true,
+            schema: { type: "string", minLength: 1, maxLength: 200 },
+          }, workspaceQueryParameter],
+          responses: {
+            "200": {
+              description: "Private portable export artifact",
+              content: {
+                "application/json": {
+                  schema: { type: "string", format: "binary" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "410": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/vcard": {
+        get: {
+          operationId: "exportPersonVCard",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            workspaceParameter,
+            workspaceQueryParameter,
+            personIdParameter,
+          ],
+          responses: {
+            "200": {
+              description: "Member-authorized person vCard",
+              content: {
+                "text/vcard": { schema: { type: "string", format: "binary" } },
+              },
+            },
+            "401": problem,
             "404": problem,
             "503": problem,
           },
@@ -6334,6 +6471,94 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        ExportManifest: {
+          type: "object",
+          required: [
+            "attachments",
+            "limitations",
+            "profile",
+            "rows",
+            "version",
+          ],
+          properties: {
+            attachments: {
+              type: "object",
+              required: ["count", "items", "sha256"],
+              properties: {
+                count: { type: "integer", minimum: 0 },
+                items: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    required: ["byteSize", "filename", "sha256"],
+                    properties: {
+                      byteSize: { type: "integer", minimum: 0 },
+                      filename: { type: "string" },
+                      sha256: { type: "string", pattern: "^[0-9a-f]{64}$" },
+                    },
+                    additionalProperties: false,
+                  },
+                },
+                sha256: { type: "string", pattern: "^[0-9a-f]{64}$" },
+              },
+              additionalProperties: false,
+            },
+            limitations: { type: "array", items: { type: "string" } },
+            profile: { const: "monica-json" },
+            rows: {
+              type: "object",
+              required: ["people"],
+              properties: {
+                people: {
+                  type: "object",
+                  required: ["count", "sha256"],
+                  properties: {
+                    count: { type: "integer", minimum: 0 },
+                    sha256: { type: "string", pattern: "^[0-9a-f]{64}$" },
+                  },
+                  additionalProperties: false,
+                },
+              },
+              additionalProperties: false,
+            },
+            version: { const: 1 },
+          },
+          additionalProperties: false,
+        },
+        ExportSummary: {
+          type: "object",
+          required: ["createdAt", "exportId", "format", "manifest", "status"],
+          properties: {
+            completedAt: { type: "string", format: "date-time" },
+            createdAt: { type: "string", format: "date-time" },
+            error: { type: "string" },
+            expiresAt: { type: "string", format: "date-time" },
+            exportId: { type: "string", format: "uuid" },
+            format: { const: "json" },
+            manifest: { $ref: "#/components/schemas/ExportManifest" },
+            status: {
+              enum: [
+                "cancelled",
+                "completed",
+                "expired",
+                "failed",
+                "pending",
+                "running",
+              ],
+            },
+          },
+          additionalProperties: false,
+        },
+        ExportDownload: {
+          type: "object",
+          required: ["expiresAt", "href", "status"],
+          properties: {
+            expiresAt: { type: "string", format: "date-time" },
+            href: { type: "string" },
+            status: { const: "ready" },
+          },
+          additionalProperties: false,
+        },
         StorageFileLookupItem: {
           type: "object",
           required: [
@@ -6991,6 +7216,25 @@ export interface ImportSummary {
   readonly status: "completed" | "dry_run" | "failed";
 }
 
+export interface ExportManifest {
+  readonly attachments: { readonly count: number; readonly items: readonly { readonly byteSize: number; readonly filename: string; readonly sha256: string }[]; readonly sha256: string };
+  readonly limitations: readonly string[];
+  readonly profile: "monica-json";
+  readonly rows: { readonly people: { readonly count: number; readonly sha256: string } };
+  readonly version: 1;
+}
+
+export interface ExportSummary {
+  readonly completedAt?: string;
+  readonly createdAt: string;
+  readonly error?: string;
+  readonly expiresAt?: string;
+  readonly exportId: string;
+  readonly format: "json";
+  readonly manifest: ExportManifest;
+  readonly status: "cancelled" | "completed" | "expired" | "failed" | "pending" | "running";
+}
+
 export interface StorageFileLookupItem {
   readonly byteSize: number;
   readonly createdAt: string;
@@ -7190,6 +7434,18 @@ export function getImportReport(importId: string, workspaceId?: string): Promise
 
 export function commitImport(importId: string, workspaceId?: string): Promise<ApiResult<{ readonly importId: string; readonly peopleCreated: number; readonly peopleReused: number; readonly status: "completed" }>> {
   return request(\`/api/v1/imports/\${encodeURIComponent(importId)}/commit\`, { method: "POST", headers: workspaceHeader(workspaceId), body: JSON.stringify({ confirmed: true }) });
+}
+
+export function listExports(workspaceId?: string): Promise<ApiResult<{ readonly exports: readonly ExportSummary[] }>> {
+  return request("/api/v1/exports", { headers: workspaceHeader(workspaceId) });
+}
+
+export function createWorkspaceExport(workspaceId?: string): Promise<ApiResult<ExportSummary>> {
+  return request("/api/v1/exports", { method: "POST", headers: workspaceHeader(workspaceId) });
+}
+
+export function createExportDownload(exportId: string, workspaceId?: string): Promise<ApiResult<{ readonly expiresAt: string; readonly href: string; readonly status: "ready" }>> {
+  return request(\`/api/v1/exports/\${encodeURIComponent(exportId)}/downloads\`, { method: "POST", headers: workspaceHeader(workspaceId) });
 }
 
 export function listPersonalizationEntries(section: PersonalizationSection, workspaceId?: string): Promise<ApiResult<{ readonly capabilities: { readonly create: boolean; readonly editValue: boolean }; readonly entries: readonly PersonalizationEntry[]; readonly readOnly: boolean; readonly section: PersonalizationSection; readonly status: "ready" }>> {

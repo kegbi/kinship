@@ -269,6 +269,29 @@ describe("APP-002C protected application shell", () => {
     );
   });
 
+  it("renders the canonical forbidden main for direct member export access", async () => {
+    shellMarkup();
+    document.body.dataset.pageId = "settings.export";
+    document.querySelector("#protected-shell")?.insertAdjacentHTML(
+      "beforeend",
+      '<main id="main-content" data-requires-workspace-admin>Portable workspace export</main>',
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        ...(session() as Record<string, unknown>),
+        member: { id: "member", role: "member" },
+      })),
+    );
+    await mountApplicationShell();
+    expect(document.querySelector("#access-state")?.textContent).toContain(
+      "Export unavailable",
+    );
+    expect(document.body.textContent).not.toContain(
+      "Portable workspace export",
+    );
+  });
+
   it("reveals one active workspace and signs out without browser token storage", async () => {
     shellMarkup();
     const fetchMock = vi.fn()

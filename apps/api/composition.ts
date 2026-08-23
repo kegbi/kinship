@@ -44,6 +44,7 @@ import {
   type LegalAcceptance,
   PostgresAuthenticationAudit,
   PostgresCommunicationAudit,
+  PostgresExportAudit,
   PostgresFileAudit,
   PostgresGiftAudit,
   PostgresImportantDateAudit,
@@ -92,6 +93,7 @@ import {
   createProfileFactManagement,
   type ImportantDateManagement,
   PostgresImportantDateRepository,
+  PostgresPeopleExportBoundary,
   PostgresPeopleImportBoundary,
   PostgresPeoplePersonalizationReferences,
   PostgresPeopleRepository,
@@ -205,6 +207,7 @@ import {
   type ObjectStorage,
   PERSON_FILE_MAX_BYTES,
   type PersonFileManagement,
+  PostgresExportFileBoundary,
   PostgresFileImportBoundary,
   PostgresFileMetadataRepository,
   PostgresGiftAttachmentBoundary,
@@ -222,11 +225,16 @@ import {
 import { Client as MinioClient } from "minio";
 import { resolveObjectStorageConfiguration } from "./file_storage_config.ts";
 import {
+  createExportManagement,
   createImportManagement,
+  type ExportManagement,
   type ImportManagement,
+  PostgresExportRepository,
+  PostgresExportTransaction,
   PostgresImportRepository,
   PostgresImportTransaction,
 } from "../../packages/backend/modules/import-export/public.ts";
+import { createExportRoutes } from "./exports.ts";
 
 export interface ApiServices extends RegistrationHttpServices {
   readonly activityReport?: ActivityReport;
@@ -238,6 +246,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly journal?: JournalManagement;
   readonly journalTimeline?: JournalTimeline;
   readonly imports?: ImportManagement;
+  readonly exports?: ExportManagement;
   readonly legal?: LegalAcceptance;
   readonly invitations?: InvitationHttpServices["invitations"];
   readonly importantDates?: ImportantDateManagement;
@@ -412,6 +421,16 @@ export function createApiApp(services?: ApiServices): Hono {
           createImportRoutes({
             browserSecurity: services.browserSecurity,
             imports: services.imports,
+            protectedSessions: services.protectedSessions,
+          }),
+        );
+      }
+      if (services.exports) {
+        api.route(
+          "/",
+          createExportRoutes({
+            browserSecurity: services.browserSecurity,
+            exports: services.exports,
             protectedSessions: services.protectedSessions,
           }),
         );
@@ -754,6 +773,20 @@ export function createConfiguredApiApp(
     repository: new PostgresImportRepository(connection.db),
     transaction: new PostgresImportTransaction(connection.db),
   });
+  const exports = createExportManagement({
+    audit: new PostgresExportAudit(),
+    clock,
+    files: new PostgresExportFileBoundary(connection.db, {
+      ids: new WebCryptoFileIdentifiers(),
+      keys: new WebCryptoObjectKeys(),
+      storage: objectStorage,
+    }),
+    ids: { next: () => ids.create() },
+    people: new PostgresPeopleExportBoundary(),
+    repository: new PostgresExportRepository(),
+    tokens: { next: () => crypto.randomUUID() },
+    transaction: new PostgresExportTransaction(connection.db),
+  });
   const peopleRepository = new PostgresPeopleRepository();
   const peopleManagement = createPeopleManagement({
     audit: new PostgresPersonCreatedAudit(),
@@ -895,6 +928,7 @@ export function createConfiguredApiApp(
     invitations,
     importantDates,
     imports,
+    exports,
     interactions,
     journal,
     journalTimeline,
