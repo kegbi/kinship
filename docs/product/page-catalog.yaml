@@ -242,6 +242,7 @@ pages:
     rendering: static-shell-islands
     owner: journal
     flowIds: [JOURNAL-001]
+    sections: [composer, chronological-timeline]
 
   - id: journal.item
     path: /app/journal/:journalItemId
@@ -249,6 +250,7 @@ pages:
     rendering: static-shell-islands
     owner: journal
     flowIds: [JOURNAL-001]
+    sections: [item-detail]
 
   - id: settings.index
     path: /app/settings

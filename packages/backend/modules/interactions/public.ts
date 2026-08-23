@@ -1,4 +1,6 @@
 export { PostgresInteractionPersonalizationReferences } from "./adapters/postgres/personalization_references.ts";
+export { PostgresJournalActivityBoundary } from "./adapters/postgres/journal_activity_boundary.ts";
+export type { JournalActivityReference } from "./application/journal_activity_reference.ts";
 export type { InteractionPersonalizationReferences } from "./application/personalization_references.ts";
 export { createInteractionManagement } from "./application/record_interaction.ts";
 export { PostgresInteractionRepository } from "./adapters/postgres/interaction_repository.ts";

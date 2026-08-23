@@ -47,6 +47,7 @@ import {
   PostgresImportantDateAudit,
   PostgresInteractionAudit,
   PostgresInvitationAudit,
+  PostgresJournalAudit,
   PostgresPersonCreatedAudit,
   PostgresPersonLifecycleAudit,
   PostgresProfileFactAudit,
@@ -115,8 +116,14 @@ import {
   PostgresCommunicationRepository,
   PostgresInteractionPersonalizationReferences,
   PostgresInteractionRepository,
+  PostgresJournalActivityBoundary,
 } from "../../packages/backend/modules/interactions/public.ts";
-import { PostgresJournalPersonalizationReferences } from "../../packages/backend/modules/journal/public.ts";
+import {
+  createJournalManagement,
+  type JournalManagement,
+  PostgresJournalPersonalizationReferences,
+  PostgresJournalRepository,
+} from "../../packages/backend/modules/journal/public.ts";
 import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
 import { createRelationshipRoutes } from "./relationships.ts";
 import { createInteractionRoutes } from "./interactions.ts";
@@ -175,6 +182,12 @@ import { createGovernanceRoutes } from "./governance.ts";
 import { createPlanningRoutes } from "./planning.ts";
 import { createFileRoutes } from "./files.ts";
 import { createGiftRoutes } from "./gifts.ts";
+import { createJournalRoutes } from "./journal.ts";
+import {
+  createJournalTimeline,
+  type JournalTimeline,
+  PostgresJournalTimelineRepository,
+} from "../../packages/backend/read-models/journal-timeline/public.ts";
 import {
   createObjectStorageRequestTransport,
   createPersonFileManagement,
@@ -206,6 +219,8 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly files?: PersonFileManagement;
   readonly storageSettings?: StorageSettings;
   readonly gifts?: GiftManagement;
+  readonly journal?: JournalManagement;
+  readonly journalTimeline?: JournalTimeline;
   readonly invitations?: InvitationHttpServices["invitations"];
   readonly importantDates?: ImportantDateManagement;
   readonly interactions?: InteractionManagement & CommunicationManagement;
@@ -348,6 +363,17 @@ export function createApiApp(services?: ApiServices): Hono {
             browserSecurity: services.browserSecurity,
             gifts: services.gifts,
             protectedSessions: services.protectedSessions,
+          }),
+        );
+      }
+      if (services.journal && services.journalTimeline) {
+        api.route(
+          "/",
+          createJournalRoutes({
+            browserSecurity: services.browserSecurity,
+            journal: services.journal,
+            protectedSessions: services.protectedSessions,
+            timeline: services.journalTimeline,
           }),
         );
       }
@@ -667,6 +693,14 @@ export function createConfiguredApiApp(
     repository: new PostgresGiftRepository(),
     transaction: peopleTransaction,
   });
+  const journal = createJournalManagement({
+    activities: new PostgresJournalActivityBoundary(),
+    audit: new PostgresJournalAudit(),
+    clock,
+    ids: { next: () => ids.create() },
+    repository: new PostgresJournalRepository(),
+    transaction: peopleTransaction,
+  });
   const peopleRepository = new PostgresPeopleRepository();
   const peopleManagement = createPeopleManagement({
     audit: new PostgresPersonCreatedAudit(),
@@ -766,6 +800,9 @@ export function createConfiguredApiApp(
   const activityReport = createActivityReport({
     repository: new PostgresActivityReportRepository(connection.db),
   });
+  const journalTimeline = createJournalTimeline({
+    repository: new PostgresJournalTimelineRepository(connection.db),
+  });
   const auditHistory = createAuditHistory({
     cursorKeyset: subjectKeyset,
     repository: new PostgresAuditHistoryRepository(connection.db),
@@ -800,6 +837,8 @@ export function createConfiguredApiApp(
     invitations,
     importantDates,
     interactions,
+    journal,
+    journalTimeline,
     passwordRecovery,
     people,
     profile,

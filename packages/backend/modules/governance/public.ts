@@ -20,4 +20,5 @@ export { PostgresCommunicationAudit } from "./adapters/postgres/communication_au
 export { PostgresTaskAudit } from "./adapters/postgres/task_audit.ts";
 export { PostgresFileAudit } from "./adapters/postgres/file_audit.ts";
 export { PostgresGiftAudit } from "./adapters/postgres/gift_audit.ts";
+export { PostgresJournalAudit } from "./adapters/postgres/journal_audit.ts";
 export { PostgresReminderAudit } from "./adapters/postgres/reminder_audit.ts";
