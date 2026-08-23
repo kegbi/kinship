@@ -127,6 +127,11 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
       `${directive} supports a read-only image`,
     );
   }
+  assert(
+    gateway.includes("client_max_body_size 1501024;") &&
+      gateway.includes("location /api/v1/"),
+    "gateway admits the shared 1.5 MB import source plus its JSON envelope",
+  );
   for (
     const route of [
       "= /auth/verify-email",
@@ -170,6 +175,10 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
         "try_files /internal/person-audit-shell/index.html =404",
       ) &&
       gateway.includes("location = /internal/person-audit-shell") &&
+      gateway.includes(
+        "try_files /internal/import-report-shell/index.html =404",
+      ) &&
+      gateway.includes("location = /internal/import-report-shell") &&
       gatewayImage.includes(
         "COPY --from=build --chown=nginx:nginx /app/apps/web/dist/client /usr/share/nginx/html",
       ),

@@ -2783,6 +2783,152 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
         },
       },
+      "/api/v1/imports": {
+        get: {
+          operationId: "listImports",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter],
+          responses: {
+            "200": {
+              description: "Admin-only import history",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: ["imports"],
+                    properties: {
+                      imports: {
+                        type: "array",
+                        items: { $ref: "#/components/schemas/ImportSummary" },
+                      },
+                    },
+                    additionalProperties: false,
+                  },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/imports/dry-runs": {
+        post: {
+          operationId: "createImportDryRun",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["source"],
+                  properties: { source: { type: "object" } },
+                  additionalProperties: false,
+                },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "Validated bounded Monica dry-run",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ImportDryRun" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "413": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/imports/{importId}": {
+        get: {
+          operationId: "getImportReport",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter, {
+            name: "importId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          }],
+          responses: {
+            "200": {
+              description: "Import report",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ImportSummary" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/imports/{importId}/commit": {
+        post: {
+          operationId: "commitImport",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, {
+            name: "importId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["confirmed"],
+                  properties: { confirmed: { const: true } },
+                  additionalProperties: false,
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Atomic idempotent import commit",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: [
+                      "importId",
+                      "peopleCreated",
+                      "peopleReused",
+                      "status",
+                    ],
+                    properties: {
+                      importId: { type: "string", format: "uuid" },
+                      peopleCreated: { type: "integer", minimum: 0 },
+                      peopleReused: { type: "integer", minimum: 0 },
+                      status: { const: "completed" },
+                    },
+                    additionalProperties: false,
+                  },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+      },
       "/api/v1/settings/personalization/{section}": {
         parameters: [{
           name: "section",
@@ -6121,6 +6267,73 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        ImportReport: {
+          type: "object",
+          required: ["counts", "diagnostics"],
+          properties: {
+            counts: {
+              type: "object",
+              required: [
+                "contacts",
+                "legacyCredentialsDiscarded",
+                "missingFiles",
+                "orphans",
+                "unsupported",
+              ],
+              properties: {
+                contacts: { type: "integer", minimum: 0 },
+                legacyCredentialsDiscarded: { type: "integer", minimum: 0 },
+                missingFiles: { type: "integer", minimum: 0 },
+                orphans: { type: "integer", minimum: 0 },
+                unsupported: { type: "integer", minimum: 0 },
+              },
+              additionalProperties: false,
+            },
+            diagnostics: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["code", "message", "severity"],
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                  severity: { enum: ["info", "skipped", "warning"] },
+                },
+                additionalProperties: false,
+              },
+            },
+          },
+          additionalProperties: false,
+        },
+        ImportDryRun: {
+          type: "object",
+          required: ["importId", "report", "status"],
+          properties: {
+            importId: { type: "string", format: "uuid" },
+            report: { $ref: "#/components/schemas/ImportReport" },
+            status: { const: "dry_run" },
+          },
+          additionalProperties: false,
+        },
+        ImportSummary: {
+          type: "object",
+          required: [
+            "createdAt",
+            "importId",
+            "report",
+            "sourceProfile",
+            "status",
+          ],
+          properties: {
+            completedAt: { type: "string", format: "date-time" },
+            createdAt: { type: "string", format: "date-time" },
+            importId: { type: "string", format: "uuid" },
+            report: { $ref: "#/components/schemas/ImportReport" },
+            sourceProfile: { const: "json_export" },
+            status: { enum: ["completed", "dry_run", "failed"] },
+          },
+          additionalProperties: false,
+        },
         StorageFileLookupItem: {
           type: "object",
           required: [
@@ -6764,6 +6977,20 @@ export interface WorkspaceSettings {
   readonly defaultReminderTime: string;
 }
 
+export interface ImportReport {
+  readonly counts: { readonly contacts: number; readonly legacyCredentialsDiscarded: number; readonly missingFiles: number; readonly orphans: number; readonly unsupported: number };
+  readonly diagnostics: readonly { readonly code: string; readonly message: string; readonly severity: "info" | "skipped" | "warning" }[];
+}
+
+export interface ImportSummary {
+  readonly completedAt?: string;
+  readonly createdAt: string;
+  readonly importId: string;
+  readonly report: ImportReport;
+  readonly sourceProfile: "json_export";
+  readonly status: "completed" | "dry_run" | "failed";
+}
+
 export interface StorageFileLookupItem {
   readonly byteSize: number;
   readonly createdAt: string;
@@ -6947,6 +7174,22 @@ export function updateWorkspaceSettings(input: WorkspaceSettings, workspaceId?: 
 export function getStorageSettings(query?: string, workspaceId?: string): Promise<ApiResult<StorageSettings>> {
   const search = query ? \`?query=\${encodeURIComponent(query)}\` : "";
   return request(\`/api/v1/settings/storage\${search}\`, { headers: workspaceHeader(workspaceId) });
+}
+
+export function listImports(workspaceId?: string): Promise<ApiResult<{ readonly imports: readonly ImportSummary[] }>> {
+  return request("/api/v1/imports", { headers: workspaceHeader(workspaceId) });
+}
+
+export function createImportDryRun(source: unknown, workspaceId?: string): Promise<ApiResult<{ readonly importId: string; readonly report: ImportReport; readonly status: "dry_run" }>> {
+  return request("/api/v1/imports/dry-runs", { method: "POST", headers: workspaceHeader(workspaceId), body: JSON.stringify({ source }) });
+}
+
+export function getImportReport(importId: string, workspaceId?: string): Promise<ApiResult<ImportSummary>> {
+  return request(\`/api/v1/imports/\${encodeURIComponent(importId)}\`, { headers: workspaceHeader(workspaceId) });
+}
+
+export function commitImport(importId: string, workspaceId?: string): Promise<ApiResult<{ readonly importId: string; readonly peopleCreated: number; readonly peopleReused: number; readonly status: "completed" }>> {
+  return request(\`/api/v1/imports/\${encodeURIComponent(importId)}/commit\`, { method: "POST", headers: workspaceHeader(workspaceId), body: JSON.stringify({ confirmed: true }) });
 }
 
 export function listPersonalizationEntries(section: PersonalizationSection, workspaceId?: string): Promise<ApiResult<{ readonly capabilities: { readonly create: boolean; readonly editValue: boolean }; readonly entries: readonly PersonalizationEntry[]; readonly readOnly: boolean; readonly section: PersonalizationSection; readonly status: "ready" }>> {

@@ -105,3 +105,10 @@ export type { TagPersonalizationFacade } from "./application/tag_personalization
 export { PostgresTagPersonalization } from "./adapters/postgres/tag_personalization.ts";
 export { PostgresPeoplePersonalizationReferences } from "./adapters/postgres/personalization_references.ts";
 export type { PeoplePersonalizationReferences } from "./application/personalization_references.ts";
+export type {
+  ImportedPerson,
+  PeopleImportActor,
+  PeopleImportBoundary,
+  PeopleImportTransaction,
+} from "./application/import_people_boundary.ts";
+export { PostgresPeopleImportBoundary } from "./adapters/postgres/import_people_boundary.ts";

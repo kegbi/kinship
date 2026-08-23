@@ -96,6 +96,8 @@ function renderRouteForbidden(elements: ShellElements): void {
   const personalization = document.body.dataset.pageId ===
     "settings.personalization";
   const storage = document.body.dataset.pageId === "settings.storage";
+  const importSettings =
+    document.body.dataset.pageId?.startsWith("settings.import") === true;
   const auditHistory = document.body.dataset.pageId === "people.audit" ||
     document.body.dataset.pageId === "settings.audit";
   heading.textContent = workspaceSettings
@@ -104,6 +106,8 @@ function renderRouteForbidden(elements: ShellElements): void {
     ? "Personalization unavailable"
     : storage
     ? "Storage settings unavailable"
+    : importSettings
+    ? "Import unavailable"
     : auditHistory
     ? "Audit history unavailable"
     : "You don’t have access to Members";
@@ -114,6 +118,8 @@ function renderRouteForbidden(elements: ShellElements): void {
     ? "Only workspace owners and admins can manage workspace personalization."
     : storage
     ? "Only workspace owners and admins can review workspace storage and provider health."
+    : importSettings
+    ? "Only workspace owners and admins can import workspace data."
     : auditHistory
     ? "Only workspace owners and admins can review audit history."
     : "Only workspace owners and admins can view members and invitations.";
@@ -226,6 +232,7 @@ export async function mountApplicationShell(
       document.body.dataset.pageId === "settings.workspace" ||
       document.body.dataset.pageId === "settings.personalization" ||
       document.body.dataset.pageId === "settings.storage" ||
+      document.body.dataset.pageId?.startsWith("settings.import") === true ||
       document.body.dataset.pageId === "people.audit" ||
       document.body.dataset.pageId === "settings.audit") &&
     !isWorkspaceAdmin

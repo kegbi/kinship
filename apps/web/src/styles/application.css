@@ -601,6 +601,61 @@ summary:focus-visible,
   max-width: 58rem;
 }
 
+.import-page {
+  max-width: 58rem;
+}
+.import-form {
+  display: grid;
+  gap: .75rem;
+  max-width: 42rem;
+}
+.import-form label,
+.confirmation-control {
+  font-weight: 750;
+}
+.import-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+.import-counts div {
+  padding: .8rem 0;
+  border-bottom: 1px solid rgb(32 53 45 / 16%);
+}
+.import-counts dt {
+  color: #617069;
+  font-size: .78rem;
+  font-weight: 750;
+}
+.import-counts dd {
+  margin: .35rem 0 0;
+  font-size: 1.05rem;
+  font-weight: 750;
+}
+.import-history {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  list-style: none;
+}
+.import-history li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 0;
+  border-top: 1px solid rgb(32 53 45 / 16%);
+}
+.import-history span {
+  color: #617069;
+}
+.confirmation-control {
+  display: flex;
+  gap: .55rem;
+  align-items: center;
+  margin: 1.25rem 0 .75rem;
+}
+
 .storage-page-state {
   min-height: 1.5rem;
   color: #56645d;
@@ -2198,6 +2253,14 @@ summary:focus-visible,
   .storage-metrics,
   .storage-object-state {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .import-counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .import-history li {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .storage-search-form > div,
