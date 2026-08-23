@@ -1410,6 +1410,99 @@
         }
       }
     },
+    "/api/v1/people/{personId}/life-events": {
+      "get": {
+        "operationId": "listPersonLifeEvents",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "personId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded precision-aware life-event history from the person profile read model",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonLifeEventsReady"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/people/{personId}/view": {
       "post": {
         "operationId": "recordPersonView",
@@ -14211,18 +14304,121 @@
         },
         "additionalProperties": false
       },
+      "PersonLifeEventDate": {
+        "type": "object",
+        "required": [
+          "precision"
+        ],
+        "properties": {
+          "day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "happenedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "month": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "precision": {
+            "type": "string",
+            "enum": [
+              "day",
+              "full",
+              "month",
+              "month_day",
+              "unknown",
+              "year",
+              "year_month"
+            ]
+          },
+          "year": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9999
+          }
+        },
+        "additionalProperties": false
+      },
+      "PersonLifeEvent": {
+        "type": "object",
+        "required": [
+          "date",
+          "id"
+        ],
+        "properties": {
+          "date": {
+            "$ref": "#/components/schemas/PersonLifeEventDate"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "typeName": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PersonLifeEventsReady": {
+        "type": "object",
+        "required": [
+          "events",
+          "status"
+        ],
+        "properties": {
+          "events": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/PersonLifeEvent"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "hidden",
+              "ready"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "PersonDueInformation": {
         "type": "object",
         "required": [
           "status",
-          "detail"
+          "detail",
+          "openTaskCount"
         ],
         "properties": {
           "status": {
-            "const": "unavailable"
+            "const": "ready"
           },
           "detail": {
             "type": "string"
+          },
+          "nextReminderAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "openTaskCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "stayInTouchAt": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "additionalProperties": false
@@ -14516,6 +14712,7 @@
           "conversations",
           "first-meeting",
           "food-preferences",
+          "life-events",
           "notes",
           "pets",
           "relationships",

@@ -15,6 +15,8 @@ const actor = {
   workspaceId: "00000000-0000-4000-8000-000000000003",
 };
 const personId = "00000000-0000-4000-8000-000000000100";
+const listLifeEvents: PersonProfileRepository["listLifeEvents"] = () =>
+  Promise.resolve({ events: [], status: "ready" });
 
 Deno.test("[PEOPLE-004] profile implementations require a lifecycle version", () => {
   // @ts-expect-error updatedAt is required at the public read-model boundary.
@@ -40,6 +42,11 @@ Deno.test("[APP-003C] person profile composes orientation through one read-only 
     get(command) {
       received = command;
       return Promise.resolve({
+        dueInformation: {
+          nextReminderAt: "2026-08-20T09:00:00.000Z",
+          openTaskCount: 2,
+          stayInTouchAt: "2026-08-21T09:00:00.000Z",
+        },
         person: {
           description: "Mathematician and correspondent.",
           familyName: "Lovelace",
@@ -60,6 +67,7 @@ Deno.test("[APP-003C] person profile composes orientation through one read-only 
         status: "ready",
       });
     },
+    listLifeEvents,
   };
   const profile = createPersonProfile({ repository });
 
@@ -73,9 +81,10 @@ Deno.test("[APP-003C] person profile composes orientation through one read-only 
     "orientation fields remain intact",
   );
   assert(
-    result.dueInformation.status === "unavailable" &&
-      result.dueInformation.detail.includes("planning"),
-    "the not-yet-delivered due projection is explicit",
+    result.dueInformation.status === "ready" &&
+      result.dueInformation.openTaskCount === 2 &&
+      result.dueInformation.detail.includes("next reminder"),
+    "the delivered planning projection is composed with orientation",
   );
   assert(
     (received as { readonly workspaceId?: string; readonly personId?: string })
@@ -94,6 +103,7 @@ Deno.test("[APP-003C] person profile preserves archived, missing, and forbidden 
           Promise.resolve(
             status === "archived"
               ? {
+                dueInformation: { openTaskCount: 0 },
                 person: {
                   givenName: "Harriet",
                   id: personId,
@@ -109,6 +119,7 @@ Deno.test("[APP-003C] person profile preserves archived, missing, and forbidden 
               }
               : { status },
           ),
+        listLifeEvents,
       },
     });
     const result = await profile.get(actor, personId);
@@ -121,6 +132,7 @@ Deno.test("PEOPLE-006 hidden tag projection discloses no retained assignments", 
     repository: {
       get: () =>
         Promise.resolve({
+          dueInformation: { openTaskCount: 0 },
           person: {
             givenName: "Ada",
             id: personId,
@@ -138,6 +150,7 @@ Deno.test("PEOPLE-006 hidden tag projection discloses no retained assignments", 
           },
           status: "ready" as const,
         }),
+      listLifeEvents,
     },
   });
 
@@ -146,5 +159,38 @@ Deno.test("PEOPLE-006 hidden tag projection discloses no retained assignments", 
   assert(
     result.person.tagCount === 0 && result.person.tags.length === 0,
     "hidden module strips tag count and descriptors at composition",
+  );
+});
+
+Deno.test("[PEOPLE-003] person life events use the read-only profile boundary", async () => {
+  let received: unknown;
+  const profile = createPersonProfile({
+    repository: {
+      get: () => Promise.resolve({ status: "not-found" }),
+      listLifeEvents(command) {
+        received = command;
+        return Promise.resolve({
+          events: [{
+            date: { month: 12, precision: "year_month", year: 1843 },
+            id: crypto.randomUUID(),
+            name: "Published Notes",
+          }],
+          status: "ready",
+        });
+      },
+    },
+  });
+
+  const result = await profile.listLifeEvents(actor, personId);
+
+  assert(
+    result.status === "ready" && result.events[0]?.name === "Published Notes",
+    "life-event history remains available without a new write path",
+  );
+  assert(
+    (received as { readonly workspaceId?: string }).workspaceId ===
+        actor.workspaceId &&
+      (received as { readonly personId?: string }).personId === personId,
+    "life-event reads preserve the active-workspace actor",
   );
 });

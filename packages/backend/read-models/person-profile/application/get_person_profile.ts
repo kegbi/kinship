@@ -21,6 +21,7 @@ export interface PersonProfileSection {
     | "conversations"
     | "first-meeting"
     | "food-preferences"
+    | "life-events"
     | "notes"
     | "pets"
     | "relationships"
@@ -51,12 +52,50 @@ export interface PersonProfileIdentity {
 
 export interface PersonDueInformation {
   readonly detail: string;
-  readonly status: "unavailable";
+  readonly nextReminderAt?: string;
+  readonly openTaskCount: number;
+  readonly stayInTouchAt?: string;
+  readonly status: "ready";
+}
+
+export interface PersonDueProjection {
+  readonly nextReminderAt?: string;
+  readonly openTaskCount: number;
+  readonly stayInTouchAt?: string;
+}
+
+export interface PersonLifeEvent {
+  readonly date: {
+    readonly day?: number;
+    readonly happenedAt?: string;
+    readonly month?: number;
+    readonly precision:
+      | "day"
+      | "full"
+      | "month"
+      | "month_day"
+      | "unknown"
+      | "year"
+      | "year_month";
+    readonly year?: number;
+  };
+  readonly id: string;
+  readonly name?: string;
+  readonly note?: string;
+  readonly typeName?: string;
 }
 
 export type PersonProfileRepositoryResult =
-  | { readonly person: PersonProfileIdentity; readonly status: "ready" }
-  | { readonly person: PersonProfileIdentity; readonly status: "archived" }
+  | {
+    readonly dueInformation: PersonDueProjection;
+    readonly person: PersonProfileIdentity;
+    readonly status: "ready";
+  }
+  | {
+    readonly dueInformation: PersonDueProjection;
+    readonly person: PersonProfileIdentity;
+    readonly status: "archived";
+  }
   | { readonly status: "not-found" }
   | { readonly status: "forbidden" };
 
@@ -64,6 +103,13 @@ export interface PersonProfileRepository {
   get(
     command: PersonProfileActor & { readonly personId: string },
   ): Promise<PersonProfileRepositoryResult>;
+  listLifeEvents(
+    command: PersonProfileActor & { readonly personId: string },
+  ): Promise<
+    | { readonly events: readonly PersonLifeEvent[]; readonly status: "ready" }
+    | { readonly events: readonly PersonLifeEvent[]; readonly status: "hidden" }
+    | { readonly status: "not-found" | "forbidden" }
+  >;
 }
 
 export type GetPersonProfileResult =
@@ -75,11 +121,20 @@ export type GetPersonProfileResult =
   | { readonly status: "not-found" }
   | { readonly status: "forbidden" };
 
-const unavailableDueInformation: PersonDueInformation = {
-  detail:
-    "Due information will become available when planning and reminders are delivered.",
-  status: "unavailable",
-};
+function dueInformation(projection: PersonDueProjection): PersonDueInformation {
+  const details = [
+    `${projection.openTaskCount} open task${
+      projection.openTaskCount === 1 ? "" : "s"
+    }`,
+  ];
+  if (projection.nextReminderAt) {
+    details.push(`next reminder ${projection.nextReminderAt}`);
+  }
+  if (projection.stayInTouchAt) {
+    details.push(`stay in touch ${projection.stayInTouchAt}`);
+  }
+  return { ...projection, detail: `${details.join("; ")}.`, status: "ready" };
+}
 
 export function createPersonProfile(dependencies: {
   readonly repository: PersonProfileRepository;
@@ -98,7 +153,7 @@ export function createPersonProfile(dependencies: {
           section.id === "tags" && section.status === "hidden"
         ) === true;
       return {
-        dueInformation: unavailableDueInformation,
+        dueInformation: dueInformation(result.dueInformation),
         person: {
           ...result.person,
           tagCount: tagsHidden ? 0 : result.person.tagCount,
@@ -109,6 +164,8 @@ export function createPersonProfile(dependencies: {
         status: result.status,
       };
     },
+    listLifeEvents: async (actor: PersonProfileActor, personId: string) =>
+      await dependencies.repository.listLifeEvents({ ...actor, personId }),
   };
 }
 

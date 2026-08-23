@@ -21,6 +21,7 @@ import { mountTaskSurface } from "./tasks.ts";
 import { mountPersonReminders } from "./reminders.ts";
 import { mountPersonFiles } from "./person-files.ts";
 import { mountPersonGifts } from "./person-gifts.ts";
+import { mountPersonLifeEvents } from "./person-life-events.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
@@ -752,6 +753,13 @@ export async function mountPeopleProfile(): Promise<void> {
       personId: id,
       workspaceId: session.session.workspace.id,
     }),
+    mountPersonLifeEvents(
+      id,
+      session.session.workspace.id,
+      result.value.person.profileSections?.some((section) =>
+        section.id === "life-events" && section.status === "hidden"
+      ) === true,
+    ),
     mountCommunications(
       id,
       session.session.workspace.id,

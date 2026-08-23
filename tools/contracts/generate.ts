@@ -805,6 +805,31 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           "PersonDeleted",
         ),
       },
+      "/api/v1/people/{personId}/life-events": {
+        get: {
+          operationId: "listPersonLifeEvents",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter, personIdParameter],
+          responses: {
+            "200": {
+              description:
+                "Bounded precision-aware life-event history from the person profile read model",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/PersonLifeEventsReady",
+                  },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+      },
       "/api/v1/people/{personId}/view": {
         post: {
           operationId: "recordPersonView",
@@ -5352,12 +5377,63 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        PersonLifeEventDate: {
+          type: "object",
+          required: ["precision"],
+          properties: {
+            day: { type: "integer", minimum: 1, maximum: 31 },
+            happenedAt: { type: "string", format: "date-time" },
+            month: { type: "integer", minimum: 1, maximum: 12 },
+            precision: {
+              type: "string",
+              enum: [
+                "day",
+                "full",
+                "month",
+                "month_day",
+                "unknown",
+                "year",
+                "year_month",
+              ],
+            },
+            year: { type: "integer", minimum: 1, maximum: 9_999 },
+          },
+          additionalProperties: false,
+        },
+        PersonLifeEvent: {
+          type: "object",
+          required: ["date", "id"],
+          properties: {
+            date: { $ref: "#/components/schemas/PersonLifeEventDate" },
+            id: { type: "string", format: "uuid" },
+            name: { type: "string" },
+            note: { type: "string" },
+            typeName: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        PersonLifeEventsReady: {
+          type: "object",
+          required: ["events", "status"],
+          properties: {
+            events: {
+              type: "array",
+              maxItems: 100,
+              items: { $ref: "#/components/schemas/PersonLifeEvent" },
+            },
+            status: { type: "string", enum: ["hidden", "ready"] },
+          },
+          additionalProperties: false,
+        },
         PersonDueInformation: {
           type: "object",
-          required: ["status", "detail"],
+          required: ["status", "detail", "openTaskCount"],
           properties: {
-            status: { const: "unavailable" },
+            status: { const: "ready" },
             detail: { type: "string" },
+            nextReminderAt: { type: "string", format: "date-time" },
+            openTaskCount: { type: "integer", minimum: 0 },
+            stayInTouchAt: { type: "string", format: "date-time" },
           },
           additionalProperties: false,
         },
@@ -5439,6 +5515,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             "conversations",
             "first-meeting",
             "food-preferences",
+            "life-events",
             "notes",
             "pets",
             "relationships",
@@ -7357,7 +7434,19 @@ export interface PersonDeletionImpact {
 
 export interface PersonDueInformation {
   readonly detail: string;
-  readonly status: "unavailable";
+  readonly nextReminderAt?: string;
+  readonly openTaskCount: number;
+  readonly stayInTouchAt?: string;
+  readonly status: "ready";
+}
+
+export type PersonLifeEventPrecision = "day" | "full" | "month" | "month_day" | "unknown" | "year" | "year_month";
+export interface PersonLifeEvent {
+  readonly date: { readonly day?: number; readonly happenedAt?: string; readonly month?: number; readonly precision: PersonLifeEventPrecision; readonly year?: number };
+  readonly id: string;
+  readonly name?: string;
+  readonly note?: string;
+  readonly typeName?: string;
 }
 
 export type ImportantDateKind = "birthday" | "custom" | "deceased" | "first_met";
@@ -7440,7 +7529,7 @@ export interface PeopleTagOptionsPage {
 }
 
 export type ProfileFactSectionId = "addresses" | "contact-methods" | "first-meeting" | "food-preferences" | "pets" | "tags" | "work";
-export type PersonProfileSectionId = ProfileFactSectionId | "activities" | "calls" | "conversations" | "notes" | "relationships" | "tasks";
+export type PersonProfileSectionId = ProfileFactSectionId | "activities" | "calls" | "conversations" | "life-events" | "notes" | "relationships" | "tasks";
 export interface ProfileFactOption {
   readonly id: string;
   readonly kind?: "contact-label" | "contact-type" | "organization" | "pet-category";
@@ -7611,6 +7700,10 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
 
 export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
   return request(\`/api/v1/people/\${encodeURIComponent(personId)}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listPersonLifeEvents(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly events: readonly PersonLifeEvent[]; readonly status: "hidden" | "ready" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/life-events\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
 export function listPersonFiles(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly files: readonly PersonFile[]; readonly status: "ready" }>> {

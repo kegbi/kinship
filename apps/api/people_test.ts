@@ -36,6 +36,7 @@ Deno.test("PEOPLE-001 person creation requires an active session", async () => {
     },
     profile: {
       get: () => Promise.reject(new Error("must not be called")),
+      listLifeEvents: () => Promise.reject(new Error("must not be called")),
     },
     protectedSessions: {
       resolve: () => Promise.resolve(undefined),
@@ -81,9 +82,7 @@ function services(
   tagOptions: PeopleHttpServices["tagOptions"] = {
     list: () => Promise.resolve({ options: [], status: "ready" }),
   },
-  profile: PeopleHttpServices["profile"] = {
-    get: () => Promise.resolve({ status: "not-found" }),
-  },
+  profile: Partial<PeopleHttpServices["profile"]> = {},
   importantDates?: ImportantDateManagement,
   profileFacts?: ProfileFactManagement,
   recentPeople?: RecentPeopleManagement,
@@ -107,7 +106,11 @@ function services(
       restore: () => Promise.reject(new Error("must not restore")),
       ...people,
     },
-    profile,
+    profile: {
+      get: () => Promise.resolve({ status: "not-found" }),
+      listLifeEvents: () => Promise.resolve({ status: "not-found" }),
+      ...profile,
+    },
     protectedSessions: { resolve: () => Promise.resolve(actor) },
     tagOptions,
     ...(todayRecentPeople ? { todayRecentPeople } : {}),
@@ -944,8 +947,9 @@ Deno.test("PEOPLE-002 HTTP distinguishes an archived canonical identity", async 
       get: () =>
         Promise.resolve({
           dueInformation: {
-            detail: "Planning unavailable.",
-            status: "unavailable",
+            detail: "0 open tasks.",
+            openTaskCount: 0,
+            status: "ready",
           },
           person: {
             givenName: "Harriet",
@@ -984,8 +988,10 @@ Deno.test("[APP-003C] HTTP opens the read-only person workspace summary", async 
       get: () =>
         Promise.resolve({
           dueInformation: {
-            detail: "Due information will become available with planning.",
-            status: "unavailable",
+            detail: "2 open tasks; next reminder 2026-08-20T09:00:00.000Z.",
+            nextReminderAt: "2026-08-20T09:00:00.000Z",
+            openTaskCount: 2,
+            status: "ready",
           },
           person: {
             description: "Mathematician and correspondent.",
@@ -1025,8 +1031,130 @@ Deno.test("[APP-003C] HTTP opens the read-only person workspace summary", async 
     "identity orientation fields remain in the profile response",
   );
   assert(
-    body.dueInformation?.status === "unavailable",
-    "the shell reports its not-yet-delivered due projection honestly",
+    body.dueInformation?.status === "ready",
+    "the shell returns the delivered due projection with orientation",
+  );
+});
+
+Deno.test("[PEOPLE-003] HTTP reads person life events through the profile projection", async () => {
+  const personId = "00000000-0000-4000-8000-000000000100";
+  let received: unknown;
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      listLifeEvents: (resolved, id) => {
+        received = [resolved, id];
+        return Promise.resolve({
+          events: [{
+            date: { month: 12, precision: "year_month", year: 1843 },
+            id: "00000000-0000-4000-8000-000000000200",
+            name: "Published Notes",
+          }],
+          status: "ready",
+        });
+      },
+    },
+  ));
+
+  const response = await app.request(
+    `http://localhost/api/v1/people/${personId}/life-events`,
+    { headers },
+  );
+  const body = await response.json() as {
+    readonly events?: readonly { readonly name?: string }[];
+  };
+
+  assert(
+    response.status === 200 && body.events?.[0]?.name === "Published Notes",
+    "person-linked journal history remains readable on the canonical profile",
+  );
+  assert(
+    (received as [typeof actor, string])[0].workspaceId === actor.workspaceId &&
+      (received as [typeof actor, string])[1] === personId,
+    "resolved tenant context reaches only the approved profile read model",
+  );
+  assert(
+    response.headers.get("cache-control") === "private, no-store",
+    "life-event history is never publicly cacheable",
+  );
+});
+
+Deno.test("[PEOPLE-003] HTTP isolates life-event section failures", async () => {
+  const personId = "00000000-0000-4000-8000-000000000100";
+  for (
+    const scenario of [
+      { expected: 403, status: "forbidden" as const },
+      { expected: 404, status: "not-found" as const },
+    ]
+  ) {
+    const app = createPeopleRoutes(services(
+      { create: () => Promise.reject(new Error("must not create")) },
+      undefined,
+      undefined,
+      {
+        listLifeEvents: () => Promise.resolve({ status: scenario.status }),
+      },
+    ));
+    const response = await app.request(
+      `http://localhost/api/v1/people/${personId}/life-events`,
+      { headers },
+    );
+    assert(
+      response.status === scenario.expected &&
+        response.headers.get("content-type") === "application/problem+json",
+      `${scenario.status} life-event result maps without profile disclosure`,
+    );
+  }
+  const unavailable = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      listLifeEvents: () =>
+        Promise.reject(new Error("private database detail")),
+    },
+  ));
+  const outage = await unavailable.request(
+    `http://localhost/api/v1/people/${personId}/life-events`,
+    { headers },
+  );
+  assert(
+    outage.status === 503 &&
+      !(await outage.text()).includes("private database detail"),
+    "life-event dependency failure is local and conceals internals",
+  );
+  const invalid = await unavailable.request(
+    "http://localhost/api/v1/people/not-a-person/life-events",
+    { headers },
+  );
+  assert(invalid.status === 400, "invalid life-event person ID is rejected");
+});
+
+Deno.test("[PEOPLE-003] HTTP returns the non-disclosing hidden life-event projection", async () => {
+  const personId = "00000000-0000-4000-8000-000000000100";
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      listLifeEvents: () => Promise.resolve({ events: [], status: "hidden" }),
+    },
+  ));
+
+  const response = await app.request(
+    `http://localhost/api/v1/people/${personId}/life-events`,
+    { headers },
+  );
+  const body = await response.json() as {
+    readonly events?: readonly unknown[];
+    readonly status?: string;
+  };
+  assert(
+    response.status === 200 && body.status === "hidden" &&
+      body.events?.length === 0,
+    "hidden life-event history must disclose neither retained rows nor failure",
   );
 });
 
@@ -1084,8 +1212,9 @@ Deno.test("PEOPLE-001 HTTP reads canonical identity only in the resolved workspa
         received = [resolved, id];
         return Promise.resolve({
           dueInformation: {
-            detail: "Planning unavailable.",
-            status: "unavailable",
+            detail: "0 open tasks.",
+            openTaskCount: 0,
+            status: "ready",
           },
           person: {
             familyName: "Lovelace",
@@ -1377,6 +1506,7 @@ Deno.test("TODAY-001 HTTP records a resolved profile view only through explicit 
         effects.push(`profile:${resolved.workspaceId}:${id}`);
         return Promise.resolve({ status: "ready" } as never);
       },
+      listLifeEvents: () => Promise.reject(new Error("must not list history")),
     },
     recentPeople: {
       record(resolved, id) {

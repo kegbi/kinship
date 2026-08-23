@@ -72,6 +72,7 @@ function renderGift(
 ) {
   surface.list.replaceChildren();
   surface.badge.textContent = `${gifts.length} saved`;
+  surface.root.dataset.sectionState = gifts.length === 0 ? "empty" : "ready";
   surface.add.hidden = archived;
   surface.state.textContent = gifts.length === 0
     ? "No gifts saved."
@@ -117,6 +118,7 @@ function renderDebt(
 ) {
   surface.list.replaceChildren();
   surface.badge.textContent = `${debts.length} saved`;
+  surface.root.dataset.sectionState = debts.length === 0 ? "empty" : "ready";
   surface.add.hidden = archived;
   surface.state.textContent = debts.length === 0
     ? "No debts saved."
@@ -224,6 +226,7 @@ export async function mountPersonGifts(options: {
         : "Gifts and debts are temporarily unavailable.";
       for (const surface of mounted) {
         surface.badge.textContent = "Unavailable";
+        surface.root.dataset.sectionState = "error";
         surface.state.textContent = detail;
         surface.retry.hidden = false;
       }

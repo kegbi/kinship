@@ -185,6 +185,21 @@ async function getPerson(
   );
 }
 
+async function listPersonLifeEvents(
+  fixture: Fixture,
+  personId: string,
+): Promise<Response> {
+  return await configured.app.request(
+    `http://localhost/api/v1/people/${personId}/life-events`,
+    {
+      headers: {
+        cookie: fixture.cookie,
+        "X-Workspace-Id": fixture.workspaceId,
+      },
+    },
+  );
+}
+
 async function listPeople(
   fixture: Fixture,
   query = "",
@@ -1578,6 +1593,8 @@ Deno.test({
     const foreignPersonId = crypto.randomUUID();
     const genderId = crypto.randomUUID();
     const foreignTagId = crypto.randomUUID();
+    const lifeEventId = crypto.randomUUID();
+    const reminderId = crypto.randomUUID();
     await sql.begin(async (transaction) => {
       await transaction`
         insert into crm.gender_options (id, workspace_id, name)
@@ -1624,11 +1641,57 @@ Deno.test({
         insert into crm.person_tags (person_id, tag_id)
         values (${personId}, ${foreignTagId})
       `;
+      await transaction`
+        insert into crm.tasks (
+          workspace_id, person_id, title, status, created_by_member_id
+        ) values (
+          ${owner.workspaceId}, ${personId}, 'Review correspondence', 'open',
+          ${owner.memberId}
+        )
+      `;
+      await transaction`
+        insert into crm.reminders (
+          id, workspace_id, person_id, target_kind, title, anchor_on,
+          created_by_member_id
+        ) values (
+          ${reminderId}, ${owner.workspaceId}, ${personId}, 'person',
+          'Write to Ada', '2026-08-20', ${owner.memberId}
+        )
+      `;
+      await transaction`
+        insert into crm.reminder_occurrences (
+          reminder_id, member_id, occurs_on, deliver_at, title_snapshot
+        ) values (
+          ${reminderId}, ${owner.memberId}, '2026-08-20',
+          '2026-08-20T09:00:00.000Z', 'Write to Ada'
+        )
+      `;
+      await transaction`
+        insert into crm.stay_in_touch_cadences (
+          person_id, interval_count, interval_unit, next_due_at
+        ) values (${personId}, 1, 'month', '2026-08-21T09:00:00.000Z')
+      `;
+      await transaction`
+        insert into crm.life_events (
+          id, workspace_id, person_id, name, note, year, month, precision
+        ) values (
+          ${lifeEventId}, ${owner.workspaceId}, ${personId}, 'Published Notes',
+          'The first published computer algorithm.', 1843, 12, 'year_month'
+        ), (
+          gen_random_uuid(), ${foreign.workspaceId}, ${foreignPersonId},
+          'Private event', null, 1900, null, 'year'
+        )
+      `;
     });
 
     const ready = await getPerson(owner, personId);
     const readyBody = await ready.json() as {
-      readonly dueInformation: { readonly status: string };
+      readonly dueInformation: {
+        readonly nextReminderAt?: string;
+        readonly openTaskCount: number;
+        readonly stayInTouchAt?: string;
+        readonly status: string;
+      };
       readonly person: {
         readonly description?: string;
         readonly gender?: string;
@@ -1652,13 +1715,64 @@ Deno.test({
       readyBody.person.tags.length === 8 &&
         readyBody.person.tagCount === 10 &&
         readyBody.person.tags.every((tag) => tag.name !== "Private") &&
-        readyBody.dueInformation.status === "unavailable",
-      "profile bounds same-workspace tags and reports due projection honestly",
+        readyBody.dueInformation.status === "ready" &&
+        readyBody.dueInformation.openTaskCount === 1 &&
+        readyBody.dueInformation.nextReminderAt?.startsWith(
+            "2026-08-20T09:00:00",
+          ) === true &&
+        readyBody.dueInformation.stayInTouchAt?.startsWith(
+            "2026-08-21T09:00:00",
+          ) === true,
+      "profile bounds tags and composes real planning orientation",
     );
+    const history = await listPersonLifeEvents(owner, personId);
+    const historyBody = await history.json() as {
+      readonly events: readonly {
+        readonly date: { readonly month?: number; readonly year?: number };
+        readonly id: string;
+        readonly name?: string;
+      }[];
+    };
+    assert(
+      history.status === 200 && historyBody.events.length === 1 &&
+        historyBody.events[0]?.id === lifeEventId &&
+        historyBody.events[0]?.name === "Published Notes" &&
+        historyBody.events[0]?.date.year === 1843 &&
+        historyBody.events[0]?.date.month === 12,
+      "person-linked journal history is precise, bounded, and tenant-local",
+    );
+    await sql`
+      insert into crm.workspace_profile_modules (workspace_id, key, is_active)
+      values (${owner.workspaceId}, 'life-events', false)
+      on conflict (workspace_id, key) do update set is_active = false,
+        updated_at = now()
+    `;
+    const hiddenHistory = await listPersonLifeEvents(owner, personId);
+    const hiddenHistoryBody = await hiddenHistory.json() as {
+      readonly events: readonly unknown[];
+      readonly status: string;
+    };
+    const [retainedLifeEvents] = await sql<{ readonly count: number }[]>`
+      select count(*)::int as count from crm.life_events
+      where workspace_id = ${owner.workspaceId} and person_id = ${personId}
+    `;
+    assert(
+      hiddenHistory.status === 200 && hiddenHistoryBody.status === "hidden" &&
+        hiddenHistoryBody.events.length === 0 &&
+        retainedLifeEvents?.count === 1,
+      "disabled life-event history is concealed without deleting retained rows",
+    );
+    await sql`
+      update crm.workspace_profile_modules set is_active = true,
+        updated_at = now()
+      where workspace_id = ${owner.workspaceId} and key = 'life-events'
+    `;
     assert(
       (await getPerson(owner, foreignPersonId)).status === 404 &&
-        (await getPerson(owner, crypto.randomUUID())).status === 404,
-      "foreign and missing person identifiers are indistinguishable",
+        (await getPerson(owner, crypto.randomUUID())).status === 404 &&
+        (await listPersonLifeEvents(owner, foreignPersonId)).status === 404 &&
+        (await listPersonLifeEvents(owner, crypto.randomUUID())).status === 404,
+      "foreign and missing person identifiers are indistinguishable across profile reads",
     );
 
     const [ownerUser] = await sql<{ readonly id: string }[]>`
@@ -1675,6 +1789,16 @@ Deno.test({
     assert(
       forged.status === "forbidden",
       "forged active-workspace context is denied without identity disclosure",
+    );
+    const forgedHistory = await personProfile.listLifeEvents({
+      memberId: owner.memberId,
+      role: "owner",
+      userId: ownerUser.id,
+      workspaceId: foreign.workspaceId,
+    }, foreignPersonId);
+    assert(
+      forgedHistory.status === "forbidden",
+      "forged context is denied before life-event history lookup",
     );
 
     await sql`update crm.people set archived_at = now() where id = ${personId}`;

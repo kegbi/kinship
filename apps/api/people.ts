@@ -654,6 +654,59 @@ export function createPeopleRoutes(services: PeopleHttpServices): Hono {
       status: "ready",
     });
   });
+  routes.get("/api/v1/people/:personId/life-events", async (context) => {
+    const parsed = personIdSchema.safeParse(context.req.param("personId"));
+    if (!parsed.success) {
+      return problem(
+        context,
+        400,
+        "person_id_invalid",
+        "Invalid person",
+        "Use a valid canonical person identifier.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const result = await services.profile.listLifeEvents(resolved, parsed.data)
+      .catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "person_life_events_unavailable",
+        "Life events unavailable",
+        "Other person sections remain available.",
+      );
+    }
+    if (result.status === "forbidden") {
+      return problem(
+        context,
+        403,
+        "people_forbidden",
+        "Life events unavailable",
+        "Your active workspace membership no longer permits this view.",
+      );
+    }
+    if (result.status === "not-found") {
+      return problem(
+        context,
+        404,
+        "person_not_found",
+        "Person not found",
+        "No active person with this identifier exists in the current workspace.",
+      );
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
   routes.get("/api/v1/people/:personId", async (context) => {
     const parsed = personIdSchema.safeParse(context.req.param("personId"));
     if (!parsed.success) {

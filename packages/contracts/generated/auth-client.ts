@@ -835,7 +835,19 @@ export interface PersonDeletionImpact {
 
 export interface PersonDueInformation {
   readonly detail: string;
-  readonly status: "unavailable";
+  readonly nextReminderAt?: string;
+  readonly openTaskCount: number;
+  readonly stayInTouchAt?: string;
+  readonly status: "ready";
+}
+
+export type PersonLifeEventPrecision = "day" | "full" | "month" | "month_day" | "unknown" | "year" | "year_month";
+export interface PersonLifeEvent {
+  readonly date: { readonly day?: number; readonly happenedAt?: string; readonly month?: number; readonly precision: PersonLifeEventPrecision; readonly year?: number };
+  readonly id: string;
+  readonly name?: string;
+  readonly note?: string;
+  readonly typeName?: string;
 }
 
 export type ImportantDateKind = "birthday" | "custom" | "deceased" | "first_met";
@@ -918,7 +930,7 @@ export interface PeopleTagOptionsPage {
 }
 
 export type ProfileFactSectionId = "addresses" | "contact-methods" | "first-meeting" | "food-preferences" | "pets" | "tags" | "work";
-export type PersonProfileSectionId = ProfileFactSectionId | "activities" | "calls" | "conversations" | "notes" | "relationships" | "tasks";
+export type PersonProfileSectionId = ProfileFactSectionId | "activities" | "calls" | "conversations" | "life-events" | "notes" | "relationships" | "tasks";
 export interface ProfileFactOption {
   readonly id: string;
   readonly kind?: "contact-label" | "contact-type" | "organization" | "pet-category";
@@ -1089,6 +1101,10 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
 
 export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
   return request(`/api/v1/people/${encodeURIComponent(personId)}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listPersonLifeEvents(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly events: readonly PersonLifeEvent[]; readonly status: "hidden" | "ready" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/life-events`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
 export function listPersonFiles(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly files: readonly PersonFile[]; readonly status: "ready" }>> {

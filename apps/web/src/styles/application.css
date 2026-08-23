@@ -1466,6 +1466,35 @@ summary:focus-visible,
   justify-content: space-between;
 }
 
+.life-event-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.life-event-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.35rem 1rem;
+  align-items: baseline;
+  padding: 0.85rem;
+  border: 1px solid rgb(32 53 45 / 13%);
+  border-radius: 0.5rem;
+  background: #f8f4ec;
+}
+
+.life-event-list time,
+.life-event-list p {
+  color: #5e6b64;
+}
+
+.life-event-list p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .unavailable-section-card > p {
   margin: 1rem 0 0;
   color: #5e6b64;

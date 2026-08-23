@@ -403,6 +403,30 @@ const profileFactSections = new Set<string>([
                 </div>
               </section>
             )
+            : id === "life-events"
+            ? (
+              <section
+                id="profile-section-life-events"
+                class="profile-section-card life-events-card"
+                data-profile-section="life-events"
+                data-person-life-events
+                data-load-mode="independent"
+                data-section-state="loading"
+                tabindex="-1"
+                aria-labelledby="profile-section-life-events-heading"
+              >
+                <header class="profile-section-heading">
+                  <div>
+                    <p class="section-kicker">Precision-aware history</p>
+                    <h2 id="profile-section-life-events-heading">Life events</h2>
+                  </div>
+                  <span data-life-event-badge class="state-badge">Loading</span>
+                </header>
+                <p data-life-event-state class="section-state" role="status" aria-live="polite">Loading life events…</p>
+                <button data-life-event-retry class="button-secondary" type="button" hidden>Retry life events</button>
+                <ol data-life-event-list class="life-event-list" aria-label="Saved life events"></ol>
+              </section>
+            )
             : id === "tasks"
             ? (
               <section
@@ -686,9 +710,6 @@ const profileFactSections = new Set<string>([
                   <span class="state-badge">Unavailable</span>
                 </header>
                 <p>This section is not available yet. No empty result is being inferred and no saved data has changed.</p>
-                {loadMode === "independent" && (
-                  <p class="independent-load-note">This heavier section has its own loading and error boundary when delivered.</p>
-                )}
               </section>
             ))}
         </div>

@@ -180,6 +180,55 @@ describe("FILES-001 person profile files", () => {
     ).toContain("offline");
   });
 
+  it("repaints existing file controls across in-page archive and restore", async () => {
+    markup();
+    const saved = {
+      byteSize: 20,
+      createdAt: "2026-08-23T08:00:00.000Z",
+      fileId,
+      filename: "care.pdf",
+      kind: "document",
+      mimeType: "application/pdf",
+      personId,
+      status: "available",
+      title: "Care plan",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      response({ files: [saved], status: "ready" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await mountPersonFiles({ archived: false, personId, workspaceId });
+    const add = document.querySelector<HTMLButtonElement>(
+      '[data-person-files="document"] [data-file-add]',
+    )!;
+    const staleRemove = document.querySelector<HTMLButtonElement>(
+      `[data-file-remove="${fileId}"]`,
+    )!;
+
+    document.dispatchEvent(
+      new CustomEvent("person-lifecycle-changed", {
+        detail: { archived: true, personId, state: "archived" },
+      }),
+    );
+
+    expect(add.hidden).toBe(true);
+    expect(document.querySelector(`[data-file-id="${fileId}"]`))?.not
+      .toBeNull();
+    expect(document.querySelector(`[data-file-remove="${fileId}"]`)).toBeNull();
+    staleRemove.click();
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    document.dispatchEvent(
+      new CustomEvent("person-lifecycle-changed", {
+        detail: { archived: false, personId, state: "active" },
+      }),
+    );
+    expect(add.hidden).toBe(false);
+    expect(document.querySelector(`[data-file-remove="${fileId}"]`)).not
+      .toBeNull();
+  });
+
   it("validates, cancels, and reports a failed upload without a stale refresh", async () => {
     markup();
     const fetchMock = vi.fn()
