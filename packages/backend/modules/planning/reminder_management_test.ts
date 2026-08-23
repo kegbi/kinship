@@ -385,6 +385,68 @@ Deno.test("PLANNING-002 ambiguous reconciliation never redelivers and exhausts t
   }
 });
 
+Deno.test("APP-006D worker isolates a failed claimed item from the rest of its batch", async () => {
+  const base = {
+    attemptCount: 1,
+    body: "body",
+    memberId: crypto.randomUUID(),
+    providerResultState: "unattempted" as const,
+    title: "title",
+    workspaceId: crypto.randomUUID(),
+  };
+  const claims: planning.ClaimedReminderOccurrence[] = [
+    {
+      ...base,
+      claimToken: crypto.randomUUID(),
+      id: "failed-finalization",
+      providerIdempotencyKey: "failed-finalization",
+    },
+    {
+      ...base,
+      claimToken: crypto.randomUUID(),
+      id: "independent-item",
+      providerIdempotencyKey: "independent-item",
+    },
+  ];
+  const finalized: string[] = [];
+  const worker = planning.createReminderDeliveryWorker({
+    audit: { record: () => Promise.resolve() },
+    clock: { now: () => new Date("2026-08-23T10:00:00Z") },
+    provider: {
+      deliver: ({ occurrenceId }) =>
+        Promise.resolve({
+          receipt: `receipt:${occurrenceId}`,
+          status: "confirmed" as const,
+        }),
+      reconcile: () =>
+        Promise.resolve({ code: "unused", status: "transient" as const }),
+    },
+    repository: {
+      replenish: () => Promise.resolve(),
+      claimDue: () => Promise.resolve(claims),
+      finalize: ({ id }) => {
+        if (id === "failed-finalization") {
+          throw new Error("secondary item storage unavailable");
+        }
+        finalized.push(id);
+        return Promise.resolve(true);
+      },
+    },
+    transaction: { run: (work) => work({ opaque: "tx" }) },
+  });
+
+  const result = await worker.tick({ owner: "isolation-test" });
+
+  if (
+    result.claimed !== 2 ||
+    result.results[0]?.status !== "processing-error" ||
+    result.results[1]?.status !== "sent" ||
+    finalized.join(",") !== "independent-item"
+  ) {
+    throw new Error(JSON.stringify({ finalized, result }));
+  }
+});
+
 Deno.test("PLANNING-002 management preserves validation, authorization, replay, and disable boundaries", async () => {
   const actor = {
     memberId: crypto.randomUUID(),
