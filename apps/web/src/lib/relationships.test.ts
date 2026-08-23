@@ -30,7 +30,7 @@ function deferredResponse() {
 function markup() {
   document.body.innerHTML =
     `<main id="main-content" tabindex="-1"><section id="profile-section-relationships" data-section-state="loading">
-    <span id="relationships-badge"></span><p id="relationships-state" tabindex="-1"></p>
+    <span id="relationships-badge"></span><p id="relationships-state" role="status" aria-live="polite" tabindex="-1"></p>
     <ul id="relationships-list" tabindex="-1"></ul><button id="relationships-previous" hidden>Previous relationships</button><button id="relationships-load-more" hidden>Next relationships</button><button id="relationship-add" hidden>Add relationship</button>
     <form id="relationship-form" hidden>
       <input id="relationship-person-search"><button id="relationship-person-search-button" type="button">Search people</button>
@@ -793,6 +793,18 @@ describe("relationship profile section", () => {
       document.querySelector("#relationships-state"),
     );
     expect(
+      document.querySelector("#relationships-state")?.getAttribute(
+        "aria-live",
+      ),
+    ).toBe("polite");
+    const deletes = fetchMock.mock.calls.filter((call) =>
+      (call[1] as RequestInit | undefined)?.method === "DELETE"
+    );
+    expect(deletes).toHaveLength(1);
+    expect(String(deletes[0]?.[0])).toContain(
+      `/api/v1/people/${personId}/relationships/${relationshipId}`,
+    );
+    expect(
       fetchMock.mock.calls.map((call) =>
         (call[1] as RequestInit | undefined)?.method ?? "GET"
       ),
@@ -802,6 +814,89 @@ describe("relationship profile section", () => {
         (call[1] as RequestInit | undefined)?.method ?? "GET"
       ),
     ).toContain("DELETE");
+  });
+
+  it("keeps the current remount authoritative across unlink settlement windows", async () => {
+    markup();
+    const deletion = deferredResponse();
+    const currentList = deferredResponse();
+    const staleList = deferredResponse();
+    const types = () => response({ options: [], status: "ready" });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(types())
+      .mockResolvedValueOnce(
+        response({ relationships: [relationship], status: "ready" }),
+      )
+      .mockReturnValueOnce(deletion.promise)
+      .mockResolvedValueOnce(types())
+      .mockReturnValueOnce(currentList.promise)
+      .mockReturnValueOnce(staleList.promise);
+    vi.stubGlobal("fetch", fetchMock);
+    await mountRelationships(personId, workspaceId, false);
+    const unlink = [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((item) => item.textContent === "Unlink Ada Lovelace")!;
+    const unlinking = (unlink.onclick as () => Promise<void>)();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+
+    const remount = mountRelationships(personId, workspaceId, false);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    currentList.resolve(response({ relationships: [], status: "ready" }));
+    await remount;
+    const add = document.querySelector(
+      "#relationship-add",
+    ) as HTMLButtonElement;
+    add.focus();
+
+    deletion.resolve(response({
+      affectedPersonIds: [personId, targetId],
+      relationshipId,
+      status: "deleted",
+    }));
+    staleList.resolve(response({ relationships: [], status: "ready" }));
+    await unlinking;
+
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(document.querySelector("#relationships-list")?.textContent).toBe(
+      "No relationships saved.",
+    );
+    expect(document.querySelector("#relationships-state")?.textContent).toBe(
+      "",
+    );
+    expect(document.activeElement).toBe(add);
+
+    fetchMock.mockReset()
+      .mockResolvedValueOnce(types())
+      .mockResolvedValueOnce(
+        response({ relationships: [relationship], status: "ready" }),
+      )
+      .mockResolvedValueOnce(response({ status: "deleted" }))
+      .mockResolvedValueOnce(response({ relationships: [], status: "ready" }))
+      .mockResolvedValueOnce(types())
+      .mockResolvedValueOnce(response({ relationships: [], status: "ready" }));
+    await mountRelationships(personId, workspaceId, false);
+    const list = document.querySelector(
+      "#relationships-list",
+    ) as HTMLUListElement;
+    const replaceChildren = list.replaceChildren.bind(list);
+    let renders = 0;
+    let postRefreshRemount: Promise<void> | undefined;
+    list.replaceChildren = (...nodes) => {
+      replaceChildren(...nodes);
+      if (++renders === 2) {
+        postRefreshRemount = mountRelationships(personId, workspaceId, false);
+      }
+    };
+    const state = document.querySelector("#relationships-state") as HTMLElement;
+    const focus = vi.spyOn(state, "focus");
+    const secondUnlink = [...document.querySelectorAll<HTMLButtonElement>(
+      "button",
+    )].find((item) => item.textContent === "Unlink Ada Lovelace")!;
+    await (secondUnlink.onclick as () => Promise<void>)();
+    await postRefreshRemount;
+
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(focus).not.toHaveBeenCalled();
+    expect(document.activeElement).not.toBe(state);
   });
 
   it("creates a related person and relationship through the atomic coordinator", async () => {
@@ -987,6 +1082,22 @@ describe("relationship profile section", () => {
         "data-section-state",
       ),
     ).toBe("forbidden");
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(response({ options: [], status: "ready" }))
+        .mockResolvedValueOnce(response({
+          code: "relationships_unavailable",
+          detail: "Unavailable",
+          status: 500,
+          title: "Unavailable",
+          type: "about:blank",
+        }, 500)),
+    );
+    await mountRelationships(personId, workspaceId, false);
+    expect(document.querySelector("#relationships-badge")?.textContent).toBe(
+      "Try again",
+    );
   });
 
   it("hydrates an archived related person without making the active profile read-only", async () => {
@@ -1008,7 +1119,7 @@ describe("relationship profile section", () => {
           response({
             relationships: [{
               ...relationship,
-              display: { ...relationship.display, name: "Charles Babbage" },
+              display: { ...relationship.display, name: undefined },
             }],
             status: "ready",
           }),
@@ -1016,7 +1127,7 @@ describe("relationship profile section", () => {
     );
     await mountRelationships(personId, workspaceId, false);
     expect(document.querySelector("#relationships-list")?.textContent)
-      .toContain("Charles Babbage");
+      .toContain("Related person");
     expect(
       document.querySelector("#profile-section-relationships")?.getAttribute(
         "data-section-state",
@@ -1601,7 +1712,7 @@ describe("relationship profile section", () => {
         {
           archived: true,
           personId,
-          personUpdatedAt: "2026-08-16T12:03:00.000000Z",
+          personUpdatedAt: "2026-08-16T12:03:00Z",
           state: "archived",
         },
         {
