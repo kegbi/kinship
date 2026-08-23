@@ -1411,3 +1411,74 @@ export function createDebt(personId: string, input: DebtCreateInput, workspaceId
 export function changeDebtStatus(personId: string, debtId: string, status: DebtStatus, workspaceId?: string): Promise<ApiResult<{ readonly debt: Debt; readonly status: "saved" | "unchanged" }>> {
   return request(`/api/v1/people/${encodeURIComponent(personId)}/debts/${encodeURIComponent(debtId)}/status`, { method: "PATCH", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify({ status }) });
 }
+
+export interface JournalStoredPost {
+  readonly body: string;
+  readonly createdAt: string;
+  readonly id: string;
+  readonly occurredAt: string;
+  readonly title?: string;
+  readonly updatedAt: string;
+}
+
+export interface JournalStoredDayRating {
+  readonly comment?: string;
+  readonly createdAt: string;
+  readonly id: string;
+  readonly ratedOn: string;
+  readonly rating: number;
+  readonly updatedAt: string;
+}
+
+export interface JournalLinkableActivity {
+  readonly happenedAt: string;
+  readonly id: string;
+  readonly summary: string;
+}
+
+export type JournalTimelineItem =
+  | { readonly activity: { readonly id: string; readonly summary: string }; readonly id: string; readonly occurredAt: string; readonly type: "activity" }
+  | { readonly dayRating: { readonly comment?: string; readonly id: string; readonly ratedOn: string; readonly rating: number }; readonly id: string; readonly occurredAt: string; readonly type: "day-rating" }
+  | { readonly id: string; readonly occurredAt: string; readonly post: { readonly body: string; readonly id: string; readonly title?: string; readonly updatedAt: string }; readonly type: "post" };
+
+export type JournalItemType = JournalTimelineItem["type"];
+
+export interface JournalPostInput {
+  readonly body: string;
+  readonly occurredAt: string;
+  readonly title?: string;
+}
+
+export interface JournalDayRatingInput {
+  readonly comment?: string;
+  readonly ratedOn: string;
+  readonly rating: number;
+}
+
+export function listJournal(workspaceId?: string): Promise<ApiResult<{ readonly activities: readonly JournalLinkableActivity[]; readonly items: readonly JournalTimelineItem[]; readonly status: "ready" }>> {
+  return request("/api/v1/journal", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function getJournalItem(itemId: string, workspaceId?: string): Promise<ApiResult<{ readonly item: JournalTimelineItem; readonly status: "ready" }>> {
+  return request(`/api/v1/journal/items/${encodeURIComponent(itemId)}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function createJournalPost(input: JournalPostInput, workspaceId?: string): Promise<ApiResult<{ readonly post: JournalStoredPost; readonly status: "created" }>> {
+  return request("/api/v1/journal/posts", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function updateJournalPost(postId: string, input: JournalPostInput, workspaceId?: string): Promise<ApiResult<{ readonly post: JournalStoredPost; readonly status: "updated" }>> {
+  return request(`/api/v1/journal/posts/${encodeURIComponent(postId)}`, { method: "PUT", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function saveJournalDayRating(input: JournalDayRatingInput, workspaceId?: string): Promise<ApiResult<{ readonly rating: JournalStoredDayRating; readonly status: "created" | "updated" }>> {
+  return request("/api/v1/journal/day-ratings", { method: "PUT", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function linkJournalActivity(activityId: string, workspaceId?: string): Promise<ApiResult<{ readonly activityId: string; readonly id: string; readonly occurredAt: string; readonly status: "created" }>> {
+  return request("/api/v1/journal/activities", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify({ activityId }) });
+}
+
+export function deleteJournalItem(itemId: string, workspaceId?: string): Promise<ApiResult<{ readonly itemType: JournalItemType; readonly status: "deleted" }>> {
+  return request(`/api/v1/journal/items/${encodeURIComponent(itemId)}`, { method: "DELETE", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}

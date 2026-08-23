@@ -2,10 +2,12 @@
 import "../styles/application.css";
 
 interface Props {
-  readonly current: "people" | "settings" | "tasks" | "today";
+  readonly current: "journal" | "people" | "settings" | "tasks" | "today";
   readonly description: string;
   readonly pageId:
     | "app.today"
+    | "journal.index"
+    | "journal.item"
     | "people.archived"
     | "people.create"
     | "people.activity-report"
@@ -61,7 +63,7 @@ const { current, description, pageId, title } = Astro.props;
             <a href="/app" tabindex="0" aria-current={current === "today" ? "page" : undefined}>Today</a>
             <a href="/app/people" tabindex="0" aria-current={current === "people" ? "page" : undefined}>People</a>
             <a href="/app/tasks" tabindex="0" aria-current={current === "tasks" ? "page" : undefined}>Tasks</a>
-            <span class="future-nav" aria-disabled="true">Journal <small>Planned</small></span>
+            <a href="/app/journal" tabindex="0" aria-current={current === "journal" ? "page" : undefined}>Journal</a>
           </nav>
 
           <div class="global-actions" aria-label="Workspace actions">

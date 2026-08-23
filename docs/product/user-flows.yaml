@@ -607,6 +607,7 @@ flows:
 
   - id: JOURNAL-001
     title: Maintain the personal journal
+    deliveryStatus: delivered
     priority: P1
     actor: active-member
     trigger: The member adds, reads, edits, or removes a journal item or day rating.
@@ -626,7 +627,7 @@ flows:
     moduleIds: [journal, interactions, people]
     permissions: [journal.write]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-008a.spec.ts] }
 
   - id: IMPORT-001
     title: Import Monica data safely and idempotently

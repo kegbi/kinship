@@ -57,6 +57,12 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
     required: true,
     schema: { type: "string", format: "uuid" },
   };
+  const journalItemIdParameter = {
+    name: "itemId",
+    in: "path",
+    required: true,
+    schema: { type: "string", format: "uuid" },
+  };
   const taskIdParameter = {
     name: "taskId",
     in: "path",
@@ -1335,6 +1341,218 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             "404": problem,
             "410": problem,
             "423": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/journal": {
+        get: {
+          operationId: "listJournal",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter],
+          responses: {
+            "200": {
+              description: "Ordered personal journal",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/JournalTimelineList" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/journal/items/{itemId}": {
+        get: {
+          operationId: "getJournalItem",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter, journalItemIdParameter],
+          responses: {
+            "200": {
+              description: "One journal item",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/JournalItemReady" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+        delete: {
+          operationId: "deleteJournalItem",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            originParameter,
+            workspaceParameter,
+            journalItemIdParameter,
+          ],
+          responses: {
+            "200": {
+              description: "Journal item removed",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/JournalDeleted" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/journal/posts": {
+        post: {
+          operationId: "createJournalPost",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/JournalPostInput" },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "Journal post created",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/JournalPostCreated",
+                  },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/journal/posts/{itemId}": {
+        put: {
+          operationId: "updateJournalPost",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            originParameter,
+            workspaceParameter,
+            journalItemIdParameter,
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/JournalPostInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Journal post updated",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/JournalPostUpdated",
+                  },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/journal/day-ratings": {
+        put: {
+          operationId: "saveJournalDayRating",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/JournalDayRatingInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Day rating updated",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/JournalDayRatingSaved",
+                  },
+                },
+              },
+            },
+            "201": {
+              description: "Day rating created",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/JournalDayRatingSaved",
+                  },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/journal/activities": {
+        post: {
+          operationId: "linkJournalActivity",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["activityId"],
+                  properties: {
+                    activityId: { type: "string", format: "uuid" },
+                  },
+                  additionalProperties: false,
+                },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "Activity linked",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/JournalActivityLinked",
+                  },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
             "503": problem,
           },
         },
@@ -3229,6 +3447,216 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           properties: {
             file: { $ref: "#/components/schemas/PersonFile" },
             status: { const: "created" },
+          },
+          additionalProperties: false,
+        },
+        JournalPostInput: {
+          type: "object",
+          required: ["body", "occurredAt"],
+          properties: {
+            body: { type: "string", minLength: 1, maxLength: 50_000 },
+            occurredAt: { type: "string", format: "date-time" },
+            title: { type: "string", minLength: 1, maxLength: 500 },
+          },
+          additionalProperties: false,
+        },
+        JournalDayRatingInput: {
+          type: "object",
+          required: ["ratedOn", "rating"],
+          properties: {
+            comment: { type: "string", minLength: 1, maxLength: 10_000 },
+            ratedOn: { type: "string", format: "date" },
+            rating: { type: "integer", minimum: 1, maximum: 5 },
+          },
+          additionalProperties: false,
+        },
+        JournalStoredPost: {
+          type: "object",
+          required: [
+            "body",
+            "createdAt",
+            "id",
+            "occurredAt",
+            "updatedAt",
+          ],
+          properties: {
+            body: { type: "string" },
+            createdAt: { type: "string", format: "date-time" },
+            id: { type: "string", format: "uuid" },
+            occurredAt: { type: "string", format: "date-time" },
+            title: { type: "string" },
+            updatedAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
+        JournalStoredDayRating: {
+          type: "object",
+          required: ["createdAt", "id", "ratedOn", "rating", "updatedAt"],
+          properties: {
+            comment: { type: "string" },
+            createdAt: { type: "string", format: "date-time" },
+            id: { type: "string", format: "uuid" },
+            ratedOn: { type: "string", format: "date" },
+            rating: { type: "integer", minimum: 1, maximum: 5 },
+            updatedAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
+        JournalActivityItem: {
+          type: "object",
+          required: ["activity", "id", "occurredAt", "type"],
+          properties: {
+            activity: {
+              type: "object",
+              required: ["id", "summary"],
+              properties: {
+                id: { type: "string", format: "uuid" },
+                summary: { type: "string" },
+              },
+              additionalProperties: false,
+            },
+            id: { type: "string", format: "uuid" },
+            occurredAt: { type: "string", format: "date-time" },
+            type: { const: "activity" },
+          },
+          additionalProperties: false,
+        },
+        JournalDayRatingItem: {
+          type: "object",
+          required: ["dayRating", "id", "occurredAt", "type"],
+          properties: {
+            dayRating: {
+              type: "object",
+              required: ["id", "ratedOn", "rating"],
+              properties: {
+                comment: { type: "string" },
+                id: { type: "string", format: "uuid" },
+                ratedOn: { type: "string", format: "date" },
+                rating: { type: "integer", minimum: 1, maximum: 5 },
+              },
+              additionalProperties: false,
+            },
+            id: { type: "string", format: "uuid" },
+            occurredAt: { type: "string", format: "date-time" },
+            type: { const: "day-rating" },
+          },
+          additionalProperties: false,
+        },
+        JournalPostItem: {
+          type: "object",
+          required: ["id", "occurredAt", "post", "type"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            occurredAt: { type: "string", format: "date-time" },
+            post: {
+              type: "object",
+              required: ["body", "id", "updatedAt"],
+              properties: {
+                body: { type: "string" },
+                id: { type: "string", format: "uuid" },
+                title: { type: "string" },
+                updatedAt: { type: "string", format: "date-time" },
+              },
+              additionalProperties: false,
+            },
+            type: { const: "post" },
+          },
+          additionalProperties: false,
+        },
+        JournalTimelineItem: {
+          oneOf: [
+            { $ref: "#/components/schemas/JournalActivityItem" },
+            { $ref: "#/components/schemas/JournalDayRatingItem" },
+            { $ref: "#/components/schemas/JournalPostItem" },
+          ],
+          discriminator: {
+            propertyName: "type",
+            mapping: {
+              activity: "#/components/schemas/JournalActivityItem",
+              "day-rating": "#/components/schemas/JournalDayRatingItem",
+              post: "#/components/schemas/JournalPostItem",
+            },
+          },
+        },
+        JournalLinkableActivity: {
+          type: "object",
+          required: ["happenedAt", "id", "summary"],
+          properties: {
+            happenedAt: { type: "string", format: "date-time" },
+            id: { type: "string", format: "uuid" },
+            summary: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        JournalTimelineList: {
+          type: "object",
+          required: ["activities", "items", "status"],
+          properties: {
+            activities: {
+              type: "array",
+              items: { $ref: "#/components/schemas/JournalLinkableActivity" },
+            },
+            items: {
+              type: "array",
+              items: { $ref: "#/components/schemas/JournalTimelineItem" },
+            },
+            status: { const: "ready" },
+          },
+          additionalProperties: false,
+        },
+        JournalPostCreated: {
+          type: "object",
+          required: ["post", "status"],
+          properties: {
+            post: { $ref: "#/components/schemas/JournalStoredPost" },
+            status: { const: "created" },
+          },
+          additionalProperties: false,
+        },
+        JournalPostUpdated: {
+          type: "object",
+          required: ["post", "status"],
+          properties: {
+            post: { $ref: "#/components/schemas/JournalStoredPost" },
+            status: { const: "updated" },
+          },
+          additionalProperties: false,
+        },
+        JournalDayRatingSaved: {
+          type: "object",
+          required: ["rating", "status"],
+          properties: {
+            rating: { $ref: "#/components/schemas/JournalStoredDayRating" },
+            status: { enum: ["created", "updated"] },
+          },
+          additionalProperties: false,
+        },
+        JournalActivityLinked: {
+          type: "object",
+          required: ["activityId", "id", "occurredAt", "status"],
+          properties: {
+            activityId: { type: "string", format: "uuid" },
+            id: { type: "string", format: "uuid" },
+            occurredAt: { type: "string", format: "date-time" },
+            status: { const: "created" },
+          },
+          additionalProperties: false,
+        },
+        JournalDeleted: {
+          type: "object",
+          required: ["itemType", "status"],
+          properties: {
+            itemType: { enum: ["activity", "day-rating", "post"] },
+            status: { const: "deleted" },
+          },
+          additionalProperties: false,
+        },
+        JournalItemReady: {
+          type: "object",
+          required: ["item", "status"],
+          properties: {
+            item: { $ref: "#/components/schemas/JournalTimelineItem" },
+            status: { const: "ready" },
           },
           additionalProperties: false,
         },
@@ -7375,10 +7803,86 @@ export function changeDebtStatus(personId: string, debtId: string, status: DebtS
 `;
 }
 
+function renderJournalClient(): string {
+  return `
+export interface JournalStoredPost {
+  readonly body: string;
+  readonly createdAt: string;
+  readonly id: string;
+  readonly occurredAt: string;
+  readonly title?: string;
+  readonly updatedAt: string;
+}
+
+export interface JournalStoredDayRating {
+  readonly comment?: string;
+  readonly createdAt: string;
+  readonly id: string;
+  readonly ratedOn: string;
+  readonly rating: number;
+  readonly updatedAt: string;
+}
+
+export interface JournalLinkableActivity {
+  readonly happenedAt: string;
+  readonly id: string;
+  readonly summary: string;
+}
+
+export type JournalTimelineItem =
+  | { readonly activity: { readonly id: string; readonly summary: string }; readonly id: string; readonly occurredAt: string; readonly type: "activity" }
+  | { readonly dayRating: { readonly comment?: string; readonly id: string; readonly ratedOn: string; readonly rating: number }; readonly id: string; readonly occurredAt: string; readonly type: "day-rating" }
+  | { readonly id: string; readonly occurredAt: string; readonly post: { readonly body: string; readonly id: string; readonly title?: string; readonly updatedAt: string }; readonly type: "post" };
+
+export type JournalItemType = JournalTimelineItem["type"];
+
+export interface JournalPostInput {
+  readonly body: string;
+  readonly occurredAt: string;
+  readonly title?: string;
+}
+
+export interface JournalDayRatingInput {
+  readonly comment?: string;
+  readonly ratedOn: string;
+  readonly rating: number;
+}
+
+export function listJournal(workspaceId?: string): Promise<ApiResult<{ readonly activities: readonly JournalLinkableActivity[]; readonly items: readonly JournalTimelineItem[]; readonly status: "ready" }>> {
+  return request("/api/v1/journal", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function getJournalItem(itemId: string, workspaceId?: string): Promise<ApiResult<{ readonly item: JournalTimelineItem; readonly status: "ready" }>> {
+  return request(\`/api/v1/journal/items/\${encodeURIComponent(itemId)}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function createJournalPost(input: JournalPostInput, workspaceId?: string): Promise<ApiResult<{ readonly post: JournalStoredPost; readonly status: "created" }>> {
+  return request("/api/v1/journal/posts", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function updateJournalPost(postId: string, input: JournalPostInput, workspaceId?: string): Promise<ApiResult<{ readonly post: JournalStoredPost; readonly status: "updated" }>> {
+  return request(\`/api/v1/journal/posts/\${encodeURIComponent(postId)}\`, { method: "PUT", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function saveJournalDayRating(input: JournalDayRatingInput, workspaceId?: string): Promise<ApiResult<{ readonly rating: JournalStoredDayRating; readonly status: "created" | "updated" }>> {
+  return request("/api/v1/journal/day-ratings", { method: "PUT", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function linkJournalActivity(activityId: string, workspaceId?: string): Promise<ApiResult<{ readonly activityId: string; readonly id: string; readonly occurredAt: string; readonly status: "created" }>> {
+  return request("/api/v1/journal/activities", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify({ activityId }) });
+}
+
+export function deleteJournalItem(itemId: string, workspaceId?: string): Promise<ApiResult<{ readonly itemType: JournalItemType; readonly status: "deleted" }>> {
+  return request(\`/api/v1/journal/items/\${encodeURIComponent(itemId)}\`, { method: "DELETE", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+`;
+}
+
 if (import.meta.main) {
   const openApi = JSON.stringify(buildOpenApiDocument(), null, 2) + "\n";
   const client = renderGeneratedClient() + renderInvitationClient() +
-    renderSettingsClient() + renderPeopleClient() + renderGiftClient();
+    renderSettingsClient() + renderPeopleClient() + renderGiftClient() +
+    renderJournalClient();
   const check = Deno.args.includes("--check");
   if (check) {
     const currentOpenApi = await Deno.readTextFile(openApiPath).catch(() => "");
