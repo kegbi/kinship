@@ -39,6 +39,12 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
     required: true,
     schema: { type: "string", format: "uuid" },
   };
+  const fileIdParameter = {
+    name: "fileId",
+    in: "path",
+    required: true,
+    schema: { type: "string", format: "uuid" },
+  };
   const taskIdParameter = {
     name: "taskId",
     in: "path",
@@ -766,6 +772,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             "401": problem,
             "403": problem,
             "404": problem,
+            "409": problem,
             "503": problem,
           },
         },
@@ -1129,6 +1136,193 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             "403": problem,
             "404": problem,
             "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/files": {
+        get: {
+          operationId: "listPersonFiles",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter, personIdParameter],
+          responses: {
+            "200": {
+              description: "Explicit document and photo states for one person",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/PersonFileList" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+        post: {
+          operationId: "uploadPersonFile",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            originParameter,
+            workspaceParameter,
+            personIdParameter,
+            {
+              name: "X-File-Kind",
+              in: "header",
+              required: true,
+              schema: { type: "string", enum: ["document", "photo"] },
+            },
+            {
+              name: "X-File-Name",
+              in: "header",
+              required: true,
+              schema: { type: "string", maxLength: 500 },
+            },
+            {
+              name: "X-File-Title",
+              in: "header",
+              required: true,
+              schema: { type: "string", maxLength: 500 },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/pdf": {
+                schema: {
+                  type: "string",
+                  format: "binary",
+                  maxLength: 10_485_760,
+                },
+              },
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                {
+                  schema: {
+                    type: "string",
+                    format: "binary",
+                    maxLength: 10_485_760,
+                  },
+                },
+              "image/jpeg": {
+                schema: {
+                  type: "string",
+                  format: "binary",
+                  maxLength: 10_485_760,
+                },
+              },
+              "image/png": {
+                schema: {
+                  type: "string",
+                  format: "binary",
+                  maxLength: 10_485_760,
+                },
+              },
+              "image/webp": {
+                schema: {
+                  type: "string",
+                  format: "binary",
+                  maxLength: 10_485_760,
+                },
+              },
+              "text/plain": {
+                schema: {
+                  type: "string",
+                  format: "binary",
+                  maxLength: 10_485_760,
+                },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "Stored metadata and typed person link created",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/PersonFileCreated" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "413": problem,
+            "415": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/files/{fileId}": {
+        delete: {
+          operationId: "removePersonFile",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            originParameter,
+            workspaceParameter,
+            personIdParameter,
+            fileIdParameter,
+          ],
+          responses: {
+            "200": {
+              description: "Person file safely removed",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: ["fileId", "status"],
+                    properties: {
+                      fileId: { type: "string", format: "uuid" },
+                      status: { const: "removed" },
+                    },
+                    additionalProperties: false,
+                  },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/files/{fileId}/content": {
+        get: {
+          operationId: "downloadPersonFile",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter, personIdParameter, fileIdParameter],
+          responses: {
+            "200": {
+              description: "Authorized private file bytes",
+              content: {
+                "application/pdf": {
+                  schema: { type: "string", format: "binary" },
+                },
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                  {
+                    schema: { type: "string", format: "binary" },
+                  },
+                "text/plain": {
+                  schema: { type: "string", format: "binary" },
+                },
+                "image/jpeg": {
+                  schema: { type: "string", format: "binary" },
+                },
+                "image/png": {
+                  schema: { type: "string", format: "binary" },
+                },
+                "image/webp": {
+                  schema: { type: "string", format: "binary" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "410": problem,
+            "423": problem,
             "503": problem,
           },
         },
@@ -2792,6 +2986,56 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
                 $ref: "#/components/schemas/Authenticated/properties/workspace",
               },
             },
+          },
+          additionalProperties: false,
+        },
+        PersonFile: {
+          type: "object",
+          required: [
+            "byteSize",
+            "createdAt",
+            "fileId",
+            "filename",
+            "kind",
+            "mimeType",
+            "personId",
+            "status",
+            "title",
+          ],
+          properties: {
+            byteSize: { type: "integer", minimum: 0, maximum: 10_485_760 },
+            createdAt: { type: "string", format: "date-time" },
+            fileId: { type: "string", format: "uuid" },
+            filename: { type: "string" },
+            kind: { type: "string", enum: ["document", "photo"] },
+            mimeType: { type: "string" },
+            personId: { type: "string", format: "uuid" },
+            status: {
+              type: "string",
+              enum: ["available", "missing", "processing", "quarantined"],
+            },
+            title: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        PersonFileList: {
+          type: "object",
+          required: ["files", "status"],
+          properties: {
+            files: {
+              type: "array",
+              items: { $ref: "#/components/schemas/PersonFile" },
+            },
+            status: { const: "ready" },
+          },
+          additionalProperties: false,
+        },
+        PersonFileCreated: {
+          type: "object",
+          required: ["file", "status"],
+          properties: {
+            file: { $ref: "#/components/schemas/PersonFile" },
+            status: { const: "created" },
           },
           additionalProperties: false,
         },
@@ -5642,6 +5886,18 @@ export interface PersonProfileIdentity extends PersonIdentity {
   readonly updatedAt: string;
 }
 
+export interface PersonFile {
+  readonly byteSize: number;
+  readonly createdAt: string;
+  readonly fileId: string;
+  readonly filename: string;
+  readonly kind: "document" | "photo";
+  readonly mimeType: string;
+  readonly personId: string;
+  readonly status: "available" | "missing" | "processing" | "quarantined";
+  readonly title: string;
+}
+
 export interface PersonLifecycleIdentity extends PersonIdentity {
   readonly lifecycle: "active" | "archived" | "deleted";
   readonly updatedAt: string;
@@ -6317,6 +6573,32 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
 
 export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
   return request(\`/api/v1/people/\${encodeURIComponent(personId)}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listPersonFiles(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly files: readonly PersonFile[]; readonly status: "ready" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/files\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function uploadPersonFile(personId: string, input: { readonly file: File; readonly kind: PersonFile["kind"]; readonly title: string }, workspaceId?: string): Promise<ApiResult<{ readonly file: PersonFile; readonly status: "created" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/files\`, {
+    method: "POST",
+    body: input.file,
+    headers: {
+      "content-type": input.file.type,
+      "X-File-Kind": input.kind,
+      "X-File-Name": encodeURIComponent(input.file.name),
+      "X-File-Title": encodeURIComponent(input.title),
+      ...(workspaceId ? { "X-Workspace-Id": workspaceId } : {}),
+    },
+  });
+}
+
+export function personFileContentUrl(personId: string, fileId: string): string {
+  return \`/api/v1/people/\${encodeURIComponent(personId)}/files/\${encodeURIComponent(fileId)}/content\`;
+}
+
+export function removePersonFile(personId: string, fileId: string, workspaceId?: string): Promise<ApiResult<{ readonly fileId: string; readonly status: "removed" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/files/\${encodeURIComponent(fileId)}\`, { method: "DELETE", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
 export function recordPersonView(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly status: "recorded" }>> {

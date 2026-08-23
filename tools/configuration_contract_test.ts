@@ -102,3 +102,60 @@ Deno.test("Compose and root development pass PostgreSQL credentials as fields", 
     "root development must not build a raw password URL",
   );
 });
+
+Deno.test("[FILES-001] MinIO is confined to development and test overlays", async () => {
+  const base = await Deno.readTextFile(
+    new URL("../compose.yaml", import.meta.url),
+  );
+  const development = await Deno.readTextFile(
+    new URL("../compose.dev.yaml", import.meta.url),
+  );
+  const test = await Deno.readTextFile(
+    new URL("../compose.test.yaml", import.meta.url),
+  );
+  assert(
+    !base.includes("  object-store:"),
+    "production-like Compose has no local MinIO service",
+  );
+  assert(
+    !base.includes("condition: service_healthy\n      object-store:"),
+    "base API has no local object-store dependency",
+  );
+  assert(
+    base.includes("OBJECT_STORAGE_HOST: ${OBJECT_STORAGE_HOST"),
+    "base API accepts an external object host",
+  );
+  assert(
+    base.includes(
+      "OBJECT_STORAGE_REQUEST_TIMEOUT_MS: ${OBJECT_STORAGE_REQUEST_TIMEOUT_MS:-30000}",
+    ),
+    "base API passes a finite object-store request timeout",
+  );
+  assert(
+    development.includes("  object-store:"),
+    "development overlay owns MinIO",
+  );
+  assert(test.includes("  object-store:"), "test overlay owns MinIO isolation");
+  const dockerfile = await Deno.readTextFile(
+    new URL("../Dockerfile.api", import.meta.url),
+  );
+  const tasks = await Deno.readTextFile(
+    new URL("../deno.json", import.meta.url),
+  );
+  for (const manifest of [dockerfile, tasks]) {
+    assert(
+      manifest.includes("OBJECT_STORAGE_REQUEST_TIMEOUT_MS"),
+      "API environment allowlists include the object-store request timeout",
+    );
+  }
+  const auditAdapter = await Deno.readTextFile(
+    new URL(
+      "../packages/backend/modules/governance/adapters/postgres/file_audit.ts",
+      import.meta.url,
+    ),
+  );
+  assert(
+    !auditAdapter.includes('from "../../../files'),
+    "governance keeps its accepted dependency manifest",
+  );
+});

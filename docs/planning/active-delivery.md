@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 7 — Files, Gifts, And Debts**
-- Current leaf: **APP-007A / `FILES-001` — Person files**
+- Current leaf: **APP-007B / `GIFTS-001` — Gifts and debts**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -216,8 +216,8 @@ runnable behavior cannot work without them.
 
 ## Phase 7 — Files, Gifts, And Debts
 
-- [ ] **APP-007A / `FILES-001` — Person files.**
-  - [ ] Deliver the object-storage adapter, authorized upload/download,
+- [x] **APP-007A / `FILES-001` — Person files.**
+  - [x] Deliver the object-storage adapter, authorized upload/download,
         documents, photos, limits, and missing/quarantined object states.
 - [ ] **APP-007B / `GIFTS-001` — Gifts and debts.**
   - [ ] Deliver gift ideas/history, gift attachments, debts, permissions, and

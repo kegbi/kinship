@@ -365,6 +365,18 @@ export interface PersonProfileIdentity extends PersonIdentity {
   readonly updatedAt: string;
 }
 
+export interface PersonFile {
+  readonly byteSize: number;
+  readonly createdAt: string;
+  readonly fileId: string;
+  readonly filename: string;
+  readonly kind: "document" | "photo";
+  readonly mimeType: string;
+  readonly personId: string;
+  readonly status: "available" | "missing" | "processing" | "quarantined";
+  readonly title: string;
+}
+
 export interface PersonLifecycleIdentity extends PersonIdentity {
   readonly lifecycle: "active" | "archived" | "deleted";
   readonly updatedAt: string;
@@ -1040,6 +1052,32 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
 
 export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
   return request(`/api/v1/people/${encodeURIComponent(personId)}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listPersonFiles(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly files: readonly PersonFile[]; readonly status: "ready" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/files`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function uploadPersonFile(personId: string, input: { readonly file: File; readonly kind: PersonFile["kind"]; readonly title: string }, workspaceId?: string): Promise<ApiResult<{ readonly file: PersonFile; readonly status: "created" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/files`, {
+    method: "POST",
+    body: input.file,
+    headers: {
+      "content-type": input.file.type,
+      "X-File-Kind": input.kind,
+      "X-File-Name": encodeURIComponent(input.file.name),
+      "X-File-Title": encodeURIComponent(input.title),
+      ...(workspaceId ? { "X-Workspace-Id": workspaceId } : {}),
+    },
+  });
+}
+
+export function personFileContentUrl(personId: string, fileId: string): string {
+  return `/api/v1/people/${encodeURIComponent(personId)}/files/${encodeURIComponent(fileId)}/content`;
+}
+
+export function removePersonFile(personId: string, fileId: string, workspaceId?: string): Promise<ApiResult<{ readonly fileId: string; readonly status: "removed" }>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/files/${encodeURIComponent(fileId)}`, { method: "DELETE", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
 export function recordPersonView(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly status: "recorded" }>> {

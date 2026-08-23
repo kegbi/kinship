@@ -526,6 +526,47 @@ const profileFactSections = new Set<string>([
                 <form data-profile-fact-form class="profile-fact-form" hidden novalidate></form>
               </section>
             )
+            : id === "documents" || id === "photos"
+            ? (
+              <section
+                id={`profile-section-${id}`}
+                class="profile-section-card person-files-card"
+                data-profile-section={id}
+                data-person-files={id === "documents" ? "document" : "photo"}
+                data-section-state="loading"
+                tabindex="-1"
+                aria-labelledby={`profile-section-${id}-heading`}
+              >
+                <header class="profile-section-heading">
+                  <div>
+                    <p class="section-kicker">Private person attachment</p>
+                    <h2 id={`profile-section-${id}-heading`}>{title}</h2>
+                  </div>
+                  <span data-file-badge class="state-badge">Loading</span>
+                </header>
+                <p data-file-state class="section-state" role="status" aria-live="polite">Loading {title.toLowerCase()}…</p>
+                <button data-file-refresh class="button-secondary" type="button" hidden>Retry loading</button>
+                <ul data-file-list class="person-file-list" aria-label={`Saved ${title.toLowerCase()}`}></ul>
+                <button data-file-add class="button-primary" type="button" hidden>Attach {id === "photos" ? "photo" : "document"}</button>
+                <form data-file-form class="profile-fact-form" hidden novalidate>
+                  <label>Title <input name="title" maxlength="500" required /></label>
+                  <label>
+                    File
+                    <input
+                      name="file"
+                      type="file"
+                      accept={id === "photos" ? "image/jpeg,image/png,image/webp" : "application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+                      required
+                    />
+                  </label>
+                  <p class="form-hint">Maximum file size: 10 MB.</p>
+                  <div class="form-actions">
+                    <button class="button-primary" type="submit">Upload</button>
+                    <button data-file-cancel type="button">Cancel</button>
+                  </div>
+                </form>
+              </section>
+            )
             : id === "audit-summary"
             ? (
               <section
