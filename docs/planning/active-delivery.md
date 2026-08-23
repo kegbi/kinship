@@ -10,8 +10,8 @@ prerequisite queues.
 
 ## Cursor
 
-- Current phase: **Phase 6 — Today, Tasks, Reminders, And Workers**
-- Current leaf: **APP-006D — Worker reliability**
+- Current phase: **Phase 7 — Files, Gifts, And Debts**
+- Current leaf: **APP-007A / `FILES-001` — Person files**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -51,6 +51,10 @@ Playwright test carrying its stable flow ID.
 - [ ] Pull authentication, Compose, gateway/TLS, background work, CI, telemetry,
       design-system breadth, and architecture enforcement into the first leaf
       that consumes each boundary. Do not turn them into a new Foundation phase.
+- [ ] **REL-001 — Stabilize the APP-002C Chromium keyboard focus-order E2E.**
+      The Phase 6 aggregate run failed once before passing its one bounded exact
+      reproduction; keep this isolated from feature candidates and revisit at a
+      later reliability checkpoint.
 
 ## Just-In-Time Technical Capabilities
 
@@ -69,7 +73,7 @@ These are cross-cutting acceptance items, not separately scheduled tickets.
       never imports backend internals.
 - [x] Production-like gateway, secure-cookie, origin, CSRF, and test-TLS
       behavior arrive with the first protected browser flow that consumes them.
-- [ ] Durable worker guarantees arrive with the first reminder, import, export,
+- [x] Durable worker guarantees arrive with the first reminder, import, export,
       or synchronization behavior that needs them.
 - [ ] Provider CI configuration arrives only after truthful local root commands
       and real suites exist.
@@ -202,11 +206,11 @@ runnable behavior cannot work without them.
         contact, upcoming work, recent people, reference notes, and activity.
   - [x] Inline actions call owning module use cases; the `today` read model
         stays read-only.
-- [ ] **APP-006D — Worker reliability.**
-  - [ ] Prove claim, retry, restart, secondary-region failure isolation,
+- [x] **APP-006D — Worker reliability.**
+  - [x] Prove claim, retry, restart, secondary-region failure isolation,
         timezone, DST, and duplicate-delivery behavior required by active
         workloads.
-- [ ] **Phase 6 accepted:** Slice 4 flows pass and the core-alpha user journey
+- [x] **Phase 6 accepted:** Slice 4 flows pass and the core-alpha user journey
       is complete without a horizontal job framework unrelated to active
       workloads.
 

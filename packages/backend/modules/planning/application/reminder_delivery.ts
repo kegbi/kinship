@@ -193,30 +193,37 @@ export function createReminderDeliveryWorker(
               : "unattempted" as const,
             status: "retry" as const,
           };
-        const saved = await dependencies.transaction.run(
-          async (transaction) => {
-            const updated = await dependencies.repository.finalize({
-              claimToken: occurrence.claimToken,
-              id: occurrence.id,
-              now: finalizedAt,
-              transaction,
-              ...terminal,
-            });
-            if (
-              updated &&
-              (terminal.status === "sent" || terminal.status === "failed" ||
-                terminal.status === "manual_attention")
-            ) {
-              await dependencies.audit.record({
-                action: terminal.status === "sent" ? "delivered" : "failed",
-                occurrence,
-                occurredAt: finalizedAt,
+        let saved: boolean;
+        try {
+          saved = await dependencies.transaction.run(
+            async (transaction) => {
+              const updated = await dependencies.repository.finalize({
+                claimToken: occurrence.claimToken,
+                id: occurrence.id,
+                now: finalizedAt,
                 transaction,
+                ...terminal,
               });
-            }
-            return updated;
-          },
-        );
+              if (
+                updated &&
+                (terminal.status === "sent" ||
+                  terminal.status === "failed" ||
+                  terminal.status === "manual_attention")
+              ) {
+                await dependencies.audit.record({
+                  action: terminal.status === "sent" ? "delivered" : "failed",
+                  occurrence,
+                  occurredAt: finalizedAt,
+                  transaction,
+                });
+              }
+              return updated;
+            },
+          );
+        } catch {
+          results.push({ id: occurrence.id, status: "processing-error" });
+          continue;
+        }
         results.push({
           id: occurrence.id,
           status: saved ? terminal.status : "stale-claim",
