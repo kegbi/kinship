@@ -180,7 +180,15 @@ test(
       "Restore both people before changing their relationship.",
     );
     await page.goto(targetPath);
+    const targetRestoreResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === "POST" &&
+        url.pathname === `/api/v1/people/${targetId}/restore`;
+    });
     await page.getByRole("button", { name: "Restore person" }).click();
+    expect((await targetRestoreResponse).ok()).toBe(true);
+    await expect(page.locator("#profile-section-relationships"))
+      .toHaveAttribute("data-section-state", "ready");
     await page.goto(sourcePath);
     await section.getByRole("button", { name: "Unlink Charles Babbage" })
       .click();
