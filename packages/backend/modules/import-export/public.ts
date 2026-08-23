@@ -35,3 +35,4 @@ export {
   PostgresExportRepository,
   PostgresExportTransaction,
 } from "./adapters/postgres/export_repository.ts";
+export { PostgresImportExportWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";

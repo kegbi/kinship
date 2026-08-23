@@ -144,6 +144,36 @@ describe("APP-002C protected application shell", () => {
     },
   );
 
+  it.each(["admin", "member"])(
+    "blocks the %s role from the owner-only workspace danger route",
+    async (role) => {
+      shellMarkup();
+      document.body.dataset.pageId = "settings.workspace-danger";
+      document.querySelector("#protected-shell")?.insertAdjacentHTML(
+        "beforeend",
+        "<main data-requires-workspace-owner>Workspace deletion controls</main>",
+      );
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(response({
+          ...(session() as Record<string, unknown>),
+          member: { id: "non-owner", role },
+        })),
+      );
+
+      await mountApplicationShell();
+
+      expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
+        .toBe(true);
+      expect(document.querySelector("#access-state")?.textContent).toContain(
+        "Only an active workspace owner",
+      );
+      expect(document.body.textContent).not.toContain(
+        "Workspace deletion controls",
+      );
+    },
+  );
+
   it("retargets the skip link to the visible forbidden main", async () => {
     shellMarkup();
     document.body.dataset.pageId = "settings.audit";

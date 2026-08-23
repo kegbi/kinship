@@ -146,6 +146,261 @@ async function lifecycleRequest(
 }
 
 Deno.test({
+  name:
+    "WORKSPACE-002 PostgreSQL reset preserves workspace shell and deletion result survives cascade",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await sql`truncate table crm.users, crm.workspaces, crm.audit_events, crm.legal_documents, crm.workspace_lifecycle_records restart identity cascade`;
+    const owner = await register(
+      "workspace-danger@example.test",
+      "Danger circle",
+    );
+    const outsider = await register(
+      "workspace-danger-outsider@example.test",
+      "Other circle",
+    );
+    const crossWorkspace = await lifecycleRequest(
+      { cookie: owner.cookie, workspaceId: outsider.workspaceId },
+      "/api/v1/settings/workspace-lifecycle",
+    );
+    assert(
+      crossWorkspace.status === 401,
+      `cross-workspace preview returned ${crossWorkspace.status}`,
+    );
+    let limited: Response | undefined;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const response = await lifecycleRequest(
+        outsider,
+        "/api/v1/settings/workspace-lifecycle",
+        {
+          body: {
+            confirmation: "DELETE secret-confirmation",
+            impactToken: "a".repeat(64),
+            password: "wrong-secret-password",
+          },
+          clientAddress: "203.0.113.82",
+          method: "DELETE",
+        },
+      );
+      if (response.status === 429) {
+        limited = response;
+        break;
+      }
+    }
+    const [attemptAudit] = await sql<{
+      readonly clean: boolean;
+      readonly rateLimited: number;
+      readonly rejected: number;
+    }[]>`select
+      count(*) filter (where outcome='rate-limited')::int as "rateLimited",
+      count(*) filter (where outcome='reauthentication-required')::int as rejected,
+      bool_and(object_keys='[]'::jsonb and impact_counts='{}'::jsonb
+        and row_to_json(workspace_lifecycle_records)::text not like '%wrong-secret-password%'
+        and row_to_json(workspace_lifecycle_records)::text not like '%secret-confirmation%') as clean
+      from crm.workspace_lifecycle_records
+      where workspace_id=${outsider.workspaceId} and action='delete'`;
+    assert(
+      limited?.headers.get("retry-after") && attemptAudit?.rateLimited === 1 &&
+        attemptAudit.rejected > 0 && attemptAudit.clean,
+      "workspace deletion guessing was not bounded and redacted",
+    );
+    const personId = crypto.randomUUID();
+    const relatedPersonId = crypto.randomUUID();
+    await sql`insert into crm.people (id, workspace_id, created_by_member_id, given_name)
+      values (${personId}, ${owner.workspaceId}, ${owner.memberId}, 'Reset me')`;
+    await sql`insert into crm.people (id, workspace_id, created_by_member_id, given_name)
+      values (${relatedPersonId}, ${owner.workspaceId}, ${owner.memberId}, 'Related')`;
+    await sql`insert into crm.files (workspace_id, uploaded_by_member_id, storage_provider, storage_bucket, storage_key, byte_size)
+      values (${owner.workspaceId}, ${owner.memberId}, 'memory', 'test', 'objects/reset-me', 1)`;
+    const preview = await lifecycleRequest(
+      owner,
+      "/api/v1/settings/workspace-lifecycle",
+    );
+    const impact = await preview.json() as {
+      readonly confirmations: { readonly resetWorkspace: string };
+      readonly counts: {
+        readonly files: number;
+        readonly operations: number;
+        readonly people: number;
+      };
+      readonly impactToken: string;
+    };
+    assert(
+      preview.status === 200 && impact.counts.people === 2 &&
+        impact.counts.files === 1 && impact.counts.operations === 0,
+      `reset impact is current: ${preview.status} ${JSON.stringify(impact)}`,
+    );
+
+    await sql`insert into crm.relationships (
+        workspace_id, from_person_id, to_person_id, relationship_type_id
+      ) select ${owner.workspaceId}, ${personId}, ${relatedPersonId}, id
+        from crm.relationship_types where workspace_id=${owner.workspaceId}
+        order by sort_order, id limit 1`;
+    const stale = await lifecycleRequest(
+      owner,
+      "/api/v1/settings/workspace-lifecycle/reset",
+      {
+        method: "POST",
+        body: {
+          confirmation: impact.confirmations.resetWorkspace,
+          impactToken: impact.impactToken,
+          password,
+        },
+      },
+    );
+    assert(stale.status === 409, "concurrent impact change was not rejected");
+
+    const operationsPreview = await lifecycleRequest(
+      owner,
+      "/api/v1/settings/workspace-lifecycle",
+    );
+    const operationsImpact = await operationsPreview.json() as typeof impact;
+    await sql`insert into crm.statistics_snapshots (workspace_id, scope, counters)
+      values (${owner.workspaceId}, 'workspace', '{"people":2}'::jsonb)`;
+    const staleOperations = await lifecycleRequest(
+      owner,
+      "/api/v1/settings/workspace-lifecycle/reset",
+      {
+        method: "POST",
+        body: {
+          confirmation: operationsImpact.confirmations.resetWorkspace,
+          impactToken: operationsImpact.impactToken,
+          password,
+        },
+      },
+    );
+    assert(
+      staleOperations.status === 409,
+      "statistics snapshot change was not rejected",
+    );
+
+    const currentPreview = await lifecycleRequest(
+      owner,
+      "/api/v1/settings/workspace-lifecycle",
+    );
+    const currentImpact = await currentPreview.json() as typeof impact;
+    await sql`create function crm.reject_workspace_reset() returns trigger
+      language plpgsql as $$ begin raise exception 'forced reset failure'; end $$`;
+    await sql`create trigger reject_workspace_reset before delete on crm.workspaces
+      for each row execute function crm.reject_workspace_reset()`;
+    const rejected = await lifecycleRequest(
+      owner,
+      "/api/v1/settings/workspace-lifecycle/reset",
+      {
+        method: "POST",
+        body: {
+          confirmation: currentImpact.confirmations.resetWorkspace,
+          impactToken: currentImpact.impactToken,
+          password,
+        },
+      },
+    );
+    await sql`drop trigger reject_workspace_reset on crm.workspaces`;
+    await sql`drop function crm.reject_workspace_reset()`;
+    const [rolledBack] = await sql<{
+      readonly activeSessions: number;
+      readonly staleRecords: number;
+      readonly successfulRecords: number;
+      readonly transactionalFailures: number;
+      readonly workspaces: number;
+    }[]>`select
+      (select count(*)::int from crm.workspaces where id = ${owner.workspaceId}) workspaces,
+      (select count(*)::int from crm.workspace_lifecycle_records where workspace_id = ${owner.workspaceId} and outcome='stale-impact') "staleRecords",
+      (select count(*)::int from crm.workspace_lifecycle_records where workspace_id = ${owner.workspaceId} and outcome='succeeded') "successfulRecords",
+      (select count(*)::int from crm.workspace_lifecycle_records where workspace_id = ${owner.workspaceId} and outcome='transactional-failure') "transactionalFailures",
+      (select count(*)::int from crm.user_sessions where user_id = ${owner.userId}
+        and revoked_at is null and expires_at > now()) "activeSessions"`;
+    assert(
+      rejected.status === 503 && rolledBack?.workspaces === 1 &&
+        rolledBack.staleRecords === 2 && rolledBack.successfulRecords === 0 &&
+        rolledBack.transactionalFailures === 1 &&
+        rolledBack.activeSessions > 0,
+      `failed reset did not roll back: ${rejected.status} ${
+        JSON.stringify(rolledBack)
+      }`,
+    );
+
+    const retryPreview = await lifecycleRequest(
+      owner,
+      "/api/v1/settings/workspace-lifecycle",
+    );
+    const retryImpact = await retryPreview.json() as typeof impact;
+    const reset = await lifecycleRequest(
+      owner,
+      "/api/v1/settings/workspace-lifecycle/reset",
+      {
+        method: "POST",
+        body: {
+          confirmation: retryImpact.confirmations.resetWorkspace,
+          impactToken: retryImpact.impactToken,
+          password,
+        },
+      },
+    );
+    const resetBody = await reset.clone().json();
+    const [resetState] = await sql<{
+      readonly audits: number;
+      readonly members: number;
+      readonly people: number;
+      readonly workspaces: number;
+    }[]>`select
+      (select count(*)::int from crm.workspaces where id = ${owner.workspaceId}) workspaces,
+      (select count(*)::int from crm.workspace_members where workspace_id = ${owner.workspaceId}) members,
+      (select count(*)::int from crm.people where workspace_id = ${owner.workspaceId}) people,
+      (select count(*)::int from crm.audit_events where workspace_id = ${owner.workspaceId} and action = 'workspace.reset') audits`;
+    assert(
+      reset.status === 200 && resetState?.workspaces === 1 &&
+        resetState.members === 1 && resetState.people === 0 &&
+        resetState.audits === 1,
+      `reset is atomic and preserves workspace configuration shell: ${reset.status} ${
+        JSON.stringify(resetBody)
+      } ${JSON.stringify(resetState)}`,
+    );
+
+    const signedAgain = await signIn(owner.email, owner.workspaceId);
+    const cookie = signedAgain.headers.get("set-cookie")?.split(";")[0];
+    assert(signedAgain.status === 200 && cookie, "owner signs in after reset");
+    const current = { cookie, workspaceId: owner.workspaceId };
+    await sql`insert into crm.people (workspace_id, created_by_member_id, given_name)
+      values (${owner.workspaceId}, ${owner.memberId}, 'Delete me')`;
+    await sql`insert into crm.files (workspace_id, uploaded_by_member_id, storage_provider, storage_bucket, storage_key, byte_size)
+      values (${owner.workspaceId}, ${owner.memberId}, 'memory', 'test', 'objects/delete-me', 1)`;
+    const deletePreview = await lifecycleRequest(
+      current,
+      "/api/v1/settings/workspace-lifecycle",
+    );
+    const deletionImpact = await deletePreview.json() as {
+      readonly confirmations: { readonly deleteWorkspace: string };
+      readonly impactToken: string;
+    };
+    const deletion = await lifecycleRequest(
+      current,
+      "/api/v1/settings/workspace-lifecycle",
+      {
+        method: "DELETE",
+        body: {
+          confirmation: deletionImpact.confirmations.deleteWorkspace,
+          impactToken: deletionImpact.impactToken,
+          password,
+        },
+      },
+    );
+    const [deletedState] = await sql<{
+      readonly records: number;
+      readonly workspaces: number;
+    }[]>`select
+      (select count(*)::int from crm.workspaces where id = ${owner.workspaceId}) workspaces,
+      (select count(*)::int from crm.workspace_lifecycle_records where workspace_id = ${owner.workspaceId} and actor_user_id = ${owner.userId} and action = 'delete') records`;
+    assert(
+      deletion.status === 200 && deletedState?.workspaces === 0 &&
+        deletedState.records === 1,
+      "durable deletion record survives workspace cascade",
+    );
+  },
+});
+
+Deno.test({
   name: "AUTH-005 PostgreSQL concurrent leave preserves a final active owner",
   sanitizeOps: false,
   sanitizeResources: false,

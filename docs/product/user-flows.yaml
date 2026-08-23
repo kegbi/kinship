@@ -177,6 +177,7 @@ flows:
 
   - id: WORKSPACE-002
     title: Reset or delete a workspace safely
+    deliveryStatus: delivered
     priority: P1
     actor: workspace-owner
     trigger: The owner opens the workspace danger zone and chooses a destructive action.
@@ -213,7 +214,7 @@ flows:
     ]
     permissions: [workspace.reset, workspace.delete]
     testLayers: [unit, integration, schema, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-009d.spec.ts] }
 
   - id: WORKSPACE-003
     title: Configure profile modules and controlled vocabularies

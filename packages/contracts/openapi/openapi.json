@@ -49,6 +49,16 @@
               }
             }
           },
+          "429": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "503": {
             "description": "RFC 9457 problem details",
             "content": {
@@ -266,6 +276,16 @@
             }
           },
           "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
             "description": "RFC 9457 problem details",
             "content": {
               "application/problem+json": {
@@ -8347,6 +8367,314 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/workspace-lifecycle": {
+      "get": {
+        "operationId": "getWorkspaceLifecyclePreview",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current member settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceLifecyclePreview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteWorkspace",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "description": "Must exactly match the configured public web origin.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceLifecycleConfirmation"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Workspace deleted and cleanup recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds before another current-password attempt.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/workspace-lifecycle/reset": {
+      "post": {
+        "operationId": "resetWorkspace",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "description": "Must exactly match the configured public web origin.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceLifecycleConfirmation"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Workspace CRM data reset and sessions revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceReset"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds before another current-password attempt.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
                 }
               }
             }
@@ -17596,6 +17924,226 @@
           "status"
         ],
         "properties": {
+          "next": {
+            "const": "/auth/sign-in"
+          },
+          "status": {
+            "const": "deleted"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkspaceLifecycleConfirmation": {
+        "type": "object",
+        "required": [
+          "confirmation",
+          "impactToken",
+          "password"
+        ],
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "impactToken": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkspaceLifecyclePreview": {
+        "type": "object",
+        "required": [
+          "activeSessionCount",
+          "confirmations",
+          "counts",
+          "impactToken",
+          "status",
+          "workspace"
+        ],
+        "properties": {
+          "activeSessionCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "confirmations": {
+            "type": "object",
+            "required": [
+              "deleteWorkspace",
+              "resetWorkspace"
+            ],
+            "properties": {
+              "deleteWorkspace": {
+                "type": "string"
+              },
+              "resetWorkspace": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "counts": {
+            "type": "object",
+            "required": [
+              "activities",
+              "auditEvents",
+              "calls",
+              "debts",
+              "exports",
+              "files",
+              "gifts",
+              "imports",
+              "integrations",
+              "journalPosts",
+              "lifeEvents",
+              "members",
+              "messages",
+              "notes",
+              "operations",
+              "people",
+              "relationships",
+              "reminders",
+              "tasks"
+            ],
+            "properties": {
+              "activities": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "auditEvents": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "calls": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "debts": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "exports": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "files": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "gifts": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "imports": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "integrations": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "journalPosts": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "lifeEvents": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "members": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "messages": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "notes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "operations": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "people": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "relationships": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reminders": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "tasks": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          },
+          "impactToken": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "status": {
+            "const": "ready"
+          },
+          "workspace": {
+            "$ref": "#/components/schemas/BlockingWorkspace"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkspaceReset": {
+        "type": "object",
+        "required": [
+          "cleanupStatus",
+          "next",
+          "status"
+        ],
+        "properties": {
+          "cleanupStatus": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "pending"
+            ]
+          },
+          "next": {
+            "const": "/auth/sign-in"
+          },
+          "status": {
+            "const": "reset"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkspaceDeleted": {
+        "type": "object",
+        "required": [
+          "cleanupStatus",
+          "next",
+          "status"
+        ],
+        "properties": {
+          "cleanupStatus": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "pending"
+            ]
+          },
           "next": {
             "const": "/auth/sign-in"
           },

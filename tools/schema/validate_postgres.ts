@@ -50,6 +50,7 @@ const V2_UPGRADE_DATABASE = "crm_v2_upgrade_test";
 const V3_UPGRADE_DATABASE = "crm_v3_upgrade_test";
 const V4_UPGRADE_DATABASE = "crm_v4_upgrade_test";
 const V5_UPGRADE_DATABASE = "crm_v5_upgrade_test";
+const V6_UPGRADE_DATABASE = "crm_v6_upgrade_test";
 const MIGRATION_ROLLBACK_DATABASE = "crm_migration_rollback_test";
 const DATABASE_USER = "crm_test";
 
@@ -57,14 +58,14 @@ const scriptDirectory = resolve(
   fileURLToPath(new URL(".", import.meta.url)),
 );
 const repositoryRoot = resolve(scriptDirectory, "../..");
-const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v6");
+const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v7");
 const v1SchemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v1");
 const v2SchemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v2");
 const v3SchemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v3");
 const v4SchemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v4");
 const validationPath = resolve(
   schemaDirectory,
-  "personal_crm_schema_v6_validation.json",
+  "personal_crm_schema_v7_validation.json",
 );
 const v1ValidationPath = resolve(
   v1SchemaDirectory,
@@ -158,25 +159,31 @@ async function verifyArtifacts(
     validation.status !== "pending-live-validation" &&
     validation.status !== "passed"
   ) {
-    throw new Error(`Schema v6 validation status is ${validation.status}`);
+    throw new Error(`Schema v7 validation status is ${validation.status}`);
   }
 
   for (const [filename, expectedHash] of Object.entries(validation.sha256)) {
     const actualHash = await sha256(resolve(schemaDirectory, filename));
     if (actualHash !== expectedHash) {
       throw new Error(
-        `Schema v6 artifact hash mismatch for ${filename}: ${actualHash}`,
+        `Schema v7 artifact hash mismatch for ${filename}: ${actualHash}`,
       );
     }
   }
 
   const ddl = await Deno.readTextFile(
-    resolve(schemaDirectory, "personal_crm_schema_v6.sql"),
+    resolve(schemaDirectory, "personal_crm_schema_v7.sql"),
   );
   const migration = await Deno.readTextFile(
     resolve(
       schemaDirectory,
       "migrations/0006_add_durable_reminder_delivery.sql",
+    ),
+  );
+  const v7Migration = await Deno.readTextFile(
+    resolve(
+      schemaDirectory,
+      "migrations/0007_add_workspace_deletion_records.sql",
     ),
   );
   const tableColumns = (table: string): readonly string[] => {
@@ -218,6 +225,7 @@ async function verifyArtifacts(
   ];
   const occurrenceColumns = tableColumns("reminder_occurrences");
   const cadenceColumns = tableColumns("stay_in_touch_cadences");
+  const deletionColumns = tableColumns("workspace_lifecycle_records");
   const contractErrors: string[] = [];
   if (occurrenceColumns.join(",") !== expectedOccurrenceColumns.join(",")) {
     contractErrors.push(
@@ -247,9 +255,24 @@ async function verifyArtifacts(
   if (!migration.includes("last_request_fingerprint")) {
     contractErrors.push("cadence replay migration is missing");
   }
+  if (
+    deletionColumns.join(",") !==
+      "id,workspace_id,actor_user_id,action,outcome,impact_counts,object_keys,cleanup_status,occurred_at,cleanup_completed_at,created_at"
+  ) {
+    contractErrors.push("workspace deletion security record shape is missing");
+  }
+  if (
+    !v7Migration.includes("workspace_lifecycle_records") ||
+    v7Migration.includes("REFERENCES crm.workspaces") ||
+    v7Migration.includes("REFERENCES workspaces")
+  ) {
+    contractErrors.push(
+      "surviving deletion record migration is missing or cascades",
+    );
+  }
   if (contractErrors.length > 0) {
     throw new Error(
-      `Schema v6 synchronized contract: ${contractErrors.join("; ")}`,
+      `Schema v7 synchronized contract: ${contractErrors.join("; ")}`,
     );
   }
 }
@@ -417,7 +440,7 @@ async function copyFixture(
 async function readValidation(): Promise<SchemaValidation> {
   const parsed: unknown = JSON.parse(await Deno.readTextFile(validationPath));
   if (typeof parsed !== "object" || parsed === null || !("sha256" in parsed)) {
-    throw new Error("Invalid schema v6 validation JSON");
+    throw new Error("Invalid schema v7 validation JSON");
   }
   return parsed as SchemaValidation;
 }
@@ -466,20 +489,20 @@ async function assertArtifactCounts(
 ): Promise<void> {
   assertEqual(
     "table mapping rows",
-    await countCsvRows(resolve(schemaDirectory, "monica_table_mapping_v6.csv")),
+    await countCsvRows(resolve(schemaDirectory, "monica_table_mapping_v7.csv")),
     validation.table_mapping_rows,
   );
   assertEqual(
     "column mapping rows",
     await countCsvRows(
-      resolve(schemaDirectory, "monica_column_mapping_v6.csv"),
+      resolve(schemaDirectory, "monica_column_mapping_v7.csv"),
     ),
     validation.column_mapping_rows,
   );
   assertEqual(
     "field catalog rows",
     await countCsvRows(
-      resolve(schemaDirectory, "personal_crm_field_catalog_v6.csv"),
+      resolve(schemaDirectory, "personal_crm_field_catalog_v7.csv"),
     ),
     validation.field_catalog_rows,
   );
@@ -489,7 +512,7 @@ async function applySchema(database: string): Promise<void> {
   await runPsql(database, [
     "--single-transaction",
     "-f",
-    "/tmp/personal_crm_schema_v6.sql",
+    "/tmp/personal_crm_schema_v7.sql",
   ], { quiet: true });
 }
 
@@ -504,7 +527,7 @@ async function assertRollback(): Promise<void> {
       "-c",
       "BEGIN",
       "-f",
-      "/tmp/personal_crm_schema_v6.sql",
+      "/tmp/personal_crm_schema_v7.sql",
       "-c",
       "ROLLBACK",
     ], { quiet: true });
@@ -536,6 +559,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       V3_UPGRADE_DATABASE,
       V4_UPGRADE_DATABASE,
       V5_UPGRADE_DATABASE,
+      V6_UPGRADE_DATABASE,
       MIGRATION_ROLLBACK_DATABASE,
     ]
   ) {
@@ -563,6 +587,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0005_add_person_date_year_approximation.sql",
       "-f",
       "/tmp/0006_add_durable_reminder_delivery.sql",
+      "-f",
+      "/tmp/0007_add_workspace_deletion_records.sql",
     ], { quiet: true });
     const upgraded = await runPsql(UPGRADE_DATABASE, [
       "-A",
@@ -606,6 +632,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0005_add_person_date_year_approximation.sql",
       "-f",
       "/tmp/0006_add_durable_reminder_delivery.sql",
+      "-f",
+      "/tmp/0007_add_workspace_deletion_records.sql",
     ], { quiet: true });
     const v2Upgraded = await runPsql(V2_UPGRADE_DATABASE, [
       "-A",
@@ -630,6 +658,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0005_add_person_date_year_approximation.sql",
       "-f",
       "/tmp/0006_add_durable_reminder_delivery.sql",
+      "-f",
+      "/tmp/0007_add_workspace_deletion_records.sql",
     ], { quiet: true });
     const v3Upgraded = await runPsql(V3_UPGRADE_DATABASE, [
       "-A",
@@ -652,6 +682,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0005_add_person_date_year_approximation.sql",
       "-f",
       "/tmp/0006_add_durable_reminder_delivery.sql",
+      "-f",
+      "/tmp/0007_add_workspace_deletion_records.sql",
     ], { quiet: true });
     const v4Upgraded = await runPsql(V4_UPGRADE_DATABASE, [
       "-A",
@@ -693,6 +725,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
          ('00000000-0000-4000-8000-000000000509', '00000000-0000-4000-8000-000000000505', '00000000-0000-4000-8000-000000000503', '2026-09-18', '2026-09-11T09:00:00Z', 7, 'in_app', 'pending', null);`,
       "-f",
       "/tmp/0006_add_durable_reminder_delivery.sql",
+      "-f",
+      "/tmp/0007_add_workspace_deletion_records.sql",
     ], { quiet: true });
     const v5Upgraded = await runPsql(V5_UPGRADE_DATABASE, [
       "-A",
@@ -703,6 +737,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
           AND column_name='provider_idempotency_key' AND is_nullable='NO')
        AND EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname='crm'
           AND indexname='reminder_occurrences_lease_idx')
+       AND EXISTS(SELECT 1 FROM information_schema.tables
+          WHERE table_schema='crm' AND table_name='workspace_lifecycle_records')
        AND (SELECT status = 'manual_attention' AND provider_result_state = 'rejected'
               AND provider_receipt IS NULL AND visible_at IS NULL
             FROM crm.reminder_occurrences
@@ -725,6 +761,32 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       throw new Error(
         "v5-to-v6 migration did not install durable delivery state.",
       );
+    }
+
+    await runPsql(V6_UPGRADE_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/personal_crm_schema_v6.sql",
+      "-c",
+      `INSERT INTO crm.users (id, email) VALUES
+         ('00000000-0000-4000-8000-000000000601', 'v7-upgrade@example.test');`,
+      "-f",
+      "/tmp/0007_add_workspace_deletion_records.sql",
+    ], { quiet: true });
+    const v6Upgraded = await runPsql(V6_UPGRADE_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      `SELECT EXISTS(SELECT 1 FROM information_schema.tables
+          WHERE table_schema='crm' AND table_name='workspace_lifecycle_records')
+       AND EXISTS(SELECT 1 FROM information_schema.columns
+          WHERE table_schema='crm' AND table_name='workspace_lifecycle_records'
+            AND column_name='occurred_at' AND is_nullable='NO')
+       AND EXISTS(SELECT 1 FROM crm.users
+          WHERE id='00000000-0000-4000-8000-000000000601');`,
+    ], { quiet: true });
+    if (v6Upgraded !== "t") {
+      throw new Error("v6-to-v7 migration did not preserve the exact fixture.");
     }
 
     await runPsql(MIGRATION_ROLLBACK_DATABASE, [
@@ -753,6 +815,31 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
         "failed v5-to-v6 migration did not roll back atomically.",
       );
     }
+    await runPsql(MIGRATION_ROLLBACK_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/0006_add_durable_reminder_delivery.sql",
+    ], { quiet: true });
+    await runPsql(MIGRATION_ROLLBACK_DATABASE, [
+      "-c",
+      "BEGIN",
+      "-f",
+      "/tmp/0007_add_workspace_deletion_records.sql",
+      "-c",
+      "SELECT 1 / 0",
+    ], { allowFailure: true, quiet: true });
+    const v7RolledBack = await runPsql(MIGRATION_ROLLBACK_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      `SELECT NOT EXISTS(SELECT 1 FROM information_schema.tables
+        WHERE table_schema='crm' AND table_name='workspace_lifecycle_records');`,
+    ], { quiet: true });
+    if (v7RolledBack !== "t") {
+      throw new Error(
+        "failed v6-to-v7 migration did not roll back atomically.",
+      );
+    }
   } finally {
     for (
       const database of [
@@ -761,6 +848,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
         V3_UPGRADE_DATABASE,
         V4_UPGRADE_DATABASE,
         V5_UPGRADE_DATABASE,
+        V6_UPGRADE_DATABASE,
         MIGRATION_ROLLBACK_DATABASE,
       ]
     ) {
@@ -795,12 +883,16 @@ async function main(): Promise<void> {
     started = true;
 
     await copyFixture(
-      "personal-crm-schema/v6/personal_crm_schema_v6.sql",
-      "/tmp/personal_crm_schema_v6.sql",
+      "personal-crm-schema/v7/personal_crm_schema_v7.sql",
+      "/tmp/personal_crm_schema_v7.sql",
     );
     await copyFixture(
       "personal-crm-schema/v5/personal_crm_schema_v5.sql",
       "/tmp/personal_crm_schema_v5.sql",
+    );
+    await copyFixture(
+      "personal-crm-schema/v6/personal_crm_schema_v6.sql",
+      "/tmp/personal_crm_schema_v6.sql",
     );
     await copyFixture(
       "personal-crm-schema/v4/personal_crm_schema_v4.sql",
@@ -815,8 +907,8 @@ async function main(): Promise<void> {
       "/tmp/personal_crm_schema_v2.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v6/personal_crm_field_catalog_v6.csv",
-      "/tmp/personal_crm_field_catalog_v6.csv",
+      "personal-crm-schema/v7/personal_crm_field_catalog_v7.csv",
+      "/tmp/personal_crm_field_catalog_v7.csv",
     );
     await copyFixture(
       "personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql",
@@ -843,6 +935,10 @@ async function main(): Promise<void> {
       "/tmp/0006_add_durable_reminder_delivery.sql",
     );
     await copyFixture(
+      "personal-crm-schema/v7/migrations/0007_add_workspace_deletion_records.sql",
+      "/tmp/0007_add_workspace_deletion_records.sql",
+    );
+    await copyFixture(
       "tools/schema/assert_schema.sql",
       "/tmp/assert_schema.sql",
     );
@@ -863,7 +959,7 @@ async function main(): Promise<void> {
 
     await assertV1UpgradeAndFailureRollback();
     console.log(
-      "PASS exact v1/v2/v3/v4/v5 upgrades and failed v5-to-v6 migration rollback",
+      "PASS exact v1/v2/v3/v4/v5/v6 upgrades and failed migration rollback",
     );
 
     await applySchema(SCHEMA_DATABASE);

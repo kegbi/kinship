@@ -18,6 +18,19 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
+  worker:
+    environment:
+      APP_ENV: development
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-kinship}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-attachments}
+      OBJECT_STORAGE_HOST: object-store
+      OBJECT_STORAGE_PORT: "9000"
+      OBJECT_STORAGE_REQUEST_TIMEOUT_MS: ${OBJECT_STORAGE_REQUEST_TIMEOUT_MS:-30000}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-kinship-local-secret}
+      OBJECT_STORAGE_USE_SSL: "false"
+    depends_on:
+      object-store:
+        condition: service_healthy
   mailpit:
     ports:
       - "127.0.0.1:${SMTP_PORT:-1025}:1025"

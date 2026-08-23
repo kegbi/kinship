@@ -24,6 +24,7 @@ import {
   createProtectedSessionCoordinator,
   createRecentPeopleManagement,
   createVerificationDeliveryRetry,
+  createWorkspaceLifecycle,
   PostgresActiveWorkspaceResolver,
   PostgresPersonalLifecycleMemberships,
   PostgresProfileFactConfiguration,
@@ -32,6 +33,8 @@ import {
   PostgresRelationshipWorkspaceBoundary,
   PostgresWorkspaceCurrencyBoundary,
   PostgresWorkspaceInvitations,
+  PostgresWorkspaceLifecycleRepository,
+  PostgresWorkspaceLifecycleSecurityAudit,
   PostgresWorkspacePersonalization,
   PostgresWorkspaceRegistration,
   PostgresWorkspaceSettings,
@@ -50,6 +53,7 @@ import {
   PostgresExportAudit,
   PostgresFileAudit,
   PostgresGiftAudit,
+  PostgresGovernanceWorkspaceLifecycleImpact,
   PostgresImportantDateAudit,
   PostgresImportAudit,
   PostgresInteractionAudit,
@@ -93,6 +97,10 @@ import {
   createPersonalLifecycleRoutes,
   type PersonalLifecycleHttpServices,
 } from "./personal_lifecycle.ts";
+import {
+  createWorkspaceLifecycleRoutes,
+  type WorkspaceLifecycleHttpServices,
+} from "./workspace_lifecycle.ts";
 import { createSettingsManagement } from "../../packages/backend/modules/workspaces/public.ts";
 import {
   createImportantDateManagement,
@@ -106,6 +114,7 @@ import {
   PostgresPeoplePersonalizationReferences,
   PostgresPeopleRepository,
   PostgresPeopleTransaction,
+  PostgresPeopleWorkspaceLifecycleImpact,
   PostgresPersonLifecycleRepository,
   PostgresProfileFactOrganizations,
   PostgresProfileFactRepository,
@@ -116,6 +125,7 @@ import {
   createReminderManagement,
   createTaskManagement,
   PostgresPersonDateReminderPublisher,
+  PostgresPlanningWorkspaceLifecycleImpact,
   PostgresReminderRepository,
   PostgresReminderRulePersonalization,
   PostgresReminderWorkspaceBoundary,
@@ -131,6 +141,7 @@ import {
   PostgresCommunicationRepository,
   PostgresInteractionPersonalizationReferences,
   PostgresInteractionRepository,
+  PostgresInteractionWorkspaceLifecycleImpact,
   PostgresJournalActivityBoundary,
 } from "../../packages/backend/modules/interactions/public.ts";
 import {
@@ -138,6 +149,7 @@ import {
   type JournalManagement,
   PostgresJournalPersonalizationReferences,
   PostgresJournalRepository,
+  PostgresJournalWorkspaceLifecycleImpact,
 } from "../../packages/backend/modules/journal/public.ts";
 import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
 import { createRelationshipRoutes } from "./relationships.ts";
@@ -146,6 +158,7 @@ import {
   createRelationshipManagement,
   PostgresRelationshipPersonalizationReferences,
   PostgresRelationshipRepository,
+  PostgresRelationshipWorkspaceLifecycleImpact,
   type RelationshipManagement,
 } from "../../packages/backend/modules/relationships/public.ts";
 import {
@@ -218,6 +231,7 @@ import {
   PostgresExportFileBoundary,
   PostgresFileImportBoundary,
   PostgresFileMetadataRepository,
+  PostgresFileWorkspaceLifecycleImpact,
   PostgresGiftAttachmentBoundary,
   PostgresStorageSettingsRepository,
   S3CompatibleObjectStorage,
@@ -229,6 +243,7 @@ import {
   createGiftManagement,
   type GiftManagement,
   PostgresGiftRepository,
+  PostgresGiftWorkspaceLifecycleImpact,
 } from "../../packages/backend/modules/gifts/public.ts";
 import { Client as MinioClient } from "minio";
 import { resolveObjectStorageConfiguration } from "./file_storage_config.ts";
@@ -239,9 +254,12 @@ import {
   type ImportManagement,
   PostgresExportRepository,
   PostgresExportTransaction,
+  PostgresImportExportWorkspaceLifecycleImpact,
   PostgresImportRepository,
   PostgresImportTransaction,
 } from "../../packages/backend/modules/import-export/public.ts";
+import { PostgresIntegrationWorkspaceLifecycleImpact } from "../../packages/backend/modules/integrations/public.ts";
+import { PostgresOperationsWorkspaceLifecycleImpact } from "../../packages/backend/modules/operations/public.ts";
 import { createExportRoutes } from "./exports.ts";
 
 export interface ApiServices extends RegistrationHttpServices {
@@ -263,6 +281,8 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly passwordRecovery?: AuthenticationHttpServices["passwordRecovery"];
   readonly personalLifecycle?:
     PersonalLifecycleHttpServices["personalLifecycle"];
+  readonly workspaceLifecycle?:
+    WorkspaceLifecycleHttpServices["workspaceLifecycle"];
   readonly protectedSessions?: AuthenticationHttpServices["protectedSessions"];
   readonly settings?: SettingsHttpServices["settings"];
   readonly personalization?: SettingsHttpServices["personalization"];
@@ -398,6 +418,16 @@ export function createApiApp(services?: ApiServices): Hono {
             browserSecurity: services.browserSecurity,
             personalLifecycle: services.personalLifecycle,
             protectedSessions: services.protectedSessions,
+          }),
+        );
+      }
+      if (services.workspaceLifecycle) {
+        api.route(
+          "/",
+          createWorkspaceLifecycleRoutes({
+            browserSecurity: services.browserSecurity,
+            protectedSessions: services.protectedSessions,
+            workspaceLifecycle: services.workspaceLifecycle,
           }),
         );
       }
@@ -762,6 +792,29 @@ export function createConfiguredApiApp(
       configuration.bucket,
     );
   })();
+  const workspaceLifecycle = createWorkspaceLifecycle({
+    attemptBudget,
+    audit: new PostgresWorkspaceLifecycleSecurityAudit(),
+    authenticationAudit,
+    clock,
+    identity: new PostgresIdentityPersonalLifecycle(hasher),
+    impact: {
+      files: new PostgresFileWorkspaceLifecycleImpact(),
+      gifts: new PostgresGiftWorkspaceLifecycleImpact(),
+      governance: new PostgresGovernanceWorkspaceLifecycleImpact(),
+      importExport: new PostgresImportExportWorkspaceLifecycleImpact(),
+      integrations: new PostgresIntegrationWorkspaceLifecycleImpact(),
+      interactions: new PostgresInteractionWorkspaceLifecycleImpact(),
+      journal: new PostgresJournalWorkspaceLifecycleImpact(),
+      operations: new PostgresOperationsWorkspaceLifecycleImpact(),
+      people: new PostgresPeopleWorkspaceLifecycleImpact(),
+      planning: new PostgresPlanningWorkspaceLifecycleImpact(),
+      relationships: new PostgresRelationshipWorkspaceLifecycleImpact(),
+    },
+    repository: new PostgresWorkspaceLifecycleRepository(connection.db),
+    storage: objectStorage,
+    transaction,
+  });
   const files = createPersonFileManagement({
     audit: new PostgresFileAudit(),
     clock,
@@ -966,6 +1019,7 @@ export function createConfiguredApiApp(
     legal,
     passwordRecovery,
     personalLifecycle,
+    workspaceLifecycle,
     people,
     profile,
     profileFacts,

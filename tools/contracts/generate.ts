@@ -18,6 +18,15 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
       },
     },
   };
+  const rateLimitedProblem = {
+    ...problem,
+    headers: {
+      "Retry-After": {
+        description: "Seconds before another current-password attempt.",
+        schema: { type: "integer", minimum: 1 },
+      },
+    },
+  };
   const originParameter = {
     name: "Origin",
     in: "header",
@@ -365,6 +374,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             },
             "400": problem,
             "409": problem,
+            "429": problem,
             "503": problem,
           },
         },
@@ -465,6 +475,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             },
             "403": problem,
             "409": problem,
+            "429": problem,
             "503": problem,
           },
         },
@@ -2781,6 +2792,76 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             "403": problem,
             "409": problem,
             "429": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/settings/workspace-lifecycle": {
+        ...securedRead(
+          "getWorkspaceLifecyclePreview",
+          "WorkspaceLifecyclePreview",
+        ),
+        delete: {
+          operationId: "deleteWorkspace",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/WorkspaceLifecycleConfirmation",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Workspace deleted and cleanup recorded",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/WorkspaceDeleted" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "409": problem,
+            "429": rateLimitedProblem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/settings/workspace-lifecycle/reset": {
+        post: {
+          operationId: "resetWorkspace",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/WorkspaceLifecycleConfirmation",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Workspace CRM data reset and sessions revoked",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/WorkspaceReset" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "409": problem,
+            "429": rateLimitedProblem,
             "503": problem,
           },
         },
@@ -6455,6 +6536,111 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        WorkspaceLifecycleConfirmation: {
+          type: "object",
+          required: ["confirmation", "impactToken", "password"],
+          properties: {
+            confirmation: { type: "string", minLength: 1, maxLength: 300 },
+            impactToken: { type: "string", pattern: "^[0-9a-f]{64}$" },
+            password: { type: "string", minLength: 1, maxLength: 1024 },
+          },
+          additionalProperties: false,
+        },
+        WorkspaceLifecyclePreview: {
+          type: "object",
+          required: [
+            "activeSessionCount",
+            "confirmations",
+            "counts",
+            "impactToken",
+            "status",
+            "workspace",
+          ],
+          properties: {
+            activeSessionCount: { type: "integer", minimum: 0 },
+            confirmations: {
+              type: "object",
+              required: ["deleteWorkspace", "resetWorkspace"],
+              properties: {
+                deleteWorkspace: { type: "string" },
+                resetWorkspace: { type: "string" },
+              },
+              additionalProperties: false,
+            },
+            counts: {
+              type: "object",
+              required: [
+                "activities",
+                "auditEvents",
+                "calls",
+                "debts",
+                "exports",
+                "files",
+                "gifts",
+                "imports",
+                "integrations",
+                "journalPosts",
+                "lifeEvents",
+                "members",
+                "messages",
+                "notes",
+                "operations",
+                "people",
+                "relationships",
+                "reminders",
+                "tasks",
+              ],
+              properties: Object.fromEntries(
+                [
+                  "activities",
+                  "auditEvents",
+                  "calls",
+                  "debts",
+                  "exports",
+                  "files",
+                  "gifts",
+                  "imports",
+                  "integrations",
+                  "journalPosts",
+                  "lifeEvents",
+                  "members",
+                  "messages",
+                  "notes",
+                  "operations",
+                  "people",
+                  "relationships",
+                  "reminders",
+                  "tasks",
+                ].map((name) => [name, { type: "integer", minimum: 0 }]),
+              ),
+              additionalProperties: false,
+            },
+            impactToken: { type: "string", pattern: "^[0-9a-f]{64}$" },
+            status: { const: "ready" },
+            workspace: { $ref: "#/components/schemas/BlockingWorkspace" },
+          },
+          additionalProperties: false,
+        },
+        WorkspaceReset: {
+          type: "object",
+          required: ["cleanupStatus", "next", "status"],
+          properties: {
+            cleanupStatus: { type: "string", enum: ["complete", "pending"] },
+            next: { const: "/auth/sign-in" },
+            status: { const: "reset" },
+          },
+          additionalProperties: false,
+        },
+        WorkspaceDeleted: {
+          type: "object",
+          required: ["cleanupStatus", "next", "status"],
+          properties: {
+            cleanupStatus: { type: "string", enum: ["complete", "pending"] },
+            next: { const: "/auth/sign-in" },
+            status: { const: "deleted" },
+          },
+          additionalProperties: false,
+        },
         PreferencesInput: {
           type: "object",
           required: [
@@ -7362,6 +7548,38 @@ export interface PersonalLifecyclePreview {
   readonly status: "ready";
 }
 
+export interface WorkspaceLifecyclePreview {
+  readonly activeSessionCount: number;
+  readonly confirmations: {
+    readonly deleteWorkspace: string;
+    readonly resetWorkspace: string;
+  };
+  readonly counts: {
+    readonly activities: number;
+    readonly auditEvents: number;
+    readonly calls: number;
+    readonly debts: number;
+    readonly exports: number;
+    readonly files: number;
+    readonly gifts: number;
+    readonly imports: number;
+    readonly integrations: number;
+    readonly journalPosts: number;
+    readonly lifeEvents: number;
+    readonly members: number;
+    readonly messages: number;
+    readonly notes: number;
+    readonly operations: number;
+    readonly people: number;
+    readonly relationships: number;
+    readonly reminders: number;
+    readonly tasks: number;
+  };
+  readonly impactToken: string;
+  readonly status: "ready";
+  readonly workspace: BlockingWorkspace;
+}
+
 export interface MemberPreferences {
   readonly contactNameOrder: "given_family_nickname" | "family_given_nickname";
   readonly contactSortOrder: "given_name_asc" | "family_name_asc";
@@ -7591,6 +7809,18 @@ export function leaveCurrentWorkspace(input: { readonly confirmation: string; re
 
 export function deletePersonalIdentity(input: { readonly confirmation: string; readonly password: string }, workspaceId?: string): Promise<ApiResult<{ readonly next: "/auth/sign-in"; readonly status: "deleted" }>> {
   return request("/api/v1/settings/personal-lifecycle", { method: "DELETE", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function getWorkspaceLifecyclePreview(workspaceId?: string): Promise<ApiResult<WorkspaceLifecyclePreview>> {
+  return request("/api/v1/settings/workspace-lifecycle", { headers: workspaceHeader(workspaceId) });
+}
+
+export function resetWorkspace(input: { readonly confirmation: string; readonly impactToken: string; readonly password: string }, workspaceId?: string): Promise<ApiResult<{ readonly cleanupStatus: "complete" | "pending"; readonly next: "/auth/sign-in"; readonly status: "reset" }>> {
+  return request("/api/v1/settings/workspace-lifecycle/reset", { method: "POST", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function deleteWorkspace(input: { readonly confirmation: string; readonly impactToken: string; readonly password: string }, workspaceId?: string): Promise<ApiResult<{ readonly cleanupStatus: "complete" | "pending"; readonly next: "/auth/sign-in"; readonly status: "deleted" }>> {
+  return request("/api/v1/settings/workspace-lifecycle", { method: "DELETE", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
 }
 
 export function getMemberPreferences(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: MemberPreferences }>> {

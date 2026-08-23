@@ -162,6 +162,38 @@ export interface PersonalLifecyclePreview {
   readonly status: "ready";
 }
 
+export interface WorkspaceLifecyclePreview {
+  readonly activeSessionCount: number;
+  readonly confirmations: {
+    readonly deleteWorkspace: string;
+    readonly resetWorkspace: string;
+  };
+  readonly counts: {
+    readonly activities: number;
+    readonly auditEvents: number;
+    readonly calls: number;
+    readonly debts: number;
+    readonly exports: number;
+    readonly files: number;
+    readonly gifts: number;
+    readonly imports: number;
+    readonly integrations: number;
+    readonly journalPosts: number;
+    readonly lifeEvents: number;
+    readonly members: number;
+    readonly messages: number;
+    readonly notes: number;
+    readonly operations: number;
+    readonly people: number;
+    readonly relationships: number;
+    readonly reminders: number;
+    readonly tasks: number;
+  };
+  readonly impactToken: string;
+  readonly status: "ready";
+  readonly workspace: BlockingWorkspace;
+}
+
 export interface MemberPreferences {
   readonly contactNameOrder: "given_family_nickname" | "family_given_nickname";
   readonly contactSortOrder: "given_name_asc" | "family_name_asc";
@@ -391,6 +423,18 @@ export function leaveCurrentWorkspace(input: { readonly confirmation: string; re
 
 export function deletePersonalIdentity(input: { readonly confirmation: string; readonly password: string }, workspaceId?: string): Promise<ApiResult<{ readonly next: "/auth/sign-in"; readonly status: "deleted" }>> {
   return request("/api/v1/settings/personal-lifecycle", { method: "DELETE", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function getWorkspaceLifecyclePreview(workspaceId?: string): Promise<ApiResult<WorkspaceLifecyclePreview>> {
+  return request("/api/v1/settings/workspace-lifecycle", { headers: workspaceHeader(workspaceId) });
+}
+
+export function resetWorkspace(input: { readonly confirmation: string; readonly impactToken: string; readonly password: string }, workspaceId?: string): Promise<ApiResult<{ readonly cleanupStatus: "complete" | "pending"; readonly next: "/auth/sign-in"; readonly status: "reset" }>> {
+  return request("/api/v1/settings/workspace-lifecycle/reset", { method: "POST", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function deleteWorkspace(input: { readonly confirmation: string; readonly impactToken: string; readonly password: string }, workspaceId?: string): Promise<ApiResult<{ readonly cleanupStatus: "complete" | "pending"; readonly next: "/auth/sign-in"; readonly status: "deleted" }>> {
+  return request("/api/v1/settings/workspace-lifecycle", { method: "DELETE", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
 }
 
 export function getMemberPreferences(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: MemberPreferences }>> {

@@ -118,3 +118,4 @@ export type {
   PeopleExportBoundary,
 } from "./application/export_people_boundary.ts";
 export { PostgresPeopleExportBoundary } from "./adapters/postgres/export_people_boundary.ts";
+export { PostgresPeopleWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";

@@ -42,3 +42,4 @@ export {
   type LegalDocument,
 } from "./application/legal_acceptance.ts";
 export { PostgresLegalAcceptanceRepository } from "./adapters/postgres/legal_acceptance_repository.ts";
+export { PostgresGovernanceWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";

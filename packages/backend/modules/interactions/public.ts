@@ -33,3 +33,4 @@ export type {
   RecordInteractionResult,
   StoredInteraction,
 } from "./application/record_interaction.ts";
+export { PostgresInteractionWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
