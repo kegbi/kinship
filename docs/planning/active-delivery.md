@@ -18,13 +18,17 @@ prerequisite queues.
 ## How To Use This Ledger
 
 1. Work on one unchecked leaf at a time on a controller-owned `codex/` branch.
-2. A clean implementation context delivers the complete leaf through a focused
-   RED -> GREEN -> REFACTOR cycle. It does not commit or integrate.
-3. The controller runs applicable gates, ticks the delivered leaf and its
-   acceptance boxes on the candidate branch, and creates one candidate commit.
-4. A separate clean, read-only context reviews the exact candidate. Findings go
-   to a new clean implementation context and then a new clean reviewer.
-5. Only an approved candidate with independently passing gates is integrated.
+2. One implementation context delivers the complete leaf through a focused RED
+   -> GREEN -> REFACTOR cycle. Its inner loop runs only focused tests and it
+   does not commit or integrate.
+3. After behavior stabilizes, the controller runs affected candidate gates,
+   ticks the delivered leaf and its acceptance boxes, and creates one candidate
+   commit.
+4. A separate read-only context reviews the exact candidate. Localized findings
+   return to the same implementer and reviewer; replace contexts only for a
+   material redesign, changed high-risk boundary, or repeated failed approach.
+5. Only an approved candidate with its smallest owning integration gate passing
+   is integrated. Full aggregate gates run once at the flow/phase checkpoint.
    Until integration, checked boxes on its branch are not authoritative.
 6. Tick a phase only when every required leaf in that phase is accepted. Update
    the Cursor in the same candidate; do not create a separate status commit.

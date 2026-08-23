@@ -148,9 +148,12 @@ tests do not delegate their validation semantics to Lefthook.
 
 The controller records the base revision and creates the exact candidate
 revision after GREEN and REFACTOR. The separate clean, read-only reviewer gets
-that revision, its diff, accepted contracts, and concise evidence only. Any
-post-review change to code, tests, generated output, contracts, or relevant
-configuration creates a new candidate and requires a fresh review.
+that revision, its diff, accepted contracts, and concise evidence only. A
+localized post-review amendment may return to the same implementer and reviewer.
+A fresh review context is required only when the amendment changes a
+schema/security/tenant/API boundary, materially redesigns the candidate, or
+follows a repeated failed approach. The controller still records and reviews the
+exact amended revision before integration.
 
 Ordinary implementation cannot write `.codex` or `.agents`; explicit protected
 configuration maintenance is limited to its named paths. `.git` remains

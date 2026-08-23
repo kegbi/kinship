@@ -2,6 +2,7 @@ import {
   E2E_ASTRO_TASK_ARGS,
   E2E_COMPOSE_ARGS,
   e2eEnvironment,
+  e2eImageNames,
   e2eProjectName,
   exactProcessTree,
   finishAstroReadinessAttempt,
@@ -17,6 +18,33 @@ import {
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
+
+Deno.test("E2E launcher names only exact disposable project images", async () => {
+  const project = "kinship-e2e-42-1234";
+  assert(
+    e2eImageNames(project).join(",") ===
+      ["web", "gateway", "migrate", "worker", "api"]
+        .map((service) => `${project}-${service}:latest`)
+        .join(","),
+    "automatic cleanup targets the five exact run-scoped images",
+  );
+  let rejected = false;
+  try {
+    e2eImageNames("kinship-e2e-unsafe");
+  } catch {
+    rejected = true;
+  }
+  assert(rejected, "automatic cleanup rejects an invalid project name");
+  const config = JSON.parse(
+    await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
+  );
+  assert(
+    String(config.tasks["test:e2e"]).includes(
+      "--allow-write=.artifacts/playwright/.last-run.json",
+    ),
+    "the launcher can remove only its exact Playwright completion marker",
+  );
+});
 
 Deno.test("E2E launcher isolates project, listeners, and browser origins", () => {
   const project = e2eProjectName(42, 1234);

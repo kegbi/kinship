@@ -195,8 +195,9 @@ For each slice:
    intended RED result;
 2. keep the flow `planned` while implementation is partial and track
    work-in-progress in the delivery system, not by overstating catalog status;
-3. make the smallest GREEN implementation, REFACTOR under passing tests, and
-   route the exact candidate through fresh clean-context review;
+3. make the smallest GREEN implementation, REFACTOR under focused tests, run
+   affected candidate gates once, and route the exact revision through
+   independent review;
 4. add the passing Playwright path to that flow's `testRefs` only when its full
    observable contract is complete;
 5. validate that every page ID and flow ID referenced by implementation/tests

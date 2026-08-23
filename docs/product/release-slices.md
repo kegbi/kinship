@@ -210,8 +210,8 @@ statuses, page associations, and public-page empty `flowIds` remain unchanged.
 A slice is complete only when:
 
 - every changed behavior has recorded RED -> GREEN -> REFACTOR evidence for the
-  exact candidate revision, followed by a fresh clean-context review and
-  independent orchestrator gate rerun;
+  exact candidate revision, followed by independent review and one owning
+  orchestrator integration gate;
 - every included required flow names and passes its E2E test;
 - production TypeScript reaches the repository coverage threshold;
 - OpenAPI, generated client, schema, and architecture checks are clean;
