@@ -44,12 +44,38 @@ Apply evidence proportionately:
   option is selected or an option is rejected, stop hardening rejected
   alternatives.
 
+Use three verification levels and do not collapse them into one repeated gate:
+
+1. The RED -> GREEN inner loop runs only the focused test and the cheapest
+   directly affected check.
+2. The candidate runs affected coverage, static checks, and at most the affected
+   browser/database boundary once, after implementation stabilizes.
+3. Full repository coverage, production-image builds, all-browser E2E, schema
+   matrices, and release checks run once at the owning flow, phase, or release
+   integration checkpoint, not after each sub-ticket or review amendment.
+
+An unrelated aggregate-gate failure gets one bounded reproduction and enough
+diagnosis to prove whether the candidate caused it. If it is unrelated, create
+or queue a separate reliability ticket; do not expand the current candidate. It
+may block the later phase/release checkpoint, but not acceptance of an otherwise
+valid bounded candidate.
+
 Use one clean implementer context per ticket and one separate clean, read-only
 reviewer for the exact candidate. Keep a single candidate commit; do not create
 test-freeze commits, hash catalogs, controller IDs, packet files, mirrored
 state, or evidence documents solely to operate the workflow. Review findings
-normally return to the same implementer with a regression test. Use a fresh
-implementer only for high-risk redesign or after a repeated failed approach.
+normally return to the same implementer with a regression test, and the same
+reviewer may verify a localized amendment. Use a fresh implementer and reviewer
+only for a high-risk redesign, a changed schema/security/tenant/API boundary, or
+after a repeated failed approach.
+
+Prefer serialization and one authoritative refresh over multiple independent
+client-side owners. Before adding a third async owner, generation, watermark, or
+in-memory registry to one UI surface, stop and either simplify the observable
+behavior or extract one small pure reducer consumed by that surface. Do not
+preserve transient state across remount, navigation, or process death unless an
+accepted user-facing contract requires it. Line-count caps are diagnostic only;
+never recut or compact a correct vertical solely to meet an arbitrary LOC cap.
 
 The controller integrates only an approved exact candidate after rerunning the
 applicable gates. See

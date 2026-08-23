@@ -110,9 +110,12 @@ release catalog.
    observable outcome.
 2. Resolve only a decision that directly blocks that outcome; make the smallest
    choice needed and resume the feature.
-3. Run focused RED -> GREEN -> REFACTOR with one clean implementer.
-4. Create one candidate commit and send it to one clean read-only reviewer.
-5. Rerun affected gates, integrate, and advance the active queue.
+3. Run focused RED -> GREEN -> REFACTOR with one implementer; keep the inner
+   loop to focused tests and the cheapest affected check.
+4. Run candidate-level affected gates once, create one candidate commit, and
+   send it to one independent read-only reviewer.
+5. Return localized findings to the same implementer/reviewer, then run the
+   owning integration gate once, integrate, and advance the active queue.
 6. Keep a cataloged flow `planned` until its complete observable outcome and
    required E2E pass. Partial scaffolds remain honestly partial.
 
@@ -131,7 +134,7 @@ A work package is ready when:
 - the owning module can be implemented without an illegal dependency;
 - the bounded task fixes its observable outcome, owned paths, and relevant
   existing verification commands; and
-- clean implementation and review contexts are available.
+- implementation and independent review ownership are available.
 
 ## Work-Package Definition Of Done
 
@@ -148,6 +151,7 @@ A production work package is done when:
 - affected existing architecture, schema, dependency, and security gates pass;
 - affected contracts are current;
 - concise RED, GREEN, and REFACTOR command results identify the exact candidate;
-- a fresh clean-context reviewer has no unresolved actionable finding; and
-- the orchestrator has independently rerun the applicable gates and accepted the
-  exact reviewed revision.
+- an independent reviewer has no unresolved actionable finding on the exact
+  accepted revision; and
+- the orchestrator has independently run the smallest owning integration gate
+  and accepted the exact reviewed revision.

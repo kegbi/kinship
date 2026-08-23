@@ -27,11 +27,13 @@ focused delivery loop:
    pass that proof.
 3. **REFACTOR** improves structure while the focused and affected checks remain
    green; newly discovered behavior returns to RED.
-4. A fresh clean-context reviewer inspects the exact candidate revision and its
-   evidence. Findings return to the implementer with focused regressions; use a
-   fresh implementer for high-risk redesign or a repeated failed approach.
-5. The orchestrator independently reruns the applicable gates before accepting
-   or integrating the reviewed revision.
+4. One independent reviewer inspects the exact candidate revision and its
+   evidence. Localized findings return to the same implementer and reviewer;
+   refresh both contexts only for a material redesign, changed high-risk
+   boundary, or repeated failed approach.
+5. The orchestrator independently runs the smallest owning integration gate
+   before accepting the reviewed revision. Full aggregate/release gates run once
+   at their flow, phase, or release checkpoint.
 
 Documentation-only planning edits use review and existing validation rather than
 new permanent tests. Migrations, containers, CI, schemas, configuration, and
@@ -586,9 +588,9 @@ scope-complete only when:
 - every schema change has empty/prior-release migration and recovery evidence;
 - accepted security gates and secret-redaction checks pass; and
 - implementation, catalog, ADR, and operator-facing change documentation agree;
-- every included ticket has recorded RED/GREEN/REFACTOR evidence, a fresh
-  clean-context review with no unresolved actionable finding, and independent
-  orchestrator acceptance.
+- every included ticket has recorded RED/GREEN/REFACTOR evidence, independent
+  review of its exact accepted revision with no unresolved actionable finding,
+  and orchestrator acceptance.
 
 This checklist accepts feature scope, not a deployment. It deliberately does not
 waive or imply provider, SLO, backup/restore, incident, rollout, or other

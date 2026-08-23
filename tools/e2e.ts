@@ -2,6 +2,21 @@ export function e2eProjectName(pid: number, now: number): string {
   return `kinship-e2e-${pid}-${now}`;
 }
 
+const E2E_IMAGE_SERVICES = [
+  "web",
+  "gateway",
+  "migrate",
+  "worker",
+  "api",
+] as const;
+
+export function e2eImageNames(project: string): readonly string[] {
+  if (!/^kinship-e2e-\d+-\d+$/.test(project)) {
+    throw new Error("Refusing to target images for an invalid E2E project.");
+  }
+  return E2E_IMAGE_SERVICES.map((service) => `${project}-${service}:latest`);
+}
+
 export function e2eEnvironment(
   project: string,
   webOrigin: string,
@@ -86,6 +101,64 @@ export async function removeE2eTls(
     "-Command",
     `$ErrorActionPreference='Stop'; $root=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar); $directory=[IO.Path]::GetFullPath($env:KINSHIP_E2E_TLS_DIRECTORY); if ([IO.Path]::GetDirectoryName($directory) -ne $root -or [IO.Path]::GetFileName($directory) -notmatch '^kinship-e2e-\\d+-\\d+-tls$') { throw 'Refusing unsafe E2E TLS cleanup.' }; if (Test-Path -LiteralPath $directory) { Remove-Item -LiteralPath $directory -Recurse -Force }; if (Test-Path -LiteralPath $directory) { throw 'E2E TLS directory remained after cleanup.' }`,
   ], { KINSHIP_E2E_TLS_DIRECTORY: material.directory });
+}
+
+async function removeE2eImages(
+  project: string,
+  environment: Readonly<Record<string, string>>,
+): Promise<void> {
+  const expected = e2eImageNames(project);
+  const list = async () =>
+    new Set(
+      (await commandOutput(
+        "docker",
+        ["image", "ls", "--format", "{{.Repository}}:{{.Tag}}"],
+        environment,
+      )).split(/\r?\n/).filter(Boolean),
+    );
+  const before = await list();
+  const present = expected.filter((image) => before.has(image));
+  if (present.length > 0) {
+    await command("docker", ["image", "rm", ...present], environment);
+  }
+  const after = await list();
+  const remaining = expected.filter((image) => after.has(image));
+  if (remaining.length > 0) {
+    throw new Error(
+      `E2E images remained after cleanup: ${remaining.join(", ")}`,
+    );
+  }
+}
+
+async function removePlaywrightLastRun(): Promise<void> {
+  const marker = new URL(
+    "../.artifacts/playwright/.last-run.json",
+    import.meta.url,
+  );
+  try {
+    await Deno.remove(marker);
+  } catch (error) {
+    if (!(error instanceof Deno.errors.NotFound)) throw error;
+  }
+}
+
+async function cleanupE2eArtifacts(
+  project: string,
+  environment: Readonly<Record<string, string>>,
+  tls: E2eTlsMaterial | undefined,
+): Promise<void> {
+  const results = await Promise.allSettled([
+    tls ? removeE2eTls(tls) : Promise.resolve(),
+    removeE2eImages(project, environment),
+    removePlaywrightLastRun(),
+  ]);
+  const errors = results.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : []
+  );
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) {
+    throw new AggregateError(errors, "E2E artifact cleanup failed.");
+  }
 }
 
 export const E2E_COMPOSE_ARGS = [
@@ -798,7 +871,7 @@ async function main(): Promise<void> {
         environment,
       ).then(() => undefined),
     assertAbsent: () => assertProjectAbsent(project, environment),
-    cleanupFiles: () => tls ? removeE2eTls(tls) : Promise.resolve(),
+    cleanupFiles: () => cleanupE2eArtifacts(project, environment, tls),
   });
 }
 
