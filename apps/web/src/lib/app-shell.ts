@@ -98,6 +98,7 @@ function renderRouteForbidden(elements: ShellElements): void {
   const storage = document.body.dataset.pageId === "settings.storage";
   const importSettings =
     document.body.dataset.pageId?.startsWith("settings.import") === true;
+  const exportSettings = document.body.dataset.pageId === "settings.export";
   const auditHistory = document.body.dataset.pageId === "people.audit" ||
     document.body.dataset.pageId === "settings.audit";
   heading.textContent = workspaceSettings
@@ -108,6 +109,8 @@ function renderRouteForbidden(elements: ShellElements): void {
     ? "Storage settings unavailable"
     : importSettings
     ? "Import unavailable"
+    : exportSettings
+    ? "Export unavailable"
     : auditHistory
     ? "Audit history unavailable"
     : "You don’t have access to Members";
@@ -120,6 +123,8 @@ function renderRouteForbidden(elements: ShellElements): void {
     ? "Only workspace owners and admins can review workspace storage and provider health."
     : importSettings
     ? "Only workspace owners and admins can import workspace data."
+    : exportSettings
+    ? "Only workspace owners and admins can export workspace data."
     : auditHistory
     ? "Only workspace owners and admins can review audit history."
     : "Only workspace owners and admins can view members and invitations.";
@@ -233,6 +238,7 @@ export async function mountApplicationShell(
       document.body.dataset.pageId === "settings.personalization" ||
       document.body.dataset.pageId === "settings.storage" ||
       document.body.dataset.pageId?.startsWith("settings.import") === true ||
+      document.body.dataset.pageId === "settings.export" ||
       document.body.dataset.pageId === "people.audit" ||
       document.body.dataset.pageId === "settings.audit") &&
     !isWorkspaceAdmin

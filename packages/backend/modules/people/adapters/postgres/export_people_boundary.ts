@@ -1,0 +1,152 @@
+import { sql } from "kysely";
+import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import type {
+  ExportContactMethod,
+  ExportPerson,
+  PeopleExportBoundary,
+} from "../../application/export_people_boundary.ts";
+
+interface ExportPersonRow {
+  readonly archived: boolean;
+  readonly contact_methods: unknown;
+  readonly deleted_at: string | null;
+  readonly description: string | null;
+  readonly family_name: string | null;
+  readonly food_preferences: string | null;
+  readonly given_name: string;
+  readonly id: string;
+  readonly is_deceased: boolean;
+  readonly is_partial: boolean;
+  readonly is_starred: boolean;
+  readonly middle_name: string | null;
+  readonly nickname: string | null;
+}
+
+function methods(value: unknown): readonly ExportContactMethod[] {
+  const parsed = typeof value === "string"
+    ? (() => {
+      try {
+        return JSON.parse(value) as unknown;
+      } catch {
+        return [];
+      }
+    })()
+    : value;
+  return Array.isArray(parsed)
+    ? parsed.flatMap((item) => {
+      if (item === null || typeof item !== "object") return [];
+      const method = item as Record<string, unknown>;
+      return typeof method.value === "string" &&
+          typeof method.label === "string"
+        ? [{
+          kind: method.kind === "email" || method.kind === "phone"
+            ? method.kind
+            : "other" as const,
+          label: method.label,
+          value: method.value,
+        }]
+        : [];
+    })
+    : [];
+}
+
+function person(row: ExportPersonRow): ExportPerson {
+  return {
+    ...(row.archived ? { archived: true } : {}),
+    contactMethods: methods(row.contact_methods),
+    ...(row.deleted_at ? { deletedAt: row.deleted_at } : {}),
+    ...(row.description ? { description: row.description } : {}),
+    ...(row.family_name ? { familyName: row.family_name } : {}),
+    ...(row.food_preferences ? { foodPreferences: row.food_preferences } : {}),
+    givenName: row.given_name,
+    id: row.id,
+    isDeceased: row.is_deceased,
+    isPartial: row.is_partial,
+    isStarred: row.is_starred,
+    ...(row.middle_name ? { middleName: row.middle_name } : {}),
+    ...(row.nickname ? { nickname: row.nickname } : {}),
+  };
+}
+
+const activeActor = (command: {
+  readonly actor: {
+    readonly memberId: string;
+    readonly role: string;
+    readonly userId: string;
+    readonly workspaceId: string;
+  };
+}) =>
+  sql`
+  account.id = ${command.actor.userId}::uuid
+  and account.status = 'active' and account.deleted_at is null
+  and member.id = ${command.actor.memberId}::uuid
+  and member.user_id = account.id
+  and member.workspace_id = ${command.actor.workspaceId}::uuid
+  and member.role = ${command.actor.role}
+  and member.status = 'active' and member.left_at is null
+  and workspace.id = ${command.actor.workspaceId}::uuid
+  and workspace.status = 'active' and workspace.deleted_at is null
+`;
+
+const selected = sql`
+  person.id::text, person.given_name, person.middle_name, person.family_name,
+  person.nickname, person.description, person.food_preferences,
+  person.is_partial, person.is_starred, person.is_deceased,
+  person.archived_at is not null as archived,
+  case when person.deleted_at is null then null else
+    to_char(person.deleted_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+  end as deleted_at,
+  coalesce(methods.items, '[]'::jsonb) as contact_methods
+`;
+
+export class PostgresPeopleExportBoundary implements PeopleExportBoundary {
+  async getPerson(
+    command: Parameters<PeopleExportBoundary["getPerson"]>[0],
+  ): Promise<ExportPerson | undefined> {
+    const result = await sql<ExportPersonRow>`
+      select ${selected}
+      from crm.users account
+      join crm.workspace_members member on member.user_id = account.id
+      join crm.workspaces workspace on workspace.id = member.workspace_id
+      join crm.people person on person.workspace_id = workspace.id
+        and person.id = ${command.personId}::uuid and person.deleted_at is null
+      left join lateral (
+        select jsonb_agg(jsonb_build_object(
+          'kind', type.kind, 'label', type.name, 'value', method.value
+        ) order by method.sort_order, method.id) as items
+        from crm.person_contact_methods method
+        join crm.contact_method_types type on type.id = method.type_id
+          and type.workspace_id = workspace.id
+        where method.person_id = person.id
+      ) methods on true
+      where ${activeActor(command)}
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows[0] ? person(result.rows[0]) : undefined;
+  }
+
+  async listWorkspace(
+    command: Parameters<PeopleExportBoundary["listWorkspace"]>[0],
+  ): Promise<readonly ExportPerson[]> {
+    const result = await sql<ExportPersonRow>`
+      select ${selected}
+      from crm.users account
+      join crm.workspace_members member on member.user_id = account.id
+      join crm.workspaces workspace on workspace.id = member.workspace_id
+      join crm.people person on person.workspace_id = workspace.id
+        and person.deleted_at is null
+      left join lateral (
+        select jsonb_agg(jsonb_build_object(
+          'kind', type.kind, 'label', type.name, 'value', method.value
+        ) order by method.sort_order, method.id) as items
+        from crm.person_contact_methods method
+        join crm.contact_method_types type on type.id = method.type_id
+          and type.workspace_id = workspace.id
+        where method.person_id = person.id
+      ) methods on true
+      where ${activeActor(command)} and member.role in ('owner', 'admin')
+      order by person.id
+      limit 501
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows.map(person);
+  }
+}

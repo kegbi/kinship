@@ -27,6 +27,11 @@ export type {
   ImportAuditAction,
 } from "./application/import_audit.ts";
 export { PostgresImportAudit } from "./adapters/postgres/import_audit.ts";
+export type {
+  ExportAudit,
+  ExportAuditAction,
+} from "./application/export_audit.ts";
+export { PostgresExportAudit } from "./adapters/postgres/export_audit.ts";
 export {
   createLegalAcceptance,
   type LegalAcceptance,

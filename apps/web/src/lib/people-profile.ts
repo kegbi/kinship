@@ -327,6 +327,7 @@ function renderReady(
   person: PersonProfileIdentity,
   dueInformation: { readonly detail: string },
   status: "archived" | "ready",
+  workspaceId: string,
 ): void {
   const name = displayName(person);
   profile.heading.textContent = name;
@@ -371,6 +372,15 @@ function renderReady(
     ) === true;
   profile.state.hidden = true;
   profile.ready.hidden = false;
+  const vcard = document.querySelector<HTMLAnchorElement>(
+    "#person-export-vcard",
+  );
+  if (vcard) {
+    vcard.href = `/api/v1/people/${
+      encodeURIComponent(person.id)
+    }/vcard?workspaceId=${encodeURIComponent(workspaceId)}`;
+    vcard.hidden = false;
+  }
   document.title = `${name} — Kinship`;
   if (!focusSection(currentSection())) profile.heading.focus();
 }
@@ -685,6 +695,7 @@ export async function mountPeopleProfile(): Promise<void> {
     result.value.person,
     result.value.dueInformation,
     result.value.status,
+    session.session.workspace.id,
   );
   void recordPersonView(id, session.session.workspace.id).catch(() =>
     undefined

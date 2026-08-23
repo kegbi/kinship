@@ -112,3 +112,9 @@ export type {
   PeopleImportTransaction,
 } from "./application/import_people_boundary.ts";
 export { PostgresPeopleImportBoundary } from "./adapters/postgres/import_people_boundary.ts";
+export type {
+  ExportContactMethod,
+  ExportPerson,
+  PeopleExportBoundary,
+} from "./application/export_people_boundary.ts";
+export { PostgresPeopleExportBoundary } from "./adapters/postgres/export_people_boundary.ts";

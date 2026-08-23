@@ -183,6 +183,25 @@ export interface ImportSummary {
   readonly status: "completed" | "dry_run" | "failed";
 }
 
+export interface ExportManifest {
+  readonly attachments: { readonly count: number; readonly items: readonly { readonly byteSize: number; readonly filename: string; readonly sha256: string }[]; readonly sha256: string };
+  readonly limitations: readonly string[];
+  readonly profile: "monica-json";
+  readonly rows: { readonly people: { readonly count: number; readonly sha256: string } };
+  readonly version: 1;
+}
+
+export interface ExportSummary {
+  readonly completedAt?: string;
+  readonly createdAt: string;
+  readonly error?: string;
+  readonly expiresAt?: string;
+  readonly exportId: string;
+  readonly format: "json";
+  readonly manifest: ExportManifest;
+  readonly status: "cancelled" | "completed" | "expired" | "failed" | "pending" | "running";
+}
+
 export interface StorageFileLookupItem {
   readonly byteSize: number;
   readonly createdAt: string;
@@ -382,6 +401,18 @@ export function getImportReport(importId: string, workspaceId?: string): Promise
 
 export function commitImport(importId: string, workspaceId?: string): Promise<ApiResult<{ readonly importId: string; readonly peopleCreated: number; readonly peopleReused: number; readonly status: "completed" }>> {
   return request(`/api/v1/imports/${encodeURIComponent(importId)}/commit`, { method: "POST", headers: workspaceHeader(workspaceId), body: JSON.stringify({ confirmed: true }) });
+}
+
+export function listExports(workspaceId?: string): Promise<ApiResult<{ readonly exports: readonly ExportSummary[] }>> {
+  return request("/api/v1/exports", { headers: workspaceHeader(workspaceId) });
+}
+
+export function createWorkspaceExport(workspaceId?: string): Promise<ApiResult<ExportSummary>> {
+  return request("/api/v1/exports", { method: "POST", headers: workspaceHeader(workspaceId) });
+}
+
+export function createExportDownload(exportId: string, workspaceId?: string): Promise<ApiResult<{ readonly expiresAt: string; readonly href: string; readonly status: "ready" }>> {
+  return request(`/api/v1/exports/${encodeURIComponent(exportId)}/downloads`, { method: "POST", headers: workspaceHeader(workspaceId) });
 }
 
 export function listPersonalizationEntries(section: PersonalizationSection, workspaceId?: string): Promise<ApiResult<{ readonly capabilities: { readonly create: boolean; readonly editValue: boolean }; readonly entries: readonly PersonalizationEntry[]; readonly readOnly: boolean; readonly section: PersonalizationSection; readonly status: "ready" }>> {

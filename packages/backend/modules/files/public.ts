@@ -45,3 +45,9 @@ export {
 } from "./adapters/crypto/file_identifiers.ts";
 export type { FileImportBoundary } from "./application/import_file_boundary.ts";
 export { PostgresFileImportBoundary } from "./adapters/postgres/import_file_boundary.ts";
+export type {
+  ExportFileActor,
+  ExportFileBoundary,
+  ExportFileBoundaryDependencies,
+} from "./application/export_file_boundary.ts";
+export { PostgresExportFileBoundary } from "./adapters/postgres/export_file_boundary.ts";
