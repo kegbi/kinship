@@ -207,12 +207,12 @@ test(
       "+2 more",
     );
     await expect(page.locator("#person-profile-due-state")).toContainText(
-      "planning and reminders",
+      "0 open tasks",
     );
     await expect(page.locator("[data-profile-section]")).toHaveCount(22);
     await expect(
       page.locator('[data-profile-section][data-section-state="unavailable"]'),
-    ).toHaveCount(5);
+    ).toHaveCount(0);
     await expect(page.locator("#profile-section-relationships"))
       .toHaveAttribute("data-section-state", "ready");
     await expect(page.locator("#profile-section-important-dates"))

@@ -70,6 +70,12 @@ export async function mountPersonReminders(options: {
   const cadenceForm = document.querySelector<HTMLFormElement>(
     "[data-cadence-form]",
   );
+  const reminderSection = reminderState?.closest<HTMLElement>(
+    '[data-profile-section="reminders"]',
+  );
+  const cadenceSection = cadenceState?.closest<HTMLElement>(
+    '[data-profile-section="stay-in-touch"]',
+  );
   if (
     !reminderState || !reminderList || !reminderForm || !cadenceState ||
     !cadenceList || !cadenceForm
@@ -90,6 +96,8 @@ export async function mountPersonReminders(options: {
   let reminderSaving = false;
   let cadenceSaving = false;
   const load = async () => {
+    if (reminderSection) reminderSection.dataset.sectionState = "loading";
+    if (cadenceSection) cadenceSection.dataset.sectionState = "loading";
     reminderState.textContent = "Loading reminders…";
     cadenceState.textContent = "Loading stay-in-touch cadence…";
     const result = await listPersonReminders(
@@ -97,6 +105,8 @@ export async function mountPersonReminders(options: {
       options.workspaceId,
     ).catch(() => undefined);
     if (!result?.ok) {
+      if (reminderSection) reminderSection.dataset.sectionState = "error";
+      if (cadenceSection) cadenceSection.dataset.sectionState = "error";
       reminderState.textContent =
         "Reminders could not be loaded. Retry this section.";
       cadenceState.textContent =
@@ -122,6 +132,11 @@ export async function mountPersonReminders(options: {
         result.value.reminders.length === 1 ? "" : "s"
       }.`
       : "No reminders yet.";
+    if (reminderSection) {
+      reminderSection.dataset.sectionState = result.value.reminders.length === 0
+        ? "empty"
+        : "ready";
+    }
     cadenceList.replaceChildren(...result.value.cadences.map((cadence) => {
       const item = document.createElement("li");
       item.textContent =
@@ -133,6 +148,11 @@ export async function mountPersonReminders(options: {
     cadenceState.textContent = result.value.cadences.length
       ? "Stay-in-touch cadence is active."
       : "No stay-in-touch cadence yet.";
+    if (cadenceSection) {
+      cadenceSection.dataset.sectionState = result.value.cadences.length === 0
+        ? "empty"
+        : "ready";
+    }
   };
   reminderForm.addEventListener("submit", async (event) => {
     event.preventDefault();

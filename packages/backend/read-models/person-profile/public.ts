@@ -5,6 +5,8 @@ export {
 export type {
   GetPersonProfileResult,
   PersonDueInformation,
+  PersonDueProjection,
+  PersonLifeEvent,
   PersonProfile,
   PersonProfileActor,
   PersonProfileIdentity,

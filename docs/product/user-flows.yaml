@@ -316,6 +316,7 @@ flows:
 
   - id: PEOPLE-003
     title: Read the complete person workspace
+    deliveryStatus: delivered
     priority: P0
     actor: active-member
     trigger: The member opens a person.
@@ -345,7 +346,7 @@ flows:
     ]
     permissions: [people.read]
     testLayers: [integration, contract, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-008c.spec.ts] }
 
   - id: PEOPLE-004
     title: Edit, archive, restore, or delete a person

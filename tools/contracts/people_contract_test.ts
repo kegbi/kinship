@@ -653,8 +653,10 @@ Deno.test("[APP-003C] OpenAPI describes the canonical workspace summary", () => 
   } | undefined)?.items;
   const representative = {
     dueInformation: {
-      detail: "Planning and reminders are not delivered yet.",
-      status: "unavailable",
+      detail: "2 open tasks; next reminder 2026-08-20T09:00:00.000Z.",
+      nextReminderAt: "2026-08-20T09:00:00.000Z",
+      openTaskCount: 2,
+      status: "ready",
     },
     person: {
       givenName: "Ada",
@@ -686,8 +688,9 @@ Deno.test("[APP-003C] OpenAPI describes the canonical workspace summary", () => 
   assert(
     due?.additionalProperties === false &&
       due.required?.includes("status") === true &&
-      due.properties?.detail !== undefined,
-    "due-information unavailability is a typed honest contract",
+      due.required.includes("openTaskCount") &&
+      due.properties?.nextReminderAt !== undefined,
+    "due-information planning summary is a typed ready contract",
   );
   assert(
     profileSections?.enum?.includes("relationships") === true &&
@@ -712,31 +715,53 @@ Deno.test("[APP-003C] OpenAPI describes the canonical workspace summary", () => 
             profileSections: [
               { id: "calls", status: "ready" },
               { id: "conversations", status: "ready" },
+              { id: "life-events", status: "ready" },
             ],
           },
         },
-      ) &&
-      !acceptsObjectInstance(
-        schemas as Readonly<Record<string, ObjectSchema>>,
-        (schemas as Readonly<Record<string, ObjectSchema>>).PersonReady!,
-        {
-          ...representative,
-          person: {
-            ...representative.person,
-            profileSections: [{ id: "life-events", status: "ready" }],
-          },
-        },
       ),
-    "representative person response does not enforce profile section IDs",
+    "representative person response accepts every enabled profile section ID",
   );
   const relationshipsSection: PersonProfileSectionId = "relationships";
   const callsSection: PersonProfileSectionId = "calls";
-  // @ts-expect-error life events remain unavailable in the profile read model.
-  const unsupportedSection: PersonProfileSectionId = "life-events";
+  const lifeEventsSection: PersonProfileSectionId = "life-events";
   assert(
     relationshipsSection === "relationships" &&
-      callsSection === "calls" && String(unsupportedSection) === "life-events",
+      callsSection === "calls" && lifeEventsSection === "life-events",
     "generated profile-section type fixtures were not evaluated",
+  );
+});
+
+Deno.test("[PEOPLE-003] OpenAPI publishes bounded person life-event history", () => {
+  const document = buildOpenApiDocument();
+  const paths = document.paths as Record<string, {
+    readonly get?: {
+      readonly parameters?: readonly { readonly name?: string }[];
+      readonly responses?: Readonly<Record<string, unknown>>;
+      readonly security?: readonly Readonly<
+        Record<string, readonly unknown[]>
+      >[];
+    };
+  }>;
+  const read = paths["/api/v1/people/{personId}/life-events"]?.get;
+  const schemas = (document.components as {
+    readonly schemas: Readonly<Record<string, ObjectSchema>>;
+  }).schemas;
+
+  assert(
+    JSON.stringify(read?.security) ===
+        JSON.stringify([{ kinship_session: [] }]) &&
+      read?.parameters?.some((parameter) => parameter.name === "personId") &&
+      read.parameters.some((parameter) => parameter.name === "X-Workspace-Id"),
+    "life-event history requires session and resolved workspace context",
+  );
+  assert(
+    ["200", "400", "401", "403", "404", "503"].every((status) =>
+      read?.responses?.[status] !== undefined
+    ) && schemas.PersonLifeEventsReady?.properties?.events?.maxItems === 100 &&
+      JSON.stringify(schemas.PersonLifeEventsReady?.properties?.status)
+        .includes("hidden"),
+    "life-event history publishes bounded ready/hidden and independent failure states",
   );
 });
 
