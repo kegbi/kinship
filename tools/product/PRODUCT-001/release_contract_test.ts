@@ -322,6 +322,7 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
     ["AUTH-002", "tests/e2e/auth-002.spec.ts"],
     ["AUTH-003", "tests/e2e/auth-003.spec.ts"],
     ["AUTH-004", "tests/e2e/app-002e.spec.ts"],
+    ["AUTH-005", "tests/e2e/app-009c.spec.ts"],
     ["WORKSPACE-001", "tests/e2e/app-002e.spec.ts"],
     ["WORKSPACE-003", "tests/e2e/app-004e.spec.ts"],
     ["PEOPLE-001", "tests/e2e/app-003a.spec.ts"],

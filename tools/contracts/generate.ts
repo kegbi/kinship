@@ -2713,6 +2713,78 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           "ProfileSettings",
         ),
       },
+      "/api/v1/settings/personal-lifecycle": {
+        ...securedRead(
+          "getPersonalLifecyclePreview",
+          "PersonalLifecyclePreview",
+        ),
+        delete: {
+          operationId: "deletePersonalIdentity",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/PersonalIdentityDeletionInput",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Personal identity deleted and sessions revoked",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/PersonalIdentityDeleted",
+                  },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "409": problem,
+            "429": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/settings/personal-lifecycle/leave": {
+        post: {
+          operationId: "leaveCurrentWorkspace",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/PersonalLifecycleConfirmation",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Current workspace left with next valid destination",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/WorkspaceLeft" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "409": problem,
+            "429": problem,
+            "503": problem,
+          },
+        },
+      },
       "/api/v1/settings/preferences": {
         ...securedRead("getMemberPreferences", "PreferenceSettings"),
         put: securedPut(
@@ -6292,6 +6364,97 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        BlockingWorkspace: {
+          type: "object",
+          required: ["id", "name"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            name: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        PersonalLifecycleConfirmation: {
+          type: "object",
+          required: ["confirmation", "password"],
+          properties: {
+            confirmation: { type: "string", minLength: 1, maxLength: 300 },
+            password: { type: "string", minLength: 1, maxLength: 1024 },
+          },
+          additionalProperties: false,
+        },
+        PersonalIdentityDeletionInput: {
+          type: "object",
+          required: ["confirmation", "password"],
+          properties: {
+            confirmation: { type: "string", minLength: 1, maxLength: 300 },
+            password: { type: "string", minLength: 1, maxLength: 1024 },
+          },
+          additionalProperties: false,
+        },
+        PersonalLifecyclePreview: {
+          type: "object",
+          required: [
+            "activeSessionCount",
+            "blockingWorkspaces",
+            "confirmations",
+            "memberships",
+            "retainedLegalRecords",
+            "status",
+          ],
+          properties: {
+            activeSessionCount: { type: "integer", minimum: 0 },
+            blockingWorkspaces: {
+              type: "array",
+              items: { $ref: "#/components/schemas/BlockingWorkspace" },
+            },
+            confirmations: {
+              type: "object",
+              required: ["deleteIdentity", "leaveWorkspace"],
+              properties: {
+                deleteIdentity: { type: "string" },
+                leaveWorkspace: { type: "string" },
+              },
+              additionalProperties: false,
+            },
+            memberships: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["finalOwner", "id", "role", "status", "workspace"],
+                properties: {
+                  finalOwner: { type: "boolean" },
+                  id: { type: "string", format: "uuid" },
+                  role: { type: "string", enum: ["owner", "admin", "member"] },
+                  status: { type: "string", enum: ["active", "suspended"] },
+                  workspace: { $ref: "#/components/schemas/BlockingWorkspace" },
+                },
+                additionalProperties: false,
+              },
+            },
+            retainedLegalRecords: { const: true },
+            status: { const: "ready" },
+          },
+          additionalProperties: false,
+        },
+        WorkspaceLeft: {
+          type: "object",
+          required: ["next", "status"],
+          properties: {
+            next: { type: "string", enum: ["/app", "/auth/sign-in"] },
+            nextWorkspaceId: { type: "string", format: "uuid" },
+            status: { const: "left" },
+          },
+          additionalProperties: false,
+        },
+        PersonalIdentityDeleted: {
+          type: "object",
+          required: ["next", "status"],
+          properties: {
+            next: { const: "/auth/sign-in" },
+            status: { const: "deleted" },
+          },
+          additionalProperties: false,
+        },
         PreferencesInput: {
           type: "object",
           required: [
@@ -7114,6 +7277,10 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
               type: "object",
               additionalProperties: { type: "string" },
             },
+            blockingWorkspaces: {
+              type: "array",
+              items: { $ref: "#/components/schemas/BlockingWorkspace" },
+            },
           },
           additionalProperties: false,
         },
@@ -7170,6 +7337,29 @@ export interface ProfileSettings {
   readonly email: string;
   readonly firstName: string;
   readonly lastName: string;
+}
+
+export interface BlockingWorkspace {
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface PersonalLifecyclePreview {
+  readonly activeSessionCount: number;
+  readonly blockingWorkspaces: readonly BlockingWorkspace[];
+  readonly confirmations: {
+    readonly deleteIdentity: string;
+    readonly leaveWorkspace: string;
+  };
+  readonly memberships: readonly {
+    readonly finalOwner: boolean;
+    readonly id: string;
+    readonly role: "owner" | "admin" | "member";
+    readonly status: "active" | "suspended";
+    readonly workspace: BlockingWorkspace;
+  }[];
+  readonly retainedLegalRecords: true;
+  readonly status: "ready";
 }
 
 export interface MemberPreferences {
@@ -7389,6 +7579,18 @@ export function getSettingsProfile(workspaceId?: string): Promise<ApiResult<{ re
 
 export function updateSettingsProfile(input: Pick<ProfileSettings, "firstName" | "lastName">, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly profile: ProfileSettings }>> {
   return request("/api/v1/settings/profile", { method: "PUT", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function getPersonalLifecyclePreview(workspaceId?: string): Promise<ApiResult<PersonalLifecyclePreview>> {
+  return request("/api/v1/settings/personal-lifecycle", { headers: workspaceHeader(workspaceId) });
+}
+
+export function leaveCurrentWorkspace(input: { readonly confirmation: string; readonly password: string }, workspaceId?: string): Promise<ApiResult<{ readonly next: "/app" | "/auth/sign-in"; readonly nextWorkspaceId?: string; readonly status: "left" }>> {
+  return request("/api/v1/settings/personal-lifecycle/leave", { method: "POST", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function deletePersonalIdentity(input: { readonly confirmation: string; readonly password: string }, workspaceId?: string): Promise<ApiResult<{ readonly next: "/auth/sign-in"; readonly status: "deleted" }>> {
+  return request("/api/v1/settings/personal-lifecycle", { method: "DELETE", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
 }
 
 export function getMemberPreferences(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: MemberPreferences }>> {

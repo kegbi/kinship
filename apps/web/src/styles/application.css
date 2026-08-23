@@ -996,6 +996,66 @@ summary:focus-visible,
   outline: 2px solid rgb(157 44 44 / 20%);
 }
 
+.account-lifecycle {
+  display: grid;
+  gap: 1.25rem;
+  max-width: 54rem;
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 2px solid #a44730;
+}
+
+.account-lifecycle dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.account-lifecycle dl div,
+.lifecycle-form {
+  padding: 1rem;
+  border: 1px solid rgb(32 53 45 / 18%);
+  border-radius: .5rem;
+  background: white;
+}
+
+.account-lifecycle dt {
+  color: #65716b;
+  font-size: .82rem;
+  font-weight: 750;
+}
+
+.account-lifecycle dd {
+  margin: .25rem 0 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+
+.lifecycle-form {
+  display: grid;
+  gap: .8rem;
+}
+
+.lifecycle-form label {
+  display: grid;
+  gap: .4rem;
+  font-weight: 750;
+}
+
+.lifecycle-form input {
+  min-height: 48px;
+  padding: .7rem .85rem;
+  border: 1px solid #aeb7ae;
+  border-radius: .5rem;
+}
+
+.lifecycle-form .button-danger {
+  min-height: 44px;
+  border-color: #a44730;
+  color: white;
+  background: #a44730;
+}
+
 .member-list li > span:first-child {
   display: grid;
   gap: .2rem;

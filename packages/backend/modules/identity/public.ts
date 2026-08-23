@@ -59,3 +59,8 @@ export type {
   IdentityProfile,
   IdentitySessionSummary,
 } from "./application/account_settings.ts";
+export { PostgresIdentityPersonalLifecycle } from "./adapters/postgres/personal_lifecycle.ts";
+export type {
+  IdentityPersonalLifecycleFacade,
+  IdentityPersonalLifecycleInspection,
+} from "./application/personal_lifecycle.ts";

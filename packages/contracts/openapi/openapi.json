@@ -8074,6 +8074,296 @@
         }
       }
     },
+    "/api/v1/settings/personal-lifecycle": {
+      "get": {
+        "operationId": "getPersonalLifecyclePreview",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current member settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalLifecyclePreview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deletePersonalIdentity",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "description": "Must exactly match the configured public web origin.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalIdentityDeletionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Personal identity deleted and sessions revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalIdentityDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/personal-lifecycle/leave": {
+      "post": {
+        "operationId": "leaveCurrentWorkspace",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "description": "Must exactly match the configured public web origin.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalLifecycleConfirmation"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current workspace left with next valid destination",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceLeft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/settings/preferences": {
       "get": {
         "operationId": "getMemberPreferences",
@@ -17131,6 +17421,190 @@
         },
         "additionalProperties": false
       },
+      "BlockingWorkspace": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PersonalLifecycleConfirmation": {
+        "type": "object",
+        "required": [
+          "confirmation",
+          "password"
+        ],
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "additionalProperties": false
+      },
+      "PersonalIdentityDeletionInput": {
+        "type": "object",
+        "required": [
+          "confirmation",
+          "password"
+        ],
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "additionalProperties": false
+      },
+      "PersonalLifecyclePreview": {
+        "type": "object",
+        "required": [
+          "activeSessionCount",
+          "blockingWorkspaces",
+          "confirmations",
+          "memberships",
+          "retainedLegalRecords",
+          "status"
+        ],
+        "properties": {
+          "activeSessionCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "blockingWorkspaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BlockingWorkspace"
+            }
+          },
+          "confirmations": {
+            "type": "object",
+            "required": [
+              "deleteIdentity",
+              "leaveWorkspace"
+            ],
+            "properties": {
+              "deleteIdentity": {
+                "type": "string"
+              },
+              "leaveWorkspace": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "memberships": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "finalOwner",
+                "id",
+                "role",
+                "status",
+                "workspace"
+              ],
+              "properties": {
+                "finalOwner": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "owner",
+                    "admin",
+                    "member"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "suspended"
+                  ]
+                },
+                "workspace": {
+                  "$ref": "#/components/schemas/BlockingWorkspace"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "retainedLegalRecords": {
+            "const": true
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkspaceLeft": {
+        "type": "object",
+        "required": [
+          "next",
+          "status"
+        ],
+        "properties": {
+          "next": {
+            "type": "string",
+            "enum": [
+              "/app",
+              "/auth/sign-in"
+            ]
+          },
+          "nextWorkspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "left"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PersonalIdentityDeleted": {
+        "type": "object",
+        "required": [
+          "next",
+          "status"
+        ],
+        "properties": {
+          "next": {
+            "const": "/auth/sign-in"
+          },
+          "status": {
+            "const": "deleted"
+          }
+        },
+        "additionalProperties": false
+      },
       "PreferencesInput": {
         "type": "object",
         "required": [
@@ -18657,6 +19131,12 @@
             "type": "object",
             "additionalProperties": {
               "type": "string"
+            }
+          },
+          "blockingWorkspaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BlockingWorkspace"
             }
           }
         },

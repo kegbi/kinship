@@ -1,7 +1,10 @@
 import {
+  deletePersonalIdentity,
   getMemberPreferences,
+  getPersonalLifecyclePreview,
   getSettingsProfile,
   getWorkspaceSettings,
+  leaveCurrentWorkspace,
   listMemberSessions,
   revokeMemberSession,
   updateMemberPreferences,
@@ -9,6 +12,7 @@ import {
   updateWorkspaceSettings,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import {
+  ACTIVE_WORKSPACE_KEY,
   resolveWorkspaceSession,
   WORKSPACE_CHANGE_REQUEST_EVENT,
   type WorkspaceChangeRequestDetail,
@@ -22,6 +26,124 @@ async function selectedWorkspace(): Promise<string | undefined> {
   return resolved.status === "ready"
     ? resolved.session.workspace.id
     : undefined;
+}
+
+function lifecycleStatus(message: string): void {
+  const target = document.querySelector<HTMLElement>("#lifecycle-status");
+  if (target) target.textContent = message;
+}
+
+export async function mountPersonalLifecycle(
+  selectedWorkspaceId?: string,
+  navigate: (path: string) => void = (path) => globalThis.location.assign(path),
+): Promise<void> {
+  const region = document.querySelector<HTMLElement>("#account-lifecycle");
+  const leaveForm = document.querySelector<HTMLFormElement>(
+    "#leave-workspace-form",
+  );
+  const deleteForm = document.querySelector<HTMLFormElement>(
+    "#delete-identity-form",
+  );
+  if (!region || !leaveForm || !deleteForm) return;
+  const workspaceId = selectedWorkspaceId ?? await selectedWorkspace();
+  if (!workspaceId) {
+    return lifecycleStatus("Your session could not be confirmed.");
+  }
+  const loaded = await getPersonalLifecyclePreview(workspaceId).catch(() =>
+    undefined
+  );
+  if (!loaded?.ok) {
+    return lifecycleStatus(
+      loaded?.problem.detail ?? "Current account impact could not be loaded.",
+    );
+  }
+  const preview = loaded.value;
+  document.querySelector<HTMLElement>("#lifecycle-loading")!.hidden = true;
+  document.querySelector<HTMLElement>("#lifecycle-counts")!.hidden = false;
+  document.querySelector<HTMLElement>("#lifecycle-membership-count")!
+    .textContent = String(preview.memberships.length);
+  document.querySelector<HTMLElement>("#lifecycle-session-count")!
+    .textContent = String(preview.activeSessionCount);
+  document.querySelector<HTMLElement>("#leave-confirmation-value")!
+    .textContent = preview.confirmations.leaveWorkspace;
+  document.querySelector<HTMLElement>("#delete-confirmation-value")!
+    .textContent = preview.confirmations.deleteIdentity;
+  const membershipList = document.querySelector<HTMLUListElement>(
+    "#lifecycle-memberships",
+  )!;
+  membershipList.replaceChildren(...preview.memberships.map((membership) => {
+    const item = document.createElement("li");
+    const name = document.createElement("strong");
+    name.textContent = membership.workspace.name;
+    const detail = document.createElement("span");
+    detail.textContent = membership.finalOwner
+      ? `${membership.role} · final active owner`
+      : membership.status === "suspended"
+      ? `${membership.role} · suspended`
+      : membership.role;
+    item.append(name, detail);
+    return item;
+  }));
+  const blockers = document.querySelector<HTMLElement>("#lifecycle-blockers")!;
+  const current = preview.memberships.find((membership) =>
+    membership.workspace.id === workspaceId
+  );
+  const currentBlocked = current?.finalOwner === true;
+  const deleteBlocked = preview.blockingWorkspaces.length > 0;
+  if (deleteBlocked) {
+    const names = preview.blockingWorkspaces.map((workspace) => workspace.name)
+      .join(", ");
+    blockers.hidden = false;
+    blockers.textContent =
+      `You are the final active owner of ${names}. Transfer ownership in Members before leaving an owned workspace or deleting your identity. Workspace deletion is a separate owner action.`;
+  }
+  const leaveButton = leaveForm.querySelector<HTMLButtonElement>("button")!;
+  const deleteButton = deleteForm.querySelector<HTMLButtonElement>("button")!;
+  leaveButton.disabled = currentBlocked;
+  deleteButton.disabled = deleteBlocked;
+  leaveForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    leaveButton.disabled = true;
+    lifecycleStatus("Revalidating membership impact…");
+    const result = await leaveCurrentWorkspace({
+      confirmation: input(leaveForm, "confirmation").value,
+      password: input(leaveForm, "password").value,
+    }, workspaceId).catch(() => undefined);
+    if (!result?.ok) {
+      lifecycleStatus(
+        result?.problem.detail ?? "The workspace could not be left.",
+      );
+      leaveButton.disabled = currentBlocked;
+      return;
+    }
+    if (result.value.nextWorkspaceId) {
+      sessionStorage.setItem(
+        ACTIVE_WORKSPACE_KEY,
+        result.value.nextWorkspaceId,
+      );
+    } else {
+      sessionStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+    }
+    navigate(result.value.next);
+  });
+  deleteForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    deleteButton.disabled = true;
+    lifecycleStatus("Reauthenticating and revalidating every membership…");
+    const result = await deletePersonalIdentity({
+      confirmation: input(deleteForm, "confirmation").value,
+      password: input(deleteForm, "password").value,
+    }, workspaceId).catch(() => undefined);
+    if (!result?.ok) {
+      lifecycleStatus(
+        result?.problem.detail ?? "Your personal identity was not deleted.",
+      );
+      deleteButton.disabled = deleteBlocked;
+      return;
+    }
+    sessionStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+    navigate(result.value.next);
+  });
 }
 
 function status(): HTMLElement | undefined {
