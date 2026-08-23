@@ -57,6 +57,38 @@ afterEach(() => {
 });
 
 describe("WORKSPACE-002 workspace danger zone", () => {
+  it("keeps destructive submissions disabled until current impact is ready", async () => {
+    document.body.innerHTML = markup;
+    let resolvePreview!: (value: Response) => void;
+    const previewResponse = new Promise<Response>((resolve) => {
+      resolvePreview = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const path = new URL(String(input), "http://localhost").pathname;
+        return path === "/api/v1/session"
+          ? Promise.resolve(response(ownerSession))
+          : previewResponse;
+      }),
+    );
+
+    const mounted = mountWorkspaceDanger();
+
+    expect(
+      document.querySelector<HTMLButtonElement>(
+        "[data-danger-delete] button",
+      )?.disabled,
+    ).toBe(true);
+    resolvePreview(response(preview));
+    await mounted;
+    expect(
+      document.querySelector<HTMLButtonElement>(
+        "[data-danger-delete] button",
+      )?.disabled,
+    ).toBe(false);
+  });
+
   it("renders current impact and submits its authoritative token once", async () => {
     document.body.innerHTML = markup;
     sessionStorage.setItem("kinship.active-workspace", "workspace");

@@ -24,6 +24,10 @@ export async function mountWorkspaceDanger(
     "[data-danger-delete]",
   );
   if (!root || !status || !resetForm || !deleteForm) return;
+  const resetButton = resetForm.querySelector<HTMLButtonElement>("button")!;
+  const deleteButton = deleteForm.querySelector<HTMLButtonElement>("button")!;
+  resetButton.disabled = true;
+  deleteButton.disabled = true;
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready" || session.session.member.role !== "owner") {
     status.textContent = "An active owner session could not be confirmed.";
@@ -91,4 +95,6 @@ export async function mountWorkspaceDanger(
     };
   resetForm.addEventListener("submit", submit("reset", resetForm));
   deleteForm.addEventListener("submit", submit("delete", deleteForm));
+  resetButton.disabled = false;
+  deleteButton.disabled = false;
 }
