@@ -515,6 +515,28 @@ promotion, DG-10 must additionally approve deployment-specific SLOs, error
 budgets, provider limits, saturation targets, RTO/RPO, and alert thresholds.
 Passing the MVP checkpoint is not production-readiness evidence.
 
+The MVP checkpoint was accepted on 2026-08-24 for the expected private-use
+shape: one steady user, a burst of three users, and one workspace, primarily on
+desktop Chromium, Firefox, and WebKit with one 390x844 responsive smoke.
+Chromium is the stable timing engine; the existing all-browser flows own
+functional Firefox and WebKit compatibility. The representative small, medium,
+and large boundaries are respectively 250/5,000, 2,000/50,000, and
+10,000/250,000 people/history records. The large boundary is primarily for
+cursor pagination, import/export manifest accounting, and growth regression;
+large file volume may be represented by metadata and manifests.
+
+Interactive pages have a 2,000 ms functional ceiling, ordinary API reads a 500
+ms ceiling, ordinary mutations a 1,000 ms ceiling, representative queries a 250
+ms ceiling, and due reminder delivery a 10,000 ms ceiling. The current portable
+import/export maximum of 500 people must reach its durable review or completion
+state within 10,000 ms. Work above that delivered bound must remain durable,
+visibly statused, and resumable or retryable rather than extending an ordinary
+request timeout. The machine-readable authority and blocking regression tasks
+are [`mvp-capacity-profile.json`](mvp-capacity-profile.json) and
+`deno task test:performance:mvp`, plus the narrow production-built Chromium
+boundary `deno task test:performance:mvp:browser`. These budgets are MVP
+regression thresholds, not production SLOs or a claim about a named deployment.
+
 Measure at least:
 
 - public/static and authenticated-shell asset budgets and Web Vitals;

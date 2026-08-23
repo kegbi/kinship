@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "checkpoint": "mvp-feature-acceptance",
+  "acceptedOn": "2026-08-24",
+  "scope": "Initial private use. This is a feature-regression checkpoint, not a production SLO or deployment capacity claim.",
+  "concurrency": {
+    "steadyUsers": 1,
+    "burstUsers": 3,
+    "workspaces": 1
+  },
+  "clients": {
+    "primary": "desktop",
+    "timingEngine": "chromium",
+    "browserEngines": ["chromium", "firefox", "webkit"],
+    "responsiveSmoke": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  "datasets": {
+    "small": {
+      "people": 250,
+      "historyRecords": 5000
+    },
+    "medium": {
+      "people": 2000,
+      "historyRecords": 50000
+    },
+    "large": {
+      "people": 10000,
+      "historyRecords": 250000
+    }
+  },
+  "largeBoundaryUse": [
+    "cursor-pagination",
+    "import-export-manifest-accounting",
+    "growth-regression"
+  ],
+  "functionalCeilingsMs": {
+    "interactivePage": 2000,
+    "ordinaryApiRead": 500,
+    "ordinaryApiMutation": 1000,
+    "representativeQuery": 250,
+    "workerDueToDelivery": 10000,
+    "boundedImportExportCompletion": 10000
+  },
+  "longRunningWork": {
+    "operations": ["import", "export"],
+    "requirements": [
+      "durable-status",
+      "visible-status",
+      "resumable-or-retryable"
+    ],
+    "largeFileRepresentation": "metadata-and-manifests",
+    "currentPortableMaxPeople": 500,
+    "note": "The delivered portable payload remains bounded to 500 people. A future operation above that bound must run as durable background work and must not extend an ordinary request timeout."
+  },
+  "functionalBoundaryGuards": {
+    "page": [
+      {
+        "path": "playwright.config.ts",
+        "markers": [
+          "name: \"chromium\"",
+          "name: \"firefox\"",
+          "name: \"webkit\""
+        ]
+      },
+      {
+        "path": "tests/e2e/perf-001.spec.ts",
+        "markers": [
+          "profile.functionalCeilingsMs.interactivePage",
+          "profile.clients.responsiveSmoke"
+        ]
+      }
+    ],
+    "api": [
+      {
+        "path": "apps/api/people_test.ts",
+        "markers": [
+          "PEOPLE-002 HTTP lists only the resolved active workspace"
+        ]
+      }
+    ],
+    "query": [
+      {
+        "path": "packages/backend/read-models/people-directory/list_people_test.ts",
+        "markers": [
+          "directory normalizes criteria and emits a bounded opaque cursor",
+          "directory rejects malformed, mismatched, and stale cursors"
+        ]
+      }
+    ],
+    "worker": [
+      {
+        "path": "tests/integration/planning_postgres_test.ts",
+        "markers": [
+          "regeneration cannot overwrite a concurrent claim",
+          "recovers an expired confirmed claim after disable"
+        ]
+      }
+    ],
+    "import": [
+      {
+        "path": "packages/backend/modules/import-export/import_management_test.ts",
+        "markers": [
+          "Monica JSON dry-run redacts credentials and commits idempotently",
+          "rejects unsupported, hostile, oversized, and unconfirmed imports"
+        ]
+      }
+    ],
+    "export": [
+      {
+        "path": "packages/backend/modules/import-export/export_management_test.ts",
+        "markers": [
+          "persists resumable history and validates each short-lived download",
+          "resumes one running export and finalizes its verified artifact"
+        ]
+      }
+    ]
+  }
+}
