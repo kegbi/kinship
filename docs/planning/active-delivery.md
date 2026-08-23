@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 9 — Import, Export, And Destructive Data Lifecycle**
-- Current leaf: **Phase 9 aggregate acceptance checkpoint**
+- Current leaf: **PERF-001 — MVP capacity profile**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -287,6 +287,12 @@ runnable behavior cannot work without them.
   - [x] Keep destructive submissions disabled until the current owner session,
         impact preview, and submit handlers are ready in every supported
         browser.
+- [x] **REL-008 — Keep the production Compose worker alive.**
+  - [x] Grant the existing worker its exact dependency environment authority and
+        prove reminder/cadence delivery through the production-like boundary.
+- [ ] **PERF-001 — Prove the accepted MVP capacity profile.**
+  - [ ] Measure the real Compose-backed page, API, query, worker, import, and
+        export boundaries at the accepted dataset guardrails.
 - [ ] **Phase 9 accepted:** Slice 7 P0/P1 data-lifecycle flows pass and the
       catalog-derived proposed-MVP/core-feature-complete criteria are satisfied.
 
