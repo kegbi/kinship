@@ -897,8 +897,15 @@ Deno.test({
   },
 });
 
-globalThis.addEventListener("unload", () => {
-  void sql.end({ timeout: 1 });
-  void configured.close();
-  void postconditionConnection.destroy();
+Deno.test({
+  name: "registration PostgreSQL resources close",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await Promise.all([
+      sql.end({ timeout: 1 }),
+      configured.close(),
+      postconditionConnection.destroy(),
+    ]);
+  },
 });

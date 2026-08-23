@@ -213,6 +213,11 @@ Deno.test("[JOURNAL-001] PostgreSQL journal ordering, update, audit, and tenant 
   );
 });
 
-globalThis.addEventListener("unload", () => {
-  void Promise.all([configured.close(), sql.end()]);
+Deno.test({
+  name: "JOURNAL-001 PostgreSQL resources close",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await Promise.all([configured.close(), sql.end()]);
+  },
 });

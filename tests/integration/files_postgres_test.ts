@@ -581,6 +581,11 @@ Deno.test("[FILES-001] a stalled object removal aborts and rolls back for a clea
   }
 });
 
-globalThis.addEventListener("unload", () => {
-  void Promise.all([configured.close(), sql.end()]);
+Deno.test({
+  name: "FILES-001 PostgreSQL resources close",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await Promise.all([configured.close(), sql.end()]);
+  },
 });
