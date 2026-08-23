@@ -526,6 +526,81 @@ const profileFactSections = new Set<string>([
                 <form data-profile-fact-form class="profile-fact-form" hidden novalidate></form>
               </section>
             )
+            : id === "gifts" || id === "debts"
+            ? (
+              <section
+                id={`profile-section-${id}`}
+                class="profile-section-card person-files-card"
+                data-profile-section={id}
+                data-person-gifts={id === "gifts" ? "gift" : "debt"}
+                data-section-state="loading"
+                tabindex="-1"
+                aria-labelledby={`profile-section-${id}-heading`}
+              >
+                <header class="profile-section-heading">
+                  <div>
+                    <p class="section-kicker">Practical relationship detail</p>
+                    <h2 id={`profile-section-${id}-heading`}>{title}</h2>
+                  </div>
+                  <span data-gift-badge class="state-badge">Loading</span>
+                </header>
+                <p data-gift-state class="section-state" role="status" aria-live="polite">Loading {title.toLowerCase()}…</p>
+                <button data-gift-retry class="button-secondary" type="button" hidden>Retry loading</button>
+                <ul data-gift-list class="person-file-list" aria-label={`Saved ${title.toLowerCase()}`}></ul>
+                <button data-gift-add class="button-primary" type="button" hidden>Add {id === "gifts" ? "gift" : "debt"}</button>
+                <form data-gift-form class="profile-fact-form" hidden novalidate>
+                  {id === "gifts"
+                    ? (
+                      <>
+                        <label>Gift name <input name="name" maxlength="500" required /></label>
+                        <div class="form-grid">
+                          <label>Status
+                            <select name="status">
+                              <option value="idea">Idea</option>
+                              <option value="planned">Planned</option>
+                              <option value="given">Given</option>
+                              <option value="received">Received</option>
+                            </select>
+                          </label>
+                          <label>Event time (optional) <input name="eventAt" type="datetime-local" /></label>
+                          <label>Amount (optional) <input name="amount" inputmode="decimal" pattern="\d{1,15}(\.\d{1,4})?" /></label>
+                          <label>Currency (with amount) <select name="currencyCode"><option value="">Select currency</option></select></label>
+                        </div>
+                        <label>Recipient (optional) <select name="recipientPersonId"><option value="">No recipient</option></select></label>
+                        <label>Existing attachment (optional) <select name="attachmentFileId"><option value="">No attachment</option></select></label>
+                        <label>Link (optional) <input name="url" type="url" maxlength="2000" /></label>
+                        <label>Notes (optional) <textarea name="comment" maxlength="10000" rows="3"></textarea></label>
+                      </>
+                    )
+                    : (
+                      <>
+                        <div class="form-grid">
+                          <label>Direction
+                            <select name="direction">
+                              <option value="they_owe">They owe me</option>
+                              <option value="i_owe">I owe them</option>
+                            </select>
+                          </label>
+                          <label>Status
+                            <select name="status">
+                              <option value="open">Open</option>
+                              <option value="settled">Settled</option>
+                              <option value="cancelled">Cancelled</option>
+                            </select>
+                          </label>
+                          <label>Amount <input name="amount" inputmode="decimal" pattern="\d{1,15}(\.\d{1,4})?" required /></label>
+                          <label>Currency <select name="currencyCode" required></select></label>
+                        </div>
+                        <label>Reason (optional) <textarea name="reason" maxlength="10000" rows="3"></textarea></label>
+                      </>
+                    )}
+                  <div class="form-actions">
+                    <button class="button-primary" type="submit">Save</button>
+                    <button data-gift-cancel type="button">Cancel</button>
+                  </div>
+                </form>
+              </section>
+            )
             : id === "documents" || id === "photos"
             ? (
               <section

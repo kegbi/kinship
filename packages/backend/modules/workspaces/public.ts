@@ -60,6 +60,11 @@ export type {
 export { PostgresWorkspaceInvitations } from "./adapters/postgres/workspace_invitations.ts";
 export { PostgresWorkspaceSettings } from "./adapters/postgres/settings_management.ts";
 export { PostgresWorkspacePersonalization } from "./adapters/postgres/personalization.ts";
+export { PostgresWorkspaceCurrencyBoundary } from "./adapters/postgres/currency_boundary.ts";
+export type {
+  CurrencyBoundaryTransaction,
+  WorkspaceCurrencyBoundary,
+} from "./application/currency_boundary.ts";
 export {
   createPersonalizationManagement,
   PERSONALIZATION_SECTIONS,

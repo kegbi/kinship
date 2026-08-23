@@ -7,6 +7,7 @@ export type {
   FileAudit,
   FileMetadataRepository,
   FileScanner,
+  GiftAttachmentBoundary,
   ListPersonFilesResult,
   ObjectStorage,
   PersonFileActor,
@@ -21,6 +22,7 @@ export type {
   UploadPersonFileResult,
 } from "./application/person_files.ts";
 export { PostgresFileMetadataRepository } from "./adapters/postgres/file_metadata_repository.ts";
+export { PostgresGiftAttachmentBoundary } from "./adapters/postgres/gift_attachment_boundary.ts";
 export {
   createObjectStorageRequestTransport,
   S3CompatibleObjectStorage,

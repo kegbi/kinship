@@ -19,4 +19,5 @@ export { PostgresInteractionAudit } from "./adapters/postgres/interaction_audit.
 export { PostgresCommunicationAudit } from "./adapters/postgres/communication_audit.ts";
 export { PostgresTaskAudit } from "./adapters/postgres/task_audit.ts";
 export { PostgresFileAudit } from "./adapters/postgres/file_audit.ts";
+export { PostgresGiftAudit } from "./adapters/postgres/gift_audit.ts";
 export { PostgresReminderAudit } from "./adapters/postgres/reminder_audit.ts";

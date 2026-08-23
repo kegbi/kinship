@@ -163,6 +163,43 @@ export interface FileAudit {
   }): Promise<string>;
 }
 
+export interface GiftAttachmentBoundary {
+  attachToGift(
+    command: PersonFileActor & {
+      readonly fileId: string;
+      readonly giftId: string;
+      readonly transaction: PeopleTransaction;
+    },
+  ): Promise<
+    | { readonly status: "attached" }
+    | { readonly status: "forbidden" | "not-found" }
+  >;
+  validateForGift(
+    command: PersonFileActor & {
+      readonly fileId: string;
+      readonly transaction: PeopleTransaction;
+    },
+  ): Promise<
+    | { readonly status: "ready" }
+    | { readonly status: "forbidden" | "not-found" }
+  >;
+  listForGifts(
+    command: PersonFileActor & {
+      readonly giftIds: readonly string[];
+      readonly transaction: PeopleTransaction;
+    },
+  ): Promise<
+    | {
+      readonly links: readonly {
+        readonly fileId: string;
+        readonly giftId: string;
+      }[];
+      readonly status: "ready";
+    }
+    | { readonly status: "forbidden" }
+  >;
+}
+
 export interface PersonFileManagementDependencies {
   readonly audit: FileAudit;
   readonly clock: { now(): Date };

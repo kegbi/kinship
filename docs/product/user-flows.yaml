@@ -577,6 +577,7 @@ flows:
 
   - id: GIFTS-001
     title: Manage gifts and debts for a person
+    deliveryStatus: delivered
     priority: P1
     actor: crm-writer
     trigger: The member records a gift idea/history item or debt.
@@ -598,7 +599,7 @@ flows:
     moduleIds: [people, gifts, files]
     permissions: [gifts.write]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-007b.spec.ts] }
 
   - id: JOURNAL-001
     title: Maintain the personal journal

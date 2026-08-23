@@ -20,6 +20,7 @@ import { mountPersonAuditSummary } from "./audit-history.ts";
 import { mountTaskSurface } from "./tasks.ts";
 import { mountPersonReminders } from "./reminders.ts";
 import { mountPersonFiles } from "./person-files.ts";
+import { mountPersonGifts } from "./person-gifts.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
@@ -742,6 +743,11 @@ export async function mountPeopleProfile(): Promise<void> {
       workspaceId: session.session.workspace.id,
     }),
     mountPersonFiles({
+      archived: result.value.status === "archived",
+      personId: id,
+      workspaceId: session.session.workspace.id,
+    }),
+    mountPersonGifts({
       archived: result.value.status === "archived",
       personId: id,
       workspaceId: session.session.workspace.id,

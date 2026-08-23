@@ -45,6 +45,18 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
     required: true,
     schema: { type: "string", format: "uuid" },
   };
+  const giftIdParameter = {
+    name: "giftId",
+    in: "path",
+    required: true,
+    schema: { type: "string", format: "uuid" },
+  };
+  const debtIdParameter = {
+    name: "debtId",
+    in: "path",
+    required: true,
+    schema: { type: "string", format: "uuid" },
+  };
   const taskIdParameter = {
     name: "taskId",
     in: "path",
@@ -1323,6 +1335,159 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             "404": problem,
             "410": problem,
             "423": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/gifts": {
+        get: {
+          operationId: "listPersonGiftsAndDebts",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter, personIdParameter],
+          responses: {
+            "200": {
+              description: "Person gift and debt sections",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/GiftDebtList" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+        post: {
+          operationId: "createGift",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, personIdParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/GiftCreateInput" },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "Gift created",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/GiftCreated" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/gifts/{giftId}/status": {
+        patch: {
+          operationId: "changeGiftStatus",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            originParameter,
+            workspaceParameter,
+            personIdParameter,
+            giftIdParameter,
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/GiftStatusInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Gift status changed",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/GiftSaved" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/debts": {
+        post: {
+          operationId: "createDebt",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, personIdParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/DebtCreateInput" },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "Debt created",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/DebtCreated" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/people/{personId}/debts/{debtId}/status": {
+        patch: {
+          operationId: "changeDebtStatus",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            originParameter,
+            workspaceParameter,
+            personIdParameter,
+            debtIdParameter,
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/DebtStatusInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Debt status changed",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/DebtSaved" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
             "503": problem,
           },
         },
@@ -3036,6 +3201,167 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           properties: {
             file: { $ref: "#/components/schemas/PersonFile" },
             status: { const: "created" },
+          },
+          additionalProperties: false,
+        },
+        Gift: {
+          type: "object",
+          required: [
+            "createdAt",
+            "id",
+            "name",
+            "personId",
+            "status",
+            "updatedAt",
+          ],
+          properties: {
+            amount: { type: "string", pattern: "^\\d{1,15}(?:\\.\\d{1,4})?$" },
+            attachmentFileId: { type: "string", format: "uuid" },
+            comment: { type: "string", maxLength: 10_000 },
+            createdAt: { type: "string", format: "date-time" },
+            currencyCode: { type: "string", pattern: "^[A-Z]{3}$" },
+            eventAt: { type: "string", format: "date-time" },
+            id: { type: "string", format: "uuid" },
+            name: { type: "string", minLength: 1, maxLength: 500 },
+            personId: { type: "string", format: "uuid" },
+            recipientPersonId: { type: "string", format: "uuid" },
+            status: {
+              type: "string",
+              enum: ["idea", "planned", "given", "received", "archived"],
+            },
+            updatedAt: { type: "string", format: "date-time" },
+            url: { type: "string", format: "uri", maxLength: 2_000 },
+          },
+          additionalProperties: false,
+        },
+        Debt: {
+          type: "object",
+          required: [
+            "amount",
+            "createdAt",
+            "direction",
+            "id",
+            "personId",
+            "status",
+            "updatedAt",
+          ],
+          properties: {
+            amount: { type: "string", pattern: "^\\d{1,15}(?:\\.\\d{1,4})?$" },
+            createdAt: { type: "string", format: "date-time" },
+            currencyCode: { type: "string", pattern: "^[A-Z]{3}$" },
+            direction: { type: "string", enum: ["i_owe", "they_owe"] },
+            id: { type: "string", format: "uuid" },
+            personId: { type: "string", format: "uuid" },
+            reason: { type: "string", maxLength: 10_000 },
+            settledAt: { type: "string", format: "date-time" },
+            status: { type: "string", enum: ["open", "settled", "cancelled"] },
+            updatedAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
+        GiftDebtList: {
+          type: "object",
+          required: ["debts", "gifts", "status", "supportedCurrencyCodes"],
+          properties: {
+            debts: {
+              type: "array",
+              items: { $ref: "#/components/schemas/Debt" },
+            },
+            gifts: {
+              type: "array",
+              items: { $ref: "#/components/schemas/Gift" },
+            },
+            status: { const: "ready" },
+            supportedCurrencyCodes: {
+              type: "array",
+              items: { type: "string", pattern: "^[A-Z]{3}$" },
+            },
+          },
+          additionalProperties: false,
+        },
+        GiftCreateInput: {
+          type: "object",
+          required: ["name", "status"],
+          properties: {
+            amount: { type: "string", pattern: "^\\d{1,15}(?:\\.\\d{1,4})?$" },
+            attachmentFileId: { type: "string", format: "uuid" },
+            comment: { type: "string", minLength: 1, maxLength: 10_000 },
+            currencyCode: { type: "string", pattern: "^[A-Za-z]{3}$" },
+            eventAt: { type: "string", format: "date-time" },
+            name: { type: "string", minLength: 1, maxLength: 500 },
+            recipientPersonId: { type: "string", format: "uuid" },
+            status: {
+              type: "string",
+              enum: ["idea", "planned", "given", "received", "archived"],
+            },
+            url: { type: "string", format: "uri", maxLength: 2_000 },
+          },
+          additionalProperties: false,
+        },
+        DebtCreateInput: {
+          type: "object",
+          required: ["amount", "currencyCode", "direction", "status"],
+          properties: {
+            amount: { type: "string", pattern: "^\\d{1,15}(?:\\.\\d{1,4})?$" },
+            currencyCode: { type: "string", pattern: "^[A-Za-z]{3}$" },
+            direction: { type: "string", enum: ["i_owe", "they_owe"] },
+            reason: { type: "string", minLength: 1, maxLength: 10_000 },
+            status: { type: "string", enum: ["open", "settled", "cancelled"] },
+          },
+          additionalProperties: false,
+        },
+        GiftStatusInput: {
+          type: "object",
+          required: ["status"],
+          properties: {
+            status: {
+              type: "string",
+              enum: ["idea", "planned", "given", "received", "archived"],
+            },
+          },
+          additionalProperties: false,
+        },
+        DebtStatusInput: {
+          type: "object",
+          required: ["status"],
+          properties: {
+            status: { type: "string", enum: ["open", "settled", "cancelled"] },
+          },
+          additionalProperties: false,
+        },
+        GiftCreated: {
+          type: "object",
+          required: ["gift", "status"],
+          properties: {
+            gift: { $ref: "#/components/schemas/Gift" },
+            status: { const: "created" },
+          },
+          additionalProperties: false,
+        },
+        GiftSaved: {
+          type: "object",
+          required: ["gift", "status"],
+          properties: {
+            gift: { $ref: "#/components/schemas/Gift" },
+            status: { enum: ["saved", "unchanged"] },
+          },
+          additionalProperties: false,
+        },
+        DebtCreated: {
+          type: "object",
+          required: ["debt", "status"],
+          properties: {
+            debt: { $ref: "#/components/schemas/Debt" },
+            status: { const: "created" },
+          },
+          additionalProperties: false,
+        },
+        DebtSaved: {
+          type: "object",
+          required: ["debt", "status"],
+          properties: {
+            debt: { $ref: "#/components/schemas/Debt" },
+            status: { enum: ["saved", "unchanged"] },
           },
           additionalProperties: false,
         },
@@ -6819,10 +7145,93 @@ export function deletePerson(personId: string, input: PersonTransitionInput & { 
 `;
 }
 
+function renderGiftClient(): string {
+  return `
+export type GiftStatus = "archived" | "given" | "idea" | "planned" | "received";
+export type DebtStatus = "cancelled" | "open" | "settled";
+
+export interface Gift {
+  readonly amount?: string;
+  readonly attachmentFileId?: string;
+  readonly comment?: string;
+  readonly createdAt: string;
+  readonly currencyCode?: string;
+  readonly eventAt?: string;
+  readonly id: string;
+  readonly name: string;
+  readonly personId: string;
+  readonly recipientPersonId?: string;
+  readonly status: GiftStatus;
+  readonly updatedAt: string;
+  readonly url?: string;
+}
+
+export interface Debt {
+  readonly amount: string;
+  readonly createdAt: string;
+  readonly currencyCode?: string;
+  readonly direction: "i_owe" | "they_owe";
+  readonly id: string;
+  readonly personId: string;
+  readonly reason?: string;
+  readonly settledAt?: string;
+  readonly status: DebtStatus;
+  readonly updatedAt: string;
+}
+
+export interface GiftCreateInput {
+  readonly amount?: string;
+  readonly attachmentFileId?: string;
+  readonly comment?: string;
+  readonly currencyCode?: string;
+  readonly eventAt?: string;
+  readonly name: string;
+  readonly recipientPersonId?: string;
+  readonly status: GiftStatus;
+  readonly url?: string;
+}
+
+export interface DebtCreateInput {
+  readonly amount: string;
+  readonly currencyCode: string;
+  readonly direction: "i_owe" | "they_owe";
+  readonly reason?: string;
+  readonly status: DebtStatus;
+}
+
+export interface GiftDebtList {
+  readonly debts: readonly Debt[];
+  readonly gifts: readonly Gift[];
+  readonly status: "ready";
+  readonly supportedCurrencyCodes: readonly string[];
+}
+
+export function listPersonGifts(personId: string, workspaceId?: string): Promise<ApiResult<GiftDebtList>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/gifts\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function createGift(personId: string, input: GiftCreateInput, workspaceId?: string): Promise<ApiResult<{ readonly gift: Gift; readonly status: "created" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/gifts\`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function changeGiftStatus(personId: string, giftId: string, status: GiftStatus, workspaceId?: string): Promise<ApiResult<{ readonly gift: Gift; readonly status: "saved" | "unchanged" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/gifts/\${encodeURIComponent(giftId)}/status\`, { method: "PATCH", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify({ status }) });
+}
+
+export function createDebt(personId: string, input: DebtCreateInput, workspaceId?: string): Promise<ApiResult<{ readonly debt: Debt; readonly status: "created" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/debts\`, { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
+}
+
+export function changeDebtStatus(personId: string, debtId: string, status: DebtStatus, workspaceId?: string): Promise<ApiResult<{ readonly debt: Debt; readonly status: "saved" | "unchanged" }>> {
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/debts/\${encodeURIComponent(debtId)}/status\`, { method: "PATCH", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify({ status }) });
+}
+`;
+}
+
 if (import.meta.main) {
   const openApi = JSON.stringify(buildOpenApiDocument(), null, 2) + "\n";
   const client = renderGeneratedClient() + renderInvitationClient() +
-    renderSettingsClient() + renderPeopleClient();
+    renderSettingsClient() + renderPeopleClient() + renderGiftClient();
   const check = Deno.args.includes("--check");
   if (check) {
     const currentOpenApi = await Deno.readTextFile(openApiPath).catch(() => "");
