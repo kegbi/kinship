@@ -241,7 +241,7 @@ Deno.test("[REL-004] aggregate integration has object-store configuration author
   }
 });
 
-Deno.test("[WORKSPACE-002] worker receives exact private object-store runtime authority", async () => {
+Deno.test("[REL-008] worker receives exact production runtime authority", async () => {
   const base = await Deno.readTextFile(
     new URL("../compose.yaml", import.meta.url),
   );
@@ -258,6 +258,7 @@ Deno.test("[WORKSPACE-002] worker receives exact private object-store runtime au
   for (
     const name of [
       "APP_ENV",
+      "READABLE_STREAM",
       "OBJECT_STORAGE_ACCESS_KEY",
       "OBJECT_STORAGE_BUCKET",
       "OBJECT_STORAGE_HOST",
