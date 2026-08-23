@@ -211,3 +211,50 @@ Deno.test("[FILES-001] MinIO is confined to development and test overlays", asyn
     "governance keeps its accepted dependency manifest",
   );
 });
+
+Deno.test("[WORKSPACE-002] worker receives exact private object-store runtime authority", async () => {
+  const base = await Deno.readTextFile(
+    new URL("../compose.yaml", import.meta.url),
+  );
+  const development = await Deno.readTextFile(
+    new URL("../compose.dev.yaml", import.meta.url),
+  );
+  const test = await Deno.readTextFile(
+    new URL("../compose.test.yaml", import.meta.url),
+  );
+  const worker = base.slice(
+    base.indexOf("\n  worker:"),
+    base.indexOf("\n  web:"),
+  );
+  for (
+    const name of [
+      "APP_ENV",
+      "OBJECT_STORAGE_ACCESS_KEY",
+      "OBJECT_STORAGE_BUCKET",
+      "OBJECT_STORAGE_HOST",
+      "OBJECT_STORAGE_PORT",
+      "OBJECT_STORAGE_REQUEST_TIMEOUT_MS",
+      "OBJECT_STORAGE_SECRET_KEY",
+      "OBJECT_STORAGE_USE_SSL",
+    ]
+  ) {
+    assert(worker.includes(name), `worker command/env omits ${name}`);
+  }
+  assert(
+    worker.includes(
+      "--allow-net=postgres:5432,${OBJECT_STORAGE_HOST:-object-store}:${OBJECT_STORAGE_PORT:-9000}",
+    ),
+    "worker network authority must be limited to PostgreSQL and configured object storage",
+  );
+  for (const overlay of [development, test]) {
+    const overlayWorker = overlay.slice(
+      overlay.indexOf("\n  worker:"),
+      overlay.indexOf("\n  web:"),
+    );
+    assert(
+      overlayWorker.includes("object-store:") &&
+        overlayWorker.includes("condition: service_healthy"),
+      "local worker must wait for its private object store",
+    );
+  }
+});

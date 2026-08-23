@@ -10,8 +10,9 @@ prerequisite queues.
 
 ## Cursor
 
-- Current phase: **Phase 9 — Import, Export, And Destructive Data Lifecycle**
-- Current leaf: **APP-009D / `WORKSPACE-002` — Workspace reset and deletion**
+- Current phase: **Phase 10 — Optional Platform Modules**
+- Current leaf: **APP-010A / `API-001` — API tokens and approved programmatic
+  access**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -264,8 +265,8 @@ runnable behavior cannot work without them.
 - [x] **APP-009C / `AUTH-005` — Personal lifecycle.**
   - [x] Deliver leave-workspace and personal-identity deletion with recent auth,
         typed confirmation, impact preview, and final-owner handling.
-- [ ] **APP-009D / `WORKSPACE-002` — Workspace reset and deletion.**
-  - [ ] Coordinate every delivered module, session effect, atomic database
+- [x] **APP-009D / `WORKSPACE-002` — Workspace reset and deletion.**
+  - [x] Coordinate every delivered module, session effect, atomic database
         boundary, object cleanup/reconciliation, retries, and durable deletion
         audit decision.
 - [ ] **Phase 9 accepted:** Slice 7 P0/P1 data-lifecycle flows pass and the

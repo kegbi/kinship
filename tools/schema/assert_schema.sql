@@ -19,7 +19,7 @@ CREATE TEMP TABLE expected_field_catalog (
   change_reason text
 );
 
-\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v6.csv' WITH (FORMAT csv, HEADER true)
+\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v7.csv' WITH (FORMAT csv, HEADER true)
 
 DO $$
 DECLARE
@@ -28,10 +28,13 @@ BEGIN
   IF to_regclass('crm.stay_in_touch_cadence_requests') IS NULL THEN
     RAISE EXCEPTION 'missing durable cadence request history table';
   END IF;
+  IF to_regclass('crm.workspace_lifecycle_records') IS NULL THEN
+    RAISE EXCEPTION 'missing surviving workspace deletion record table';
+  END IF;
 
   SELECT count(*) INTO actual_count FROM expected_field_catalog;
-  IF actual_count <> 832 THEN
-    RAISE EXCEPTION 'field catalog row count: expected 832, got %', actual_count;
+  IF actual_count <> 843 THEN
+    RAISE EXCEPTION 'field catalog row count: expected 843, got %', actual_count;
   END IF;
 
   IF EXISTS (

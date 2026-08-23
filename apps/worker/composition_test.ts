@@ -1,4 +1,5 @@
 import {
+  createApplicationWorker,
   createConfiguredReminderWorker,
   runReminderWorkerLoop,
 } from "./composition.ts";
@@ -48,6 +49,27 @@ class CountingAbortSignal {
 function emptyTick() {
   return Promise.resolve({ claimed: 0, results: [] });
 }
+
+Deno.test("[WORKSPACE-002] worker reconciles pending object cleanup before reminders", async () => {
+  const effects: string[] = [];
+  const worker = createApplicationWorker({
+    tick: ({ owner }) => {
+      effects.push(`reminders:${owner}`);
+      return emptyTick();
+    },
+  }, {
+    reconcilePendingCleanup: () => {
+      effects.push("cleanup");
+      return Promise.resolve({ completed: 1, inspected: 1 });
+    },
+  });
+
+  await worker.tick({ owner: "restart-owner" });
+  assert(
+    effects.join(",") === "cleanup,reminders:restart-owner",
+    `worker order was ${effects.join(",")}`,
+  );
+});
 
 Deno.test({
   name: "APP-006B worker composition closes without starting a connection",

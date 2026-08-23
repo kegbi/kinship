@@ -51,3 +51,4 @@ export type {
   ExportFileBoundaryDependencies,
 } from "./application/export_file_boundary.ts";
 export { PostgresExportFileBoundary } from "./adapters/postgres/export_file_boundary.ts";
+export { PostgresFileWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";

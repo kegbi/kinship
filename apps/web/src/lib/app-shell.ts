@@ -87,6 +87,9 @@ function renderRouteForbidden(elements: ShellElements): void {
   elements.root.querySelectorAll("[data-requires-workspace-admin]").forEach(
     (node) => node.remove(),
   );
+  elements.root.querySelectorAll("[data-requires-workspace-owner]").forEach(
+    (node) => node.remove(),
+  );
   elements.root.hidden = true;
   elements.access.hidden = false;
   elements.access.replaceChildren();
@@ -99,9 +102,13 @@ function renderRouteForbidden(elements: ShellElements): void {
   const importSettings =
     document.body.dataset.pageId?.startsWith("settings.import") === true;
   const exportSettings = document.body.dataset.pageId === "settings.export";
+  const workspaceDanger = document.body.dataset.pageId ===
+    "settings.workspace-danger";
   const auditHistory = document.body.dataset.pageId === "people.audit" ||
     document.body.dataset.pageId === "settings.audit";
-  heading.textContent = workspaceSettings
+  heading.textContent = workspaceDanger
+    ? "Workspace danger zone unavailable"
+    : workspaceSettings
     ? "Workspace settings unavailable"
     : personalization
     ? "Personalization unavailable"
@@ -115,7 +122,9 @@ function renderRouteForbidden(elements: ShellElements): void {
     ? "Audit history unavailable"
     : "You don’t have access to Members";
   const copy = document.createElement("p");
-  copy.textContent = workspaceSettings
+  copy.textContent = workspaceDanger
+    ? "Only an active workspace owner can reset or delete this workspace."
+    : workspaceSettings
     ? "Only workspace owners and admins can manage workspace identity and defaults."
     : personalization
     ? "Only workspace owners and admins can manage workspace personalization."
@@ -227,8 +236,14 @@ export async function mountApplicationShell(
   }
   const isWorkspaceAdmin = resolved.session.member.role === "owner" ||
     resolved.session.member.role === "admin";
+  const isWorkspaceOwner = resolved.session.member.role === "owner";
   if (!isWorkspaceAdmin) {
     document.querySelectorAll("[data-requires-workspace-admin]").forEach(
+      (node) => node.remove(),
+    );
+  }
+  if (!isWorkspaceOwner) {
+    document.querySelectorAll("[data-requires-workspace-owner]").forEach(
       (node) => node.remove(),
     );
   }
@@ -242,6 +257,13 @@ export async function mountApplicationShell(
       document.body.dataset.pageId === "people.audit" ||
       document.body.dataset.pageId === "settings.audit") &&
     !isWorkspaceAdmin
+  ) {
+    renderRouteForbidden(elements);
+    return;
+  }
+  if (
+    document.body.dataset.pageId === "settings.workspace-danger" &&
+    !isWorkspaceOwner
   ) {
     renderRouteForbidden(elements);
     return;

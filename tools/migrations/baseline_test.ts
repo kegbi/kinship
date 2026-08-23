@@ -9,41 +9,46 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("schema v6 migration classifies only exact empty and v1-v6 states", () => {
+Deno.test("schema v7 migration classifies only exact empty and v1-v7 states", () => {
   assert(
     decideSchemaAction({ crmSchemaExists: false, state: "empty" }) ===
-      "apply-v6",
-    "empty target applies the full v6 schema",
+      "apply-v7",
+    "empty target applies the full v7 schema",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v1" }) ===
-      "upgrade-v1-to-v6",
+      "upgrade-v1-to-v7",
     "exact v1 target upgrades",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v2" }) ===
-      "upgrade-v2-to-v6",
+      "upgrade-v2-to-v7",
     "exact v2 target upgrades",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v3" }) ===
-      "upgrade-v3-to-v6",
+      "upgrade-v3-to-v7",
     "exact v3 target upgrades",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v4" }) ===
-      "upgrade-v4-to-v6",
+      "upgrade-v4-to-v7",
     "exact v4 target upgrades",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v5" }) ===
-      "upgrade-v5-to-v6",
+      "upgrade-v5-to-v7",
     "exact v5 target upgrades",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v6" }) ===
-      "verify-v6",
-    "exact v6 target verifies idempotently",
+      "upgrade-v6-to-v7",
+    "exact v6 target upgrades",
+  );
+  assert(
+    decideSchemaAction({ crmSchemaExists: true, state: "v7" }) ===
+      "verify-v7",
+    "exact v7 target verifies idempotently",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "drift" }) ===
@@ -88,5 +93,24 @@ Deno.test("baseline verification requires the complete canonical table catalog",
       required,
     ),
     "a rename retaining the same count must fail",
+  );
+});
+
+Deno.test("schema v7 specification reports its exact canonical metrics", async () => {
+  const specification = await Deno.readTextFile(
+    "personal-crm-schema/v7/personal_crm_schema_spec_v7.md",
+  );
+  assert(
+    specification.includes("SQL tables parsed: **89**") &&
+      specification.includes("Explicit indexes: **149**"),
+    "v7 specification metrics drifted from canonical SQL and validation JSON",
+  );
+  const sql = await Deno.readTextFile(
+    "personal-crm-schema/v7/personal_crm_schema_v7.sql",
+  );
+  assert(
+    sql.includes("'transactional-failure'") &&
+      specification.includes("`transactional-failure`"),
+    "v7 omits the redacted post-rollback lifecycle outcome",
   );
 });

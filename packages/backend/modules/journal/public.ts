@@ -10,3 +10,4 @@ export type {
   StoredJournalPost,
 } from "./application/journal_management.ts";
 export { PostgresJournalRepository } from "./adapters/postgres/journal_repository.ts";
+export { PostgresJournalWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";

@@ -2,7 +2,7 @@
 
 This directory records the implementation baseline for the Personal CRM rewrite.
 Read it together with the canonical schema in
-[`personal-crm-schema/v6`](../../personal-crm-schema/v6/README.md). Repository
+[`personal-crm-schema/v7`](../../personal-crm-schema/v7/README.md). Repository
 v1 remains the immutable external-audit baseline.
 
 ## Decision Status

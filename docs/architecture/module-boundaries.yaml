@@ -1,6 +1,6 @@
 schemaVersion: 1
 decisionStatus: accepted
-schemaSource: personal-crm-schema/v6/personal_crm_schema_v6.sql
+schemaSource: personal-crm-schema/v7/personal_crm_schema_v7.sql
 
 sharedKernel:
   path: packages/backend/shared-kernel
@@ -93,6 +93,7 @@ modules:
       - relationship_type_groups
       - relationship_types
       - pet_categories
+      - workspace_lifecycle_records
     publicEntryPoints: [packages/backend/modules/workspaces/public.ts]
     allowedModuleDependencies: [identity]
     publishes: [

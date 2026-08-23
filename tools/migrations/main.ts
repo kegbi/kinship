@@ -25,6 +25,10 @@ const v6SchemaPath = new URL(
   "../../personal-crm-schema/v6/personal_crm_schema_v6.sql",
   import.meta.url,
 );
+const v7SchemaPath = new URL(
+  "../../personal-crm-schema/v7/personal_crm_schema_v7.sql",
+  import.meta.url,
+);
 const migrationPath = new URL(
   "../../personal-crm-schema/v2/migrations/0002_add_authentication_subject_digest.sql",
   import.meta.url,
@@ -45,6 +49,10 @@ const migrationV5ToV6Path = new URL(
   "../../personal-crm-schema/v6/migrations/0006_add_durable_reminder_delivery.sql",
   import.meta.url,
 );
+const migrationV6ToV7Path = new URL(
+  "../../personal-crm-schema/v7/migrations/0007_add_workspace_deletion_records.sql",
+  import.meta.url,
+);
 
 if (import.meta.main) {
   const databaseUrl = resolveDatabaseUrl(Deno.env);
@@ -59,12 +67,14 @@ if (import.meta.main) {
     migrationV3ToV4: await Deno.readTextFile(migrationV3ToV4Path),
     migrationV4ToV5: await Deno.readTextFile(migrationV4ToV5Path),
     migrationV5ToV6: await Deno.readTextFile(migrationV5ToV6Path),
+    migrationV6ToV7: await Deno.readTextFile(migrationV6ToV7Path),
     v1Sql: await Deno.readTextFile(v1SchemaPath),
     v2Sql: await Deno.readTextFile(v2SchemaPath),
     v3Sql: await Deno.readTextFile(v3SchemaPath),
     v4Sql: await Deno.readTextFile(v4SchemaPath),
     v5Sql: await Deno.readTextFile(v5SchemaPath),
     v6Sql: await Deno.readTextFile(v6SchemaPath),
+    v7Sql: await Deno.readTextFile(v7SchemaPath),
   });
-  console.log(`Canonical schema v6: ${action}`);
+  console.log(`Canonical schema v7: ${action}`);
 }

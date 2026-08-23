@@ -15,3 +15,4 @@ export type {
   StoredGift,
 } from "./application/gift_management.ts";
 export { PostgresGiftRepository } from "./adapters/postgres/gift_repository.ts";
+export { PostgresGiftWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
