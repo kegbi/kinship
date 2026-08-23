@@ -212,6 +212,35 @@ Deno.test("[FILES-001] MinIO is confined to development and test overlays", asyn
   );
 });
 
+Deno.test("[REL-004] aggregate integration has object-store configuration authority", async () => {
+  const manifest = JSON.parse(
+    await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
+  ) as { tasks?: Record<string, string> };
+  const integrationTask = manifest.tasks?.["test:integration:direct"] ?? "";
+
+  assert(
+    integrationTask.includes("--allow-read=") &&
+      integrationTask.includes("personal-crm-schema/v7"),
+    "aggregate integration must read the canonical v7 schema",
+  );
+  for (
+    const name of [
+      "OBJECT_STORAGE_ACCESS_KEY",
+      "OBJECT_STORAGE_BUCKET",
+      "OBJECT_STORAGE_HOST",
+      "OBJECT_STORAGE_PORT",
+      "OBJECT_STORAGE_REQUEST_TIMEOUT_MS",
+      "OBJECT_STORAGE_SECRET_KEY",
+      "OBJECT_STORAGE_USE_SSL",
+    ]
+  ) {
+    assert(
+      integrationTask.includes(name),
+      `aggregate integration must permit the object-storage environment name ${name}`,
+    );
+  }
+});
+
 Deno.test("[WORKSPACE-002] worker receives exact private object-store runtime authority", async () => {
   const base = await Deno.readTextFile(
     new URL("../compose.yaml", import.meta.url),
