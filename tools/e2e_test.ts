@@ -3,6 +3,7 @@ import {
   E2E_COMPOSE_ARGS,
   e2eEnvironment,
   e2eImageNames,
+  e2ePlaywrightArgs,
   e2eProjectName,
   exactProcessTree,
   finishAstroReadinessAttempt,
@@ -71,6 +72,22 @@ Deno.test("E2E launcher isolates project, listeners, and browser origins", () =>
   assert(
     E2E_COMPOSE_ARGS.includes("compose.test.yaml"),
     "launcher consumes the disposable test overlay",
+  );
+});
+
+Deno.test("production-like E2E serializes shared state unless explicitly overridden", () => {
+  assert(
+    e2ePlaywrightArgs(["tests/e2e/app-008a.spec.ts"]).join(" ") ===
+      "exec playwright test tests/e2e/app-008a.spec.ts --workers=1",
+    "the shared Compose database is serialized by default",
+  );
+  assert(
+    e2ePlaywrightArgs(["--workers=2", "tests/e2e/app-008a.spec.ts"]).join(
+          " ",
+        ) === "exec playwright test --workers=2 tests/e2e/app-008a.spec.ts" &&
+      e2ePlaywrightArgs(["-j", "2"]).join(" ") ===
+        "exec playwright test -j 2",
+    "an explicit Playwright worker choice remains authoritative",
   );
 });
 

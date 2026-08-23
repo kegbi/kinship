@@ -31,6 +31,18 @@ export function e2eEnvironment(
   };
 }
 
+export function e2ePlaywrightArgs(
+  testArgs: readonly string[],
+): string[] {
+  const args = ["exec", "playwright", "test", ...testArgs];
+  const hasWorkerOverride = testArgs.some((argument) =>
+    argument === "--workers" || argument.startsWith("--workers=") ||
+    argument === "-j" || argument.startsWith("-j=") || /^-j\d/.test(argument)
+  );
+  if (!hasWorkerOverride) args.push("--workers=1");
+  return args;
+}
+
 export interface E2eTlsMaterial {
   readonly certificate: string;
   readonly directory: string;
@@ -837,7 +849,7 @@ async function main(): Promise<void> {
       await assertGatewayDependencyReadiness(gatewayOrigin, environment);
     },
     test: async () => {
-      const args = ["exec", "playwright", "test", ...Deno.args];
+      const args = e2ePlaywrightArgs(Deno.args);
       const child = new Deno.Command("pnpm", {
         args,
         cwd: new URL("../", import.meta.url),
