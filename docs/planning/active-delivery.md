@@ -274,6 +274,9 @@ runnable behavior cannot work without them.
 - [x] **REL-005 — Bound the PEOPLE-006 full-integration hang.**
   - [x] Reproduce and correct the stalled profile-facts integration boundary
         observed with idle PostgreSQL sessions and no Deno progress.
+- [x] **REL-006 — Restore the authoritative API coverage manifest.**
+  - [x] Include the existing Slice 7 unit, API, contract, worker, and PostgreSQL
+        tests required to measure every delivered production surface.
 - [ ] **Phase 9 accepted:** Slice 7 P0/P1 data-lifecycle flows pass and the
       catalog-derived proposed-MVP/core-feature-complete criteria are satisfied.
 
