@@ -60,6 +60,11 @@ Playwright test carrying its stable flow ID.
         `GOVERNANCE-001` after its assertions complete.
   - [x] Prove `GOVERNANCE-001` followed by `INTERACTION-001` on one disposable
         database without legal-acceptance guard leakage.
+- [x] **REL-003 — Serialize production-like E2E shared state.**
+  - [x] Default the shared Compose-stack browser run to one worker while
+        preserving an explicit caller override.
+  - [x] Remove each `GOVERNANCE-001` browser project's legal fixture
+        unconditionally by its exact document ID.
 
 ## Just-In-Time Technical Capabilities
 
@@ -244,7 +249,7 @@ runnable behavior cannot work without them.
 - [x] **APP-008C / `PEOPLE-003` — Complete person workspace.**
   - [x] Compose every enabled core person section through approved read models,
         preserve deep links, and prove mutations still call owning facades.
-- [ ] **Phase 8 accepted:** Slice 6 flows pass and the canonical person
+- [x] **Phase 8 accepted:** Slice 6 flows pass and the canonical person
       workspace is complete for every enabled core module.
 
 ## Phase 9 — Import, Export, And Destructive Data Lifecycle

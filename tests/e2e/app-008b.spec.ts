@@ -5,7 +5,6 @@ import { execFileSync } from "node:child_process";
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
 const password = "correct horse battery staple";
-const documentId = "00000000-0000-4000-8000-000000008001";
 const composeArgs = [
   "compose",
   "--file",
@@ -33,6 +32,29 @@ function database(statement: string, tuples = false): string {
   ], { cwd: process.cwd(), encoding: "utf8", env: process.env }).trim();
 }
 
+let documentId = "";
+
+test.beforeEach(() => {
+  documentId = crypto.randomUUID();
+  database(`insert into crm.legal_documents
+    (id, document_type, version, content, published_at, is_active)
+    values ('${documentId}'::uuid, 'terms', 'APP-008B',
+      'Kinship exact acceptance test terms.', now() - interval '1 minute', true)`);
+});
+
+test.afterEach(() => {
+  if (!documentId) return;
+  database(`begin;
+    delete from crm.legal_acceptances
+      where legal_document_id = '${documentId}'::uuid;
+    delete from crm.audit_events
+      where subject_type = 'legal_document'
+        and subject_id = '${documentId}'::uuid;
+    delete from crm.legal_documents where id = '${documentId}'::uuid;
+    commit;`);
+  documentId = "";
+});
+
 test("[GOVERNANCE-001] reviews and accepts an exact required legal version", {
   annotation: [{ type: "flow", description: "GOVERNANCE-001" }, {
     type: "leaf",
@@ -41,14 +63,6 @@ test("[GOVERNANCE-001] reviews and accepts an exact required legal version", {
 }, async ({ browserName, page, request }) => {
   test.setTimeout(300_000);
   page.setDefaultTimeout(15_000);
-  database(`insert into crm.legal_documents
-    (id, document_type, version, content, published_at, is_active)
-    values ('${documentId}'::uuid, 'terms', 'APP-008B',
-      'Kinship exact acceptance test terms.', now() - interval '1 minute', true)
-    on conflict (document_type, version) do update set
-      content = excluded.content, published_at = excluded.published_at,
-      is_active = true`);
-
   await page.goto("/terms");
   await expect(page.locator("body")).toHaveAttribute(
     "data-page-id",
