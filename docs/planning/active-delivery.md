@@ -55,6 +55,12 @@ Playwright test carrying its stable flow ID.
       The Phase 6 aggregate run failed once before passing its one bounded exact
       reproduction; keep this isolated from feature candidates and revisit at a
       later reliability checkpoint.
+- [ ] **AI-mediated CRM data interaction is deferred.** It is not part of the
+      active delivery queue or a prerequisite for core, optional-platform, or
+      production-readiness completion. Revisit it only when the product is ready
+      to define how a user should interact with CRM data through AI; DG-08 must
+      then establish the product, privacy, authorization, safety, evaluation,
+      and persistence contract before implementation begins.
 - [x] **REL-002 — Isolate governance PostgreSQL legal-document fixtures.**
   - [x] Remove the legal documents, acceptances, and audits owned by
         `GOVERNANCE-001` after its assertions complete.
@@ -297,22 +303,7 @@ contract applies. Disabled modules must not break core CRM workflows.
 - [ ] **Phase 10 accepted:** every enabled Slice 8 module independently passes
       its flows and can be disabled without breaking the core product.
 
-## Phase 11 — AI Assistance
-
-- [ ] **APP-011A — Accept the AI product/privacy contract before production AI
-      code.**
-  - [ ] Choose the user outcome, permissions, selected-data boundary, provider
-        retention policy, confirmation rules, failure behavior, evaluation set,
-        page/flow IDs, and any persistence needs.
-- [ ] **APP-011B — First bounded AI behavior.**
-  - [ ] Deliver a user-requested draft or summary over explicitly selected
-        person data through a provider-neutral adapter.
-  - [ ] Prove tenant isolation, safe failure, evaluation behavior, and that no
-        autonomous mutation or message send occurs.
-- [ ] **Phase 11 accepted:** only capabilities covered by the accepted AI
-      contract ship; AI is not a prerequisite for core CRM completion.
-
-## Phase 12 — Production Readiness
+## Phase 11 — Production Readiness
 
 Production readiness is independent of feature-completion labels and applies to
 a named environment.
@@ -324,6 +315,6 @@ a named environment.
 - [ ] **OPS-001D — Secrets, provider configuration, incident and release
       runbooks.**
 - [ ] **OPS-001E — Deployment rollout, rollback, and post-deploy verification.**
-- [ ] **Phase 12 accepted:** the named environment independently passes every
+- [ ] **Phase 11 accepted:** the named environment independently passes every
       required security, privacy, accessibility, performance, observability,
       backup, restore, migration, rollout, rollback, and operational proof.
