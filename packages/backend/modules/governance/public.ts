@@ -22,3 +22,12 @@ export { PostgresFileAudit } from "./adapters/postgres/file_audit.ts";
 export { PostgresGiftAudit } from "./adapters/postgres/gift_audit.ts";
 export { PostgresJournalAudit } from "./adapters/postgres/journal_audit.ts";
 export { PostgresReminderAudit } from "./adapters/postgres/reminder_audit.ts";
+export {
+  createLegalAcceptance,
+  type LegalAcceptance,
+  type LegalAcceptanceDependencies,
+  type LegalAcceptanceRepository,
+  type LegalActor,
+  type LegalDocument,
+} from "./application/legal_acceptance.ts";
+export { PostgresLegalAcceptanceRepository } from "./adapters/postgres/legal_acceptance_repository.ts";

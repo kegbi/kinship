@@ -616,3 +616,23 @@ footer p {
     scroll-behavior: auto;
   }
 }
+
+.legal-page {
+  margin-inline: auto;
+  max-width: 52rem;
+  padding-block: 4rem 6rem;
+}
+
+.legal-page h1 {
+  font-size: 2.5rem;
+  margin-block: 0.75rem;
+}
+
+.legal-document {
+  border-block: 1px solid #d7cec0;
+  line-height: 1.75;
+  margin-block-start: 2rem;
+  overflow-wrap: anywhere;
+  padding-block: 2rem;
+  white-space: pre-wrap;
+}

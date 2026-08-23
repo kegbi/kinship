@@ -12,7 +12,7 @@ prerequisite queues.
 
 - Current phase: **Phase 8 — Journal, Governance, And Complete Person
   Workspace**
-- Current leaf: **APP-008B / `GOVERNANCE-001` — Legal-document acceptance**
+- Current leaf: **APP-008C / `PEOPLE-003` — Complete person workspace**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -234,8 +234,8 @@ runnable behavior cannot work without them.
 - [x] **APP-008A / `JOURNAL-001` — Personal journal.**
   - [x] Deliver posts, day ratings, ordered items, CRUD behavior, and accepted
         journal routes/states.
-- [ ] **APP-008B / `GOVERNANCE-001` — Legal-document acceptance.**
-  - [ ] Deliver versioned review/acceptance behavior and required navigation or
+- [x] **APP-008B / `GOVERNANCE-001` — Legal-document acceptance.**
+  - [x] Deliver versioned review/acceptance behavior and required navigation or
         access interruption states.
 - [ ] **APP-008C / `PEOPLE-003` — Complete person workspace.**
   - [ ] Compose every enabled core person section through approved read models,

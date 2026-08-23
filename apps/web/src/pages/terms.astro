@@ -1,0 +1,18 @@
+---
+import PublicLayout from "../layouts/PublicLayout.astro";
+export const prerender = true;
+---
+
+<PublicLayout currentPath="/terms" description="Review the current Kinship terms of service." pageId="legal.terms" title="Terms of service — Kinship">
+  <main id="main-content" class="legal-page" tabindex="-1">
+    <p data-legal-state role="status" aria-live="polite">Loading terms…</p>
+    <h1 data-legal-title>Terms of service</h1>
+    <p data-legal-version></p>
+    <article data-legal-content class="legal-document"></article>
+  </main>
+</PublicLayout>
+
+<script>
+  import { mountPublicLegal } from "../lib/legal.ts";
+  void mountPublicLegal("terms");
+</script>

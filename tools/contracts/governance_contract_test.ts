@@ -95,6 +95,33 @@ Deno.test("GOVERNANCE-002 contract publishes only bounded redacted audit reads",
 });
 import { buildOpenApiDocument } from "./generate.ts";
 import {
+  acceptLegalDocument,
+  getLegalRequirements,
+  getPublicLegalDocument,
   listPersonAudit,
   listWorkspaceAudit,
 } from "../../packages/contracts/generated/auth-client.ts";
+
+Deno.test("GOVERNANCE-001 contract publishes immutable version review and acceptance", () => {
+  const document = buildOpenApiDocument() as unknown as {
+    readonly paths: Readonly<Record<string, Record<string, unknown>>>;
+    readonly components: {
+      readonly schemas: Readonly<Record<string, unknown>>;
+    };
+  };
+  assert(
+    document.paths["/api/v1/legal-documents/{documentType}"]?.get &&
+      document.paths["/api/v1/legal-requirements"]?.get &&
+      document.paths["/api/v1/legal-acceptances"]?.post,
+    "version review or acceptance operation is missing",
+  );
+  assert(
+    JSON.stringify(document.components.schemas.LegalAccepted).includes(
+      "already-accepted",
+    ) &&
+      typeof getPublicLegalDocument === "function" &&
+      typeof getLegalRequirements === "function" &&
+      typeof acceptLegalDocument === "function",
+    "immutable acceptance contract or generated client is incomplete",
+  );
+});

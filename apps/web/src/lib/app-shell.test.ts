@@ -66,6 +66,32 @@ afterEach(() => {
 });
 
 describe("APP-002C protected application shell", () => {
+  it("GOVERNANCE-001 interrupts protected navigation for a required version", async () => {
+    shellMarkup();
+    history.replaceState({}, "", "/app/journal?view=recent");
+    document.body.dataset.pageId = "journal.index";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        ...(session() as Record<string, unknown>),
+        requiredLegalDocuments: [{
+          content: "Exact terms",
+          documentType: "terms",
+          id: "00000000-0000-4000-8000-000000000101",
+          version: "2026-08",
+        }],
+      })),
+    );
+    const navigate = vi.fn();
+
+    await mountApplicationShell(navigate);
+
+    expect(navigate).toHaveBeenCalledWith(
+      "/app/compliance?next=%2Fapp%2Fjournal%3Fview%3Drecent",
+    );
+    expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
+      .toBe(true);
+  });
   it.each(["people.audit", "settings.audit"])(
     "renders an audit-specific whole-route forbidden state for members on %s",
     async (pageId) => {
