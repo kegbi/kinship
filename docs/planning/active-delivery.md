@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 9 — Import, Export, And Destructive Data Lifecycle**
-- Current leaf: **APP-009A / `IMPORT-001` — Safe Monica import**
+- Current leaf: **APP-009B / `EXPORT-001` — Portable exports**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -254,8 +254,8 @@ runnable behavior cannot work without them.
 
 ## Phase 9 — Import, Export, And Destructive Data Lifecycle
 
-- [ ] **APP-009A / `IMPORT-001` — Safe Monica import.**
-  - [ ] Deliver format detection, bounded staging, mapping, dry-run reports,
+- [x] **APP-009A / `IMPORT-001` — Safe Monica import.**
+  - [x] Deliver format detection, bounded staging, mapping, dry-run reports,
         attachment manifests, atomic commit, idempotent rerun, and explicit
         legacy-credential non-activation.
 - [ ] **APP-009B / `EXPORT-001` — Portable exports.**

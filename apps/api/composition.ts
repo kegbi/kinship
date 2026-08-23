@@ -47,6 +47,7 @@ import {
   PostgresFileAudit,
   PostgresGiftAudit,
   PostgresImportantDateAudit,
+  PostgresImportAudit,
   PostgresInteractionAudit,
   PostgresInvitationAudit,
   PostgresJournalAudit,
@@ -91,6 +92,7 @@ import {
   createProfileFactManagement,
   type ImportantDateManagement,
   PostgresImportantDateRepository,
+  PostgresPeopleImportBoundary,
   PostgresPeoplePersonalizationReferences,
   PostgresPeopleRepository,
   PostgresPeopleTransaction,
@@ -189,6 +191,7 @@ import { createPlanningRoutes } from "./planning.ts";
 import { createFileRoutes } from "./files.ts";
 import { createGiftRoutes } from "./gifts.ts";
 import { createJournalRoutes } from "./journal.ts";
+import { createImportRoutes } from "./imports.ts";
 import {
   createJournalTimeline,
   type JournalTimeline,
@@ -202,6 +205,7 @@ import {
   type ObjectStorage,
   PERSON_FILE_MAX_BYTES,
   type PersonFileManagement,
+  PostgresFileImportBoundary,
   PostgresFileMetadataRepository,
   PostgresGiftAttachmentBoundary,
   PostgresStorageSettingsRepository,
@@ -217,6 +221,12 @@ import {
 } from "../../packages/backend/modules/gifts/public.ts";
 import { Client as MinioClient } from "minio";
 import { resolveObjectStorageConfiguration } from "./file_storage_config.ts";
+import {
+  createImportManagement,
+  type ImportManagement,
+  PostgresImportRepository,
+  PostgresImportTransaction,
+} from "../../packages/backend/modules/import-export/public.ts";
 
 export interface ApiServices extends RegistrationHttpServices {
   readonly activityReport?: ActivityReport;
@@ -227,6 +237,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly gifts?: GiftManagement;
   readonly journal?: JournalManagement;
   readonly journalTimeline?: JournalTimeline;
+  readonly imports?: ImportManagement;
   readonly legal?: LegalAcceptance;
   readonly invitations?: InvitationHttpServices["invitations"];
   readonly importantDates?: ImportantDateManagement;
@@ -392,6 +403,16 @@ export function createApiApp(services?: ApiServices): Hono {
             journal: services.journal,
             protectedSessions: services.protectedSessions,
             timeline: services.journalTimeline,
+          }),
+        );
+      }
+      if (services.imports) {
+        api.route(
+          "/",
+          createImportRoutes({
+            browserSecurity: services.browserSecurity,
+            imports: services.imports,
+            protectedSessions: services.protectedSessions,
           }),
         );
       }
@@ -725,6 +746,14 @@ export function createConfiguredApiApp(
     repository: new PostgresJournalRepository(),
     transaction: peopleTransaction,
   });
+  const imports = createImportManagement({
+    audit: new PostgresImportAudit(),
+    files: new PostgresFileImportBoundary(),
+    ids: { next: () => ids.create() },
+    people: new PostgresPeopleImportBoundary(),
+    repository: new PostgresImportRepository(connection.db),
+    transaction: new PostgresImportTransaction(connection.db),
+  });
   const peopleRepository = new PostgresPeopleRepository();
   const peopleManagement = createPeopleManagement({
     audit: new PostgresPersonCreatedAudit(),
@@ -865,6 +894,7 @@ export function createConfiguredApiApp(
     hasher,
     invitations,
     importantDates,
+    imports,
     interactions,
     journal,
     journalTimeline,

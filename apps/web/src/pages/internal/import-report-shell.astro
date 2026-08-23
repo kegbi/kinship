@@ -1,0 +1,13 @@
+---
+import ApplicationLayout from "../../layouts/ApplicationLayout.astro";
+export const prerender = true;
+---
+<ApplicationLayout current="settings" description="Review a Monica import report." pageId="settings.import-report" title="Import report — Kinship">
+  <main id="main-content" class="page-frame settings-page import-page" tabindex="-1" data-requires-workspace-admin data-import-report-page>
+    <header class="settings-heading"><div><p class="eyebrow">Data settings</p><h1>Import report</h1></div><a class="button-link secondary-link" href="/app/settings/import">Import history</a></header>
+    <p data-import-state class="section-state" role="status" aria-live="polite">Loading import report…</p>
+    <button data-import-retry class="button-secondary" type="button" hidden>Retry</button>
+    <section data-import-report hidden aria-labelledby="import-report-heading"><h2 id="import-report-heading">Summary</h2><p data-import-status></p><dl class="import-counts"><div><dt>Contacts</dt><dd data-import-contacts></dd></div><div><dt>Orphans</dt><dd data-import-orphans></dd></div><div><dt>Missing files</dt><dd data-import-missing></dd></div><div><dt>Legacy identities discarded</dt><dd data-import-credentials></dd></div><div><dt>Unsupported records</dt><dd data-import-unsupported></dd></div></dl><ul data-import-diagnostics></ul></section>
+  </main>
+</ApplicationLayout>
+<script>import { mountImports } from "../../lib/imports.ts"; void mountImports();</script>

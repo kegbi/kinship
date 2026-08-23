@@ -632,6 +632,7 @@ flows:
 
   - id: IMPORT-001
     title: Import Monica data safely and idempotently
+    deliveryStatus: delivered
     priority: P0
     actor: data-admin
     trigger: The administrator uploads a supported Monica export.
@@ -667,7 +668,7 @@ flows:
     ]
     permissions: [data.import]
     testLayers: [unit, integration, schema, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-009a.spec.ts] }
 
   - id: EXPORT-001
     title: Export workspace or person data
