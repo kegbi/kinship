@@ -1,0 +1,514 @@
+import postgres from "postgres";
+import {
+  CapturedVerificationMail,
+  createConfiguredApiApp,
+} from "../../apps/api/composition.ts";
+import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
+import type { ObjectStorage } from "../../packages/backend/modules/files/public.ts";
+import {
+  createObjectStorageRequestTransport,
+  S3CompatibleObjectStorage,
+} from "../../packages/backend/modules/files/public.ts";
+import { Client as MinioClient } from "minio";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+
+function assert(condition: unknown, message: string): asserts condition {
+  if (!condition) throw new Error(message);
+}
+
+class CapturedObjectStorage implements ObjectStorage {
+  readonly bucket = "captured-files";
+  readonly objects = new Map<string, Uint8Array>();
+  readonly provider = "captured";
+  failRemove = false;
+  putCalls = 0;
+  blockedKey: string | undefined;
+  #entered?: () => void;
+  #release?: () => void;
+  #released?: Promise<void>;
+
+  blockRemoval(key: string): Promise<void> {
+    this.blockedKey = key;
+    this.#released = new Promise((resolve) => this.#release = resolve);
+    return new Promise((resolve) => this.#entered = resolve);
+  }
+
+  releaseRemoval(): void {
+    this.#release?.();
+  }
+
+  get(command: { readonly key: string }): Promise<Uint8Array | undefined> {
+    return Promise.resolve(this.objects.get(command.key));
+  }
+  put(
+    command: { readonly bytes: Uint8Array; readonly key: string },
+  ): Promise<void> {
+    this.putCalls += 1;
+    this.objects.set(command.key, command.bytes.slice());
+    return Promise.resolve();
+  }
+  async remove(command: { readonly key: string }): Promise<void> {
+    if (this.failRemove) {
+      throw new Error("object store unavailable");
+    }
+    if (command.key === this.blockedKey) {
+      this.#entered?.();
+      await this.#released;
+      this.blockedKey = undefined;
+    }
+    this.objects.delete(command.key);
+  }
+}
+
+const databaseUrl = Deno.env.get("DATABASE_URL");
+if (!databaseUrl) throw new Error("DATABASE_URL is required");
+const sql = postgres(databaseUrl, { max: 2, onnotice: () => undefined });
+const mail = new CapturedVerificationMail();
+const storage = new CapturedObjectStorage();
+const configured = createConfiguredApiApp(
+  databaseUrl,
+  mail,
+  browserSecurityPolicy("test", "http://localhost"),
+  undefined,
+  undefined,
+  undefined,
+  storage,
+);
+const password = "correct horse battery staple";
+
+interface Fixture {
+  readonly cookie: string;
+  readonly workspaceId: string;
+}
+
+async function register(
+  email: string,
+  workspaceName: string,
+): Promise<Fixture> {
+  const registration = await configured.app.request(
+    "http://localhost/api/v1/registrations",
+    {
+      body: JSON.stringify({
+        email,
+        firstName: "File",
+        lastName: "Tester",
+        password,
+        workspaceName,
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+  );
+  assert(registration.status === 202, "file fixture registers");
+  const token = mail.latestToken(email);
+  assert(token, "verification token captured");
+  assert(
+    (await configured.app.request(
+      "http://localhost/api/v1/email-verifications",
+      {
+        body: JSON.stringify({ token }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      },
+    )).status === 200,
+    "file fixture verifies",
+  );
+  const signed = await configured.app.request(
+    "http://localhost/api/v1/sessions",
+    {
+      body: JSON.stringify({ email, password }),
+      headers: {
+        "content-type": "application/json",
+        origin: "http://localhost",
+      },
+      method: "POST",
+    },
+  );
+  const body = await signed.json() as {
+    readonly workspace: { readonly id: string };
+  };
+  const cookie = signed.headers.get("set-cookie")?.split(";")[0];
+  assert(signed.status === 200 && cookie, "file fixture signs in");
+  return { cookie, workspaceId: body.workspace.id };
+}
+
+async function person(fixture: Fixture, givenName: string): Promise<string> {
+  const response = await configured.app.request(
+    "http://localhost/api/v1/people",
+    {
+      body: JSON.stringify({ givenName, isPartial: false }),
+      headers: {
+        "content-type": "application/json",
+        cookie: fixture.cookie,
+        origin: "http://localhost",
+        "X-Workspace-Id": fixture.workspaceId,
+      },
+      method: "POST",
+    },
+  );
+  const body = await response.json() as {
+    readonly person: { readonly id: string };
+  };
+  assert(response.status === 201, "file person created");
+  return body.person.id;
+}
+
+function request(
+  fixture: Fixture,
+  path: string,
+  method: "DELETE" | "GET" | "POST" = "GET",
+  body?: Uint8Array,
+): Promise<Response> {
+  return Promise.resolve(configured.app.request(`http://localhost${path}`, {
+    ...(body ? { body: body.slice().buffer } : {}),
+    headers: {
+      cookie: fixture.cookie,
+      origin: "http://localhost",
+      "X-File-Kind": "document",
+      "X-File-Name": "care-plan.pdf",
+      "X-File-Title": "Care plan",
+      "X-Workspace-Id": fixture.workspaceId,
+      ...(body ? { "content-type": "application/pdf" } : {}),
+    },
+    method,
+  }));
+}
+
+Deno.test("[FILES-001] PostgreSQL and object effects stay tenant-safe and compensating", async () => {
+  const suffix = crypto.randomUUID();
+  const primary = await register(
+    `files-${suffix}@example.test`,
+    "Files primary",
+  );
+  const foreign = await register(
+    `files-foreign-${suffix}@example.test`,
+    "Files foreign",
+  );
+  const ada = await person(primary, "Ada");
+  await person(foreign, "Outsider");
+  const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]);
+
+  const uploaded = await request(
+    primary,
+    `/api/v1/people/${ada}/files`,
+    "POST",
+    pdf,
+  );
+  const uploadBody = await uploaded.json() as {
+    readonly file: { readonly fileId: string; readonly status: string };
+  };
+  assert(uploaded.status === 201, "bounded PDF uploads");
+  assert(uploadBody.file.status === "available", "clean file is available");
+  const fileId = uploadBody.file.fileId;
+  const [stored] = await sql<{
+    readonly storage_bucket: string;
+    readonly storage_key: string;
+    readonly storage_provider: string;
+  }[]>`
+    select storage_bucket, storage_key, storage_provider
+    from crm.files where id = ${fileId}::uuid
+  `;
+  assert(
+    stored && storage.objects.has(stored.storage_key),
+    "opaque object is stored",
+  );
+  assert(
+    stored.storage_bucket === storage.bucket &&
+      stored.storage_provider === storage.provider,
+    "metadata records the concrete object-store reference",
+  );
+
+  const listed = await request(primary, `/api/v1/people/${ada}/files`);
+  assert(listed.status === 200, "metadata lists on the person profile");
+  const concealed = await request(
+    foreign,
+    `/api/v1/people/${ada}/files/${fileId}/content`,
+  );
+  assert(concealed.status === 404, "foreign workspace is concealed");
+  const downloaded = await request(
+    primary,
+    `/api/v1/people/${ada}/files/${fileId}/content`,
+  );
+  assert(
+    downloaded.status === 200 &&
+      (await downloaded.arrayBuffer()).byteLength === pdf.byteLength,
+    "authorized member retrieves bytes",
+  );
+  const [readLink] = await sql<{ readonly download_count: number }[]>`
+    select download_count from crm.person_file_links
+    where person_id = ${ada}::uuid and file_id = ${fileId}::uuid
+  `;
+  assert(
+    readLink?.download_count === 1,
+    "authorized reads update link metadata",
+  );
+
+  await sql`update crm.files set status = 'quarantined' where id = ${fileId}::uuid`;
+  assert(
+    (await request(primary, `/api/v1/people/${ada}/files/${fileId}/content`))
+      .status === 423,
+    "quarantine blocks byte delivery",
+  );
+  await sql`update crm.files set status = 'available' where id = ${fileId}::uuid`;
+  storage.objects.delete(stored.storage_key);
+  assert(
+    (await request(primary, `/api/v1/people/${ada}/files/${fileId}/content`))
+      .status === 410,
+    "missing object is explicit",
+  );
+  const [missing] = await sql<
+    { readonly status: string }[]
+  >`select status from crm.files where id = ${fileId}::uuid`;
+  assert(missing?.status === "missing", "missing state persists");
+
+  const putsBeforeConcealedUpload = storage.putCalls;
+  const compensated = await request(
+    foreign,
+    `/api/v1/people/${ada}/files`,
+    "POST",
+    pdf,
+  );
+  assert(compensated.status === 404, "cross-workspace upload is concealed");
+  assert(
+    storage.putCalls === putsBeforeConcealedUpload,
+    "cross-workspace ownership is rejected before object storage",
+  );
+  assert(
+    storage.objects.size === 0,
+    "cross-workspace metadata rejection compensates bytes",
+  );
+
+  const secondUpload = await request(
+    primary,
+    `/api/v1/people/${ada}/files`,
+    "POST",
+    pdf,
+  );
+  const secondBody = await secondUpload.json() as {
+    readonly file: { readonly fileId: string };
+  };
+  storage.failRemove = true;
+  assert(
+    (await request(
+      primary,
+      `/api/v1/people/${ada}/files/${secondBody.file.fileId}`,
+      "DELETE",
+    )).status === 503,
+    "object-store remove failure is recoverable",
+  );
+  const [stillLinked] = await sql<{ readonly status: string }[]>`
+    select stored.status from crm.files stored
+    join crm.person_file_links link on link.file_id = stored.id
+    where stored.id = ${secondBody.file.fileId}::uuid and link.person_id = ${ada}::uuid
+  `;
+  assert(
+    stillLinked?.status === "available",
+    "failed remove rolls back metadata for retry",
+  );
+  storage.failRemove = false;
+  assert(
+    (await request(
+      primary,
+      `/api/v1/people/${ada}/files/${secondBody.file.fileId}`,
+      "DELETE",
+    )).status === 200,
+    "failed removal is retryable",
+  );
+
+  const removableUpload = await request(
+    primary,
+    `/api/v1/people/${ada}/files`,
+    "POST",
+    pdf,
+  );
+  const removableFileId = (await removableUpload.json() as {
+    readonly file: { readonly fileId: string };
+  }).file.fileId;
+  const [removableStored] = await sql<{ readonly storage_key: string }[]>`
+    select storage_key from crm.files where id = ${removableFileId}::uuid
+  `;
+  const entered = storage.blockRemoval(removableStored!.storage_key);
+  const firstRemoval = request(
+    primary,
+    `/api/v1/people/${ada}/files/${removableFileId}`,
+    "DELETE",
+  );
+  await entered;
+  const secondRemoval = request(
+    primary,
+    `/api/v1/people/${ada}/files/${removableFileId}`,
+    "DELETE",
+  );
+  storage.releaseRemoval();
+  const concurrentStatuses = (await Promise.all([firstRemoval, secondRemoval]))
+    .map((response) => response.status).sort();
+  assert(
+    concurrentStatuses.join(",") === "200,404" &&
+      !storage.objects.has(removableStored!.storage_key),
+    "two PostgreSQL connections yield one removal winner without resurrection",
+  );
+
+  const archivedUpload = await request(
+    primary,
+    `/api/v1/people/${ada}/files`,
+    "POST",
+    pdf,
+  );
+  const archivedFileId = (await archivedUpload.json() as {
+    readonly file: { readonly fileId: string };
+  }).file.fileId;
+  await sql`update crm.people set archived_at = now() where id = ${ada}::uuid`;
+  const archivedRemove = await request(
+    primary,
+    `/api/v1/people/${ada}/files/${archivedFileId}`,
+    "DELETE",
+  );
+  assert(archivedRemove.status === 404, "archived person files are read-only");
+
+  const audit = await sql<{ readonly action: string }[]>`
+    select action from crm.audit_events
+    where workspace_id = ${primary.workspaceId}::uuid
+      and subject_type = 'file'
+    order by occurred_at, created_at, id
+  `;
+  assert(
+    audit.some((event) => event.action === "files.file-uploaded"),
+    "upload audited",
+  );
+  assert(
+    audit.some((event) => event.action === "files.file-read"),
+    "read audited",
+  );
+  assert(
+    audit.some((event) => event.action === "files.file-removed"),
+    "remove audited",
+  );
+});
+
+Deno.test("[FILES-001] a stalled object removal aborts and rolls back for a clean retry", async () => {
+  const effects = { aborts: 0, deletes: 0 };
+  let stall = true;
+  const server = createServer((request, response) => {
+    if (request.method !== "DELETE") {
+      response.writeHead(200).end();
+      return;
+    }
+    if (!stall) {
+      effects.deletes += 1;
+      response.writeHead(204).end();
+      return;
+    }
+    let aborted = false;
+    const abort = () => {
+      if (aborted || response.writableEnded) return;
+      aborted = true;
+      effects.aborts += 1;
+      clearTimeout(delayedDelete);
+    };
+    const delayedDelete = setTimeout(() => {
+      if (aborted) return;
+      effects.deletes += 1;
+      response.writeHead(204).end();
+    }, 250);
+    request.once("aborted", abort);
+    response.once("close", abort);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const timeoutStorage = new S3CompatibleObjectStorage(
+    new MinioClient({
+      accessKey: "access",
+      endPoint: "127.0.0.1",
+      port: (server.address() as AddressInfo).port,
+      region: "us-east-1",
+      secretKey: "secret-value",
+      transport: createObjectStorageRequestTransport(false, 100),
+      useSSL: false,
+    }) as unknown as ConstructorParameters<
+      typeof S3CompatibleObjectStorage
+    >[0],
+    "timeout-files",
+  );
+  const timeoutConfigured = createConfiguredApiApp(
+    databaseUrl,
+    new CapturedVerificationMail(),
+    browserSecurityPolicy("test", "http://localhost"),
+    undefined,
+    undefined,
+    undefined,
+    timeoutStorage,
+  );
+  try {
+    const suffix = crypto.randomUUID();
+    const fixture = await register(
+      `files-timeout-${suffix}@example.test`,
+      "Files timeout",
+    );
+    const personId = await person(fixture, "Timeout");
+    const uploaded = await request(
+      fixture,
+      `/api/v1/people/${personId}/files`,
+      "POST",
+      new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+    );
+    const fileId = (await uploaded.json() as {
+      readonly file: { readonly fileId: string };
+    }).file.fileId;
+
+    const timedOut = await timeoutConfigured.app.request(
+      `http://localhost/api/v1/people/${personId}/files/${fileId}`,
+      {
+        headers: {
+          cookie: fixture.cookie,
+          origin: "http://localhost",
+          "X-Workspace-Id": fixture.workspaceId,
+        },
+        method: "DELETE",
+      },
+    );
+    assert(
+      timedOut.status === 503,
+      `stalled removal is contained (status ${timedOut.status}, aborts ${effects.aborts}, deletes ${effects.deletes})`,
+    );
+    const [afterTimeout] = await sql<{ readonly status: string }[]>`
+      select status from crm.files where id = ${fileId}::uuid
+    `;
+    assert(
+      afterTimeout?.status === "available",
+      "request timeout rolls back the removal transaction",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert(
+      effects.aborts === 1 && effects.deletes === 0,
+      "destroyed request cannot delete after transaction rollback",
+    );
+
+    stall = false;
+    const retried = await timeoutConfigured.app.request(
+      `http://localhost/api/v1/people/${personId}/files/${fileId}`,
+      {
+        headers: {
+          cookie: fixture.cookie,
+          origin: "http://localhost",
+          "X-Workspace-Id": fixture.workspaceId,
+        },
+        method: "DELETE",
+      },
+    );
+    assert(
+      retried.status === 200 && Number(effects.deletes) === 1,
+      "retry performs exactly one object deletion",
+    );
+  } finally {
+    await Promise.all([
+      timeoutConfigured.close(),
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => error ? reject(error) : resolve())
+      ),
+    ]);
+  }
+});
+
+globalThis.addEventListener("unload", () => {
+  void Promise.all([configured.close(), sql.end()]);
+});

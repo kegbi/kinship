@@ -41,6 +41,7 @@ import { SmtpVerificationMail } from "../../packages/backend/modules/workspaces/
 import {
   PostgresAuthenticationAudit,
   PostgresCommunicationAudit,
+  PostgresFileAudit,
   PostgresImportantDateAudit,
   PostgresInteractionAudit,
   PostgresInvitationAudit,
@@ -170,11 +171,26 @@ import {
 } from "../../packages/backend/read-models/audit-history/public.ts";
 import { createGovernanceRoutes } from "./governance.ts";
 import { createPlanningRoutes } from "./planning.ts";
+import { createFileRoutes } from "./files.ts";
+import {
+  createObjectStorageRequestTransport,
+  createPersonFileManagement,
+  DeclaredMediaScanner,
+  type ObjectStorage,
+  type PersonFileManagement,
+  PostgresFileMetadataRepository,
+  S3CompatibleObjectStorage,
+  WebCryptoFileIdentifiers,
+  WebCryptoObjectKeys,
+} from "../../packages/backend/modules/files/public.ts";
+import { Client as MinioClient } from "minio";
+import { resolveObjectStorageConfiguration } from "./file_storage_config.ts";
 
 export interface ApiServices extends RegistrationHttpServices {
   readonly activityReport?: ActivityReport;
   readonly auditHistory?: AuditHistory;
   readonly directory?: PeopleDirectory;
+  readonly files?: PersonFileManagement;
   readonly invitations?: InvitationHttpServices["invitations"];
   readonly importantDates?: ImportantDateManagement;
   readonly interactions?: InteractionManagement & CommunicationManagement;
@@ -297,6 +313,16 @@ export function createApiApp(services?: ApiServices): Hono {
           }),
         );
       }
+      if (services.files) {
+        api.route(
+          "/",
+          createFileRoutes({
+            browserSecurity: services.browserSecurity,
+            files: services.files,
+            protectedSessions: services.protectedSessions,
+          }),
+        );
+      }
     }
     if (
       services.directory && services.people && services.profile &&
@@ -390,6 +416,7 @@ export function createConfiguredApiApp(
   mfaKeysetOverride?: MfaEncryptionKeyset,
   subjectKeysetOverride?: AuthenticationSubjectKeyset,
   responseEqualizerOverride?: AuthenticationResponseEqualizer,
+  objectStorageOverride?: ObjectStorage,
 ): { readonly app: Hono; readonly close: () => Promise<void> } {
   const random = new WebCryptoRandomSource();
   const tokens = new SecureTokenService(random);
@@ -567,6 +594,35 @@ export function createConfiguredApiApp(
     transaction,
   });
   const peopleTransaction = new PostgresPeopleTransaction(connection.db);
+  const objectStorage = objectStorageOverride ?? (() => {
+    const configuration = resolveObjectStorageConfiguration(Deno.env);
+    return new S3CompatibleObjectStorage(
+      new MinioClient({
+        accessKey: configuration.accessKey,
+        endPoint: configuration.host,
+        port: configuration.port,
+        secretKey: configuration.secretKey,
+        transport: createObjectStorageRequestTransport(
+          configuration.useSsl,
+          configuration.requestTimeoutMs,
+        ),
+        useSSL: configuration.useSsl,
+      }) as unknown as ConstructorParameters<
+        typeof S3CompatibleObjectStorage
+      >[0],
+      configuration.bucket,
+    );
+  })();
+  const files = createPersonFileManagement({
+    audit: new PostgresFileAudit(),
+    clock,
+    ids: new WebCryptoFileIdentifiers(),
+    keys: new WebCryptoObjectKeys(),
+    repository: new PostgresFileMetadataRepository(),
+    scanner: new DeclaredMediaScanner(),
+    storage: objectStorage,
+    transaction: peopleTransaction,
+  });
   const peopleRepository = new PostgresPeopleRepository();
   const peopleManagement = createPeopleManagement({
     audit: new PostgresPersonCreatedAudit(),
@@ -693,6 +749,7 @@ export function createConfiguredApiApp(
     auditHistory,
     browserSecurity: policy,
     directory,
+    files,
     hasher,
     invitations,
     importantDates,
