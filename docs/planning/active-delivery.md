@@ -1,6 +1,6 @@
 # Active Application Delivery Plan
 
-Status: Accepted execution ledger, revised 2026-08-14
+Status: Accepted execution ledger, revised 2026-08-24
 
 This is the authoritative delivery checklist. Select the first unchecked leaf in
 the current phase and deliver it as a complete vertical behavior. The larger
@@ -10,8 +10,9 @@ prerequisite queues.
 
 ## Cursor
 
-- Current phase: **Phase 9 — Import, Export, And Destructive Data Lifecycle**
-- Current leaf: **PERF-001 — MVP capacity profile**
+- Current phase: **Phase 10 — Optional Platform Modules**
+- Current leaf: **APP-010A / `API-001` — API tokens and approved programmatic
+  access**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -290,10 +291,17 @@ runnable behavior cannot work without them.
 - [x] **REL-008 — Keep the production Compose worker alive.**
   - [x] Grant the existing worker its exact dependency environment authority and
         prove reminder/cadence delivery through the production-like boundary.
-- [ ] **PERF-001 — Prove the accepted MVP capacity profile.**
-  - [ ] Measure the real Compose-backed page, API, query, worker, import, and
-        export boundaries at the accepted dataset guardrails.
-- [ ] **Phase 9 accepted:** Slice 7 P0/P1 data-lifecycle flows pass and the
+- [x] **PERF-001 — Accept the DG-10 MVP capacity profile.**
+  - [x] Fix the initial one-workspace, one-user/three-user-burst assumptions,
+        representative datasets, desktop/browser baseline, and functional
+        page/API ceilings.
+  - [x] Keep large files represented by metadata/manifests and require heavy
+        import/export work to expose durable visible status and resume/retry
+        behavior.
+  - [x] Add one blocking regression gate for the delivered
+        page/API/query/worker/import/export boundaries without claiming a
+        production SLO.
+- [x] **Phase 9 accepted:** Slice 7 P0/P1 data-lifecycle flows pass and the
       catalog-derived proposed-MVP/core-feature-complete criteria are satisfied.
 
 ## Phase 10 — Optional Platform Modules
