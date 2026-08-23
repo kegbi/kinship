@@ -1102,6 +1102,95 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
         },
       },
+      "/api/v1/legal-documents/{documentType}": {
+        get: {
+          operationId: "getPublicLegalDocument",
+          parameters: [{
+            name: "documentType",
+            in: "path",
+            required: true,
+            schema: { type: "string", enum: ["privacy", "terms"] },
+          }],
+          responses: {
+            "200": {
+              description: "Exact active public legal-document version",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/LegalDocumentReady" },
+                },
+              },
+            },
+            "404": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/legal-requirements": {
+        get: {
+          operationId: "getLegalRequirements",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter],
+          responses: {
+            "200": {
+              description:
+                "Unaccepted active versions for the current identity and workspace",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/LegalRequirements" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/legal-acceptances": {
+        post: {
+          operationId: "acceptLegalDocument",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["documentId"],
+                  properties: {
+                    documentId: { type: "string", format: "uuid" },
+                  },
+                  additionalProperties: false,
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Previously recorded immutable acceptance",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/LegalAccepted" },
+                },
+              },
+            },
+            "201": {
+              description: "Immutable acceptance recorded",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/LegalAccepted" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
       "/api/v1/people/{personId}/audit": {
         get: {
           operationId: "listPersonAudit",
@@ -3375,6 +3464,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             "workspace",
             "member",
             "workspaces",
+            "requiredLegalDocuments",
           ],
           properties: {
             status: { const: "authenticated" },
@@ -3397,6 +3487,53 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
                 $ref: "#/components/schemas/Authenticated/properties/workspace",
               },
             },
+            requiredLegalDocuments: {
+              type: "array",
+              items: { $ref: "#/components/schemas/LegalDocument" },
+            },
+          },
+          additionalProperties: false,
+        },
+        LegalDocument: {
+          type: "object",
+          required: ["content", "documentType", "id", "version"],
+          properties: {
+            content: { type: "string" },
+            documentType: { type: "string" },
+            id: { type: "string", format: "uuid" },
+            publishedAt: { type: "string", format: "date-time" },
+            version: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        LegalDocumentReady: {
+          type: "object",
+          required: ["document", "status"],
+          properties: {
+            document: { $ref: "#/components/schemas/LegalDocument" },
+            status: { const: "ready" },
+          },
+          additionalProperties: false,
+        },
+        LegalRequirements: {
+          type: "object",
+          required: ["documents", "status"],
+          properties: {
+            documents: {
+              type: "array",
+              items: { $ref: "#/components/schemas/LegalDocument" },
+            },
+            status: { const: "ready" },
+          },
+          additionalProperties: false,
+        },
+        LegalAccepted: {
+          type: "object",
+          required: ["acceptedAt", "documentId", "status"],
+          properties: {
+            acceptedAt: { type: "string", format: "date-time" },
+            documentId: { type: "string", format: "uuid" },
+            status: { enum: ["accepted", "already-accepted"] },
           },
           additionalProperties: false,
         },
@@ -7878,11 +8015,39 @@ export function deleteJournalItem(itemId: string, workspaceId?: string): Promise
 `;
 }
 
+function renderGovernanceClient(): string {
+  return `
+export interface LegalDocument {
+  readonly content: string;
+  readonly documentType: string;
+  readonly id: string;
+  readonly publishedAt?: string;
+  readonly version: string;
+}
+
+export interface SessionContext {
+  readonly requiredLegalDocuments: readonly LegalDocument[];
+}
+
+export function getPublicLegalDocument(documentType: "privacy" | "terms"): Promise<ApiResult<{ readonly document: LegalDocument; readonly status: "ready" }>> {
+  return request(\`/api/v1/legal-documents/\${documentType}\`);
+}
+
+export function getLegalRequirements(workspaceId?: string): Promise<ApiResult<{ readonly documents: readonly LegalDocument[]; readonly status: "ready" }>> {
+  return request("/api/v1/legal-requirements", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function acceptLegalDocument(documentId: string, workspaceId?: string): Promise<ApiResult<{ readonly acceptedAt: string; readonly documentId: string; readonly status: "accepted" | "already-accepted" }>> {
+  return request("/api/v1/legal-acceptances", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify({ documentId }) });
+}
+`;
+}
+
 if (import.meta.main) {
   const openApi = JSON.stringify(buildOpenApiDocument(), null, 2) + "\n";
   const client = renderGeneratedClient() + renderInvitationClient() +
     renderSettingsClient() + renderPeopleClient() + renderGiftClient() +
-    renderJournalClient();
+    renderJournalClient() + renderGovernanceClient();
   const check = Deno.args.includes("--check");
   if (check) {
     const currentOpenApi = await Deno.readTextFile(openApiPath).catch(() => "");

@@ -1482,3 +1482,27 @@ export function linkJournalActivity(activityId: string, workspaceId?: string): P
 export function deleteJournalItem(itemId: string, workspaceId?: string): Promise<ApiResult<{ readonly itemType: JournalItemType; readonly status: "deleted" }>> {
   return request(`/api/v1/journal/items/${encodeURIComponent(itemId)}`, { method: "DELETE", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
+
+export interface LegalDocument {
+  readonly content: string;
+  readonly documentType: string;
+  readonly id: string;
+  readonly publishedAt?: string;
+  readonly version: string;
+}
+
+export interface SessionContext {
+  readonly requiredLegalDocuments: readonly LegalDocument[];
+}
+
+export function getPublicLegalDocument(documentType: "privacy" | "terms"): Promise<ApiResult<{ readonly document: LegalDocument; readonly status: "ready" }>> {
+  return request(`/api/v1/legal-documents/${documentType}`);
+}
+
+export function getLegalRequirements(workspaceId?: string): Promise<ApiResult<{ readonly documents: readonly LegalDocument[]; readonly status: "ready" }>> {
+  return request("/api/v1/legal-requirements", { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function acceptLegalDocument(documentId: string, workspaceId?: string): Promise<ApiResult<{ readonly acceptedAt: string; readonly documentId: string; readonly status: "accepted" | "already-accepted" }>> {
+  return request("/api/v1/legal-acceptances", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify({ documentId }) });
+}

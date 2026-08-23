@@ -233,6 +233,15 @@ export async function mountApplicationShell(
     renderRouteForbidden(elements);
     return;
   }
+  const requiredLegalDocuments = resolved.session.requiredLegalDocuments ?? [];
+  if (
+    requiredLegalDocuments.length > 0 &&
+    document.body.dataset.pageId !== "compliance.accept"
+  ) {
+    const next = `${globalThis.location.pathname}${globalThis.location.search}`;
+    navigate(`/app/compliance?next=${encodeURIComponent(next)}`);
+    return;
+  }
   renderSession(elements, resolved.session, resolved.firstName);
   let activeWorkspaceId = resolved.session.workspace.id;
 

@@ -1,6 +1,7 @@
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import type { PasswordRecoveryFacade } from "../../packages/backend/modules/identity/public.ts";
+import type { LegalAcceptance } from "../../packages/backend/modules/governance/public.ts";
 import {
   type AuthenticationRequestStatusCode,
   type createProtectedSessionCoordinator,
@@ -32,6 +33,7 @@ type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
 export interface AuthenticationHttpServices {
   readonly browserSecurity: BrowserSecurityPolicy;
+  readonly legal?: LegalAcceptance;
   readonly passwordRecovery: PasswordRecoveryFacade;
   readonly protectedSessions: ProtectedSessions;
 }
@@ -428,11 +430,35 @@ export function createAuthenticationRoutes(
         "The session or workspace access is no longer active.",
       );
     }
+    const requirements = services.legal
+      ? await services.legal.requirements({
+        memberId: resolved.memberId,
+        role: resolved.role,
+        userId: resolved.userId,
+        workspaceId: resolved.workspaceId,
+      })
+      : { documents: [], status: "ready" as const };
+    if (requirements.status !== "ready") {
+      return problem(
+        context,
+        requirements.status === "forbidden" ? 401 : 503,
+        requirements.status === "forbidden"
+          ? "session_invalid"
+          : "legal_unavailable",
+        requirements.status === "forbidden"
+          ? "Authentication required"
+          : "Legal review unavailable",
+        requirements.status === "forbidden"
+          ? "The session or workspace access is no longer active."
+          : "Required legal documents cannot be confirmed right now.",
+      );
+    }
     context.header("Cache-Control", "private, no-store");
     return context.json({
       status: "authenticated",
       principal: { userId: resolved.userId },
       member: { id: resolved.memberId, role: resolved.role },
+      requiredLegalDocuments: requirements.documents,
       workspace: { id: resolved.workspaceId, name: resolved.workspaceName },
       workspaces: resolved.accessibleWorkspaces.map((workspace) => ({
         id: workspace.workspaceId,

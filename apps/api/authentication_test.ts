@@ -179,6 +179,20 @@ Deno.test("session context exposes the active workspace and accessible switcher 
   };
   const app = createAuthenticationRoutes({
     ...base,
+    legal: {
+      accept: () => Promise.resolve({ status: "unavailable" }),
+      publicDocument: () => Promise.resolve({ status: "not-found" }),
+      requirements: () =>
+        Promise.resolve({
+          documents: [{
+            content: "Exact terms",
+            documentType: "terms",
+            id: "00000000-0000-4000-8000-000000000101",
+            version: "2026-08",
+          }],
+          status: "ready",
+        }),
+    },
     protectedSessions: {
       ...base.protectedSessions,
       resolve: () =>
@@ -212,10 +226,16 @@ Deno.test("session context exposes the active workspace and accessible switcher 
     headers: { cookie: "kinship_session=active-session-token" },
   });
   const body = await response.json() as {
+    readonly requiredLegalDocuments?: readonly { readonly id?: string }[];
     readonly workspace?: { readonly id?: string };
     readonly workspaces?: readonly { readonly id?: string }[];
   };
   assert(response.status === 200, "active session resolves");
+  assert(
+    body.requiredLegalDocuments?.[0]?.id ===
+      "00000000-0000-4000-8000-000000000101",
+    "session refresh omitted the required legal interruption",
+  );
   assert(body.workspace?.id === workspace.id, "active workspace is explicit");
   assert(
     body.workspaces?.map((item) => item.id).join(",") ===

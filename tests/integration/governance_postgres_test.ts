@@ -20,6 +20,22 @@ const configured = createConfiguredApiApp(
 );
 const password = "correct horse battery staple";
 
+async function waitForLegalDocumentLock(): Promise<void> {
+  const deadline = Date.now() + 3_000;
+  while (Date.now() < deadline) {
+    const [state] = await sql<[{ readonly waiting: boolean }]>`
+      select exists (
+        select 1 from pg_stat_activity
+        where datname = current_database()
+          and wait_event_type = 'Lock'
+          and query like '%from crm.legal_documents%for update%'
+      ) waiting`;
+    if (state?.waiting) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("acceptance did not reach the legal-document row lock");
+}
+
 interface Fixture {
   readonly cookie: string;
   readonly memberId: string;
@@ -309,6 +325,211 @@ Deno.test("GOVERNANCE-002 PostgreSQL keeps authorized audit tenant-safe, redacte
   assert(forbidden.status === 403, "ordinary member received audit history");
   await sql`update crm.workspace_members set role = 'owner'
     where id = ${owner.memberId}::uuid`;
+});
+
+Deno.test("GOVERNANCE-001 PostgreSQL serializes immutable acceptance and isolates workspace context", async () => {
+  const suffix = crypto.randomUUID();
+  const owner = await register(
+    `legal-owner-${suffix}@example.test`,
+    "Legal workspace",
+  );
+  const outsider = await register(
+    `legal-outsider-${suffix}@example.test`,
+    "Other legal workspace",
+  );
+  const firstDocumentId = crypto.randomUUID();
+  await sql`insert into crm.legal_documents
+    (id, document_type, version, content, published_at, is_active)
+    values (${firstDocumentId}::uuid, 'terms', '2026-08',
+      'Exact terms version one', now() - interval '1 minute', true)`;
+
+  const publicDocument = await configured.app.request(
+    "http://localhost/api/v1/legal-documents/terms",
+  );
+  const absentPublicDocument = await configured.app.request(
+    "http://localhost/api/v1/legal-documents/privacy",
+  );
+  assert(
+    publicDocument.status === 200 && absentPublicDocument.status === 404,
+    "active and absent public legal versions were not distinguished",
+  );
+
+  const pending = await configured.app.request(
+    "http://localhost/api/v1/session",
+    {
+      headers: {
+        cookie: owner.cookie,
+        "X-Workspace-Id": owner.workspaceId,
+      },
+    },
+  );
+  const pendingBody = await pending.json() as {
+    readonly requiredLegalDocuments?: readonly { readonly id: string }[];
+  };
+  assert(
+    pending.status === 200 &&
+      pendingBody.requiredLegalDocuments?.[0]?.id === firstDocumentId,
+    "active version did not interrupt the selected workspace",
+  );
+  const interrupted = await configured.app.request(
+    "http://localhost/api/v1/people?limit=1",
+    { headers: { cookie: owner.cookie } },
+  );
+  assert(
+    interrupted.status === 403,
+    "pending legal acceptance did not block a direct protected API call",
+  );
+
+  const accept = () =>
+    configured.app.request(
+      "http://localhost/api/v1/legal-acceptances",
+      {
+        body: JSON.stringify({ documentId: firstDocumentId }),
+        headers: {
+          "content-type": "application/json",
+          cookie: owner.cookie,
+          origin: "http://localhost",
+          "X-Kinship-Client-Address": "2001:db8::42",
+          "X-Workspace-Id": owner.workspaceId,
+        },
+        method: "POST",
+      },
+    );
+  const concurrent = await Promise.all([accept(), accept()]);
+  assert(
+    concurrent.map((response) => response.status).sort().join(",") ===
+      "200,201",
+    "concurrent acceptance was not serialized into accepted plus immutable replay",
+  );
+  const [recorded] = await sql<
+    [{
+      readonly acceptances: number;
+      readonly audits: number;
+      readonly ip_address: string;
+      readonly user_id: string;
+    }]
+  >`select count(*)::int acceptances,
+      min(acceptance.user_id::text) user_id,
+      min(host(acceptance.ip_address)) ip_address,
+      (select count(*)::int from crm.audit_events audit
+        where audit.workspace_id = ${owner.workspaceId}::uuid
+          and audit.actor_member_id = ${owner.memberId}::uuid
+          and audit.subject_type = 'legal_document'
+          and audit.subject_id = ${firstDocumentId}::uuid
+          and audit.action = 'legal-document-accepted') audits
+    from crm.legal_acceptances acceptance
+    join crm.workspace_members member on member.user_id = acceptance.user_id
+      and member.workspace_id = acceptance.workspace_id
+    where acceptance.workspace_id = ${owner.workspaceId}::uuid
+      and acceptance.legal_document_id = ${firstDocumentId}::uuid`;
+  assert(
+    recorded?.acceptances === 1 && recorded.user_id &&
+      recorded.ip_address === "2001:db8::42" && recorded.audits === 1,
+    `acceptance was duplicated or lost identity, client, or audit attribution: ${
+      JSON.stringify(recorded)
+    }`,
+  );
+
+  const satisfied = await configured.app.request(
+    "http://localhost/api/v1/legal-requirements",
+    {
+      headers: {
+        cookie: owner.cookie,
+        "X-Workspace-Id": owner.workspaceId,
+      },
+    },
+  );
+  const satisfiedBody = await satisfied.json() as {
+    readonly documents?: readonly unknown[];
+  };
+  assert(
+    satisfied.status === 200 && satisfiedBody.documents?.length === 0,
+    "accepted version continued to interrupt access",
+  );
+  const continuedAccess = await configured.app.request(
+    "http://localhost/api/v1/people?limit=1",
+    { headers: { cookie: owner.cookie } },
+  );
+  assert(
+    continuedAccess.status === 200,
+    "accepted version did not restore direct protected API access",
+  );
+
+  const secondDocumentId = crypto.randomUUID();
+  let releasePublication: () => void = () => {};
+  let publicationLocked: () => void = () => {};
+  const release = new Promise<void>((resolve) => {
+    releasePublication = resolve;
+  });
+  const locked = new Promise<void>((resolve) => {
+    publicationLocked = resolve;
+  });
+  const publication = sql.begin(async (transaction) => {
+    await transaction`update crm.legal_documents set is_active = false
+      where id = ${firstDocumentId}::uuid`;
+    publicationLocked();
+    await Promise.race([
+      release,
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("publication coordination timed out")),
+          3_000,
+        )
+      ),
+    ]);
+    await transaction`insert into crm.legal_documents
+      (id, document_type, version, content, published_at, is_active)
+      values (${secondDocumentId}::uuid, 'terms', '2026-09',
+        'Exact terms version two', now() - interval '1 minute', true)`;
+  });
+  await locked;
+  const racingAcceptance = Promise.resolve(accept());
+  try {
+    await waitForLegalDocumentLock();
+  } finally {
+    releasePublication();
+  }
+  await publication;
+  const stale = await Promise.race([
+    racingAcceptance,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("racing acceptance timed out")), 3_000)
+    ),
+  ]);
+  assert(
+    stale.status === 409,
+    "acceptance did not serialize with active-version publication",
+  );
+  const [afterRace] = await sql<
+    [{ readonly acceptances: number; readonly audits: number }]
+  >`select
+      (select count(*)::int from crm.legal_acceptances
+        where legal_document_id = ${firstDocumentId}::uuid) acceptances,
+      (select count(*)::int from crm.audit_events
+        where subject_id = ${firstDocumentId}::uuid
+          and action = 'legal-document-accepted') audits`;
+  assert(
+    afterRace?.acceptances === 1 && afterRace.audits === 1,
+    "supersede race duplicated acceptance or audit effect",
+  );
+
+  const forgedWorkspace = await configured.app.request(
+    "http://localhost/api/v1/legal-acceptances",
+    {
+      body: JSON.stringify({ documentId: secondDocumentId }),
+      headers: {
+        "content-type": "application/json",
+        cookie: owner.cookie,
+        origin: "http://localhost",
+        "X-Workspace-Id": outsider.workspaceId,
+      },
+      method: "POST",
+    },
+  );
+  assert(
+    forgedWorkspace.status === 401,
+    "foreign workspace context was accepted for the authenticated identity",
+  );
 });
 
 Deno.test({

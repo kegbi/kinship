@@ -1,0 +1,26 @@
+---
+import ApplicationLayout from "../../layouts/ApplicationLayout.astro";
+export const prerender = false;
+---
+
+<ApplicationLayout current="today" description="Review and accept required legal document versions." pageId="compliance.accept" title="Required legal review — Kinship">
+  <main id="main-content" class="page-frame compliance-page" tabindex="-1">
+    <p data-compliance-state class="section-state" role="status" aria-live="polite">Checking required legal documents…</p>
+    <section data-compliance-review hidden>
+      <p data-compliance-kind class="eyebrow"></p>
+      <h1 data-compliance-title>Required legal review</h1>
+      <p data-compliance-version></p>
+      <article data-compliance-content class="legal-document"></article>
+      <label class="checkbox-row"><input data-compliance-confirm type="checkbox" /> I have reviewed and accept this exact version.</label>
+      <div class="form-actions">
+        <button data-compliance-accept class="button-primary" type="button" disabled>Accept and continue</button>
+        <button data-compliance-decline type="button">Not now</button>
+      </div>
+    </section>
+  </main>
+</ApplicationLayout>
+
+<script>
+  import { mountCompliance } from "../../lib/legal.ts";
+  void mountCompliance();
+</script>

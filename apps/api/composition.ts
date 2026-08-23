@@ -40,6 +40,8 @@ import {
 } from "../../packages/backend/modules/workspaces/public.ts";
 import { SmtpVerificationMail } from "../../packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail.ts";
 import {
+  createLegalAcceptance,
+  type LegalAcceptance,
   PostgresAuthenticationAudit,
   PostgresCommunicationAudit,
   PostgresFileAudit,
@@ -48,6 +50,7 @@ import {
   PostgresInteractionAudit,
   PostgresInvitationAudit,
   PostgresJournalAudit,
+  PostgresLegalAcceptanceRepository,
   PostgresPersonCreatedAudit,
   PostgresPersonLifecycleAudit,
   PostgresProfileFactAudit,
@@ -178,7 +181,10 @@ import {
   createAuditHistory,
   PostgresAuditHistoryRepository,
 } from "../../packages/backend/read-models/audit-history/public.ts";
-import { createGovernanceRoutes } from "./governance.ts";
+import {
+  createGovernanceRoutes,
+  createLegalRequirementGuard,
+} from "./governance.ts";
 import { createPlanningRoutes } from "./planning.ts";
 import { createFileRoutes } from "./files.ts";
 import { createGiftRoutes } from "./gifts.ts";
@@ -221,6 +227,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly gifts?: GiftManagement;
   readonly journal?: JournalManagement;
   readonly journalTimeline?: JournalTimeline;
+  readonly legal?: LegalAcceptance;
   readonly invitations?: InvitationHttpServices["invitations"];
   readonly importantDates?: ImportantDateManagement;
   readonly interactions?: InteractionManagement & CommunicationManagement;
@@ -310,6 +317,16 @@ export function createApiApp(services?: ApiServices): Hono {
     return context.json(HEALTH_RESPONSE);
   });
 
+  if (services?.legal && services.protectedSessions) {
+    api.use(
+      "/api/v1/*",
+      createLegalRequirementGuard({
+        legal: services.legal,
+        protectedSessions: services.protectedSessions,
+      }),
+    );
+  }
+
   if (services) {
     api.route("/", createRegistrationRoutes(services));
     if (services.passwordRecovery && services.protectedSessions) {
@@ -317,6 +334,7 @@ export function createApiApp(services?: ApiServices): Hono {
         "/",
         createAuthenticationRoutes({
           browserSecurity: services.browserSecurity,
+          ...(services.legal ? { legal: services.legal } : {}),
           passwordRecovery: services.passwordRecovery,
           protectedSessions: services.protectedSessions,
         }),
@@ -431,11 +449,17 @@ export function createApiApp(services?: ApiServices): Hono {
         }),
       );
     }
-    if (services.auditHistory && services.protectedSessions) {
+    if (
+      (services.auditHistory || services.legal) && services.protectedSessions
+    ) {
       api.route(
         "/",
         createGovernanceRoutes({
-          auditHistory: services.auditHistory,
+          ...(services.auditHistory
+            ? { auditHistory: services.auditHistory }
+            : {}),
+          browserSecurity: services.browserSecurity,
+          ...(services.legal ? { legal: services.legal } : {}),
           protectedSessions: services.protectedSessions,
         }),
       );
@@ -807,6 +831,11 @@ export function createConfiguredApiApp(
     cursorKeyset: subjectKeyset,
     repository: new PostgresAuditHistoryRepository(connection.db),
   });
+  const legal = createLegalAcceptance({
+    clock,
+    ids: { next: () => ids.create() },
+    repository: new PostgresLegalAcceptanceRepository(connection.db),
+  });
   const today = createTodayInteractions({
     repository: new PostgresTodayInteractionsRepository(connection.db),
   });
@@ -839,6 +868,7 @@ export function createConfiguredApiApp(
     interactions,
     journal,
     journalTimeline,
+    legal,
     passwordRecovery,
     people,
     profile,

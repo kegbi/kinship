@@ -740,6 +740,7 @@ flows:
 
   - id: GOVERNANCE-001
     title: Review and accept a legal document
+    deliveryStatus: delivered
     priority: P1
     actor: authenticated-person
     trigger: A required legal document has a new applicable version.
@@ -759,7 +760,7 @@ flows:
     moduleIds: [governance, identity]
     permissions: [legal.accept]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-008b.spec.ts] }
 
   - id: GOVERNANCE-002
     title: Review authorized audit history
