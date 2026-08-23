@@ -298,6 +298,7 @@ export async function mountRelationships(
           const result = await deleteRelationship(personId, relationship.id, {
             expectedUpdatedAt: relationship.updatedAt,
           }, workspaceId).catch(() => undefined);
+          if (!isCurrentMount()) return;
           if (!result || !result.ok) {
             ui.state.textContent = result && !result.ok
               ? result.problem.detail
@@ -306,6 +307,7 @@ export async function mountRelationships(
             return;
           }
           await load();
+          if (!isCurrentMount()) return;
           if (
             listState === "ready" && currentStatus === "ready" &&
             typeState === "ready"
