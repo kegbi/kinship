@@ -55,6 +55,11 @@ Playwright test carrying its stable flow ID.
       The Phase 6 aggregate run failed once before passing its one bounded exact
       reproduction; keep this isolated from feature candidates and revisit at a
       later reliability checkpoint.
+- [x] **REL-002 — Isolate governance PostgreSQL legal-document fixtures.**
+  - [x] Remove the legal documents, acceptances, and audits owned by
+        `GOVERNANCE-001` after its assertions complete.
+  - [x] Prove `GOVERNANCE-001` followed by `INTERACTION-001` on one disposable
+        database without legal-acceptance guard leakage.
 
 ## Just-In-Time Technical Capabilities
 

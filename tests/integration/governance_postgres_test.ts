@@ -36,6 +36,22 @@ async function waitForLegalDocumentLock(): Promise<void> {
   throw new Error("acceptance did not reach the legal-document row lock");
 }
 
+async function cleanupLegalDocumentFixtures(
+  documentIds: readonly string[],
+): Promise<void> {
+  await sql.begin(async (transaction) => {
+    for (const documentId of documentIds) {
+      await transaction`delete from crm.legal_acceptances
+        where legal_document_id = ${documentId}::uuid`;
+      await transaction`delete from crm.audit_events
+        where subject_type = 'legal_document'
+          and subject_id = ${documentId}::uuid`;
+      await transaction`delete from crm.legal_documents
+        where id = ${documentId}::uuid`;
+    }
+  });
+}
+
 interface Fixture {
   readonly cookie: string;
   readonly memberId: string;
@@ -327,7 +343,17 @@ Deno.test("GOVERNANCE-002 PostgreSQL keeps authorized audit tenant-safe, redacte
     where id = ${owner.memberId}::uuid`;
 });
 
-Deno.test("GOVERNANCE-001 PostgreSQL serializes immutable acceptance and isolates workspace context", async () => {
+interface LegalDocumentFixtureLifecycle {
+  publication?: Promise<unknown>;
+  racingAcceptance?: Promise<unknown>;
+  releasePublication: () => void;
+}
+
+async function runLegalDocumentAcceptanceFixture(
+  firstDocumentId: string,
+  secondDocumentId: string,
+  lifecycle: LegalDocumentFixtureLifecycle,
+): Promise<void> {
   const suffix = crypto.randomUUID();
   const owner = await register(
     `legal-owner-${suffix}@example.test`,
@@ -337,7 +363,6 @@ Deno.test("GOVERNANCE-001 PostgreSQL serializes immutable acceptance and isolate
     `legal-outsider-${suffix}@example.test`,
     "Other legal workspace",
   );
-  const firstDocumentId = crypto.randomUUID();
   await sql`insert into crm.legal_documents
     (id, document_type, version, content, published_at, is_active)
     values (${firstDocumentId}::uuid, 'terms', '2026-08',
@@ -455,16 +480,14 @@ Deno.test("GOVERNANCE-001 PostgreSQL serializes immutable acceptance and isolate
     "accepted version did not restore direct protected API access",
   );
 
-  const secondDocumentId = crypto.randomUUID();
-  let releasePublication: () => void = () => {};
   let publicationLocked: () => void = () => {};
   const release = new Promise<void>((resolve) => {
-    releasePublication = resolve;
+    lifecycle.releasePublication = resolve;
   });
   const locked = new Promise<void>((resolve) => {
     publicationLocked = resolve;
   });
-  const publication = sql.begin(async (transaction) => {
+  const startedPublication = sql.begin(async (transaction) => {
     await transaction`update crm.legal_documents set is_active = false
       where id = ${firstDocumentId}::uuid`;
     publicationLocked();
@@ -482,18 +505,23 @@ Deno.test("GOVERNANCE-001 PostgreSQL serializes immutable acceptance and isolate
       values (${secondDocumentId}::uuid, 'terms', '2026-09',
         'Exact terms version two', now() - interval '1 minute', true)`;
   });
+  lifecycle.publication = Promise.resolve(startedPublication);
   await locked;
-  const racingAcceptance = Promise.resolve(accept());
+  const startedRacingAcceptance = Promise.resolve(accept());
+  lifecycle.racingAcceptance = startedRacingAcceptance;
   try {
     await waitForLegalDocumentLock();
   } finally {
-    releasePublication();
+    lifecycle.releasePublication();
   }
-  await publication;
+  await startedPublication;
   const stale = await Promise.race([
-    racingAcceptance,
+    startedRacingAcceptance,
     new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("racing acceptance timed out")), 3_000)
+      setTimeout(
+        () => reject(new Error("racing acceptance timed out")),
+        3_000,
+      )
     ),
   ]);
   assert(
@@ -530,6 +558,49 @@ Deno.test("GOVERNANCE-001 PostgreSQL serializes immutable acceptance and isolate
     forgedWorkspace.status === 401,
     "foreign workspace context was accepted for the authenticated identity",
   );
+}
+
+Deno.test("GOVERNANCE-001 PostgreSQL serializes immutable acceptance and isolates workspace context", async () => {
+  const firstDocumentId = crypto.randomUUID();
+  const secondDocumentId = crypto.randomUUID();
+  const lifecycle: LegalDocumentFixtureLifecycle = {
+    releasePublication: () => {},
+  };
+  try {
+    await runLegalDocumentAcceptanceFixture(
+      firstDocumentId,
+      secondDocumentId,
+      lifecycle,
+    );
+  } finally {
+    lifecycle.releasePublication();
+    const inFlight = [lifecycle.publication, lifecycle.racingAcceptance].filter(
+      (pending): pending is Promise<unknown> => pending !== undefined,
+    );
+    await Promise.allSettled(inFlight);
+    await cleanupLegalDocumentFixtures([firstDocumentId, secondDocumentId]);
+  }
+});
+
+Deno.test("GOVERNANCE-001 PostgreSQL cleans an interrupted legal-document fixture", async () => {
+  const documentId = crypto.randomUUID();
+  let interrupted = false;
+  try {
+    await sql`insert into crm.legal_documents
+      (id, document_type, version, content, published_at, is_active)
+      values (${documentId}::uuid, 'terms', ${documentId},
+        'Interrupted fixture', now() - interval '1 minute', true)`;
+    throw new Error("forced fixture interruption");
+  } catch (error) {
+    interrupted = error instanceof Error &&
+      error.message === "forced fixture interruption";
+  } finally {
+    await cleanupLegalDocumentFixtures([documentId]);
+  }
+  const [remaining] = await sql<[{ readonly count: number }]>`
+    select count(*)::int count from crm.legal_documents
+    where id = ${documentId}::uuid`;
+  assert(interrupted && remaining?.count === 0, "interrupted fixture leaked");
 });
 
 Deno.test({
