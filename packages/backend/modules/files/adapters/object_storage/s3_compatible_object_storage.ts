@@ -103,6 +103,16 @@ export class S3CompatibleObjectStorage implements ObjectStorage {
     }
   }
 
+  async health(): Promise<"available" | "not-initialized" | "unavailable"> {
+    try {
+      return await this.client.bucketExists(this.bucket)
+        ? "available"
+        : "not-initialized";
+    } catch {
+      return "unavailable";
+    }
+  }
+
   async put(command: {
     readonly bytes: Uint8Array;
     readonly key: string;

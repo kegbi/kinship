@@ -49,6 +49,20 @@ Deno.test("[FILES-001] generated contract exposes opaque person file operations"
     "opaque content URL generated",
   );
   assert(
+    document.paths["/api/v1/settings/storage"],
+    "workspace storage settings path generated",
+  );
+  assert(
+    typeof client.getStorageSettings === "function",
+    "storage settings client generated",
+  );
+  assert(
+    !JSON.stringify(document.components.schemas.StorageSettings).match(
+      /accessKey|secretKey|storageKey|checksum/i,
+    ),
+    "storage diagnostics omit credentials, object keys, and checksums",
+  );
+  assert(
     !JSON.stringify(document.components.schemas.PersonFile).includes(
       "storageKey",
     ),

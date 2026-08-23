@@ -41,6 +41,9 @@ class CapturedObjectStorage implements ObjectStorage {
   get(command: { readonly key: string }): Promise<Uint8Array | undefined> {
     return Promise.resolve(this.objects.get(command.key));
   }
+  health(): Promise<"available"> {
+    return Promise.resolve("available");
+  }
   put(
     command: { readonly bytes: Uint8Array; readonly key: string },
   ): Promise<void> {
@@ -186,7 +189,7 @@ Deno.test("[FILES-001] PostgreSQL and object effects stay tenant-safe and compen
     "Files foreign",
   );
   const ada = await person(primary, "Ada");
-  await person(foreign, "Outsider");
+  const outsider = await person(foreign, "Outsider");
   const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]);
 
   const uploaded = await request(
@@ -217,6 +220,75 @@ Deno.test("[FILES-001] PostgreSQL and object effects stay tenant-safe and compen
     stored.storage_bucket === storage.bucket &&
       stored.storage_provider === storage.provider,
     "metadata records the concrete object-store reference",
+  );
+
+  const diagnostics = await request(
+    primary,
+    `/api/v1/settings/storage?query=${fileId}`,
+  );
+  const diagnosticsBody = await diagnostics.json() as {
+    readonly files: readonly { readonly fileId: string }[];
+    readonly usage: { readonly available: number; readonly totalFiles: number };
+  };
+  assert(
+    diagnostics.status === 200 && diagnosticsBody.usage.totalFiles === 1 &&
+      diagnosticsBody.usage.available === 1 &&
+      diagnosticsBody.files[0]?.fileId === fileId,
+    "workspace owner receives canonical usage and bounded metadata lookup",
+  );
+  const crossWorkspaceDiagnostics = await configured.app.request(
+    "http://localhost/api/v1/settings/storage",
+    {
+      headers: {
+        cookie: primary.cookie,
+        "X-Workspace-Id": foreign.workspaceId,
+      },
+    },
+  );
+  assert(
+    crossWorkspaceDiagnostics.status === 401,
+    "inaccessible workspace storage inventory is concealed",
+  );
+  await sql`
+    update crm.workspace_members set role = 'member'
+    where workspace_id = ${primary.workspaceId}::uuid
+  `;
+  assert(
+    (await request(primary, "/api/v1/settings/storage")).status === 403,
+    "ordinary member cannot receive workspace storage diagnostics",
+  );
+  await sql`
+    update crm.workspace_members set role = 'owner'
+    where workspace_id = ${primary.workspaceId}::uuid
+  `;
+  const malformedFileId = crypto.randomUUID();
+  await sql`
+    insert into crm.files (
+      id, workspace_id, original_filename, storage_provider, storage_bucket,
+      storage_key, byte_size, mime_type, status
+    ) values (
+      ${malformedFileId}::uuid, ${primary.workspaceId}::uuid, 'neutral.pdf',
+      'captured', 'captured-files', 'objects/malformed', 1,
+      'application/pdf', 'available'
+    )
+  `;
+  await sql`
+    insert into crm.person_file_links (
+      person_id, file_id, kind, title
+    ) values (
+      ${outsider}::uuid, ${malformedFileId}::uuid, 'document',
+      'Foreign secret title'
+    )
+  `;
+  const malformedLookup = await request(
+    primary,
+    "/api/v1/settings/storage?query=foreign-secret",
+  );
+  assert(
+    malformedLookup.status === 200 &&
+      ((await malformedLookup.json()) as { readonly files: unknown[] }).files
+          .length === 0,
+    "malformed cross-workspace links cannot contribute lookup metadata",
   );
 
   const listed = await request(primary, `/api/v1/people/${ada}/files`);

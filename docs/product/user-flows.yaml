@@ -551,6 +551,7 @@ flows:
 
   - id: FILES-001
     title: Attach and retrieve a person file
+    deliveryStatus: delivered
     priority: P0
     actor: crm-writer
     trigger: The member uploads or opens a document or photo.
@@ -573,7 +574,10 @@ flows:
     moduleIds: [people, files]
     permissions: [files.write, files.read]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/app-007a.spec.ts, tests/e2e/app-007c.spec.ts],
+    }
 
   - id: GIFTS-001
     title: Manage gifts and debts for a person

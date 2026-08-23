@@ -38,6 +38,7 @@ export interface ObjectStorage {
   readonly bucket: string;
   readonly provider: string;
   get(command: { readonly key: string }): Promise<Uint8Array | undefined>;
+  health(): Promise<"available" | "not-initialized" | "unavailable">;
   put(command: {
     readonly bytes: Uint8Array;
     readonly key: string;

@@ -26,6 +26,7 @@ function fixture(options: { readonly attachmentDisappears?: boolean } = {}) {
   const debts = new Map<string, StoredDebt>();
   const attachments: string[] = [];
   const audit: string[] = [];
+  let attachmentListingAvailable = true;
   let nextId = 7;
   const dependencies: GiftManagementDependencies = {
     attachments: {
@@ -41,15 +42,20 @@ function fixture(options: { readonly attachmentDisappears?: boolean } = {}) {
           status: command.fileId === fileId ? "ready" : "not-found",
         }),
       listForGifts: (command) =>
-        Promise.resolve({
-          links: attachments.flatMap((value) => {
-            const [giftId, linkedFileId] = value.split(":");
-            return giftId && linkedFileId && command.giftIds.includes(giftId)
-              ? [{ fileId: linkedFileId, giftId }]
-              : [];
-          }),
-          status: "ready",
-        }),
+        Promise.resolve(
+          attachmentListingAvailable
+            ? {
+              links: attachments.flatMap((value) => {
+                const [giftId, linkedFileId] = value.split(":");
+                return giftId && linkedFileId &&
+                    command.giftIds.includes(giftId)
+                  ? [{ fileId: linkedFileId, giftId }]
+                  : [];
+              }),
+              status: "ready" as const,
+            }
+            : { status: "forbidden" as const },
+        ),
     },
     audit: {
       record: (command) => {
@@ -167,7 +173,14 @@ function fixture(options: { readonly attachmentDisappears?: boolean } = {}) {
       },
     },
   };
-  return { attachments, audit, management: createGiftManagement(dependencies) };
+  return {
+    attachments,
+    audit,
+    management: createGiftManagement(dependencies),
+    setAttachmentListingAvailable: (available: boolean) => {
+      attachmentListingAvailable = available;
+    },
+  };
 }
 
 Deno.test("GIFTS-001 conceals an attachment removed between validation and linking", async () => {
@@ -187,6 +200,31 @@ Deno.test("GIFTS-001 conceals an attachment removed between validation and linki
     status: "ready",
     supportedCurrencyCodes: ["EUR", "USD"],
   });
+});
+
+Deno.test("GIFTS-001 rolls back a transition when final attachment hydration is forbidden", async () => {
+  const { management, setAttachmentListingAvailable } = fixture();
+  const created = await management.createGift(actor, personId, {
+    attachmentFileId: fileId,
+    name: "Protected attachment",
+    status: "planned",
+  });
+  if (created.status !== "created") throw new Error("gift expected");
+
+  setAttachmentListingAvailable(false);
+  assertEquals(
+    await management.changeGiftStatus(
+      actor,
+      personId,
+      created.gift.id,
+      "given",
+    ),
+    { status: "forbidden" },
+  );
+  setAttachmentListingAvailable(true);
+  const records = await management.list(actor, personId);
+  if (records.status !== "ready") throw new Error("gift list expected");
+  assertEquals(records.gifts[0], created.gift);
 });
 
 Deno.test("GIFTS-001 manages gift ideas, attachments, and debts with guarded transitions", async () => {

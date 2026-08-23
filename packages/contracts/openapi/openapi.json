@@ -7558,6 +7558,88 @@
         }
       }
     },
+    "/api/v1/settings/storage": {
+      "get": {
+        "operationId": "getStorageSettings",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Admin-only safe workspace storage diagnostics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/settings/personalization/{section}": {
       "parameters": [
         {
@@ -9465,11 +9547,7 @@
             "type": "string"
           },
           "kind": {
-            "type": "string",
-            "enum": [
-              "document",
-              "photo"
-            ]
+            "type": "string"
           },
           "mimeType": {
             "type": "string"
@@ -14726,6 +14804,152 @@
           },
           "workspace": {
             "$ref": "#/components/schemas/WorkspaceSettingsInput"
+          }
+        },
+        "additionalProperties": false
+      },
+      "StorageFileLookupItem": {
+        "type": "object",
+        "required": [
+          "byteSize",
+          "createdAt",
+          "fileId",
+          "filename",
+          "kind",
+          "mimeType",
+          "status",
+          "title"
+        ],
+        "properties": {
+          "byteSize": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "fileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "personName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "missing",
+              "processing",
+              "quarantined"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "StorageSettings": {
+        "type": "object",
+        "required": [
+          "files",
+          "maximumUploadBytes",
+          "provider",
+          "status",
+          "usage"
+        ],
+        "properties": {
+          "files": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/StorageFileLookupItem"
+            }
+          },
+          "maximumUploadBytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "provider": {
+            "type": "object",
+            "required": [
+              "bucket",
+              "health",
+              "name"
+            ],
+            "properties": {
+              "bucket": {
+                "type": "string"
+              },
+              "health": {
+                "type": "string",
+                "enum": [
+                  "available",
+                  "not-initialized",
+                  "unavailable"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "status": {
+            "const": "ready"
+          },
+          "usage": {
+            "type": "object",
+            "required": [
+              "available",
+              "missing",
+              "processing",
+              "quarantined",
+              "totalBytes",
+              "totalFiles"
+            ],
+            "properties": {
+              "available": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "missing": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "processing": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "quarantined": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "totalBytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "totalFiles": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false

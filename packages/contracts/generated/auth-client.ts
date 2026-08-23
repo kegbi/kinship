@@ -169,6 +169,38 @@ export interface WorkspaceSettings {
   readonly defaultReminderTime: string;
 }
 
+export interface StorageFileLookupItem {
+  readonly byteSize: number;
+  readonly createdAt: string;
+  readonly fileId: string;
+  readonly filename: string;
+  readonly kind: string;
+  readonly mimeType: string;
+  readonly personId?: string;
+  readonly personName?: string;
+  readonly status: "available" | "missing" | "processing" | "quarantined";
+  readonly title: string;
+}
+
+export interface StorageSettings {
+  readonly files: readonly StorageFileLookupItem[];
+  readonly maximumUploadBytes: number;
+  readonly provider: {
+    readonly bucket: string;
+    readonly health: "available" | "not-initialized" | "unavailable";
+    readonly name: string;
+  };
+  readonly status: "ready";
+  readonly usage: {
+    readonly available: number;
+    readonly missing: number;
+    readonly processing: number;
+    readonly quarantined: number;
+    readonly totalBytes: number;
+    readonly totalFiles: number;
+  };
+}
+
 export interface ManagedMember {
   readonly id: string;
   readonly email: string;
@@ -315,6 +347,11 @@ export function getWorkspaceSettings(workspaceId?: string): Promise<ApiResult<{ 
 
 export function updateWorkspaceSettings(input: WorkspaceSettings, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly workspace: WorkspaceSettings }>> {
   return request("/api/v1/settings/workspace", { method: "PUT", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function getStorageSettings(query?: string, workspaceId?: string): Promise<ApiResult<StorageSettings>> {
+  const search = query ? `?query=${encodeURIComponent(query)}` : "";
+  return request(`/api/v1/settings/storage${search}`, { headers: workspaceHeader(workspaceId) });
 }
 
 export function listPersonalizationEntries(section: PersonalizationSection, workspaceId?: string): Promise<ApiResult<{ readonly capabilities: { readonly create: boolean; readonly editValue: boolean }; readonly entries: readonly PersonalizationEntry[]; readonly readOnly: boolean; readonly section: PersonalizationSection; readonly status: "ready" }>> {

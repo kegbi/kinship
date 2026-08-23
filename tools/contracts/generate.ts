@@ -2423,6 +2423,34 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           "WorkspaceSettings",
         ),
       },
+      "/api/v1/settings/storage": {
+        get: {
+          operationId: "getStorageSettings",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            workspaceParameter,
+            {
+              name: "query",
+              in: "query",
+              schema: { type: "string", maxLength: 100 },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Admin-only safe workspace storage diagnostics",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/StorageSettings" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+      },
       "/api/v1/settings/personalization/{section}": {
         parameters: [{
           name: "section",
@@ -3172,7 +3200,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             createdAt: { type: "string", format: "date-time" },
             fileId: { type: "string", format: "uuid" },
             filename: { type: "string" },
-            kind: { type: "string", enum: ["document", "photo"] },
+            kind: { type: "string" },
             mimeType: { type: "string" },
             personId: { type: "string", format: "uuid" },
             status: {
@@ -5451,6 +5479,88 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        StorageFileLookupItem: {
+          type: "object",
+          required: [
+            "byteSize",
+            "createdAt",
+            "fileId",
+            "filename",
+            "kind",
+            "mimeType",
+            "status",
+            "title",
+          ],
+          properties: {
+            byteSize: { type: "integer", minimum: 0 },
+            createdAt: { type: "string", format: "date-time" },
+            fileId: { type: "string", format: "uuid" },
+            filename: { type: "string" },
+            kind: { type: "string" },
+            mimeType: { type: "string" },
+            personId: { type: "string", format: "uuid" },
+            personName: { type: "string" },
+            status: {
+              type: "string",
+              enum: ["available", "missing", "processing", "quarantined"],
+            },
+            title: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        StorageSettings: {
+          type: "object",
+          required: [
+            "files",
+            "maximumUploadBytes",
+            "provider",
+            "status",
+            "usage",
+          ],
+          properties: {
+            files: {
+              type: "array",
+              maxItems: 20,
+              items: { $ref: "#/components/schemas/StorageFileLookupItem" },
+            },
+            maximumUploadBytes: { type: "integer", minimum: 1 },
+            provider: {
+              type: "object",
+              required: ["bucket", "health", "name"],
+              properties: {
+                bucket: { type: "string" },
+                health: {
+                  type: "string",
+                  enum: ["available", "not-initialized", "unavailable"],
+                },
+                name: { type: "string" },
+              },
+              additionalProperties: false,
+            },
+            status: { const: "ready" },
+            usage: {
+              type: "object",
+              required: [
+                "available",
+                "missing",
+                "processing",
+                "quarantined",
+                "totalBytes",
+                "totalFiles",
+              ],
+              properties: {
+                available: { type: "integer", minimum: 0 },
+                missing: { type: "integer", minimum: 0 },
+                processing: { type: "integer", minimum: 0 },
+                quarantined: { type: "integer", minimum: 0 },
+                totalBytes: { type: "integer", minimum: 0 },
+                totalFiles: { type: "integer", minimum: 0 },
+              },
+              additionalProperties: false,
+            },
+          },
+          additionalProperties: false,
+        },
         PersonalizationSection: {
           type: "string",
           enum: [
@@ -6012,6 +6122,38 @@ export interface WorkspaceSettings {
   readonly defaultReminderTime: string;
 }
 
+export interface StorageFileLookupItem {
+  readonly byteSize: number;
+  readonly createdAt: string;
+  readonly fileId: string;
+  readonly filename: string;
+  readonly kind: string;
+  readonly mimeType: string;
+  readonly personId?: string;
+  readonly personName?: string;
+  readonly status: "available" | "missing" | "processing" | "quarantined";
+  readonly title: string;
+}
+
+export interface StorageSettings {
+  readonly files: readonly StorageFileLookupItem[];
+  readonly maximumUploadBytes: number;
+  readonly provider: {
+    readonly bucket: string;
+    readonly health: "available" | "not-initialized" | "unavailable";
+    readonly name: string;
+  };
+  readonly status: "ready";
+  readonly usage: {
+    readonly available: number;
+    readonly missing: number;
+    readonly processing: number;
+    readonly quarantined: number;
+    readonly totalBytes: number;
+    readonly totalFiles: number;
+  };
+}
+
 export interface ManagedMember {
   readonly id: string;
   readonly email: string;
@@ -6158,6 +6300,11 @@ export function getWorkspaceSettings(workspaceId?: string): Promise<ApiResult<{ 
 
 export function updateWorkspaceSettings(input: WorkspaceSettings, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly workspace: WorkspaceSettings }>> {
   return request("/api/v1/settings/workspace", { method: "PUT", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function getStorageSettings(query?: string, workspaceId?: string): Promise<ApiResult<StorageSettings>> {
+  const search = query ? \`?query=\${encodeURIComponent(query)}\` : "";
+  return request(\`/api/v1/settings/storage\${search}\`, { headers: workspaceHeader(workspaceId) });
 }
 
 export function listPersonalizationEntries(section: PersonalizationSection, workspaceId?: string): Promise<ApiResult<{ readonly capabilities: { readonly create: boolean; readonly editValue: boolean }; readonly entries: readonly PersonalizationEntry[]; readonly readOnly: boolean; readonly section: PersonalizationSection; readonly status: "ready" }>> {

@@ -1,5 +1,8 @@
 import { createFileRoutes } from "./files.ts";
-import type { PersonFileManagement } from "../../packages/backend/modules/files/public.ts";
+import type {
+  PersonFileManagement,
+  StorageSettings,
+} from "../../packages/backend/modules/files/public.ts";
 import { browserSecurityPolicy } from "./security_config.ts";
 import { resolveObjectStorageConfiguration } from "./file_storage_config.ts";
 
@@ -22,22 +25,27 @@ const visibleFile = {
   title: "Care plan",
 };
 
-function app(files: Partial<PersonFileManagement>) {
+function app(
+  files: Partial<PersonFileManagement>,
+  storageSettings: Partial<StorageSettings> = {},
+  role: "admin" | "member" | "owner" = "member",
+) {
   return createFileRoutes({
     browserSecurity: browserSecurityPolicy("test", "http://localhost"),
     files: files as PersonFileManagement,
+    storageSettings: storageSettings as StorageSettings,
     protectedSessions: {
       resolve: () =>
         Promise.resolve({
           accessibleWorkspaces: [{
             memberId: "00000000-0000-4000-8000-000000000004",
-            role: "member" as const,
+            role,
             userId: "00000000-0000-4000-8000-000000000005",
             workspaceId,
             workspaceName: "Files",
           }],
           memberId: "00000000-0000-4000-8000-000000000004",
-          role: "member" as const,
+          role,
           userId: "00000000-0000-4000-8000-000000000005",
           workspaceId,
           workspaceName: "Files",
@@ -45,6 +53,71 @@ function app(files: Partial<PersonFileManagement>) {
     },
   });
 }
+
+Deno.test("[FILES-001] storage settings HTTP boundary returns only safe admin diagnostics", async () => {
+  let requestedQuery = "";
+  const routes = app({}, {
+    get: (_actor, query) => {
+      requestedQuery = query ?? "";
+      return Promise.resolve({
+        files: [{
+          byteSize: 2048,
+          createdAt: "2026-08-23T08:00:00.000Z",
+          fileId,
+          filename: "care-plan.pdf",
+          kind: "document",
+          mimeType: "application/pdf",
+          personId,
+          personName: "Ada Lovelace",
+          status: "available",
+          title: "Care plan",
+        }],
+        maximumUploadBytes: 10_485_760,
+        provider: {
+          bucket: "attachments",
+          health: "available",
+          name: "s3",
+        },
+        status: "ready",
+        usage: {
+          available: 1,
+          missing: 0,
+          processing: 0,
+          quarantined: 0,
+          totalBytes: 2048,
+          totalFiles: 1,
+        },
+      });
+    },
+  }, "admin");
+  const response = await routes.request(
+    "http://localhost/api/v1/settings/storage?query=care",
+    {
+      headers: {
+        cookie: "kinship_session=session",
+        "X-Workspace-Id": workspaceId,
+      },
+    },
+  );
+  assert(response.status === 200, "admin diagnostics ready");
+  const body = await response.json();
+  assert(requestedQuery === "care", "bounded query reaches facade");
+  assert(!JSON.stringify(body).includes("storageKey"), "object keys concealed");
+  assert(!JSON.stringify(body).includes("secret"), "credentials concealed");
+
+  const member = app({}, {
+    get: () => Promise.resolve({ status: "forbidden" }),
+  });
+  assert(
+    (await member.request("http://localhost/api/v1/settings/storage", {
+      headers: {
+        cookie: "kinship_session=session",
+        "X-Workspace-Id": workspaceId,
+      },
+    })).status === 403,
+    "ordinary member inventory is forbidden",
+  );
+});
 
 Deno.test("[FILES-001] file HTTP flow uploads, lists, downloads, and removes without storage references", async () => {
   const actions: string[] = [];

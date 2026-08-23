@@ -597,6 +597,113 @@ summary:focus-visible,
   text-decoration: none;
 }
 
+.storage-settings-page {
+  max-width: 58rem;
+}
+
+.storage-page-state {
+  min-height: 1.5rem;
+  color: #56645d;
+}
+
+.storage-settings-sections {
+  display: grid;
+  gap: 2rem;
+  margin-top: 1rem;
+}
+
+.storage-settings-section {
+  padding-top: 1.5rem;
+  border-top: 1px solid rgb(32 53 45 / 20%);
+}
+
+.storage-settings-section header h2 {
+  margin: .25rem 0 1rem;
+  font-family: Georgia, serif;
+  font-size: 1.6rem;
+  font-weight: 500;
+}
+
+.storage-metrics,
+.storage-object-state {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0;
+}
+
+.storage-metrics div,
+.storage-object-state div {
+  min-width: 0;
+  padding: .9rem 0;
+  border-bottom: 1px solid rgb(32 53 45 / 14%);
+}
+
+.storage-metrics dt,
+.storage-object-state dt {
+  color: #617069;
+  font-size: .78rem;
+  font-weight: 750;
+}
+
+.storage-metrics dd,
+.storage-object-state dd {
+  min-height: 1.5rem;
+  margin: .35rem 0 0;
+  overflow-wrap: anywhere;
+  font-size: 1.05rem;
+  font-weight: 750;
+}
+
+.storage-search-form {
+  display: grid;
+  gap: .45rem;
+}
+
+.storage-search-form label {
+  font-weight: 750;
+}
+
+.storage-search-form > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .65rem;
+}
+
+.storage-search-form input {
+  min-width: 0;
+}
+
+.storage-results {
+  display: grid;
+  gap: 0;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.storage-results li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .25rem 1rem;
+  padding: .9rem 0;
+  border-top: 1px solid rgb(32 53 45 / 16%);
+}
+
+.storage-results span,
+.storage-results small {
+  overflow-wrap: anywhere;
+  color: #617069;
+}
+
+.storage-results code {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  max-width: 18rem;
+  overflow-wrap: anywhere;
+  font-size: .75rem;
+}
+
 .members-page {
   max-width: 72rem;
 }
@@ -2057,6 +2164,21 @@ summary:focus-visible,
 
   .settings-card-grid {
     grid-template-columns: 1fr;
+  }
+
+  .storage-metrics,
+  .storage-object-state {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .storage-search-form > div,
+  .storage-results li {
+    grid-template-columns: 1fr;
+  }
+
+  .storage-results code {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .invitation-form {
