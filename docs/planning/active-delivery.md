@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 10 — Optional Platform Modules**
-- Current leaf: **APP-010C / `BILLING-001` — Optional workspace billing**
+- Current leaf: **APP-010D — Operational administration disposition**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -315,7 +315,14 @@ contract applies. Disabled modules must not break core CRM workflows.
   - [x] Encrypt credentials, isolate tenant state, checkpoint href/ETag/token
         progress, reclaim stale work after restart, and preserve core people and
         tasks when the optional module is disabled.
-- [ ] **APP-010C / `BILLING-001` — Optional workspace billing.**
+- [x] **APP-010C — Keep optional workspace billing disabled for the initial
+      private deployment.**
+  - [x] Do not claim `BILLING-001` as delivered: it remains conditional future
+        work when a deployment explicitly enables the billing module and selects
+        a provider with credentials.
+  - [x] Do not introduce billing state, adapters, or entitlement coupling while
+        the module is disabled; the current one-primary-user deployment does not
+        require subscription or invoice operations.
 - [ ] **APP-010D — Operational administration**, only after accepted page/flow,
       permissions, availability, and state contracts exist.
 - [ ] **Phase 10 accepted:** every enabled Slice 8 module independently passes
