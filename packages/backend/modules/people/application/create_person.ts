@@ -39,6 +39,10 @@ export type PersonIdentityLookup =
   | { readonly status: "forbidden" };
 
 export interface PeopleRepository {
+  lockRequest(command: {
+    readonly id: string;
+    readonly transaction: PeopleTransaction;
+  }): Promise<void>;
   revalidateAndLockCreateContext(
     command: PeopleActor & { readonly transaction: PeopleTransaction },
   ): Promise<boolean>;
@@ -109,6 +113,43 @@ export type CreatePersonResult =
   }
   | { readonly status: "forbidden" }
   | { readonly person: PersonIdentity; readonly status: "created" };
+
+export type EnsurePersonResult =
+  | {
+    readonly errors: Readonly<Record<string, string>>;
+    readonly status: "validation-error";
+  }
+  | { readonly status: "forbidden" | "idempotency-conflict" }
+  | { readonly person: PersonIdentity; readonly status: "ready" };
+
+async function derivePersonId(
+  workspaceId: string,
+  requestId: string,
+): Promise<string> {
+  const digest = new Uint8Array(
+    await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(
+        `kinship.people.external-id.v1\u0000${workspaceId.toLowerCase()}\u0000${requestId.toLowerCase()}`,
+      ),
+    ),
+  );
+  digest[6] = (digest[6]! & 0x0f) | 0x80;
+  digest[8] = (digest[8]! & 0x3f) | 0x80;
+  const hex = [...digest.slice(0, 16)].map((value) =>
+    value.toString(16).padStart(2, "0")
+  ).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${
+    hex.slice(16, 20)
+  }-${hex.slice(20)}`;
+}
+
+function sameIdentity(left: PersonIdentity, right: CreatePersonInput): boolean {
+  return left.givenName === right.givenName &&
+    left.familyName === right.familyName &&
+    left.middleName === right.middleName && left.nickname === right.nickname &&
+    left.isPartial === right.isPartial;
+}
 
 export type GetPersonResult = PersonIdentityLookup;
 
@@ -196,8 +237,66 @@ export function createPeopleManagement(
     await dependencies.audit.assertPostcondition(auditCommand);
     return { person: created, status: "created" };
   };
+  const ensureInTransaction = async (
+    actor: PeopleActor,
+    requestId: string,
+    rawInput: CreatePersonInput,
+    transaction: PeopleTransaction,
+  ): Promise<EnsurePersonResult> => {
+    const input = normalize(rawInput);
+    const errors = validate(input);
+    if (Object.keys(errors).length > 0) {
+      return { errors, status: "validation-error" };
+    }
+    const id = await derivePersonId(actor.workspaceId, requestId);
+    if (
+      !await dependencies.repository.revalidateAndLockCreateContext({
+        ...actor,
+        transaction,
+      })
+    ) return { status: "forbidden" };
+    await dependencies.repository.lockRequest({ id, transaction });
+    const existing = await dependencies.repository.getIdentity({
+      ...actor,
+      personId: id,
+      transaction,
+    });
+    if (existing.status === "ready" || existing.status === "archived") {
+      return sameIdentity(existing.person, input)
+        ? { person: existing.person, status: "ready" }
+        : { status: "idempotency-conflict" };
+    }
+    if (existing.status === "forbidden") return { status: "forbidden" };
+    const person: PersonIdentity = { id, ...input };
+    const created = await dependencies.repository.create({
+      ...actor,
+      ...person,
+      transaction,
+    });
+    if (!created) return { status: "forbidden" };
+    const occurredAt = dependencies.clock.now();
+    const auditCommand = { actor, occurredAt, person: created, transaction };
+    await dependencies.audit.record(auditCommand);
+    await dependencies.repository.assertCreatedPostcondition({
+      ...actor,
+      ...created,
+      transaction,
+    });
+    await dependencies.audit.assertPostcondition(auditCommand);
+    return { person: created, status: "ready" };
+  };
   return {
     createInTransaction,
+    ensureInTransaction,
+    ensure: async (
+      actor: PeopleActor,
+      requestId: string,
+      rawInput: CreatePersonInput,
+    ): Promise<EnsurePersonResult> => {
+      return await dependencies.transaction.run((transaction) =>
+        ensureInTransaction(actor, requestId, rawInput, transaction)
+      );
+    },
     create: async (
       actor: PeopleActor,
       rawInput: CreatePersonInput,

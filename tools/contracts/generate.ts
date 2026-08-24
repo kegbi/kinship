@@ -2993,6 +2993,112 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
         },
       },
+      "/api/v1/settings/integrations/dav": {
+        get: {
+          operationId: "getDavSubscriptions",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter],
+          responses: {
+            "200": {
+              description: "DAV subscription metadata",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/DavSubscriptionList" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+        post: {
+          operationId: "createDavSubscription",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/DavSubscriptionInput" },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "DAV subscription configured",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/DavSubscriptionConfigured",
+                  },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/settings/integrations/dav/{subscriptionId}": {
+        delete: {
+          operationId: "disableDavSubscription",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, {
+            name: "subscriptionId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          }],
+          responses: {
+            "200": {
+              description:
+                "DAV subscription disabled without deleting core data",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/DavSubscriptionDisabled",
+                  },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/settings/integrations/dav/{subscriptionId}/sync": {
+        post: {
+          operationId: "synchronizeDavSubscription",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter, {
+            name: "subscriptionId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          }],
+          responses: {
+            "200": {
+              description:
+                "DAV synchronization completed or produced a recoverable outcome",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/DavSyncResult" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
       "/api/v1/settings/storage": {
         get: {
           operationId: "getStorageSettings",
@@ -7089,6 +7195,84 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        DavSubscription: {
+          type: "object",
+          required: ["id", "isActive", "lastOutcome", "name", "remoteUrl"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            isActive: { type: "boolean" },
+            lastError: { type: "string", maxLength: 300 },
+            lastOutcome: {
+              type: "string",
+              enum: ["auth-failure", "conflict", "never", "partial", "success"],
+            },
+            lastSyncedAt: { type: "string", format: "date-time" },
+            name: { type: "string", minLength: 1, maxLength: 100 },
+            remoteSyncToken: { type: "string" },
+            remoteUrl: { type: "string", format: "uri", maxLength: 2048 },
+            username: { type: "string", maxLength: 255 },
+          },
+          additionalProperties: false,
+        },
+        DavSubscriptionInput: {
+          type: "object",
+          required: ["name", "password", "remoteUrl"],
+          properties: {
+            name: { type: "string", minLength: 1, maxLength: 100 },
+            password: {
+              type: "string",
+              minLength: 1,
+              maxLength: 4096,
+              writeOnly: true,
+            },
+            remoteUrl: { type: "string", format: "uri", maxLength: 2048 },
+            username: { type: "string", maxLength: 255 },
+          },
+          additionalProperties: false,
+        },
+        DavSubscriptionList: {
+          type: "object",
+          required: ["status", "subscriptions"],
+          properties: {
+            status: { const: "ready" },
+            subscriptions: {
+              type: "array",
+              items: { $ref: "#/components/schemas/DavSubscription" },
+            },
+          },
+          additionalProperties: false,
+        },
+        DavSubscriptionConfigured: {
+          type: "object",
+          required: ["status", "subscription"],
+          properties: {
+            status: { const: "configured" },
+            subscription: { $ref: "#/components/schemas/DavSubscription" },
+          },
+          additionalProperties: false,
+        },
+        DavSubscriptionDisabled: {
+          type: "object",
+          required: ["status", "subscription"],
+          properties: {
+            status: { const: "disabled" },
+            subscription: { $ref: "#/components/schemas/DavSubscription" },
+          },
+          additionalProperties: false,
+        },
+        DavSyncResult: {
+          type: "object",
+          required: ["status", "subscription"],
+          properties: {
+            processed: { type: "integer", minimum: 0 },
+            status: {
+              type: "string",
+              enum: ["auth-failure", "conflict", "partial", "success"],
+            },
+            subscription: { $ref: "#/components/schemas/DavSubscription" },
+          },
+          additionalProperties: false,
+        },
         StorageSettings: {
           type: "object",
           required: [
@@ -7851,6 +8035,23 @@ export interface ApiTokenCreated {
   readonly status: "created";
 }
 
+export interface DavSubscription {
+  readonly id: string;
+  readonly isActive: boolean;
+  readonly lastError?: string;
+  readonly lastOutcome: "auth-failure" | "conflict" | "never" | "partial" | "success";
+  readonly lastSyncedAt?: string;
+  readonly name: string;
+  readonly remoteSyncToken?: string;
+  readonly remoteUrl: string;
+  readonly username?: string;
+}
+
+export interface DavSubscriptionList {
+  readonly status: "ready";
+  readonly subscriptions: readonly DavSubscription[];
+}
+
 export interface ManagedMember {
   readonly id: string;
   readonly email: string;
@@ -8038,6 +8239,22 @@ export function createApiToken(input: { readonly expiresAt?: string; readonly na
 
 export function revokeApiToken(tokenId: string, workspaceId?: string): Promise<ApiResult<{ readonly record: ApiTokenRecord; readonly status: "revoked" }>> {
   return request(\`/api/v1/settings/api-tokens/\${encodeURIComponent(tokenId)}\`, { method: "DELETE", headers: workspaceHeader(workspaceId) });
+}
+
+export function getDavSubscriptions(workspaceId?: string): Promise<ApiResult<DavSubscriptionList>> {
+  return request("/api/v1/settings/integrations/dav", { headers: workspaceHeader(workspaceId) });
+}
+
+export function createDavSubscription(input: { readonly name: string; readonly password: string; readonly remoteUrl: string; readonly username?: string }, workspaceId?: string): Promise<ApiResult<{ readonly status: "configured"; readonly subscription: DavSubscription }>> {
+  return request("/api/v1/settings/integrations/dav", { method: "POST", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function synchronizeDavSubscription(subscriptionId: string, workspaceId?: string): Promise<ApiResult<{ readonly processed?: number; readonly status: "auth-failure" | "conflict" | "partial" | "success"; readonly subscription: DavSubscription }>> {
+  return request(\`/api/v1/settings/integrations/dav/\${encodeURIComponent(subscriptionId)}/sync\`, { method: "POST", headers: workspaceHeader(workspaceId) });
+}
+
+export function disableDavSubscription(subscriptionId: string, workspaceId?: string): Promise<ApiResult<{ readonly status: "disabled"; readonly subscription: DavSubscription }>> {
+  return request(\`/api/v1/settings/integrations/dav/\${encodeURIComponent(subscriptionId)}\`, { method: "DELETE", headers: workspaceHeader(workspaceId) });
 }
 
 export function listImports(workspaceId?: string): Promise<ApiResult<{ readonly imports: readonly ImportSummary[] }>> {

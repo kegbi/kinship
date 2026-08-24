@@ -411,6 +411,7 @@ function racingPeople(
 ) {
   const delegate = new PostgresPeopleRepository();
   const repository: PeopleRepository = {
+    lockRequest: () => Promise.resolve(),
     async revalidateAndLockCreateContext(command) {
       authorizationAttempted.resolve();
       const authorized = await delegate.revalidateAndLockCreateContext(command);

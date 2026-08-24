@@ -220,108 +220,141 @@ export function createPersonLifecycle(
     return person;
   };
 
+  const inspectInTransaction = (
+    actor: PeopleActor,
+    personId: string,
+    transaction: PeopleTransaction,
+  ): Promise<PersonLifecycleLock> =>
+    dependencies.repository.lock({
+      action: "edit",
+      ...actor,
+      personId,
+      transaction,
+    });
+  const editInTransaction = async (
+    actor: PeopleActor,
+    personId: string,
+    rawInput: EditPersonInput,
+    transaction: PeopleTransaction,
+  ): Promise<EditPersonResult> => {
+    const input = normalize(rawInput);
+    const errors = validate(input);
+    if (Object.keys(errors).length > 0) {
+      return { errors, status: "validation-error" };
+    }
+    const locked = await dependencies.repository.lock({
+      action: "edit",
+      ...actor,
+      personId,
+      transaction,
+    });
+    if (locked.status !== "ready") return failure(locked);
+    if (locked.person.lifecycle === "deleted") return { status: "not-found" };
+    if (locked.person.lifecycle === "archived") {
+      return { status: "archived-write-rejected" };
+    }
+    if (locked.person.updatedAt !== input.expectedUpdatedAt) {
+      return { status: "stale" };
+    }
+    const { expectedUpdatedAt, ...identity } = input;
+    const person = await change(
+      actor,
+      "edit",
+      locked.person,
+      expectedUpdatedAt,
+      transaction,
+      identity,
+    );
+    return person ? { person, status: "updated" } : { status: "stale" };
+  };
+  const transitionInTransaction = async (
+    actor: PeopleActor,
+    personId: string,
+    input: PersonTransitionInput,
+    action: "archive" | "restore",
+    transaction: PeopleTransaction,
+  ): Promise<TransitionPersonResult> => {
+    const locked = await dependencies.repository.lock({
+      action,
+      ...actor,
+      personId,
+      transaction,
+    });
+    if (locked.status !== "ready") return failure(locked);
+    if (locked.person.lifecycle === "deleted") return { status: "not-found" };
+    if (
+      action === "archive" && locked.person.lifecycle === "archived" ||
+      action === "restore" && locked.person.lifecycle === "active"
+    ) {
+      return {
+        person: locked.person,
+        status: action === "archive" ? "archived" : "restored",
+      };
+    }
+    if (locked.person.updatedAt !== input.expectedUpdatedAt) {
+      return { status: "stale" };
+    }
+    const person = await change(
+      actor,
+      action,
+      locked.person,
+      input.expectedUpdatedAt,
+      transaction,
+    );
+    return person
+      ? { person, status: action === "archive" ? "archived" : "restored" }
+      : { status: "stale" };
+  };
+
   return {
+    archiveInTransaction: (
+      actor: PeopleActor,
+      personId: string,
+      input: PersonTransitionInput,
+      transaction: PeopleTransaction,
+    ) =>
+      transitionInTransaction(actor, personId, input, "archive", transaction),
+    editInTransaction,
+    inspectInTransaction,
+    restoreInTransaction: (
+      actor: PeopleActor,
+      personId: string,
+      input: PersonTransitionInput,
+      transaction: PeopleTransaction,
+    ) =>
+      transitionInTransaction(actor, personId, input, "restore", transaction),
+    inspect: (
+      actor: PeopleActor,
+      personId: string,
+    ): Promise<PersonLifecycleLock> =>
+      dependencies.transaction.run((transaction) =>
+        inspectInTransaction(actor, personId, transaction)
+      ),
     edit: async (
       actor: PeopleActor,
       personId: string,
       rawInput: EditPersonInput,
     ): Promise<EditPersonResult> => {
-      const input = normalize(rawInput);
-      const errors = validate(input);
-      if (Object.keys(errors).length > 0) {
-        return { errors, status: "validation-error" };
-      }
-      return await dependencies.transaction.run(async (transaction) => {
-        const locked = await dependencies.repository.lock({
-          action: "edit",
-          ...actor,
-          personId,
-          transaction,
-        });
-        if (locked.status !== "ready") return failure(locked);
-        if (locked.person.lifecycle === "deleted") {
-          return { status: "not-found" };
-        }
-        if (locked.person.lifecycle === "archived") {
-          return { status: "archived-write-rejected" };
-        }
-        if (locked.person.updatedAt !== input.expectedUpdatedAt) {
-          return { status: "stale" };
-        }
-        const { expectedUpdatedAt, ...identity } = input;
-        const person = await change(
-          actor,
-          "edit",
-          locked.person,
-          expectedUpdatedAt,
-          transaction,
-          identity,
-        );
-        return person ? { person, status: "updated" } : { status: "stale" };
-      });
+      return await dependencies.transaction.run((transaction) =>
+        editInTransaction(actor, personId, rawInput, transaction)
+      );
     },
     archive: (
       actor: PeopleActor,
       personId: string,
       input: PersonTransitionInput,
     ): Promise<TransitionPersonResult> =>
-      dependencies.transaction.run(async (transaction) => {
-        const locked = await dependencies.repository.lock({
-          action: "archive",
-          ...actor,
-          personId,
-          transaction,
-        });
-        if (locked.status !== "ready") return failure(locked);
-        if (locked.person.lifecycle === "deleted") {
-          return { status: "not-found" };
-        }
-        if (locked.person.lifecycle === "archived") {
-          return { person: locked.person, status: "archived" };
-        }
-        if (locked.person.updatedAt !== input.expectedUpdatedAt) {
-          return { status: "stale" };
-        }
-        const person = await change(
-          actor,
-          "archive",
-          locked.person,
-          input.expectedUpdatedAt,
-          transaction,
-        );
-        return person ? { person, status: "archived" } : { status: "stale" };
-      }),
+      dependencies.transaction.run((transaction) =>
+        transitionInTransaction(actor, personId, input, "archive", transaction)
+      ),
     restore: (
       actor: PeopleActor,
       personId: string,
       input: PersonTransitionInput,
     ): Promise<TransitionPersonResult> =>
-      dependencies.transaction.run(async (transaction) => {
-        const locked = await dependencies.repository.lock({
-          action: "restore",
-          ...actor,
-          personId,
-          transaction,
-        });
-        if (locked.status !== "ready") return failure(locked);
-        if (locked.person.lifecycle === "deleted") {
-          return { status: "not-found" };
-        }
-        if (locked.person.lifecycle === "active") {
-          return { person: locked.person, status: "restored" };
-        }
-        if (locked.person.updatedAt !== input.expectedUpdatedAt) {
-          return { status: "stale" };
-        }
-        const person = await change(
-          actor,
-          "restore",
-          locked.person,
-          input.expectedUpdatedAt,
-          transaction,
-        );
-        return person ? { person, status: "restored" } : { status: "stale" };
-      }),
+      dependencies.transaction.run((transaction) =>
+        transitionInTransaction(actor, personId, input, "restore", transaction)
+      ),
     previewDeletion: (
       actor: PeopleActor,
       personId: string,
@@ -380,4 +413,7 @@ export function createPersonLifecycle(
   };
 }
 
-export type PersonLifecycle = ReturnType<typeof createPersonLifecycle>;
+export type PersonLifecycle = Pick<
+  ReturnType<typeof createPersonLifecycle>,
+  "archive" | "delete" | "edit" | "previewDeletion" | "restore"
+>;

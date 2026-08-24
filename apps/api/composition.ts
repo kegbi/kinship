@@ -51,6 +51,7 @@ import {
   PostgresApiTokenAudit,
   PostgresAuthenticationAudit,
   PostgresCommunicationAudit,
+  PostgresDavAudit,
   PostgresExportAudit,
   PostgresFileAudit,
   PostgresGiftAudit,
@@ -82,6 +83,15 @@ import {
   PostgresAuthenticationAttemptBudget,
   WebCryptoApiTokenSecrets,
 } from "../../packages/backend/modules/api-access/public.ts";
+import {
+  AesGcmDavSecretBox,
+  createDavSyncManagement,
+  type DavEncryptionKeyset,
+  type DavRemoteClient,
+  type DavSyncManagement,
+  HttpDavClient,
+  PostgresDavRepository,
+} from "../../packages/backend/modules/integrations/public.ts";
 import {
   createRegistrationRoutes,
   type RegistrationHttpServices,
@@ -221,6 +231,7 @@ import { createFileRoutes } from "./files.ts";
 import { createGiftRoutes } from "./gifts.ts";
 import { createJournalRoutes } from "./journal.ts";
 import { createImportRoutes } from "./imports.ts";
+import { createIntegrationRoutes } from "./integrations.ts";
 import {
   createJournalTimeline,
   type JournalTimeline,
@@ -301,6 +312,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly reminders?: ReminderManagement;
   readonly tagOptions?: PeopleTagOptions;
   readonly tasks?: TaskManagement;
+  readonly dav?: DavSyncManagement;
   readonly today?: TodayInteractions;
   readonly todayAttention?: TodayAttention;
   readonly todayTasks?: TodayTasks;
@@ -425,6 +437,16 @@ export function createApiApp(services?: ApiServices): Hono {
           createApiTokenRoutes({
             apiTokens: services.apiTokens,
             browserSecurity: services.browserSecurity,
+            protectedSessions: services.protectedSessions,
+          }),
+        );
+      }
+      if (services.dav) {
+        api.route(
+          "/",
+          createIntegrationRoutes({
+            browserSecurity: services.browserSecurity,
+            dav: services.dav,
             protectedSessions: services.protectedSessions,
           }),
         );
@@ -604,6 +626,9 @@ export function createConfiguredApiApp(
   subjectKeysetOverride?: AuthenticationSubjectKeyset,
   responseEqualizerOverride?: AuthenticationResponseEqualizer,
   objectStorageOverride?: ObjectStorage,
+  davRemoteOverride?: DavRemoteClient,
+  davKeysetOverride?: DavEncryptionKeyset,
+  davEnabled = true,
 ): { readonly app: Hono; readonly close: () => Promise<void> } {
   const random = new WebCryptoRandomSource();
   const tokens = new SecureTokenService(random);
@@ -618,6 +643,15 @@ export function createConfiguredApiApp(
     webOrigin: Deno.env.get("PUBLIC_WEB_ORIGIN") ?? "http://127.0.0.1:4321",
   });
   const connection = connectDatabase(databaseUrl);
+  if (environment === "production" && davEnabled && !davKeysetOverride) {
+    throw new Error(
+      "INTEGRATIONS_ENCRYPTION_KEYSET is required in production.",
+    );
+  }
+  const davKeyset = davKeysetOverride ?? {
+    activeKeyId: "local-development",
+    keys: new Map([["local-development", new Uint8Array(32).fill(0x69)]]),
+  };
   const hasher = new Argon2idPasswordHasher(random, {
     memoryKiB: 19_456,
     iterations: 2,
@@ -983,6 +1017,97 @@ export function createConfiguredApiApp(
     transaction: peopleTransaction,
     workspace: interactionWorkspace,
   });
+  const davRemoteId = async (value: string) => {
+    const digest = new Uint8Array(
+      await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(`kinship.dav.remote.v1\u0000${value}`),
+      ),
+    );
+    digest[6] = (digest[6]! & 0x0f) | 0x80;
+    digest[8] = (digest[8]! & 0x3f) | 0x80;
+    const hex = [...digest.slice(0, 16)].map((byte) =>
+      byte.toString(16).padStart(2, "0")
+    ).join("");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${
+      hex.slice(16, 20)
+    }-${hex.slice(20)}`;
+  };
+  const dav = davEnabled
+    ? createDavSyncManagement({
+      clock,
+      ids: {
+        create: () => ids.create(),
+        fromRemote: davRemoteId,
+      },
+      people: {
+        ensure: (actor, input, transaction) => {
+          const { requestId, ...identity } = input;
+          return peopleManagement.ensureInTransaction(actor, requestId, {
+            ...identity,
+            isPartial: !identity.givenName,
+          }, transaction);
+        },
+        update: async (actor, personId, input, transaction) => {
+          const current = await peopleLifecycle.inspectInTransaction(
+            actor,
+            personId,
+            transaction,
+          );
+          if (current.status !== "ready") return current;
+          return await peopleLifecycle.editInTransaction(actor, personId, {
+            ...input,
+            expectedUpdatedAt: current.person.updatedAt,
+            isPartial: !input.givenName,
+          }, transaction);
+        },
+        archive: async (actor, personId, transaction) => {
+          const current = await peopleLifecycle.inspectInTransaction(
+            actor,
+            personId,
+            transaction,
+          );
+          if (current.status !== "ready") return current;
+          return await peopleLifecycle.archiveInTransaction(actor, personId, {
+            expectedUpdatedAt: current.person.updatedAt,
+          }, transaction);
+        },
+        restore: async (actor, personId, transaction) => {
+          const current = await peopleLifecycle.inspectInTransaction(
+            actor,
+            personId,
+            transaction,
+          );
+          if (current.status !== "ready") return current;
+          return await peopleLifecycle.restoreInTransaction(actor, personId, {
+            expectedUpdatedAt: current.person.updatedAt,
+          }, transaction);
+        },
+      },
+      remote: davRemoteOverride ?? new HttpDavClient(),
+      repository: new PostgresDavRepository(
+        connection.db,
+        new PostgresDavAudit(),
+      ),
+      secrets: new AesGcmDavSecretBox(davKeyset),
+      tasks: {
+        create: (actor, input, transaction) =>
+          tasks.create(actor, input, transaction),
+        update: async (actor, taskId, input, transaction) => {
+          const current = await tasks.get(actor, taskId, transaction);
+          if (current.status !== "ready") return current;
+          return await tasks.change(actor, taskId, {
+            ...input,
+            expectedUpdatedAt: current.task.updatedAt,
+          }, transaction);
+        },
+        complete: (actor, taskId, transaction) =>
+          tasks.setCompletion(actor, taskId, true, transaction),
+        reopen: (actor, taskId, transaction) =>
+          tasks.setCompletion(actor, taskId, false, transaction),
+      },
+    })
+    : undefined;
   const people = { ...peopleManagement, ...peopleLifecycle };
   const directoryRepository = new PostgresPeopleDirectoryRepository(
     connection.db,
@@ -1033,6 +1158,7 @@ export function createConfiguredApiApp(
     auditHistory,
     browserSecurity: policy,
     directory,
+    ...(dav ? { dav } : {}),
     files,
     storageSettings,
     gifts,

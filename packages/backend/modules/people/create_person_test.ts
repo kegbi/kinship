@@ -40,6 +40,10 @@ function dependencies(options: {
         create: () => "00000000-0000-4000-8000-000000000100",
       },
       repository: {
+        lockRequest() {
+          effects.push("request.lock");
+          return Promise.resolve();
+        },
         revalidateAndLockCreateContext() {
           effects.push("authorization.lock");
           return Promise.resolve(options.authorize !== false);
@@ -217,4 +221,46 @@ Deno.test("PEOPLE-001 reads identity through the public active-workspace facade"
     );
     assert(result.status === status, `${status} remains explicit`);
   }
+});
+
+Deno.test("DAV person ensure reuses the exact deterministic identity and ignores similar-name duplicate heuristics", async () => {
+  const first = dependencies({ duplicate: true, readStatus: "not-found" });
+  const created = await createPeopleManagement(first.dependencies).ensure(
+    actor,
+    "00000000-0000-4000-8000-000000000777",
+    { familyName: "Lovelace", givenName: "Ada", isPartial: false },
+  );
+  assert(created.status === "ready", "remote identity created");
+  assert(
+    !first.effects.some((effect) => effect.startsWith("duplicates:")),
+    "similar names are not remote identity",
+  );
+  assert(first.effects.includes("request.lock"), "stable identity serialized");
+
+  const replay = dependencies();
+  const found = await createPeopleManagement(replay.dependencies).ensure(
+    actor,
+    "00000000-0000-4000-8000-000000000777",
+    { familyName: "Lovelace", givenName: "Ada", isPartial: false },
+  );
+  assert(found.status === "ready", "exact deterministic identity replayed");
+  assert(
+    !replay.effects.includes("people.create"),
+    "replay does not create a second person",
+  );
+
+  const bound = dependencies({ readStatus: "not-found" });
+  const davTransaction = { opaque: "dav-transaction" };
+  const inTransaction = await createPeopleManagement(bound.dependencies)
+    .ensureInTransaction(
+      actor,
+      "00000000-0000-4000-8000-000000000778",
+      { familyName: "Hopper", givenName: "Grace", isPartial: false },
+      davTransaction,
+    );
+  assert(inTransaction.status === "ready", "bound DAV identity created");
+  assert(
+    !bound.effects.includes("transaction.begin"),
+    "existing DAV transaction is used without opening another owner",
+  );
 });

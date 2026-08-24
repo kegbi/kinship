@@ -35,6 +35,12 @@ export class PostgresPeopleTransaction {
 }
 
 export class PostgresPeopleRepository implements PeopleRepository {
+  async lockRequest(
+    command: Parameters<PeopleRepository["lockRequest"]>[0],
+  ): Promise<void> {
+    await sql`select pg_advisory_xact_lock(hashtextextended(${command.id},0))`
+      .execute(databaseFromSession(command.transaction));
+  }
   async revalidateAndLockCreateContext(
     command: Parameters<
       PeopleRepository["revalidateAndLockCreateContext"]

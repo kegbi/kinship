@@ -1,0 +1,41 @@
+---
+import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
+export const prerender = true;
+---
+
+<ApplicationLayout
+  current="settings"
+  description="Configure and monitor workspace DAV synchronization."
+  pageId="settings.integrations"
+  title="Integrations — Kinship"
+>
+  <main id="main-content" class="page-frame settings-page api-access-page" tabindex="-1" data-requires-workspace-admin data-integrations>
+    <header class="settings-heading">
+      <div><p class="eyebrow">Developer settings</p><h1>Integrations</h1><p>Synchronize CardDAV contacts and CalDAV tasks while keeping connection state separate from CRM records.</p></div>
+      <a class="button-link secondary-link" href="/app/settings">All settings</a>
+    </header>
+    <p data-integration-state class="api-access-state" role="status" aria-live="polite"></p>
+
+    <section class="api-access-section" aria-labelledby="configure-dav-heading">
+      <header><p class="scope-label">Workspace connection</p><h2 id="configure-dav-heading">Add DAV collection</h2></header>
+      <form data-integration-create class="api-token-form" novalidate>
+        <label>Connection name<input name="name" type="text" maxlength="100" required /></label>
+        <label>DAV collection URL<input name="remoteUrl" type="url" inputmode="url" placeholder="https://dav.example.com/collection/" required /></label>
+        <label>Username<input name="username" type="text" maxlength="255" autocomplete="username" /></label>
+        <label>Secret<input name="password" type="password" maxlength="4096" autocomplete="new-password" required /></label>
+        <button type="submit">Add connection</button>
+      </form>
+    </section>
+
+    <section class="api-access-section" aria-labelledby="dav-list-heading">
+      <header><p class="scope-label">Durable checkpoint</p><h2 id="dav-list-heading">DAV connections</h2></header>
+      <p data-integration-empty hidden>No DAV connections yet.</p>
+      <ul data-integration-list class="api-token-list" aria-label="DAV connections"></ul>
+    </section>
+  </main>
+</ApplicationLayout>
+
+<script>
+  import { mountIntegrations } from "../../../lib/integrations.ts";
+  void mountIntegrations();
+</script>
