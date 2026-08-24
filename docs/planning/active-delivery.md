@@ -427,6 +427,12 @@ a named environment.
         to the host API so local file operations use the real object store.
   - [x] Prove upload, download, delete, backup, and isolated source-to-target
         restore against real RustFS instances without running a MinIO server.
+- [x] **REL-011 — Rebuild the current migration bundle in root development.**
+  - [x] Make `deno task dev` build the migration image from the current checkout
+        before applying it so a stale cached API image cannot run an older
+        canonical schema bundle.
+  - [x] Preserve the existing serial startup, cleanup, and local development
+        volumes without introducing a registry or deployment build workflow.
 - [ ] **OPS-001E — Deployment rollout, rollback, and post-deploy verification.**
 - [ ] **Phase 11 accepted:** the named environment independently passes every
       required security, privacy, accessibility, performance, observability,

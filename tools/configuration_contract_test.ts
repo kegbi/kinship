@@ -300,6 +300,18 @@ Deno.test("[OPS-001E1] RustFS owns local and recovery S3 boundaries", async () =
   );
 });
 
+Deno.test("[REL-011] root development rebuilds the current migration bundle", async () => {
+  const developmentTool = await Deno.readTextFile(
+    new URL("./dev.ts", import.meta.url),
+  );
+  assert(
+    developmentTool.includes(
+      '[...compose, "run", "--build", "--rm", "migrate"]',
+    ),
+    "root development must build the migration image from the current checkout before applying it",
+  );
+});
+
 Deno.test("[REL-004] aggregate integration has object-store configuration authority", async () => {
   const manifest = JSON.parse(
     await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
