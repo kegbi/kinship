@@ -168,6 +168,13 @@ test(
       "data-page-id",
       "app.today",
     );
+    await expect(page.locator("#shell-status")).toBeEmpty();
+    await page.reload();
+    await expect(page.locator("body")).toHaveAttribute(
+      "data-page-id",
+      "app.today",
+    );
+    await expect(page.locator("#shell-status")).toBeEmpty();
     await expect(page.locator("main#main-content > section h2")).toHaveText([
       "Needs attention",
       "People to reconnect",
@@ -214,6 +221,57 @@ test(
     await expect(recentPerson).toBeVisible();
     await expect(favorite).toBeVisible();
     await expect(seedActivity).toBeVisible();
+
+    const openAllTasks = page.getByRole("link", { name: "Open all tasks" });
+    const openAllPresentation = await openAllTasks.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        alignItems: style.alignItems,
+        boxShadow: style.boxShadow,
+        display: style.display,
+        minHeight: style.minHeight,
+        outlineOffset: style.outlineOffset,
+        paddingRight: style.paddingRight,
+        textDecorationLine: style.textDecorationLine,
+      };
+    });
+    expect(openAllPresentation).toMatchObject({
+      alignItems: "center",
+      textDecorationLine: "none",
+    });
+    expect(["flex", "inline-flex"]).toContain(openAllPresentation.display);
+    expect(Number.parseFloat(openAllPresentation.minHeight))
+      .toBeGreaterThanOrEqual(
+        44,
+      );
+    expect(Number.parseFloat(openAllPresentation.paddingRight)).toBeGreaterThan(
+      0,
+    );
+    await openAllTasks.focus();
+    const focusedOpenAll = await openAllTasks.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { boxShadow: style.boxShadow, outlineOffset: style.outlineOffset };
+    });
+    expect(focusedOpenAll.outlineOffset).not.toBe("3px");
+    expect(focusedOpenAll.boxShadow).toContain("inset");
+    await openAllTasks.click();
+    await expect(page).toHaveURL(/\/app\/tasks$/);
+    const stateFilter = page.locator("[data-task-status-filter]");
+    await expect(stateFilter).toHaveCSS("min-height", "44px");
+    await expect(stateFilter).toHaveCSS("cursor", "pointer");
+    await expect(stateFilter).toHaveCSS(
+      "background-color",
+      "rgb(255, 255, 255)",
+    );
+    await stateFilter.focus();
+    await expect(stateFilter).toHaveCSS("outline-offset", "0px");
+    expect(
+      await stateFilter.evaluate((element) =>
+        getComputedStyle(element).boxShadow
+      ),
+    ).toContain("inset");
+    await page.goBack();
+    await expect(page).toHaveURL(/\/app$/);
 
     const taskLink = nextSeven.getByRole("link", { name: "Plan Ada's call" });
     await expect(taskLink).toHaveAttribute(
