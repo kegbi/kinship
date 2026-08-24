@@ -41,20 +41,6 @@ services:
     read_only: true
     restart: "no"
 
-  mailpit:
-    image: axllent/mailpit:v1.30.6@sha256:7f33095f80e901f6ad08028f06ca284aa58fe84942be5496008d041d3b9f4d4d
-    environment:
-      MP_DATABASE: /tmp/mailpit.db
-      MP_MAX_MESSAGES: "100"
-    healthcheck:
-      test: ["CMD", "/mailpit", "readyz"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
-    read_only: true
-    tmpfs:
-      - /tmp:size=32m
-
   api:
     build:
       context: .
@@ -81,14 +67,15 @@ services:
       OBJECT_STORAGE_USE_SSL: ${OBJECT_STORAGE_USE_SSL:-true}
       PORT: "8000"
       PUBLIC_WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN:-http://127.0.0.1:4321}
-      SMTP_FROM: hello@kinship.local
-      SMTP_HOST: mailpit
-      SMTP_PORT: "1025"
+      SMTP_FROM: ${SMTP_FROM:-hello@kinship.local}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURITY: ${SMTP_SECURITY:-plain}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
-      mailpit:
-        condition: service_healthy
     healthcheck:
       test: [
         "CMD",
@@ -182,7 +169,14 @@ services:
         target: /run/secrets/gateway_tls_private_key
         read_only: true
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/gateway-health"]
+      test: [
+        "CMD",
+        "wget",
+        "-q",
+        "-O",
+        "/dev/null",
+        "http://127.0.0.1:8080/gateway-health",
+      ]
       interval: 5s
       timeout: 3s
       retries: 20

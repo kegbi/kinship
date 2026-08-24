@@ -11,8 +11,8 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 11 — Production Readiness**
-- Current leaf: **OPS-001D — Secrets, provider configuration, incident and
-  release runbooks**
+- Current leaf: **OPS-001E — Deployment rollout, rollback, and post-deploy
+  verification**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -398,8 +398,27 @@ a named environment.
         provider/session key material external for OPS-001D.
   - [x] Reuse the owning schema matrix for v6-to-v7 rollout and atomic failed
         migration rollback instead of creating another migration framework.
-- [ ] **OPS-001D — Secrets, provider configuration, incident and release
+- [x] **OPS-001D — Secrets, provider configuration, incident and release
       runbooks.**
+  - [x] Provide one fail-closed operator preflight that consumes the existing
+        runtime validators for HTTPS origin, PostgreSQL, S3-compatible object
+        storage, versioned MFA/throttle/DAV keys, authentication timing, and
+        authenticated implicit-TLS SMTP. Emit only bounded issue codes and
+        corrective actions, never supplied values.
+  - [x] Keep DAV explicitly enabled with its complete encryption keyset or
+        explicitly disabled without residual key material. Require TLS for the
+        public gateway, object storage, and production SMTP without choosing a
+        deployment provider; keep Mailpit capture and its API dependency only in
+        the development and test overlays.
+  - [x] Keep application/provider/session/archive secrets outside the repo and
+        recovery archive. Name the private owner, overlap-safe rotation, and
+        independent recovery dependency for every consumed secret class.
+  - [x] Require an external encrypted-at-rest archive boundary and independently
+        verified archive-key recovery before preflight succeeds; actual secret
+        values and the deployment key store remain OPS-001E inputs.
+  - [x] Provide exact release/abort, readiness, incident, compromised-key,
+        isolated recovery, log-retention, daily backup, monthly restore, and
+        secret-rotation steps for the named owner-operated environment.
 - [ ] **OPS-001E — Deployment rollout, rollback, and post-deploy verification.**
 - [ ] **Phase 11 accepted:** the named environment independently passes every
       required security, privacy, accessibility, performance, observability,

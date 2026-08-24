@@ -56,6 +56,20 @@ export interface PrivateProductionProfile {
       readonly thirdPartyExport: boolean;
     };
   };
+  readonly operations: {
+    readonly preflightCommand: "deno task ops:preflight:private-production";
+    readonly runbookPath: "docs/operations/private-production.md";
+    readonly archiveProtection: {
+      readonly encryptedAtRestRequired: true;
+      readonly keyRecoveryVerificationRequired: true;
+    };
+    readonly secrets: readonly {
+      readonly name: string;
+      readonly owner: "private-production-owner";
+      readonly rotation: string;
+      readonly recovery: string;
+    }[];
+  };
 }
 
 export interface ReadinessProbeResult {
@@ -104,6 +118,14 @@ function assertProbeProfile(
     profile.recovery.rpoHours < 1 ||
     profile.recovery.rtoMinutes < 1 ||
     profile.recovery.schemaVersion !== 7 ||
+    profile.operations?.preflightCommand !==
+      "deno task ops:preflight:private-production" ||
+    profile.operations.runbookPath !==
+      "docs/operations/private-production.md" ||
+    profile.operations.archiveProtection?.encryptedAtRestRequired !== true ||
+    profile.operations.archiveProtection?.keyRecoveryVerificationRequired !==
+      true ||
+    profile.operations.secrets.length < 1 ||
     probe.path !== "/gateway-health" ||
     probe.consecutiveFailuresToAlert < 1 ||
     probe.intervalMs < 0 ||

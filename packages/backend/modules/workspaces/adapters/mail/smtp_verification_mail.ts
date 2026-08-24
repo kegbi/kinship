@@ -10,8 +10,38 @@ export interface SmtpVerificationMailOptions {
   readonly host: string;
   readonly port: number;
   readonly readTimeoutMs?: number;
+  readonly security?: "plain" | "tls";
+  readonly username?: string;
+  readonly password?: string;
   readonly webOrigin: string;
   readonly writeTimeoutMs?: number;
+}
+
+interface EnvironmentReader {
+  get(name: string): string | undefined;
+}
+
+export function resolveSmtpVerificationMailOptions(
+  environment: EnvironmentReader,
+): SmtpVerificationMailOptions {
+  const applicationEnvironment = environment.get("APP_ENV") ?? "development";
+  const security = environment.get("SMTP_SECURITY") ?? "plain";
+  if (security !== "plain" && security !== "tls") {
+    throw new Error("SMTP_SECURITY must be plain or tls.");
+  }
+  const username = environment.get("SMTP_USERNAME") || undefined;
+  const password = environment.get("SMTP_PASSWORD") || undefined;
+  return {
+    environment: applicationEnvironment,
+    from: environment.get("SMTP_FROM") ?? "hello@kinship.local",
+    host: environment.get("SMTP_HOST") ?? "127.0.0.1",
+    ...(password === undefined ? {} : { password }),
+    port: Number(environment.get("SMTP_PORT") ?? "1025"),
+    security,
+    ...(username === undefined ? {} : { username }),
+    webOrigin: environment.get("PUBLIC_WEB_ORIGIN") ??
+      "http://127.0.0.1:4321",
+  };
 }
 
 export function plainSmtpPolicy(environment: string, host: string): void {
@@ -42,6 +72,23 @@ interface SmtpTimeouts {
   readonly readTimeoutMs: number;
   readonly writeTimeoutMs: number;
 }
+
+interface SmtpConnection {
+  close(): void;
+  read(buffer: Uint8Array): Promise<number | null>;
+  write(buffer: Uint8Array): Promise<number>;
+}
+
+type SmtpConnector = (
+  security: "plain" | "tls",
+  host: string,
+  port: number,
+) => Promise<SmtpConnection>;
+
+const connectSmtp: SmtpConnector = (security, host, port) =>
+  security === "tls"
+    ? Deno.connectTls({ hostname: host, port })
+    : Deno.connect({ hostname: host, port, transport: "tcp" });
 
 export function smtpTimeouts(
   options: Pick<
@@ -171,7 +218,7 @@ export function buildInvitationMessage(
 }
 
 async function readReply(
-  connection: Deno.TcpConn,
+  connection: SmtpConnection,
   timeoutMs: number,
 ): Promise<number> {
   const buffer = new Uint8Array(2_048);
@@ -193,7 +240,7 @@ async function readReply(
 }
 
 async function command(
-  connection: Deno.TcpConn,
+  connection: SmtpConnection,
   value: string,
   acceptedCodes: readonly number[],
   timeouts: Pick<SmtpTimeouts, "readTimeoutMs" | "writeTimeoutMs">,
@@ -210,8 +257,21 @@ async function command(
 export class SmtpVerificationMail implements VerificationMail {
   readonly #timeouts: SmtpTimeouts;
 
-  constructor(private readonly options: SmtpVerificationMailOptions) {
-    plainSmtpPolicy(options.environment, options.host);
+  constructor(
+    private readonly options: SmtpVerificationMailOptions,
+    private readonly connect: SmtpConnector = connectSmtp,
+  ) {
+    const security = options.security ?? "plain";
+    if (security === "plain") {
+      plainSmtpPolicy(options.environment, options.host);
+    } else if (security !== "tls") {
+      throw new Error("SMTP_SECURITY must be plain or tls.");
+    }
+    if ((options.username === undefined) !== (options.password === undefined)) {
+      throw new Error(
+        "SMTP_USERNAME and SMTP_PASSWORD must be configured together.",
+      );
+    }
     if (
       !Number.isInteger(options.port) || options.port < 1 ||
       options.port > 65_535
@@ -257,12 +317,12 @@ export class SmtpVerificationMail implements VerificationMail {
   }
 
   async #send(email: string, content: string): Promise<void> {
-    const pendingConnection = Deno.connect({
-      hostname: this.options.host,
-      port: this.options.port,
-      transport: "tcp",
-    });
-    let connection: Deno.TcpConn;
+    const pendingConnection = this.connect(
+      this.options.security ?? "plain",
+      this.options.host,
+      this.options.port,
+    );
+    let connection: SmtpConnection;
     try {
       connection = await withTimeout(
         pendingConnection,
@@ -280,6 +340,21 @@ export class SmtpVerificationMail implements VerificationMail {
       );
       if (greeting !== 220) throw new Error("SMTP service unavailable.");
       await command(connection, "EHLO kinship.local", [250], this.#timeouts);
+      if (this.options.username !== undefined) {
+        await command(connection, "AUTH LOGIN", [334], this.#timeouts);
+        await command(
+          connection,
+          encoder.encode(this.options.username).toBase64(),
+          [334],
+          this.#timeouts,
+        );
+        await command(
+          connection,
+          encoder.encode(this.options.password ?? "").toBase64(),
+          [235],
+          this.#timeouts,
+        );
+      }
       await command(
         connection,
         `MAIL FROM:<${safeHeader(this.options.from)}>`,

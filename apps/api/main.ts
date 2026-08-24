@@ -2,7 +2,10 @@ import { createConfiguredApiApp } from "./composition.ts";
 import { app as publicOnlyApp } from "./app.ts";
 import { browserSecurityPolicy } from "./security_config.ts";
 import { resolveDatabaseUrl } from "../../packages/backend/platform/postgres/config.ts";
-import { SmtpVerificationMail } from "../../packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail.ts";
+import {
+  resolveSmtpVerificationMailOptions,
+  SmtpVerificationMail,
+} from "../../packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail.ts";
 import type { EnvironmentReader } from "../../packages/backend/platform/postgres/config.ts";
 import { decodeMfaEncryptionKeyset } from "../../packages/backend/modules/identity/public.ts";
 import { decodeAuthenticationSubjectKeyset } from "../../packages/backend/modules/api-access/public.ts";
@@ -69,14 +72,9 @@ export function createApiRuntime(
     applicationEnvironment,
     environment.get("PUBLIC_WEB_ORIGIN"),
   );
-  const mail = new SmtpVerificationMail({
-    environment: applicationEnvironment,
-    from: environment.get("SMTP_FROM") ?? "hello@kinship.local",
-    host: environment.get("SMTP_HOST") ?? "127.0.0.1",
-    port: Number(environment.get("SMTP_PORT") ?? "1025"),
-    webOrigin: environment.get("PUBLIC_WEB_ORIGIN") ??
-      "http://127.0.0.1:4321",
-  });
+  const mail = new SmtpVerificationMail(
+    resolveSmtpVerificationMailOptions(environment),
+  );
   return configure(
     databaseUrl,
     mail,

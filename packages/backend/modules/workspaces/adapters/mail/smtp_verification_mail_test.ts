@@ -2,6 +2,7 @@ import {
   buildInvitationMessage,
   buildVerificationMessage,
   plainSmtpPolicy,
+  resolveSmtpVerificationMailOptions,
   smtpTimeouts,
   SmtpVerificationMail,
 } from "./smtp_verification_mail.ts";
@@ -134,6 +135,119 @@ Deno.test("plain SMTP is restricted to explicit local capture environments", () 
     }
     assert(failed, `${rejected.join("/")} must fail closed`);
   }
+});
+
+Deno.test("production SMTP requires an explicit TLS transport and paired credentials", () => {
+  const values = new Map<string, string>([
+    ["APP_ENV", "production"],
+    ["PUBLIC_WEB_ORIGIN", "https://kinship.example"],
+    ["SMTP_FROM", "hello@kinship.example"],
+    ["SMTP_HOST", "smtp.example"],
+    ["SMTP_PASSWORD", "private-password"],
+    ["SMTP_PORT", "465"],
+    ["SMTP_SECURITY", "tls"],
+    ["SMTP_USERNAME", "private-user"],
+  ]);
+  const options = resolveSmtpVerificationMailOptions({
+    get: (name) => values.get(name),
+  });
+  new SmtpVerificationMail(options);
+  assert(options.security === "tls", "production SMTP uses implicit TLS");
+
+  for (const name of ["SMTP_PASSWORD", "SMTP_USERNAME"] as const) {
+    const incomplete = new Map(values);
+    incomplete.delete(name);
+    let error: unknown;
+    try {
+      new SmtpVerificationMail(resolveSmtpVerificationMailOptions({
+        get: (requested) => incomplete.get(requested),
+      }));
+    } catch (caught) {
+      error = caught;
+    }
+    assert(
+      error instanceof Error &&
+        error.message ===
+          "SMTP_USERNAME and SMTP_PASSWORD must be configured together.",
+      `${name} cannot be configured without its pair`,
+    );
+  }
+
+  values.set("SMTP_SECURITY", "starttls");
+  let invalidSecurity: unknown;
+  try {
+    resolveSmtpVerificationMailOptions({ get: (name) => values.get(name) });
+  } catch (caught) {
+    invalidSecurity = caught;
+  }
+  assert(
+    invalidSecurity instanceof Error &&
+      invalidSecurity.message === "SMTP_SECURITY must be plain or tls.",
+    "unsupported transport fails configuration",
+  );
+});
+
+Deno.test("authenticated TLS SMTP delivers without exposing credentials in results", async () => {
+  const replies = [
+    "220 ready\r\n",
+    "250 hello\r\n",
+    "334 username\r\n",
+    "334 password\r\n",
+    "235 authenticated\r\n",
+    "250 sender\r\n",
+    "250 recipient\r\n",
+    "354 content\r\n",
+    "250 queued\r\n",
+    "221 bye\r\n",
+  ];
+  const commands: string[] = [];
+  let closed = false;
+  const mail = new SmtpVerificationMail({
+    environment: "production",
+    from: "hello@kinship.example",
+    host: "smtp.example",
+    password: "private-password",
+    port: 465,
+    security: "tls",
+    username: "private-user",
+    webOrigin: "https://kinship.example",
+  }, (security, host, port) => {
+    assert(
+      security === "tls" && host === "smtp.example" && port === 465,
+      "connector receives the validated TLS endpoint",
+    );
+    return Promise.resolve({
+      close: () => closed = true,
+      read: (buffer) => {
+        const reply = new TextEncoder().encode(replies.shift()!);
+        buffer.set(reply);
+        return Promise.resolve(reply.length);
+      },
+      write: (buffer) => {
+        commands.push(new TextDecoder().decode(buffer));
+        return Promise.resolve(buffer.length);
+      },
+    });
+  });
+
+  await mail.sendPasswordReset({
+    email: "owner@example.test",
+    expiresAt: new Date("2026-08-24T12:00:00Z"),
+    token: "reset-token",
+  });
+
+  assert(closed, "successful provider connection is closed");
+  assert(commands[0] === "EHLO kinship.local\r\n", "SMTP greeting is sent");
+  assert(commands[1] === "AUTH LOGIN\r\n", "authentication is explicit");
+  assert(
+    commands[2] === "cHJpdmF0ZS11c2Vy\r\n" &&
+      commands[3] === "cHJpdmF0ZS1wYXNzd29yZA==\r\n",
+    "credentials are encoded only inside the encrypted SMTP session",
+  );
+  assert(
+    commands.some((value) => value.includes("/auth/reset-password?token=")),
+    "password recovery uses the delivered browser route",
+  );
 });
 
 Deno.test("SMTP configuration rejects invalid ports before delivery", () => {
