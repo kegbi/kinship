@@ -769,6 +769,7 @@ describe("relationship profile section", () => {
       .find((item) =>
         item.textContent === "Save relationship with Ada Lovelace"
       )!;
+    expect(save.classList.contains("button-primary")).toBe(true);
     save.click();
     await vi.waitFor(() =>
       expect(document.querySelector("#relationships-state")?.textContent)
@@ -776,6 +777,7 @@ describe("relationship profile section", () => {
     );
     const unlink = [...document.querySelectorAll<HTMLButtonElement>("button")]
       .find((item) => item.textContent === "Unlink Ada Lovelace")!;
+    expect(unlink.classList.contains("button-danger")).toBe(true);
     unlink.click();
     await vi.waitFor(() =>
       expect(document.querySelector("#relationships-state")?.textContent)

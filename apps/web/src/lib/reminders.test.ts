@@ -232,6 +232,11 @@ describe("PLANNING-002 reminder browser behavior", () => {
       })),
     );
     await mountPersonReminders({ archived: false, personId, workspaceId });
+    expect(
+      document.querySelector<HTMLButtonElement>(
+        "[data-reminder-list] button",
+      )?.classList.contains("button-secondary"),
+    ).toBe(true);
 
     document.dispatchEvent(
       new CustomEvent("person-lifecycle-changed", {

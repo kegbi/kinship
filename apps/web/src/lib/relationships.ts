@@ -258,6 +258,7 @@ export async function mountRelationships(
         });
         const save = document.createElement("button");
         save.type = "button";
+        save.className = "button-primary";
         save.textContent = `Save relationship with ${name}`;
         const selectable = () =>
           Boolean(editor.value) && !editor.selectedOptions[0]?.disabled;
@@ -293,6 +294,7 @@ export async function mountRelationships(
         };
         const remove = document.createElement("button");
         remove.type = "button";
+        remove.className = "button-danger";
         remove.textContent = `Unlink ${name}`;
         remove.onclick = async () => {
           const result = await deleteRelationship(personId, relationship.id, {

@@ -167,6 +167,7 @@ describe("PLANNING-001 task browser behavior", () => {
     const buttons = document.querySelectorAll<HTMLButtonElement>(
       "[data-task-open-list] button",
     );
+    expect(buttons[1]?.classList.contains("button-secondary")).toBe(true);
     buttons[1]!.click();
     const form = document.querySelector<HTMLFormElement>("[data-task-form]")!;
     (form.elements.namedItem("title") as HTMLInputElement).value = "Updated";
