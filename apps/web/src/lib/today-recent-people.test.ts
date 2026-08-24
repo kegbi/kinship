@@ -87,6 +87,7 @@ describe("TODAY-001 actual recently viewed people", () => {
       .mockResolvedValueOnce(response(session))
       .mockRejectedValueOnce(new Error("offline"))
       .mockResolvedValueOnce(response({ status: 401 }, 401))
+      .mockResolvedValueOnce(response({ status: 409 }, 409))
       .mockResolvedValueOnce(response(session))
       .mockResolvedValueOnce(response({ people: [], status: "ready" }))
       .mockResolvedValueOnce(response(session))
@@ -104,7 +105,7 @@ describe("TODAY-001 actual recently viewed people", () => {
     expect(retry.hidden).toBe(false);
     retry.click();
     await vi.waitFor(() => expect(retry.hidden).toBe(false));
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     retry.click();
     await vi.waitFor(() => {
       expect(
@@ -115,7 +116,7 @@ describe("TODAY-001 actual recently viewed people", () => {
     });
 
     const superseded = mountTodayRecentPeople();
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(7));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(8));
     const current = mountTodayRecentPeople();
     await current;
     resolveStale?.(response({

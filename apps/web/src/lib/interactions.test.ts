@@ -315,7 +315,12 @@ describe("INTERACTION-001 browser behavior", () => {
         status: 401,
         title: "Unauthorized",
         type: "about:blank",
-      }, 401)),
+      }, 401)).mockResolvedValueOnce(response({
+        detail: "Entry unavailable",
+        status: 409,
+        title: "Application entry unavailable",
+        type: "about:blank",
+      }, 409)),
     );
     await mountInteractionCapture();
     expect(document.querySelector("#interaction-capture-status")?.textContent)
@@ -2019,6 +2024,12 @@ describe("INTERACTION-001 browser behavior", () => {
     }, 401);
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(unauthorized)
+      .mockResolvedValueOnce(response({
+        detail: "Entry unavailable",
+        status: 409,
+        title: "Application entry unavailable",
+        type: "about:blank",
+      }, 409))
       .mockResolvedValueOnce(response(session()))
       .mockResolvedValueOnce(response({
         detail: "Missing",
@@ -2052,6 +2063,12 @@ describe("INTERACTION-001 browser behavior", () => {
         title: "Unauthorized",
         type: "about:blank",
       }, 401))
+      .mockResolvedValueOnce(response({
+        detail: "Entry unavailable",
+        status: 409,
+        title: "Application entry unavailable",
+        type: "about:blank",
+      }, 409))
       .mockResolvedValueOnce(response(session()))
       .mockResolvedValueOnce(response({
         items: [],

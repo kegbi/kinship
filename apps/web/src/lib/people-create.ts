@@ -6,6 +6,10 @@ import {
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 
+type Navigate = (path: string) => void;
+
+const browserNavigate: Navigate = (path) => globalThis.location.assign(path);
+
 function input(form: HTMLFormElement, name: string): HTMLInputElement {
   return form.elements.namedItem(name) as HTMLInputElement;
 }
@@ -97,40 +101,13 @@ function localErrors(person: PersonInput): Readonly<Record<string, string>> {
   return {};
 }
 
-function showCreated(person: PersonIdentity, next: string): void {
-  document.querySelector<HTMLElement>("#people-create-heading")!.hidden = true;
-  document.querySelector<HTMLFormElement>("#people-create-form")!.hidden = true;
-  const created = document.querySelector<HTMLElement>("#created-person")!;
-  const name = document.querySelector<HTMLElement>("#created-person-name")!;
-  name.textContent = displayName(person);
-  for (
-    const field of [
-      "givenName",
-      "middleName",
-      "familyName",
-      "nickname",
-    ] as const
-  ) {
-    const target = document.querySelector<HTMLElement>(
-      `[data-person-field="${field}"]`,
-    );
-    if (target) target.textContent = person[field] || "Unknown";
-  }
-  const partial = document.querySelector<HTMLElement>(
-    "#created-person-partial",
-  );
-  if (partial) partial.hidden = !person.isPartial;
-  created.hidden = false;
-  document.body.dataset.pageId = "people.profile";
-  history.replaceState({}, "", next);
-  name.focus();
-}
-
 function problemDetail(problem: ProblemDetails | undefined): string {
   return problem?.detail ?? "The person could not be created. Try again.";
 }
 
-export async function mountPeopleCreate(): Promise<void> {
+export async function mountPeopleCreate(
+  navigate: Navigate = browserNavigate,
+): Promise<void> {
   const form = document.querySelector<HTMLFormElement>("#people-create-form");
   const status = document.querySelector<HTMLElement>("#people-create-status");
   const duplicate = document.querySelector<HTMLElement>("#duplicate-warning");
@@ -186,7 +163,7 @@ export async function mountPeopleCreate(): Promise<void> {
       input(form, "givenName").focus();
       return;
     }
-    showCreated(result.value.person, result.value.next);
+    navigate(result.value.next);
   };
 
   form.addEventListener("input", (event) => {

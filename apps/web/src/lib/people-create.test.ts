@@ -55,7 +55,7 @@ afterEach(() => {
 });
 
 describe("PEOPLE-001 person creation form", () => {
-  it("creates through the generated client and renders the canonical created state", async () => {
+  it("creates through the generated client and opens the complete person workspace", async () => {
     const form = markup();
     set(form, "givenName", "Ada");
     set(form, "familyName", "Lovelace");
@@ -72,12 +72,12 @@ describe("PEOPLE-001 person creation form", () => {
         status: "created",
       }, 201));
     vi.stubGlobal("fetch", fetchMock);
-    await mountPeopleCreate();
+    const navigate = vi.fn();
+    await mountPeopleCreate(navigate);
     document.querySelector<HTMLButtonElement>("#save-person")!.click();
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await vi.waitFor(() =>
-      expect(document.querySelector("#created-person")?.hasAttribute("hidden"))
-        .toBe(false)
+      expect(navigate).toHaveBeenCalledWith(`/app/people/${personId}`)
     );
     expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/v1/people");
     expect(fetchMock.mock.calls[1]?.[1]?.headers).toEqual({
@@ -89,15 +89,8 @@ describe("PEOPLE-001 person creation form", () => {
       givenName: "Ada",
       isPartial: false,
     });
-    expect(location.pathname).toBe(`/app/people/${personId}`);
-    expect(document.body.dataset.pageId).toBe("people.profile");
-    expect(document.querySelector("#created-person-name")?.textContent).toBe(
-      "Ada Lovelace",
-    );
-    expect(
-      document.querySelector('[data-person-field="nickname"]')?.textContent,
-    )
-      .toBe("Unknown");
+    expect(location.pathname).toBe("/");
+    expect(document.body.dataset.pageId).toBe("people.create");
   });
 
   it("keeps duplicate guidance non-blocking through explicit create-anyway", async () => {

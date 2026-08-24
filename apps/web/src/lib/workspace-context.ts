@@ -1,4 +1,5 @@
 import {
+  consumeApplicationEntry,
   getSession,
   type SessionContext,
 } from "../../../../packages/contracts/generated/auth-client.ts";
@@ -19,7 +20,11 @@ export interface WorkspaceChangeDecision {
 }
 
 export type WorkspaceSessionResolution =
-  | { readonly status: "ready"; readonly session: SessionContext }
+  | {
+    readonly status: "ready";
+    readonly session: SessionContext;
+    readonly entryFirstName?: string;
+  }
   | { readonly status: "access-lost" }
   | { readonly status: "unavailable" };
 
@@ -43,7 +48,26 @@ async function resolveWorkspaceSessionSelection(): Promise<
     }
     if (result.problem.status !== 401) return { status: "unavailable" };
   }
-  return { status: "access-lost" };
+  const entry = await consumeApplicationEntry().catch(() => undefined);
+  if (!entry) return { status: "unavailable" };
+  if (!entry.ok) {
+    return entry.problem.status >= 500
+      ? { status: "unavailable" }
+      : { status: "access-lost" };
+  }
+  const entered = await getSession().catch(() => undefined);
+  if (!entered) return { status: "unavailable" };
+  if (!entered.ok) {
+    return entered.problem.status >= 500
+      ? { status: "unavailable" }
+      : { status: "access-lost" };
+  }
+  if (savedWorkspace) sessionStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+  return {
+    entryFirstName: entry.value.member.firstName,
+    session: entered.value,
+    status: "ready",
+  };
 }
 
 export function resolveWorkspaceSession(): Promise<WorkspaceSessionResolution> {

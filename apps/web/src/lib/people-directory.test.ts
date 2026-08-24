@@ -191,7 +191,13 @@ describe("PEOPLE-002 people directory island", () => {
         status: 401,
         title: "Authentication required",
         type: "about:blank",
-      }, 401)),
+      }, 401)).mockResolvedValueOnce(response({
+        code: "entry_handoff_invalid",
+        detail: "Sign in again",
+        status: 409,
+        title: "Application entry unavailable",
+        type: "about:blank",
+      }, 409)),
     );
     await mountPeopleDirectory();
     expect(document.querySelector("#people-directory-error h2")?.textContent)

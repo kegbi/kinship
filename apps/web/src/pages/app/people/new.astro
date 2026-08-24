@@ -23,21 +23,21 @@ export const prerender = true;
       <div class="name-grid">
         <div class="name-field">
           <label>
-            Given name
+            <span class="field-label">Given name</span>
             <input name="givenName" maxlength="200" autocomplete="given-name" aria-describedby="person-given-name-error" />
           </label>
           <small id="person-given-name-error" data-field-error="givenName"></small>
         </div>
         <label>
-          Middle name <span>Optional</span>
+          <span class="field-label">Middle name <small>Optional</small></span>
           <input name="middleName" maxlength="200" autocomplete="additional-name" />
         </label>
         <label>
-          Family name <span>Optional</span>
+          <span class="field-label">Family name <small>Optional</small></span>
           <input name="familyName" maxlength="200" autocomplete="family-name" />
         </label>
         <label>
-          Nickname <span>Optional</span>
+          <span class="field-label">Nickname <small>Optional</small></span>
           <input name="nickname" maxlength="200" />
         </label>
       </div>
@@ -60,22 +60,6 @@ export const prerender = true;
       <p id="people-create-status" role="status" aria-live="polite"></p>
     </form>
 
-    <section id="created-person" class="created-person" tabindex="-1" hidden>
-      <p class="eyebrow">Person created</p>
-      <h1 id="created-person-name" tabindex="-1"><span class="sr-only">Created person</span></h1>
-      <p id="created-person-partial" class="state-badge" hidden>Partial identity · unknown values preserved</p>
-      <dl class="identity-summary">
-        <div><dt>Given name</dt><dd data-person-field="givenName"></dd></div>
-        <div><dt>Middle name</dt><dd data-person-field="middleName"></dd></div>
-        <div><dt>Family name</dt><dd data-person-field="familyName"></dd></div>
-        <div><dt>Nickname</dt><dd data-person-field="nickname"></dd></div>
-      </dl>
-      <aside class="profile-next-step">
-        <h2>Identity saved</h2>
-        <p>This canonical page currently shows the saved identity. Additional profile sections are not available yet.</p>
-      </aside>
-      <a class="button-link" href="/app/people/new">Add another person</a>
-    </section>
   </main>
 </ApplicationLayout>
 
