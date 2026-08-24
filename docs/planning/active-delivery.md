@@ -11,8 +11,8 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 11 — Production Readiness**
-- Current leaf: **OPS-001C — Backup/restore, migration rollout/rollback, and
-  recovery**
+- Current leaf: **OPS-001D — Secrets, provider configuration, incident and
+  release runbooks**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -376,7 +376,28 @@ a named environment.
   - [x] Provide one executable HTTPS operator probe that emits a bounded local
         structured result and reports unavailability only after three
         consecutive one-minute readiness failures.
-- [ ] **OPS-001C — Backup/restore, migration rollout/rollback, and recovery.**
+- [x] **OPS-001C — Backup/restore, migration rollout/rollback, and recovery.**
+  - [x] Provide one explicit operator command that creates a consistent
+        canonical-v7 PostgreSQL custom dump plus a complete S3-compatible object
+        archive only while application and worker writes are explicitly
+        quiesced. Accept only an atomic direct-child archive ID under the
+        repo-local recovery root so a concurrent loser cannot delete its winner.
+  - [x] Make a versioned manifest authoritative for schema version, database and
+        object checksums, object metadata, and the private recovery policy; fail
+        closed before target mutation on missing source bytes, format drift, or
+        checksum mismatch without emitting object keys or credentials.
+  - [x] Restore only into an explicitly isolated database with no user relation
+        or non-system schema and an empty object endpoint that reuses the
+        manifest bucket name required by restored file metadata, verify the
+        restored database through the canonical migration verifier, and report
+        missing and extra object counts with measured recovery time and
+        recovery-point age. Treat either reconciliation class or a missed
+        objective as non-zero operator attention and never promote that target.
+  - [x] Fix the proportionate owner-operated policy at daily backups, 30-day
+        retention, 24-hour RPO, and four-hour RTO. Keep archive encryption and
+        provider/session key material external for OPS-001D.
+  - [x] Reuse the owning schema matrix for v6-to-v7 rollout and atomic failed
+        migration rollback instead of creating another migration framework.
 - [ ] **OPS-001D — Secrets, provider configuration, incident and release
       runbooks.**
 - [ ] **OPS-001E — Deployment rollout, rollback, and post-deploy verification.**

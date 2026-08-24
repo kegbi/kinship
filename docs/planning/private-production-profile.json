@@ -23,6 +23,25 @@
       "boundedImportExportCompletion": 10000
     }
   },
+  "recovery": {
+    "archiveRoot": ".artifacts/private-production-recovery",
+    "backupSchedule": "daily",
+    "backupCommand": "deno task ops:recovery:private-production backup <archive-id>",
+    "manifestVersion": 1,
+    "migrationVerificationTask": "deno task test:schema:matrix",
+    "prerequisites": [
+      "Stop API and worker writes, then set PRIVATE_PRODUCTION_WRITES_QUIESCED=true only for the backup invocation.",
+      "Use the pinned PostgreSQL 18.4 pg_dump and pg_restore clients and a reachable S3-compatible endpoint.",
+      "Restore only into an empty isolated database and bucket, then set PRIVATE_PRODUCTION_ISOLATED_TARGET=true only for the restore invocation.",
+      "Keep database, object-storage, archive-encryption, and key material outside the archive and provide them through the OPS-001D secret boundary."
+    ],
+    "promotionRule": "Promote only an exit-zero restored result with zero missing and extra objects and met RPO/RTO; otherwise discard the isolated target and retry from the last valid archive.",
+    "retentionDays": 30,
+    "restoreCommand": "deno task ops:recovery:private-production restore <archive-id>",
+    "rpoHours": 24,
+    "rtoMinutes": 240,
+    "schemaVersion": 7
+  },
   "observability": {
     "gatewayConfigPath": "gateway/nginx.conf",
     "readinessProbe": {
