@@ -35,7 +35,7 @@ test(
       { type: "leaf", description: "APP-010A" },
     ],
   },
-  async ({ context, page, request }) => {
+  async ({ page, request }) => {
     test.setTimeout(180_000);
     const email = `api-${Date.now()}@example.test`;
     expect((await request.post(`${origin}/api/v1/registrations`, {
@@ -80,11 +80,28 @@ test(
     await expect(secretInput).toBeVisible();
     const secret = await secretInput.inputValue();
     expect(secret).toMatch(/^kin_pat_[0-9a-f-]+\.[A-Za-z0-9_-]+$/);
-    await context.grantPermissions(["clipboard-read", "clipboard-write"], {
-      origin,
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText(value: string) {
+            (globalThis as typeof globalThis & {
+              __app010aCopiedText?: string;
+            }).__app010aCopiedText = value;
+            return Promise.resolve();
+          },
+        },
+      });
     });
     await page.getByRole("button", { name: "Copy", exact: true }).click();
     await expect(page.locator("[data-api-state]")).toContainText("copied");
+    expect(
+      await page.evaluate(() =>
+        (globalThis as typeof globalThis & {
+          __app010aCopiedText?: string;
+        }).__app010aCopiedText
+      ),
+    ).toBe(secret);
     await expect(page.locator("[data-api-list]")).toContainText("Desktop read");
     await expect(page.locator("[data-api-list]")).toContainText("No expiry");
     await expect(page.locator("[data-api-list]")).not.toContainText(secret);
