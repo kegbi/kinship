@@ -187,11 +187,7 @@ function renderSession(
       ? `Welcome, ${firstName}.`
       : "Welcome back.";
   }
-  const sessionMessage = firstName
-    ? "You are its verified owner. Your protected session is active."
-    : "Your protected session and active workspace membership were resolved by the server.";
-  elements.status.textContent =
-    `${session.workspace.name} is ready. ${sessionMessage}`;
+  elements.status.textContent = "";
 }
 
 async function resolveSession(): Promise<ShellResolution> {
@@ -266,20 +262,9 @@ export async function mountApplicationShell(
     return;
   }
   renderSession(elements, resolved.session, resolved.firstName);
-  let statusTimer: ReturnType<typeof setTimeout> | undefined;
-  const setStatus = (message: string, clearAfter?: number): void => {
-    if (statusTimer !== undefined) clearTimeout(statusTimer);
-    statusTimer = undefined;
+  const setStatus = (message: string): void => {
     elements.status.textContent = message;
-    if (clearAfter === undefined) return;
-    statusTimer = setTimeout(() => {
-      if (elements.status.textContent === message) {
-        elements.status.textContent = "";
-      }
-      statusTimer = undefined;
-    }, clearAfter);
   };
-  setStatus(elements.status.textContent, 5_000);
   let activeWorkspaceId = resolved.session.workspace.id;
 
   const menuToggle = document.querySelector<HTMLButtonElement>(

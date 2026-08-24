@@ -324,9 +324,7 @@ test(
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
       "Welcome back.",
     );
-    await expect(page.locator("#shell-status")).toContainText(
-      "protected session",
-    );
+    await expect(page.locator("#shell-status")).toBeEmpty();
     await expectAccessible(page);
     const firstCookie = (await context.cookies()).find((item) =>
       item.name === "kinship_session"

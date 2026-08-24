@@ -22,8 +22,25 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
+}
+
+select {
+  max-width: 100%;
+  min-height: 44px;
+  padding: .65rem 2.35rem .65rem .75rem;
+  border: 1px solid #aeb7ae;
+  border-radius: .6rem;
+  color: inherit;
+  background-color: white;
+  cursor: pointer;
+}
+
+select:disabled {
+  cursor: not-allowed;
+  opacity: .65;
 }
 
 .global-actions > a {
@@ -42,14 +59,20 @@ a {
   color: inherit;
 }
 
-a:focus-visible,
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-summary:focus-visible,
-[tabindex="-1"]:focus-visible {
-  outline: 3px solid #a44730;
-  outline-offset: 3px;
+:where(a[href], button, input, select, textarea, summary):focus-visible {
+  outline: none;
+  outline-offset: 0;
+  box-shadow:
+    inset 0 0 0 2px white,
+    inset 0 0 0 5px #a44730;
+}
+
+@media (forced-colors: active) {
+  :where(a[href], button, input, select, textarea, summary):focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: -3px;
+    box-shadow: none;
+  }
 }
 
 [hidden] {
@@ -123,6 +146,52 @@ summary:focus-visible,
   background: #20352d;
   font-weight: 750;
   text-decoration: none;
+}
+
+:is(a, button):is(.button-primary, .button-secondary, .button-danger) {
+  display: inline-flex;
+  min-height: 44px;
+  margin: 0;
+  padding: .65rem .9rem;
+  border: 1px solid;
+  border-radius: .65rem;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-weight: 750;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+:is(a, button).button-primary {
+  border-color: #20352d;
+  color: white;
+  background: #20352d;
+}
+
+:is(a, button).button-secondary {
+  border-color: #aeb7ae;
+  color: #20352d;
+  background: white;
+}
+
+:is(a, button).button-danger {
+  border-color: #a44730;
+  color: white;
+  background: #a44730;
+}
+
+:is(a, button):is(.button-primary, .button-secondary, .button-danger):hover {
+  filter: brightness(.96);
+}
+
+button:is(.button-primary, .button-secondary, .button-danger):disabled,
+a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: .55;
+  pointer-events: none;
 }
 
 .app-header {
@@ -1736,8 +1805,19 @@ summary:focus-visible,
 }
 
 .profile-section-card:focus {
-  outline: 3px solid #a44730;
-  outline-offset: 3px;
+  outline: none;
+  outline-offset: 0;
+  box-shadow:
+    inset 0 0 0 2px white,
+    inset 0 0 0 5px #a44730;
+}
+
+@media (forced-colors: active) {
+  .profile-section-card:focus {
+    outline: 3px solid Highlight;
+    outline-offset: -3px;
+    box-shadow: none;
+  }
 }
 
 .profile-section-heading {
@@ -1904,6 +1984,36 @@ summary:focus-visible,
 .form-actions button.secondary-action {
   color: #20352d;
   background: white;
+}
+
+.form-actions a.button-primary,
+.form-actions a.button-secondary,
+.form-actions a.button-danger,
+.form-actions button.button-primary,
+.form-actions button.button-secondary,
+.form-actions button.button-danger {
+  min-height: 46px;
+  padding: .7rem 1rem;
+  border-radius: .7rem;
+  line-height: 1.2;
+}
+
+.form-actions .button-primary {
+  border-color: #20352d;
+  color: white;
+  background: #20352d;
+}
+
+.form-actions .button-secondary {
+  border-color: #aeb7ae;
+  color: #20352d;
+  background: white;
+}
+
+.form-actions .button-danger {
+  border-color: #a44730;
+  color: white;
+  background: #a44730;
 }
 
 .person-form [aria-invalid="true"] {
@@ -2690,12 +2800,6 @@ summary:focus-visible,
   white-space: normal;
 }
 
-a.today-touch-target {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.5rem 0.25rem;
-}
-
 @media (max-width: 760px) {
   .attention-groups {
     grid-template-columns: 1fr;
@@ -2738,6 +2842,27 @@ a.today-touch-target {
   border-left: 0.3rem solid #35796b;
   border-radius: 0.5rem;
   padding: 1rem;
+}
+
+select:not([multiple]) {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%2320352d' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+  background-position: right .7rem center;
+  background-repeat: no-repeat;
+  background-size: 1rem;
+}
+
+select[multiple] {
+  padding-right: .75rem;
+  background-image: none;
+}
+
+@media (forced-colors: active) {
+  select:not([multiple]) {
+    appearance: auto;
+    padding-right: .75rem;
+    background-image: none;
+  }
 }
 
 .journal-list h2,

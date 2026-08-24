@@ -279,9 +279,7 @@ test(
     await page.keyboard.press("Tab");
     await expect(switcher).toBeFocused();
     await switcher.selectOption(secondWorkspaceId);
-    await expect(page.locator("#shell-status")).toContainText(
-      "Community circle is ready",
-    );
+    await expect(page.locator("#shell-status")).toBeEmpty();
     await expect(switcher).toHaveValue(secondWorkspaceId);
     const originalWorkspaceId = await switcher.locator("option").first()
       .getAttribute("value");

@@ -344,9 +344,7 @@ describe("APP-002C protected application shell", () => {
     expect(document.querySelector("[data-workspace-name]")?.textContent).toBe(
       "Family circle",
     );
-    expect(document.querySelector("#shell-status")?.textContent).toMatch(
-      /protected session/i,
-    );
+    expect(document.querySelector("#shell-status")?.textContent).toBe("");
     expect(document.querySelector("#today-heading")?.textContent).toBe(
       "Welcome back.",
     );
@@ -683,18 +681,13 @@ describe("APP-002C protected application shell", () => {
     ]);
     expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
       .toBe(false);
-    expect(document.querySelector("#shell-status")?.textContent).toMatch(
-      /verified owner/i,
-    );
-    expect(document.querySelector("#shell-status")?.textContent).toContain(
-      "Family circle is ready",
-    );
+    expect(document.querySelector("#shell-status")?.textContent).toBe("");
     expect(document.querySelector("#today-heading")?.textContent).toBe(
       "Welcome, Avery.",
     );
   });
 
-  it("clears the ready notice without erasing a later session error", async () => {
+  it("keeps later session errors visible without a routine mount notice", async () => {
     vi.useFakeTimers();
     shellMarkup();
     vi.stubGlobal(
@@ -706,7 +699,7 @@ describe("APP-002C protected application shell", () => {
 
     await mountApplicationShell(vi.fn());
     const status = document.querySelector<HTMLElement>("#shell-status")!;
-    expect(status.textContent).toMatch(/is ready/i);
+    expect(status.textContent).toBe("");
 
     document.querySelector<HTMLButtonElement>("#member-sign-out")!.click();
     await vi.advanceTimersByTimeAsync(0);
@@ -714,19 +707,6 @@ describe("APP-002C protected application shell", () => {
 
     await vi.advanceTimersByTimeAsync(10_000);
     expect(status.textContent).toMatch(/could not be revoked/i);
-  });
-
-  it("automatically clears an unchanged ready notice", async () => {
-    vi.useFakeTimers();
-    shellMarkup();
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(session())));
-
-    await mountApplicationShell(vi.fn());
-    const status = document.querySelector<HTMLElement>("#shell-status")!;
-    expect(status.textContent).toMatch(/is ready/i);
-
-    await vi.advanceTimersByTimeAsync(10_000);
-    expect(status.textContent).toBe("");
   });
 
   it("keeps a failed sign-out retryable and does not navigate", async () => {
