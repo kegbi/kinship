@@ -145,7 +145,8 @@ async function requestForLog(
 }
 
 Deno.test({
-  name: "real Nginx logs only safe route templates and operational fields",
+  name:
+    "real Nginx exposes browser protections and logs only safe operational fields",
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
@@ -154,6 +155,9 @@ Deno.test({
     const container = `kinship-gateway-log-${Deno.pid}-${run}`;
     const tls = await createE2eTls(project);
     const config = await Deno.realPath("gateway/nginx.conf");
+    const securityHeaders = await Deno.realPath(
+      "gateway/security_headers.conf",
+    );
     let started = false;
     const errors: unknown[] = [];
     try {
@@ -169,6 +173,8 @@ Deno.test({
         "--mount",
         `type=bind,source=${config},target=/etc/nginx/nginx.conf,readonly`,
         "--mount",
+        `type=bind,source=${securityHeaders},target=/etc/nginx/security_headers.conf,readonly`,
+        "--mount",
         `type=bind,source=${tls.certificate},target=/run/secrets/gateway_tls_certificate,readonly`,
         "--mount",
         `type=bind,source=${tls.privateKey},target=/run/secrets/gateway_tls_private_key,readonly`,
@@ -180,6 +186,22 @@ Deno.test({
       assert(port, "Docker-assigned gateway log port is discoverable.");
       const origin = `http://127.0.0.1:${port}`;
       await waitForGateway(origin);
+      const browserBoundary = await fetch(origin);
+      const expectedHeaders = {
+        "content-security-policy":
+          "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'",
+        "permissions-policy": "camera=(), geolocation=(), microphone=()",
+        "referrer-policy": "no-referrer",
+        "strict-transport-security": "max-age=31536000",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+      } as const;
+      for (const [name, expected] of Object.entries(expectedHeaders)) {
+        assert(
+          browserBoundary.headers.get(name) === expected,
+          `${name} must protect every public gateway response`,
+        );
+      }
 
       const resetSecret = "reset-query-secret-7ccd";
       const verificationSecret = "verify-query-secret-61da";
