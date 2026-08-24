@@ -17,6 +17,40 @@ const cursorKeyset = {
   keys: new Map([[1, new Uint8Array(32).fill(7)]]),
 };
 
+Deno.test("DAV task operations use the supplied owning transaction", async () => {
+  const { management, seenTransactions } = dependencies();
+  const transaction = { opaque: "dav-transaction" };
+  const created = await management.create(actor, {
+    requestId: taskId,
+    title: "Synchronized task",
+  }, transaction);
+  assert(created.status === "created", "DAV task created");
+  if (created.status !== "created") return;
+  const saved = await management.change(actor, created.task.id, {
+    expectedUpdatedAt: created.task.updatedAt,
+    title: "Updated synchronized task",
+  }, transaction);
+  assert(saved.status === "saved", "DAV task updated");
+  const completed = await management.setCompletion(
+    actor,
+    created.task.id,
+    true,
+    transaction,
+  );
+  assert(completed.status === "saved", "DAV task completed");
+  const reopened = await management.setCompletion(
+    actor,
+    created.task.id,
+    false,
+    transaction,
+  );
+  assert(reopened.status === "saved", "DAV task reopened");
+  assert(
+    seenTransactions.every((value) => value === transaction.opaque),
+    "all planning operations stay inside the supplied DAV transaction",
+  );
+});
+
 function dependencies(
   personStatus: "archived" | "not-found" | "ready" = "ready",
   workspaceStatus: "forbidden" | "ready" = "ready",
@@ -35,6 +69,7 @@ function dependencies(
     updatedAt: string;
   } | undefined;
   const auditActions: string[] = [];
+  const seenTransactions: unknown[] = [];
   return {
     auditActions,
     management: createTaskManagement({
@@ -133,9 +168,13 @@ function dependencies(
           work({ opaque: "tx" }),
       },
       workspace: {
-        authorize: () => Promise.resolve({ status: workspaceStatus }),
+        authorize: ({ transaction }) => {
+          seenTransactions.push(transaction.opaque);
+          return Promise.resolve({ status: workspaceStatus });
+        },
       },
     }),
+    seenTransactions,
   };
 }
 

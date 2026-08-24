@@ -3,7 +3,9 @@
   "specifiers": {
     "npm:@hono/standard-validator@0.4.0": "0.4.0_@standard-schema+spec@1.1.0_hono@4.13.1",
     "npm:@standard-schema/spec@1.1.0": "1.1.0",
+    "npm:fast-xml-parser@5.11.0": "5.11.0",
     "npm:hono@4.13.1": "4.13.1",
+    "npm:ipaddr.js@2.5.0": "2.5.0",
     "npm:kysely-postgres-js@3.0.0": "3.0.0_kysely@0.29.4_postgres@3.4.9",
     "npm:kysely@0.29.4": "0.29.4",
     "npm:minio@8.0.7": "8.0.7",

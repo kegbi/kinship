@@ -42,6 +42,12 @@ Deno.test("Compose and root development pass PostgreSQL credentials as fields", 
     ),
     "Compose must pass the private authentication-subject key only to the API",
   );
+  assert(
+    compose.includes(
+      "INTEGRATIONS_ENCRYPTION_KEYSET: ${INTEGRATIONS_ENCRYPTION_KEYSET:-}",
+    ),
+    "Compose must pass the private integrations key only to the API",
+  );
   const example = await Deno.readTextFile(
     new URL("../.env.example", import.meta.url),
   );
@@ -56,6 +62,14 @@ Deno.test("Compose and root development pass PostgreSQL credentials as fields", 
   assert(
     example.includes("AUTH_THROTTLE_SUBJECT_KEYSET="),
     "the environment example must document the authentication-subject key name",
+  );
+  assert(
+    example.includes("INTEGRATIONS_ENCRYPTION_KEYSET="),
+    "the environment example must document the integrations key name",
+  );
+  assert(
+    example.includes("INTEGRATIONS_DAV_ENABLED=true"),
+    "the environment example must document DAV module enablement",
   );
 
   const developmentTool = await Deno.readTextFile(

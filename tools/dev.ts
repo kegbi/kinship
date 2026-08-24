@@ -22,6 +22,10 @@ const smtpPort = configured("SMTP_PORT") ?? "1025";
 const mfaEncryptionKeyset = configured("AUTH_MFA_ENCRYPTION_KEYSET");
 const authenticationResponseFloor = configured("AUTH_MINIMUM_RESPONSE_MS");
 const throttleSubjectKeyset = configured("AUTH_THROTTLE_SUBJECT_KEYSET");
+const integrationsEncryptionKeyset = configured(
+  "INTEGRATIONS_ENCRYPTION_KEYSET",
+);
+const integrationsDavEnabled = configured("INTEGRATIONS_DAV_ENABLED");
 const composeEnvironment = {
   POSTGRES_DB: postgresDatabase,
   POSTGRES_PASSWORD: postgresPassword,
@@ -95,6 +99,12 @@ try {
       : {}),
     ...(throttleSubjectKeyset
       ? { AUTH_THROTTLE_SUBJECT_KEYSET: throttleSubjectKeyset }
+      : {}),
+    ...(integrationsEncryptionKeyset
+      ? { INTEGRATIONS_ENCRYPTION_KEYSET: integrationsEncryptionKeyset }
+      : {}),
+    ...(integrationsDavEnabled
+      ? { INTEGRATIONS_DAV_ENABLED: integrationsDavEnabled }
       : {}),
   };
   const api = new Deno.Command(Deno.execPath(), {

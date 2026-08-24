@@ -181,6 +181,10 @@ export type CreateTaskResult =
   | { readonly status: "idempotency-conflict" }
   | TaskFailure;
 
+export type GetTaskResult =
+  | { readonly status: "forbidden" | "not-found" | "validation-error" }
+  | { readonly status: "ready"; readonly task: TaskRecord };
+
 export type ChangeTaskResult =
   | { readonly status: "saved" | "unchanged"; readonly task: TaskRecord }
   | TaskFailure;
@@ -496,9 +500,42 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
     await dependencies.audit.assertPostcondition({ ...command, auditId });
   };
   return {
+    get: (
+      actor: PeopleActor,
+      taskId: string,
+      existingTransaction?: PeopleTransaction,
+    ): Promise<GetTaskResult> => {
+      if (!UUID_PATTERN.test(taskId)) {
+        return Promise.resolve({ status: "validation-error" });
+      }
+      const work = async (
+        transaction: PeopleTransaction,
+      ): Promise<GetTaskResult> => {
+        const authorized = await dependencies.workspace.authorize({
+          ...actor,
+          transaction,
+        });
+        if (authorized.status !== "ready") return { status: "forbidden" };
+        const current = await dependencies.repository.find({
+          ...actor,
+          id: canonicalUuid(taskId),
+          lock: false,
+          transaction,
+        });
+        if (current.status !== "found") return { status: "not-found" };
+        const [task] = await hydrate(dependencies.people, actor, transaction, [
+          current.task,
+        ]);
+        return { status: "ready", task: task! };
+      };
+      return existingTransaction
+        ? work(existingTransaction)
+        : dependencies.transaction.run(work);
+    },
     create: (
       actor: PeopleActor,
       input: CreateTaskInput,
+      existingTransaction?: PeopleTransaction,
     ): Promise<CreateTaskResult> => {
       const checked = createValidation(input);
       if (Object.keys(checked.errors).length > 0) {
@@ -507,7 +544,9 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
           status: "validation-error",
         });
       }
-      return dependencies.transaction.run(async (transaction) => {
+      const work = async (
+        transaction: PeopleTransaction,
+      ): Promise<CreateTaskResult> => {
         const authorized = await dependencies.workspace.authorize({
           ...actor,
           transaction,
@@ -560,7 +599,10 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
           [task],
         );
         return { status: "created", task: record! };
-      });
+      };
+      return existingTransaction
+        ? work(existingTransaction)
+        : dependencies.transaction.run(work);
     },
     list: (
       actor: PeopleActor,
@@ -629,6 +671,7 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
       actor: PeopleActor,
       taskId: string,
       input: ChangeTaskInput,
+      existingTransaction?: PeopleTransaction,
     ): Promise<ChangeTaskResult> => {
       const errors: Record<string, string> = {};
       if (!UUID_PATTERN.test(taskId)) {
@@ -661,7 +704,9 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
       if (Object.keys(errors).length > 0) {
         return Promise.resolve({ errors, status: "validation-error" });
       }
-      return dependencies.transaction.run(async (transaction) => {
+      const work = async (
+        transaction: PeopleTransaction,
+      ): Promise<ChangeTaskResult> => {
         const authorized = await dependencies.workspace.authorize({
           ...actor,
           transaction,
@@ -734,12 +779,16 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
           saved,
         ]);
         return { status: "saved", task: task! };
-      });
+      };
+      return existingTransaction
+        ? work(existingTransaction)
+        : dependencies.transaction.run(work);
     },
     setCompletion: (
       actor: PeopleActor,
       taskId: string,
       completed: boolean,
+      existingTransaction?: PeopleTransaction,
     ): Promise<ChangeTaskResult> => {
       if (!UUID_PATTERN.test(taskId)) {
         return Promise.resolve({
@@ -747,7 +796,9 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
           status: "validation-error",
         });
       }
-      return dependencies.transaction.run(async (transaction) => {
+      const work = async (
+        transaction: PeopleTransaction,
+      ): Promise<ChangeTaskResult> => {
         const authorized = await dependencies.workspace.authorize({
           ...actor,
           transaction,
@@ -793,9 +844,15 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
           saved,
         ]);
         return { status: "saved", task: task! };
-      });
+      };
+      return existingTransaction
+        ? work(existingTransaction)
+        : dependencies.transaction.run(work);
     },
   };
 }
 
-export type TaskManagement = ReturnType<typeof createTaskManagement>;
+export type TaskManagement = Pick<
+  ReturnType<typeof createTaskManagement>,
+  "change" | "create" | "list" | "setCompletion"
+>;

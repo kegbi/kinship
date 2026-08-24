@@ -721,6 +721,7 @@ flows:
 
   - id: INTEGRATION-001
     title: Configure and synchronize DAV
+    deliveryStatus: delivered
     priority: P2
     actor: workspace-admin
     trigger: The administrator enables DAV synchronization.
@@ -742,7 +743,7 @@ flows:
     moduleIds: [integrations, people, planning]
     permissions: [integrations.manage]
     testLayers: [unit, adapter-contract, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-010b.spec.ts] }
 
   - id: GOVERNANCE-001
     title: Review and accept a legal document

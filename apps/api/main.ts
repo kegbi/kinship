@@ -6,6 +6,7 @@ import { SmtpVerificationMail } from "../../packages/backend/modules/workspaces/
 import type { EnvironmentReader } from "../../packages/backend/platform/postgres/config.ts";
 import { decodeMfaEncryptionKeyset } from "../../packages/backend/modules/identity/public.ts";
 import { decodeAuthenticationSubjectKeyset } from "../../packages/backend/modules/api-access/public.ts";
+import { decodeDavEncryptionKeyset } from "../../packages/backend/modules/integrations/public.ts";
 import {
   createAuthenticationResponseEqualizer,
   resolveAuthenticationResponseFloor,
@@ -37,17 +38,29 @@ export function createApiRuntime(
   const applicationEnvironment = environment.get("APP_ENV") ?? "development";
   const mfaKeysetValue = environment.get("AUTH_MFA_ENCRYPTION_KEYSET");
   const subjectKeysetValue = environment.get("AUTH_THROTTLE_SUBJECT_KEYSET");
+  const davKeysetValue = environment.get("INTEGRATIONS_ENCRYPTION_KEYSET");
+  const davEnabled = environment.get("INTEGRATIONS_DAV_ENABLED") !== "false";
   if (applicationEnvironment === "production" && !mfaKeysetValue) {
     throw new Error("AUTH_MFA_ENCRYPTION_KEYSET is required in production.");
   }
   if (applicationEnvironment === "production" && !subjectKeysetValue) {
     throw new Error("AUTH_THROTTLE_SUBJECT_KEYSET is required in production.");
   }
+  if (
+    applicationEnvironment === "production" && davEnabled && !davKeysetValue
+  ) {
+    throw new Error(
+      "INTEGRATIONS_ENCRYPTION_KEYSET is required in production.",
+    );
+  }
   const mfaKeyset = mfaKeysetValue
     ? decodeMfaEncryptionKeyset(mfaKeysetValue)
     : undefined;
   const subjectKeyset = subjectKeysetValue
     ? decodeAuthenticationSubjectKeyset(subjectKeysetValue)
+    : undefined;
+  const davKeyset = davKeysetValue
+    ? decodeDavEncryptionKeyset(davKeysetValue)
     : undefined;
   const authenticationResponseFloor = resolveAuthenticationResponseFloor(
     environment.get("AUTH_MINIMUM_RESPONSE_MS"),
@@ -71,6 +84,10 @@ export function createApiRuntime(
     mfaKeyset,
     subjectKeyset,
     createAuthenticationResponseEqualizer(authenticationResponseFloor),
+    undefined,
+    undefined,
+    davKeyset,
+    davEnabled,
   );
 }
 

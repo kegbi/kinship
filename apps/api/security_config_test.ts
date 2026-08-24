@@ -238,3 +238,50 @@ Deno.test("authentication subject keyset is validated at the API composition bou
     );
   }
 });
+
+Deno.test("DAV encryption keyset is required and validated only when the optional module is enabled", () => {
+  const key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+  const validMfa = JSON.stringify({
+    activeKeyId: "test",
+    keys: { test: key },
+  });
+  const validSubject = JSON.stringify({
+    activeVersion: 1,
+    keys: { v1: key },
+  });
+  for (
+    const [environment, integrationsKey, expected] of [
+      ["production", undefined, "required in production"],
+      ["test", "not-json-key-material", "valid JSON"],
+    ] as const
+  ) {
+    let composed = false;
+    let error: unknown;
+    try {
+      createApiRuntime(
+        {
+          get: (requested) =>
+            ({
+              APP_ENV: environment,
+              AUTH_MFA_ENCRYPTION_KEYSET: validMfa,
+              AUTH_THROTTLE_SUBJECT_KEYSET: validSubject,
+              DATABASE_URL: "postgres://unused:unused@127.0.0.1:1/unused",
+              INTEGRATIONS_ENCRYPTION_KEYSET: integrationsKey,
+              PUBLIC_WEB_ORIGIN: environment === "production"
+                ? "https://kinship.example"
+                : "http://127.0.0.1:4321",
+            })[requested],
+        },
+        () => {
+          composed = true;
+          throw new Error("database composition must not be reached");
+        },
+      );
+    } catch (caught) {
+      error = caught;
+    }
+    assert(error instanceof Error, "unsafe DAV key must fail startup");
+    assert(error.message.includes(expected), `startup identifies ${expected}`);
+    assert(!composed, "unsafe DAV key fails before composition");
+  }
+});
