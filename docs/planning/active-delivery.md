@@ -419,6 +419,14 @@ a named environment.
   - [x] Provide exact release/abort, readiness, incident, compromised-key,
         isolated recovery, log-retention, daily backup, monthly restore, and
         secret-rotation steps for the named owner-operated environment.
+- [x] **OPS-001E1 — RustFS local and recovery object-storage boundary.**
+  - [x] Replace the development, test, and real disposable recovery MinIO
+        servers with the exact accepted RustFS image while retaining the
+        existing SDK only as a compatible S3 client.
+  - [x] Make root development wait for RustFS and pass its loopback S3 endpoint
+        to the host API so local file operations use the real object store.
+  - [x] Prove upload, download, delete, backup, and isolated source-to-target
+        restore against real RustFS instances without running a MinIO server.
 - [ ] **OPS-001E — Deployment rollout, rollback, and post-deploy verification.**
 - [ ] **Phase 11 accepted:** the named environment independently passes every
       required security, privacy, accessibility, performance, observability,

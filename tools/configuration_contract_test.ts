@@ -117,7 +117,7 @@ Deno.test("Compose and root development pass PostgreSQL credentials as fields", 
   );
 });
 
-Deno.test("[FILES-001] MinIO is confined to development and test overlays", async () => {
+Deno.test("[OPS-001E1] RustFS owns local and recovery S3 boundaries", async () => {
   const base = await Deno.readTextFile(
     new URL("../compose.yaml", import.meta.url),
   );
@@ -129,7 +129,7 @@ Deno.test("[FILES-001] MinIO is confined to development and test overlays", asyn
   );
   assert(
     !base.includes("  object-store:"),
-    "production-like Compose has no local MinIO service",
+    "production-like Compose has no local object-store service",
   );
   assert(
     !base.includes("condition: service_healthy\n      object-store:"),
@@ -145,11 +145,70 @@ Deno.test("[FILES-001] MinIO is confined to development and test overlays", asyn
     ),
     "base API passes a finite object-store request timeout",
   );
-  assert(
-    development.includes("  object-store:"),
-    "development overlay owns MinIO",
+  const rustfsImage =
+    "rustfs/rustfs:1.0.0-beta.12@sha256:41fe89380f4120a337790c02af192c3fe7bb55c3edc2e6e9357b487b47c6ab21";
+  for (
+    const [name, localBoundary] of [
+      ["development overlay", development],
+      ["test overlay", test],
+    ] as const
+  ) {
+    assert(
+      localBoundary.includes(rustfsImage),
+      `${name} must use the exact accepted RustFS image`,
+    );
+    assert(
+      !localBoundary.includes("minio/minio:"),
+      `${name} must not run a MinIO server`,
+    );
+  }
+  for (
+    const [name, overlay] of [
+      ["development overlay", development],
+      ["test overlay", test],
+    ] as const
+  ) {
+    assert(overlay.includes("  object-store:"), `${name} owns RustFS`);
+    assert(
+      overlay.includes("RUSTFS_ACCESS_KEY:") &&
+        overlay.includes("RUSTFS_SECRET_KEY:"),
+      `${name} configures RustFS credentials`,
+    );
+    assert(
+      overlay.includes("/health"),
+      `${name} waits on the RustFS health endpoint`,
+    );
+    assert(
+      !overlay.includes("MINIO_ROOT_") && !overlay.includes("MC_HOST_"),
+      `${name} must not retain MinIO server configuration`,
+    );
+  }
+  const developmentTool = await Deno.readTextFile(
+    new URL("./dev.ts", import.meta.url),
   );
-  assert(test.includes("  object-store:"), "test overlay owns MinIO isolation");
+  assert(
+    developmentTool.includes('"--wait"') &&
+      developmentTool.includes('"postgres"') &&
+      developmentTool.includes('"mailpit"') &&
+      developmentTool.includes('"object-store"'),
+    "root development must wait for its RustFS dependency",
+  );
+  for (
+    const name of [
+      "OBJECT_STORAGE_ACCESS_KEY",
+      "OBJECT_STORAGE_BUCKET",
+      "OBJECT_STORAGE_HOST",
+      "OBJECT_STORAGE_PORT",
+      "OBJECT_STORAGE_REQUEST_TIMEOUT_MS",
+      "OBJECT_STORAGE_SECRET_KEY",
+      "OBJECT_STORAGE_USE_SSL",
+    ]
+  ) {
+    assert(
+      developmentTool.includes(`${name}:`),
+      `root development must pass ${name} to its host API`,
+    );
+  }
   const dockerfile = await Deno.readTextFile(
     new URL("../Dockerfile.api", import.meta.url),
   );
@@ -169,6 +228,21 @@ Deno.test("[FILES-001] MinIO is confined to development and test overlays", asyn
   const configuredTasks = (JSON.parse(tasks) as {
     tasks?: Record<string, string>;
   }).tasks ?? {};
+  for (
+    const name of [
+      "OBJECT_STORAGE_ACCESS_KEY",
+      "OBJECT_STORAGE_BUCKET",
+      "OBJECT_STORAGE_CONSOLE_PORT",
+      "OBJECT_STORAGE_PORT",
+      "OBJECT_STORAGE_REQUEST_TIMEOUT_MS",
+      "OBJECT_STORAGE_SECRET_KEY",
+    ]
+  ) {
+    assert(
+      configuredTasks.dev?.includes(name),
+      `root development must permit its configured ${name}`,
+    );
+  }
   for (const taskName of ["test:unit:api", "test:coverage:api:direct"]) {
     assert(
       configuredTasks[taskName]?.includes("Dockerfile.api"),
