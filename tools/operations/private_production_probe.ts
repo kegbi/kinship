@@ -26,6 +26,20 @@ export interface PrivateProductionProfile {
       readonly workerDueToDelivery: number;
     };
   };
+  readonly recovery: {
+    readonly archiveRoot: ".artifacts/private-production-recovery";
+    readonly backupSchedule: "daily";
+    readonly backupCommand: string;
+    readonly manifestVersion: 1;
+    readonly migrationVerificationTask: "deno task test:schema:matrix";
+    readonly prerequisites: readonly string[];
+    readonly promotionRule: string;
+    readonly retentionDays: number;
+    readonly restoreCommand: string;
+    readonly rpoHours: number;
+    readonly rtoMinutes: number;
+    readonly schemaVersion: 7;
+  };
   readonly observability: {
     readonly forbiddenLogData: readonly string[];
     readonly gatewayConfigPath: string;
@@ -76,6 +90,20 @@ function assertProbeProfile(
   const probe = profile.observability.readinessProbe;
   if (
     profile.environment !== "private-production" ||
+    profile.recovery.archiveRoot !==
+      ".artifacts/private-production-recovery" ||
+    profile.recovery.backupSchedule !== "daily" ||
+    !profile.recovery.backupCommand ||
+    profile.recovery.manifestVersion !== 1 ||
+    profile.recovery.migrationVerificationTask !==
+      "deno task test:schema:matrix" ||
+    profile.recovery.prerequisites.length < 3 ||
+    !profile.recovery.promotionRule ||
+    profile.recovery.retentionDays < 1 ||
+    !profile.recovery.restoreCommand ||
+    profile.recovery.rpoHours < 1 ||
+    profile.recovery.rtoMinutes < 1 ||
+    profile.recovery.schemaVersion !== 7 ||
     probe.path !== "/gateway-health" ||
     probe.consecutiveFailuresToAlert < 1 ||
     probe.intervalMs < 0 ||
