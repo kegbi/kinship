@@ -11,7 +11,8 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 11 — Production Readiness**
-- Current leaf: **REL-010 — Restore the aggregate API unit read permission**
+- Current leaf: **OPS-001B — Representative performance, capacity, SLOs, and
+  observability**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -358,10 +359,10 @@ a named environment.
   - [x] Keep automated accessibility scans, semantic assertions, keyboard-only
         primary paths, and the `390x844` smoke blocking for the current private
         desktop audience without claiming an unapproved manual WCAG target.
-- [ ] **REL-010 — Restore the aggregate API unit read permission.**
-  - [ ] Add only `personal-crm-schema/v7/personal_crm_schema_spec_v7.md` to the
-        `test:unit:api` read allowlist required by its existing baseline test.
-  - [ ] Prove the aggregate API unit task no longer fails its own Deno
+- [x] **REL-010 — Restore the aggregate API unit read permission.**
+  - [x] Add only the exact v7 specification and canonical SQL files consumed by
+        the existing baseline test to the `test:unit:api` read allowlist.
+  - [x] Prove the aggregate API unit task no longer fails its own Deno
         permission boundary.
 - [ ] **OPS-001B — Representative performance, capacity, SLOs, and
       observability.**
