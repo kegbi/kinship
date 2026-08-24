@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 10 — Optional Platform Modules**
-- Current leaf: **APP-010D — Operational administration disposition**
+- Current leaf: **Phase 10 acceptance checkpoint**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -323,8 +323,14 @@ contract applies. Disabled modules must not break core CRM workflows.
   - [x] Do not introduce billing state, adapters, or entitlement coupling while
         the module is disabled; the current one-primary-user deployment does not
         require subscription or invoice operations.
-- [ ] **APP-010D — Operational administration**, only after accepted page/flow,
-      permissions, availability, and state contracts exist.
+- [x] **APP-010D — Keep operational administration internal until its product
+      contract is accepted.**
+  - [x] Do not ship or claim an operations/admin user surface for this
+        deployment: no accepted page ID, flow ID, permission, availability,
+        state, or E2E contract exists.
+  - [x] Preserve the unresolved DG-07 choice between a future user surface and
+        CLI/runbook-only administration. Keep existing runtime/lifecycle
+        evidence internal; production runbooks remain Phase 11 work.
 - [ ] **Phase 10 accepted:** every enabled Slice 8 module independently passes
       its flows and can be disabled without breaking the core product.
 
