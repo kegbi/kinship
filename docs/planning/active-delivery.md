@@ -331,6 +331,11 @@ contract applies. Disabled modules must not break core CRM workflows.
   - [x] Preserve the unresolved DG-07 choice between a future user surface and
         CLI/runbook-only administration. Keep existing runtime/lifecycle
         evidence internal; production runbooks remain Phase 11 work.
+- [x] **REL-009 — Make the API-token Copy E2E browser-neutral.**
+  - [x] Exercise the real Copy handler without requesting clipboard permissions
+        that Firefox or WebKit do not support in Playwright.
+  - [x] Verify both the visible success outcome and the exact one-time secret
+        passed to the page-local clipboard boundary in every browser engine.
 - [ ] **Phase 10 accepted:** every enabled Slice 8 module independently passes
       its flows and can be disabled without breaking the core product.
 
