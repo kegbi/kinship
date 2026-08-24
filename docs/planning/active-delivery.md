@@ -433,6 +433,13 @@ a named environment.
         canonical schema bundle.
   - [x] Preserve the existing serial startup, cleanup, and local development
         volumes without introducing a registry or deployment build workflow.
+- [x] **APP-011A — Discoverable public authentication entry.**
+  - [x] Give anonymous visitors visible sign-in and account-creation links in
+        both the public header and home-page hero.
+  - [x] Route those links to the existing authentication pages while keeping
+        private people navigation inside the authenticated application shell.
+  - [x] Preserve coherent keyboard order and overflow-free desktop and `390x844`
+        layouts without adding client state.
 - [ ] **OPS-001E — Deployment rollout, rollback, and post-deploy verification.**
 - [ ] **Phase 11 accepted:** the named environment independently passes every
       required security, privacy, accessibility, performance, observability,
