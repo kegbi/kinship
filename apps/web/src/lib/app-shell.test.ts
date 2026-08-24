@@ -59,6 +59,7 @@ function session(
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
   localStorage.clear();
@@ -691,6 +692,41 @@ describe("APP-002C protected application shell", () => {
     expect(document.querySelector("#today-heading")?.textContent).toBe(
       "Welcome, Avery.",
     );
+  });
+
+  it("clears the ready notice without erasing a later session error", async () => {
+    vi.useFakeTimers();
+    shellMarkup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(session()))
+        .mockRejectedValueOnce(new Error("offline")),
+    );
+
+    await mountApplicationShell(vi.fn());
+    const status = document.querySelector<HTMLElement>("#shell-status")!;
+    expect(status.textContent).toMatch(/is ready/i);
+
+    document.querySelector<HTMLButtonElement>("#member-sign-out")!.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(status.textContent).toMatch(/could not be revoked/i);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(status.textContent).toMatch(/could not be revoked/i);
+  });
+
+  it("automatically clears an unchanged ready notice", async () => {
+    vi.useFakeTimers();
+    shellMarkup();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(session())));
+
+    await mountApplicationShell(vi.fn());
+    const status = document.querySelector<HTMLElement>("#shell-status")!;
+    expect(status.textContent).toMatch(/is ready/i);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(status.textContent).toBe("");
   });
 
   it("keeps a failed sign-out retryable and does not navigate", async () => {

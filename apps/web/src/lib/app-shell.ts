@@ -1,5 +1,4 @@
 import {
-  consumeApplicationEntry,
   getSession,
   type SessionContext,
   signOut,
@@ -195,29 +194,18 @@ function renderSession(
     `${session.workspace.name} is ready. ${sessionMessage}`;
 }
 
-function isUnavailableStatus(status: number): boolean {
-  return status >= 500;
-}
-
 async function resolveSession(): Promise<ShellResolution> {
   const selected = await resolveWorkspaceSession();
-  if (selected.status === "ready") return { session: selected.session };
+  if (selected.status === "ready") {
+    return {
+      ...(selected.entryFirstName
+        ? { firstName: selected.entryFirstName }
+        : {}),
+      session: selected.session,
+    };
+  }
   if (selected.status === "unavailable") return "unavailable";
-  const entry = await consumeApplicationEntry().catch(() => undefined);
-  if (!entry) return "unavailable";
-  if (!entry.ok) {
-    return isUnavailableStatus(entry.problem.status)
-      ? "unavailable"
-      : undefined;
-  }
-  const entered = await getSession().catch(() => undefined);
-  if (!entered) return "unavailable";
-  if (entered.ok) {
-    return { firstName: entry.value.member.firstName, session: entered.value };
-  }
-  return isUnavailableStatus(entered.problem.status)
-    ? "unavailable"
-    : undefined;
+  return undefined;
 }
 
 export async function mountApplicationShell(
@@ -278,6 +266,20 @@ export async function mountApplicationShell(
     return;
   }
   renderSession(elements, resolved.session, resolved.firstName);
+  let statusTimer: ReturnType<typeof setTimeout> | undefined;
+  const setStatus = (message: string, clearAfter?: number): void => {
+    if (statusTimer !== undefined) clearTimeout(statusTimer);
+    statusTimer = undefined;
+    elements.status.textContent = message;
+    if (clearAfter === undefined) return;
+    statusTimer = setTimeout(() => {
+      if (elements.status.textContent === message) {
+        elements.status.textContent = "";
+      }
+      statusTimer = undefined;
+    }, clearAfter);
+  };
+  setStatus(elements.status.textContent, 5_000);
   let activeWorkspaceId = resolved.session.workspace.id;
 
   const menuToggle = document.querySelector<HTMLButtonElement>(
@@ -298,13 +300,14 @@ export async function mountApplicationShell(
     );
     if (!change.allowed) {
       elements.select.value = activeWorkspaceId;
-      elements.status.textContent =
-        "Workspace switch canceled. Your unsaved changes and active workspace were kept.";
+      setStatus(
+        "Workspace switch canceled. Your unsaved changes and active workspace were kept.",
+      );
       if (hadFocus) elements.select.focus();
       return;
     }
     elements.select.disabled = true;
-    elements.status.textContent = "Switching workspace…";
+    setStatus("Switching workspace…");
     const selected = await getSession(elements.select.value).catch(() =>
       undefined
     );
@@ -319,8 +322,9 @@ export async function mountApplicationShell(
       navigate(`${globalThis.location.pathname}${globalThis.location.search}`);
       return;
     } else {
-      elements.status.textContent =
-        "That workspace is no longer available. Your current workspace was not changed.";
+      setStatus(
+        "That workspace is no longer available. Your current workspace was not changed.",
+      );
       elements.select.value = activeWorkspaceId;
     }
     elements.select.disabled = false;
@@ -330,7 +334,7 @@ export async function mountApplicationShell(
   elements.signOutButton.addEventListener("click", async () => {
     const hadFocus = document.activeElement === elements.signOutButton;
     elements.signOutButton.disabled = true;
-    elements.status.textContent = "Signing out securely…";
+    setStatus("Signing out securely…");
     const result = await signOut().catch(() => undefined);
     if (result?.ok) {
       sessionStorage.removeItem(ACTIVE_WORKSPACE_KEY);
@@ -338,8 +342,9 @@ export async function mountApplicationShell(
       return;
     }
     elements.signOutButton.disabled = false;
-    elements.status.textContent =
-      "Your session could not be revoked. Check your connection and try again.";
+    setStatus(
+      "Your session could not be revoked. Check your connection and try again.",
+    );
     if (hadFocus) elements.signOutButton.focus();
   });
 }

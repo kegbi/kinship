@@ -171,6 +171,12 @@ test(
       page.getByRole("heading", { level: 1, name: "Ada Lovelace" }),
     ).toBeVisible();
     await expect(page.getByText("Identity saved")).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        level: 2,
+        name: "Manage identity and availability",
+      }),
+    ).toBeVisible();
     await expect(page.getByText("Unknown", { exact: true })).toHaveCount(2);
     await expectAccessible(page);
 

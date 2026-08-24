@@ -391,7 +391,9 @@ describe("GOVERNANCE-002 audit history UI", () => {
     document.body.innerHTML = historyMarkup();
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(response({ status: 401 }, 401)),
+      vi.fn()
+        .mockResolvedValueOnce(response({ status: 401 }, 401))
+        .mockResolvedValueOnce(response({ status: 401 }, 401)),
     );
     await mountAuditHistory();
     expect(document.querySelector("[data-audit-state]")?.textContent)
