@@ -102,6 +102,7 @@ function checkbox(labelText: string, name: string): HTMLLabelElement {
 function actionButton(text: string, marker: string): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
+  button.className = "button-secondary";
   button.textContent = text;
   button.dataset[marker] = "";
   return button;
@@ -147,6 +148,7 @@ function controls(
   save.textContent = "Save profile fact";
   const cancel = document.createElement("button");
   cancel.type = "button";
+  cancel.className = "button-secondary";
   cancel.textContent = "Cancel";
   actions.append(save, cancel);
   form.append(actions);
@@ -1097,6 +1099,7 @@ export async function mountProfileFacts(
         if (!archived && snapshot.status !== "archived") {
           const edit = document.createElement("button");
           edit.type = "button";
+          edit.className = "button-secondary";
           edit.textContent = `Edit ${summary(record, snapshot.options)}`;
           edit.addEventListener("click", async () => {
             const submit = target.form.querySelector<HTMLButtonElement>(
@@ -1115,6 +1118,7 @@ export async function mountProfileFacts(
           if (section !== "tags") {
             const remove = document.createElement("button");
             remove.type = "button";
+            remove.className = "button-danger";
             remove.textContent = section === "food-preferences"
               ? "Clear food preferences"
               : `Delete ${summary(record, snapshot.options)}`;
@@ -1166,10 +1170,12 @@ export async function mountProfileFacts(
       pagination.setAttribute("aria-label", `${section} fact pages`);
       const previousFacts = document.createElement("button");
       previousFacts.type = "button";
+      previousFacts.className = "button-secondary";
       previousFacts.dataset.profileFactPrevious = "";
       previousFacts.textContent = `Previous ${section.replaceAll("-", " ")}`;
       const moreFacts = document.createElement("button");
       moreFacts.type = "button";
+      moreFacts.className = "button-secondary";
       moreFacts.dataset.profileFactMore = "";
       moreFacts.textContent = `Next ${section.replaceAll("-", " ")}`;
       const pageCursors: Array<string | undefined> = [undefined];

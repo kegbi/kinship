@@ -300,10 +300,12 @@ function render(
       actions.className = "important-date-actions";
       const edit = document.createElement("button");
       edit.type = "button";
+      edit.className = "button-secondary";
       edit.textContent = `Edit ${title(date)}`;
       edit.addEventListener("click", () => onEdit(date));
       const remove = document.createElement("button");
       remove.type = "button";
+      remove.className = "button-danger";
       remove.textContent = `Delete ${title(date)}`;
       remove.addEventListener("click", () => onDelete(date, remove));
       actions.append(edit, remove);

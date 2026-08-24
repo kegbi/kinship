@@ -40,6 +40,7 @@ function reminderItem(
   if (mutable && reminder.isActive) {
     const button = document.createElement("button");
     button.type = "button";
+    button.className = "button-secondary";
     button.textContent = "Disable reminder";
     button.addEventListener("click", () => disable(reminder.id));
     item.append(button);

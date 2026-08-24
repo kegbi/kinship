@@ -605,6 +605,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
       "[data-profile-fact-list] button:last-child",
     )!;
     expect(clear.textContent).toBe("Clear food preferences");
+    expect(clear.classList.contains("button-danger")).toBe(true);
     clear.click();
     clear.click();
     await vi.waitFor(() =>
@@ -958,6 +959,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
     const more = document.querySelector<HTMLButtonElement>(
       "[data-profile-fact-more]",
     )!;
+    expect(more.classList.contains("button-secondary")).toBe(true);
     expect(more.hidden).toBe(false);
     more.click();
     await vi.waitFor(() =>
@@ -968,6 +970,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
     const previous = document.querySelector<HTMLButtonElement>(
       "[data-profile-fact-previous]",
     )!;
+    expect(previous.classList.contains("button-secondary")).toBe(true);
     expect(previous.hidden).toBe(false);
     previous.click();
     await vi.waitFor(() =>
@@ -984,6 +987,9 @@ describe("PEOPLE-006 profile-fact sections", () => {
     const continuationEdit = [...document.querySelectorAll<HTMLButtonElement>(
       "[data-profile-fact-list] button",
     )].find((button) => button.textContent?.includes("person-50@example.test"));
+    expect(continuationEdit?.classList.contains("button-secondary")).toBe(
+      true,
+    );
     continuationEdit?.click();
     await vi.waitFor(() =>
       expect(

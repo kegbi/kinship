@@ -251,6 +251,11 @@ describe("INTERACTION-002 person communications", () => {
     const rows = [
       ...section.querySelectorAll<HTMLElement>("[data-message-row]"),
     ];
+    expect(
+      rows.every((row) =>
+        row.querySelector("button")?.classList.contains("button-danger")
+      ),
+    ).toBe(true);
     rows[0]!.querySelector<HTMLTextAreaElement>("textarea")!.value = "Hello";
     rows[1]!.querySelector<HTMLTextAreaElement>("textarea")!.value = "Hi";
     rows[1]!.querySelector<HTMLSelectElement>("select")!.value = "inbound";

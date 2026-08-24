@@ -139,6 +139,62 @@ async function openLocalEditor(
   await expect(editor).toBeVisible();
 }
 
+async function controlPresentation(control: Locator) {
+  await expect(control).toBeVisible();
+  return await control.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      alignItems: style.alignItems,
+      backgroundColor: style.backgroundColor,
+      borderColor: style.borderColor,
+      borderRadius: style.borderRadius,
+      borderStyle: style.borderStyle,
+      borderWidth: style.borderWidth,
+      color: style.color,
+      display: style.display,
+      fontFamily: style.fontFamily,
+      height: element.getBoundingClientRect().height,
+      justifyContent: style.justifyContent,
+      minHeight: style.minHeight,
+      paddingBottom: style.paddingBottom,
+      paddingLeft: style.paddingLeft,
+      paddingRight: style.paddingRight,
+      paddingTop: style.paddingTop,
+    };
+  });
+}
+
+async function expectAlignedControls(
+  first: Locator,
+  second: Locator,
+): Promise<void> {
+  const [firstStyle, secondStyle] = await Promise.all([
+    controlPresentation(first),
+    controlPresentation(second),
+  ]);
+  expect(Math.abs(firstStyle.height - secondStyle.height)).toBeLessThanOrEqual(
+    0.5,
+  );
+  for (
+    const property of [
+      "alignItems",
+      "borderRadius",
+      "borderStyle",
+      "borderWidth",
+      "display",
+      "fontFamily",
+      "justifyContent",
+      "minHeight",
+      "paddingBottom",
+      "paddingLeft",
+      "paddingRight",
+      "paddingTop",
+    ] as const
+  ) {
+    expect(firstStyle[property]).toBe(secondStyle[property]);
+  }
+}
+
 test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
   annotation: { type: "flow", description: "PEOPLE-006" },
 }, async ({ browserName, page, request }) => {
@@ -207,6 +263,48 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
     ),
   ).toHaveCount(0);
 
+  const editPerson = page.getByRole("button", { name: "Edit person" });
+  const exportVCard = page.getByRole("link", { name: "Export vCard" });
+  await expectAlignedControls(editPerson, exportVCard);
+  const [editPersonStyle, exportStyle] = await Promise.all([
+    controlPresentation(editPerson),
+    controlPresentation(exportVCard),
+  ]);
+  expect(exportStyle.borderColor).toBe(editPersonStyle.borderColor);
+
+  await expectAlignedControls(
+    page.getByRole("button", { name: "Log activity" }),
+    page.getByRole("link", { name: "Open activity report" }),
+  );
+
+  const cadence = page.locator('[data-profile-section="stay-in-touch"]');
+  const [cadenceCountStyle, cadenceUnitStyle] = await Promise.all([
+    controlPresentation(cadence.getByLabel("Reconnect every")),
+    controlPresentation(cadence.getByLabel("Calendar unit")),
+  ]);
+  expect(Math.abs(cadenceCountStyle.height - cadenceUnitStyle.height))
+    .toBeLessThanOrEqual(2);
+  for (
+    const property of [
+      "backgroundColor",
+      "borderColor",
+      "borderRadius",
+      "borderStyle",
+      "borderWidth",
+      "fontFamily",
+      "minHeight",
+      "paddingBottom",
+      "paddingLeft",
+      "paddingRight",
+      "paddingTop",
+    ] as const
+  ) {
+    expect(cadenceCountStyle[property]).toBe(cadenceUnitStyle[property]);
+  }
+  expect(cadenceCountStyle.borderColor).not.toBe(
+    cadenceCountStyle.backgroundColor,
+  );
+
   const calls: string[] = [];
   page.on("request", (outgoing) => {
     if (outgoing.url().includes("/facts/")) {
@@ -232,6 +330,25 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
     .click();
   await expect(contacts.getByText("Profile fact saved.")).toBeFocused();
   await expect(contacts).toContainText("Email: ada@example.test");
+  const editContact = contacts.getByRole("button", {
+    name: "Edit Email: ada@example.test",
+  });
+  const deleteContact = contacts.getByRole("button", {
+    name: "Delete Email: ada@example.test",
+  });
+  await expect(editContact).toHaveClass(/\bbutton-secondary\b/);
+  await expect(deleteContact).toHaveClass(/\bbutton-danger\b/);
+  const [editContactStyle, deleteContactStyle] = await Promise.all([
+    controlPresentation(editContact),
+    controlPresentation(deleteContact),
+  ]);
+  expect(deleteContactStyle.backgroundColor).not.toBe(
+    editContactStyle.backgroundColor,
+  );
+  expect(deleteContactStyle.borderColor).not.toBe(
+    editContactStyle.borderColor,
+  );
+  expect(deleteContactStyle.color).not.toBe(editContactStyle.color);
   await expect.poll(() => calls).toEqual([
     `POST /api/v1/people/${
       profilePath.split("/").at(-1)

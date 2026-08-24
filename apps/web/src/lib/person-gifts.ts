@@ -102,6 +102,7 @@ function renderGift(
       for (const status of options) select.add(option(status, status));
       const save = document.createElement("button");
       save.type = "button";
+      save.className = "button-secondary";
       save.dataset.giftStatusSave = gift.id;
       save.textContent = "Change status";
       actions.append(select, save);
@@ -143,6 +144,7 @@ function renderDebt(
       for (const status of options) select.add(option(status, status));
       const save = document.createElement("button");
       save.type = "button";
+      save.className = "button-secondary";
       save.dataset.debtStatusSave = debt.id;
       save.textContent = "Change status";
       actions.append(select, save);

@@ -282,6 +282,10 @@ describe("PEOPLE-005 important-date presentation", () => {
       .toContain("First meeting");
     expect(document.querySelector("#important-dates-list")?.textContent)
       .toContain("No reminder scheduled");
+    expect(button("Edit Custom date").classList.contains("button-secondary"))
+      .toBe(true);
+    expect(button("Delete Custom date").classList.contains("button-danger"))
+      .toBe(true);
 
     button("Edit Custom date").click();
     const kind = document.querySelector(

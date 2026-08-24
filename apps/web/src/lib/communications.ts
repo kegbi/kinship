@@ -58,6 +58,7 @@ function messageRow(): HTMLElement {
   contentLabel.append(content);
   const remove = document.createElement("button");
   remove.type = "button";
+  remove.className = "button-danger";
   remove.textContent = "Remove message";
   remove.addEventListener("click", () => row.remove());
   row.append(legend, directionLabel, timeLabel, contentLabel, remove);

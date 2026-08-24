@@ -254,9 +254,11 @@ describe("GIFTS-001 person gifts and debts", () => {
     expect(document.querySelector('[data-gift-id$="5"] select')?.children)
       .toHaveLength(1);
     expect(document.querySelector('[data-gift-id$="7"] select')).toBeNull();
-    document.querySelector<HTMLButtonElement>(
+    const giftStatus = document.querySelector<HTMLButtonElement>(
       `[data-gift-status-save="${giftId}"]`,
-    )?.click();
+    )!;
+    expect(giftStatus.classList.contains("button-secondary")).toBe(true);
+    giftStatus.click();
     await vi.waitFor(() =>
       expect(
         document.querySelector('[data-person-gifts="gift"] [data-gift-state]')

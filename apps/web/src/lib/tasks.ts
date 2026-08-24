@@ -104,6 +104,7 @@ function renderTask(
     if (onEdit) {
       const edit = document.createElement("button");
       edit.type = "button";
+      edit.className = "button-secondary";
       edit.textContent = "Edit task";
       edit.addEventListener("click", () => onEdit(task));
       actions.append(edit);

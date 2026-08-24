@@ -1371,6 +1371,65 @@ summary:focus-visible,
   gap: 1.5rem;
 }
 
+.person-workspace button,
+.person-workspace a:is(.button-primary, .button-secondary, .button-danger) {
+  align-items: center;
+  box-sizing: border-box;
+  display: inline-flex;
+  justify-content: center;
+  max-width: 100%;
+  min-height: 44px;
+  padding: .7rem 1rem;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: .7rem;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 750;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-align: center;
+  text-decoration: none;
+  white-space: normal;
+}
+
+.person-workspace button {
+  border-color: #aeb7ae;
+  color: #20352d;
+  background: white;
+}
+
+.person-workspace .button-primary {
+  border-color: #20352d;
+  color: white;
+  background: #20352d;
+}
+
+.person-workspace .button-secondary {
+  border-color: #aeb7ae;
+  color: #20352d;
+  background: white;
+}
+
+.person-workspace .button-danger {
+  border-color: #a44730;
+  color: white;
+  background: #a44730;
+}
+
+.person-workspace button:hover,
+.person-workspace a:is(.button-primary, .button-secondary, .button-danger):hover {
+  filter: brightness(.96);
+}
+
+.person-workspace button:disabled,
+.person-workspace a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: .55;
+  pointer-events: none;
+}
+
 .profile-back-link {
   width: fit-content;
   min-height: 44px;
@@ -1496,15 +1555,11 @@ summary:focus-visible,
   gap: 0.75rem;
 }
 
-.person-lifecycle-buttons button {
+.person-lifecycle-buttons button,
+.person-lifecycle-buttons a:is(.button-primary, .button-secondary, .button-danger) {
   min-height: 44px;
   padding: .7rem 1rem;
-  border: 1px solid #aeb7ae;
   border-radius: 999px;
-  color: #20352d;
-  background: white;
-  cursor: pointer;
-  font-weight: 750;
 }
 
 .person-lifecycle-buttons .button-primary {
@@ -1840,6 +1895,12 @@ summary:focus-visible,
   cursor: pointer;
 }
 
+.person-workspace .form-actions a:is(.button-primary, .button-secondary, .button-danger) {
+  min-height: 46px;
+  padding: .7rem 1rem;
+  border-radius: .7rem;
+}
+
 .form-actions button.secondary-action {
   color: #20352d;
   background: white;
@@ -2024,6 +2085,28 @@ summary:focus-visible,
   max-width: 100%;
   min-width: 0;
   width: 100%;
+}
+
+.profile-fact-form input:not([type="checkbox"]):not([type="radio"]),
+.profile-fact-form select,
+.profile-fact-form textarea {
+  padding: .65rem .75rem;
+  border: 1px solid #aeb7ae;
+  border-radius: .65rem;
+  color: inherit;
+  background: white;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.profile-fact-form input:not([type="checkbox"]):not([type="radio"]),
+.profile-fact-form select {
+  min-height: 44px;
+}
+
+.profile-fact-form textarea {
+  min-height: 6rem;
+  resize: vertical;
 }
 
 .profile-fact-form select[multiple] {
