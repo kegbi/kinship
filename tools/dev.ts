@@ -19,6 +19,18 @@ const postgresPort = configured("POSTGRES_PORT") ?? "5432";
 const apiPort = configured("API_PORT") ?? "8000";
 const webPort = configured("WEB_PORT") ?? "4321";
 const smtpPort = configured("SMTP_PORT") ?? "1025";
+const objectStorageAccessKey = configured("OBJECT_STORAGE_ACCESS_KEY") ??
+  "kinship";
+const objectStorageBucket = configured("OBJECT_STORAGE_BUCKET") ??
+  "attachments";
+const objectStorageConsolePort = configured("OBJECT_STORAGE_CONSOLE_PORT") ??
+  "9001";
+const objectStoragePort = configured("OBJECT_STORAGE_PORT") ?? "9000";
+const objectStorageRequestTimeout = configured(
+  "OBJECT_STORAGE_REQUEST_TIMEOUT_MS",
+) ?? "30000";
+const objectStorageSecretKey = configured("OBJECT_STORAGE_SECRET_KEY") ??
+  "kinship-local-secret";
 const mfaEncryptionKeyset = configured("AUTH_MFA_ENCRYPTION_KEYSET");
 const authenticationResponseFloor = configured("AUTH_MINIMUM_RESPONSE_MS");
 const throttleSubjectKeyset = configured("AUTH_THROTTLE_SUBJECT_KEYSET");
@@ -34,6 +46,11 @@ const composeEnvironment = {
   API_PORT: apiPort,
   WEB_PORT: webPort,
   SMTP_PORT: smtpPort,
+  OBJECT_STORAGE_ACCESS_KEY: objectStorageAccessKey,
+  OBJECT_STORAGE_BUCKET: objectStorageBucket,
+  OBJECT_STORAGE_CONSOLE_PORT: objectStorageConsolePort,
+  OBJECT_STORAGE_PORT: objectStoragePort,
+  OBJECT_STORAGE_SECRET_KEY: objectStorageSecretKey,
 };
 const compose = [
   "compose",
@@ -79,7 +96,15 @@ let children: Deno.ChildProcess[] = [];
 try {
   await run(
     "docker",
-    [...compose, "up", "--detach", "--wait", "postgres", "mailpit"],
+    [
+      ...compose,
+      "up",
+      "--detach",
+      "--wait",
+      "postgres",
+      "mailpit",
+      "object-store",
+    ],
     composeEnvironment,
   );
   await run(
@@ -106,6 +131,13 @@ try {
     ...(integrationsDavEnabled
       ? { INTEGRATIONS_DAV_ENABLED: integrationsDavEnabled }
       : {}),
+    OBJECT_STORAGE_ACCESS_KEY: objectStorageAccessKey,
+    OBJECT_STORAGE_BUCKET: objectStorageBucket,
+    OBJECT_STORAGE_HOST: "127.0.0.1",
+    OBJECT_STORAGE_PORT: objectStoragePort,
+    OBJECT_STORAGE_REQUEST_TIMEOUT_MS: objectStorageRequestTimeout,
+    OBJECT_STORAGE_SECRET_KEY: objectStorageSecretKey,
+    OBJECT_STORAGE_USE_SSL: "false",
   };
   const api = new Deno.Command(Deno.execPath(), {
     args: ["task", "dev:api"],

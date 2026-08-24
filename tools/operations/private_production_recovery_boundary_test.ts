@@ -1,19 +1,19 @@
 import postgres from "postgres";
-import { Client as MinioClient } from "minio";
+import { Client as S3Client } from "minio";
 import { Buffer } from "node:buffer";
 import {
   createBackup,
-  MinioRecovery,
   PostgresRecovery,
   privateProductionArchivePath,
   restoreBackup,
+  S3Recovery,
 } from "./private_production_recovery.ts";
 import { loadPrivateProductionProfile } from "./private_production_probe.ts";
 
 const POSTGRES_IMAGE =
   "postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e";
-const MINIO_IMAGE =
-  "minio/minio:RELEASE.2025-07-23T15-54-02Z@sha256:d249d1fb6966de4d8ad26c04754b545205ff15a62e4fd19ebd0f26fa5baacbc0";
+const RUSTFS_IMAGE =
+  "rustfs/rustfs:1.0.0-beta.12@sha256:41fe89380f4120a337790c02af192c3fe7bb55c3edc2e6e9357b487b47c6ab21";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -74,14 +74,14 @@ async function applyCanonicalSchema(databaseUrl: string): Promise<void> {
   }
 }
 
-async function waitForMinio(client: MinioClient): Promise<void> {
+async function waitForS3(client: S3Client): Promise<void> {
   for (let attempt = 0; attempt < 60; attempt++) {
     try {
       await client.listBuckets();
       return;
     } catch {
       if (attempt === 59) {
-        throw new Error("Disposable MinIO did not become ready.");
+        throw new Error("Disposable RustFS did not become ready.");
       }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
@@ -97,8 +97,8 @@ Deno.test({
     const suffix = `${Deno.pid}-${Date.now()}`;
     const sourceContainer = `kinship-recovery-source-${suffix}`;
     const targetContainer = `kinship-recovery-target-${suffix}`;
-    const sourceMinioContainer = `kinship-recovery-minio-source-${suffix}`;
-    const targetMinioContainer = `kinship-recovery-minio-target-${suffix}`;
+    const sourceObjectContainer = `kinship-recovery-rustfs-source-${suffix}`;
+    const targetObjectContainer = `kinship-recovery-rustfs-target-${suffix}`;
     const password = `test-${crypto.randomUUID()}`;
     const accessKey = "kinship-recovery";
     const secretKey = `test-${crypto.randomUUID()}`;
@@ -107,8 +107,8 @@ Deno.test({
     const containers = [
       sourceContainer,
       targetContainer,
-      sourceMinioContainer,
-      targetMinioContainer,
+      sourceObjectContainer,
+      targetObjectContainer,
     ];
     try {
       await docker([
@@ -148,38 +148,34 @@ Deno.test({
         "--detach",
         "--rm",
         "--name",
-        sourceMinioContainer,
+        sourceObjectContainer,
         "--env",
-        `MINIO_ROOT_USER=${accessKey}`,
+        `RUSTFS_ACCESS_KEY=${accessKey}`,
         "--env",
-        `MINIO_ROOT_PASSWORD=${secretKey}`,
+        `RUSTFS_SECRET_KEY=${secretKey}`,
         "--publish",
         "127.0.0.1::9000",
-        MINIO_IMAGE,
-        "server",
-        "/data",
+        RUSTFS_IMAGE,
       ]);
       await docker([
         "run",
         "--detach",
         "--rm",
         "--name",
-        targetMinioContainer,
+        targetObjectContainer,
         "--env",
-        `MINIO_ROOT_USER=${accessKey}`,
+        `RUSTFS_ACCESS_KEY=${accessKey}`,
         "--env",
-        `MINIO_ROOT_PASSWORD=${secretKey}`,
+        `RUSTFS_SECRET_KEY=${secretKey}`,
         "--publish",
         "127.0.0.1::9000",
-        MINIO_IMAGE,
-        "server",
-        "/data",
+        RUSTFS_IMAGE,
       ]);
 
       const sourcePort = await mappedPort(sourceContainer, 5432);
       const targetPort = await mappedPort(targetContainer, 5432);
-      const sourceMinioPort = await mappedPort(sourceMinioContainer, 9000);
-      const targetMinioPort = await mappedPort(targetMinioContainer, 9000);
+      const sourceObjectPort = await mappedPort(sourceObjectContainer, 9000);
+      const targetObjectPort = await mappedPort(targetObjectContainer, 9000);
       const sourceUrl = `postgres://kinship:${
         encodeURIComponent(password)
       }@127.0.0.1:${sourcePort}/kinship`;
@@ -209,23 +205,23 @@ Deno.test({
       `;
       await sourceSql.end();
 
-      const sourceClient = new MinioClient({
+      const sourceClient = new S3Client({
         accessKey,
         endPoint: "127.0.0.1",
-        port: sourceMinioPort,
+        port: sourceObjectPort,
         secretKey,
         useSSL: false,
       });
-      const targetClient = new MinioClient({
+      const targetClient = new S3Client({
         accessKey,
         endPoint: "127.0.0.1",
-        port: targetMinioPort,
+        port: targetObjectPort,
         secretKey,
         useSSL: false,
       });
       await Promise.all([
-        waitForMinio(sourceClient),
-        waitForMinio(targetClient),
+        waitForS3(sourceClient),
+        waitForS3(targetClient),
       ]);
       await sourceClient.makeBucket("attachments");
       await sourceClient.putObject(
@@ -267,7 +263,7 @@ Deno.test({
         bucket: "attachments",
         database: sourceDatabase,
         databaseName: "kinship",
-        objects: new MinioRecovery(sourceClient, "attachments"),
+        objects: new S3Recovery(sourceClient, "attachments"),
         profile,
       });
       const sentinelSql = postgres(targetUrl, { max: 1 });
@@ -280,7 +276,7 @@ Deno.test({
           bucket: "attachments",
           database: targetDatabase,
           databaseName: "kinship_restore",
-          objects: new MinioRecovery(targetClient, "attachments"),
+          objects: new S3Recovery(targetClient, "attachments"),
           profile,
         });
       } catch (error) {
@@ -315,7 +311,7 @@ Deno.test({
         bucket: "attachments",
         database: targetDatabase,
         databaseName: "kinship_restore",
-        objects: new MinioRecovery(targetClient, "attachments"),
+        objects: new S3Recovery(targetClient, "attachments"),
         profile,
       });
       assert(
@@ -348,7 +344,7 @@ Deno.test({
           restored.storage_key === "wanted",
         "PostgreSQL restore must preserve application metadata",
       );
-      const restoredBytes = await new MinioRecovery(
+      const restoredBytes = await new S3Recovery(
         targetClient,
         "attachments",
       ).get("wanted");
@@ -365,7 +361,7 @@ Deno.test({
           bucket: "attachments",
           database: sourceDatabase,
           databaseName: "kinship",
-          objects: new MinioRecovery(sourceClient, "attachments"),
+          objects: new S3Recovery(sourceClient, "attachments"),
           profile,
         });
       } catch (error) {

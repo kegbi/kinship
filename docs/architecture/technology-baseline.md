@@ -117,7 +117,7 @@ and reset behavior is defined in [`compose-contract.md`](compose-contract.md).
 | `migrate`        | Apply and verify immutable SQL migrations before rollout         | One-shot                                                    |
 | `postgres`       | Canonical durable store                                          | Long-running                                                |
 | `web`            | Private Astro renderer                                           | Long-running in production/test; `astro dev` in development |
-| `object-store`   | S3-compatible attachment storage such as MinIO                   | Development/test profile or separate production service     |
+| `object-store`   | Pinned RustFS S3-compatible attachment storage                   | Development/test profile or separate production service     |
 | `mail`           | Captured development/test mail such as Mailpit                   | Development/test profile                                    |
 | `otel-collector` | Optional OTLP destination and local observability stack          | Observability profile                                       |
 
@@ -135,6 +135,11 @@ for the first modular monolith. Add a cache or broker only after a measured
 requirement and a failure-mode design. `scheduled_job_runs` is observability
 data, not a durable queue. A transactional outbox or persistent job queue would
 change the data model and therefore requires a synchronized new schema version.
+
+Development, test, and disposable recovery boundaries run the pinned RustFS
+server image. The existing `minio` npm package is retained only as an
+S3-protocol client SDK, which RustFS supports; no MinIO server image is part of
+the accepted topology.
 
 ## Deno Responsibilities
 

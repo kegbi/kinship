@@ -13,15 +13,17 @@ real API, and Astro from the repository root:
 deno task dev
 ```
 
-The command waits for PostgreSQL, migration, mail, and API readiness before it
-starts Astro, and removes its containers/network on exit while retaining the
-local PostgreSQL volume. Open <http://127.0.0.1:4321> and use the public
-navigation to visit <http://127.0.0.1:4321/features>. Astro proxies `/api/v1/*`
-to the API at <http://127.0.0.1:8000>, so the readiness state on the page
-reflects the running API. Configure local listeners with `POSTGRES_PORT`,
-`API_PORT`, `WEB_PORT`, `SMTP_PORT`, and `MAILPIT_PORT`; set `POSTGRES_PASSWORD`
-before starting Compose. `PUBLIC_WEB_ORIGIN`, `POSTGRES_DB`, `POSTGRES_USER`,
-`APP_ENV`, `AUTH_MFA_ENCRYPTION_KEYSET`, `AUTH_THROTTLE_SUBJECT_KEYSET`,
+The command waits for PostgreSQL, migration, Mailpit, pinned RustFS object
+storage, and API readiness before it starts Astro, and removes its
+containers/network on exit while retaining the local PostgreSQL and RustFS
+volumes. Open <http://127.0.0.1:4321> and use the public navigation to visit
+<http://127.0.0.1:4321/features>. Astro proxies `/api/v1/*` to the API at
+<http://127.0.0.1:8000>, so the readiness state on the page reflects the running
+API. Configure local listeners with `POSTGRES_PORT`, `API_PORT`, `WEB_PORT`,
+`SMTP_PORT`, `MAILPIT_PORT`, `OBJECT_STORAGE_PORT`, and
+`OBJECT_STORAGE_CONSOLE_PORT`; set `POSTGRES_PASSWORD` before starting Compose.
+`PUBLIC_WEB_ORIGIN`, `POSTGRES_DB`, `POSTGRES_USER`, `APP_ENV`,
+`AUTH_MFA_ENCRYPTION_KEYSET`, `AUTH_THROTTLE_SUBJECT_KEYSET`,
 `AUTH_MINIMUM_RESPONSE_MS`, `SMTP_HOST`, and `SMTP_FROM` use the names shown in
 `.env.example`. Production requires `AUTH_MFA_ENCRYPTION_KEYSET` to be bounded
 JSON containing `activeKeyId` and a `keys` object of key IDs to 32 random bytes

@@ -251,10 +251,10 @@ implementation.
 ## Files and External Effects
 
 Store file metadata and authorization in PostgreSQL and file bytes behind an
-object-storage port. Development and tests may use MinIO; production may use any
-compatible implementation. Uploads require size/type limits, generated object
-names, malware-scanning integration points, and tests for missing or quarantined
-objects.
+object-storage port. Development and tests use the pinned RustFS server;
+production may use RustFS or another compatible S3 implementation. Uploads
+require size/type limits, generated object names, malware-scanning integration
+points, and tests for missing or quarantined objects.
 
 Email, webhooks, OAuth, AI providers, geocoding, and similar services are ports.
 Each adapter has timeouts, bounded retries, redacted structured logs, and

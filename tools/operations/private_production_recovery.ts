@@ -1,5 +1,6 @@
 import postgres from "postgres";
-import { Client as MinioClient } from "minio";
+// The MinIO package is an S3 protocol client; local/test servers are RustFS.
+import { Client as S3Client } from "minio";
 import { Buffer } from "node:buffer";
 import { applyCanonicalSchema } from "../migrations/baseline.ts";
 import {
@@ -609,9 +610,9 @@ export class PostgresRecovery implements DatabaseRecoveryPort {
   }
 }
 
-export class MinioRecovery implements ObjectRecoveryPort {
+export class S3Recovery implements ObjectRecoveryPort {
   constructor(
-    private readonly client: MinioClient,
+    private readonly client: S3Client,
     private readonly bucket: string,
   ) {}
 
@@ -670,7 +671,7 @@ export class MinioRecovery implements ObjectRecoveryPort {
   }
 }
 
-function minio(
+function s3(
   environment: { readonly get: (name: string) => string | undefined },
   prefix = "OBJECT_STORAGE_",
 ): { bucket: string; port: ObjectRecoveryPort } {
@@ -697,8 +698,8 @@ function minio(
   const useSSL = ssl === "true";
   return {
     bucket,
-    port: new MinioRecovery(
-      new MinioClient({
+    port: new S3Recovery(
+      new S3Client({
         accessKey,
         endPoint: host,
         port: numericPort,
@@ -723,7 +724,7 @@ interface RecoveryCliDependencies {
 const DEFAULT_CLI_DEPENDENCIES: RecoveryCliDependencies = {
   database: (databaseUrl) => new PostgresRecovery(databaseUrl),
   loadProfile: () => loadPrivateProductionProfile(),
-  objects: minio,
+  objects: s3,
   write: (value) => console.log(value),
 };
 
