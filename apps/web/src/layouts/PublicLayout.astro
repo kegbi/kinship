@@ -57,7 +57,12 @@ const {
           <a href="/terms" tabindex="0" aria-current={currentPath === "/terms" ? "page" : undefined}>Terms</a>
         </nav>
 
-        <p class="header-note">Personal CRM, thoughtfully made</p>
+        <div class="header-actions" aria-label="Account">
+          <a class="button-link header-sign-in" href="/auth/sign-in" tabindex="0">Sign in</a>
+          <a class="button-link button-link-primary" href="/auth/sign-up" tabindex="0">
+            Create account
+          </a>
+        </div>
       </header>
 
       <slot />

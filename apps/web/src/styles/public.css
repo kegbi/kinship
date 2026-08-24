@@ -113,12 +113,22 @@ a:focus-visible {
   background: #21332c;
 }
 
-.header-note {
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
   justify-self: end;
-  margin: 0;
-  color: #617068;
+}
+
+.header-actions .button-link {
+  min-height: 2.4rem;
+  padding: 0.55rem 0.75rem;
   font-size: 0.78rem;
-  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.header-sign-in {
+  border-color: transparent;
 }
 
 main:focus {
@@ -181,6 +191,13 @@ h3 {
   color: #536159;
   font-size: clamp(1.05rem, 1.7vw, 1.25rem);
   line-height: 1.7;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 1.5rem;
 }
 
 .readiness {
@@ -512,10 +529,12 @@ footer p {
 @media (max-width: 800px) {
   .site-header {
     grid-template-columns: 1fr auto;
+    gap: 0.75rem;
   }
 
-  .header-note {
-    display: none;
+  .header-actions {
+    grid-row: 2;
+    grid-column: 1 / -1;
   }
 
   .hero,

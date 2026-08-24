@@ -105,6 +105,46 @@ test("public pages expose their catalog contracts and navigate both ways", async
   await expect(page).toHaveURL(/\/$/);
 });
 
+test("public home exposes direct sign-in and registration entry points", async ({ page }) => {
+  await page.goto("/");
+
+  const header = page.getByRole("banner");
+  const main = page.getByRole("main");
+  const headerSignIn = header.getByRole("link", {
+    name: "Sign in",
+    exact: true,
+  });
+  const headerCreateAccount = header.getByRole("link", {
+    name: "Create account",
+    exact: true,
+  });
+  const heroSignIn = main.getByRole("link", { name: "Sign in", exact: true });
+  const heroCreateAccount = main.getByRole("link", {
+    name: "Create account",
+    exact: true,
+  });
+
+  await expect(headerSignIn).toHaveAttribute("href", "/auth/sign-in");
+  await expect(headerCreateAccount).toHaveAttribute("href", "/auth/sign-up");
+  await expect(heroSignIn).toHaveAttribute("href", "/auth/sign-in");
+  await expect(heroCreateAccount).toHaveAttribute("href", "/auth/sign-up");
+
+  await headerSignIn.click();
+  await expect(page).toHaveURL(/\/auth\/sign-in$/);
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-page-id",
+    "auth.sign-in",
+  );
+
+  await page.goto("/");
+  await main.getByRole("link", { name: "Create account", exact: true }).click();
+  await expect(page).toHaveURL(/\/auth\/sign-up$/);
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-page-id",
+    "auth.sign-up",
+  );
+});
+
 test("public navigation and skip links have a coherent keyboard order", async ({ page }) => {
   await page.goto("/features");
 
@@ -120,6 +160,16 @@ test("public navigation and skip links have a coherent keyboard order", async ({
     page.getByRole("link", { name: "Kinship home" }),
     page.getByRole("link", { name: "Home", exact: true }),
     page.getByRole("link", { name: "Features", exact: true }),
+    page.getByRole("link", { name: "Privacy", exact: true }),
+    page.getByRole("link", { name: "Terms", exact: true }),
+    page.getByRole("banner").getByRole("link", {
+      name: "Sign in",
+      exact: true,
+    }),
+    page.getByRole("banner").getByRole("link", {
+      name: "Create account",
+      exact: true,
+    }),
   ];
   for (const link of orderedLinks) {
     await page.keyboard.press("Tab");
@@ -129,7 +179,7 @@ test("public navigation and skip links have a coherent keyboard order", async ({
 
 test("public pages remain usable at a representative mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/features");
+  await page.goto("/");
 
   const navigation = page.getByRole("navigation", { name: "Public" });
   await expect(navigation).toBeVisible();
@@ -137,6 +187,18 @@ test("public pages remain usable at a representative mobile viewport", async ({ 
     .toBeInViewport();
   await expect(page.getByRole("link", { name: "Features", exact: true }))
     .toBeInViewport();
+  await expect(
+    page.getByRole("banner").getByRole("link", {
+      name: "Create account",
+      exact: true,
+    }),
+  ).toBeInViewport();
+  await expect(
+    page.getByRole("main").getByRole("link", {
+      name: "Create account",
+      exact: true,
+    }),
+  ).toBeInViewport();
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await expect.poll(
     () =>
