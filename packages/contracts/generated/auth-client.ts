@@ -289,6 +289,30 @@ export interface StorageSettings {
   };
 }
 
+export type ApiTokenScope = "people:read";
+
+export interface ApiTokenRecord {
+  readonly createdAt: string;
+  readonly expiresAt?: string;
+  readonly id: string;
+  readonly lastUsedAt?: string;
+  readonly name: string;
+  readonly revokedAt?: string;
+  readonly scopes: readonly ApiTokenScope[];
+}
+
+export interface ApiTokenList {
+  readonly records: readonly ApiTokenRecord[];
+  readonly scopes: readonly ApiTokenScope[];
+  readonly status: "ready";
+}
+
+export interface ApiTokenCreated {
+  readonly record: ApiTokenRecord;
+  readonly secret: string;
+  readonly status: "created";
+}
+
 export interface ManagedMember {
   readonly id: string;
   readonly email: string;
@@ -464,6 +488,18 @@ export function updateWorkspaceSettings(input: WorkspaceSettings, workspaceId?: 
 export function getStorageSettings(query?: string, workspaceId?: string): Promise<ApiResult<StorageSettings>> {
   const search = query ? `?query=${encodeURIComponent(query)}` : "";
   return request(`/api/v1/settings/storage${search}`, { headers: workspaceHeader(workspaceId) });
+}
+
+export function getApiTokens(workspaceId?: string): Promise<ApiResult<ApiTokenList>> {
+  return request("/api/v1/settings/api-tokens", { headers: workspaceHeader(workspaceId) });
+}
+
+export function createApiToken(input: { readonly expiresAt?: string; readonly name: string; readonly scopes: readonly ApiTokenScope[] }, workspaceId?: string): Promise<ApiResult<ApiTokenCreated>> {
+  return request("/api/v1/settings/api-tokens", { method: "POST", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function revokeApiToken(tokenId: string, workspaceId?: string): Promise<ApiResult<{ readonly record: ApiTokenRecord; readonly status: "revoked" }>> {
+  return request(`/api/v1/settings/api-tokens/${encodeURIComponent(tokenId)}`, { method: "DELETE", headers: workspaceHeader(workspaceId) });
 }
 
 export function listImports(workspaceId?: string): Promise<ApiResult<{ readonly imports: readonly ImportSummary[] }>> {

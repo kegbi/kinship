@@ -700,6 +700,7 @@ flows:
 
   - id: API-001
     title: Create and revoke an API token
+    deliveryStatus: delivered
     priority: P2
     actor: workspace-admin
     trigger: The administrator manages programmatic access.
@@ -716,7 +717,7 @@ flows:
     moduleIds: [api-access, workspaces]
     permissions: [api-tokens.manage]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [] }
+    e2e: { required: true, testRefs: [tests/e2e/app-010a.spec.ts] }
 
   - id: INTEGRATION-001
     title: Configure and synchronize DAV

@@ -23,6 +23,7 @@ export { PostgresFileAudit } from "./adapters/postgres/file_audit.ts";
 export { PostgresGiftAudit } from "./adapters/postgres/gift_audit.ts";
 export { PostgresJournalAudit } from "./adapters/postgres/journal_audit.ts";
 export { PostgresReminderAudit } from "./adapters/postgres/reminder_audit.ts";
+export { PostgresApiTokenAudit } from "./adapters/postgres/api_token_audit.ts";
 export type {
   ImportAudit,
   ImportAuditAction,

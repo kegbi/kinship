@@ -122,6 +122,65 @@ function todayRoutes(overrides: Partial<PeopleHttpServices>) {
   return createPeopleRoutes({ ...base, ...overrides });
 }
 
+Deno.test("API-001 bearer scope authenticates only the people directory read", async () => {
+  let listedWorkspace = "";
+  const routes = createPeopleRoutes({
+    ...services({ create: () => Promise.reject(new Error("unused")) }),
+    apiTokens: {
+      authenticate: (token, scope, workspaceId) => {
+        assert(
+          token === "accepted-token",
+          "bearer passed without logging or mutation",
+        );
+        assert(
+          scope === "people:read",
+          "directory requires explicit read scope",
+        );
+        assert(
+          workspaceId === actor.workspaceId,
+          "requested workspace is verified",
+        );
+        return Promise.resolve({ actor, status: "authenticated" });
+      },
+    },
+    directory: {
+      list: (resolved) => {
+        listedWorkspace = resolved.workspaceId;
+        return Promise.resolve({ people: [], status: "ready" });
+      },
+    },
+  });
+  const accepted = await routes.request("http://localhost/api/v1/people", {
+    headers: {
+      authorization: "bEaReR accepted-token",
+      "X-Workspace-Id": actor.workspaceId,
+    },
+  });
+  assert(
+    accepted.status === 200 && listedWorkspace === actor.workspaceId,
+    "bearer reads its active workspace",
+  );
+  assert(
+    (await routes.request("http://localhost/api/v1/people", {
+      headers: { authorization: "Bearer accepted-token extra" },
+    })).status === 401,
+    "bearer accepts exactly one credential",
+  );
+  const mutation = await routes.request("http://localhost/api/v1/people", {
+    body: JSON.stringify({ givenName: "Rejected", isPartial: false }),
+    headers: {
+      authorization: "Bearer accepted-token",
+      "content-type": "application/json",
+      origin: "http://localhost",
+    },
+    method: "POST",
+  });
+  assert(
+    mutation.status === 401,
+    "bearer cannot reuse browser mutation boundary",
+  );
+});
+
 Deno.test("PEOPLE-006 HTTP refreshes one strict profile-fact section", async () => {
   const personId = "00000000-0000-4000-8000-000000000100";
   const factId = "00000000-0000-4000-8000-000000000200";

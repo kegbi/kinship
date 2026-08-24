@@ -24,10 +24,12 @@ import type {
   RecentPeopleManagement,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
+import type { ApiTokenManagement } from "../../packages/backend/modules/api-access/public.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
 export interface PeopleHttpServices {
+  readonly apiTokens?: Pick<ApiTokenManagement, "authenticate">;
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly directory: PeopleDirectory;
   readonly importantDates?: ImportantDateManagement;
@@ -289,6 +291,23 @@ async function actor(context: Context, services: PeopleHttpServices) {
     : undefined;
 }
 
+async function directoryActor(context: Context, services: PeopleHttpServices) {
+  const authorization = context.req.header("Authorization");
+  if (authorization) {
+    const matched = /^Bearer ([^\s]+)$/i.exec(authorization);
+    if (!matched?.[1] || !services.apiTokens) return undefined;
+    const authenticated = await services.apiTokens.authenticate(
+      matched[1],
+      "people:read",
+      context.req.header("X-Workspace-Id"),
+    ).catch(() => undefined);
+    return authenticated?.status === "authenticated"
+      ? authenticated.actor
+      : undefined;
+  }
+  return await actor(context, services);
+}
+
 function identity(person: PersonIdentity) {
   return {
     ...(person.familyName ? { familyName: person.familyName } : {}),
@@ -533,7 +552,7 @@ export function createPeopleRoutes(services: PeopleHttpServices): Hono {
         "Review the search, tag, sort, lifecycle, and pagination criteria.",
       );
     }
-    const resolved = await actor(context, services);
+    const resolved = await directoryActor(context, services);
     if (!resolved) {
       return problem(
         context,
