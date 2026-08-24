@@ -10,8 +10,8 @@ prerequisite queues.
 
 ## Cursor
 
-- Current phase: **Phase 10 — Optional Platform Modules**
-- Current leaf: **Phase 10 acceptance checkpoint**
+- Current phase: **Phase 11 — Production Readiness**
+- Current leaf: **OPS-001A — Security, privacy, and accessibility verification**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -336,7 +336,7 @@ contract applies. Disabled modules must not break core CRM workflows.
         that Firefox or WebKit do not support in Playwright.
   - [x] Verify both the visible success outcome and the exact one-time secret
         passed to the page-local clipboard boundary in every browser engine.
-- [ ] **Phase 10 accepted:** every enabled Slice 8 module independently passes
+- [x] **Phase 10 accepted:** every enabled Slice 8 module independently passes
       its flows and can be disabled without breaking the core product.
 
 ## Phase 11 — Production Readiness
