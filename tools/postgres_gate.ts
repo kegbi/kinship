@@ -117,7 +117,9 @@ async function main(): Promise<void> {
     task !== "test:coverage:planning:direct" &&
     task !== "test:integration:exports:direct" &&
     task !== "test:integration:lifecycle:direct" &&
-    task !== "test:coverage:lifecycle:direct"
+    task !== "test:coverage:lifecycle:direct" &&
+    task !== "test:integration:api-access:direct" &&
+    task !== "test:coverage:api-access:direct"
   ) {
     throw new Error("Expected an allowlisted direct PostgreSQL gate task.");
   }

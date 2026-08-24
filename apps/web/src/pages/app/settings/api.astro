@@ -1,0 +1,47 @@
+---
+import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
+export const prerender = true;
+---
+
+<ApplicationLayout
+  current="settings"
+  description="Create, inspect, and revoke scoped personal API tokens."
+  pageId="settings.api-access"
+  title="API access — Kinship"
+>
+  <main id="main-content" class="page-frame settings-page api-access-page" tabindex="-1" data-requires-workspace-admin data-api-access>
+    <header class="settings-heading">
+      <div><p class="eyebrow">Developer settings</p><h1>API access</h1><p>Personal credentials for approved programmatic access to this workspace.</p></div>
+      <a class="button-link secondary-link" href="/app/settings">All settings</a>
+    </header>
+    <p data-api-state class="api-access-state" role="status" aria-live="polite"></p>
+
+    <section class="api-access-section" aria-labelledby="create-token-heading">
+      <header><p class="scope-label">Personal credential</p><h2 id="create-token-heading">Create API token</h2></header>
+      <form data-api-create class="api-token-form" novalidate>
+        <label>Token name<input name="name" type="text" maxlength="100" autocomplete="off" required /></label>
+        <label>Expiry <span class="optional-label">Optional</span><input name="expiresAt" type="datetime-local" /></label>
+        <fieldset><legend>Scopes</legend><label class="scope-choice"><input name="scopes" type="checkbox" value="people:read" />Read people</label></fieldset>
+        <button type="submit">Create token</button>
+      </form>
+    </section>
+
+    <section data-api-secret-panel class="api-secret-panel" aria-labelledby="api-secret-heading" hidden>
+      <header><p class="scope-label">Shown once</p><h2 id="api-secret-heading">Copy your token now</h2></header>
+      <p>This secret cannot be shown again after you leave or dismiss this view.</p>
+      <div class="api-secret-control"><input data-api-secret aria-label="New API token secret" readonly /><button data-api-copy type="button">Copy</button></div>
+      <button data-api-dismiss class="button-secondary" type="button">I have saved it</button>
+    </section>
+
+    <section class="api-access-section" aria-labelledby="api-token-list-heading">
+      <header><p class="scope-label">Workspace-bound</p><h2 id="api-token-list-heading">Personal API tokens</h2></header>
+      <p data-api-empty hidden>No API tokens yet.</p>
+      <ul data-api-list class="api-token-list" aria-label="Personal API tokens"></ul>
+    </section>
+  </main>
+</ApplicationLayout>
+
+<script>
+  import { mountApiAccess } from "../../../lib/api-access.ts";
+  void mountApiAccess();
+</script>

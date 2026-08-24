@@ -601,6 +601,113 @@ summary:focus-visible,
   max-width: 58rem;
 }
 
+.api-access-page {
+  max-width: 58rem;
+}
+
+.api-access-state {
+  min-height: 1.5rem;
+  color: #56645d;
+}
+
+.api-access-section,
+.api-secret-panel {
+  padding-top: 1.5rem;
+  border-top: 1px solid rgb(32 53 45 / 20%);
+}
+
+.api-access-section h2,
+.api-secret-panel h2 {
+  margin: .25rem 0 1rem;
+  font-family: Georgia, serif;
+  font-size: 1.6rem;
+  font-weight: 500;
+}
+
+.api-token-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+  max-width: 46rem;
+}
+
+.api-token-form label,
+.api-token-form fieldset {
+  display: grid;
+  gap: .4rem;
+  font-weight: 750;
+}
+
+.api-token-form input:not([type="checkbox"]),
+.api-secret-control input {
+  min-height: 44px;
+  padding: .7rem .8rem;
+  border: 1px solid #aeb7ae;
+  border-radius: .45rem;
+  background: white;
+}
+
+.api-token-form fieldset {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: .75rem 0;
+  border: 0;
+}
+
+.api-token-form .scope-choice {
+  display: flex;
+  gap: .55rem;
+  align-items: center;
+}
+
+.api-token-form > button {
+  justify-self: start;
+}
+
+.api-secret-panel {
+  margin: 2rem 0;
+}
+
+.api-secret-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .6rem;
+  max-width: 46rem;
+  margin: 1rem 0;
+}
+
+.api-secret-control input {
+  min-width: 0;
+  font-family: ui-monospace, monospace;
+}
+
+.api-token-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.api-token-list li {
+  display: flex;
+  gap: 1rem;
+  min-height: 5rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid rgb(32 53 45 / 14%);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.api-token-list li > div {
+  display: grid;
+  gap: .25rem;
+  min-width: 0;
+}
+
+.api-token-list span,
+.api-token-list small {
+  color: #617069;
+}
+
 .import-page {
   max-width: 58rem;
 }
@@ -2199,6 +2306,11 @@ summary:focus-visible,
 }
 
 @media (max-width: 760px) {
+  .api-token-form,
+  .api-secret-control {
+    grid-template-columns: 1fr;
+  }
+
   .header-row {
     grid-template-columns: 1fr;
     gap: .5rem;

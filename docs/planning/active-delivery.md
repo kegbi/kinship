@@ -11,8 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 10 — Optional Platform Modules**
-- Current leaf: **APP-010A / `API-001` — API tokens and approved programmatic
-  access**
+- Current leaf: **APP-010B / `INTEGRATION-001` — DAV and selected integrations**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -309,7 +308,7 @@ runnable behavior cannot work without them.
 Each leaf remains optional until its module is enabled and its accepted product
 contract applies. Disabled modules must not break core CRM workflows.
 
-- [ ] **APP-010A / `API-001` — API tokens and approved programmatic access.**
+- [x] **APP-010A / `API-001` — API tokens and approved programmatic access.**
 - [ ] **APP-010B / `INTEGRATION-001` — DAV and selected integrations.**
 - [ ] **APP-010C / `BILLING-001` — Optional workspace billing.**
 - [ ] **APP-010D — Operational administration**, only after accepted page/flow,

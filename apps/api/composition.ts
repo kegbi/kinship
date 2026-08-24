@@ -48,6 +48,7 @@ import { SmtpVerificationMail } from "../../packages/backend/modules/workspaces/
 import {
   createLegalAcceptance,
   type LegalAcceptance,
+  PostgresApiTokenAudit,
   PostgresAuthenticationAudit,
   PostgresCommunicationAudit,
   PostgresExportAudit,
@@ -72,9 +73,14 @@ import {
 } from "../../packages/backend/modules/governance/public.ts";
 import { createWorkspaceInvitationCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import {
+  type ApiTokenManagement,
   AuthenticationSubjectDigester,
   type AuthenticationSubjectKeyset,
+  createApiTokenManagement,
+  PostgresApiTokenRepository,
+  PostgresApiTokenTransaction,
   PostgresAuthenticationAttemptBudget,
+  WebCryptoApiTokenSecrets,
 } from "../../packages/backend/modules/api-access/public.ts";
 import {
   createRegistrationRoutes,
@@ -261,8 +267,10 @@ import {
 import { PostgresIntegrationWorkspaceLifecycleImpact } from "../../packages/backend/modules/integrations/public.ts";
 import { PostgresOperationsWorkspaceLifecycleImpact } from "../../packages/backend/modules/operations/public.ts";
 import { createExportRoutes } from "./exports.ts";
+import { createApiTokenRoutes } from "./api_tokens.ts";
 
 export interface ApiServices extends RegistrationHttpServices {
+  readonly apiTokens?: ApiTokenManagement;
   readonly activityReport?: ActivityReport;
   readonly auditHistory?: AuditHistory;
   readonly directory?: PeopleDirectory;
@@ -411,6 +419,16 @@ export function createApiApp(services?: ApiServices): Hono {
           }),
         );
       }
+      if (services.apiTokens) {
+        api.route(
+          "/",
+          createApiTokenRoutes({
+            apiTokens: services.apiTokens,
+            browserSecurity: services.browserSecurity,
+            protectedSessions: services.protectedSessions,
+          }),
+        );
+      }
       if (services.personalLifecycle) {
         api.route(
           "/",
@@ -493,6 +511,7 @@ export function createApiApp(services?: ApiServices): Hono {
       api.route(
         "/",
         createPeopleRoutes({
+          ...(services.apiTokens ? { apiTokens: services.apiTokens } : {}),
           browserSecurity: services.browserSecurity,
           directory: services.directory,
           ...(services.importantDates
@@ -665,6 +684,14 @@ export function createConfiguredApiApp(
       ),
     transaction,
     workspace: new PostgresActiveWorkspaceResolver(),
+  });
+  const apiTokens = createApiTokenManagement({
+    audit: new PostgresApiTokenAudit(),
+    clock,
+    ids: { next: () => ids.create() },
+    repository: new PostgresApiTokenRepository(connection.db),
+    secrets: new WebCryptoApiTokenSecrets(),
+    transaction: new PostgresApiTokenTransaction(connection.db),
   });
   const passwordRecovery = createPasswordRecovery({
     clock,
@@ -1001,6 +1028,7 @@ export function createConfiguredApiApp(
     repository: new PostgresTodayRecentPeopleRepository(connection.db),
   });
   const app = createApiApp({
+    apiTokens,
     activityReport,
     auditHistory,
     browserSecurity: policy,

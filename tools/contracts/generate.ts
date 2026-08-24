@@ -649,7 +649,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
       "/api/v1/people": {
         get: {
           operationId: "listPeople",
-          security: [{ kinship_session: [] }],
+          security: [{ kinship_session: [] }, { kinship_api_token: [] }],
           parameters: [
             workspaceParameter,
             {
@@ -2916,6 +2916,83 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           "WorkspaceSettings",
         ),
       },
+      "/api/v1/settings/api-tokens": {
+        get: {
+          operationId: "getApiTokens",
+          security: [{ kinship_session: [] }],
+          parameters: [workspaceParameter],
+          responses: {
+            "200": {
+              description: "Personal API token metadata",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ApiTokenList" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+        post: {
+          operationId: "createApiToken",
+          security: [{ kinship_session: [] }],
+          parameters: [originParameter, workspaceParameter],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ApiTokenCreateInput" },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "API token created; secret returned only once",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ApiTokenCreated" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "503": problem,
+          },
+        },
+      },
+      "/api/v1/settings/api-tokens/{tokenId}": {
+        delete: {
+          operationId: "revokeApiToken",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            originParameter,
+            workspaceParameter,
+            {
+              name: "tokenId",
+              in: "path",
+              required: true,
+              schema: { type: "string", format: "uuid" },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "API token revoked",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ApiTokenRevoked" },
+                },
+              },
+            },
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "503": problem,
+          },
+        },
+      },
       "/api/v1/settings/storage": {
         get: {
           operationId: "getStorageSettings",
@@ -3742,6 +3819,13 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           name: "kinship_session",
           description:
             "Revocable random browser session; HttpOnly, SameSite=Strict, and Secure outside loopback.",
+        },
+        kinship_api_token: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "kin_pat",
+          description:
+            "Workspace-bound personal API token accepted only for explicitly granted first-party scopes.",
         },
       },
       schemas: {
@@ -6937,6 +7021,74 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        ApiTokenRecord: {
+          type: "object",
+          required: ["createdAt", "id", "name", "scopes"],
+          properties: {
+            createdAt: { type: "string", format: "date-time" },
+            expiresAt: { type: "string", format: "date-time" },
+            id: { type: "string", format: "uuid" },
+            lastUsedAt: { type: "string", format: "date-time" },
+            name: { type: "string", minLength: 1, maxLength: 100 },
+            revokedAt: { type: "string", format: "date-time" },
+            scopes: {
+              type: "array",
+              minItems: 1,
+              items: { type: "string", enum: ["people:read"] },
+            },
+          },
+          additionalProperties: false,
+        },
+        ApiTokenCreateInput: {
+          type: "object",
+          required: ["name", "scopes"],
+          properties: {
+            expiresAt: { type: "string", format: "date-time" },
+            name: { type: "string", minLength: 1, maxLength: 100 },
+            scopes: {
+              type: "array",
+              minItems: 1,
+              maxItems: 1,
+              items: { type: "string", enum: ["people:read"] },
+            },
+          },
+          additionalProperties: false,
+        },
+        ApiTokenList: {
+          type: "object",
+          required: ["records", "scopes", "status"],
+          properties: {
+            records: {
+              type: "array",
+              items: { $ref: "#/components/schemas/ApiTokenRecord" },
+            },
+            scopes: {
+              type: "array",
+              items: { type: "string", enum: ["people:read"] },
+            },
+            status: { const: "ready" },
+          },
+          additionalProperties: false,
+        },
+        ApiTokenCreated: {
+          type: "object",
+          required: ["record", "secret", "status"],
+          properties: {
+            record: { $ref: "#/components/schemas/ApiTokenRecord" },
+            secret: { type: "string", minLength: 64 },
+            status: { const: "created" },
+          },
+          additionalProperties: false,
+        },
+        ApiTokenRevoked: {
+          type: "object",
+          required: ["record", "status"],
+          properties: {
+            record: { $ref: "#/components/schemas/ApiTokenRecord" },
+            status: { const: "revoked" },
+          },
+          additionalProperties: false,
+        },
         StorageSettings: {
           type: "object",
           required: [
@@ -7675,6 +7827,30 @@ export interface StorageSettings {
   };
 }
 
+export type ApiTokenScope = "people:read";
+
+export interface ApiTokenRecord {
+  readonly createdAt: string;
+  readonly expiresAt?: string;
+  readonly id: string;
+  readonly lastUsedAt?: string;
+  readonly name: string;
+  readonly revokedAt?: string;
+  readonly scopes: readonly ApiTokenScope[];
+}
+
+export interface ApiTokenList {
+  readonly records: readonly ApiTokenRecord[];
+  readonly scopes: readonly ApiTokenScope[];
+  readonly status: "ready";
+}
+
+export interface ApiTokenCreated {
+  readonly record: ApiTokenRecord;
+  readonly secret: string;
+  readonly status: "created";
+}
+
 export interface ManagedMember {
   readonly id: string;
   readonly email: string;
@@ -7850,6 +8026,18 @@ export function updateWorkspaceSettings(input: WorkspaceSettings, workspaceId?: 
 export function getStorageSettings(query?: string, workspaceId?: string): Promise<ApiResult<StorageSettings>> {
   const search = query ? \`?query=\${encodeURIComponent(query)}\` : "";
   return request(\`/api/v1/settings/storage\${search}\`, { headers: workspaceHeader(workspaceId) });
+}
+
+export function getApiTokens(workspaceId?: string): Promise<ApiResult<ApiTokenList>> {
+  return request("/api/v1/settings/api-tokens", { headers: workspaceHeader(workspaceId) });
+}
+
+export function createApiToken(input: { readonly expiresAt?: string; readonly name: string; readonly scopes: readonly ApiTokenScope[] }, workspaceId?: string): Promise<ApiResult<ApiTokenCreated>> {
+  return request("/api/v1/settings/api-tokens", { method: "POST", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
+}
+
+export function revokeApiToken(tokenId: string, workspaceId?: string): Promise<ApiResult<{ readonly record: ApiTokenRecord; readonly status: "revoked" }>> {
+  return request(\`/api/v1/settings/api-tokens/\${encodeURIComponent(tokenId)}\`, { method: "DELETE", headers: workspaceHeader(workspaceId) });
 }
 
 export function listImports(workspaceId?: string): Promise<ApiResult<{ readonly imports: readonly ImportSummary[] }>> {
