@@ -61,6 +61,14 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
     "production-like gateway terminates TLS from deployment-provided files",
   );
   assert(
+    (gateway.match(/include \/etc\/nginx\/security_headers\.conf;/g)?.length ??
+          0) === 7 &&
+      gatewayImage.includes(
+        "COPY gateway/security_headers.conf /etc/nginx/security_headers.conf",
+      ),
+    "all public gateway responses receive the pinned browser security policy",
+  );
+  assert(
     gateway.includes("location /api/v1/") &&
       gateway.includes("proxy_pass $api_upstream") &&
       gateway.includes(
