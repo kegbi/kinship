@@ -109,7 +109,7 @@ try {
   );
   await run(
     "docker",
-    [...compose, "run", "--rm", "migrate"],
+    [...compose, "run", "--build", "--rm", "migrate"],
     composeEnvironment,
   );
 
