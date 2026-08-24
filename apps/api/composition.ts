@@ -44,7 +44,10 @@ import {
   createFirstWorkspaceRegistration,
   type VerificationMail,
 } from "../../packages/backend/modules/workspaces/public.ts";
-import { SmtpVerificationMail } from "../../packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail.ts";
+import {
+  resolveSmtpVerificationMailOptions,
+  SmtpVerificationMail,
+} from "../../packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail.ts";
 import {
   createLegalAcceptance,
   type LegalAcceptance,
@@ -635,13 +638,9 @@ export function createConfiguredApiApp(
   const clock = { now: () => new Date() };
   const ids = { create: () => crypto.randomUUID() };
   const environment = Deno.env.get("APP_ENV") ?? "development";
-  const mail = mailAdapter ?? new SmtpVerificationMail({
-    environment,
-    from: Deno.env.get("SMTP_FROM") ?? "hello@kinship.local",
-    host: Deno.env.get("SMTP_HOST") ?? "127.0.0.1",
-    port: Number(Deno.env.get("SMTP_PORT") ?? "1025"),
-    webOrigin: Deno.env.get("PUBLIC_WEB_ORIGIN") ?? "http://127.0.0.1:4321",
-  });
+  const mail = mailAdapter ?? new SmtpVerificationMail(
+    resolveSmtpVerificationMailOptions(Deno.env),
+  );
   const connection = connectDatabase(databaseUrl);
   if (environment === "production" && davEnabled && !davKeysetOverride) {
     throw new Error(

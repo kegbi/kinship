@@ -20,6 +20,8 @@ services:
       OBJECT_STORAGE_USE_SSL: "false"
       PUBLIC_WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN}
     depends_on:
+      mailpit:
+        condition: service_healthy
       object-store:
         condition: service_healthy
     ports: !reset []
@@ -40,6 +42,18 @@ services:
     ports: !override
       - "127.0.0.1::8443"
   mailpit:
+    image: axllent/mailpit:v1.30.6@sha256:7f33095f80e901f6ad08028f06ca284aa58fe84942be5496008d041d3b9f4d4d
+    environment:
+      MP_DATABASE: /tmp/mailpit.db
+      MP_MAX_MESSAGES: "100"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
     ports:
       - "127.0.0.1::8025"
   object-store:

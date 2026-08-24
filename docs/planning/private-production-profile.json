@@ -42,6 +42,64 @@
     "rtoMinutes": 240,
     "schemaVersion": 7
   },
+  "operations": {
+    "preflightCommand": "deno task ops:preflight:private-production",
+    "runbookPath": "docs/operations/private-production.md",
+    "archiveProtection": {
+      "encryptedAtRestRequired": true,
+      "keyRecoveryVerificationRequired": true
+    },
+    "secrets": [
+      {
+        "name": "POSTGRES_PASSWORD",
+        "owner": "private-production-owner",
+        "rotation": "Create a new database role credential, update the deployment secret, restart migrate/API/worker, then revoke the old credential after readiness succeeds.",
+        "recovery": "Recover from the deployment secret store; never place the credential in a recovery archive."
+      },
+      {
+        "name": "OBJECT_STORAGE_ACCESS_KEY+OBJECT_STORAGE_SECRET_KEY",
+        "owner": "private-production-owner",
+        "rotation": "Create a second scoped storage identity, update API/worker/recovery secrets, verify file access and backup, then revoke the prior identity.",
+        "recovery": "Recover the scoped identity from the deployment secret store independently of archived object bytes."
+      },
+      {
+        "name": "SMTP_USERNAME+SMTP_PASSWORD",
+        "owner": "private-production-owner",
+        "rotation": "Issue replacement SMTP credentials, update the API secret, verify one delivery, then revoke the prior credentials.",
+        "recovery": "Recover from the mail-provider credential owner; application backups do not contain provider credentials."
+      },
+      {
+        "name": "AUTH_MFA_ENCRYPTION_KEYSET",
+        "owner": "private-production-owner",
+        "rotation": "Add a new active key while retaining prior decrypt keys, restart API, verify MFA, then retire old keys only after dependent rows have been re-encrypted or expired.",
+        "recovery": "Recover the complete versioned keyset from the deployment secret store before restoring encrypted MFA data."
+      },
+      {
+        "name": "AUTH_THROTTLE_SUBJECT_KEYSET",
+        "owner": "private-production-owner",
+        "rotation": "Add a new active version while retaining prior verification versions through the throttle window, restart API, then remove expired versions.",
+        "recovery": "Recover the versioned keyset from the deployment secret store before serving authentication traffic."
+      },
+      {
+        "name": "INTEGRATIONS_ENCRYPTION_KEYSET",
+        "owner": "private-production-owner",
+        "rotation": "When DAV is enabled, add a new active key while retaining old decrypt keys, restart API, re-save provider secrets, then retire unused keys.",
+        "recovery": "Recover the complete keyset before restoring DAV subscriptions; otherwise keep DAV disabled."
+      },
+      {
+        "name": "GATEWAY_TLS_PRIVATE_KEY_PATH",
+        "owner": "private-production-owner",
+        "rotation": "Install the replacement certificate and key through the deployment secret mount, reload gateway, verify HTTPS, then remove the old mount.",
+        "recovery": "Reissue from the certificate authority; never copy the private key into application archives."
+      },
+      {
+        "name": "PRIVATE_PRODUCTION_ARCHIVE_KEY",
+        "owner": "private-production-owner",
+        "rotation": "Write new archives under the new external encryption key and retain old keys until every retained archive using them has expired.",
+        "recovery": "Keep an independently recoverable key copy outside the host and verify access before every release."
+      }
+    ]
+  },
   "observability": {
     "gatewayConfigPath": "gateway/nginx.conf",
     "readinessProbe": {
