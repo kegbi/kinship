@@ -11,8 +11,8 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 11 — Production Readiness**
-- Current leaf: **OPS-001B — Representative performance, capacity, SLOs, and
-  observability**
+- Current leaf: **OPS-001C — Backup/restore, migration rollout/rollback, and
+  recovery**
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -364,8 +364,18 @@ a named environment.
         the existing baseline test to the `test:unit:api` read allowlist.
   - [x] Prove the aggregate API unit task no longer fails its own Deno
         permission boundary.
-- [ ] **OPS-001B — Representative performance, capacity, SLOs, and
+- [x] **OPS-001B — Representative performance, capacity, SLOs, and
       observability.**
+  - [x] Fix conservative startup objectives for the named owner-operated
+        `private-production` environment: one steady user, a burst of three, one
+        workspace, 99.0% rolling 30-day availability, and p95 latency targets no
+        looser than the accepted PERF-001 functional ceilings.
+  - [x] Consume the existing redacted gateway request duration/status logs and
+        API/renderer readiness boundary without introducing third-party
+        telemetry for the initial deployment.
+  - [x] Provide one executable HTTPS operator probe that emits a bounded local
+        structured result and reports unavailability only after three
+        consecutive one-minute readiness failures.
 - [ ] **OPS-001C — Backup/restore, migration rollout/rollback, and recovery.**
 - [ ] **OPS-001D — Secrets, provider configuration, incident and release
       runbooks.**

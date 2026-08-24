@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "environment": "private-production",
+  "scope": "Owner-operated startup objectives for one workspace. No historical usage data or third-party telemetry is required.",
+  "sourceCapacityProfile": "docs/planning/mvp-capacity-profile.json",
+  "capacity": {
+    "steadyUsers": 1,
+    "burstUsers": 3,
+    "workspaces": 1
+  },
+  "serviceObjectives": {
+    "availability": {
+      "targetPercent": 99,
+      "rollingDays": 30,
+      "allowedDowntimeMinutes": 432
+    },
+    "p95LatencyMs": {
+      "interactivePage": 2000,
+      "ordinaryApiRead": 500,
+      "ordinaryApiMutation": 1000,
+      "representativeQuery": 250,
+      "workerDueToDelivery": 10000,
+      "boundedImportExportCompletion": 10000
+    }
+  },
+  "observability": {
+    "gatewayConfigPath": "gateway/nginx.conf",
+    "readinessProbe": {
+      "path": "/gateway-health",
+      "timeoutMs": 3000,
+      "intervalMs": 60000,
+      "consecutiveFailuresToAlert": 3
+    },
+    "gatewayRequestFields": [
+      "event",
+      "method",
+      "route",
+      "status",
+      "duration_seconds",
+      "bytes_sent"
+    ],
+    "telemetry": {
+      "localStructuredLogs": true,
+      "thirdPartyExport": false,
+      "retentionDays": 30
+    },
+    "forbiddenLogData": [
+      "authorization",
+      "cookies",
+      "query-values",
+      "person-identifiers",
+      "workspace-identifiers",
+      "crm-content",
+      "free-form-errors"
+    ]
+  }
+}
