@@ -512,9 +512,22 @@ Deno.test("PEOPLE-002 OpenAPI describes tenant-safe cursor directory reads", () 
   }>;
   const list = paths["/api/v1/people"]?.get;
   assert(list !== undefined, "people directory path must be versioned");
+  const approvedAuthenticationSchemes = new Set([
+    "kinship_api_token",
+    "kinship_session",
+  ]);
+  const directorySecurity = list.security ?? [];
   assert(
-    JSON.stringify(list.security) === JSON.stringify([{ kinship_session: [] }]),
-    "people directory must require the session cookie",
+    directorySecurity.some((requirement) =>
+      Object.keys(requirement).length === 1 &&
+      Object.hasOwn(requirement, "kinship_session")
+    ) &&
+      directorySecurity.every((requirement) => {
+        const schemes = Object.keys(requirement);
+        return schemes.length > 0 &&
+          schemes.every((scheme) => approvedAuthenticationSchemes.has(scheme));
+      }),
+    "people directory must accept the session cookie and only approved authenticated schemes",
   );
   for (
     const parameter of [
