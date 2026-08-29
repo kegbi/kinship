@@ -623,13 +623,22 @@ asserts, so it runs that spec on its candidate.
         closer to it; both now use `--warning-soft` at 5.987:1, so `UXD-016` can
         override each family together without inverting them wrongly.
 
-- [ ] **UXD-013 — Person summary read model with per-section counts.** (§9.2
+- [x] **UXD-013 — Person summary read model with per-section counts.** (§9.2
       stage 2; effort M; API side; no dependency)
-  - [ ] Extend the person read path with primary contact methods, next reminder,
-        stay-in-touch state, relationship counts, and a record count per
-        section.
-  - [ ] Keep the `person-profile` read model read-only and regenerate contract
-        artifacts through their generator.
+  - [x] `?include=summary` adds primary contact methods capped at three, the
+        next reminder and stay-in-touch dates copied from `dueInformation`,
+        relationship counts grouped by type, and a count for each of the
+        fourteen stable section ids.
+  - [x] Hidden and empty stay distinct in the type system: the section count is
+        a discriminated union, so a hidden section cannot carry a count and a
+        turned-off module can never render as "none recorded".
+  - [x] One lateral projection on the existing person query, with counts built
+        from a single `UNION ALL` and one `GROUP BY`. Without the parameter the
+        projection is not emitted and the response is byte-for-byte unchanged.
+  - [x] Tenant boundaries proven against real PostgreSQL: a foreign-workspace
+        person with `include=summary` returns 404 and a forged workspace context
+        is forbidden.
+
 - [ ] **UXD-002 — Person workspace three-zone layout.** (§7; effort L; depends
       on `UXD-001` and `UXD-006`)
   - [ ] Deliver the hero that absorbs the lifecycle panel, due-information card,
