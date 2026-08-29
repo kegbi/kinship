@@ -513,30 +513,29 @@ Report and request direction once `UXD-001` through `UXD-005` are integrated.
   - [x] Do not weaken `read_only`, drop the tmpfs for a persistent volume in the
         test overlay, or change the accepted RustFS image pin.
 
-- [ ] **REL-013 — Stabilize the WORKSPACE-003 personalization browser flow.**
-      With the stack able to start again, `app-004e.spec.ts` failed twice at the
-      Tags step: after the Tags module is toggled off and back on, clicking the
-      `Tags` section link left the URL at `?section=profile-modules` instead of
-      `?section=tags`. It then passed twice. Treat it as intermittent, not
-      deterministic, and reproduce it before changing anything.
-  - [ ] Reproduced identically on `10019c60` carrying only the REL-012 Compose
-        fix, so neither `UXD-006` nor `REL-012` caused it. The failure was
-        hidden while the object-store could not start, which means a delivered
-        P1 flow has been red without anyone seeing it.
-  - [ ] Prime suspect, to confirm before fixing: the section link handler in
-        `apps/web/src/lib/personalization.ts` calls `navigationCleanMessage()`,
-        which fires `globalThis.confirm()` while the page is dirty. Playwright
-        auto-dismisses an unhandled dialog, so the handler returns early and
-        never pushes the new section. Decide whether the page is wrongly still
-        dirty after a successful module save, in which case the product is at
-        fault and the dirty baseline must be refreshed, or whether the guard is
-        correct and the spec must handle its own dialog. Do not change the
-        accepted dirty-state protection contract to make a test pass.
-  - [ ] Check whether other cataloged flows regressed while the browser gate was
-        unrunnable before claiming this is the only one. Two of the first two
-        flows run against a healthy stack were red: `APP-002C`, corrected by
-        `REL-001`, and `WORKSPACE-003` here. Until that sweep runs, treat
-        `user-flows.yaml`'s delivered statuses as unverified rather than false.
+- [x] **REL-013 — Keep section navigation authoritative over a concurrent
+      refresh.** The Tags step failed roughly three times in eight runs, leaving
+      the URL on `?section=profile-modules`. The page reported "All changes
+      saved.", so no unsaved-changes confirm was blocking, and the network trace
+      showed the navigation had already fired its request before a later refresh
+      of the current section followed it.
+  - [x] `render()` carries a `requestGeneration` watermark and returns false
+        when superseded, and the navigation handler pushed history only if that
+        render won. Any refresh landing in the window cancelled the navigation
+        silently, the same defect `UXD-006` fixed on the person page and the
+        class `AGENTS.md` warns about when one surface has several async owners
+        behind a watermark.
+  - [x] Navigation now commits `current`, `currentIndex`, and history before
+        awaiting the load. A failed load leaves the member on the requested
+        section with its existing error state and Retry, matching how a
+        `?section=` deep link already behaves on first load.
+  - [x] The authoritative evidence is the deterministic unit reproduction of the
+        race, not repeated browser runs: one green `app-004e` run sits inside
+        the old pass rate and could not distinguish a fix from luck.
+  - [ ] Still open from this investigation: `app-004e` cannot be run with
+        `--repeat-each`, because its `E2E chromium companion category` fixture
+        insert is not idempotent and collides on a unique name. That blocks the
+        cheapest way to measure a flake in this spec.
 
 - [x] **REL-014 — Walk the real header focus order in `auth-003`.**
       `tests/e2e/auth-003.spec.ts:265` skips the Journal navigation link exactly
