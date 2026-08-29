@@ -1191,8 +1191,13 @@ describe("WORKSPACE-003 personalization deep links", () => {
     )!.click();
     await vi.waitFor(() =>
       expect(document.querySelector("#personalization-status")?.textContent)
-        .toBe("Tags could not be loaded.")
+        .toContain("Tags could not be loaded. Retry")
     );
+    expect(location.search).toBe("?section=tags");
+    expect(history.state.personalization).toEqual({
+      index: 1,
+      section: "tags",
+    });
     expect(forward.value).toBe("Mentor");
     expect(reverse.value).toBe("Student");
     expect(document.querySelector("#personalization-dirty")?.textContent)
@@ -1286,10 +1291,10 @@ describe("WORKSPACE-003 personalization deep links", () => {
         if (path === "/api/v1/session") {
           return Promise.resolve(response(session));
         }
-        if (
-          path.includes("reminder-rules") ||
-          (path.includes("tags") && failTags)
-        ) {
+        if (path.includes("reminder-rules")) {
+          return Promise.reject(new Error("offline"));
+        }
+        if (path.includes("tags") && failTags) {
           return Promise.resolve(response({
             code: "personalization_unavailable",
             detail: "Target section could not be loaded.",
@@ -1327,9 +1332,13 @@ describe("WORKSPACE-003 personalization deep links", () => {
     )!.click();
     await vi.waitFor(() =>
       expect(document.querySelector("#personalization-status")?.textContent)
-        .toBe("Target section could not be loaded.")
+        .toContain("This section could not be loaded. Retry")
     );
-    expect(location.search).toBe("?section=tags");
+    expect(location.search).toBe("?section=reminder-rules");
+    expect(history.state.personalization).toEqual({
+      index: 1,
+      section: "reminder-rules",
+    });
     expect(document.querySelector("#personalization-heading")?.textContent)
       .toBe("Tags");
     expect(tagName.value).toBe("Closest friends");
@@ -1357,9 +1366,9 @@ describe("WORKSPACE-003 personalization deep links", () => {
     const tagsState = { personalization: { index: 0, section: "tags" } };
     history.replaceState(tagsState, "", "?section=tags");
     dispatchEvent(new PopStateEvent("popstate", { state: tagsState }));
-    await vi.waitFor(() => expect(go).toHaveBeenLastCalledWith(1));
+    await vi.waitFor(() => expect(go).toHaveBeenLastCalledWith(2));
     const genderState = {
-      personalization: { index: 1, section: "gender-options" },
+      personalization: { index: 2, section: "gender-options" },
     };
     history.replaceState(genderState, "", "?section=gender-options");
     dispatchEvent(new PopStateEvent("popstate", { state: genderState }));
@@ -1661,5 +1670,118 @@ describe("WORKSPACE-003 personalization deep links", () => {
       .toHaveLength(0);
     expect(document.querySelector("#personalization-status")?.textContent)
       .toContain("No options yet");
+  });
+
+  it("keeps section navigation authoritative over a later refresh", async () => {
+    markup();
+    const unknownLink = document.createElement("a");
+    unknownLink.dataset.personalizationSection = "unknown";
+    unknownLink.href = "?section=unknown";
+    document.querySelector("nav")!.append(unknownLink);
+    history.replaceState(
+      {},
+      "",
+      "/app/settings/personalization?section=profile-modules",
+    );
+    const mutation = deferred<Response>();
+    const navigation = deferred<Response>();
+    const trailingRefresh = deferred<Response>();
+    const profileModule = {
+      canDelete: true,
+      id: "00000000-0000-4000-8000-000000000005",
+      isActive: true,
+      isDefault: false,
+      name: "Tags",
+      referenceCount: 0,
+      sortOrder: 0,
+      updatedAt: "2026-08-16T11:00:00.000Z",
+    };
+    let initialProfileRead = true;
+    let tagReads = 0;
+    let trailingSection = "";
+    const fetchMock = vi.fn(
+      (input: string | URL | Request, init?: RequestInit) => {
+        const path = String(input);
+        if (path === "/api/v1/session") {
+          return Promise.resolve(response(session));
+        }
+        if (init?.method === "PATCH") return mutation.promise;
+        if (path.includes("/tags")) {
+          tagReads += 1;
+          if (tagReads === 1) return navigation.promise;
+          trailingSection = "tags";
+          return trailingRefresh.promise;
+        }
+        if (initialProfileRead) {
+          initialProfileRead = false;
+          return Promise.resolve(response({
+            entries: [profileModule],
+            section: "profile-modules",
+            status: "ready",
+          }));
+        }
+        trailingSection = "profile-modules";
+        return trailingRefresh.promise;
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountPersonalization();
+    const toggle = Array.from(document.querySelectorAll<HTMLButtonElement>(
+      ".personalization-actions button",
+    )).find((button) => button.textContent === "Disable")!;
+    toggle.click();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const tagsLink = document.querySelector<HTMLAnchorElement>(
+      '[data-personalization-section="tags"]',
+    )!;
+    tagsLink.click();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    mutation.resolve(response({
+      entry: { ...profileModule, isActive: false },
+      status: "saved",
+    }));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    navigation.resolve(response({
+      entries: [],
+      section: "tags",
+      status: "ready",
+    }));
+    trailingRefresh.resolve(response({
+      entries: trailingSection === "profile-modules" ? [profileModule] : [],
+      section: trailingSection,
+      status: "ready",
+    }));
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector("#personalization-list")?.getAttribute(
+          "aria-busy",
+        ),
+      ).toBe("false")
+    );
+
+    expect(location.search).toBe("?section=tags");
+    expect(history.state.personalization).toEqual({
+      index: 1,
+      section: "tags",
+    });
+    expect(document.querySelector("#personalization-heading")?.textContent)
+      .toBe("Tags");
+    expect(trailingSection).toBe("tags");
+    const requestCount = fetchMock.mock.calls.length;
+    tagsLink.focus();
+    tagsLink.click();
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(requestCount);
+    expect(document.activeElement).toBe(tagsLink);
+    expect(document.querySelector("#personalization-status")?.textContent)
+      .toBe("That personalization section is already open.");
+    unknownLink.focus();
+    unknownLink.click();
+    expect(fetchMock).toHaveBeenCalledTimes(requestCount);
+    expect(location.search).toBe("?section=tags");
+    expect(document.activeElement).toBe(unknownLink);
+    expect(document.querySelector("#personalization-status")?.textContent)
+      .toBe("That personalization section is already open.");
   });
 });
