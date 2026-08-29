@@ -10,9 +10,10 @@ prerequisite queues.
 
 ## Cursor
 
-- Current phase: **Phase 11 — Production Readiness**
-- Current leaf: **OPS-001E — Deployment rollout, rollback, and post-deploy
-  verification**
+- Current phase: **Phase 12 — UX And Design Integration**
+- Current leaf: **UXD-006 — Repair dead section navigation for hidden modules**
+- Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
+  verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
 - Exact delivery checkpoints: `git log -- docs/planning/active-delivery.md`
 
@@ -444,3 +445,171 @@ a named environment.
 - [ ] **Phase 11 accepted:** the named environment independently passes every
       required security, privacy, accessibility, performance, observability,
       backup, restore, migration, rollout, rollback, and operational proof.
+
+## Phase 12 — UX And Design Integration
+
+Owning specification:
+[`docs/validation/ux-design-review-2026-08-29.md`](../validation/ux-design-review-2026-08-29.md),
+the accepted full-codebase UX and design review recorded at `cde53f33`. Its §6
+through §11 are the implementation specs for these leaves, and its §12 roadmap
+fixes their rank, effort, and dependencies. Leaf `UXD-<n>` is review §12 item
+`n`; the review's numbering is preserved so a leaf and its spec never drift.
+
+This phase is scheduled ahead of the still-open Phase 11 `OPS-001E` deployment
+leaf. `OPS-001E` is not a prerequisite for any leaf here, and no leaf here
+blocks it.
+
+These constraints bind every leaf in this phase:
+
+- The accepted direction is vanilla TypeScript plus CSS custom properties
+  (review §10.6). Do not introduce React, Tailwind, shadcn, or another component
+  framework.
+- Preserve the static-shell and gateway-rewrite routing pattern (review §3.2).
+  The five `internal/*-shell.astro` pages remain the implementations of the
+  cataloged dynamic routes.
+- `?section=` deep links stay non-negotiable
+  ([`person-workspace.md`](../product/person-workspace.md), review §7.4). Every
+  section ID keeps resolving after the layout changes.
+- One roadmap item per candidate. Do not batch two items into one commit.
+- An accepted contract changes only through an explicit amendment inside the
+  same candidate that needs it. Never silently violate one.
+
+### Execution Order
+
+1. `UXD-006`, `UXD-007`, and `UXD-010` as three separate same-day candidates.
+2. `UXD-001` design tokens, with `UXD-013` opened in parallel on the API side so
+   the per-section summary lands before `UXD-002` consumes it.
+3. `UXD-002` person-workspace three-zone layout.
+4. `UXD-003` staged loading. Its three prefetch deletions may ship as an earlier
+   independent slice.
+5. `UXD-005` feedback pass, then the remaining leaves in §12 rank order,
+   respecting each row's dependency note.
+
+Report and request direction once `UXD-001` through `UXD-005` are integrated.
+
+### Do First
+
+- [ ] **UXD-006 — Repair dead section navigation for hidden modules.** (§3.4,
+      §6.9, §7.4; effort S; no dependency)
+  - [ ] Remove section-navigation entries for sections hidden by workspace
+        personalization instead of leaving links that only push history.
+  - [ ] Render an inline turned-off notice with a personalization link when a
+        hidden section is deep-linked, never a silent no-op in `focusSection`.
+- [ ] **UXD-007 — Quick-wins bundle.** (§6.8, §8, §10.7; effort S; no
+      dependency)
+  - [ ] Make the reduced-motion rule stop animation, not only transitions and
+        scroll behavior, so the directory spinner honors the preference.
+  - [ ] Link the member menu Profile item to the existing profile settings page
+        and delete the help and what-is-new stub.
+  - [ ] Move sign out and the workspace switcher into the member popover so
+        header height stops changing between accounts.
+  - [ ] Widen the person workspace frame to the header width and give the two
+        always-open forms the same `hidden` behavior as the other twenty.
+- [ ] **UXD-010 — Remove dead dependencies and amend the component clause.**
+      (§10.6; effort S; no dependency)
+  - [ ] Remove the React, Tailwind, shadcn, and related unused packages from the
+        manifest and lockfile while keeping the live JSX accessibility plugin.
+  - [ ] Amend the component clause in
+        [`dashboard-settings-design.md`](../product/dashboard-settings-design.md)
+        to name the equivalent Kinship primitives, keeping every accessibility
+        clause verbatim. Amend it; do not silently violate it.
+- [ ] **UXD-001 — Design tokens.** (§10.1, §10.2; effort M; no dependency)
+  - [ ] Introduce the accepted token set and replace the hardcoded literals
+        across the three stylesheets.
+  - [ ] Fix the small-text contrast failures found in the same pass rather than
+        tokenizing them unchanged.
+- [ ] **UXD-013 — Person summary read model with per-section counts.** (§9.2
+      stage 2; effort M; API side; no dependency)
+  - [ ] Extend the person read path with primary contact methods, next reminder,
+        stay-in-touch state, relationship counts, and a record count per
+        section.
+  - [ ] Keep the `person-profile` read model read-only and regenerate contract
+        artifacts through their generator.
+- [ ] **UXD-002 — Person workspace three-zone layout.** (§7; effort L; depends
+      on `UXD-001` and `UXD-006`)
+  - [ ] Deliver the hero that absorbs the lifecycle panel, due-information card,
+        identity summary, and standalone back link, with destructive actions
+        demoted into the overflow menu.
+  - [ ] Move the nine profile-fact sections into the rail and group the
+        remaining stream sections into Timeline, Planning, Things, and Admin
+        behind a pressed-state filter, not a tab list.
+  - [ ] Preserve every `?section=` deep link through the section-to-zone map and
+        keep DOM order contractual at every breakpoint.
+- [ ] **UXD-003 — Staged loading.** (§9.2, §9.3; effort M; the prefetch
+      deletions are independent, zone laziness depends on `UXD-002`)
+  - [ ] Delete the duplicate contact-methods fetch, the gifts prefetch, and the
+        global quick-capture prefetch, including the failure path that disables
+        quick capture application-wide.
+  - [ ] Replace the full-page takeover with a shell and skeletons, cache the
+        session, and load only the visible zone eagerly.
+  - [ ] Keep the initial fan-out silent for assistive technology while
+        user-initiated refreshes still announce.
+- [ ] **UXD-005 — Feedback pass.** (§11; effort M; depends on `UXD-001` and
+      `UXD-003`)
+  - [ ] Promote the existing status region into a dismissible toast region for
+        off-screen and undoable outcomes only, keeping inline form feedback
+        authoritative.
+  - [ ] Deliver the person-level first-run empty state, collapsed empty rail
+        rows, and the dirty-state guard the settings design already requires.
+
+### Then
+
+- [ ] **UXD-004 — Global people search and command palette.** (§8; effort M; no
+      dependency) The only design-document requirement that is unimplemented and
+      untracked elsewhere.
+- [ ] **UXD-008 — Persistent settings sidebar.** (§8; effort M; depends on
+      `UXD-001`)
+- [ ] **UXD-009 — Breadcrumbs on routes at least two levels deep.** (§8; effort
+      S; no dependency)
+- [ ] **UXD-011 — Decide the Inter question: self-host or drop the name.**
+      (§10.3; effort S; depends on `UXD-001`)
+- [ ] **UXD-012 — Split the application stylesheet into six files.** (§10.7;
+      effort S; depends on `UXD-001`)
+- [ ] **UXD-014 — Optimistic UI on the four safe mutations only.** (§9.4; effort
+      M; depends on `UXD-003` and `UXD-005`) Anything carrying an expected
+      update timestamp stays non-optimistic.
+- [ ] **UXD-015 — Parser-inert role gating on the application shell.** (§9.5;
+      effort M; no dependency)
+- [ ] **UXD-016 — Dark mode.** (§10.5; effort M; depends on `UXD-001` and
+      `UXD-011`)
+- [ ] **UXD-017 — Type-scale and spacing-rhythm pass.** (§10.3, §10.4; effort M;
+      depends on `UXD-001` and `UXD-011`)
+- [ ] **UXD-018 — Command mode in the palette.** (§8; effort M; depends on
+      `UXD-004`)
+- [ ] **UXD-019 — Mobile bottom-sheet editors below the tablet breakpoint.**
+      (§7.7; effort M; depends on `UXD-002`)
+- [ ] **UXD-020 — Deferred product features named in §12 row 20.** Notifications
+      centre, people favorites, life-event mutation, and directory tag cloud and
+      sort are product scope, not design debt. They stay parked until their
+      product contracts exist; life-event mutation still depends on the open
+      flow decision in [`traceability.md`](traceability.md).
+- [ ] **DOC-001 — Refresh the planning entry-point baseline.** The Current
+      Baseline table in [`README.md`](README.md) still describes a pre-scaffold
+      repository with zero delivered flows, and
+      `tools/product/PRODUCT-001/release_contract_test.ts` pins that zero. Fix
+      the table and its pinning assertion together so the two planning documents
+      stop contradicting each other. This continues review §5.3 item 5 beyond
+      the traceability correction shipped with this queue.
+- [ ] **Phase 12 accepted:** the person workspace reads as grouped zones rather
+      than peer cards, first paint no longer waits on the full section fan-out,
+      tokens back every surface, and no leaf above is unchecked without a
+      recorded parked reason.
+
+### Recorded Correction To The Owning Review
+
+Review §5.3 item 5 states the actual totals as 30 delivered flows and 34 pages.
+Both numbers are wrong against the catalogs it cites:
+`docs/product/user-flows.yaml` declares 30 flows of which 29 are `delivered`,
+because `BILLING-001` remains planned with empty `testRefs`, and
+`docs/product/page-catalog.yaml` declares 39 page IDs, which is the number
+[`traceability.md`](traceability.md) already carried. The 34 appears to be the
+count of prerendered Astro pages from review §3.1. The traceability refresh
+shipped with this queue uses the verified totals; the review itself keeps its
+original analysis.
+
+The review file was also brought under `deno fmt`, which it failed as committed,
+so the repository formatting gate passes for every candidate in this phase. That
+pass changed exactly one character of prose: a wrapped continuation line in §7.4
+began with `+ name appear alongside`, which every CommonMark parser reads as a
+nested list item, and it now reads `and name appear alongside`. No other wording
+changed.

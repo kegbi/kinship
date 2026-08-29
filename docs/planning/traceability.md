@@ -10,9 +10,19 @@ contract.
 The current baseline contains:
 
 - 15 backend modules and 6 read models;
-- 39 cataloged pages;
+- 39 cataloged pages, all implemented, except `settings.billing`, which the
+  catalog marks as an optional module and Phase 10 `APP-010C` withholds;
 - 30 required flows: 17 P0, 10 P1, and 3 P2; and
-- no implemented application flow or populated `testRefs` entry yet.
+- 29 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
+  still planned with an empty `testRefs` array, consistent with its withheld
+  optional module.
+
+Verified against `docs/product/page-catalog.yaml` and
+`docs/product/user-flows.yaml` on 2026-08-29 while integrating
+[`ux-design-review-2026-08-29.md`](../validation/ux-design-review-2026-08-29.md)
+§5.3 item 5. The five cataloged dynamic routes are served by the internal shell
+and gateway-rewrite pattern rather than by separate Astro routes; that is an
+implementation shape, not a coverage gap.
 
 The slice column below is the **accepted slice in which the complete contract is
 accepted**, not necessarily the first slice in which a shell or dependency is
