@@ -634,6 +634,7 @@ const profileFactSections = new Set<string>([
                 class="profile-section-card person-files-card"
                 data-profile-section={id}
                 data-person-files={id === "documents" ? "document" : "photo"}
+                data-load-mode={loadMode}
                 data-section-state="loading"
                 tabindex="-1"
                 aria-labelledby={`profile-section-${id}-heading`}
