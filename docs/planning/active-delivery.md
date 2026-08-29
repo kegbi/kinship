@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-006 — Repair dead section navigation for hidden modules**
+- Current leaf: **UXD-007 — Quick-wins bundle**
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -487,13 +487,40 @@ These constraints bind every leaf in this phase:
 
 Report and request direction once `UXD-001` through `UXD-005` are integrated.
 
+### Blocking Reliability Repair
+
+- [ ] **REL-012 — Restore the end-to-end object-storage container.** The
+      production-like browser gate cannot start: `deno task test:e2e` fails
+      because the `object-store` service exits 1 with
+      `[FATAL] Server runtime failed: Io error: Permission denied (os error 13)`,
+      so `api`, `web`, and `worker` never start. Reproduced with no repository
+      code involved, from the pinned RustFS image plus the test overlay's own
+      settings.
+  - [ ] Root cause: the image runs as `uid=10001(rustfs)` and ships `/data`
+        owned by that user, but `compose.test.yaml` mounts `/data` as a bare
+        `tmpfs`, which Docker creates root-owned at mode 0755, so the server
+        cannot write its data or log directories. The same service in
+        `compose.dev.yaml` uses the `object-store-data` named volume, which
+        inherits the image's ownership, and therefore still works. The tmpfs
+        arrived with the MinIO-to-RustFS switch in `cb9e544b`; MinIO tolerated a
+        root-owned mount.
+  - [ ] Give the test overlay's `/data` tmpfs the ownership or mode the pinned
+        image requires, and prove the stack reaches ready with a focused
+        executable check that consumes the changed Compose artifact.
+  - [ ] Do not weaken `read_only`, drop the tmpfs for a persistent volume in the
+        test overlay, or change the accepted RustFS image pin.
+
+Until `REL-012` lands, no candidate in this phase can produce browser evidence.
+`UXD-007` changes keyboard focus order that `tests/e2e/app-002c.spec.ts`
+asserts, so `REL-012` is delivered before it.
+
 ### Do First
 
-- [ ] **UXD-006 — Repair dead section navigation for hidden modules.** (§3.4,
+- [x] **UXD-006 — Repair dead section navigation for hidden modules.** (§3.4,
       §6.9, §7.4; effort S; no dependency)
-  - [ ] Remove section-navigation entries for sections hidden by workspace
+  - [x] Remove section-navigation entries for sections hidden by workspace
         personalization instead of leaving links that only push history.
-  - [ ] Render an inline turned-off notice with a personalization link when a
+  - [x] Render an inline turned-off notice with a personalization link when a
         hidden section is deep-linked, never a silent no-op in `focusSection`.
 - [ ] **UXD-007 — Quick-wins bundle.** (§6.8, §8, §10.7; effort S; no
       dependency)
