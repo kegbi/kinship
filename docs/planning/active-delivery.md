@@ -560,6 +560,28 @@ Report and request direction once `UXD-001` through `UXD-005` are integrated.
       the gateway with no renderer upstream, which is how the `OPS-001A` proof
       passed while real responses carried duplicates.
 
+- [x] **UXD-001A — Raise `--ink-3` to meet AA on every surface.** The first
+      full-suite sweep failed 22 of 44 tests, all on the axe contrast rule,
+      every violating node carrying `#6b7a72`. That value is the one review
+      §10.2 specifies, and it is below 4.5:1 on all five of its own surface
+      tokens (3.60 to 4.44). The section whose purpose was fixing contrast
+      specified one. Amended to `#5d6a63`, the smallest darkening holding hue
+      and saturation that clears AA everywhere. Missed originally because
+      `UXD-001` ran static and unit gates only, and computed contrast is visible
+      to neither.
+- [x] **REL-018 — Give the file sections their declared load mode.** The file
+      branch of the person shell dropped `data-load-mode`, failing `app-003c`.
+      The audit corrected the diagnosis: the attribute appears three times in a
+      template rendering twenty-two sections, `life-events` hardcodes it, and no
+      runtime code reads it at all. `UXD-002` should decide whether that tuple
+      field is real metadata or dead weight.
+- [x] **REL-019 — Gate settings forms until they are wired.** All three settings
+      mounts awaited two sequential round trips, assigned values, and only then
+      attached the submit handler, while the form shipped visible and enabled. A
+      person could type into it and press Save: the input was overwritten and
+      the click swallowed. Same class as the already-accepted `REL-007`, which
+      had only been applied to the destructive lifecycle form.
+
 `REL-012` is delivered, so candidates in this phase can produce browser evidence
 again. `UXD-007` changes keyboard focus order that `tests/e2e/app-002c.spec.ts`
 asserts, so it runs that spec on its candidate.
