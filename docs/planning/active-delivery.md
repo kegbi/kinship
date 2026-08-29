@@ -610,11 +610,19 @@ asserts, so it runs that spec on its candidate.
         rule against using tabs to hide unrelated datasets, which review §7.4
         relies on to justify `UXD-002`'s segmented filter.
 
-- [ ] **UXD-001 — Design tokens.** (§10.1, §10.2; effort M; no dependency)
-  - [ ] Introduce the accepted token set and replace the hardcoded literals
-        across the three stylesheets.
-  - [ ] Fix the small-text contrast failures found in the same pass rather than
-        tokenizing them unchanged.
+- [x] **UXD-001 — Design tokens.** (§10.1, §10.2; effort M; no dependency)
+  - [x] Declared the accepted token set on `:root` and replaced every literal
+        across the three stylesheets. 270 hex literals became 24, all inside the
+        token block; literals outside `:root` are zero in all three files, and
+        all 38 tokens are declared and referenced with no orphans.
+  - [x] Fixed the contrast failures in the same pass. `#809087` measured 3.302:1
+        behind .72-.82rem text and the two borderline greens about 4.04:1; all
+        three now use `--ink-2` at 7.184:1.
+  - [x] Kept the token families paired. Two rules had mapped `--warning` text
+        onto `--accent-soft` because the original warm literals were numerically
+        closer to it; both now use `--warning-soft` at 5.987:1, so `UXD-016` can
+        override each family together without inverting them wrongly.
+
 - [ ] **UXD-013 — Person summary read model with per-section counts.** (§9.2
       stage 2; effort M; API side; no dependency)
   - [ ] Extend the person read path with primary contact methods, next reminder,
@@ -650,6 +658,15 @@ asserts, so it runs that spec on its candidate.
         rows, and the dirty-state guard the settings design already requires.
 
 ### Then
+
+- [x] **REL-017 — Assert approved people directory auth schemes.**
+      `deno task test:contract` failed on `main`: the assertion pinned
+      `GET /api/v1/people` to exactly `[{ kinship_session: [] }]`, but
+      `80ae3582` delivered `API-001` and added `kinship_api_token` as an
+      alternative. The contract was right and the test was stale. It now proves
+      the session cookie remains a standalone alternative and every accepted
+      scheme is approved, so anonymous reads still fail. Found only because
+      `UXD-013` required a gate the earlier candidates had not been running.
 
 - [ ] **UXD-004 — Global people search and command palette.** (§8; effort M; no
       dependency) The only design-document requirement that is unimplemented and
