@@ -18,14 +18,19 @@ function shellMarkup(): void {
     <div id="protected-shell" hidden>
       <h1 id="today-heading">Opening</h1>
       <time data-today-date>Loading date…</time>
-      <span data-workspace-name></span>
-      <div id="workspace-switcher-container" hidden>
-        <label for="workspace-switcher">Active workspace</label>
-        <select id="workspace-switcher"></select>
-      </div>
       <button id="member-menu-toggle" type="button" aria-expanded="false">Member menu</button>
-      <div id="member-popover" hidden>Menu contents</div>
-      <button id="member-sign-out" type="button">Sign out</button>
+      <div id="member-popover" hidden>
+        <div class="menu-workspace">
+          <label for="workspace-switcher">Active workspace</label>
+          <strong data-workspace-name></strong>
+          <div id="workspace-switcher-container" hidden>
+            <select id="workspace-switcher"></select>
+          </div>
+        </div>
+        <a href="/app/settings/profile">Profile</a>
+        <a href="/app/settings">Settings</a>
+        <button id="member-sign-out" type="button">Sign out</button>
+      </div>
       <p id="shell-status" role="status" tabindex="-1"></p>
     </div>`;
 }
@@ -67,6 +72,16 @@ afterEach(() => {
 });
 
 describe("APP-002C protected application shell", () => {
+  it("keeps workspace switching and sign out inside the member popover", () => {
+    shellMarkup();
+
+    const popover = document.querySelector("#member-popover")!;
+    expect(popover.firstElementChild?.className).toBe("menu-workspace");
+    expect(popover.querySelector("#workspace-switcher-container")).not
+      .toBeNull();
+    expect(popover.lastElementChild?.id).toBe("member-sign-out");
+  });
+
   it("GOVERNANCE-001 interrupts protected navigation for a required version", async () => {
     shellMarkup();
     history.replaceState({}, "", "/app/journal?view=recent");

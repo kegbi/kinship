@@ -399,6 +399,11 @@ test(
         );
         await adminPage.goto("/app/settings/members");
         await expect(adminPage.getByText(ownerEmail)).toBeVisible();
+        const memberMenuToggle = adminPage.getByRole("button", {
+          name: "Open member menu",
+        });
+        await memberMenuToggle.click();
+        await expect(memberMenuToggle).toHaveAttribute("aria-expanded", "true");
         await adminPage.getByLabel("Active workspace").selectOption(
           adminWorkspaceId,
         );

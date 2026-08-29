@@ -80,20 +80,20 @@ const { current, description, pageId, title } = Astro.props;
             <div class="member-menu" role="group" aria-label="Member menu">
               <button id="member-menu-toggle" type="button" aria-label="Open member menu" aria-expanded="false" aria-controls="member-popover">Member menu</button>
               <div id="member-popover" class="member-popover" hidden>
-                <p class="menu-workspace"><span>Active workspace</span><strong data-workspace-name></strong></p>
-                <span class="menu-item unavailable" aria-disabled="true">Profile <small>Available from settings</small></span>
-                <a class="menu-item" href="/app/settings" tabindex="0" aria-current={current === "settings" ? "page" : undefined}>Settings</a>
-                <span class="menu-item unavailable" aria-disabled="true">Help &amp; what's new <small>Support is being prepared</small></span>
+                <div class="menu-workspace">
+                  <label for="workspace-switcher">Active workspace</label>
+                  <strong data-workspace-name></strong>
+                  <div id="workspace-switcher-container" class="workspace-switcher" hidden>
+                    <select id="workspace-switcher"></select>
+                  </div>
+                </div>
+                <a class="menu-item" href="/app/settings/profile" tabindex="0" aria-current={pageId === "settings.profile" ? "page" : undefined}>Profile</a>
+                <a class="menu-item" href="/app/settings" tabindex="0" aria-current={current === "settings" && pageId !== "settings.profile" ? "page" : undefined}>Settings</a>
+                <button id="member-sign-out" class="direct-sign-out" type="button">Sign out</button>
               </div>
               <p id="shell-status" class="sr-status" role="status" tabindex="-1" aria-live="polite"></p>
-              <button id="member-sign-out" class="direct-sign-out" type="button">Sign out</button>
             </div>
           </div>
-        </div>
-
-        <div id="workspace-switcher-container" class="workspace-switcher" hidden>
-          <label for="workspace-switcher">Active workspace</label>
-          <select id="workspace-switcher"></select>
         </div>
       </header>
       <slot />
