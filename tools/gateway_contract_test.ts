@@ -2,6 +2,88 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
+type NginxLocation = {
+  selector: string;
+  body: string;
+};
+
+function nginxLocations(config: string): NginxLocation[] {
+  const lines = config.split("\n");
+  const locations: NginxLocation[] = [];
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex];
+    if (line === undefined) break;
+    const locationStart = line.match(
+      /^ {4}location\s+(.+)\s+\{$/,
+    );
+    if (!locationStart) continue;
+    const selector = locationStart[1];
+    if (selector === undefined) continue;
+
+    const body: string[] = [];
+    for (lineIndex++; lineIndex < lines.length; lineIndex++) {
+      const bodyLine = lines[lineIndex];
+      if (bodyLine === undefined || bodyLine === "    }") break;
+      body.push(bodyLine);
+    }
+    locations.push({ selector, body: body.join("\n") });
+  }
+
+  return locations;
+}
+
+function addedHeaderNames(config: string): string[] {
+  return [...config.matchAll(/^\s*add_header\s+([^\s;]+)\s+/gm)].flatMap(
+    (match) => match[1] === undefined ? [] : [match[1]],
+  );
+}
+
+Deno.test("renderer proxy locations hide gateway-owned response headers", async () => {
+  const [gateway, securityHeaders] = await Promise.all([
+    Deno.readTextFile(new URL("../gateway/nginx.conf", import.meta.url)),
+    Deno.readTextFile(
+      new URL("../gateway/security_headers.conf", import.meta.url),
+    ),
+  ]);
+  const securityHeaderNames = addedHeaderNames(securityHeaders);
+  assert(
+    securityHeaderNames.length > 0,
+    "the gateway security policy declares response headers",
+  );
+
+  const rendererLocations = nginxLocations(gateway).filter(({ body }) =>
+    /^\s*include \/etc\/nginx\/security_headers\.conf;$/m.test(body) &&
+    /^\s*proxy_pass \$web_upstream;$/m.test(body)
+  );
+  assert(
+    rendererLocations.length > 0,
+    "the gateway declares renderer proxy locations with security headers",
+  );
+
+  for (const { selector, body } of rendererLocations) {
+    const gatewayHeaderNames = [
+      ...new Set([...securityHeaderNames, ...addedHeaderNames(body)]),
+    ];
+    const hiddenHeaderNames = new Set(
+      [...body.matchAll(/^\s*proxy_hide_header\s+([^\s;]+)\s*;$/gm)].flatMap(
+        (match) => match[1] === undefined ? [] : [match[1].toLowerCase()],
+      ),
+    );
+    const missing = gatewayHeaderNames.filter((header) =>
+      !hiddenHeaderNames.has(header.toLowerCase())
+    );
+    assert(
+      missing.length === 0,
+      `renderer location ${selector} exposes upstream copies of gateway-owned headers: ${
+        missing.join(
+          ", ",
+        )
+      }`,
+    );
+  }
+});
+
 Deno.test("production-like Compose exposes only the gateway application entry", async () => {
   const [
     base,
