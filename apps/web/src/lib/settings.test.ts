@@ -14,6 +14,30 @@ const profilePage = readFileSync(
   "apps/web/src/pages/app/settings/profile.astro",
   "utf8",
 );
+const preferencePage = readFileSync(
+  "apps/web/src/pages/app/settings/preferences.astro",
+  "utf8",
+);
+const workspacePage = readFileSync(
+  "apps/web/src/pages/app/settings/workspace.astro",
+  "utf8",
+);
+
+function formMarkup(page: string, id: string): string {
+  const markup = page.match(new RegExp(`<form id="${id}"[\\s\\S]*?</form>`))
+    ?.[0];
+  if (!markup) throw new Error(`Missing ${id} fixture markup.`);
+  return markup;
+}
+
+function deferredResponse(): {
+  promise: Promise<Response>;
+  resolve(value: Response): void;
+} {
+  let resolve!: (value: Response) => void;
+  const promise = new Promise<Response>((done) => resolve = done);
+  return { promise, resolve };
+}
 
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -80,6 +104,283 @@ afterEach(() => {
 });
 
 describe("AUTH-004 personal settings", () => {
+  it.each([
+    {
+      changedValue: "Changed",
+      field: "firstName",
+      formId: "profile-form",
+      loaded: {
+        status: "ready",
+        profile: {
+          email: "owner@example.test",
+          firstName: "Loaded",
+          lastName: "Profile",
+        },
+      },
+      loadedValue: "Loaded",
+      mount: mountProfileSettings,
+      name: "profile",
+      page: profilePage,
+      saved: {
+        status: "ready",
+        profile: {
+          email: "owner@example.test",
+          firstName: "Changed",
+          lastName: "Profile",
+        },
+      },
+      savedStatus: /profile saved/i,
+    },
+    {
+      changedValue: "sr-Latn",
+      field: "locale",
+      formId: "preferences-form",
+      loaded: {
+        status: "ready",
+        preferences: {
+          contactNameOrder: "given_family_nickname",
+          contactSortOrder: "given_name_asc",
+          fluidLayout: false,
+          locale: "en",
+          measurementSystem: "metric",
+          temperatureScale: "celsius",
+          timezone: "Europe/Belgrade",
+        },
+      },
+      loadedValue: "en",
+      mount: mountPreferenceSettings,
+      name: "preferences",
+      page: preferencePage,
+      saved: { status: "ready" },
+      savedStatus: /preferences saved/i,
+    },
+    {
+      changedValue: "Changed",
+      field: "name",
+      formId: "workspace-form",
+      loaded: {
+        status: "ready",
+        workspace: {
+          defaultCurrencyCode: "EUR",
+          defaultLocale: "en",
+          defaultReminderTime: "12:00",
+          defaultTimezone: "Europe/Belgrade",
+          name: "Loaded",
+          slug: "circle",
+        },
+      },
+      loadedValue: "Loaded",
+      mount: mountWorkspaceSettings,
+      name: "workspace",
+      page: workspacePage,
+      saved: {
+        status: "ready",
+        workspace: {
+          defaultCurrencyCode: "EUR",
+          defaultLocale: "en",
+          defaultReminderTime: "12:00",
+          defaultTimezone: "Europe/Belgrade",
+          name: "Changed",
+          slug: "circle",
+        },
+      },
+      savedStatus: /workspace settings saved/i,
+    },
+  ])(
+    "keeps the $name form explained and inoperable until it is ready",
+    async ({
+      changedValue,
+      field,
+      formId,
+      loaded,
+      loadedValue,
+      mount,
+      page,
+      saved,
+      savedStatus,
+    }) => {
+      document.body.innerHTML = formMarkup(page, formId);
+      const form = document.querySelector<HTMLFormElement>("form")!;
+      const submit = form.querySelector<HTMLButtonElement>(
+        'button[type="submit"]',
+      )!;
+      const changed = form.elements.namedItem(field) as HTMLInputElement;
+      const initiallyDisabled = submit.disabled;
+      const fieldInitiallyDisabled = changed.disabled;
+      const initialStatus = document.querySelector("#settings-status")
+        ?.textContent;
+      const pending = deferredResponse();
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockReturnValueOnce(pending.promise)
+        .mockResolvedValueOnce(response(saved));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const mounting = mount();
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+      expect({
+        initialStatus,
+        initiallyDisabled,
+        fieldInitiallyDisabled,
+        fieldPendingDisabled: changed.disabled,
+        pendingDisabled: submit.disabled,
+        pendingStatus: document.querySelector("#settings-status")?.textContent,
+      }).toEqual({
+        initialStatus: expect.stringMatching(/loading/i),
+        initiallyDisabled: true,
+        fieldInitiallyDisabled: true,
+        fieldPendingDisabled: true,
+        pendingDisabled: true,
+        pendingStatus: expect.stringMatching(/loading/i),
+      });
+      submit.click();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      pending.resolve(response(loaded));
+      await mounting;
+
+      expect(changed.value).toBe(loadedValue);
+      expect(changed.disabled).toBe(false);
+      expect(submit.disabled).toBe(false);
+      changed.value = changedValue;
+      changed.dispatchEvent(new Event("input", { bubbles: true }));
+      submit.click();
+      await vi.waitFor(() =>
+        expect(document.querySelector("#settings-status")?.textContent).toMatch(
+          savedStatus,
+        )
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    },
+  );
+
+  it("does not initialize settings when their forms are absent", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await Promise.all([
+      mountProfileSettings(),
+      mountPreferenceSettings(),
+      mountWorkspaceSettings(),
+    ]);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      formId: "preferences-form",
+      mount: mountPreferenceSettings,
+      name: "preferences",
+      page: preferencePage,
+    },
+    {
+      formId: "workspace-form",
+      mount: mountWorkspaceSettings,
+      name: "workspace",
+      page: workspacePage,
+    },
+  ])(
+    "keeps the $name form unavailable when its session cannot be confirmed",
+    async ({ formId, mount, page }) => {
+      document.body.innerHTML = formMarkup(page, formId);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValueOnce(
+          response({ code: "session_invalid", status: 401 }, 401),
+        ),
+      );
+
+      await mount();
+
+      expect(
+        document.querySelector<HTMLButtonElement>('button[type="submit"]')
+          ?.disabled,
+      ).toBe(true);
+      expect(document.querySelector("#settings-status")?.textContent).toMatch(
+        /could not be confirmed/i,
+      );
+    },
+  );
+
+  it.each([
+    {
+      formId: "preferences-form",
+      loaded: {
+        status: "ready",
+        preferences: {
+          contactNameOrder: "given_family_nickname",
+          contactSortOrder: "given_name_asc",
+          fluidLayout: false,
+          locale: "en",
+          measurementSystem: "metric",
+          temperatureScale: "celsius",
+        },
+      },
+      mount: mountPreferenceSettings,
+      name: "preferences",
+      page: preferencePage,
+      unavailable: "Preferences could not be saved.",
+    },
+    {
+      formId: "workspace-form",
+      loaded: {
+        status: "ready",
+        workspace: {
+          defaultLocale: "en",
+          defaultReminderTime: "12:00",
+          name: "Circle",
+        },
+      },
+      mount: mountWorkspaceSettings,
+      name: "workspace",
+      page: workspacePage,
+      unavailable: "Workspace settings could not be saved.",
+    },
+  ])(
+    "keeps ready $name saves retryable after server and transport failures",
+    async ({ formId, loaded, mount, page, unavailable }) => {
+      for (
+        const [failure, expected] of [
+          [
+            response({
+              code: "settings_unavailable",
+              detail: "Settings are temporarily unavailable.",
+              status: 503,
+            }, 503),
+            "Settings are temporarily unavailable.",
+          ],
+          [new Error("offline"), unavailable],
+        ] as const
+      ) {
+        document.body.innerHTML = formMarkup(page, formId);
+        const fetchMock = vi.fn()
+          .mockResolvedValueOnce(response(session))
+          .mockResolvedValueOnce(response(loaded));
+        if (failure instanceof Error) {
+          fetchMock.mockRejectedValueOnce(failure);
+        } else {
+          fetchMock.mockResolvedValueOnce(failure);
+        }
+        vi.stubGlobal("fetch", fetchMock);
+
+        await mount();
+        const submit = document.querySelector<HTMLButtonElement>(
+          'button[type="submit"]',
+        )!;
+        submit.click();
+
+        await vi.waitFor(() =>
+          expect(document.querySelector("#settings-status")?.textContent).toBe(
+            expected,
+          )
+        );
+        expect(submit.disabled).toBe(false);
+      }
+    },
+  );
+
   it("recovers a stale saved workspace through one valid default session", async () => {
     document.body.innerHTML =
       `<form id="profile-form"><div id="settings-errors" hidden></div><input name="email"><input name="firstName"><input name="lastName"><button></button><p id="settings-dirty"></p></form><p id="settings-status"></p>`;
