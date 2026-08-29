@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import axe from "axe-core";
 import { execFileSync } from "node:child_process";
 
@@ -52,6 +52,14 @@ function databaseValue(statement: string): string {
     "-c",
     statement,
   ], { cwd: process.cwd(), encoding: "utf8", env: process.env }).trim();
+}
+
+async function openMemberPopover(page: Page): Promise<void> {
+  const toggle = page.getByRole("button", { name: "Open member menu" });
+  if (await toggle.getAttribute("aria-expanded") !== "true") {
+    await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
 }
 
 test(
@@ -288,6 +296,7 @@ test(
     const closeFriendsDraft = page.getByLabel("Name for Close friends");
     await closeFriendsDraft.fill("Workspace switch draft");
     const workspaceSwitcher = page.getByLabel("Active workspace");
+    await openMemberPopover(page);
     await workspaceSwitcher.focus();
     let switchDialog = page.waitForEvent("dialog");
     let switchAction = workspaceSwitcher.selectOption(switchWorkspaceId);
@@ -318,6 +327,7 @@ test(
       }
       await route.continue();
     });
+    await openMemberPopover(page);
     switchDialog = page.waitForEvent("dialog");
     switchAction = workspaceSwitcher.selectOption(switchWorkspaceId);
     await (await switchDialog).accept();
@@ -332,6 +342,7 @@ test(
     );
 
     failWorkspaceTarget = false;
+    await openMemberPopover(page);
     let workspaceNavigation = page.waitForEvent(
       "framenavigated",
       (frame) => frame === page.mainFrame(),
@@ -349,6 +360,7 @@ test(
     await expect(page.getByRole("heading", { name: "Tags", exact: true }))
       .toBeVisible();
     await expect(page.getByLabel("Name for Close friends")).toHaveCount(0);
+    await openMemberPopover(page);
     workspaceNavigation = page.waitForEvent(
       "framenavigated",
       (frame) => frame === page.mainFrame(),

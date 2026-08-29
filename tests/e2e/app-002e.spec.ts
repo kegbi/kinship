@@ -112,6 +112,14 @@ async function signIn(page: Page, email: string): Promise<void> {
   await expect(page).toHaveURL(/\/app$/);
 }
 
+async function openMemberPopover(page: Page): Promise<void> {
+  const toggle = page.getByRole("button", { name: "Open member menu" });
+  if (await toggle.getAttribute("aria-expanded") !== "true") {
+    await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+}
+
 async function sessionCookie(context: BrowserContext): Promise<string> {
   const cookie = (await context.cookies()).find((item) =>
     item.name === "kinship_session"
@@ -261,6 +269,7 @@ test(
     const workspaceSwitcher = page.getByLabel("Active workspace");
     await expect(workspaceName).toHaveValue(`Owner ${suffix}`);
     await workspaceName.fill(`Unsaved ${suffix}`);
+    await openMemberPopover(page);
     const cancelSwitch = new Promise<void>((resolve) => {
       page.once("dialog", async (dialog) => {
         expect(dialog.type()).toBe("confirm");
@@ -285,6 +294,7 @@ test(
       }::uuid`,
     )).not.toBe(`Unsaved ${suffix}`);
 
+    await openMemberPopover(page);
     const discardSwitch = new Promise<void>((resolve) => {
       page.once("dialog", async (dialog) => {
         expect(dialog.type()).toBe("confirm");
@@ -302,6 +312,7 @@ test(
         sessionStorage.getItem("kinship.active-workspace")
       ),
     ).toBe(foreignWorkspaceId);
+    await openMemberPopover(page);
     await workspaceSwitcher.selectOption(ownerWorkspaceId);
     await expect(workspaceName).toHaveValue(`Owner ${suffix}`);
 

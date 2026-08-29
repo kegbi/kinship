@@ -154,12 +154,30 @@ async function keyboardOpenMemberMenu(page: Page): Promise<void> {
   await expect(menuToggle).toHaveAttribute("aria-expanded", "true");
 }
 
-async function keyboardReachSignOut(page: Page): Promise<void> {
-  await keyboardOpenMemberMenu(page);
+async function keyboardReachSignOutTail(page: Page): Promise<void> {
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Profile" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Settings" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Sign out" })).toBeFocused();
+}
+
+async function keyboardReachSignOutWithMultipleWorkspaces(
+  page: Page,
+): Promise<void> {
+  await keyboardOpenMemberMenu(page);
+  await page.keyboard.press("Tab");
+  await expect(page.getByLabel("Active workspace")).toBeFocused();
+  await keyboardReachSignOutTail(page);
+}
+
+async function keyboardReachSignOutWithSingleWorkspace(
+  page: Page,
+): Promise<void> {
+  await keyboardOpenMemberMenu(page);
+  await expect(page.getByLabel("Active workspace")).toBeHidden();
+  await keyboardReachSignOutTail(page);
 }
 
 test(
@@ -211,6 +229,8 @@ test(
     expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
     await expectAccessible(page);
 
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("link", { name: "Profile" })).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name: "Settings" })).toBeFocused();
     await page.keyboard.press("Enter");
@@ -267,6 +287,10 @@ test(
     `);
     await page.goto("/app");
     const switcher = page.getByLabel("Active workspace");
+    await expect(switcher).toBeHidden();
+    await keyboardOpenMemberMenu(page);
+    await page.keyboard.press("Tab");
+    await expect(switcher).toBeFocused();
     await expect(switcher).toBeVisible();
     await expect(switcher.locator("option")).toHaveCount(2);
     await page.setViewportSize({ width: 390, height: 844 });
@@ -275,11 +299,6 @@ test(
     expect(switcherBox!.width).toBeGreaterThanOrEqual(44);
     expect(switcherBox!.height).toBeGreaterThanOrEqual(44);
     await page.setViewportSize({ width: 1280, height: 900 });
-    await keyboardReachMemberMenuToggle(page);
-    await page.keyboard.press("Tab");
-    await expect(page.getByRole("button", { name: "Sign out" }))
-      .toBeFocused();
-    await page.keyboard.press("Tab");
     await expect(switcher).toBeFocused();
     await switcher.selectOption(secondWorkspaceId);
     await expect(page.locator("#shell-status")).toBeEmpty();
@@ -296,7 +315,9 @@ test(
       }
       return route.continue();
     });
-    await switcher.focus();
+    await expect(switcher).toBeHidden();
+    await keyboardOpenMemberMenu(page);
+    await page.keyboard.press("Tab");
     await expect(switcher).toBeFocused();
     await switcher.selectOption(originalWorkspaceId!);
     await expect(page.locator("#shell-status")).toContainText(
@@ -338,7 +359,7 @@ test(
 
     await page.route("**/api/v1/sign-out", (route) => route.abort("failed"));
     const signOutButton = page.getByRole("button", { name: "Sign out" });
-    await keyboardReachSignOut(page);
+    await keyboardReachSignOutWithMultipleWorkspaces(page);
     await page.keyboard.press("Enter");
     await expect(page.locator("#shell-status")).toContainText(
       "could not be revoked",
@@ -351,6 +372,7 @@ test(
       where id = '${secondMemberId}'::uuid;
     `);
     await page.reload();
+    await keyboardOpenMemberMenu(page);
     await expect(page.getByLabel("Active workspace")).toBeHidden();
     await expect(
       page.locator("#main-content .page-heading").getByText(
@@ -380,7 +402,7 @@ test(
       );
     `);
     await signIn(page, email);
-    await keyboardReachSignOut(page);
+    await keyboardReachSignOutWithSingleWorkspace(page);
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/auth\/sign-in$/);
     await page.goto("/app");

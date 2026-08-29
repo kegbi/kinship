@@ -244,7 +244,7 @@ async function keyboardReset(page: Page, password: string): Promise<void> {
   await page.keyboard.press("Enter");
 }
 
-async function keyboardSignOut(page: Page): Promise<void> {
+async function keyboardOpenMemberMenu(page: Page): Promise<void> {
   const skipLink = page.getByRole("link", { name: "Skip to main content" });
   await page.keyboard.press("Tab");
   await expect(skipLink).toBeFocused();
@@ -270,6 +270,11 @@ async function keyboardSignOut(page: Page): Promise<void> {
   await expect(menuToggle).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(menuToggle).toHaveAttribute("aria-expanded", "true");
+}
+
+async function keyboardFinishSignOut(page: Page): Promise<void> {
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Profile" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Settings" })).toBeFocused();
   await page.keyboard.press("Tab");
@@ -277,6 +282,21 @@ async function keyboardSignOut(page: Page): Promise<void> {
   await expect(signOutButton).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/auth\/sign-in$/);
+}
+
+async function keyboardSignOutWithMultipleWorkspaces(
+  page: Page,
+): Promise<void> {
+  await keyboardOpenMemberMenu(page);
+  await page.keyboard.press("Tab");
+  await expect(page.getByLabel("Active workspace")).toBeFocused();
+  await keyboardFinishSignOut(page);
+}
+
+async function keyboardSignOutWithSingleWorkspace(page: Page): Promise<void> {
+  await keyboardOpenMemberMenu(page);
+  await expect(page.getByLabel("Active workspace")).toBeHidden();
+  await keyboardFinishSignOut(page);
 }
 
 test(
@@ -393,7 +413,7 @@ test(
     );
 
     await page.goto("/app");
-    await keyboardSignOut(page);
+    await keyboardSignOutWithMultipleWorkspaces(page);
     expect(
       (await context.cookies()).find((item) => item.name === "kinship_session"),
     ).toBeUndefined();
@@ -480,12 +500,12 @@ test(
     });
     expect(replay.status()).toBe(410);
 
-    await keyboardSignOut(page);
+    await keyboardSignOutWithSingleWorkspace(page);
     await keyboardSignIn(page, email);
     await expect(page).toHaveURL(/\/auth\/mfa$/);
     await keyboardMfaFactor(page, recoveryCode);
     await expect(page).toHaveURL(/\/app$/);
-    await keyboardSignOut(page);
+    await keyboardSignOutWithSingleWorkspace(page);
     await keyboardSignIn(page, email);
     await expect(page).toHaveURL(/\/auth\/mfa$/);
     await keyboardMfaFactor(page, recoveryCode);
