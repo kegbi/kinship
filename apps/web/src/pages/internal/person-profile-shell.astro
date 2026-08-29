@@ -51,14 +51,20 @@ const profileFactSections = new Set<string>([
     </section>
 
     <section id="person-profile-ready" class="person-workspace" aria-labelledby="person-profile-name" hidden>
-      <a class="profile-back-link" href="/app/people">← Back to people</a>
-
       <header class="person-profile-hero">
+        <nav class="person-profile-breadcrumb" aria-label="Breadcrumb">
+          <a href="/app/people">People</a>
+          <span aria-hidden="true">/</span>
+          <span data-person-breadcrumb-name aria-current="page"></span>
+        </nav>
+
         <div id="person-profile-avatar" class="person-profile-avatar" aria-hidden="true"></div>
         <div class="person-profile-heading">
-          <p class="eyebrow">Person workspace · <span data-workspace-name></span></p>
-          <h1 id="person-profile-name" tabindex="-1"><span class="sr-only">Saved person identity</span></h1>
-          <div class="person-profile-badges" aria-label="Person states">
+          <div class="person-profile-title">
+            <h1 id="person-profile-name" tabindex="-1"><span class="sr-only">Saved person identity</span></h1>
+            <p id="person-profile-nickname" hidden></p>
+          </div>
+          <div class="person-profile-badges" role="group" aria-label="Person states">
             <p class="state-badge calm">Identity saved</p>
             <p id="person-profile-favorite" class="state-badge favorite" hidden>Favorite</p>
             <p id="person-profile-self" class="state-badge calm" hidden>Your person record</p>
@@ -67,25 +73,80 @@ const profileFactSections = new Set<string>([
             <p id="person-profile-partial" class="state-badge" hidden>Partial identity · unknown values preserved</p>
           </div>
           <p class="person-profile-description" data-profile-description></p>
-          <ul id="person-profile-tags" class="profile-tag-list" aria-label="Person tags"></ul>
         </div>
-      </header>
 
-      <section class="person-lifecycle-panel" aria-labelledby="person-lifecycle-heading">
-        <div>
-          <p class="section-kicker">Person lifecycle</p>
-          <h2 id="person-lifecycle-heading">Manage identity and availability</h2>
-          <p id="person-lifecycle-status" class="section-state" role="status" aria-live="polite"></p>
-        </div>
-        <div class="person-lifecycle-buttons">
+        <div class="person-profile-actions" data-person-profile-actions role="group" aria-label="Person actions">
+          <button
+            class="button-primary"
+            data-person-interaction-capture
+            data-quick-capture
+            data-interaction-intended-kind="activity"
+            type="button"
+          >Log interaction</button>
+          <button
+            class="button-secondary"
+            data-person-interaction-capture
+            data-quick-capture
+            data-interaction-intended-kind="note"
+            type="button"
+          >Add note</button>
           <button id="person-edit-open" class="button-secondary" type="button">Edit person</button>
-          <button id="person-archive" class="button-secondary" type="button">Archive person</button>
-          <button id="person-restore" class="button-secondary" type="button" hidden>Restore person</button>
           <a id="person-export-vcard" class="button-secondary" href="/app/people" download hidden>Export vCard</a>
+          <button id="person-archive" class="button-secondary" type="button">Archive person</button>
           <button id="person-delete-open" class="button-danger" type="button">Delete person</button>
         </div>
 
-        <form id="person-edit-form" class="person-lifecycle-form" hidden>
+        <dl class="person-vital-stats" data-person-vital-stats>
+          <div>
+            <dt>Age or birthday</dt>
+            <dd><a href="?section=important-dates" data-person-vital-value="birthday">Not recorded</a></dd>
+          </div>
+          <div>
+            <dt>Last contact</dt>
+            <dd><a href="?section=activities" data-profile-last-contact>None recorded</a></dd>
+          </div>
+          <div>
+            <dt>Next reminder</dt>
+            <dd><a href="?section=reminders" data-person-vital-value="next-reminder">Not recorded</a></dd>
+          </div>
+          <div>
+            <dt>Stay in touch</dt>
+            <dd><a href="?section=stay-in-touch"><span id="person-profile-due-state" role="status">Loading due information…</span></a></dd>
+          </div>
+          <div>
+            <dt>Work</dt>
+            <dd><a href="?section=work" data-person-vital-value="work">Not recorded</a></dd>
+          </div>
+          <div>
+            <dt>First met</dt>
+            <dd><a href="?section=first-meeting" data-person-vital-value="first-meeting">Not recorded</a></dd>
+          </div>
+        </dl>
+
+        <div class="person-hero-tags" data-profile-fact-section="tags" data-section-state="loading">
+          <ul id="person-profile-tags" class="profile-tag-list" aria-label="Person tags"></ul>
+          <p data-profile-fact-state class="section-state" role="status" aria-live="polite">Loading tag assignments…</p>
+          <button data-profile-fact-add class="button-secondary" type="button" hidden>Edit tags</button>
+          <form data-profile-fact-form class="profile-fact-form" hidden novalidate></form>
+        </div>
+
+        <p id="person-lifecycle-status" class="section-state person-lifecycle-status" role="status" aria-live="polite"></p>
+
+        <form
+          id="person-edit-form"
+          class="person-lifecycle-form"
+          data-profile-section="identity-summary"
+          data-section-state="ready"
+          aria-label="Edit person"
+          hidden
+        >
+          <dl class="identity-edit-context" hidden>
+            <div><dt>Given name</dt><dd data-profile-field="givenName"></dd></div>
+            <div><dt>Middle name</dt><dd data-profile-field="middleName"></dd></div>
+            <div><dt>Family name</dt><dd data-profile-field="familyName"></dd></div>
+            <div><dt>Nickname</dt><dd data-profile-field="nickname"></dd></div>
+            <div><dt>Gender</dt><dd data-profile-field="gender"></dd></div>
+          </dl>
           <div class="form-grid">
             <label>Given name <input name="givenName" maxlength="200" /></label>
             <label>Middle name <input name="middleName" maxlength="200" /></label>
@@ -110,15 +171,12 @@ const profileFactSections = new Set<string>([
             </div>
           </form>
         </dialog>
-      </section>
+      </header>
 
-      <section class="profile-due-summary" aria-labelledby="person-profile-due-heading">
-        <div>
-          <p class="section-kicker">Orientation first</p>
-          <h2 id="person-profile-due-heading">Due information</h2>
-        </div>
-        <p id="person-profile-due-state" class="section-state unavailable" role="status"></p>
-      </section>
+      <aside class="person-archived-banner" data-person-archived-banner hidden>
+        <p><strong>This person is archived.</strong> Editing is disabled.</p>
+        <button id="person-restore" class="button-secondary" type="button">Restore person</button>
+      </aside>
 
       <div class="person-workspace-layout">
         <details class="profile-section-directory" open>
@@ -134,39 +192,7 @@ const profileFactSections = new Set<string>([
         </details>
 
         <div class="profile-section-list">
-          {sections.map(([id, title, loadMode]) => id === "identity-summary"
-            ? (
-              <section
-                id={`profile-section-${id}`}
-                class="profile-section-card identity-section-card"
-                data-profile-section={id}
-                data-section-state="ready"
-                tabindex="-1"
-                aria-labelledby={`profile-section-${id}-heading`}
-              >
-                <header class="profile-section-heading">
-                  <div>
-                    <p class="section-kicker">Available now</p>
-                    <h2 id={`profile-section-${id}-heading`}>{title}</h2>
-                  </div>
-                  <span class="state-badge calm">Ready</span>
-                </header>
-                <dl class="identity-summary">
-                  <div><dt>Given name</dt><dd data-profile-field="givenName"></dd></div>
-                  <div><dt>Middle name</dt><dd data-profile-field="middleName"></dd></div>
-                  <div><dt>Family name</dt><dd data-profile-field="familyName"></dd></div>
-                  <div><dt>Nickname</dt><dd data-profile-field="nickname"></dd></div>
-                  <div><dt>Gender</dt><dd data-profile-field="gender"></dd></div>
-                  <div><dt>Last contact</dt><dd data-profile-last-contact>None recorded</dd></div>
-                </dl>
-                <div data-profile-fact-section="tags" data-section-state="loading">
-                  <p data-profile-fact-state role="status" aria-live="polite">Loading tag assignments…</p>
-                  <button data-profile-fact-add class="button-secondary" type="button" hidden>Edit tags</button>
-                  <form data-profile-fact-form hidden novalidate></form>
-                </div>
-              </section>
-            )
-            : id === "important-dates"
+          {sections.filter(([id]) => id !== "identity-summary").map(([id, title, loadMode]) => id === "important-dates"
             ? (
               <section
                 id="profile-section-important-dates"

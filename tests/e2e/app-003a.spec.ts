@@ -171,12 +171,11 @@ test(
       page.getByRole("heading", { level: 1, name: "Ada Lovelace" }),
     ).toBeVisible();
     await expect(page.getByText("Identity saved")).toBeVisible();
-    await expect(
-      page.getByRole("heading", {
-        level: 2,
-        name: "Manage identity and availability",
-      }),
-    ).toBeVisible();
+    for (const name of ["Edit person", "Archive person", "Delete person"]) {
+      const lifecycleControl = page.getByRole("button", { exact: true, name });
+      await expect(lifecycleControl).toBeVisible();
+      await expect(lifecycleControl).toBeEnabled();
+    }
     await expect(page.getByText("Unknown", { exact: true })).toHaveCount(2);
     await expectAccessible(page);
 
