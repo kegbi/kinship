@@ -11,8 +11,8 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-010 — Remove dead dependencies and amend the component
-  clause**
+- Current leaf: **UXD-001 — Design tokens**, with **UXD-013** opened in parallel
+  on the API side
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -594,14 +594,22 @@ asserts, so it runs that spec on its candidate.
   - [ ] Split out of `UXD-007` because it changes a delivered P0 flow's UI and
         needs its own browser evidence, which is not a same-day quick win.
 
-- [ ] **UXD-010 — Remove dead dependencies and amend the component clause.**
+- [x] **UXD-010 — Remove dead dependencies and amend the component clause.**
       (§10.6; effort S; no dependency)
-  - [ ] Remove the React, Tailwind, shadcn, and related unused packages from the
-        manifest and lockfile while keeping the live JSX accessibility plugin.
-  - [ ] Amend the component clause in
+  - [x] Removed the thirteen unused React, Tailwind, and shadcn packages, taking
+        `devDependencies` from 27 to 14 and the lockfile from 8,374 to 6,013
+        lines. The production web image now installs 566 packages instead of
+        809.
+  - [x] Kept `eslint-plugin-jsx-a11y`, which is live through
+        `astro.configs["flat/jsx-a11y-recommended"]`; lint still covers the same
+        460 files, so accessibility linting was not silently dropped.
+  - [x] Amended the component clause in
         [`dashboard-settings-design.md`](../product/dashboard-settings-design.md)
-        to name the equivalent Kinship primitives, keeping every accessibility
-        clause verbatim. Amend it; do not silently violate it.
+        to name Kinship primitives and to record that it supersedes the
+        shadcn/ui naming. Every accessibility clause is unchanged, including the
+        rule against using tabs to hide unrelated datasets, which review §7.4
+        relies on to justify `UXD-002`'s segmented filter.
+
 - [ ] **UXD-001 — Design tokens.** (§10.1, §10.2; effort M; no dependency)
   - [ ] Introduce the accepted token set and replace the hardcoded literals
         across the three stylesheets.
