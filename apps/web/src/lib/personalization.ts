@@ -387,7 +387,14 @@ export async function mountPersonalization(): Promise<void> {
       } else {
         finishSectionLoad(previousControls, true);
         updateMutationAvailability();
-        status(message, focusHeading);
+        if (section === current && section !== renderedSection) {
+          showInitialLoadFailure(
+            message,
+            section,
+            focusHeading,
+            cleanMessage,
+          );
+        } else status(message, focusHeading);
       }
       return false;
     }
@@ -749,6 +756,7 @@ export async function mountPersonalization(): Promise<void> {
     message: string,
     section: PersonalizationSection,
     focus: boolean,
+    cleanMessage?: string,
   ): void => {
     const target = document.querySelector<HTMLElement>(
       "#personalization-status",
@@ -760,7 +768,7 @@ export async function mountPersonalization(): Promise<void> {
     retry.textContent = "Retry";
     retry.addEventListener("click", async () => {
       retry.disabled = true;
-      await render(section, focus);
+      await render(section, focus, cleanMessage);
     });
     target.append(retry);
     if (focus) target.focus();
@@ -774,13 +782,19 @@ export async function mountPersonalization(): Promise<void> {
         if (
           !selected ||
           !PERSONALIZATION_SECTIONS.some(({ id }) => id === selected)
-        ) return;
-        if (selected === current) return;
+        ) {
+          // Section links are generated from this catalog; keep malformed DOM
+          // state inert if one is introduced outside this module.
+          return;
+        }
+        if (selected === current) {
+          status("That personalization section is already open.");
+          return;
+        }
         const cleanMessage = navigationCleanMessage();
         if (cleanMessage === false) return;
         const target = selected as PersonalizationSection;
         const targetIndex = currentIndex + 1;
-        if (!await render(target, true, cleanMessage)) return;
         current = target;
         currentIndex = targetIndex;
         globalThis.history.pushState(
@@ -788,6 +802,7 @@ export async function mountPersonalization(): Promise<void> {
           "",
           `?section=${current}`,
         );
+        await render(target, true, cleanMessage);
       })
     );
   if (activePopstate) {
