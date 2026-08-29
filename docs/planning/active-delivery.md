@@ -11,7 +11,8 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-007 — Quick-wins bundle**
+- Current leaf: **UXD-010 — Remove dead dependencies and amend the component
+  clause**
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -512,13 +513,12 @@ Report and request direction once `UXD-001` through `UXD-005` are integrated.
   - [x] Do not weaken `read_only`, drop the tmpfs for a persistent volume in the
         test overlay, or change the accepted RustFS image pin.
 
-- [ ] **REL-013 — Restore the WORKSPACE-003 personalization browser flow.** With
-      the stack able to start again,
-      `deno task test:e2e
-      tests/e2e/app-004e.spec.ts --project=chromium`
-      runs and fails deterministically at `app-004e.spec.ts:268`: after the Tags
-      module is toggled off and back on, clicking the `Tags` section link leaves
-      the URL at `?section=profile-modules` instead of `?section=tags`.
+- [ ] **REL-013 — Stabilize the WORKSPACE-003 personalization browser flow.**
+      With the stack able to start again, `app-004e.spec.ts` failed twice at the
+      Tags step: after the Tags module is toggled off and back on, clicking the
+      `Tags` section link left the URL at `?section=profile-modules` instead of
+      `?section=tags`. It then passed twice. Treat it as intermittent, not
+      deterministic, and reproduce it before changing anything.
   - [ ] Reproduced identically on `10019c60` carrying only the REL-012 Compose
         fix, so neither `UXD-006` nor `REL-012` caused it. The failure was
         hidden while the object-store could not start, which means a delivered
@@ -538,6 +538,25 @@ Report and request direction once `UXD-001` through `UXD-005` are integrated.
         `REL-001`, and `WORKSPACE-003` here. Until that sweep runs, treat
         `user-flows.yaml`'s delivered statuses as unverified rather than false.
 
+- [ ] **REL-014 — Walk the real header focus order in `auth-003`.**
+      `tests/e2e/auth-003.spec.ts:265` skips the Journal navigation link exactly
+      as `app-002c` did, so both sign-out tests fail. `REL-001` fixed the
+      `app-002c` copy of this walk and missed this duplicate. Reproduced on
+      clean `main`. Check every remaining spec for a third copy before closing.
+- [ ] **REL-015 — Disambiguate the settings alert region.**
+      `tests/e2e/app-002e.spec.ts:203` fails a Playwright strict-mode check
+      because `getByRole('alert')` matches both `#settings-errors` and
+      `#lifecycle-blockers` on the settings page. Decide whether two
+      simultaneous alerts on one page is the intended experience before
+      narrowing the locator; two competing alert regions may be the real defect.
+      Reproduced on clean `main`.
+- [ ] **REL-016 — Send one `referrer-policy` header.**
+      `tests/e2e/auth-002.spec.ts:212` receives `no-referrer, no-referrer`, so
+      the gateway emits the header twice, most likely from `add_header` in two
+      nginx scopes. `OPS-001A` claims this policy was proved on the real pinned
+      Nginx, so establish why that proof passes while a browser response carries
+      a duplicate. Reproduced on clean `main`.
+
 `REL-012` is delivered, so candidates in this phase can produce browser evidence
 again. `UXD-007` changes keyboard focus order that `tests/e2e/app-002c.spec.ts`
 asserts, so it runs that spec on its candidate.
@@ -550,15 +569,15 @@ asserts, so it runs that spec on its candidate.
         personalization instead of leaving links that only push history.
   - [x] Render an inline turned-off notice with a personalization link when a
         hidden section is deep-linked, never a silent no-op in `focusSection`.
-- [ ] **UXD-007 — Quick-wins bundle.** (§6.8, §8, §10.7; effort S; no
+- [x] **UXD-007 — Quick-wins bundle.** (§6.8, §8, §10.7; effort S; no
       dependency)
-  - [ ] Make the reduced-motion rule stop animation, not only transitions and
+  - [x] Make the reduced-motion rule stop animation, not only transitions and
         scroll behavior, so the directory spinner honors the preference.
-  - [ ] Link the member menu Profile item to the existing profile settings page
+  - [x] Link the member menu Profile item to the existing profile settings page
         and delete the help and what-is-new stub.
-  - [ ] Move sign out and the workspace switcher into the member popover so
+  - [x] Move sign out and the workspace switcher into the member popover so
         header height stops changing between accounts.
-  - [ ] Widen the person workspace frame to the header width.
+  - [x] Widen the person workspace frame to the header width.
 - [ ] **UXD-007B — Give the reminder and cadence editors the shared add-form
       pattern.** (§6.8, §7.7; effort M; split out of `UXD-007`; no dependency)
   - [ ] The review asks for the `hidden` attribute on the two always-open forms
