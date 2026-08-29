@@ -7,6 +7,7 @@ import {
   type PersonDueInformation,
   type PersonIdentity,
   type PersonProfileIdentity,
+  type PersonProfileSummary,
   type ProblemDetails,
   recordPersonView,
   restorePerson,
@@ -24,6 +25,14 @@ import { mountPersonReminders } from "./reminders.ts";
 import { mountPersonFiles } from "./person-files.ts";
 import { mountPersonGifts } from "./person-gifts.ts";
 import { mountPersonLifeEvents } from "./person-life-events.ts";
+import {
+  type PersonFactRailSectionId,
+  setFirstMeetingDate,
+  setFirstMeetingPlace,
+  setRailCount,
+  setRailEmpty,
+  setVitalStat,
+} from "./person-facts-rail.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
@@ -67,6 +76,35 @@ interface LifecycleElements {
   readonly editOpen: HTMLButtonElement;
   readonly restore: HTMLButtonElement;
   readonly status: HTMLElement;
+}
+
+const summaryRailSectionIds = new Set<PersonFactRailSectionId>([
+  "contact-methods",
+  "relationships",
+  "addresses",
+  "work",
+  "pets",
+  "food-preferences",
+  "first-meeting",
+]);
+
+function seedRailSummary(
+  summary: PersonProfileSummary | undefined,
+): void {
+  if (!summary) return;
+  for (const entry of summary.sectionCounts) {
+    if (!summaryRailSectionIds.has(entry.id as PersonFactRailSectionId)) {
+      continue;
+    }
+    const sectionId = entry.id as PersonFactRailSectionId;
+    if (entry.status === "hidden") {
+      setRailCount(sectionId, undefined);
+      setRailEmpty(sectionId, false);
+      continue;
+    }
+    setRailCount(sectionId, entry.count);
+    setRailEmpty(sectionId, entry.count === 0);
+  }
 }
 
 function elements(): ProfileElements | undefined {
@@ -522,12 +560,10 @@ function renderReady(
       ? new Date(dueInformation.nextReminderAt).toLocaleString()
       : "Not recorded";
   }
-  for (const vital of ["birthday", "work", "first-meeting"]) {
-    const target = document.querySelector<HTMLElement>(
-      `[data-person-vital-value="${vital}"]`,
-    );
-    if (target) target.textContent = "Not recorded";
-  }
+  setVitalStat("birthday", undefined);
+  setVitalStat("work", undefined);
+  setFirstMeetingDate(undefined);
+  setFirstMeetingPlace(undefined);
   renderTags(profile.tags, person);
   const tagsHidden = navigation.hiddenSectionIds.has("tags");
   profile.tags.hidden = tagsHidden;
@@ -853,9 +889,11 @@ export async function mountPeopleProfile(): Promise<void> {
     );
     return;
   }
-  const result = await getPerson(id, session.session.workspace.id).catch(() =>
-    undefined
-  );
+  const result = await getPerson(
+    id,
+    session.session.workspace.id,
+    "summary",
+  ).catch(() => undefined);
   if (!result) {
     renderState(profile, "unavailable");
     return;
@@ -885,6 +923,7 @@ export async function mountPeopleProfile(): Promise<void> {
     session.session.workspace.id,
     sectionNavigation,
   );
+  seedRailSummary(result.value.summary);
   void recordPersonView(id, session.session.workspace.id).catch(() =>
     undefined
   );

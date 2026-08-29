@@ -19,9 +19,10 @@ function markup(): void {
   document.body.innerHTML = `
     <section data-profile-section="contact-methods" data-profile-fact-section="contact-methods" data-section-state="loading">
       <span data-profile-fact-badge>Loading</span>
+      <span data-profile-rail-count hidden></span>
       <p data-profile-fact-state tabindex="-1"></p>
       <ul data-profile-fact-list></ul>
-      <button data-profile-fact-add hidden>Add contact methods</button>
+      <button data-profile-fact-add data-profile-fact-add-icon aria-label="Add contact methods" hidden><span aria-hidden="true">+</span></button>
       <form data-profile-fact-form hidden></form>
     </section>`;
 }
@@ -29,6 +30,8 @@ function markup(): void {
 function allMarkup(): void {
   document.body.innerHTML = `
     <ul id="person-profile-tags"></ul>
+    <span data-person-vital-value="work">Not recorded</span>
+    <span data-person-vital-value="first-meeting">Not recorded</span>
     ${
     [
       "contact-methods",
@@ -39,8 +42,8 @@ function allMarkup(): void {
       "pets",
     ].map((section) => `
       <section data-profile-section="${section}" data-profile-fact-section="${section}" data-section-state="loading">
-        <span data-profile-fact-badge>Loading</span><p data-profile-fact-state tabindex="-1"></p>
-        <ul data-profile-fact-list></ul><button data-profile-fact-add hidden>Add</button>
+        <span data-profile-fact-badge>Loading</span><span data-profile-rail-count hidden></span><p data-profile-fact-state tabindex="-1"></p>
+        <ul data-profile-fact-list></ul><button data-profile-fact-add data-profile-fact-add-icon aria-label="Add ${section}" hidden><span aria-hidden="true">+</span></button>
         <form data-profile-fact-form hidden></form>
       </section>`).join("")
   }
@@ -56,6 +59,112 @@ afterEach(() => {
 });
 
 describe("PEOPLE-006 profile-fact sections", () => {
+  it("UXD-002B publishes rail state, icon labels, and live hero facts", async () => {
+    allMarkup();
+    let workPresent = true;
+    const workRecord = {
+      id: "00000000-0000-4000-8000-000000000701",
+      section: "work",
+      updatedAt: revision,
+      value: {
+        organizationName: "Analytical Engines",
+        title: "Mathematician",
+      },
+    };
+    const firstMeetingRecord = {
+      id: "00000000-0000-4000-8000-000000000702",
+      section: "first-meeting",
+      updatedAt: revision,
+      value: { placeText: "Royal Society" },
+    };
+    const foodRecord = {
+      id: "00000000-0000-4000-8000-000000000703",
+      section: "food-preferences",
+      updatedAt: revision,
+      value: { foodPreferences: "Tea" },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((resource: string | URL | Request, init?: RequestInit) => {
+        const section = /\/facts\/([^?]+)/.exec(String(resource))?.[1];
+        if (init?.method === "DELETE") {
+          workPresent = false;
+          return response({
+            factId: workRecord.id,
+            personUpdatedAt: "2026-08-16T12:00:00.000001Z",
+            status: "deleted",
+          });
+        }
+        const records = section === "work" && workPresent
+          ? [workRecord]
+          : section === "first-meeting"
+          ? [firstMeetingRecord]
+          : section === "food-preferences"
+          ? [foodRecord]
+          : [];
+        return response({
+          options: [],
+          personUpdatedAt: revision,
+          records,
+          status: "ready",
+        });
+      }),
+    );
+
+    await mountProfileFacts(personId, workspaceId, false, revision);
+
+    const contact = document.querySelector<HTMLElement>(
+      '[data-profile-fact-section="contact-methods"]',
+    )!;
+    expect(contact.dataset.railEmpty).toBe("true");
+    expect(contact.querySelector("[data-profile-rail-count]")?.textContent)
+      .toBe("0");
+    expect(contact.querySelector("[data-profile-fact-state]")?.textContent)
+      .toBe("No contact methods saved.");
+    const contactAdd = contact.querySelector<HTMLButtonElement>(
+      "[data-profile-fact-add]",
+    )!;
+    expect(contactAdd.textContent).toBe("+");
+    expect(contactAdd.getAttribute("aria-label")).toBe("Add contact methods");
+    const firstMeetingAdd = document.querySelector<HTMLButtonElement>(
+      '[data-profile-fact-section="first-meeting"] [data-profile-fact-add]',
+    )!;
+    expect(firstMeetingAdd.textContent).toBe("+");
+    expect(firstMeetingAdd.getAttribute("aria-label")).toBe(
+      "Edit first meeting",
+    );
+    expect(
+      document.querySelector<HTMLButtonElement>(
+        '[data-profile-fact-section="food-preferences"] [data-profile-fact-add]',
+      )?.getAttribute("aria-label"),
+    ).toBe("Edit food preferences");
+    expect(
+      document.querySelector('[data-person-vital-value="work"]')?.textContent,
+    ).toBe("Mathematician at Analytical Engines");
+    expect(
+      document.querySelector('[data-person-vital-value="first-meeting"]')
+        ?.textContent,
+    ).toBe("Royal Society");
+
+    const work = document.querySelector<HTMLElement>(
+      '[data-profile-fact-section="work"]',
+    )!;
+    const remove = [...work.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.startsWith("Delete"))!;
+    remove.click();
+    remove.click();
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector('[data-person-vital-value="work"]')
+          ?.textContent,
+      ).toBe("Not recorded")
+    );
+    expect(work.querySelector("[data-profile-rail-count]")?.textContent).toBe(
+      "0",
+    );
+    expect(work.dataset.railEmpty).toBe("true");
+  });
+
   it("selects an existing workspace organization from the local work editor", async () => {
     document.body.innerHTML = `
       <section data-profile-fact-section="work">
@@ -1540,6 +1649,10 @@ describe("PEOPLE-006 profile-fact sections", () => {
     ).toBe(true);
     expect(document.querySelector("[data-profile-fact-badge]")?.textContent)
       .toBe("Read-only");
+    expect(
+      document.querySelector<HTMLElement>("[data-profile-fact-section]")
+        ?.dataset.railEmpty,
+    ).toBe("true");
   });
 
   it("rejects notes-only pets locally with an adjacent field error", async () => {

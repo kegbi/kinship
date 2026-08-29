@@ -1897,20 +1897,32 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
 
 .person-workspace-layout {
   display: grid;
-  grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr);
-  gap: var(--space-5);
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  gap: 1.5rem;
   align-items: start;
 }
 
-.profile-section-directory {
+.profile-facts-column {
   position: sticky;
   top: 6rem;
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
   max-height: calc(100vh - 7rem);
+  overflow: auto;
+}
+
+.profile-section-directory {
   padding: .7rem;
   border: 1px solid rgb(32 53 45 / 13%);
   border-radius: var(--radius-lg);
-  overflow: auto;
   background: var(--surface-1);
+}
+
+.profile-facts-rail {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
 }
 
 .profile-section-directory summary {
@@ -1989,6 +2001,137 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
   border: 1px solid rgb(32 53 45 / 13%);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
+}
+
+.profile-rail-block {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: .875rem;
+}
+
+.profile-rail-block h3 {
+  min-width: 0;
+  margin: 0;
+  font-family: Georgia, serif;
+  font-size: .95rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.profile-rail-block .profile-section-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.profile-rail-count {
+  color: var(--ink-2);
+  font-size: .78rem;
+  font-weight: 750;
+}
+
+.profile-rail-add {
+  width: 44px;
+  padding: 0;
+  aspect-ratio: 1;
+  justify-self: end;
+  font-size: 1.25rem;
+}
+
+.profile-rail-block :is(form, fieldset, .form-grid, label, input, select, textarea) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.profile-rail-block .important-date-form .form-grid,
+.profile-rail-block #relationship-form .form-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+}
+
+.profile-rail-block :is(.important-date-actions, .form-actions) {
+  flex-wrap: wrap;
+}
+
+.profile-rail-block .important-dates-list li {
+  min-width: 0;
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.profile-rail-block .important-dates-list li > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.profile-rail-block[data-rail-empty="true"] {
+  grid-template-columns: minmax(0, auto) auto minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--ink-3);
+}
+
+.profile-rail-block[data-rail-empty="true"] > .profile-section-heading {
+  display: contents;
+}
+
+.profile-rail-block[data-rail-empty="true"] > .section-state {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: .78rem;
+  overflow-wrap: anywhere;
+}
+
+.profile-rail-block[data-rail-empty="true"] .profile-rail-add {
+  grid-column: 4;
+  grid-row: 1;
+}
+
+.profile-rail-block[data-rail-empty="true"] > .section-state:empty {
+  display: none;
+}
+
+.profile-rail-block[data-rail-empty="true"] > .section-state:empty + #relationships-list {
+  display: block;
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  color: var(--ink-2);
+  font-size: .78rem;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.profile-rail-block[data-rail-empty="true"] > .section-state:empty + #relationships-list > li {
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  background: transparent;
+  font-size: inherit;
+  list-style: none;
+}
+
+.profile-rail-block[data-rail-empty="true"] :is(.important-dates-list, [data-profile-fact-list], [data-cadence-list], [data-profile-fact-pagination], #relationships-list + nav) {
+  display: none;
+}
+
+.profile-rail-block[data-rail-empty="true"] > form {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1199px) {
+  .person-workspace-layout {
+    grid-template-columns: minmax(240px, 260px) minmax(0, 1fr);
+    gap: 1.25rem;
+  }
 }
 
 .profile-section-card:focus {
@@ -2862,9 +3005,10 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
     grid-template-columns: 1fr;
   }
 
-  .profile-section-directory {
+  .profile-facts-column {
     position: static;
     max-height: none;
+    overflow: visible;
   }
 
   .profile-section-directory nav ul {

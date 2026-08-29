@@ -187,9 +187,13 @@ test(
 
     await page.reload();
     await expect(section).toHaveAttribute("data-section-state", "ready");
-    await expect(page.getByText("February 29, about 1984")).toBeVisible();
-    await expect(page.getByText("May 6 (year unknown)")).toBeVisible();
-    await expect(page.getByText("April 2012")).toBeVisible();
+    await expect(section.getByText("February 29, about 1984")).toBeVisible();
+    await expect(section.getByText("May 6 (year unknown)")).toBeVisible();
+    await expect(section.getByText("April 2012")).toBeVisible();
+    await expect(page.locator('[data-person-vital-value="birthday"]'))
+      .toHaveText("February 29, about 1984");
+    await expect(page.locator('[data-person-vital-value="first-meeting"]'))
+      .toHaveText("April 2012");
 
     await custom.getByRole("button", { name: "Delete Citizenship day" })
       .click();
@@ -265,7 +269,7 @@ test(
     await expect(add).toBeHidden();
     await expect(section.getByRole("button", { name: /Edit|Delete/ }))
       .toHaveCount(0);
-    await expect(page.getByText("February 29, about 1984")).toBeVisible();
+    await expect(section.getByText("February 29, about 1984")).toBeVisible();
     await expectAccessible(page);
   },
 );

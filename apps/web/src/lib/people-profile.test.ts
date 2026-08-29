@@ -118,6 +118,31 @@ function interactionSectionMarkup(): void {
   );
 }
 
+function summaryRailMarkup(): void {
+  document.querySelector("#person-profile-ready")?.insertAdjacentHTML(
+    "beforeend",
+    `
+      <section data-profile-section="contact-methods" data-profile-fact-section="contact-methods" data-section-state="loading">
+        <span data-profile-rail-count hidden></span>
+        <p data-profile-fact-state></p><ul data-profile-fact-list></ul>
+        <button data-profile-fact-add data-profile-fact-add-icon aria-label="Add contact methods"><span aria-hidden="true">+</span></button>
+        <form data-profile-fact-form></form>
+      </section>
+      ${
+      [
+        "relationships",
+        "addresses",
+        "work",
+        "pets",
+        "food-preferences",
+        "first-meeting",
+      ].map((id) =>
+        `<section data-profile-section="${id}"><span data-profile-rail-count hidden></span></section>`
+      ).join("")
+    }`,
+  );
+}
+
 function reminderSectionMarkup(): void {
   document.querySelector("#person-profile-sections ul")?.insertAdjacentHTML(
     "beforeend",
@@ -146,6 +171,102 @@ afterEach(() => {
 });
 
 describe("PEOPLE-001 canonical person identity shell", () => {
+  it("UXD-002B requests summary and seeds visible and hidden rail counts before fact refresh", async () => {
+    markup();
+    summaryRailMarkup();
+    let releaseContact!: (value: Response) => void;
+    const pendingContact = new Promise<Response>((resolve) => {
+      releaseContact = resolve;
+    });
+    const fetchMock = vi.fn(
+      (resource: string | URL | Request, init?: RequestInit) => {
+        const url = String(resource);
+        if (url.endsWith("/api/v1/session")) return response(session);
+        if (url === `/api/v1/people/${personId}?include=summary`) {
+          return response({
+            dueInformation: {
+              detail: "No due information.",
+              openTaskCount: 0,
+              status: "ready",
+            },
+            person: {
+              givenName: "Ada",
+              id: personId,
+              isDeceased: false,
+              isPartial: false,
+              isSelf: false,
+              isStarred: false,
+              tagCount: 0,
+              tags: [],
+              updatedAt: "2026-08-15T08:00:00.000Z",
+            },
+            status: "ready",
+            summary: {
+              primaryContactMethods: [],
+              relationshipCounts: [],
+              sectionCounts: [
+                { count: 2, id: "contact-methods", status: "ready" },
+                { count: 3, id: "relationships", status: "ready" },
+                { id: "addresses", status: "hidden" },
+                { count: 1, id: "work", status: "ready" },
+                { count: 0, id: "pets", status: "ready" },
+                { count: 4, id: "food-preferences", status: "ready" },
+                { count: 0, id: "first-meeting", status: "ready" },
+              ],
+            },
+          });
+        }
+        if (url.includes("/facts/contact-methods")) return pendingContact;
+        if (init?.method === "POST" && url.endsWith("/view")) {
+          return response({ status: "recorded" });
+        }
+        return Promise.resolve(undefined as never);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const mounting = mountPeopleProfile();
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector(
+          '[data-profile-section="contact-methods"] [data-profile-rail-count]',
+        )?.textContent,
+      ).toBe("2")
+    );
+    expect(
+      document.querySelector<HTMLElement>(
+        '[data-profile-section="pets"]',
+      )?.dataset.railEmpty,
+    ).toBe("true");
+    const hiddenCount = document.querySelector<HTMLElement>(
+      '[data-profile-section="addresses"] [data-profile-rail-count]',
+    )!;
+    expect(hiddenCount.hidden).toBe(true);
+    expect(hiddenCount.textContent).toBe("");
+    expect(
+      document.querySelector('[data-profile-section="addresses"]')
+        ?.hasAttribute("data-rail-empty"),
+    ).toBe(false);
+
+    releaseContact(response({
+      options: [],
+      personUpdatedAt: "2026-08-15T08:00:00.000Z",
+      records: [],
+      status: "ready",
+    }));
+    await mounting;
+    expect(
+      document.querySelector(
+        '[data-profile-section="contact-methods"] [data-profile-rail-count]',
+      )?.textContent,
+    ).toBe("0");
+    expect(
+      document.querySelector<HTMLElement>(
+        '[data-profile-section="contact-methods"]',
+      )?.dataset.railEmpty,
+    ).toBe("true");
+  });
+
   it("UXD-002A names the breadcrumb and renders honest vital-stat values", async () => {
     markup();
     vi.stubGlobal(
@@ -269,7 +390,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     releaseSecondary(undefined as never);
     await mounting;
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
-      `/api/v1/people/${personId}`,
+      `/api/v1/people/${personId}?include=summary`,
     );
     expect(fetchMock.mock.calls[1]?.[1]?.headers).toEqual({
       "X-Workspace-Id": workspaceId,
@@ -833,6 +954,10 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("distinguishes an archived canonical person as read-only", async () => {
     markup(`/app/people/${personId}?section=identity-summary`);
+    document.querySelector("#person-profile-ready")?.insertAdjacentHTML(
+      "beforeend",
+      '<section data-profile-section="pets"><span data-profile-rail-count hidden></span></section>',
+    );
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response(session))
       .mockResolvedValueOnce(response({
@@ -852,6 +977,11 @@ describe("PEOPLE-001 canonical person identity shell", () => {
           updatedAt: "2026-08-15T08:00:00.000Z",
         },
         status: "archived",
+        summary: {
+          primaryContactMethods: [],
+          relationshipCounts: [],
+          sectionCounts: [{ count: 0, id: "pets", status: "ready" }],
+        },
       }));
     vi.stubGlobal(
       "fetch",
@@ -882,6 +1012,10 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         init?.method === "POST" && String(url).endsWith("/view")
       ),
     ).toBe(true);
+    expect(
+      document.querySelector<HTMLElement>('[data-profile-section="pets"]')
+        ?.dataset.railEmpty,
+    ).toBe("true");
   });
 
   it("[PEOPLE-004] edits, archives, restores, and cancels explicit deletion", async () => {

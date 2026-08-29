@@ -22,10 +22,15 @@ function response(body: unknown, status = 200): Response {
 
 function personMarkup(): void {
   document.body.innerHTML = `
-    <p data-reminder-state></p><ul data-reminder-list></ul>
-    <form data-reminder-form><input name="title"><input name="anchorOn"><input name="sendTime"><select name="recurrenceUnit"><option value="month">month</option></select><input name="recurrenceInterval"><button type="submit">Save</button></form>
-    <p data-cadence-state></p><ul data-cadence-list></ul>
-    <form data-cadence-form><input name="intervalCount"><select name="intervalUnit"><option value="month">month</option></select><button type="submit">Save</button></form>`;
+    <section data-profile-section="reminders">
+      <p data-reminder-state></p><ul data-reminder-list></ul>
+      <form data-reminder-form><input name="title"><input name="anchorOn"><input name="sendTime"><select name="recurrenceUnit"><option value="month">month</option></select><input name="recurrenceInterval"><button type="submit">Save</button></form>
+    </section>
+    <section data-profile-section="stay-in-touch">
+      <span data-profile-rail-count hidden></span>
+      <p data-cadence-state></p><ul data-cadence-list></ul>
+      <form data-cadence-form><input name="intervalCount"><select name="intervalUnit"><option value="month">month</option></select><button type="submit">Save</button></form>
+    </section>`;
 }
 
 function todayMarkup(): void {
@@ -170,6 +175,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
       .toContain("Notification visible");
     expect(document.querySelector("[data-cadence-list]")?.textContent)
       .toContain("Every 1 month");
+    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
+      .toBe("1");
+    expect(
+      document.querySelector('[data-profile-section="stay-in-touch"]')
+        ?.hasAttribute("data-rail-empty"),
+    ).toBe(false);
     expect(document.querySelectorAll("[data-reminder-list] button"))
       .toHaveLength(0);
     expect(
@@ -177,6 +188,26 @@ describe("PLANNING-002 reminder browser behavior", () => {
         "[data-reminder-form] [type=submit]",
       )?.disabled,
     ).toBe(true);
+  });
+
+  it("collapses an empty archived stay-in-touch block", async () => {
+    personMarkup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        cadences: [],
+        reminders: [],
+        status: "ready",
+      })),
+    );
+
+    await mountPersonReminders({ archived: true, personId, workspaceId });
+
+    expect(
+      document.querySelector<HTMLElement>(
+        '[data-profile-section="stay-in-touch"]',
+      )?.dataset.railEmpty,
+    ).toBe("true");
   });
 
   it("reuses the reminder request id after an ambiguous create failure", async () => {
@@ -192,6 +223,13 @@ describe("PLANNING-002 reminder browser behavior", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
     await mountPersonReminders({ archived: false, personId, workspaceId });
+    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
+      .toBe("0");
+    expect(
+      document.querySelector<HTMLElement>(
+        '[data-profile-section="stay-in-touch"]',
+      )?.dataset.railEmpty,
+    ).toBe("true");
     const form = document.querySelector<HTMLFormElement>(
       "[data-reminder-form]",
     )!;

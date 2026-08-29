@@ -104,4 +104,85 @@ describe("people form layout regressions", () => {
       /\.profile-fact-form \.checkbox-row input\s*\{[^}]*width:\s*auto;/s,
     );
   });
+
+  it("UXD-002B keeps the directory and ordered profile facts in one compact rail", () => {
+    const railStart = profilePage.indexOf('class="profile-facts-rail"');
+    const mainStart = profilePage.indexOf('class="profile-section-list"');
+    const rail = profilePage.slice(railStart, mainStart);
+    expect(railStart).toBeGreaterThan(-1);
+    expect(mainStart).toBeGreaterThan(railStart);
+    expect(profilePage.slice(0, railStart)).toContain(
+      'class="profile-facts-column"',
+    );
+    expect(rail).toContain('<h2 class="sr-only">Profile facts</h2>');
+    const railDefinition = profilePage.slice(
+      profilePage.indexOf("const railSections = ["),
+      profilePage.indexOf(
+        "] as const;",
+        profilePage.indexOf("const railSections = ["),
+      ),
+    );
+    const orderedIds = [
+      "contact-methods",
+      "relationships",
+      "important-dates",
+      "addresses",
+      "work",
+      "pets",
+      "food-preferences",
+      "first-meeting",
+      "stay-in-touch",
+    ];
+    let previous = -1;
+    for (const id of orderedIds) {
+      const current = railDefinition.indexOf(`"${id}"`);
+      expect(current).toBeGreaterThan(previous);
+      previous = current;
+    }
+    expect(rail).not.toContain("section-kicker");
+    expect(rail).not.toContain("state-badge");
+    expect(rail.match(/class="profile-section-card profile-rail-block"/g))
+      .toHaveLength(4);
+    expect(rail).toContain("data-profile-rail-count hidden");
+    expect(rail).toContain("data-profile-fact-add-icon");
+    expect(rail).toContain('aria-label="Add important date"');
+    expect(rail).toContain('aria-label="Add relationship"');
+    expect(rail).toContain('<span aria-hidden="true">+</span>');
+  });
+
+  it("UXD-002B gives the rail its specified columns, density, and one sticky owner", () => {
+    expect(applicationStyles).toMatch(
+      /\.person-workspace-layout\s*\{[^}]*grid-template-columns:\s*minmax\(280px, 320px\) minmax\(0, 1fr\);[^}]*gap:\s*1\.5rem;/s,
+    );
+    expect(applicationStyles).toMatch(
+      /@media \(max-width: 1199px\)[\s\S]*?\.person-workspace-layout\s*\{[^}]*grid-template-columns:\s*minmax\(240px, 260px\) minmax\(0, 1fr\);[^}]*gap:\s*1\.25rem;/s,
+    );
+    expect(applicationStyles).toMatch(
+      /\.profile-facts-column\s*\{[^}]*position:\s*sticky;[^}]*top:\s*6rem;[^}]*max-height:\s*calc\(100vh - 7rem\);[^}]*overflow:\s*auto;/s,
+    );
+    expect(applicationStyles).not.toMatch(
+      /\.profile-section-directory\s*\{[^}]*(?:position:\s*sticky|max-height:|overflow:\s*auto)/s,
+    );
+    expect(applicationStyles).toMatch(
+      /\.profile-rail-block\s*\{[^}]*min-width:\s*0;[^}]*padding:\s*\.875rem;/s,
+    );
+    expect(applicationStyles).toMatch(
+      /\.profile-rail-block h3\s*\{[^}]*font-size:\s*\.95rem;/s,
+    );
+    expect(applicationStyles).toMatch(
+      /\.profile-rail-add\s*\{[^}]*width:\s*44px;[^}]*padding:\s*0;[^}]*aspect-ratio:\s*1;/s,
+    );
+    expect(applicationStyles).toMatch(
+      /\.profile-rail-block\[data-rail-empty="true"\][\s\S]*?\[data-profile-fact-list\][\s\S]*?display:\s*none;/s,
+    );
+    expect(applicationStyles).toMatch(
+      /\.profile-rail-block\[data-rail-empty="true"\] > \.section-state\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*1;/s,
+    );
+    expect(applicationStyles).toMatch(
+      /\.profile-rail-block\[data-rail-empty="true"\] \.profile-rail-add\s*\{[^}]*grid-column:\s*4;[^}]*grid-row:\s*1;/s,
+    );
+    expect(applicationStyles).toMatch(
+      /\.profile-rail-block\[data-rail-empty="true"\] > \.section-state:empty \+ #relationships-list\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*1;/s,
+    );
+  });
 });

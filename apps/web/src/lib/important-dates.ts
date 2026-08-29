@@ -7,13 +7,19 @@ import {
   type ProblemDetails,
   updateImportantDate,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import {
+  setFirstMeetingDate,
+  setRailCount,
+  setRailEmpty,
+  setVitalStat,
+} from "./person-facts-rail.ts";
 
 interface ImportantDateElements {
   readonly add: HTMLButtonElement;
   readonly age: HTMLInputElement;
   readonly approximate: HTMLInputElement;
   readonly approximateRow: HTMLElement;
-  readonly badge: HTMLElement;
+  readonly badge?: HTMLElement;
   readonly cancel: HTMLButtonElement;
   readonly day: HTMLInputElement;
   readonly form: HTMLFormElement;
@@ -78,15 +84,15 @@ function elements(): ImportantDateElements | undefined {
     "#important-date-version",
   );
   const year = document.querySelector<HTMLInputElement>("#important-date-year");
-  return section && add && age && approximate && approximateRow && badge &&
-      cancel && day && form && formState && kind && label && labelRow && list &&
+  return section && add && age && approximate && approximateRow && cancel &&
+      day && form && formState && kind && label && labelRow && list &&
       month && notes && precision && state && version && year
     ? {
       add,
       age,
       approximate,
       approximateRow,
-      badge,
+      ...(badge ? { badge } : {}),
       cancel,
       day,
       form,
@@ -144,6 +150,21 @@ export function formatImportantDate(date: ImportantDate): string {
     return `Day ${date.day} (month and year unknown)`;
   }
   return "Date unknown";
+}
+
+function formatBirthday(date: ImportantDate, now = new Date()): string {
+  const formatted = formatImportantDate(date);
+  if (!date.isAgeBased || date.year === undefined || date.isYearApproximate) {
+    return formatted;
+  }
+  let age = now.getFullYear() - date.year;
+  if (
+    date.month !== undefined &&
+    (now.getMonth() + 1 < date.month ||
+      (now.getMonth() + 1 === date.month && date.day !== undefined &&
+        now.getDate() < date.day))
+  ) age -= 1;
+  return age < 0 ? formatted : `Age ${age} · ${formatted}`;
 }
 
 function title(date: ImportantDate): string {
@@ -322,10 +343,16 @@ function render(
     : `${dates.length} important ${
       dates.length === 1 ? "date" : "dates"
     } loaded.`;
-  ui.badge.textContent = archived ? "Read only" : "Ready";
-  ui.badge.classList.toggle("calm", !archived);
   ui.section.dataset.sectionState = "ready";
   ui.add.hidden = archived;
+  setRailCount("important-dates", dates.length);
+  setRailEmpty("important-dates", dates.length === 0);
+  const birthday = dates.find((date) => date.kind === "birthday");
+  setVitalStat("birthday", birthday ? formatBirthday(birthday) : undefined);
+  const firstMeeting = dates.find((date) => date.kind === "first_met");
+  setFirstMeetingDate(
+    firstMeeting ? formatImportantDate(firstMeeting) : undefined,
+  );
 }
 
 export async function mountImportantDates(
@@ -345,10 +372,8 @@ export async function mountImportantDates(
         listed?.problem.status === 403
       ? "forbidden"
       : "error";
-    ui.badge.textContent = listed?.problem.status === 401 ||
-        listed?.problem.status === 403
-      ? "Forbidden"
-      : "Error";
+    setRailCount("important-dates", undefined);
+    setRailEmpty("important-dates", false);
     ui.state.textContent = listed
       ? problemMessage(listed.problem)
       : "Important dates are temporarily unavailable. Try again.";
