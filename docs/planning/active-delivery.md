@@ -543,13 +543,14 @@ Report and request direction once `UXD-001` through `UXD-005` are integrated.
       as `app-002c` did, so both sign-out tests fail. `REL-001` fixed the
       `app-002c` copy of this walk and missed this duplicate. Reproduced on
       clean `main`. Check every remaining spec for a third copy before closing.
-- [ ] **REL-015 — Disambiguate the settings alert region.**
-      `tests/e2e/app-002e.spec.ts:203` fails a Playwright strict-mode check
-      because `getByRole('alert')` matches both `#settings-errors` and
-      `#lifecycle-blockers` on the settings page. Decide whether two
-      simultaneous alerts on one page is the intended experience before
-      narrowing the locator; two competing alert regions may be the real defect.
-      Reproduced on clean `main`.
+- [x] **REL-015 — Stop announcing a standing constraint as an alert.**
+      `getByRole('alert')` matched two elements on the settings profile page.
+      The competing alert was the real defect, not the locator:
+      `#lifecycle-blockers` states a standing condition rendered during load, so
+      its `role="alert"` gave final-owner members an assertive interruption on
+      page load, nested inside a region that already declares
+      `aria-live="polite"`. Removing the role fixed the announcement and the
+      ambiguity together.
 - [x] **REL-016 — Send each security header exactly once.**
       `tests/e2e/auth-002.spec.ts:212` received `no-referrer, no-referrer`.
       nginx `add_header` appends to a proxied response, and the five on-demand
