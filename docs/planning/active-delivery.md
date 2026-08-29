@@ -11,8 +11,8 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-001 — Design tokens**, with **UXD-013** opened in parallel
-  on the API side
+- Current leaf: **UXD-002C — Streams and zone filter**, the last slice of
+  `UXD-002` before the top-five block is complete
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -676,10 +676,66 @@ asserts, so it runs that spec on its candidate.
         `app-004b`, `app-004c`, `app-004d`, `app-006a`, `app-006b`, `app-007b`,
         and `app-009b`. Use one idempotent helper per spec, modelled on the
         `openMemberPopover` helper `UXD-007` established.
-  - [ ] **UXD-002B — Profile-facts rail.** (§7.2) Nine compact sticky blocks,
-        empty ones collapsing to one muted row. Also wires `?include=summary`
-        from `UXD-013`, which fills the age, work, and first-met vital-stat
-        slots that render honest empty values today.
+  - [x] **UXD-002B — Profile-facts rail.** (§7.2) The nine sections left the
+        main column for one sticky column holding the workspace-section
+        directory and the rail. Block chrome is an `<h3>` at .95rem, a count,
+        and a 44×44 icon add control; the kicker and the `.state-badge` are gone
+        from all nine, so `important-dates` and `relationships` had to stop
+        requiring a badge element the way `profile-facts` already did. Density
+        is `.875rem` against the main column's
+        `clamp(1.1rem, 3vw,
+        1.6rem)`, and the grid took review §7.5's
+        `minmax(280px, 320px)` and its 1199px step.
+    - [x] An empty block collapses to one muted row. The row keeps the section's
+          own empty text, because `app-004b` and `app-004c` assert those strings
+          and they are the honest message. The first attempt rendered two rows:
+          an add button at `grid-column: 4` before a state paragraph at
+          `grid-column: 3` moves the sparse auto-placement cursor to the next
+          row. Measured in Chromium, fixed with an explicit `grid-row: 1`, and
+          pinned by a CSS-shape assertion, since happy-dom cannot compute grid
+          placement.
+    - [x] `?include=summary` seeds the seven counts the `UXD-013` projection
+          covers before the nine section fetches land; each section then writes
+          its own count. `important-dates` and `stay-in-touch` are not in the
+          projection and get their count only from their own load.
+    - [x] **Correction to this leaf's own text:** the summary payload carries
+          counts, primary contact methods, relationship counts, and the two due
+          dates. It carries no birthday, job title, or first-meeting value, so
+          `?include=summary` cannot fill those three hero slots. They are filled
+          from data the page already loads — birthday and first met from the
+          important dates, work from the work profile fact — and each is
+          republished when its section re-renders, so a saved or deleted record
+          updates the hero without a reload.
+    - [x] The age prefix honours `is_age_based`, which
+          [`personal_crm_schema_spec_v7.md`](../../personal-crm-schema/v7/personal_crm_schema_spec_v7.md)
+          defines as whether age should be displayed when the year is known and
+          the important-date form already exposes. The first implementation
+          showed an age whenever a non-approximate year existed, overriding the
+          member's explicit choice.
+    - [x] Two specs changed because the delivered design changed what they
+          observe, not to hide a defect. `app-003c` needed `*` on three route
+          globs, because the person request now carries a query string and
+          Playwright's glob is anchored and treats `?` literally. `app-004b`
+          needed four page-wide `getByText` calls scoped to the important-dates
+          section, because review §7.1 puts the birthday and first-met values in
+          the hero on purpose, so a page-wide search for a date string now
+          matches twice; two hero assertions were added in the same place, and
+          that fixture is the only one in the suite with an approximate birthday
+          to prove the age prefix stays off.
+    - [x] Gates: `fmt:check`, `lint`, `check:web`, `contracts:check`, 408 web
+          unit tests, `test:coverage:web` at 91.63/82.15/85.92/93.63 with the
+          new rail module at 100%, and the complete Chromium suite 44/44. The
+          first full-suite run caught the `app-004b` locator ambiguity that no
+          static or unit gate could see.
+  - [ ] **UXD-002B2 — Rail summary formats.** (§7.2 table, §7.6) The per-row
+        "Summary shown" and "Expand rule" columns: primary contact methods as
+        `mailto:`/`tel:` links with a copy button, relationships grouped by
+        type, `+ n more` and `Show all (n)` expanders, and the two-line clamps.
+        Split out of `UXD-002B` because it needs `summary.primaryContactMethods`
+        and `summary.relationshipCounts` to become a second renderer for lists
+        `profile-facts.ts` and `relationships.ts` already own, and the copy
+        button needs the `UXD-005` feedback surface. `UXD-002B` deliberately
+        used only `sectionCounts`.
   - [ ] **UXD-002C — Streams and zone filter.** (§7.3, §7.4, §7.5) Thirteen
         sections into four groups, the segmented filter, the section-to-zone
         map, and the breakpoint collapse order. Also decides what happens to the
