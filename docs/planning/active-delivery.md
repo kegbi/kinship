@@ -489,14 +489,14 @@ Report and request direction once `UXD-001` through `UXD-005` are integrated.
 
 ### Blocking Reliability Repair
 
-- [ ] **REL-012 — Restore the end-to-end object-storage container.** The
-      production-like browser gate cannot start: `deno task test:e2e` fails
-      because the `object-store` service exits 1 with
+- [x] **REL-012 — Restore the end-to-end object-storage container.** The
+      production-like browser gate could not start: `deno task test:e2e` failed
+      because the `object-store` service exited 1 with
       `[FATAL] Server runtime failed: Io error: Permission denied (os error 13)`,
-      so `api`, `web`, and `worker` never start. Reproduced with no repository
+      so `api`, `web`, and `worker` never started. Reproduced with no repository
       code involved, from the pinned RustFS image plus the test overlay's own
       settings.
-  - [ ] Root cause: the image runs as `uid=10001(rustfs)` and ships `/data`
+  - [x] Root cause: the image runs as `uid=10001(rustfs)` and ships `/data`
         owned by that user, but `compose.test.yaml` mounts `/data` as a bare
         `tmpfs`, which Docker creates root-owned at mode 0755, so the server
         cannot write its data or log directories. The same service in
@@ -504,15 +504,38 @@ Report and request direction once `UXD-001` through `UXD-005` are integrated.
         inherits the image's ownership, and therefore still works. The tmpfs
         arrived with the MinIO-to-RustFS switch in `cb9e544b`; MinIO tolerated a
         root-owned mount.
-  - [ ] Give the test overlay's `/data` tmpfs the ownership or mode the pinned
+  - [x] Give the test overlay's `/data` tmpfs the ownership or mode the pinned
         image requires, and prove the stack reaches ready with a focused
         executable check that consumes the changed Compose artifact.
-  - [ ] Do not weaken `read_only`, drop the tmpfs for a persistent volume in the
+  - [x] Do not weaken `read_only`, drop the tmpfs for a persistent volume in the
         test overlay, or change the accepted RustFS image pin.
 
-Until `REL-012` lands, no candidate in this phase can produce browser evidence.
-`UXD-007` changes keyboard focus order that `tests/e2e/app-002c.spec.ts`
-asserts, so `REL-012` is delivered before it.
+- [ ] **REL-013 — Restore the WORKSPACE-003 personalization browser flow.** With
+      the stack able to start again,
+      `deno task test:e2e
+      tests/e2e/app-004e.spec.ts --project=chromium`
+      runs and fails deterministically at `app-004e.spec.ts:268`: after the Tags
+      module is toggled off and back on, clicking the `Tags` section link leaves
+      the URL at `?section=profile-modules` instead of `?section=tags`.
+  - [ ] Reproduced identically on `10019c60` carrying only the REL-012 Compose
+        fix, so neither `UXD-006` nor `REL-012` caused it. The failure was
+        hidden while the object-store could not start, which means a delivered
+        P1 flow has been red without anyone seeing it.
+  - [ ] Prime suspect, to confirm before fixing: the section link handler in
+        `apps/web/src/lib/personalization.ts` calls `navigationCleanMessage()`,
+        which fires `globalThis.confirm()` while the page is dirty. Playwright
+        auto-dismisses an unhandled dialog, so the handler returns early and
+        never pushes the new section. Decide whether the page is wrongly still
+        dirty after a successful module save, in which case the product is at
+        fault and the dirty baseline must be refreshed, or whether the guard is
+        correct and the spec must handle its own dialog. Do not change the
+        accepted dirty-state protection contract to make a test pass.
+  - [ ] Check whether other cataloged flows regressed while the browser gate was
+        unrunnable before claiming this is the only one.
+
+`REL-012` is delivered, so candidates in this phase can produce browser evidence
+again. `UXD-007` changes keyboard focus order that `tests/e2e/app-002c.spec.ts`
+asserts, so it runs that spec on its candidate.
 
 ### Do First
 
