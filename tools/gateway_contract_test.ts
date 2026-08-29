@@ -359,3 +359,26 @@ Deno.test("[APP-003C] static person shell keeps the accepted canonical sections"
     "the shell introduces no person-specific subpage tree",
   );
 });
+
+Deno.test("[REL-015] settings profile reserves alerts for validation", async () => {
+  const profile = await Deno.readTextFile(
+    new URL(
+      "../apps/web/src/pages/app/settings/profile.astro",
+      import.meta.url,
+    ),
+  );
+  const alerts = profile.match(/\brole=["']alert["']/g) ?? [];
+  const lifecycleBlockers = profile.match(
+    /<p\b[^>]*\bid=["']lifecycle-blockers["'][^>]*>/,
+  )?.[0];
+
+  assert(
+    alerts.length === 1,
+    `the settings profile declares exactly one alert; found ${alerts.length}`,
+  );
+  assert(
+    lifecycleBlockers !== undefined &&
+      !/\brole=["']alert["']/.test(lifecycleBlockers),
+    "standing lifecycle blockers are not an alert",
+  );
+});
