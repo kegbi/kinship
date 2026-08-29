@@ -538,7 +538,7 @@ Report and request direction once `UXD-001` through `UXD-005` are integrated.
         `REL-001`, and `WORKSPACE-003` here. Until that sweep runs, treat
         `user-flows.yaml`'s delivered statuses as unverified rather than false.
 
-- [ ] **REL-014 — Walk the real header focus order in `auth-003`.**
+- [x] **REL-014 — Walk the real header focus order in `auth-003`.**
       `tests/e2e/auth-003.spec.ts:265` skips the Journal navigation link exactly
       as `app-002c` did, so both sign-out tests fail. `REL-001` fixed the
       `app-002c` copy of this walk and missed this duplicate. Reproduced on
@@ -550,12 +550,15 @@ Report and request direction once `UXD-001` through `UXD-005` are integrated.
       simultaneous alerts on one page is the intended experience before
       narrowing the locator; two competing alert regions may be the real defect.
       Reproduced on clean `main`.
-- [ ] **REL-016 — Send one `referrer-policy` header.**
-      `tests/e2e/auth-002.spec.ts:212` receives `no-referrer, no-referrer`, so
-      the gateway emits the header twice, most likely from `add_header` in two
-      nginx scopes. `OPS-001A` claims this policy was proved on the real pinned
-      Nginx, so establish why that proof passes while a browser response carries
-      a duplicate. Reproduced on clean `main`.
+- [x] **REL-016 — Send each security header exactly once.**
+      `tests/e2e/auth-002.spec.ts:212` received `no-referrer, no-referrer`.
+      nginx `add_header` appends to a proxied response, and the five on-demand
+      Astro routes set their own headers, so the gateway doubled them. The audit
+      found all seven gateway-owned headers exposed on four of the five
+      renderer-proxying locations, not only the one the assertion caught.
+      `tools/gateway_log_capture_test.ts` could never catch this because it runs
+      the gateway with no renderer upstream, which is how the `OPS-001A` proof
+      passed while real responses carried duplicates.
 
 `REL-012` is delivered, so candidates in this phase can produce browser evidence
 again. `UXD-007` changes keyboard focus order that `tests/e2e/app-002c.spec.ts`
