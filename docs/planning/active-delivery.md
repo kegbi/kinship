@@ -53,10 +53,12 @@ Playwright test carrying its stable flow ID.
 - [ ] Pull authentication, Compose, gateway/TLS, background work, CI, telemetry,
       design-system breadth, and architecture enforcement into the first leaf
       that consumes each boundary. Do not turn them into a new Foundation phase.
-- [ ] **REL-001 — Stabilize the APP-002C Chromium keyboard focus-order E2E.**
-      The Phase 6 aggregate run failed once before passing its one bounded exact
-      reproduction; keep this isolated from feature candidates and revisit at a
-      later reliability checkpoint.
+- [x] **REL-001 — Correct the APP-002C Chromium keyboard focus-order E2E.** Not
+      flaky. The walk in `keyboardReachMemberMenuToggle` never tabbed through
+      the Journal primary-navigation link that `06093381` added, so focus landed
+      on Journal and the Quick capture assertion failed deterministically. The
+      application's tab order was correct; only the spec was stale. Found once
+      `REL-012` let the stack start again.
 - [ ] **AI-mediated CRM data interaction is deferred.** It is not part of the
       active delivery queue or a prerequisite for core, optional-platform, or
       production-readiness completion. Revisit it only when the product is ready
@@ -531,7 +533,10 @@ Report and request direction once `UXD-001` through `UXD-005` are integrated.
         correct and the spec must handle its own dialog. Do not change the
         accepted dirty-state protection contract to make a test pass.
   - [ ] Check whether other cataloged flows regressed while the browser gate was
-        unrunnable before claiming this is the only one.
+        unrunnable before claiming this is the only one. Two of the first two
+        flows run against a healthy stack were red: `APP-002C`, corrected by
+        `REL-001`, and `WORKSPACE-003` here. Until that sweep runs, treat
+        `user-flows.yaml`'s delivered statuses as unverified rather than false.
 
 `REL-012` is delivered, so candidates in this phase can produce browser evidence
 again. `UXD-007` changes keyboard focus order that `tests/e2e/app-002c.spec.ts`
