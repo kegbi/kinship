@@ -4,10 +4,13 @@ import type { ApplicationDatabase } from "../../../../platform/postgres/database
 import {
   PERSON_PROFILE_TAG_PREVIEW_LIMIT,
   type PersonLifeEvent,
+  type PersonPrimaryContactMethod,
   type PersonProfileIdentity,
   type PersonProfileRepository,
   type PersonProfileSection,
+  type PersonProfileSectionRecordCount,
   type PersonProfileTag,
+  type PersonRelationshipCount,
 } from "../../application/get_person_profile.ts";
 
 interface PersonProfileRow {
@@ -26,7 +29,12 @@ interface PersonProfileRow {
   readonly next_reminder_at: string | null;
   readonly nickname: string | null;
   readonly open_task_count: number;
+  readonly primary_contact_methods:
+    | readonly PersonPrimaryContactMethod[]
+    | null;
   readonly profile_sections: readonly PersonProfileSection[];
+  readonly relationship_counts: readonly PersonRelationshipCount[] | null;
+  readonly section_counts: readonly PersonProfileSectionRecordCount[] | null;
   readonly tag_count: number;
   readonly tags: readonly PersonProfileTag[];
   readonly stay_in_touch_at: string | null;
@@ -75,6 +83,148 @@ export class PostgresPersonProfileRepository
   async get(
     command: Parameters<PersonProfileRepository["get"]>[0],
   ): Promise<Awaited<ReturnType<PersonProfileRepository["get"]>>> {
+    const summaryColumns = command.includeSummary
+      ? sql`,
+        coalesce(profile_summary.primary_contact_methods, '[]'::jsonb)
+          as primary_contact_methods,
+        coalesce(profile_summary.relationship_counts, '[]'::jsonb)
+          as relationship_counts,
+        coalesce(profile_summary.section_counts, '[]'::jsonb)
+          as section_counts`
+      : sql`, null::jsonb as primary_contact_methods,
+        null::jsonb as relationship_counts, null::jsonb as section_counts`;
+    const summaryJoin = command.includeSummary
+      ? sql`
+      left join lateral (
+        select
+          (
+            select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+              'id', primary_method.id::text,
+              'kind', primary_method.kind,
+              'label', primary_method.label,
+              'value', primary_method.value,
+              'href', case
+                when primary_method.kind = 'email'
+                  then 'mailto:' || primary_method.value
+                when primary_method.kind = 'phone'
+                  then 'tel:' || primary_method.value
+              end
+            )) order by primary_method.type_sort_order,
+              primary_method.method_sort_order, primary_method.id)
+            from (
+              select method.id, method.value, method.sort_order as method_sort_order,
+                method_type.kind, method_type.name as label,
+                method_type.sort_order as type_sort_order
+              from crm.person_contact_methods method
+              join crm.contact_method_types method_type
+                on method_type.id = method.type_id
+                and method_type.workspace_id = workspace.id
+              where method.person_id = person.id and method.is_primary
+              order by method_type.sort_order, method.sort_order, method.id
+              limit 3
+            ) primary_method
+          ) as primary_contact_methods,
+          (
+            select jsonb_agg(jsonb_build_object(
+              'count', grouped.record_count,
+              'label', grouped.label,
+              'relationshipTypeId', grouped.relationship_type_id::text
+            ) order by grouped.sort_order, lower(grouped.label),
+              grouped.relationship_type_id)
+            from (
+              select relationship_type.id as relationship_type_id,
+                relationship_type.sort_order,
+                case when edge.from_person_id = person.id
+                  then relationship_type.forward_label
+                  else relationship_type.reverse_label end as label,
+                count(*)::int as record_count
+              from crm.relationships edge
+              join crm.relationship_types relationship_type
+                on relationship_type.id = edge.relationship_type_id
+                and relationship_type.workspace_id = workspace.id
+              where edge.workspace_id = workspace.id
+                and person.id in (edge.from_person_id, edge.to_person_id)
+              group by relationship_type.id, relationship_type.sort_order,
+                case when edge.from_person_id = person.id
+                  then relationship_type.forward_label
+                  else relationship_type.reverse_label end
+            ) grouped
+          ) as relationship_counts,
+          (
+            select jsonb_agg(jsonb_build_object(
+              'count', counted.record_count,
+              'id', counted.section_id
+            ) order by counted.section_id)
+            from (
+              select record.section_id, count(*)::int as record_count
+              from (
+                select 'activities'::text as section_id,
+                  participant.activity_id as record_id
+                from crm.activity_participants participant
+                join crm.activities activity on activity.id = participant.activity_id
+                  and activity.workspace_id = workspace.id
+                where participant.person_id = person.id
+                union all
+                select 'addresses', address.id
+                from crm.person_addresses address
+                where address.person_id = person.id
+                  and person.workspace_id = workspace.id
+                union all
+                select 'contact-methods', method.id
+                from crm.person_contact_methods method
+                join crm.contact_method_types method_type on method_type.id = method.type_id
+                  and method_type.workspace_id = workspace.id
+                where method.person_id = person.id
+                union all
+                select 'calls', call.id from crm.calls call
+                where call.workspace_id = workspace.id and call.person_id = person.id
+                union all
+                select 'conversations', thread.id
+                from crm.conversation_threads thread
+                where thread.workspace_id = workspace.id and thread.person_id = person.id
+                union all
+                select 'first-meeting', meeting.person_id
+                from crm.person_first_meetings meeting
+                where meeting.person_id = person.id
+                  and person.workspace_id = workspace.id
+                union all
+                select 'food-preferences', person.id
+                where person.workspace_id = workspace.id
+                  and person.food_preferences is not null
+                union all
+                select 'life-events', event.id from crm.life_events event
+                where event.workspace_id = workspace.id and event.person_id = person.id
+                union all
+                select 'notes', note.id from crm.notes note
+                where note.workspace_id = workspace.id and note.person_id = person.id
+                union all
+                select 'pets', pet.id from crm.pets pet
+                where pet.person_id = person.id and person.workspace_id = workspace.id
+                union all
+                select 'relationships', edge.id from crm.relationships edge
+                where edge.workspace_id = workspace.id
+                  and person.id in (edge.from_person_id, edge.to_person_id)
+                union all
+                select 'tasks', task.id from crm.tasks task
+                where task.workspace_id = workspace.id and task.person_id = person.id
+                  and task.deleted_at is null
+                union all
+                select 'tags', person_tag.tag_id
+                from crm.person_tags person_tag
+                join crm.tags tag on tag.id = person_tag.tag_id
+                  and tag.workspace_id = workspace.id
+                where person_tag.person_id = person.id
+                union all
+                select 'work', occupation.id
+                from crm.person_occupations occupation
+                where occupation.person_id = person.id
+                  and person.workspace_id = workspace.id
+              ) record
+              group by record.section_id
+            ) counted
+          ) as section_counts
+      ) profile_summary on true`
+      : sql``;
     const result = await sql<PersonProfileRow>`
       select person.id::text, person.given_name, person.middle_name,
         person.family_name, person.nickname, person.description,
@@ -89,6 +239,7 @@ export class PostgresPersonProfileRepository
         last_contact.last_contact_at,
         coalesce(due.open_task_count, 0)::int as open_task_count,
         due.next_reminder_at, due.stay_in_touch_at
+        ${summaryColumns}
       from crm.users account
       join crm.workspace_members member on member.user_id = account.id
       join crm.workspaces workspace on workspace.id = member.workspace_id
@@ -174,6 +325,7 @@ export class PostgresPersonProfileRepository
             order by cadence.next_due_at nulls last, cadence.id limit 1
           ) as stay_in_touch_at
       ) due on true
+      ${summaryJoin}
       where account.id = ${command.userId}::uuid
         and account.status = 'active'
         and account.deleted_at is null
@@ -202,6 +354,15 @@ export class PostgresPersonProfileRepository
       },
       person,
       status: row.archived_at ? "archived" : "ready",
+      ...(command.includeSummary
+        ? {
+          summary: {
+            primaryContactMethods: row.primary_contact_methods ?? [],
+            relationshipCounts: row.relationship_counts ?? [],
+            sectionCounts: row.section_counts ?? [],
+          },
+        }
+        : {}),
     };
   }
 

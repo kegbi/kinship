@@ -1050,6 +1050,32 @@ export interface PersonDueInformation {
   readonly status: "ready";
 }
 
+export interface PersonPrimaryContactMethod {
+  readonly href?: string;
+  readonly id: string;
+  readonly kind: string;
+  readonly label: string;
+  readonly value: string;
+}
+
+export interface PersonRelationshipCount {
+  readonly count: number;
+  readonly label: string;
+  readonly relationshipTypeId: string;
+}
+
+export type PersonProfileSectionCount =
+  | { readonly count: number; readonly id: PersonProfileSectionId; readonly status: "ready" }
+  | { readonly id: PersonProfileSectionId; readonly status: "hidden" };
+
+export interface PersonProfileSummary {
+  readonly nextReminderAt?: string;
+  readonly primaryContactMethods: readonly PersonPrimaryContactMethod[];
+  readonly relationshipCounts: readonly PersonRelationshipCount[];
+  readonly sectionCounts: readonly PersonProfileSectionCount[];
+  readonly stayInTouchAt?: string;
+}
+
 export type PersonLifeEventPrecision = "day" | "full" | "month" | "month_day" | "unknown" | "year" | "year_month";
 export interface PersonLifeEvent {
   readonly date: { readonly day?: number; readonly happenedAt?: string; readonly month?: number; readonly precision: PersonLifeEventPrecision; readonly year?: number };
@@ -1308,8 +1334,9 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
   return request("/api/v1/people", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
 }
 
-export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
-  return request(`/api/v1/people/${encodeURIComponent(personId)}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+export function getPerson(personId: string, workspaceId?: string, include?: "summary"): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity; readonly summary?: PersonProfileSummary }>> {
+  const suffix = include ? `?include=${include}` : "";
+  return request(`/api/v1/people/${encodeURIComponent(personId)}${suffix}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
 export function listPersonLifeEvents(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly events: readonly PersonLifeEvent[]; readonly status: "hidden" | "ready" }>> {

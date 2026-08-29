@@ -1115,11 +1115,23 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "include",
+            "in": "query",
+            "required": false,
+            "description": "Adds the bounded person summary without changing the default response.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "summary"
+              ]
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Current-workspace person identity, lifecycle, and due-information shell",
+            "description": "Current-workspace person identity, lifecycle, due-information shell, and optional bounded summary",
             "content": {
               "application/json": {
                 "schema": {
@@ -13676,6 +13688,137 @@
         },
         "additionalProperties": false
       },
+      "PersonPrimaryContactMethod": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "value"
+        ],
+        "properties": {
+          "href": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PersonRelationshipCount": {
+        "type": "object",
+        "required": [
+          "count",
+          "label",
+          "relationshipTypeId"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "label": {
+            "type": "string"
+          },
+          "relationshipTypeId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PersonProfileSectionCount": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "count",
+              "id",
+              "status"
+            ],
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "id": {
+                "$ref": "#/components/schemas/PersonProfileSectionId"
+              },
+              "status": {
+                "const": "ready"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "status"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/PersonProfileSectionId"
+              },
+              "status": {
+                "const": "hidden"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "PersonProfileSummary": {
+        "type": "object",
+        "required": [
+          "primaryContactMethods",
+          "relationshipCounts",
+          "sectionCounts"
+        ],
+        "properties": {
+          "nextReminderAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "primaryContactMethods": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/PersonPrimaryContactMethod"
+            }
+          },
+          "relationshipCounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonRelationshipCount"
+            }
+          },
+          "sectionCounts": {
+            "type": "array",
+            "minItems": 14,
+            "maxItems": 14,
+            "items": {
+              "$ref": "#/components/schemas/PersonProfileSectionCount"
+            }
+          },
+          "stayInTouchAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
       "PersonProfileIdentity": {
         "type": "object",
         "required": [
@@ -18302,6 +18445,9 @@
           },
           "dueInformation": {
             "$ref": "#/components/schemas/PersonDueInformation"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PersonProfileSummary"
           }
         },
         "additionalProperties": false
