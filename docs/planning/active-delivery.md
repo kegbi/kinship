@@ -662,15 +662,30 @@ asserts, so it runs that spec on its candidate.
         is forbidden.
 
 - [ ] **UXD-002 — Person workspace three-zone layout.** (§7; effort L; depends
-      on `UXD-001` and `UXD-006`)
-  - [ ] Deliver the hero that absorbs the lifecycle panel, due-information card,
-        identity summary, and standalone back link, with destructive actions
-        demoted into the overflow menu.
-  - [ ] Move the nine profile-fact sections into the rail and group the
-        remaining stream sections into Timeline, Planning, Things, and Admin
-        behind a pressed-state filter, not a tab list.
-  - [ ] Preserve every `?section=` deep link through the section-to-zone map and
-        keep DOM order contractual at every breakpoint.
+      on `UXD-001` and `UXD-006`) Delivered in slices, because a single
+      candidate rewriting the 726-line shell, `people-profile.ts`, and the
+      stylesheet at once would be unreviewable and the `?section=` contract must
+      stay provable at every step.
+  - [x] **UXD-002A — Hero.** (§7.1) Absorbs the lifecycle panel, the
+        due-information card, the identity-summary card, and the back link.
+        Breadcrumb, vital-stats strip, tags, archived banner. Every id the
+        browser flows drive survives, so eight specs needed no change.
+  - [ ] **UXD-002A2 — Overflow menu.** (§7.1) Move the five lifecycle controls
+        and Audit history behind `⋯`. Deferred from A because hiding them
+        requires an open-the-menu step in eight cataloged flows: `app-004a`,
+        `app-004b`, `app-004c`, `app-004d`, `app-006a`, `app-006b`, `app-007b`,
+        and `app-009b`. Use one idempotent helper per spec, modelled on the
+        `openMemberPopover` helper `UXD-007` established.
+  - [ ] **UXD-002B — Profile-facts rail.** (§7.2) Nine compact sticky blocks,
+        empty ones collapsing to one muted row. Also wires `?include=summary`
+        from `UXD-013`, which fills the age, work, and first-met vital-stat
+        slots that render honest empty values today.
+  - [ ] **UXD-002C — Streams and zone filter.** (§7.3, §7.4, §7.5) Thirteen
+        sections into four groups, the segmented filter, the section-to-zone
+        map, and the breakpoint collapse order. Also decides what happens to the
+        audit-summary section's own audit link, and whether the section tuple's
+        load-mode field is real metadata or dead weight, per `REL-018`.
+
 - [ ] **UXD-003 — Staged loading.** (§9.2, §9.3; effort M; the prefetch
       deletions are independent, zone laziness depends on `UXD-002`)
   - [ ] Delete the duplicate contact-methods fetch, the gifts prefetch, and the
