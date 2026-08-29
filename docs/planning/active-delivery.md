@@ -558,8 +558,20 @@ asserts, so it runs that spec on its candidate.
         and delete the help and what-is-new stub.
   - [ ] Move sign out and the workspace switcher into the member popover so
         header height stops changing between accounts.
-  - [ ] Widen the person workspace frame to the header width and give the two
-        always-open forms the same `hidden` behavior as the other twenty.
+  - [ ] Widen the person workspace frame to the header width.
+- [ ] **UXD-007B — Give the reminder and cadence editors the shared add-form
+      pattern.** (§6.8, §7.7; effort M; split out of `UXD-007`; no dependency)
+  - [ ] The review asks for the `hidden` attribute on the two always-open forms
+        so all twenty-two behave identically. Adding the attribute alone would
+        strand them: unlike the other twenty sections these two have no add
+        button, and `apps/web/src/lib/reminders.ts` never toggles their
+        visibility, so a hidden form would be unreachable.
+  - [ ] Deliver the same add-button, hidden-form, and focus behavior the other
+        sections already use, and update the `PLANNING-002` browser flow that
+        drives those forms directly.
+  - [ ] Split out of `UXD-007` because it changes a delivered P0 flow's UI and
+        needs its own browser evidence, which is not a same-day quick win.
+
 - [ ] **UXD-010 — Remove dead dependencies and amend the component clause.**
       (§10.6; effort S; no dependency)
   - [ ] Remove the React, Tailwind, shadcn, and related unused packages from the
