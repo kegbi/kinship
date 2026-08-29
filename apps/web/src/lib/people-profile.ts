@@ -9,6 +9,7 @@ import {
   type ProblemDetails,
   recordPersonView,
   restorePerson,
+  type SessionContext,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 import { mountImportantDates } from "./important-dates.ts";
@@ -33,6 +34,7 @@ interface ProfileElements {
   readonly heading: HTMLElement;
   readonly partial: HTMLElement;
   readonly ready: HTMLElement;
+  readonly sectionNotice: HTMLElement;
   readonly sections: HTMLElement;
   readonly self: HTMLElement;
   readonly state: HTMLElement;
@@ -40,6 +42,11 @@ interface ProfileElements {
 }
 
 type ProfileState = "forbidden" | "not-found" | "unavailable";
+
+interface SectionNavigationContext {
+  readonly hiddenSectionIds: ReadonlySet<string>;
+  memberRole: SessionContext["member"]["role"];
+}
 
 interface LifecycleElements {
   readonly archive: HTMLButtonElement;
@@ -77,6 +84,9 @@ function elements(): ProfileElements | undefined {
     "#person-profile-partial",
   );
   const ready = document.querySelector<HTMLElement>("#person-profile-ready");
+  const sectionNotice = document.querySelector<HTMLElement>(
+    "#person-profile-section-notice",
+  );
   const sections = document.querySelector<HTMLElement>(
     "#person-profile-sections",
   );
@@ -84,7 +94,9 @@ function elements(): ProfileElements | undefined {
   const state = document.querySelector<HTMLElement>("#person-profile-state");
   const tags = document.querySelector<HTMLUListElement>("#person-profile-tags");
   return archived && avatar && deceased && description && due && favorite &&
-      heading && partial && ready && sections && self && state && tags
+      heading && partial && ready && sectionNotice && sections && self &&
+      state &&
+      tags
     ? {
       archived,
       avatar,
@@ -95,6 +107,7 @@ function elements(): ProfileElements | undefined {
       heading,
       partial,
       ready,
+      sectionNotice,
       sections,
       self,
       state,
@@ -228,6 +241,71 @@ function section(id: string | null): HTMLElement | undefined {
     .find((candidate) => candidate.dataset.profileSection === id);
 }
 
+function sectionLink(
+  profile: ProfileElements,
+  id: string,
+): HTMLAnchorElement | undefined {
+  return [...profile.sections.querySelectorAll<HTMLAnchorElement>(
+    "[data-section-link]",
+  )].find((link) => link.dataset.sectionLink === id);
+}
+
+function clearCurrentSection(profile: ProfileElements): void {
+  for (
+    const link of profile.sections.querySelectorAll<HTMLAnchorElement>(
+      "[data-section-link]",
+    )
+  ) {
+    link.removeAttribute("aria-current");
+  }
+}
+
+function clearSectionNotice(profile: ProfileElements): void {
+  profile.sectionNotice.hidden = true;
+  delete profile.sectionNotice.dataset.sectionNotice;
+  profile.sectionNotice.replaceChildren();
+}
+
+function showHiddenSectionNotice(
+  profile: ProfileElements,
+  id: string,
+  link: HTMLAnchorElement,
+  memberRole: SessionContext["member"]["role"],
+): void {
+  const title = link.textContent!.trim();
+  profile.sectionNotice.replaceChildren(
+    `${title} — turned off for this workspace.`,
+  );
+  if (memberRole === "owner" || memberRole === "admin") {
+    const personalization = document.createElement("a");
+    personalization.href =
+      "/app/settings/personalization?section=profile-modules";
+    personalization.textContent = "Open personalization";
+    profile.sectionNotice.append(" ", personalization);
+  } else {
+    profile.sectionNotice.append(
+      " A workspace owner or admin can turn this section back on.",
+    );
+  }
+  profile.sectionNotice.dataset.sectionNotice = id;
+  profile.sectionNotice.hidden = false;
+}
+
+function renderSectionNavigation(
+  profile: ProfileElements,
+  hiddenSectionIds: ReadonlySet<string>,
+): void {
+  for (
+    const link of profile.sections.querySelectorAll<HTMLAnchorElement>(
+      "[data-section-link]",
+    )
+  ) {
+    link.closest<HTMLElement>("li")!.hidden = hiddenSectionIds.has(
+      link.dataset.sectionLink!,
+    );
+  }
+}
+
 function hasMeaningfulInteractiveFocus(): boolean {
   const active = document.activeElement;
   return active instanceof HTMLElement && active.isConnected &&
@@ -237,20 +315,39 @@ function hasMeaningfulInteractiveFocus(): boolean {
 }
 
 function focusSection(
+  profile: ProfileElements,
+  navigation: SectionNavigationContext,
   id: string | null,
   preserveInteractiveFocus = false,
 ): boolean {
   const target = section(id);
-  if (!target || target.hidden) return false;
+  if (!target) {
+    clearSectionNotice(profile);
+    return false;
+  }
+  const link = sectionLink(profile, id!)!;
+  if (navigation.hiddenSectionIds.has(id!)) {
+    clearCurrentSection(profile);
+    if (profile.sectionNotice.dataset.sectionNotice !== id) {
+      showHiddenSectionNotice(profile, id!, link, navigation.memberRole);
+    }
+    if (preserveInteractiveFocus && hasMeaningfulInteractiveFocus()) {
+      return true;
+    }
+    profile.sectionNotice.focus({ preventScroll: true });
+    return true;
+  }
+  clearSectionNotice(profile);
+  if (target.hidden) return false;
   for (
-    const link of document.querySelectorAll<HTMLAnchorElement>(
+    const candidate of profile.sections.querySelectorAll<HTMLAnchorElement>(
       "[data-section-link]",
     )
   ) {
-    if (link.dataset.sectionLink === id) {
-      link.setAttribute("aria-current", "location");
+    if (candidate === link) {
+      candidate.setAttribute("aria-current", "location");
     } else {
-      link.removeAttribute("aria-current");
+      candidate.removeAttribute("aria-current");
     }
   }
   if (preserveInteractiveFocus && hasMeaningfulInteractiveFocus()) return true;
@@ -265,21 +362,26 @@ function currentSection(): string | null {
 
 function reconcileSectionLocation(
   profile: ProfileElements,
+  navigation: SectionNavigationContext,
   preserveInteractiveFocus = false,
 ): void {
-  if (focusSection(currentSection(), preserveInteractiveFocus)) return;
-  for (
-    const link of document.querySelectorAll<HTMLAnchorElement>(
-      "[data-section-link]",
+  if (
+    focusSection(
+      profile,
+      navigation,
+      currentSection(),
+      preserveInteractiveFocus,
     )
-  ) {
-    link.removeAttribute("aria-current");
-  }
+  ) return;
+  clearCurrentSection(profile);
   if (preserveInteractiveFocus && hasMeaningfulInteractiveFocus()) return;
   profile.heading.focus({ preventScroll: true });
 }
 
-function mountSectionNavigation(profile: ProfileElements): void {
+function mountSectionNavigation(
+  profile: ProfileElements,
+  navigation: SectionNavigationContext,
+): void {
   profile.sections.addEventListener("click", (event) => {
     const link = (event.target as Element | null)?.closest<HTMLAnchorElement>(
       "[data-section-link]",
@@ -290,10 +392,10 @@ function mountSectionNavigation(profile: ProfileElements): void {
     const url = new URL(globalThis.location.href);
     url.searchParams.set("section", id);
     globalThis.history.pushState({}, "", url);
-    focusSection(id);
+    focusSection(profile, navigation, id);
   });
   globalThis.addEventListener("popstate", () => {
-    reconcileSectionLocation(profile);
+    reconcileSectionLocation(profile, navigation);
   });
 }
 
@@ -328,6 +430,7 @@ function renderReady(
   dueInformation: { readonly detail: string },
   status: "archived" | "ready",
   workspaceId: string,
+  navigation: SectionNavigationContext,
 ): void {
   const name = displayName(person);
   profile.heading.textContent = name;
@@ -366,10 +469,8 @@ function renderReady(
       : "None recorded";
   }
   renderTags(profile.tags, person);
-  profile.tags.hidden =
-    person.profileSections?.some((section) =>
-      section.id === "tags" && section.status === "hidden"
-    ) === true;
+  profile.tags.hidden = navigation.hiddenSectionIds.has("tags");
+  renderSectionNavigation(profile, navigation.hiddenSectionIds);
   profile.state.hidden = true;
   profile.ready.hidden = false;
   const vcard = document.querySelector<HTMLAnchorElement>(
@@ -382,7 +483,9 @@ function renderReady(
     vcard.hidden = false;
   }
   document.title = `${name} — Kinship`;
-  if (!focusSection(currentSection())) profile.heading.focus();
+  if (!focusSection(profile, navigation, currentSection())) {
+    profile.heading.focus();
+  }
 }
 
 function renderLifecycleState(
@@ -670,7 +773,12 @@ export async function mountPeopleProfile(): Promise<void> {
     renderState(profile, "not-found");
     return;
   }
-  mountSectionNavigation(profile);
+  const hiddenSectionIds = new Set<string>();
+  const sectionNavigation: SectionNavigationContext = {
+    hiddenSectionIds,
+    memberRole: "member",
+  };
+  mountSectionNavigation(profile, sectionNavigation);
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") {
     renderState(
@@ -690,12 +798,19 @@ export async function mountPeopleProfile(): Promise<void> {
     renderState(profile, problemState(result.problem));
     return;
   }
+  for (const section of result.value.person.profileSections ?? []) {
+    if (section.status === "hidden") {
+      hiddenSectionIds.add(section.id);
+    }
+  }
+  sectionNavigation.memberRole = session.session.member.role;
   renderReady(
     profile,
     result.value.person,
     result.value.dueInformation,
     result.value.status,
     session.session.workspace.id,
+    sectionNavigation,
   );
   void recordPersonView(id, session.session.workspace.id).catch(() =>
     undefined
@@ -723,9 +838,7 @@ export async function mountPeopleProfile(): Promise<void> {
       id,
       session.session.workspace.id,
       result.value.status === "archived",
-      result.value.person.profileSections?.some((section) =>
-        section.id === "relationships" && section.status === "hidden"
-      ) === true,
+      sectionNavigation.hiddenSectionIds.has("relationships"),
       result.value.person.updatedAt,
     ),
     mountPersonInteractions(
@@ -733,19 +846,13 @@ export async function mountPeopleProfile(): Promise<void> {
       session.session.workspace.id,
       result.value.status === "archived",
       {
-        activities: result.value.person.profileSections?.some((section) =>
-          section.id === "activities" && section.status === "hidden"
-        ) === true,
-        notes: result.value.person.profileSections?.some((section) =>
-          section.id === "notes" && section.status === "hidden"
-        ) === true,
+        activities: sectionNavigation.hiddenSectionIds.has("activities"),
+        notes: sectionNavigation.hiddenSectionIds.has("notes"),
       },
     ),
     mountTaskSurface({
       archived: result.value.status === "archived",
-      hidden: result.value.person.profileSections?.some((section) =>
-        section.id === "tasks" && section.status === "hidden"
-      ) === true,
+      hidden: sectionNavigation.hiddenSectionIds.has("tasks"),
       personId: id,
       workspaceId: session.session.workspace.id,
     }),
@@ -767,24 +874,18 @@ export async function mountPeopleProfile(): Promise<void> {
     mountPersonLifeEvents(
       id,
       session.session.workspace.id,
-      result.value.person.profileSections?.some((section) =>
-        section.id === "life-events" && section.status === "hidden"
-      ) === true,
+      sectionNavigation.hiddenSectionIds.has("life-events"),
     ),
     mountCommunications(
       id,
       session.session.workspace.id,
       result.value.status === "archived",
       {
-        calls: result.value.person.profileSections?.some((section) =>
-          section.id === "calls" && section.status === "hidden"
-        ) === true,
-        conversations: result.value.person.profileSections?.some((section) =>
-          section.id === "conversations" && section.status === "hidden"
-        ) === true,
+        calls: sectionNavigation.hiddenSectionIds.has("calls"),
+        conversations: sectionNavigation.hiddenSectionIds.has("conversations"),
       },
     ),
     mountPersonAuditSummary(id, session.session.workspace.id),
   ]);
-  reconcileSectionLocation(profile, true);
+  reconcileSectionLocation(profile, sectionNavigation, true);
 }

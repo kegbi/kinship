@@ -1790,6 +1790,36 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
   background: #ece5d8;
 }
 
+.profile-section-notice {
+  margin: .75rem .7rem .25rem;
+  padding: .75rem;
+  border: 1px solid rgb(123 79 27 / 25%);
+  border-radius: .65rem;
+  color: #573813;
+  background: #fff4dc;
+}
+
+.profile-section-notice:focus {
+  outline: none;
+  outline-offset: 0;
+  box-shadow:
+    inset 0 0 0 2px white,
+    inset 0 0 0 5px #a44730;
+}
+
+@media (forced-colors: active) {
+  .profile-section-notice:focus {
+    outline: 3px solid Highlight;
+    outline-offset: -3px;
+    box-shadow: none;
+  }
+}
+
+.profile-section-notice a {
+  color: inherit;
+  font-weight: 800;
+}
+
 .profile-section-list {
   display: grid;
   gap: 1rem;

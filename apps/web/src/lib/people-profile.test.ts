@@ -55,9 +55,12 @@ function markup(path = `/app/people/${personId}`): void {
         </form>
       </dialog>
       <nav id="person-profile-sections">
-        <a href="?section=important-dates" data-section-link="important-dates">Important dates</a>
-        <a href="?section=documents" data-section-link="documents">Documents</a>
-        <a href="?section=photos" data-section-link="photos">Photos</a>
+        <ul>
+          <li><a href="?section=important-dates" data-section-link="important-dates">Important dates</a></li>
+          <li><a href="?section=documents" data-section-link="documents">Documents</a></li>
+          <li><a href="?section=photos" data-section-link="photos">Photos</a></li>
+        </ul>
+        <p id="person-profile-section-notice" role="status" tabindex="-1" hidden></p>
       </nav>
       <section id="profile-section-important-dates" data-profile-section="important-dates" tabindex="-1"><h2>Important dates</h2></section>
       <section id="profile-section-documents" data-profile-section="documents" data-load-mode="independent" tabindex="-1"><h2>Documents</h2></section>
@@ -66,7 +69,7 @@ function markup(path = `/app/people/${personId}`): void {
 }
 
 function interactionSectionMarkup(): void {
-  document.querySelector("#person-profile-sections")?.insertAdjacentHTML(
+  document.querySelector("#person-profile-sections ul")?.insertAdjacentHTML(
     "beforeend",
     `<li><a href="?section=activities" data-section-link="activities">Activities</a></li>
      <li><a href="?section=notes" data-section-link="notes">Notes</a></li>`,
@@ -85,9 +88,9 @@ function interactionSectionMarkup(): void {
 }
 
 function reminderSectionMarkup(): void {
-  document.querySelector("#person-profile-sections")?.insertAdjacentHTML(
+  document.querySelector("#person-profile-sections ul")?.insertAdjacentHTML(
     "beforeend",
-    `<a href="?section=reminders" data-section-link="reminders">Reminders</a>`,
+    `<li><a href="?section=reminders" data-section-link="reminders">Reminders</a></li>`,
   );
   document.querySelector("#person-profile-ready")?.insertAdjacentHTML(
     "beforeend",
@@ -221,6 +224,12 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("[APP-003C] renders orientation first and focuses stable section deep links", async () => {
     markup(`/app/people/${personId}?section=documents`);
+    document.querySelector("#person-profile-ready")?.insertAdjacentHTML(
+      "afterbegin",
+      `<span data-profile-field="gender"></span>
+       <p data-profile-last-contact></p>
+       <a id="person-export-vcard" hidden></a>`,
+    );
     vi.stubGlobal(
       "fetch",
       vi.fn()
@@ -233,14 +242,20 @@ describe("PEOPLE-001 canonical person identity shell", () => {
           person: {
             description: "Mathematician and correspondent.",
             familyName: "Lovelace",
+            gender: "Woman",
             givenName: "Ada",
             id: personId,
             isDeceased: true,
             isPartial: false,
             isSelf: false,
             isStarred: true,
-            tagCount: 0,
-            tags: [],
+            lastContactAt: "2026-08-14T08:00:00.000Z",
+            profileSections: [{ id: "documents", status: "ready" }],
+            tagCount: 2,
+            tags: [{
+              id: "00000000-0000-4000-8000-000000000230",
+              name: "Mathematics",
+            }],
             updatedAt: "2026-08-15T08:00:00.000Z",
           },
           status: "ready",
@@ -259,9 +274,22 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     ).toBe(false);
     expect(document.querySelector("#person-profile-due-state")?.textContent)
       .toContain("planning");
+    expect(document.querySelector('[data-profile-field="gender"]')?.textContent)
+      .toBe("Woman");
+    expect(document.querySelector("[data-profile-last-contact]")?.textContent)
+      .not.toBe("None recorded");
+    expect(document.querySelector("#person-profile-tags")?.textContent)
+      .toContain("+1 more");
+    expect(
+      document.querySelector<HTMLAnchorElement>("#person-export-vcard")?.href,
+    ).toContain(`/api/v1/people/${personId}/vcard`);
     expect(document.activeElement).toBe(
       document.querySelector("#profile-section-documents"),
     );
+    expect(
+      document.querySelector<HTMLElement>("#person-profile-section-notice")
+        ?.hidden,
+    ).toBe(true);
 
     document.querySelector<HTMLAnchorElement>(
       '[data-section-link="photos"]',
@@ -270,6 +298,146 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(document.activeElement).toBe(
       document.querySelector("#profile-section-photos"),
     );
+  });
+
+  it("UXD-006 explains an admin deep link to a personalization-hidden section", async () => {
+    markup(`/app/people/${personId}?section=documents`);
+    reminderSectionMarkup();
+    let releaseSecondary!: (value: Response) => void;
+    const pendingSecondary = new Promise<Response>((resolve) => {
+      releaseSecondary = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response({
+          ...session,
+          member: { ...session.member, role: "admin" },
+        }))
+        .mockResolvedValueOnce(response({
+          dueInformation: {
+            detail: "No due information.",
+            status: "unavailable",
+          },
+          person: {
+            givenName: "Ada",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            profileSections: [{ id: "documents", status: "hidden" }],
+            tagCount: 1,
+            tags: [{
+              id: "00000000-0000-4000-8000-000000000230",
+              name: "Friend",
+            }],
+            updatedAt: "2026-08-15T08:00:00.000Z",
+          },
+          status: "ready",
+        }))
+        .mockImplementation((url, init) =>
+          init?.method === "POST" && String(url).endsWith("/view")
+            ? Promise.resolve(response({ status: "recorded" }))
+            : pendingSecondary
+        ),
+    );
+
+    const mounting = mountPeopleProfile();
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector("[data-person-audit-state]")?.textContent,
+      ).toContain("Loading")
+    );
+    expect(
+      document.querySelector<HTMLAnchorElement>(
+        '[data-section-link="documents"]',
+      )?.closest<HTMLElement>("li")?.hidden,
+    ).toBe(true);
+    const notice = document.querySelector<HTMLElement>(
+      "#person-profile-section-notice",
+    );
+    expect(notice?.getAttribute("role")).toBe("status");
+    expect(notice?.hidden).toBe(false);
+    expect(notice?.textContent).toContain(
+      "Documents — turned off for this workspace.",
+    );
+    expect(notice?.querySelector("a")?.textContent).toBe(
+      "Open personalization",
+    );
+    expect(notice?.querySelector("a")?.getAttribute("href")).toBe(
+      "/app/settings/personalization?section=profile-modules",
+    );
+    expect(document.activeElement).toBe(notice);
+    const personalization = notice?.querySelector<HTMLAnchorElement>("a");
+    personalization?.focus();
+    releaseSecondary(undefined as never);
+    await mounting;
+    expect(document.activeElement).toBe(personalization);
+  });
+
+  it("UXD-006 does not describe a DOM-hidden visible module as turned off", async () => {
+    markup(`/app/people/${personId}?section=documents`);
+    reminderSectionMarkup();
+    document.querySelector<HTMLElement>(
+      '[data-profile-section="documents"]',
+    )!.hidden = true;
+    let resolveAudit!: (response: Response) => void;
+    const delayedAudit = new Promise<Response>((resolve) => {
+      resolveAudit = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockResolvedValueOnce(response({
+          dueInformation: {
+            detail: "No due information.",
+            status: "unavailable",
+          },
+          person: {
+            givenName: "Ada",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            profileSections: [{ id: "documents", status: "ready" }],
+            tagCount: 0,
+            tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
+          },
+          status: "ready",
+        }))
+        .mockImplementation((url, init) => {
+          if (init?.method === "POST" && String(url).endsWith("/view")) {
+            return Promise.resolve(response({ status: "recorded" }));
+          }
+          return String(url).includes("/audit")
+            ? delayedAudit
+            : Promise.resolve(undefined as never);
+        }),
+    );
+
+    const mounting = mountPeopleProfile();
+    await vi.waitFor(() =>
+      expect(document.querySelector("[data-person-audit-state]")?.textContent)
+        .toContain("Loading")
+    );
+    const notice = document.querySelector<HTMLElement>(
+      "#person-profile-section-notice",
+    );
+    expect(notice?.hidden).toBe(true);
+    expect(document.activeElement).toBe(
+      document.querySelector("#person-profile-name"),
+    );
+
+    const edit = document.querySelector<HTMLButtonElement>("#person-edit-open");
+    edit?.focus();
+    resolveAudit(response({ items: [], status: "ready" }));
+    await mounting;
+    expect(document.activeElement).toBe(edit);
+    expect(notice?.hidden).toBe(true);
   });
 
   it("PLANNING-002 does not steal reminder form focus after delayed profile reconciliation", async () => {
@@ -372,6 +540,10 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(document.querySelectorAll("[data-section-link][aria-current]"))
       .toHaveLength(0);
     expect(document.activeElement).toBe(heading);
+    expect(
+      document.querySelector<HTMLElement>("#person-profile-section-notice")
+        ?.hidden,
+    ).toBe(true);
 
     history.replaceState({}, "", `?section=not-a-section`);
     document.querySelector<HTMLAnchorElement>(
@@ -384,9 +556,13 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(document.querySelectorAll("[data-section-link][aria-current]"))
       .toHaveLength(0);
     expect(document.activeElement).toBe(heading);
+    expect(
+      document.querySelector<HTMLElement>("#person-profile-section-notice")
+        ?.hidden,
+    ).toBe(true);
   });
 
-  it("INTERACTION-001 reconciles hidden interaction deep links before initial and history focus", async () => {
+  it("INTERACTION-001 / UXD-006 explains member hidden links and clears the notice for visible history", async () => {
     markup(`/app/people/${personId}?section=activities`);
     interactionSectionMarkup();
     vi.stubGlobal(
@@ -418,8 +594,24 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     );
 
     await mountPeopleProfile();
-    const heading = document.querySelector("#person-profile-name");
-    expect(document.activeElement).toBe(heading);
+    const notice = document.querySelector<HTMLElement>(
+      "#person-profile-section-notice",
+    );
+    expect(document.activeElement).toBe(notice);
+    expect(notice?.textContent).toContain(
+      "Activities — turned off for this workspace.",
+    );
+    expect(notice?.textContent).toContain(
+      "A workspace owner or admin can turn this section back on.",
+    );
+    expect(notice?.querySelector("a")).toBeNull();
+    const currentUrl = location.href;
+    expect(
+      notice?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      ),
+    ).toBe(true);
+    expect(location.href).toBe(currentUrl);
     expect(document.querySelectorAll("[data-section-link][aria-current]"))
       .toHaveLength(0);
 
@@ -429,9 +621,19 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(document.activeElement).toBe(
       document.querySelector('[data-profile-section="documents"]'),
     );
+    expect(notice?.hidden).toBe(true);
+    expect(
+      document.querySelector('[data-section-link="documents"]')?.getAttribute(
+        "aria-current",
+      ),
+    ).toBe("location");
     history.back();
     await vi.waitFor(() => expect(location.search).toBe("?section=notes"));
-    expect(document.activeElement).toBe(heading);
+    expect(document.activeElement).toBe(notice);
+    expect(notice?.hidden).toBe(false);
+    expect(notice?.textContent).toContain(
+      "Notes — turned off for this workspace.",
+    );
     expect(document.querySelectorAll("[data-section-link][aria-current]"))
       .toHaveLength(0);
     history.forward();
@@ -439,6 +641,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(document.activeElement).toBe(
       document.querySelector('[data-profile-section="documents"]'),
     );
+    expect(notice?.hidden).toBe(true);
   });
 
   it("renders explicit not-found, forbidden, and unavailable states", async () => {
