@@ -25,37 +25,68 @@ function markup(path = `/app/people/${personId}`): void {
   document.body.innerHTML = `
     <section id="person-profile-state" tabindex="-1"><h1>Opening person…</h1></section>
     <section id="person-profile-ready" hidden>
-      <h1 id="person-profile-name" tabindex="-1"></h1>
-      <div id="person-profile-avatar"></div>
-      <p id="person-profile-archived" hidden></p>
-      <p id="person-profile-partial" hidden></p>
-      <p id="person-profile-favorite" hidden></p>
-      <p id="person-profile-deceased" hidden></p>
-      <p id="person-profile-self" hidden></p>
-      <p data-profile-description></p>
-      <ul id="person-profile-tags"></ul>
-      <span data-profile-field="givenName"></span>
-      <span data-profile-field="middleName"></span>
-      <span data-profile-field="familyName"></span>
-      <span data-profile-field="nickname"></span>
-      <p id="person-profile-due-state"></p>
-      <button id="person-edit-open" type="button">Edit person</button>
-      <button id="person-archive" type="button">Archive person</button>
-      <button id="person-restore" type="button" hidden>Restore person</button>
-      <button id="person-delete-open" type="button">Delete person</button>
-      <p id="person-lifecycle-status"></p>
-      <form id="person-edit-form" hidden>
-        <input name="givenName"><input name="middleName"><input name="familyName"><input name="nickname"><input name="isPartial" type="checkbox">
-        <button type="submit">Save person</button><button id="person-edit-cancel" type="button">Cancel edit</button>
-      </form>
-      <dialog id="person-delete-dialog">
-        <form id="person-delete-form">
-          <p id="person-delete-impact"></p><input id="person-delete-confirmation">
-          <button type="submit">Confirm delete</button><button id="person-delete-cancel" type="button">Cancel delete</button>
+      <header class="person-profile-hero">
+        <nav aria-label="Breadcrumb">
+          <a href="/app/people">People</a><span aria-hidden="true">/</span>
+          <span data-person-breadcrumb-name></span>
+        </nav>
+        <div id="person-profile-avatar"></div>
+        <div>
+          <h1 id="person-profile-name" tabindex="-1"></h1>
+          <p id="person-profile-nickname" hidden></p>
+          <div class="person-profile-badges" role="group" aria-label="Person states">
+            <p class="state-badge calm">Identity saved</p>
+            <p id="person-profile-favorite" hidden></p>
+            <p id="person-profile-self" hidden></p>
+            <p id="person-profile-deceased" hidden></p>
+            <p id="person-profile-archived" hidden></p>
+            <p id="person-profile-partial" hidden></p>
+          </div>
+          <p data-profile-description></p>
+        </div>
+        <div data-person-profile-actions role="group" aria-label="Person actions">
+          <button data-person-interaction-capture data-quick-capture data-interaction-intended-kind="activity" type="button">Log interaction</button>
+          <button data-person-interaction-capture data-quick-capture data-interaction-intended-kind="note" type="button">Add note</button>
+          <button id="person-edit-open" type="button">Edit person</button>
+          <a id="person-export-vcard" hidden>Export vCard</a>
+          <button id="person-archive" type="button">Archive person</button>
+          <button id="person-delete-open" type="button">Delete person</button>
+        </div>
+        <dl data-person-vital-stats>
+          <div><dt>Age or birthday</dt><dd><a href="?section=important-dates" data-person-vital-value="birthday">Loading…</a></dd></div>
+          <div><dt>Last contact</dt><dd><a href="?section=activities" data-profile-last-contact>Loading…</a></dd></div>
+          <div><dt>Next reminder</dt><dd><a href="?section=reminders" data-person-vital-value="next-reminder">Loading…</a></dd></div>
+          <div><dt>Stay in touch</dt><dd><a href="?section=stay-in-touch"><span id="person-profile-due-state"></span></a></dd></div>
+          <div><dt>Work</dt><dd><a href="?section=work" data-person-vital-value="work">Loading…</a></dd></div>
+          <div><dt>First met</dt><dd><a href="?section=first-meeting" data-person-vital-value="first-meeting">Loading…</a></dd></div>
+        </dl>
+        <div data-profile-fact-section="tags">
+          <ul id="person-profile-tags"></ul>
+        </div>
+        <p id="person-lifecycle-status"></p>
+        <form id="person-edit-form" data-profile-section="identity-summary" hidden>
+          <span data-profile-field="givenName"></span>
+          <span data-profile-field="middleName"></span>
+          <span data-profile-field="familyName"></span>
+          <span data-profile-field="nickname"></span>
+          <span data-profile-field="gender"></span>
+          <input name="givenName"><input name="middleName"><input name="familyName"><input name="nickname"><input name="isPartial" type="checkbox">
+          <button type="submit">Save person</button><button id="person-edit-cancel" type="button">Cancel edit</button>
         </form>
-      </dialog>
+        <dialog id="person-delete-dialog">
+          <form id="person-delete-form">
+            <p id="person-delete-impact"></p><input id="person-delete-confirmation">
+            <button type="submit">Confirm delete</button><button id="person-delete-cancel" type="button">Cancel delete</button>
+          </form>
+        </dialog>
+      </header>
+      <aside data-person-archived-banner hidden>
+        <p>This person is archived. Editing is disabled.</p>
+        <button id="person-restore" type="button">Restore person</button>
+      </aside>
       <nav id="person-profile-sections">
         <ul>
+          <li><a href="?section=identity-summary" data-section-link="identity-summary">Identity summary</a></li>
           <li><a href="?section=important-dates" data-section-link="important-dates">Important dates</a></li>
           <li><a href="?section=documents" data-section-link="documents">Documents</a></li>
           <li><a href="?section=photos" data-section-link="photos">Photos</a></li>
@@ -115,6 +146,80 @@ afterEach(() => {
 });
 
 describe("PEOPLE-001 canonical person identity shell", () => {
+  it("UXD-002A names the breadcrumb and renders honest vital-stat values", async () => {
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockResolvedValueOnce(response({
+          dueInformation: {
+            detail: "1 open task; next reminder tomorrow; stay in touch soon.",
+            nextReminderAt: "2026-08-30T09:00:00.000Z",
+            openTaskCount: 1,
+            status: "ready",
+            stayInTouchAt: "2026-09-01T09:00:00.000Z",
+          },
+          person: {
+            familyName: "Lovelace",
+            givenName: "Ada",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            lastContactAt: "2026-08-29T09:00:00.000Z",
+            nickname: "Enchantress of Numbers",
+            tagCount: 0,
+            tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
+          },
+          status: "ready",
+        })),
+    );
+
+    await mountPeopleProfile();
+
+    expect(document.querySelector("[data-person-breadcrumb-name]")?.textContent)
+      .toBe("Ada Lovelace");
+    expect(document.querySelector("#person-profile-nickname")?.textContent)
+      .toBe("“Enchantress of Numbers”");
+    const badges = document.querySelector<HTMLElement>(
+      ".person-profile-badges",
+    );
+    expect(badges?.getAttribute("role")).toBe("group");
+    expect(badges?.getAttribute("aria-label")).toBe("Person states");
+    const identitySaved = [...badges!.querySelectorAll<HTMLElement>("p")]
+      .find((badge) => badge.textContent === "Identity saved");
+    expect(identitySaved?.className).toBe("state-badge calm");
+    expect(identitySaved?.hidden).toBe(false);
+    expect(
+      document.querySelector('[data-person-vital-value="birthday"]')
+        ?.textContent,
+    ).toBe("Not recorded");
+    expect(
+      document.querySelector('[data-person-vital-value="next-reminder"]')
+        ?.textContent,
+    ).not.toBe("Not recorded");
+    expect(
+      document.querySelector('[data-person-vital-value="work"]')?.textContent,
+    ).toBe("Not recorded");
+    expect(
+      document.querySelector('[data-person-vital-value="first-meeting"]')
+        ?.textContent,
+    ).toBe("Not recorded");
+    expect(
+      document.querySelector("[data-person-vital-stats]")?.contains(
+        document.querySelector("#person-profile-due-state"),
+      ),
+    ).toBe(true);
+    expect(
+      document.querySelector<HTMLElement>("[data-person-archived-banner]")
+        ?.hidden,
+    ).toBe(true);
+    expect(document.querySelector("[data-person-audit-history]")).toBeNull();
+  });
+
   it("loads a partial identity through the generated active-workspace client", async () => {
     markup();
     reminderSectionMarkup();
@@ -220,16 +325,15 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(
       document.querySelector<HTMLElement>("#person-profile-tags")?.hidden,
     ).toBe(true);
+    expect(
+      document.querySelector<HTMLElement>(
+        '[data-profile-fact-section="tags"]',
+      )?.hidden,
+    ).toBe(true);
   });
 
   it("[APP-003C] renders orientation first and focuses stable section deep links", async () => {
     markup(`/app/people/${personId}?section=documents`);
-    document.querySelector("#person-profile-ready")?.insertAdjacentHTML(
-      "afterbegin",
-      `<span data-profile-field="gender"></span>
-       <p data-profile-last-contact></p>
-       <a id="person-export-vcard" hidden></a>`,
-    );
     vi.stubGlobal(
       "fetch",
       vi.fn()
@@ -298,6 +402,49 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(document.activeElement).toBe(
       document.querySelector("#profile-section-photos"),
     );
+  });
+
+  it("UXD-002A opens and focuses the edit affordance for the absorbed identity deep link", async () => {
+    markup(`/app/people/${personId}?section=identity-summary`);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockResolvedValueOnce(response({
+          dueInformation: {
+            detail: "No due information.",
+            openTaskCount: 0,
+            status: "ready",
+          },
+          person: {
+            familyName: "Lovelace",
+            givenName: "Ada",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            tagCount: 0,
+            tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
+          },
+          status: "ready",
+        })),
+    );
+
+    await mountPeopleProfile();
+
+    const editForm = document.querySelector<HTMLFormElement>(
+      "#person-edit-form",
+    )!;
+    expect(editForm.hidden).toBe(false);
+    expect(document.activeElement).toBe(
+      editForm.elements.namedItem("givenName"),
+    );
+    expect(
+      document.querySelector('[data-section-link="identity-summary"]')
+        ?.getAttribute("aria-current"),
+    ).toBe("location");
   });
 
   it("UXD-006 explains an admin deep link to a personalization-hidden section", async () => {
@@ -685,7 +832,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
   });
 
   it("distinguishes an archived canonical person as read-only", async () => {
-    markup();
+    markup(`/app/people/${personId}?section=identity-summary`);
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response(session))
       .mockResolvedValueOnce(response({
@@ -716,6 +863,20 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         "hidden",
       ),
     ).toBe(false);
+    const banner = document.querySelector<HTMLElement>(
+      "[data-person-archived-banner]",
+    );
+    expect(banner?.hidden).toBe(false);
+    expect(banner?.textContent).toContain(
+      "This person is archived. Editing is disabled.",
+    );
+    expect(banner?.querySelector("#person-restore")).not.toBeNull();
+    expect(
+      document.querySelector<HTMLFormElement>("#person-edit-form")?.hidden,
+    ).toBe(true);
+    expect(document.activeElement).toBe(
+      document.querySelector("#person-profile-name"),
+    );
     expect(
       fetchMock.mock.calls.some(([url, init]) =>
         init?.method === "POST" && String(url).endsWith("/view")
@@ -804,6 +965,10 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       expect(document.querySelector<HTMLElement>("#person-restore")?.hidden)
         .toBe(false)
     );
+    expect(
+      document.querySelector<HTMLElement>("[data-person-archived-banner]")
+        ?.hidden,
+    ).toBe(false);
     expect(JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body))).toEqual({
       expectedUpdatedAt: factRevision,
     });
@@ -820,6 +985,10 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       expect(document.querySelector<HTMLElement>("#person-edit-open")?.hidden)
         .toBe(false)
     );
+    expect(
+      document.querySelector<HTMLElement>("[data-person-archived-banner]")
+        ?.hidden,
+    ).toBe(true);
     expect(lifecycleEvents[1]).toEqual({
       archived: false,
       personId,

@@ -4,6 +4,7 @@ import {
   editPerson,
   getPerson,
   getPersonDeletionImpact,
+  type PersonDueInformation,
   type PersonIdentity,
   type PersonProfileIdentity,
   type ProblemDetails,
@@ -26,12 +27,15 @@ import { mountPersonLifeEvents } from "./person-life-events.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
+  readonly archivedBanner: HTMLElement;
   readonly avatar: HTMLElement;
+  readonly breadcrumbName: HTMLElement;
   readonly deceased: HTMLElement;
   readonly description: HTMLElement;
   readonly due: HTMLElement;
   readonly favorite: HTMLElement;
   readonly heading: HTMLElement;
+  readonly nickname: HTMLElement;
   readonly partial: HTMLElement;
   readonly ready: HTMLElement;
   readonly sectionNotice: HTMLElement;
@@ -39,6 +43,7 @@ interface ProfileElements {
   readonly self: HTMLElement;
   readonly state: HTMLElement;
   readonly tags: HTMLUListElement;
+  readonly tagsContainer: HTMLElement;
 }
 
 type ProfileState = "forbidden" | "not-found" | "unavailable";
@@ -68,7 +73,13 @@ function elements(): ProfileElements | undefined {
   const archived = document.querySelector<HTMLElement>(
     "#person-profile-archived",
   );
+  const archivedBanner = document.querySelector<HTMLElement>(
+    "[data-person-archived-banner]",
+  );
   const avatar = document.querySelector<HTMLElement>("#person-profile-avatar");
+  const breadcrumbName = document.querySelector<HTMLElement>(
+    "[data-person-breadcrumb-name]",
+  );
   const deceased = document.querySelector<HTMLElement>(
     "#person-profile-deceased",
   );
@@ -80,6 +91,9 @@ function elements(): ProfileElements | undefined {
     "#person-profile-favorite",
   );
   const heading = document.querySelector<HTMLElement>("#person-profile-name");
+  const nickname = document.querySelector<HTMLElement>(
+    "#person-profile-nickname",
+  );
   const partial = document.querySelector<HTMLElement>(
     "#person-profile-partial",
   );
@@ -93,18 +107,24 @@ function elements(): ProfileElements | undefined {
   const self = document.querySelector<HTMLElement>("#person-profile-self");
   const state = document.querySelector<HTMLElement>("#person-profile-state");
   const tags = document.querySelector<HTMLUListElement>("#person-profile-tags");
-  return archived && avatar && deceased && description && due && favorite &&
-      heading && partial && ready && sectionNotice && sections && self &&
-      state &&
-      tags
+  const tagsContainer = document.querySelector<HTMLElement>(
+    '[data-profile-fact-section="tags"]',
+  );
+  return archived && archivedBanner && avatar && breadcrumbName && deceased &&
+      description && due && favorite && heading && nickname && partial &&
+      ready && sectionNotice && sections && self && state && tags &&
+      tagsContainer
     ? {
       archived,
+      archivedBanner,
       avatar,
+      breadcrumbName,
       deceased,
       description,
       due,
       favorite,
       heading,
+      nickname,
       partial,
       ready,
       sectionNotice,
@@ -112,6 +132,7 @@ function elements(): ProfileElements | undefined {
       self,
       state,
       tags,
+      tagsContainer,
     }
     : undefined;
 }
@@ -338,6 +359,28 @@ function focusSection(
     return true;
   }
   clearSectionNotice(profile);
+  if (id === "identity-summary") {
+    const editOpen = document.querySelector<HTMLButtonElement>(
+      "#person-edit-open",
+    );
+    if (!editOpen || editOpen.hidden || editOpen.disabled) return false;
+    for (
+      const candidate of profile.sections.querySelectorAll<HTMLAnchorElement>(
+        "[data-section-link]",
+      )
+    ) {
+      if (candidate === link) {
+        candidate.setAttribute("aria-current", "location");
+      } else {
+        candidate.removeAttribute("aria-current");
+      }
+    }
+    if (preserveInteractiveFocus && hasMeaningfulInteractiveFocus()) {
+      return true;
+    }
+    editOpen.click();
+    return true;
+  }
   if (target.hidden) return false;
   for (
     const candidate of profile.sections.querySelectorAll<HTMLAnchorElement>(
@@ -427,13 +470,16 @@ function renderTags(
 function renderReady(
   profile: ProfileElements,
   person: PersonProfileIdentity,
-  dueInformation: { readonly detail: string },
+  dueInformation: PersonDueInformation,
   status: "archived" | "ready",
   workspaceId: string,
   navigation: SectionNavigationContext,
 ): void {
   const name = displayName(person);
   profile.heading.textContent = name;
+  profile.breadcrumbName.textContent = name;
+  profile.nickname.textContent = person.nickname ? `“${person.nickname}”` : "";
+  profile.nickname.hidden = !person.nickname;
   profile.avatar.textContent = initials(person);
   for (
     const field of [
@@ -468,8 +514,24 @@ function renderReady(
       ? new Date(person.lastContactAt).toLocaleString()
       : "None recorded";
   }
+  const nextReminder = document.querySelector<HTMLElement>(
+    '[data-person-vital-value="next-reminder"]',
+  );
+  if (nextReminder) {
+    nextReminder.textContent = dueInformation.nextReminderAt
+      ? new Date(dueInformation.nextReminderAt).toLocaleString()
+      : "Not recorded";
+  }
+  for (const vital of ["birthday", "work", "first-meeting"]) {
+    const target = document.querySelector<HTMLElement>(
+      `[data-person-vital-value="${vital}"]`,
+    );
+    if (target) target.textContent = "Not recorded";
+  }
   renderTags(profile.tags, person);
-  profile.tags.hidden = navigation.hiddenSectionIds.has("tags");
+  const tagsHidden = navigation.hiddenSectionIds.has("tags");
+  profile.tags.hidden = tagsHidden;
+  profile.tagsContainer.hidden = tagsHidden;
   renderSectionNavigation(profile, navigation.hiddenSectionIds);
   profile.state.hidden = true;
   profile.ready.hidden = false;
@@ -495,6 +557,7 @@ function renderLifecycleState(
 ): void {
   const archived = state === "archived";
   profile.archived.hidden = !archived;
+  profile.archivedBanner.hidden = !archived;
   lifecycle.editOpen.hidden = archived;
   lifecycle.archive.hidden = archived;
   lifecycle.restore.hidden = !archived;
@@ -523,6 +586,9 @@ function updateIdentity(
 ): void {
   const name = displayName(person);
   profile.heading.textContent = name;
+  profile.breadcrumbName.textContent = name;
+  profile.nickname.textContent = person.nickname ? `“${person.nickname}”` : "";
+  profile.nickname.hidden = !person.nickname;
   profile.avatar.textContent = initials(person);
   for (
     const field of [
@@ -804,6 +870,13 @@ export async function mountPeopleProfile(): Promise<void> {
     }
   }
   sectionNavigation.memberRole = session.session.member.role;
+  mountLifecycleActions(
+    profile,
+    result.value.person,
+    result.value.status,
+    id,
+    session.session.workspace.id,
+  );
   renderReady(
     profile,
     result.value.person,
@@ -814,13 +887,6 @@ export async function mountPeopleProfile(): Promise<void> {
   );
   void recordPersonView(id, session.session.workspace.id).catch(() =>
     undefined
-  );
-  mountLifecycleActions(
-    profile,
-    result.value.person,
-    result.value.status,
-    id,
-    session.session.workspace.id,
   );
   await Promise.all([
     mountImportantDates(
