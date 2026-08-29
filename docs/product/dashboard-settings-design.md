@@ -246,12 +246,11 @@ rows on that page; they do not create additional page routes.
 
 ## Component And Accessibility Contract
 
-Use current stable shadcn/ui components where they match the interaction:
-`Button`, `Card`, `Badge`, `Breadcrumb`, `Sidebar`, `Command`, `Input`,
-`Select`, `Switch`, `Tabs` only for views of the same dataset, `Dialog`,
-`AlertDialog`, `Sheet`, `DropdownMenu`, `Table`, `Skeleton`, and form
-primitives. Package versions are selected only with the first executable
-scaffold.
+Use equivalent Kinship primitives for button, card, badge, breadcrumb, segmented
+filter, dialog, sheet, menu, table, and skeleton interactions. These primitives
+are hand-written vanilla TypeScript and CSS. This amendment supersedes the
+earlier shadcn/ui naming; it is an explicit implementation decision, not
+contract drift.
 
 The component library does not determine information architecture. In
 particular:
