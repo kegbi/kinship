@@ -64,7 +64,8 @@ services:
     ports: !reset []
     volumes: !reset []
     tmpfs:
-      - /data
+      # uid/gid 10001 is the pinned image's rustfs user; revisit on image bumps.
+      - /data:uid=10001,gid=10001
     healthcheck:
       test: [
         "CMD",
