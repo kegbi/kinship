@@ -10,10 +10,11 @@ import {
   type RelationshipType,
   updateRelationship,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import { setRailCount, setRailEmpty } from "./person-facts-rail.ts";
 
 interface Elements {
   readonly add: HTMLButtonElement;
-  readonly badge: HTMLElement;
+  readonly badge?: HTMLElement;
   readonly form: HTMLFormElement;
   readonly duplicateChoices: HTMLElement;
   readonly createAnyway: HTMLButtonElement;
@@ -71,12 +72,12 @@ function elements(): Elements | undefined {
   const typeSearchButton = document.querySelector<HTMLButtonElement>(
     "#relationship-type-search-button",
   );
-  return section && badge && state && list && loadMore && previous && add &&
-      form && target && type && typeNext && typePrevious && typeSearch &&
+  return section && state && list && loadMore && previous && add && form &&
+      target && type && typeNext && typePrevious && typeSearch &&
       typeSearchButton && duplicateChoices && selectExisting && createAnyway
     ? {
       add,
-      badge,
+      ...(badge ? { badge } : {}),
       createAnyway,
       duplicateChoices,
       form,
@@ -167,6 +168,8 @@ export async function mountRelationships(
     }
     ui.section.hidden = true;
     ui.section.dataset.sectionState = "hidden";
+    setRailCount("relationships", undefined);
+    setRailEmpty("relationships", false);
     document.querySelector<HTMLElement>("#main-content")?.focus();
     return;
   }
@@ -388,7 +391,9 @@ export async function mountRelationships(
       disableForm(true);
       ui.section.hidden = true;
       ui.section.dataset.sectionState = "hidden";
-      ui.badge.textContent = "Hidden";
+      ui.badge && (ui.badge.textContent = "Hidden");
+      setRailCount("relationships", undefined);
+      setRailEmpty("relationships", false);
       ui.add.hidden = true;
       ui.add.disabled = true;
       ui.loadMore.hidden = true;
@@ -418,57 +423,65 @@ export async function mountRelationships(
     if (listState === "error" || listState === "forbidden") {
       cancelPeopleSearch();
       ui.section.dataset.sectionState = listState;
-      ui.badge.textContent = listState === "forbidden"
-        ? "Unavailable"
-        : "Try again";
+      ui.badge &&
+        (ui.badge.textContent = listState === "forbidden"
+          ? "Unavailable"
+          : "Try again");
       ui.state.textContent = listProblem;
+      setRailEmpty("relationships", false);
       ui.state.focus();
       return;
     }
     if (readOnly) {
       cancelPeopleSearch();
       ui.section.dataset.sectionState = "read-only";
-      ui.badge.textContent = "Read-only";
+      ui.badge && (ui.badge.textContent = "Read-only");
       ui.state.textContent =
         "Relationships are read-only because this person is archived.";
+      setRailCount("relationships", current.length);
+      setRailEmpty("relationships", false);
       ui.state.focus();
       return;
     }
     if (typesUnavailable) {
       cancelPeopleSearch();
       ui.section.dataset.sectionState = "error";
-      ui.badge.textContent = "Unavailable";
+      ui.badge && (ui.badge.textContent = "Unavailable");
       ui.state.textContent = typeProblem;
+      setRailEmpty("relationships", false);
       ui.state.focus();
       return;
     }
     if (listState === "loading" || typeState === "loading") {
       ui.section.dataset.sectionState = "loading";
-      ui.badge.textContent = "Loading";
+      ui.badge && (ui.badge.textContent = "Loading");
       ui.state.textContent = "Loading relationships…";
       return;
     }
     if (peopleSearchState === "loading") {
       disablePeopleSelection(true);
       ui.section.dataset.sectionState = "loading";
-      ui.badge.textContent = "Searching";
+      ui.badge && (ui.badge.textContent = "Searching");
       ui.state.textContent = "Searching people…";
       return;
     }
     if (peopleSearchState === "error") {
       disablePeopleSelection(true);
       ui.section.dataset.sectionState = "error";
-      ui.badge.textContent = "Unavailable";
+      ui.badge && (ui.badge.textContent = "Unavailable");
       ui.state.textContent = peopleSearchProblem;
+      setRailEmpty("relationships", false);
       ui.state.focus();
       return;
     }
     disablePeopleSelection(false);
     ui.section.dataset.sectionState = "ready";
-    ui.badge.textContent = "Ready";
+    ui.badge && (ui.badge.textContent = "Ready");
     ui.state.textContent = current.length
       ? `${current.length} relationship${current.length === 1 ? "" : "s"}.`
       : "";
+    setRailCount("relationships", current.length);
+    setRailEmpty("relationships", current.length === 0);
   };
   const load = async (cursor?: string) => {
     const requestGeneration = ++listRequestGeneration;

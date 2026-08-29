@@ -178,7 +178,7 @@ test(
     const profileAllowed = new Promise<void>((resolve) => {
       releaseProfile = resolve;
     });
-    const profilePattern = `**/api/v1/people/${personId}`;
+    const profilePattern = `**/api/v1/people/${personId}*`;
     await page.route(profilePattern, async (route) => {
       await profileAllowed;
       await route.continue();
@@ -316,7 +316,7 @@ test(
     ).toBeVisible();
 
     const deniedId = randomUUID();
-    await page.route(`**/api/v1/people/${deniedId}`, (route) =>
+    await page.route(`**/api/v1/people/${deniedId}*`, (route) =>
       route.fulfill({
         body: JSON.stringify({
           code: "people_forbidden",
@@ -332,11 +332,11 @@ test(
     await expect(
       page.getByRole("heading", { level: 1, name: "Person unavailable" }),
     ).toBeVisible();
-    await page.unroute(`**/api/v1/people/${deniedId}`);
+    await page.unroute(`**/api/v1/people/${deniedId}*`);
 
     const unavailableId = randomUUID();
     await page.route(
-      `**/api/v1/people/${unavailableId}`,
+      `**/api/v1/people/${unavailableId}*`,
       (route) =>
         route.fulfill({
           body: JSON.stringify({
@@ -357,6 +357,6 @@ test(
         name: "Person temporarily unavailable",
       }),
     ).toBeVisible();
-    await page.unroute(`**/api/v1/people/${unavailableId}`);
+    await page.unroute(`**/api/v1/people/${unavailableId}*`);
   },
 );

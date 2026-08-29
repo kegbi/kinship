@@ -27,14 +27,18 @@ const sections = [
   ["photos", "Photos", "independent"],
   ["audit-summary", "Audit summary", "independent"],
 ] as const;
-const profileFactSections = new Set<string>([
-  "contact-methods",
-  "addresses",
-  "first-meeting",
-  "work",
-  "food-preferences",
-  "pets",
-]);
+const railSections = [
+  ["contact-methods", "Contact methods"],
+  ["relationships", "Relationships"],
+  ["important-dates", "Important dates"],
+  ["addresses", "Addresses"],
+  ["work", "Work"],
+  ["pets", "Pets"],
+  ["food-preferences", "Food preferences"],
+  ["first-meeting", "First meeting"],
+  ["stay-in-touch", "Stay in touch"],
+] as const;
+const railSectionIds = new Set<string>(railSections.map(([id]) => id));
 ---
 
 <ApplicationLayout
@@ -179,167 +183,226 @@ const profileFactSections = new Set<string>([
       </aside>
 
       <div class="person-workspace-layout">
-        <details class="profile-section-directory" open>
-          <summary>Workspace sections</summary>
-          <nav id="person-profile-sections" aria-label="Person workspace sections">
-            <ul>
-              {sections.map(([id, title]) => (
-                <li><a href={`?section=${id}`} data-section-link={id}>{title}</a></li>
+        <div class="profile-facts-column">
+          <details class="profile-section-directory" open>
+            <summary>Workspace sections</summary>
+            <nav id="person-profile-sections" aria-label="Person workspace sections">
+              <ul>
+                {sections.map(([id, title]) => (
+                  <li><a href={`?section=${id}`} data-section-link={id}>{title}</a></li>
+                ))}
+              </ul>
+              <p id="person-profile-section-notice" class="profile-section-notice" role="status" aria-live="polite" tabindex="-1" hidden></p>
+            </nav>
+          </details>
+
+          <div class="profile-facts-rail">
+            <h2 class="sr-only">Profile facts</h2>
+            {railSections.map(([id, title]) => id === "important-dates"
+              ? (
+                <section
+                  id="profile-section-important-dates"
+                  class="profile-section-card profile-rail-block"
+                  data-profile-section="important-dates"
+                  data-section-state="loading"
+                  tabindex="-1"
+                  aria-labelledby="profile-section-important-dates-heading"
+                >
+                  <header class="profile-section-heading">
+                    <h3 id="profile-section-important-dates-heading">Important dates</h3>
+                    <span class="profile-rail-count" data-profile-rail-count hidden></span>
+                    <button id="important-date-add" class="button-primary profile-rail-add" type="button" aria-label="Add important date" hidden><span aria-hidden="true">+</span></button>
+                  </header>
+                  <p id="important-dates-state" class="section-state" role="status" aria-live="polite" tabindex="-1">
+                    Loading important dates…
+                  </p>
+                  <ul id="important-dates-list" class="important-dates-list" aria-label="Saved important dates"></ul>
+                  <form id="important-date-form" class="important-date-form" hidden novalidate>
+                    <input id="important-date-version" name="expectedUpdatedAt" type="hidden" />
+                    <div class="form-grid">
+                      <label>
+                        Date type
+                        <select id="important-date-kind" name="kind">
+                          <option value="birthday">Birthday</option>
+                          <option value="first_met">First meeting</option>
+                          <option value="deceased">Date of death</option>
+                          <option value="custom">Custom</option>
+                        </select>
+                      </label>
+                      <label id="important-date-label-row" hidden>
+                        Custom label
+                        <input id="important-date-label" name="label" maxlength="200" />
+                      </label>
+                      <label>
+                        Known components
+                        <select id="important-date-precision" name="precision">
+                          <option value="full">Year, month, and day</option>
+                          <option value="year_month">Year and month</option>
+                          <option value="month_day">Month and day; year unknown</option>
+                          <option value="year">Year only</option>
+                          <option value="month">Month only</option>
+                          <option value="day">Day only</option>
+                          <option value="unknown">Date unknown</option>
+                        </select>
+                      </label>
+                      <label data-date-component="year">
+                        Year
+                        <input id="important-date-year" name="year" type="number" min="1" max="9999" inputmode="numeric" />
+                      </label>
+                      <label data-date-component="month">
+                        Month
+                        <select id="important-date-month" name="month">
+                          <option value="">Select month</option>
+                          {Array.from({ length: 12 }, (_, index) => <option value={index + 1}>{index + 1}</option>)}
+                        </select>
+                      </label>
+                      <label data-date-component="day">
+                        Day
+                        <input id="important-date-day" name="day" type="number" min="1" max="31" inputmode="numeric" />
+                      </label>
+                    </div>
+                    <label id="important-date-approximate-row" class="checkbox-row">
+                      <input id="important-date-approximate" name="isYearApproximate" type="checkbox" />
+                      The stated year is approximate
+                    </label>
+                    <label class="checkbox-row">
+                      <input id="important-date-age" name="isAgeBased" type="checkbox" />
+                      Show age when the year is known
+                    </label>
+                    <label>
+                      Notes (optional)
+                      <textarea id="important-date-notes" name="notes" maxlength="2000" rows="3"></textarea>
+                    </label>
+                    <p class="form-hint">Annual reminders are scheduled only when both month and day are known. Missing components are never invented.</p>
+                    <p id="important-date-form-state" class="section-state" role="alert" tabindex="-1"></p>
+                    <div class="form-actions">
+                      <button type="submit" class="button-primary">Save date</button>
+                      <button id="important-date-cancel" class="button-secondary" type="button">Cancel</button>
+                    </div>
+                  </form>
+                </section>
+              )
+              : id === "relationships"
+              ? (
+                <section
+                  id="profile-section-relationships"
+                  class="profile-section-card profile-rail-block"
+                  data-profile-section="relationships"
+                  data-section-state="loading"
+                  tabindex="-1"
+                  aria-labelledby="profile-section-relationships-heading"
+                >
+                  <header class="profile-section-heading">
+                    <h3 id="profile-section-relationships-heading">Relationships</h3>
+                    <span class="profile-rail-count" data-profile-rail-count hidden></span>
+                    <button id="relationship-add" class="button-primary profile-rail-add" type="button" aria-label="Add relationship" hidden><span aria-hidden="true">+</span></button>
+                  </header>
+                  <p id="relationships-state" class="section-state" role="status" aria-live="polite" tabindex="-1">Loading relationships…</p>
+                  <ul id="relationships-list" class="profile-fact-list" aria-label="Saved relationships" tabindex="-1"></ul>
+                  <nav class="form-actions" aria-label="Relationship pages">
+                    <button id="relationships-previous" class="button-secondary" type="button" hidden>Previous relationships</button>
+                    <button id="relationships-load-more" class="button-secondary" type="button" hidden>Next relationships</button>
+                  </nav>
+                  <form id="relationship-form" class="profile-fact-form" hidden novalidate>
+                    <fieldset>
+                      <legend>Choose an existing person</legend>
+                      <label>Search people <input id="relationship-person-search" type="search" maxlength="200" /></label>
+                      <button id="relationship-person-search-button" class="button-secondary" type="button">Search people</button>
+                      <label>Related person <select id="relationship-target" name="targetPersonId"><option value="">Select existing person</option></select></label>
+                    </fieldset>
+                    <fieldset>
+                      <legend>Or create a new related person</legend>
+                      <div class="form-grid">
+                        <label>New person given name <input name="newGivenName" maxlength="200" /></label>
+                        <label>New person family name <input name="newFamilyName" maxlength="200" /></label>
+                      </div>
+                    </fieldset>
+                    <fieldset>
+                      <legend>Relationship type</legend>
+                      <label>Search relationship types <input id="relationship-type-search" type="search" maxlength="200" /></label>
+                      <button id="relationship-type-search-button" class="button-secondary" type="button">Search relationship types</button>
+                      <label>Relationship type <select id="relationship-type" name="relationshipTypeId" required><option value="">Select relationship type</option></select></label>
+                      <nav class="form-actions" aria-label="Relationship type pages">
+                        <button id="relationship-types-previous" class="button-secondary" type="button" hidden>Previous relationship types</button>
+                        <button id="relationship-types-next" class="button-secondary" type="button" hidden>Next relationship types</button>
+                      </nav>
+                    </fieldset>
+                    <div id="relationship-duplicate-choices" role="group" aria-label="Possible duplicate person choices" hidden>
+                      <p>A person with this name may already exist.</p>
+                      <button id="relationship-select-existing" class="button-secondary" type="button">Select existing person</button>
+                      <button id="relationship-create-anyway" class="button-secondary" type="button">Create anyway</button>
+                    </div>
+                    <div class="form-actions">
+                      <button class="button-primary" type="submit">Save relationship</button>
+                      <button id="relationship-cancel" class="button-secondary" type="button">Cancel</button>
+                    </div>
+                  </form>
+                </section>
+              )
+              : id === "stay-in-touch"
+              ? (
+                <section
+                  id="profile-section-stay-in-touch"
+                  class="profile-section-card profile-rail-block"
+                  data-profile-section="stay-in-touch"
+                  data-section-state="loading"
+                  tabindex="-1"
+                  aria-labelledby="profile-section-stay-in-touch-heading"
+                >
+                  <header class="profile-section-heading">
+                    <h3 id="profile-section-stay-in-touch-heading">Stay in touch</h3>
+                    <span class="profile-rail-count" data-profile-rail-count hidden></span>
+                  </header>
+                  <p data-cadence-state class="section-state" role="status" aria-live="polite">Loading stay-in-touch cadence…</p>
+                  <ul data-cadence-list class="task-list" aria-label="Stay-in-touch cadence"></ul>
+                  <form data-cadence-form class="profile-fact-form" novalidate>
+                    <label>Reconnect every <input name="intervalCount" type="number" min="1" max="100" value="1" required /></label>
+                    <label>Calendar unit
+                      <select name="intervalUnit">
+                        <option value="week">Week</option>
+                        <option value="month">Month</option>
+                        <option value="year">Year</option>
+                        <option value="day">Day</option>
+                      </select>
+                    </label>
+                    <div class="form-actions"><button class="button-primary" type="submit">Save cadence</button></div>
+                  </form>
+                </section>
+              )
+              : (
+                <section
+                  id={`profile-section-${id}`}
+                  class="profile-section-card profile-rail-block"
+                  data-profile-section={id}
+                  data-profile-fact-section={id}
+                  data-section-state="loading"
+                  tabindex="-1"
+                  aria-labelledby={`profile-section-${id}-heading`}
+                >
+                  <header class="profile-section-heading">
+                    <h3 id={`profile-section-${id}-heading`}>{title}</h3>
+                    <span class="profile-rail-count" data-profile-rail-count hidden></span>
+                    <button
+                      data-profile-fact-add
+                      data-profile-fact-add-icon
+                      class="button-primary profile-rail-add"
+                      type="button"
+                      aria-label={`Add ${title.toLowerCase()}`}
+                      hidden
+                    ><span aria-hidden="true">+</span></button>
+                  </header>
+                  <p data-profile-fact-state class="section-state" role="status" aria-live="polite" tabindex="-1">
+                    Loading {title.toLowerCase()}…
+                  </p>
+                  <ul data-profile-fact-list class="profile-fact-list" aria-label={`Saved ${title.toLowerCase()}`}></ul>
+                  <form data-profile-fact-form class="profile-fact-form" hidden novalidate></form>
+                </section>
               ))}
-            </ul>
-            <p id="person-profile-section-notice" class="profile-section-notice" role="status" aria-live="polite" tabindex="-1" hidden></p>
-          </nav>
-        </details>
+          </div>
+        </div>
 
         <div class="profile-section-list">
-          {sections.filter(([id]) => id !== "identity-summary").map(([id, title, loadMode]) => id === "important-dates"
-            ? (
-              <section
-                id="profile-section-important-dates"
-                class="profile-section-card important-dates-card"
-                data-profile-section="important-dates"
-                data-section-state="loading"
-                tabindex="-1"
-                aria-labelledby="profile-section-important-dates-heading"
-              >
-                <header class="profile-section-heading">
-                  <div>
-                    <p class="section-kicker">Known exactly as stated</p>
-                    <h2 id="profile-section-important-dates-heading">Important dates</h2>
-                  </div>
-                  <span id="important-dates-badge" class="state-badge">Loading</span>
-                </header>
-                <p id="important-dates-state" class="section-state" role="status" aria-live="polite" tabindex="-1">
-                  Loading important dates…
-                </p>
-                <ul id="important-dates-list" class="important-dates-list" aria-label="Saved important dates"></ul>
-                <button id="important-date-add" class="button-primary" type="button" hidden>Add important date</button>
-                <form id="important-date-form" class="important-date-form" hidden novalidate>
-                  <input id="important-date-version" name="expectedUpdatedAt" type="hidden" />
-                  <div class="form-grid">
-                    <label>
-                      Date type
-                      <select id="important-date-kind" name="kind">
-                        <option value="birthday">Birthday</option>
-                        <option value="first_met">First meeting</option>
-                        <option value="deceased">Date of death</option>
-                        <option value="custom">Custom</option>
-                      </select>
-                    </label>
-                    <label id="important-date-label-row" hidden>
-                      Custom label
-                      <input id="important-date-label" name="label" maxlength="200" />
-                    </label>
-                    <label>
-                      Known components
-                      <select id="important-date-precision" name="precision">
-                        <option value="full">Year, month, and day</option>
-                        <option value="year_month">Year and month</option>
-                        <option value="month_day">Month and day; year unknown</option>
-                        <option value="year">Year only</option>
-                        <option value="month">Month only</option>
-                        <option value="day">Day only</option>
-                        <option value="unknown">Date unknown</option>
-                      </select>
-                    </label>
-                    <label data-date-component="year">
-                      Year
-                      <input id="important-date-year" name="year" type="number" min="1" max="9999" inputmode="numeric" />
-                    </label>
-                    <label data-date-component="month">
-                      Month
-                      <select id="important-date-month" name="month">
-                        <option value="">Select month</option>
-                        {Array.from({ length: 12 }, (_, index) => <option value={index + 1}>{index + 1}</option>)}
-                      </select>
-                    </label>
-                    <label data-date-component="day">
-                      Day
-                      <input id="important-date-day" name="day" type="number" min="1" max="31" inputmode="numeric" />
-                    </label>
-                  </div>
-                  <label id="important-date-approximate-row" class="checkbox-row">
-                    <input id="important-date-approximate" name="isYearApproximate" type="checkbox" />
-                    The stated year is approximate
-                  </label>
-                  <label class="checkbox-row">
-                    <input id="important-date-age" name="isAgeBased" type="checkbox" />
-                    Show age when the year is known
-                  </label>
-                  <label>
-                    Notes (optional)
-                    <textarea id="important-date-notes" name="notes" maxlength="2000" rows="3"></textarea>
-                  </label>
-                  <p class="form-hint">Annual reminders are scheduled only when both month and day are known. Missing components are never invented.</p>
-                  <p id="important-date-form-state" class="section-state" role="alert" tabindex="-1"></p>
-                  <div class="form-actions">
-                    <button type="submit" class="button-primary">Save date</button>
-                    <button id="important-date-cancel" class="button-secondary" type="button">Cancel</button>
-                  </div>
-                </form>
-              </section>
-            )
-            : id === "relationships"
-            ? (
-              <section
-                id="profile-section-relationships"
-                class="profile-section-card relationships-card"
-                data-profile-section="relationships"
-                data-section-state="loading"
-                tabindex="-1"
-                aria-labelledby="profile-section-relationships-heading"
-              >
-                <header class="profile-section-heading">
-                  <div>
-                    <p class="section-kicker">Directional connections</p>
-                    <h2 id="profile-section-relationships-heading">Relationships</h2>
-                  </div>
-                  <span id="relationships-badge" class="state-badge">Loading</span>
-                </header>
-                <p id="relationships-state" class="section-state" role="status" aria-live="polite" tabindex="-1">Loading relationships…</p>
-                <ul id="relationships-list" class="profile-fact-list" aria-label="Saved relationships" tabindex="-1"></ul>
-                <nav class="form-actions" aria-label="Relationship pages">
-                  <button id="relationships-previous" class="button-secondary" type="button" hidden>Previous relationships</button>
-                  <button id="relationships-load-more" class="button-secondary" type="button" hidden>Next relationships</button>
-                </nav>
-                <button id="relationship-add" class="button-primary" type="button" hidden>Add relationship</button>
-                <form id="relationship-form" class="profile-fact-form" hidden novalidate>
-                  <fieldset>
-                    <legend>Choose an existing person</legend>
-                    <label>Search people <input id="relationship-person-search" type="search" maxlength="200" /></label>
-                    <button id="relationship-person-search-button" class="button-secondary" type="button">Search people</button>
-                    <label>Related person <select id="relationship-target" name="targetPersonId"><option value="">Select existing person</option></select></label>
-                  </fieldset>
-                  <fieldset>
-                    <legend>Or create a new related person</legend>
-                    <div class="form-grid">
-                      <label>New person given name <input name="newGivenName" maxlength="200" /></label>
-                      <label>New person family name <input name="newFamilyName" maxlength="200" /></label>
-                    </div>
-                  </fieldset>
-                  <fieldset>
-                    <legend>Relationship type</legend>
-                    <label>Search relationship types <input id="relationship-type-search" type="search" maxlength="200" /></label>
-                    <button id="relationship-type-search-button" class="button-secondary" type="button">Search relationship types</button>
-                    <label>Relationship type <select id="relationship-type" name="relationshipTypeId" required><option value="">Select relationship type</option></select></label>
-                    <nav class="form-actions" aria-label="Relationship type pages">
-                      <button id="relationship-types-previous" class="button-secondary" type="button" hidden>Previous relationship types</button>
-                      <button id="relationship-types-next" class="button-secondary" type="button" hidden>Next relationship types</button>
-                    </nav>
-                  </fieldset>
-                  <div id="relationship-duplicate-choices" role="group" aria-label="Possible duplicate person choices" hidden>
-                    <p>A person with this name may already exist.</p>
-                    <button id="relationship-select-existing" class="button-secondary" type="button">Select existing person</button>
-                    <button id="relationship-create-anyway" class="button-secondary" type="button">Create anyway</button>
-                  </div>
-                  <div class="form-actions">
-                    <button class="button-primary" type="submit">Save relationship</button>
-                    <button id="relationship-cancel" class="button-secondary" type="button">Cancel</button>
-                  </div>
-                </form>
-              </section>
-            )
-            : id === "calls" || id === "conversations"
+          {sections.filter(([id]) => id !== "identity-summary" && !railSectionIds.has(id)).map(([id, title, loadMode]) => id === "calls" || id === "conversations"
             ? (
               <section
                 id={`profile-section-${id}`}
@@ -520,62 +583,6 @@ const profileFactSections = new Set<string>([
                   <label>Every <input name="recurrenceInterval" type="number" min="1" max="100" value="1" required /></label>
                   <div class="form-actions"><button class="button-primary" type="submit">Save reminder</button></div>
                 </form>
-              </section>
-            )
-            : id === "stay-in-touch"
-            ? (
-              <section
-                id="profile-section-stay-in-touch"
-                class="profile-section-card"
-                data-profile-section="stay-in-touch"
-                data-section-state="loading"
-                tabindex="-1"
-                aria-labelledby="profile-section-stay-in-touch-heading"
-              >
-                <header class="profile-section-heading">
-                  <div><p class="section-kicker">Relationship rhythm</p><h2 id="profile-section-stay-in-touch-heading">Stay in touch</h2></div>
-                  <span class="state-badge calm">Contact cadence</span>
-                </header>
-                <p data-cadence-state class="section-state" role="status" aria-live="polite">Loading stay-in-touch cadence…</p>
-                <ul data-cadence-list class="task-list" aria-label="Stay-in-touch cadence"></ul>
-                <form data-cadence-form class="profile-fact-form" novalidate>
-                  <label>Reconnect every <input name="intervalCount" type="number" min="1" max="100" value="1" required /></label>
-                  <label>Calendar unit
-                    <select name="intervalUnit">
-                      <option value="week">Week</option>
-                      <option value="month">Month</option>
-                      <option value="year">Year</option>
-                      <option value="day">Day</option>
-                    </select>
-                  </label>
-                  <div class="form-actions"><button class="button-primary" type="submit">Save cadence</button></div>
-                </form>
-              </section>
-            )
-            : profileFactSections.has(id)
-            ? (
-              <section
-                id={`profile-section-${id}`}
-                class="profile-section-card profile-fact-card"
-                data-profile-section={id}
-                data-profile-fact-section={id}
-                data-section-state="loading"
-                tabindex="-1"
-                aria-labelledby={`profile-section-${id}-heading`}
-              >
-                <header class="profile-section-heading">
-                  <div>
-                    <p class="section-kicker">Available profile fact</p>
-                    <h2 id={`profile-section-${id}-heading`}>{title}</h2>
-                  </div>
-                  <span data-profile-fact-badge class="state-badge">Loading</span>
-                </header>
-                <p data-profile-fact-state class="section-state" role="status" aria-live="polite" tabindex="-1">
-                  Loading {title.toLowerCase()}…
-                </p>
-                <ul data-profile-fact-list class="profile-fact-list" aria-label={`Saved ${title.toLowerCase()}`}></ul>
-                <button data-profile-fact-add class="button-primary" type="button" hidden>Add {title.toLowerCase()}</button>
-                <form data-profile-fact-form class="profile-fact-form" hidden novalidate></form>
               </section>
             )
             : id === "gifts" || id === "debts"

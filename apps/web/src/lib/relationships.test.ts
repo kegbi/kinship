@@ -29,8 +29,8 @@ function deferredResponse() {
 
 function markup() {
   document.body.innerHTML =
-    `<main id="main-content" tabindex="-1"><section id="profile-section-relationships" data-section-state="loading">
-    <span id="relationships-badge"></span><p id="relationships-state" role="status" aria-live="polite" tabindex="-1"></p>
+    `<main id="main-content" tabindex="-1"><section id="profile-section-relationships" data-profile-section="relationships" data-section-state="loading">
+    <span data-profile-rail-count hidden></span><p id="relationships-state" role="status" aria-live="polite" tabindex="-1"></p>
     <ul id="relationships-list" tabindex="-1"></ul><button id="relationships-previous" hidden>Previous relationships</button><button id="relationships-load-more" hidden>Next relationships</button><button id="relationship-add" hidden>Add relationship</button>
     <form id="relationship-form" hidden>
       <input id="relationship-person-search"><button id="relationship-person-search-button" type="button">Search people</button>
@@ -791,6 +791,16 @@ describe("relationship profile section", () => {
     expect(document.querySelector("#relationships-list")?.textContent).toBe(
       "No relationships saved.",
     );
+    expect(document.querySelector("#relationships-state")?.textContent).toBe(
+      "People unlinked. Neither person was deleted.",
+    );
+    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
+      .toBe("0");
+    expect(
+      document.querySelector("#profile-section-relationships")?.getAttribute(
+        "data-rail-empty",
+      ),
+    ).toBe("true");
     expect(document.activeElement).toBe(
       document.querySelector("#relationships-state"),
     );
@@ -1097,8 +1107,13 @@ describe("relationship profile section", () => {
         }, 500)),
     );
     await mountRelationships(personId, workspaceId, false);
-    expect(document.querySelector("#relationships-badge")?.textContent).toBe(
-      "Try again",
+    expect(
+      document.querySelector("#profile-section-relationships")?.getAttribute(
+        "data-section-state",
+      ),
+    ).toBe("error");
+    expect(document.querySelector("#relationships-state")?.textContent).toBe(
+      "This relationship section is temporarily unavailable. Try again.",
     );
   });
 

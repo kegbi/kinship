@@ -17,8 +17,10 @@ function response(body: unknown, status = 200): Response {
 
 function markup(): void {
   document.body.innerHTML = `
-    <section id="profile-section-important-dates" data-section-state="loading">
-      <span id="important-dates-badge">Loading</span>
+    <a data-person-vital-value="birthday">Not recorded</a>
+    <a data-person-vital-value="first-meeting">Not recorded</a>
+    <section id="profile-section-important-dates" data-profile-section="important-dates" data-section-state="loading">
+      <span data-profile-rail-count hidden></span>
       <p id="important-dates-state" tabindex="-1"></p>
       <ul id="important-dates-list"></ul>
       <button id="important-date-add" hidden>Add important date</button>
@@ -81,6 +83,7 @@ function button(label: string): HTMLButtonElement {
 afterEach(() => {
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("PEOPLE-005 important-date presentation", () => {
@@ -130,6 +133,13 @@ describe("PEOPLE-005 important-date presentation", () => {
     await mountImportantDates(personId, workspaceId, false);
     expect(document.querySelector("#important-dates-state")?.textContent)
       .toBe("No important dates recorded.");
+    expect(
+      document.querySelector("#profile-section-important-dates")?.getAttribute(
+        "data-rail-empty",
+      ),
+    ).toBe("true");
+    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
+      .toBe("0");
     (document.querySelector("#important-date-add") as HTMLButtonElement)
       .click();
     const precision = document.querySelector(
@@ -154,6 +164,103 @@ describe("PEOPLE-005 important-date presentation", () => {
       expect(document.querySelector("#important-dates-list")?.textContent)
         .toContain("February 29 (year unknown)")
     );
+    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
+      .toBe("1");
+    expect(
+      document.querySelector("#profile-section-important-dates")?.hasAttribute(
+        "data-rail-empty",
+      ),
+    ).toBe(false);
+    expect(
+      document.querySelector('[data-person-vital-value="birthday"]')
+        ?.textContent,
+    ).toBe("February 29 (year unknown)");
+  });
+
+  it("publishes exact birthday age and first-meeting values to the hero", async () => {
+    markup();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-29T12:00:00.000Z"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(response({
+        dates: [
+          date({
+            day: 12,
+            isAgeBased: true,
+            month: 3,
+            precision: "full",
+            year: 1992,
+          }),
+          date({
+            day: 5,
+            id: "00000000-0000-4000-8000-000000000204",
+            kind: "first_met",
+            month: 6,
+            precision: "full",
+            year: 2010,
+          }),
+        ],
+        status: "ready",
+      })),
+    );
+
+    await mountImportantDates(personId, workspaceId, false);
+
+    expect(
+      document.querySelector('[data-person-vital-value="birthday"]')
+        ?.textContent,
+    ).toBe("Age 34 · March 12, 1992");
+    expect(
+      document.querySelector('[data-person-vital-value="first-meeting"]')
+        ?.textContent,
+    ).toBe("June 5, 2010");
+  });
+
+  it("publishes a birthday without age when age display is not enabled", async () => {
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(response({
+        dates: [
+          date({
+            day: 12,
+            isAgeBased: false,
+            month: 3,
+            precision: "full",
+            year: 1992,
+          }),
+        ],
+        status: "ready",
+      })),
+    );
+
+    await mountImportantDates(personId, workspaceId, false);
+
+    expect(
+      document.querySelector('[data-person-vital-value="birthday"]')
+        ?.textContent,
+    ).toBe("March 12, 1992");
+  });
+
+  it("collapses an empty archived important-dates block", async () => {
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(
+        response({ dates: [], status: "archived" }),
+      ),
+    );
+
+    await mountImportantDates(personId, workspaceId, true);
+
+    expect(
+      document.querySelector<HTMLElement>(
+        "#profile-section-important-dates",
+      )?.dataset.railEmpty,
+    ).toBe("true");
+    expect(document.querySelector("#important-dates-state")?.textContent)
+      .toBe("No important dates recorded. This archived person is read-only.");
   });
 
   it("keeps archived dates readable and maps forbidden loading honestly", async () => {
@@ -170,8 +277,13 @@ describe("PEOPLE-005 important-date presentation", () => {
         .hidden,
     )
       .toBe(true);
-    expect(document.querySelector("#important-dates-badge")?.textContent)
-      .toBe("Read only");
+    expect(
+      document.querySelector("#profile-section-important-dates")?.getAttribute(
+        "data-section-state",
+      ),
+    ).toBe("ready");
+    expect(document.querySelector("#important-dates-state")?.textContent)
+      .toBe("Important dates loaded. This archived person is read-only.");
 
     markup();
     vi.stubGlobal(
@@ -213,8 +325,13 @@ describe("PEOPLE-005 important-date presentation", () => {
       (document.querySelector("#important-date-add") as HTMLButtonElement)
         .hidden,
     ).toBe(true);
-    expect(document.querySelector("#important-dates-badge")?.textContent)
-      .toBe("Read only");
+    expect(
+      document.querySelector("#profile-section-important-dates")?.getAttribute(
+        "data-section-state",
+      ),
+    ).toBe("ready");
+    expect(document.querySelector("#important-dates-state")?.textContent)
+      .toBe("Important dates loaded. This archived person is read-only.");
     expect(document.querySelector("#important-dates-list")?.textContent)
       .not.toContain("Edit Birthday");
   });
@@ -375,6 +492,13 @@ describe("PEOPLE-005 important-date presentation", () => {
       expect(document.querySelector("#important-dates-state")?.textContent)
         .toBe("No important dates recorded.")
     );
+    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
+      .toBe("0");
+    expect(
+      document.querySelector("#profile-section-important-dates")?.getAttribute(
+        "data-rail-empty",
+      ),
+    ).toBe("true");
   });
 
   it("maps missing, server, and network failures without leaking details", async () => {

@@ -12,6 +12,12 @@ import {
   type ProfileFactUpdateInputBySection,
   updateProfileFact,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import {
+  setFirstMeetingPlace,
+  setRailCount,
+  setRailEmpty,
+  setVitalStat,
+} from "./person-facts-rail.ts";
 
 interface FactElements {
   readonly add: HTMLButtonElement;
@@ -601,6 +607,38 @@ function summary(
   return "Tag assignments";
 }
 
+type RailProfileFactSection = Exclude<ProfileFactSectionId, "tags">;
+
+function clearRailPresentation(section: RailProfileFactSection): void {
+  setRailCount(section, undefined);
+  setRailEmpty(section, false);
+  if (section === "work") setVitalStat("work", undefined);
+  if (section === "first-meeting") setFirstMeetingPlace(undefined);
+}
+
+function publishRailPresentation(
+  section: RailProfileFactSection,
+  snapshot: ProfileFactSection,
+): void {
+  setRailCount(section, snapshot.records.length);
+  setRailEmpty(section, snapshot.records.length === 0);
+  if (section === "work") {
+    const record = snapshot.records.find((record) => record.section === "work");
+    setVitalStat(
+      "work",
+      record ? summary(record, snapshot.options) : undefined,
+    );
+  }
+  if (section === "first-meeting") {
+    const record = snapshot.records.find((record) =>
+      record.section === "first-meeting"
+    );
+    setFirstMeetingPlace(
+      record?.section === "first-meeting" ? record.value.placeText : undefined,
+    );
+  }
+}
+
 function renderTags(
   record: Extract<ProfileFactRecord, { readonly section: "tags" }>,
   options: readonly ProfileFactOption[],
@@ -674,6 +712,10 @@ export async function mountProfileFacts(
         : "This profile section is temporarily unavailable. Try again.";
       target.badge &&
         (target.badge.textContent = forbidden ? "Forbidden" : "Error");
+      if (section !== "tags") {
+        setRailEmpty(section, false);
+        if (forbidden) clearRailPresentation(section);
+      }
       return;
     }
     let snapshot: ProfileFactSection = {
@@ -699,6 +741,7 @@ export async function mountProfileFacts(
       target.badge && (target.badge.textContent = "Hidden");
       target.add.onclick = null;
       target.add.hidden = true;
+      if (section !== "tags") clearRailPresentation(section);
       if (section === "tags") {
         const preview = document.querySelector<HTMLElement>(
           "#person-profile-tags",
@@ -734,12 +777,15 @@ export async function mountProfileFacts(
       ? `${snapshot.records.length} saved.`
       : `No ${section.replaceAll("-", " ")} saved.`;
     target.add.hidden = archived || snapshot.status === "archived";
-    target.add.textContent = section === "tags"
+    const addLabel = section === "tags"
       ? "Edit tags"
       : snapshot.records.length &&
           ["first-meeting", "food-preferences"].includes(section)
       ? `Edit ${section.replaceAll("-", " ")}`
       : `Add ${section.replaceAll("-", " ")}`;
+    if (target.add.hasAttribute("data-profile-fact-add-icon")) {
+      target.add.setAttribute("aria-label", addLabel);
+    } else target.add.textContent = addLabel;
     buildForm(section, target.form, snapshot.options);
     let prepareEditor = (
       _record?: ProfileFactRecord,
@@ -1160,6 +1206,9 @@ export async function mountProfileFacts(
           }
         }
         target.list?.append(item);
+      }
+      if (section !== "tags") {
+        publishRailPresentation(section, snapshot);
       }
     };
     renderRecords();

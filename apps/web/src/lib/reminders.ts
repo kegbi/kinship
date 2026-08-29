@@ -9,6 +9,7 @@ import {
   type TodayReminderItem,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
+import { setRailCount, setRailEmpty } from "./person-facts-rail.ts";
 
 let todayRemindersAbort: AbortController | undefined;
 const TODAY_RECONNECT_RECORDED_EVENT = "kinship:today-reconnect-recorded";
@@ -101,6 +102,7 @@ export async function mountPersonReminders(options: {
     if (cadenceSection) cadenceSection.dataset.sectionState = "loading";
     reminderState.textContent = "Loading reminders…";
     cadenceState.textContent = "Loading stay-in-touch cadence…";
+    setRailEmpty("stay-in-touch", false);
     const result = await listPersonReminders(
       options.personId,
       options.workspaceId,
@@ -112,6 +114,8 @@ export async function mountPersonReminders(options: {
         "Reminders could not be loaded. Retry this section.";
       cadenceState.textContent =
         "Cadence could not be loaded. Other profile sections remain available.";
+      setRailCount("stay-in-touch", undefined);
+      setRailEmpty("stay-in-touch", false);
       return;
     }
     const disable = async (id: string) => {
@@ -154,6 +158,11 @@ export async function mountPersonReminders(options: {
         ? "empty"
         : "ready";
     }
+    setRailCount("stay-in-touch", result.value.cadences.length);
+    setRailEmpty(
+      "stay-in-touch",
+      result.value.cadences.length === 0,
+    );
   };
   reminderForm.addEventListener("submit", async (event) => {
     event.preventDefault();
