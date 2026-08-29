@@ -185,6 +185,22 @@ async function getPerson(
   );
 }
 
+async function getPersonSummary(
+  fixture: Fixture,
+  personId: string,
+  workspaceId = fixture.workspaceId,
+): Promise<Response> {
+  return await configured.app.request(
+    `http://localhost/api/v1/people/${personId}?include=summary`,
+    {
+      headers: {
+        cookie: fixture.cookie,
+        "X-Workspace-Id": workspaceId,
+      },
+    },
+  );
+}
+
 async function listPersonLifeEvents(
   fixture: Fixture,
   personId: string,
@@ -1596,6 +1612,19 @@ Deno.test({
     const foreignTagId = crypto.randomUUID();
     const lifeEventId = crypto.randomUUID();
     const reminderId = crypto.randomUUID();
+    const activityId = crypto.randomUUID();
+    const callId = crypto.randomUUID();
+    const contactTypeIds = [
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+    ] as const;
+    const relationshipTypeId = crypto.randomUUID();
+    const relatedPersonIds = [
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+    ] as const;
     await sql.begin(async (transaction) => {
       await transaction`
         insert into crm.gender_options (id, workspace_id, name)
@@ -1604,11 +1633,22 @@ Deno.test({
       await transaction`
         insert into crm.people (
           id, workspace_id, created_by_member_id, gender_option_id,
-          given_name, family_name, description, is_starred, is_deceased
+          given_name, family_name, description, food_preferences, is_starred,
+          is_deceased
         ) values (
           ${personId}, ${owner.workspaceId}, ${owner.memberId}, ${genderId},
-          'Ada', 'Lovelace', 'Mathematician and correspondent.', true, true
+          'Ada', 'Lovelace', 'Mathematician and correspondent.', 'Tea', true,
+          true
         )
+      `;
+      await transaction`
+        insert into crm.people (
+          id, workspace_id, created_by_member_id, given_name
+        ) values
+          (${relatedPersonIds[0]}, ${owner.workspaceId}, ${owner.memberId},
+            'Charles'),
+          (${relatedPersonIds[1]}, ${owner.workspaceId}, ${owner.memberId},
+            'Mary')
       `;
       await transaction`
         update crm.workspace_members set self_person_id = ${personId}
@@ -1641,6 +1681,73 @@ Deno.test({
       await transaction`
         insert into crm.person_tags (person_id, tag_id)
         values (${personId}, ${foreignTagId})
+      `;
+      await transaction`
+        insert into crm.contact_method_types (
+          id, workspace_id, name, kind, protocol, sort_order
+        ) values
+          (${contactTypeIds[0]}, ${owner.workspaceId}, 'Email', 'email',
+            'mailto', 1),
+          (${contactTypeIds[1]}, ${owner.workspaceId}, 'Phone', 'phone',
+            'tel', 2),
+          (${contactTypeIds[2]}, ${owner.workspaceId}, 'Social', 'social',
+            null, 3),
+          (${contactTypeIds[3]}, ${owner.workspaceId}, 'Custom', 'custom',
+            null, 4)
+      `;
+      await transaction`
+        insert into crm.person_contact_methods (
+          person_id, type_id, value, is_primary, sort_order
+        ) values
+          (${personId}, ${contactTypeIds[0]}, 'ada@example.test', true, 1),
+          (${personId}, ${contactTypeIds[1]}, '+381111111', true, 2),
+          (${personId}, ${contactTypeIds[2]}, '@ada', true, 3),
+          (${personId}, ${contactTypeIds[3]}, 'fourth', true, 4)
+      `;
+      await transaction`
+        insert into crm.relationship_types (
+          id, workspace_id, forward_label, reverse_label, sort_order
+        ) values (
+          ${relationshipTypeId}, ${owner.workspaceId}, 'friend', 'friend', 1
+        )
+      `;
+      await transaction`
+        insert into crm.relationships (
+          workspace_id, from_person_id, to_person_id, relationship_type_id
+        ) values
+          (${owner.workspaceId}, ${personId}, ${relatedPersonIds[0]},
+            ${relationshipTypeId}),
+          (${owner.workspaceId}, ${personId}, ${relatedPersonIds[1]},
+            ${relationshipTypeId})
+      `;
+      await transaction`
+        insert into crm.notes (
+          workspace_id, person_id, body, created_by_member_id
+        ) values
+          (${owner.workspaceId}, ${personId}, 'First summary note',
+            ${owner.memberId}),
+          (${owner.workspaceId}, ${personId}, 'Second summary note',
+            ${owner.memberId})
+      `;
+      await transaction`
+        insert into crm.calls (
+          id, workspace_id, person_id, called_at, created_by_member_id
+        ) values (
+          ${callId}, ${owner.workspaceId}, ${personId},
+          '2026-08-18T09:00:00.000Z', ${owner.memberId}
+        )
+      `;
+      await transaction`
+        insert into crm.activities (
+          id, workspace_id, summary, happened_at, created_by_member_id
+        ) values (
+          ${activityId}, ${owner.workspaceId}, 'Analytical engine review',
+          '2026-08-19T09:00:00.000Z', ${owner.memberId}
+        )
+      `;
+      await transaction`
+        insert into crm.activity_participants (activity_id, person_id)
+        values (${activityId}, ${personId})
       `;
       await transaction`
         insert into crm.tasks (
@@ -1726,6 +1833,106 @@ Deno.test({
           ) === true,
       "profile bounds tags and composes real planning orientation",
     );
+    const summaryResponse = await getPersonSummary(owner, personId);
+    const summaryBody = await summaryResponse.json() as {
+      readonly dueInformation: {
+        readonly nextReminderAt?: string;
+        readonly stayInTouchAt?: string;
+      };
+      readonly summary: {
+        readonly nextReminderAt?: string;
+        readonly primaryContactMethods: readonly {
+          readonly href?: string;
+          readonly kind: string;
+        }[];
+        readonly relationshipCounts: readonly {
+          readonly count: number;
+          readonly label: string;
+          readonly relationshipTypeId: string;
+        }[];
+        readonly sectionCounts: readonly {
+          readonly count?: number;
+          readonly id: string;
+          readonly status: string;
+        }[];
+        readonly stayInTouchAt?: string;
+      };
+    };
+    const sectionCount = (id: string) =>
+      summaryBody.summary.sectionCounts.find((entry) => entry.id === id);
+    assert(
+      summaryResponse.status === 200 &&
+        summaryBody.summary.sectionCounts.length === 14 &&
+        new Set(summaryBody.summary.sectionCounts.map((entry) => entry.id))
+            .size === 14 &&
+        sectionCount("activities")?.count === 1 &&
+        sectionCount("calls")?.count === 1 &&
+        sectionCount("contact-methods")?.count === 4 &&
+        sectionCount("food-preferences")?.count === 1 &&
+        sectionCount("life-events")?.count === 1 &&
+        sectionCount("notes")?.count === 2 &&
+        sectionCount("relationships")?.count === 2 &&
+        sectionCount("tags")?.count === 10 &&
+        sectionCount("tasks")?.count === 1,
+      "summary returns every stable section with tenant-local grouped counts",
+    );
+    assert(
+      summaryBody.summary.primaryContactMethods.length === 3 &&
+        summaryBody.summary.primaryContactMethods[0]?.href ===
+          "mailto:ada@example.test" &&
+        summaryBody.summary.primaryContactMethods[1]?.href ===
+          "tel:+381111111" &&
+        summaryBody.summary.relationshipCounts.length === 1 &&
+        summaryBody.summary.relationshipCounts[0]?.relationshipTypeId ===
+          relationshipTypeId &&
+        summaryBody.summary.relationshipCounts[0]?.label === "friend" &&
+        summaryBody.summary.relationshipCounts[0]?.count === 2 &&
+        summaryBody.summary.nextReminderAt ===
+          summaryBody.dueInformation.nextReminderAt &&
+        summaryBody.summary.stayInTouchAt ===
+          summaryBody.dueInformation.stayInTouchAt,
+      "summary bounds actionable contacts, groups relationships, and reuses due state",
+    );
+
+    const [ownerUser] = await sql<{ readonly id: string }[]>`
+      select user_id::text as id from crm.workspace_members
+      where id = ${owner.memberId}
+    `;
+    assert(ownerUser, "owner user exists");
+    let summaryQueryCount = 0;
+    const observedClient = postgres(databaseUrl, {
+      debug: () => {
+        summaryQueryCount += 1;
+      },
+      max: 1,
+      onnotice: () => undefined,
+    });
+    const observedDatabase = new Kysely<ApplicationDatabase>({
+      dialect: new PostgresJSDialect({ postgres: observedClient }),
+    });
+    try {
+      await kyselySql`select 1`.execute(observedDatabase);
+      summaryQueryCount = 0;
+      const observedProfile = createPersonProfile({
+        repository: new PostgresPersonProfileRepository(observedDatabase),
+      });
+      const observedSummary = await observedProfile.get(
+        {
+          memberId: owner.memberId,
+          role: "owner",
+          userId: ownerUser.id,
+          workspaceId: owner.workspaceId,
+        },
+        personId,
+        { includeSummary: true },
+      );
+      assert(
+        observedSummary.status === "ready" && summaryQueryCount === 1,
+        "the complete summary is resolved by one tenant-safe SQL statement",
+      );
+    } finally {
+      await observedDatabase.destroy();
+    }
     const history = await listPersonLifeEvents(owner, personId);
     const historyBody = await history.json() as {
       readonly events: readonly {
@@ -1763,6 +1970,25 @@ Deno.test({
         retainedLifeEvents?.count === 1,
       "disabled life-event history is concealed without deleting retained rows",
     );
+    const hiddenSummary = await getPersonSummary(owner, personId);
+    const hiddenSummaryBody = await hiddenSummary.json() as {
+      readonly summary: {
+        readonly sectionCounts: readonly {
+          readonly count?: number;
+          readonly id: string;
+          readonly status: string;
+        }[];
+      };
+    };
+    const hiddenLifeEvents = hiddenSummaryBody.summary.sectionCounts.find(
+      (entry) => entry.id === "life-events",
+    );
+    assert(
+      hiddenSummary.status === 200 &&
+        hiddenLifeEvents?.status === "hidden" &&
+        !("count" in hiddenLifeEvents),
+      "a hidden section omits its retained record count rather than reporting zero",
+    );
     await sql`
       update crm.workspace_profile_modules set is_active = true,
         updated_at = now()
@@ -1770,23 +1996,22 @@ Deno.test({
     `;
     assert(
       (await getPerson(owner, foreignPersonId)).status === 404 &&
+        (await getPersonSummary(owner, foreignPersonId)).status === 404 &&
         (await getPerson(owner, crypto.randomUUID())).status === 404 &&
         (await listPersonLifeEvents(owner, foreignPersonId)).status === 404 &&
         (await listPersonLifeEvents(owner, crypto.randomUUID())).status === 404,
       "foreign and missing person identifiers are indistinguishable across profile reads",
     );
-
-    const [ownerUser] = await sql<{ readonly id: string }[]>`
-      select user_id::text as id from crm.workspace_members
-      where id = ${owner.memberId}
-    `;
-    assert(ownerUser, "owner user exists");
-    const forged = await personProfile.get({
-      memberId: owner.memberId,
-      role: "owner",
-      userId: ownerUser.id,
-      workspaceId: foreign.workspaceId,
-    }, foreignPersonId);
+    const forged = await personProfile.get(
+      {
+        memberId: owner.memberId,
+        role: "owner",
+        userId: ownerUser.id,
+        workspaceId: foreign.workspaceId,
+      },
+      foreignPersonId,
+      { includeSummary: true },
+    );
     assert(
       forged.status === "forbidden",
       "forged active-workspace context is denied without identity disclosure",

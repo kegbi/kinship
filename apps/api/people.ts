@@ -51,6 +51,9 @@ const personSchema = z.object({
   nickname: z.string().trim().max(200).optional(),
 }).strict();
 const personIdSchema = z.uuid();
+const personReadQuerySchema = z.object({
+  include: z.literal("summary").optional(),
+}).strict();
 const expectedUpdatedAtSchema = z.iso.datetime({ offset: true });
 const editPersonSchema = personSchema.omit({ duplicateOverride: true }).extend({
   expectedUpdatedAt: expectedUpdatedAtSchema,
@@ -737,6 +740,16 @@ export function createPeopleRoutes(services: PeopleHttpServices): Hono {
         "Use a valid canonical person identifier.",
       );
     }
+    const query = personReadQuerySchema.safeParse(context.req.query());
+    if (!query.success) {
+      return problem(
+        context,
+        400,
+        "person_query_invalid",
+        "Invalid person query",
+        "Use include=summary to request the person summary.",
+      );
+    }
     const resolved = await actor(context, services);
     if (!resolved) {
       return problem(
@@ -747,9 +760,12 @@ export function createPeopleRoutes(services: PeopleHttpServices): Hono {
         "Sign in with an active workspace membership.",
       );
     }
-    const result = await services.profile.get(resolved, parsed.data).catch(() =>
-      undefined
-    );
+    const includeSummary = query.data.include === "summary";
+    const result = await (includeSummary
+      ? services.profile.get(resolved, parsed.data, { includeSummary: true })
+      : services.profile.get(resolved, parsed.data)).catch(() =>
+        undefined
+      );
     if (!result) {
       return problem(
         context,
@@ -782,6 +798,7 @@ export function createPeopleRoutes(services: PeopleHttpServices): Hono {
       dueInformation: result.dueInformation,
       person: result.person,
       status: result.status,
+      ...(includeSummary && result.summary ? { summary: result.summary } : {}),
     });
   });
   routes.post("/api/v1/people/:personId/view", async (context) => {

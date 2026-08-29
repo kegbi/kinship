@@ -1095,6 +1095,137 @@ Deno.test("[APP-003C] HTTP opens the read-only person workspace summary", async 
   );
 });
 
+Deno.test("[UXD-013] HTTP includes person section counts when summary is requested", async () => {
+  const personId = "00000000-0000-4000-8000-000000000100";
+  let includeSummary = false;
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      get: (_resolved, _id, options) => {
+        includeSummary = options?.includeSummary === true;
+        return Promise.resolve({
+          dueInformation: {
+            detail: "0 open tasks.",
+            openTaskCount: 0,
+            status: "ready",
+          },
+          person: {
+            givenName: "Ada",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            tagCount: 0,
+            tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
+          },
+          status: "ready",
+          summary: {
+            primaryContactMethods: [],
+            relationshipCounts: [],
+            sectionCounts: [
+              { count: 2, id: "activities", status: "ready" },
+              { count: 12, id: "notes", status: "ready" },
+              { count: 3, id: "tasks", status: "ready" },
+            ],
+          },
+        } as never);
+      },
+    },
+  ));
+
+  const response = await app.request(
+    `http://localhost/api/v1/people/${personId}?include=summary`,
+    { headers },
+  );
+  const body = await response.json() as {
+    readonly summary?: {
+      readonly sectionCounts?: readonly {
+        readonly count?: number;
+        readonly id?: string;
+      }[];
+    };
+  };
+
+  assert(response.status === 200, "summary person response is readable");
+  assert(
+    includeSummary &&
+      JSON.stringify(body.summary?.sectionCounts) === JSON.stringify([
+          { count: 2, id: "activities", status: "ready" },
+          { count: 12, id: "notes", status: "ready" },
+          { count: 3, id: "tasks", status: "ready" },
+        ]),
+    "summary includes the requested per-section record counts",
+  );
+});
+
+Deno.test("[UXD-013] HTTP leaves the person response unchanged without include", async () => {
+  const personId = "00000000-0000-4000-8000-000000000100";
+  let argumentCount = 0;
+  const dueInformation = {
+    detail: "0 open tasks.",
+    openTaskCount: 0,
+    status: "ready" as const,
+  };
+  const person = {
+    givenName: "Ada",
+    id: personId,
+    isDeceased: false,
+    isPartial: false,
+    isSelf: false,
+    isStarred: false,
+    tagCount: 0,
+    tags: [],
+    updatedAt: "2026-08-15T08:00:00.000Z",
+  };
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      get: (...args) => {
+        argumentCount = args.length;
+        return Promise.resolve({
+          dueInformation,
+          person,
+          status: "ready",
+          summary: {
+            primaryContactMethods: [],
+            relationshipCounts: [],
+            sectionCounts: [],
+          },
+        });
+      },
+    },
+  ));
+
+  const response = await app.request(
+    `http://localhost/api/v1/people/${personId}`,
+    { headers },
+  );
+
+  assert(response.status === 200, "base person response is readable");
+  assert(
+    await response.text() === JSON.stringify({
+          dueInformation,
+          person,
+          status: "ready",
+        }) && argumentCount === 2,
+    "the absent include preserves bytes and does not request summary work",
+  );
+  const invalid = await app.request(
+    `http://localhost/api/v1/people/${personId}?include=everything`,
+    { headers },
+  );
+  assert(
+    invalid.status === 400 && argumentCount === 2,
+    "unsupported include values are rejected before summary work",
+  );
+});
+
 Deno.test("[PEOPLE-003] HTTP reads person life events through the profile projection", async () => {
   const personId = "00000000-0000-4000-8000-000000000100";
   let received: unknown;

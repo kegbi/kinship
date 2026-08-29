@@ -794,11 +794,19 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           parameters: [
             workspaceParameter,
             personIdParameter,
+            {
+              name: "include",
+              in: "query",
+              required: false,
+              description:
+                "Adds the bounded person summary without changing the default response.",
+              schema: { type: "string", enum: ["summary"] },
+            },
           ],
           responses: {
             "200": {
               description:
-                "Current-workspace person identity, lifecycle, and due-information shell",
+                "Current-workspace person identity, lifecycle, due-information shell, and optional bounded summary",
               content: {
                 "application/json": {
                   schema: { $ref: "#/components/schemas/PersonReady" },
@@ -4635,6 +4643,89 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        PersonPrimaryContactMethod: {
+          type: "object",
+          required: ["id", "kind", "label", "value"],
+          properties: {
+            href: { type: "string" },
+            id: { type: "string", format: "uuid" },
+            kind: { type: "string" },
+            label: { type: "string" },
+            value: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        PersonRelationshipCount: {
+          type: "object",
+          required: ["count", "label", "relationshipTypeId"],
+          properties: {
+            count: { type: "integer", minimum: 0 },
+            label: { type: "string" },
+            relationshipTypeId: { type: "string", format: "uuid" },
+          },
+          additionalProperties: false,
+        },
+        PersonProfileSectionCount: {
+          oneOf: [
+            {
+              type: "object",
+              required: ["count", "id", "status"],
+              properties: {
+                count: { type: "integer", minimum: 0 },
+                id: {
+                  $ref: "#/components/schemas/PersonProfileSectionId",
+                },
+                status: { const: "ready" },
+              },
+              additionalProperties: false,
+            },
+            {
+              type: "object",
+              required: ["id", "status"],
+              properties: {
+                id: {
+                  $ref: "#/components/schemas/PersonProfileSectionId",
+                },
+                status: { const: "hidden" },
+              },
+              additionalProperties: false,
+            },
+          ],
+        },
+        PersonProfileSummary: {
+          type: "object",
+          required: [
+            "primaryContactMethods",
+            "relationshipCounts",
+            "sectionCounts",
+          ],
+          properties: {
+            nextReminderAt: { type: "string", format: "date-time" },
+            primaryContactMethods: {
+              type: "array",
+              maxItems: 3,
+              items: {
+                $ref: "#/components/schemas/PersonPrimaryContactMethod",
+              },
+            },
+            relationshipCounts: {
+              type: "array",
+              items: {
+                $ref: "#/components/schemas/PersonRelationshipCount",
+              },
+            },
+            sectionCounts: {
+              type: "array",
+              minItems: 14,
+              maxItems: 14,
+              items: {
+                $ref: "#/components/schemas/PersonProfileSectionCount",
+              },
+            },
+            stayInTouchAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
         PersonProfileIdentity: {
           type: "object",
           required: [
@@ -6605,6 +6696,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
             dueInformation: {
               $ref: "#/components/schemas/PersonDueInformation",
             },
+            summary: { $ref: "#/components/schemas/PersonProfileSummary" },
           },
           additionalProperties: false,
         },
@@ -8776,6 +8868,32 @@ export interface PersonDueInformation {
   readonly status: "ready";
 }
 
+export interface PersonPrimaryContactMethod {
+  readonly href?: string;
+  readonly id: string;
+  readonly kind: string;
+  readonly label: string;
+  readonly value: string;
+}
+
+export interface PersonRelationshipCount {
+  readonly count: number;
+  readonly label: string;
+  readonly relationshipTypeId: string;
+}
+
+export type PersonProfileSectionCount =
+  | { readonly count: number; readonly id: PersonProfileSectionId; readonly status: "ready" }
+  | { readonly id: PersonProfileSectionId; readonly status: "hidden" };
+
+export interface PersonProfileSummary {
+  readonly nextReminderAt?: string;
+  readonly primaryContactMethods: readonly PersonPrimaryContactMethod[];
+  readonly relationshipCounts: readonly PersonRelationshipCount[];
+  readonly sectionCounts: readonly PersonProfileSectionCount[];
+  readonly stayInTouchAt?: string;
+}
+
 export type PersonLifeEventPrecision = "day" | "full" | "month" | "month_day" | "unknown" | "year" | "year_month";
 export interface PersonLifeEvent {
   readonly date: { readonly day?: number; readonly happenedAt?: string; readonly month?: number; readonly precision: PersonLifeEventPrecision; readonly year?: number };
@@ -9034,8 +9152,9 @@ export function createPerson(input: PersonInput, workspaceId?: string): Promise<
   return request("/api/v1/people", { method: "POST", headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined, body: JSON.stringify(input) });
 }
 
-export function getPerson(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity }>> {
-  return request(\`/api/v1/people/\${encodeURIComponent(personId)}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+export function getPerson(personId: string, workspaceId?: string, include?: "summary"): Promise<ApiResult<{ readonly dueInformation: PersonDueInformation; readonly status: "ready" | "archived"; readonly person: PersonProfileIdentity; readonly summary?: PersonProfileSummary }>> {
+  const suffix = include ? \`?include=\${include}\` : "";
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}\${suffix}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
 export function listPersonLifeEvents(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly events: readonly PersonLifeEvent[]; readonly status: "hidden" | "ready" }>> {
