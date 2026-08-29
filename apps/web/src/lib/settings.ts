@@ -163,6 +163,40 @@ function setUnavailable(message: string): void {
   if (target) target.textContent = message;
 }
 
+function settingsFormControls(
+  form: HTMLFormElement,
+): (HTMLButtonElement | HTMLInputElement | HTMLSelectElement)[] {
+  return Array.from(form.elements).filter((control) =>
+    control instanceof HTMLButtonElement ||
+    control instanceof HTMLInputElement ||
+    control instanceof HTMLSelectElement
+  );
+}
+
+function beginSettingsFormLoading(
+  form: HTMLFormElement,
+  message: string,
+): void {
+  for (const control of settingsFormControls(form)) control.disabled = true;
+  setUnavailable(message);
+}
+
+function prepareLoadedSettingsForm(
+  form: HTMLFormElement,
+): ReturnType<typeof prepareSettingsForm> {
+  for (const control of settingsFormControls(form)) {
+    if (!(control instanceof HTMLButtonElement)) control.disabled = false;
+  }
+  return prepareSettingsForm(form);
+}
+
+function markSettingsFormReady(form: HTMLFormElement): void {
+  for (const control of settingsFormControls(form)) {
+    if (control instanceof HTMLButtonElement) control.disabled = false;
+  }
+  setUnavailable("");
+}
+
 function formSnapshot(form: HTMLFormElement): string {
   return JSON.stringify(Array.from(new FormData(form).entries()));
 }
@@ -283,6 +317,7 @@ function prepareSettingsForm(form: HTMLFormElement): {
 export async function mountProfileSettings(): Promise<void> {
   const form = document.querySelector<HTMLFormElement>("#profile-form");
   if (!form) return;
+  beginSettingsFormLoading(form, "Loading your profile…");
   const workspaceId = await selectedWorkspace();
   if (!workspaceId) {
     return setUnavailable("Your session could not be confirmed.");
@@ -292,7 +327,7 @@ export async function mountProfileSettings(): Promise<void> {
   input(form, "email").value = loaded.value.profile.email;
   input(form, "firstName").value = loaded.value.profile.firstName;
   input(form, "lastName").value = loaded.value.profile.lastName;
-  const guard = prepareSettingsForm(form);
+  const guard = prepareLoadedSettingsForm(form);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!guard.validate()) return;
@@ -308,11 +343,13 @@ export async function mountProfileSettings(): Promise<void> {
         : result?.problem.detail ?? "Profile could not be saved.",
     );
   });
+  markSettingsFormReady(form);
 }
 
 export async function mountPreferenceSettings(): Promise<void> {
   const form = document.querySelector<HTMLFormElement>("#preferences-form");
   if (!form) return;
+  beginSettingsFormLoading(form, "Loading your preferences…");
   const workspaceId = await selectedWorkspace();
   if (!workspaceId) {
     return setUnavailable("Your session could not be confirmed.");
@@ -330,7 +367,7 @@ export async function mountPreferenceSettings(): Promise<void> {
   select(form, "measurementSystem").value = value.measurementSystem;
   select(form, "contactSortOrder").value = value.contactSortOrder;
   select(form, "contactNameOrder").value = value.contactNameOrder;
-  const guard = prepareSettingsForm(form);
+  const guard = prepareLoadedSettingsForm(form);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!guard.validate()) return;
@@ -364,6 +401,7 @@ export async function mountPreferenceSettings(): Promise<void> {
         : result?.problem.detail ?? "Preferences could not be saved.",
     );
   });
+  markSettingsFormReady(form);
 }
 
 export async function mountSecuritySettings(): Promise<void> {
@@ -425,6 +463,7 @@ export async function mountSecuritySettings(): Promise<void> {
 export async function mountWorkspaceSettings(): Promise<void> {
   const form = document.querySelector<HTMLFormElement>("#workspace-form");
   if (!form) return;
+  beginSettingsFormLoading(form, "Loading workspace settings…");
   const workspaceId = await selectedWorkspace();
   if (!workspaceId) {
     return setUnavailable("Your session could not be confirmed.");
@@ -446,7 +485,7 @@ export async function mountWorkspaceSettings(): Promise<void> {
       defaultReminderTime: value.defaultReminderTime,
     })
   ) input(form, name).value = current;
-  const guard = prepareSettingsForm(form);
+  const guard = prepareLoadedSettingsForm(form);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!guard.validate()) return;
@@ -476,4 +515,5 @@ export async function mountWorkspaceSettings(): Promise<void> {
         : result?.problem.detail ?? "Workspace settings could not be saved.",
     );
   });
+  markSettingsFormReady(form);
 }
