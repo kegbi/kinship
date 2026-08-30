@@ -112,6 +112,11 @@ export async function mountPeopleCreate(
   const status = document.querySelector<HTMLElement>("#people-create-status");
   const duplicate = document.querySelector<HTMLElement>("#duplicate-warning");
   if (!form || !status || !duplicate) return;
+  const parameters = new URLSearchParams(globalThis.location.search);
+  for (const name of ["givenName", "familyName"] as const) {
+    const prefill = parameters.get(name);
+    if (prefill !== null) input(form, name).value = prefill;
+  }
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") {
     status.textContent = "Your active workspace could not be confirmed.";

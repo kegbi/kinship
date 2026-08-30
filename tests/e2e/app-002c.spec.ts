@@ -138,6 +138,9 @@ async function keyboardReachMemberMenuToggle(page: Page): Promise<void> {
   await expect(page.getByRole("link", { name: "Journal", exact: true }))
     .toBeFocused();
   await page.keyboard.press("Tab");
+  await expect(page.getByRole("combobox", { name: "Find a person" }))
+    .toBeFocused();
+  await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Quick capture" }))
     .toBeFocused();
   await page.keyboard.press("Tab");

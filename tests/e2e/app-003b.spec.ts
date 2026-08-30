@@ -233,6 +233,42 @@ test(
       values ('${adaId}'::uuid, '${foreignTagId}'::uuid);
     `);
 
+    const globalSearch = page.getByRole("combobox", {
+      name: "Find a person",
+    });
+    await globalSearch.fill("Ada Lovelace");
+    await expect(
+      page.getByRole("option", { name: /Ada Lovelace.*Scientist/ }),
+    ).toBeVisible();
+    await globalSearch.press("Enter");
+    await expect(page).toHaveURL(new RegExp(`/app/people/${adaId}$`));
+
+    await page.goto("/app/people");
+    const peopleNavigation = page.getByRole("link", {
+      exact: true,
+      name: "People",
+    });
+    await peopleNavigation.focus();
+    await page.keyboard.press("Control+KeyK");
+    await expect(page.locator("#global-people-search-dialog")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#global-people-search-dialog")).not
+      .toBeVisible();
+    await expect(peopleNavigation).toBeFocused();
+
+    await page.getByRole("combobox", { name: "Find a person" }).fill(
+      "Marie Dupont",
+    );
+    await page.getByRole("option", {
+      name: 'Add "Marie Dupont" as a new person',
+    }).click();
+    await expect(page).toHaveURL(
+      /\/app\/people\/new\?givenName=Marie&familyName=Dupont$/,
+    );
+    await expect(page.getByLabel("Given name")).toHaveValue("Marie");
+    await expect(page.getByLabel("Family name")).toHaveValue("Dupont");
+    await page.goto("/app/people");
+
     await page.reload();
     await expect(page.locator("#people-directory-list > li")).toHaveCount(20);
     const adaDirectoryLink = page.locator(
