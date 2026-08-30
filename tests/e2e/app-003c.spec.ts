@@ -297,6 +297,15 @@ test(
     ).toBeVisible();
     await expect(page.getByText("No tags saved")).toBeVisible();
     await expect(page.getByText("No description saved.")).toBeVisible();
+    await expect(page.locator("#person-first-run")).toBeVisible();
+    const emptyZones = page.locator("[data-zone]");
+    await expect(emptyZones).toHaveCount(4);
+    for (const zone of await emptyZones.all()) await expect(zone).toBeHidden();
+    await expect(page.locator("[data-profile-section]")).toHaveCount(22);
+    await expectAccessible(page);
+    await page.getByRole("button", { name: "Show all sections" }).click();
+    await expect(page.locator("#person-first-run")).toBeHidden();
+    for (const zone of await emptyZones.all()) await expect(zone).toBeVisible();
 
     databaseSql(
       `update crm.people set archived_at = now() where id = '${personId}'::uuid`,

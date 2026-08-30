@@ -270,6 +270,9 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
       '[data-profile-fact-section][data-section-state="loading"]',
     ),
   ).toHaveCount(0);
+  await expect(page.locator("#person-first-run")).toBeVisible();
+  await page.getByRole("button", { name: "Show all sections" }).click();
+  await expect(page.locator("#person-first-run")).toBeHidden();
 
   await openPersonMenu(page);
   const editPerson = page.getByRole("button", { name: "Edit person" });

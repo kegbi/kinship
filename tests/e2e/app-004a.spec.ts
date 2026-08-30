@@ -104,6 +104,9 @@ test(
     await expect(
       page.getByRole("heading", { level: 1, name: "Ada Lovelace" }),
     ).toBeVisible();
+    await expect(page.locator("#person-first-run")).toBeVisible();
+    await page.getByRole("button", { name: "Show all sections" }).click();
+    await expect(page.locator("#person-first-run")).toBeHidden();
 
     await openPersonMenu(page);
     await page.getByRole("button", { name: "Edit person" }).click();
