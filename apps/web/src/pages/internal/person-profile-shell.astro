@@ -99,10 +99,23 @@ const railSections = [
             data-interaction-intended-kind="note"
             type="button"
           >Add note</button>
-          <button id="person-edit-open" class="button-secondary" type="button">Edit person</button>
-          <a id="person-export-vcard" class="button-secondary" href="/app/people" download hidden>Export vCard</a>
-          <button id="person-archive" class="button-secondary" type="button">Archive person</button>
-          <button id="person-delete-open" class="button-danger" type="button">Delete person</button>
+          <div class="person-menu" role="group" aria-label="Person menu">
+            <button
+              id="person-menu-toggle"
+              class="button-secondary"
+              type="button"
+              aria-label="Open person menu"
+              aria-expanded="false"
+              aria-controls="person-menu"
+            ><span aria-hidden="true">…</span></button>
+            <div id="person-menu" class="person-menu-popover" hidden>
+              <button id="person-edit-open" class="button-secondary" type="button">Edit person</button>
+              <a id="person-export-vcard" class="button-secondary" href="/app/people" download hidden>Export vCard</a>
+              <button id="person-archive" class="button-secondary" type="button">Archive person</button>
+              <button id="person-audit-history" class="button-secondary" type="button">Audit history</button>
+              <button id="person-delete-open" class="button-danger" type="button">Delete person</button>
+            </div>
+          </div>
         </div>
 
         <dl class="person-vital-stats" data-person-vital-stats>

@@ -1,9 +1,17 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import axe from "axe-core";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
 const password = "correct horse battery staple";
+
+async function openPersonMenu(page: Page): Promise<void> {
+  const toggle = page.getByRole("button", { name: "Open person menu" });
+  if (await toggle.getAttribute("aria-expanded") !== "true") {
+    await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+}
 
 test(
   "[PLANNING-001] creates, changes, completes, and reopens person and workspace tasks",
@@ -80,6 +88,7 @@ test(
     });
     await expect(personOpenTask).toBeVisible();
 
+    await openPersonMenu(page);
     await page.getByRole("button", { name: "Archive person" }).click();
     await expect(page.getByText("Archived person · read-only")).toBeVisible();
     await expect(taskSection.getByRole("button", { name: "Add task" }))

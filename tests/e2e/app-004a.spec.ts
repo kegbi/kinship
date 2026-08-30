@@ -61,6 +61,14 @@ async function signIn(page: Page, email: string): Promise<void> {
   await expect(page).toHaveURL(/\/app$/);
 }
 
+async function openPersonMenu(page: Page): Promise<void> {
+  const toggle = page.getByRole("button", { name: "Open person menu" });
+  if (await toggle.getAttribute("aria-expanded") !== "true") {
+    await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+}
+
 async function expectAccessible(page: Page): Promise<void> {
   await page.addScriptTag({ content: axe.source });
   const violations = await page.evaluate(async () =>
@@ -97,6 +105,7 @@ test(
       page.getByRole("heading", { level: 1, name: "Ada Lovelace" }),
     ).toBeVisible();
 
+    await openPersonMenu(page);
     await page.getByRole("button", { name: "Edit person" }).click();
     await page.locator(
       '#person-edit-form input[name="familyName"]',
@@ -109,6 +118,7 @@ test(
       "Person identity updated",
     );
 
+    await openPersonMenu(page);
     await page.getByRole("button", { name: "Delete person" }).click();
     const dialog = page.getByRole("dialog", { name: "Delete this person?" });
     await expect(dialog).toContainText("Related records are retained");
@@ -138,14 +148,17 @@ test(
     ).toBe(true);
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
+    await openPersonMenu(page);
     await expect(page.getByRole("button", { name: "Delete person" }))
       .toBeFocused();
     expect(deleteRequests).toHaveLength(0);
 
+    await openPersonMenu(page);
     await page.getByRole("button", { name: "Delete person" }).click();
     await expect(dialog).toContainText("DELETE Ada Byron");
     await page.getByRole("button", { name: "Cancel delete" }).click();
     await expect(dialog).toBeHidden();
+    await openPersonMenu(page);
     await expect(page.getByRole("button", { name: "Delete person" }))
       .toBeFocused();
     expect(deleteRequests).toHaveLength(0);
@@ -153,6 +166,7 @@ test(
       "Delete cancelled",
     );
 
+    await openPersonMenu(page);
     await page.getByRole("button", { name: "Archive person" }).click();
     await expect(page.getByText("Archived person · read-only")).toBeVisible();
     const logActivity = page.locator(
@@ -165,8 +179,10 @@ test(
     await expect(logActivity).toBeDisabled();
     await expect(addNote).toBeHidden();
     await expect(addNote).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Edit person" }))
-      .toBeHidden();
+    await openPersonMenu(page);
+    const archivedEdit = page.locator("#person-menu #person-edit-open");
+    await expect(archivedEdit).toHaveCount(1);
+    await expect(archivedEdit).toBeHidden();
     await expect(page.locator("#person-lifecycle-status")).toContainText(
       "They now appear in Archived people",
     );
@@ -197,6 +213,7 @@ test(
       page.getByRole("heading", { level: 2, name: "Ada Byron" }),
     ).toBeVisible();
     await page.getByRole("link", { name: /Ada Byron/ }).click();
+    await openPersonMenu(page);
     await page.getByRole("button", { name: "Delete person" }).click();
     await expect(dialog).toContainText("Related records are retained");
     await page.getByLabel("Confirmation").fill("DELETE Ada Byron");

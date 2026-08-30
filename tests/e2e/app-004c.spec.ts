@@ -116,6 +116,14 @@ async function signIn(page: Page, email: string): Promise<void> {
   await expect(page).toHaveURL(/\/app$/);
 }
 
+async function openPersonMenu(page: Page): Promise<void> {
+  const toggle = page.getByRole("button", { name: "Open person menu" });
+  if (await toggle.getAttribute("aria-expanded") !== "true") {
+    await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+}
+
 async function expectAccessible(page: Page): Promise<void> {
   await page.addScriptTag({ content: axe.source });
   expect(
@@ -263,6 +271,7 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
     ),
   ).toHaveCount(0);
 
+  await openPersonMenu(page);
   const editPerson = page.getByRole("button", { name: "Edit person" });
   const exportVCard = page.getByRole("link", { name: "Export vCard" });
   await expectAlignedControls(editPerson, exportVCard);
@@ -603,6 +612,7 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
   ).toBeVisible();
   await page.unroute("**/facts/contact-methods");
   await page.goto(profilePath);
+  await openPersonMenu(page);
   await page.getByRole("button", { name: "Archive person" }).click();
   await expect(contacts).toHaveAttribute("data-section-state", "read-only");
   await expect(contacts.getByRole("button", { name: /Add|Edit|Delete/ }))

@@ -111,6 +111,14 @@ async function signIn(page: Page, email: string): Promise<void> {
   await expect(page).toHaveURL(/\/app$/);
 }
 
+async function openPersonMenu(page: Page): Promise<void> {
+  const toggle = page.getByRole("button", { name: "Open person menu" });
+  if (await toggle.getAttribute("aria-expanded") !== "true") {
+    await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+}
+
 async function expectAccessible(page: Page): Promise<void> {
   await page.addScriptTag({ content: axe.source });
   const violations = await page.evaluate(async () =>
@@ -171,6 +179,7 @@ test(
       page.getByRole("heading", { level: 1, name: "Ada Lovelace" }),
     ).toBeVisible();
     await expect(page.getByText("Identity saved")).toBeVisible();
+    await openPersonMenu(page);
     for (const name of ["Edit person", "Archive person", "Delete person"]) {
       const lifecycleControl = page.getByRole("button", { exact: true, name });
       await expect(lifecycleControl).toBeVisible();

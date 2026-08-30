@@ -617,6 +617,57 @@ function mountSectionNavigation(
   });
 }
 
+function mountPersonMenu(
+  profile: ProfileElements,
+  navigation: SectionNavigationContext,
+): void {
+  const toggle = document.querySelector<HTMLButtonElement>(
+    "#person-menu-toggle",
+  );
+  const menu = document.querySelector<HTMLElement>("#person-menu");
+  const auditHistory = document.querySelector<HTMLButtonElement>(
+    "#person-audit-history",
+  );
+  if (!toggle || !menu || !auditHistory) return;
+
+  toggle.addEventListener(
+    "click",
+    () => setPersonMenuOpen(menu.hasAttribute("hidden")),
+  );
+  menu.addEventListener("click", (event) => {
+    const item = (event.target as Element | null)?.closest("a, button");
+    if (!item || !menu.contains(item)) return;
+    setPersonMenuOpen(false);
+    if (item !== auditHistory) return;
+
+    const sectionId = "audit-summary";
+    const zone = SECTION_ZONE[sectionId];
+    const url = new URL(globalThis.location.href);
+    url.searchParams.set("section", sectionId);
+    url.searchParams.set("view", zone);
+    if (navigation.zoneFilter) {
+      applyZoneView(navigation.zoneFilter, zone);
+    }
+    globalThis.history.pushState({}, "", url);
+    focusSection(profile, navigation, sectionId);
+  });
+}
+
+function setPersonMenuOpen(open: boolean): void {
+  const toggle = document.querySelector<HTMLButtonElement>(
+    "#person-menu-toggle",
+  );
+  const menu = document.querySelector<HTMLElement>("#person-menu");
+  if (!toggle || !menu) return;
+  menu.hidden = !open;
+  toggle.setAttribute("aria-expanded", String(open));
+}
+
+function focusPersonMenuItem(item: HTMLElement): void {
+  setPersonMenuOpen(true);
+  item.focus();
+}
+
 function renderTags(
   target: HTMLUListElement,
   person: PersonProfileIdentity,
@@ -829,7 +880,7 @@ function mountLifecycleActions(
   });
   lifecycle.editCancel.addEventListener("click", () => {
     lifecycle.editForm.hidden = true;
-    lifecycle.editOpen.focus();
+    focusPersonMenuItem(lifecycle.editOpen);
     announce("Edit cancelled. No changes were saved.");
   });
   lifecycle.editForm.addEventListener("submit", async (event) => {
@@ -915,7 +966,7 @@ function mountLifecycleActions(
     lifecycle.deleteConfirm.disabled = false;
     if (lifecycle.deleteDialog.open) lifecycle.deleteDialog.close();
     lifecycle.deleteForm.reset();
-    lifecycle.deleteOpen.focus();
+    focusPersonMenuItem(lifecycle.deleteOpen);
     announce("Delete cancelled. No changes were made.");
   };
   lifecycle.deleteCancel.addEventListener("click", cancelDelete);
@@ -1023,6 +1074,7 @@ export async function mountPeopleProfile(): Promise<void> {
     ...(zoneFilter ? { zoneFilter } : {}),
   };
   mountSectionNavigation(profile, sectionNavigation);
+  mountPersonMenu(profile, sectionNavigation);
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") {
     renderState(

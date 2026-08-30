@@ -47,10 +47,16 @@ function markup(path = `/app/people/${personId}`): void {
         <div data-person-profile-actions role="group" aria-label="Person actions">
           <button data-person-interaction-capture data-quick-capture data-interaction-intended-kind="activity" type="button">Log interaction</button>
           <button data-person-interaction-capture data-quick-capture data-interaction-intended-kind="note" type="button">Add note</button>
-          <button id="person-edit-open" type="button">Edit person</button>
-          <a id="person-export-vcard" hidden>Export vCard</a>
-          <button id="person-archive" type="button">Archive person</button>
-          <button id="person-delete-open" type="button">Delete person</button>
+          <div role="group" aria-label="Person menu">
+            <button id="person-menu-toggle" type="button" aria-label="Open person menu" aria-expanded="false" aria-controls="person-menu"><span aria-hidden="true">…</span></button>
+            <div id="person-menu" hidden>
+              <button id="person-edit-open" type="button">Edit person</button>
+              <a id="person-export-vcard" hidden>Export vCard</a>
+              <button id="person-archive" type="button">Archive person</button>
+              <button id="person-audit-history" type="button">Audit history</button>
+              <button id="person-delete-open" type="button">Delete person</button>
+            </div>
+          </div>
         </div>
         <dl data-person-vital-stats>
           <div><dt>Age or birthday</dt><dd><a href="?section=important-dates" data-person-vital-value="birthday">Loading…</a></dd></div>
@@ -90,6 +96,7 @@ function markup(path = `/app/people/${personId}`): void {
           <li><a href="?section=important-dates" data-section-link="important-dates">Important dates</a></li>
           <li><a href="?section=documents" data-section-link="documents">Documents</a></li>
           <li><a href="?section=photos" data-section-link="photos">Photos</a></li>
+          <li><a href="?section=audit-summary" data-section-link="audit-summary">Audit summary</a></li>
         </ul>
         <p id="person-profile-section-notice" role="status" tabindex="-1" hidden></p>
       </nav>
@@ -120,6 +127,7 @@ function markup(path = `/app/people/${personId}`): void {
         </section>
         <section class="person-zone" data-zone="admin" aria-labelledby="person-zone-admin-heading">
           <h2 id="person-zone-admin-heading">Admin</h2>
+          <section id="profile-section-audit-summary" data-profile-section="audit-summary" tabindex="-1"><h3>Audit summary</h3></section>
         </section>
       </div>
     </section>`;
@@ -602,6 +610,60 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         "aria-pressed",
       ),
     ).toBe("true");
+  });
+
+  it("UXD-002A2 toggles and closes the person menu and reveals Admin from Audit history", async () => {
+    markup();
+    stubReadyProfile();
+
+    await mountPeopleProfile();
+
+    const toggle = document.querySelector<HTMLButtonElement>(
+      "#person-menu-toggle",
+    )!;
+    const menu = document.querySelector<HTMLElement>("#person-menu")!;
+    expect(menu.hidden).toBe(true);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+
+    toggle.click();
+    expect(menu.hidden).toBe(false);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    toggle.click();
+    expect(menu.hidden).toBe(true);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+
+    toggle.click();
+    document.querySelector<HTMLButtonElement>("#person-edit-open")?.click();
+    expect(menu.hidden).toBe(true);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(document.querySelector<HTMLFormElement>("#person-edit-form")?.hidden)
+      .toBe(false);
+    expect(document.activeElement).toBe(
+      document.querySelector<HTMLInputElement>(
+        '#person-edit-form input[name="givenName"]',
+      ),
+    );
+
+    toggle.click();
+    const auditHistory = document.querySelector<HTMLButtonElement>(
+      "#person-audit-history",
+    )!;
+    auditHistory.click();
+    expect(menu.hidden).toBe(true);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(new URLSearchParams(location.search).get("section")).toBe(
+      "audit-summary",
+    );
+    expect(new URLSearchParams(location.search).get("view")).toBe("admin");
+    expect(
+      document.querySelector<HTMLElement>('[data-zone="admin"]')?.hidden,
+    ).toBe(false);
+    expect(
+      [...document.querySelectorAll<HTMLElement>("[data-zone]")]
+        .filter((zone) => zone.dataset.zone !== "admin")
+        .every((zone) => zone.hidden),
+    ).toBe(true);
+    expect(auditHistory.closest("a")).toBeNull();
   });
 
   it("UXD-002C does not write history while popstate restores a section", async () => {
@@ -1355,6 +1417,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     document.addEventListener("person-lifecycle-changed", recordLifecycle);
     await mountPeopleProfile();
 
+    document.querySelector<HTMLButtonElement>("#person-menu-toggle")?.click();
     document.querySelector<HTMLButtonElement>("#person-edit-open")?.click();
     const editForm = document.querySelector<HTMLFormElement>(
       "#person-edit-form",
@@ -1374,6 +1437,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         detail: { personUpdatedAt: factRevision },
       }),
     );
+    document.querySelector<HTMLButtonElement>("#person-menu-toggle")?.click();
     document.querySelector<HTMLButtonElement>("#person-archive")?.click();
     await vi.waitFor(() =>
       expect(document.querySelector<HTMLElement>("#person-restore")?.hidden)
@@ -1388,6 +1452,27 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     });
     expect(document.querySelector<HTMLElement>("#person-edit-open")?.hidden)
       .toBe(true);
+    document.querySelector<HTMLButtonElement>("#person-menu-toggle")?.click();
+    expect(document.querySelector<HTMLElement>("#person-menu")?.hidden).toBe(
+      false,
+    );
+    expect(document.querySelector<HTMLElement>("#person-archive")?.hidden)
+      .toBe(true);
+    const controlsNamed = (name: string) =>
+      [...document.querySelectorAll<HTMLElement>("button, a")].filter(
+        (control) => control.textContent?.trim() === name,
+      );
+    for (
+      const name of [
+        "Edit person",
+        "Archive person",
+        "Restore person",
+        "Delete person",
+      ]
+    ) {
+      expect(controlsNamed(name)).toHaveLength(1);
+    }
+    expect(document.querySelector("#person-menu #person-restore")).toBeNull();
     expect(lifecycleEvents[0]).toEqual({
       archived: true,
       personId,
@@ -1423,6 +1508,9 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       .toBe(false);
     expect(document.activeElement).toBe(
       document.querySelector("#person-delete-open"),
+    );
+    expect(document.querySelector<HTMLElement>("#person-menu")?.hidden).toBe(
+      false,
     );
     expect(document.querySelector("#person-lifecycle-status")?.textContent)
       .toContain("cancelled");

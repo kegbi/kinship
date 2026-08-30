@@ -1,9 +1,17 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import axe from "axe-core";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
 const password = "correct horse battery staple";
+
+async function openPersonMenu(page: Page): Promise<void> {
+  const toggle = page.getByRole("button", { name: "Open person menu" });
+  if (await toggle.getAttribute("aria-expanded") !== "true") {
+    await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+}
 
 test("[EXPORT-001] exports portable workspace data and a person vCard", {
   annotation: [{ type: "flow", description: "EXPORT-001" }, {
@@ -111,6 +119,7 @@ test("[EXPORT-001] exports portable workspace data and a person vCard", {
     );
   }
   await page.goto(`/app/people/${personId}`);
+  await openPersonMenu(page);
   const vcardLink = page.getByRole("link", { name: "Export vCard" });
   await expect(vcardLink).toHaveAttribute(
     "href",
