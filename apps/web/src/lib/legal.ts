@@ -5,7 +5,10 @@ import {
   type LegalDocument,
   signOut,
 } from "../../../../packages/contracts/generated/auth-client.ts";
-import { ACTIVE_WORKSPACE_KEY } from "./workspace-context.ts";
+import {
+  ACTIVE_WORKSPACE_KEY,
+  clearSessionCache,
+} from "./workspace-context.ts";
 
 type Navigate = (path: string) => void;
 const browserNavigate: Navigate = (path) => globalThis.location.assign(path);
@@ -166,8 +169,10 @@ export async function mountCompliance(
     elements.state.textContent = "Leaving the protected workspace…";
     const result = await signOut().catch(() => undefined);
     elements.decline.disabled = false;
-    if (result?.ok) navigate(result.value.next);
-    else {elements.state.textContent =
+    if (result?.ok) {
+      clearSessionCache();
+      navigate(result.value.next);
+    } else {elements.state.textContent =
         "Sign-out could not be completed. Try again.";}
   });
   await refresh();

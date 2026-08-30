@@ -5,6 +5,8 @@ import {
 } from "../../../../packages/contracts/generated/auth-client.ts";
 
 export const ACTIVE_WORKSPACE_KEY = "kinship.active-workspace";
+export const SESSION_CACHE_KEY = "kinship.session";
+const SESSION_CACHE_TTL_MS = 60_000;
 export const WORKSPACE_CHANGE_REQUEST_EVENT =
   "kinship:workspace-change-request";
 
@@ -29,6 +31,106 @@ export type WorkspaceSessionResolution =
   | { readonly status: "unavailable" };
 
 let activeResolution: Promise<WorkspaceSessionResolution> | undefined;
+let activeRevalidation:
+  | Promise<WorkspaceSessionResolution | undefined>
+  | undefined;
+let completedRevalidation: WorkspaceSessionResolution | undefined;
+// This is a cross-document accelerator, not a same-document memo:
+// optimisticSession serves concurrent startup consumers during revalidation,
+// while later resolutions in a long-lived document make a real round trip.
+let optimisticSession: SessionContext | undefined;
+let sessionCacheChecked = false;
+
+interface SessionCacheEntry {
+  readonly savedAt: number;
+  readonly session: SessionContext;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isWorkspace(value: unknown): boolean {
+  return isRecord(value) && typeof value.id === "string" &&
+    typeof value.name === "string";
+}
+
+function isSessionCacheEntry(value: unknown): value is SessionCacheEntry {
+  if (
+    !isRecord(value) || typeof value.savedAt !== "number" ||
+    !Number.isFinite(value.savedAt) ||
+    !isRecord(value.session)
+  ) return false;
+  const session = value.session;
+  return session.status === "authenticated" &&
+    isRecord(session.principal) &&
+    typeof session.principal.userId === "string" &&
+    isWorkspace(session.workspace) &&
+    isRecord(session.member) &&
+    typeof session.member.id === "string" &&
+    (session.member.role === "owner" || session.member.role === "admin" ||
+      session.member.role === "member") &&
+    Array.isArray(session.workspaces) &&
+    session.workspaces.every(isWorkspace) &&
+    (session.requiredLegalDocuments === undefined ||
+      Array.isArray(session.requiredLegalDocuments));
+}
+
+function readSessionCache(): SessionCacheEntry | undefined {
+  try {
+    const raw = sessionStorage.getItem(SESSION_CACHE_KEY);
+    if (!raw) return undefined;
+    const entry: unknown = JSON.parse(raw);
+    if (!isSessionCacheEntry(entry)) {
+      clearSessionCache();
+      return undefined;
+    }
+    const age = Date.now() - entry.savedAt;
+    const activeWorkspace = sessionStorage.getItem(ACTIVE_WORKSPACE_KEY);
+    if (
+      age < 0 || age >= SESSION_CACHE_TTL_MS ||
+      (activeWorkspace !== null &&
+        activeWorkspace !== entry.session.workspace.id)
+    ) {
+      clearSessionCache();
+      return undefined;
+    }
+    return entry;
+  } catch {
+    clearSessionCache();
+    return undefined;
+  }
+}
+
+function writeSessionCache(session: SessionContext): void {
+  try {
+    sessionStorage.setItem(
+      SESSION_CACHE_KEY,
+      JSON.stringify({ savedAt: Date.now(), session }),
+    );
+  } catch {
+    // Storage can be full or disabled without preventing session resolution.
+  }
+}
+
+export function clearSessionCache(): void {
+  completedRevalidation = undefined;
+  try {
+    sessionStorage.removeItem(SESSION_CACHE_KEY);
+  } catch {
+    // Disabled storage degrades to uncached session resolution.
+  }
+}
+
+export function setActiveWorkspace(workspaceId: string): void {
+  sessionStorage.setItem(ACTIVE_WORKSPACE_KEY, workspaceId);
+  clearSessionCache();
+}
+
+export function clearActiveWorkspace(): void {
+  sessionStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+  clearSessionCache();
+}
 
 async function resolveWorkspaceSessionSelection(): Promise<
   WorkspaceSessionResolution
@@ -43,7 +145,7 @@ async function resolveWorkspaceSessionSelection(): Promise<
     result = await getSession().catch(() => undefined);
     if (!result) return { status: "unavailable" };
     if (result.ok) {
-      sessionStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+      clearActiveWorkspace();
       return { status: "ready", session: result.value };
     }
     if (result.problem.status !== 401) return { status: "unavailable" };
@@ -62,7 +164,7 @@ async function resolveWorkspaceSessionSelection(): Promise<
       ? { status: "unavailable" }
       : { status: "access-lost" };
   }
-  if (savedWorkspace) sessionStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+  if (savedWorkspace) clearActiveWorkspace();
   return {
     entryFirstName: entry.value.member.firstName,
     session: entered.value,
@@ -70,12 +172,71 @@ async function resolveWorkspaceSessionSelection(): Promise<
   };
 }
 
+async function revalidateSession(
+  cachedSession: SessionContext,
+): Promise<WorkspaceSessionResolution | undefined> {
+  const resolution = await resolveWorkspaceSessionSelection();
+  if (resolution.status === "unavailable") return undefined;
+  if (resolution.status === "access-lost") {
+    clearSessionCache();
+    return resolution;
+  }
+  writeSessionCache(resolution.session);
+  return JSON.stringify(resolution.session) === JSON.stringify(cachedSession)
+    ? undefined
+    : { session: resolution.session, status: "ready" };
+}
+
+function startSessionRevalidation(cachedSession: SessionContext): void {
+  if (activeRevalidation) return;
+  completedRevalidation = undefined;
+  optimisticSession = cachedSession;
+  const revalidation = revalidateSession(cachedSession);
+  activeRevalidation = revalidation;
+  void revalidation.then((resolution) => {
+    completedRevalidation = resolution;
+  }).finally(() => {
+    if (activeRevalidation === revalidation) {
+      activeRevalidation = undefined;
+      optimisticSession = undefined;
+    }
+  });
+}
+
 export function resolveWorkspaceSession(): Promise<WorkspaceSessionResolution> {
   if (activeResolution) return activeResolution;
-  activeResolution = resolveWorkspaceSessionSelection().finally(() => {
+  if (activeRevalidation && optimisticSession) {
+    return Promise.resolve({ session: optimisticSession, status: "ready" });
+  }
+  if (!sessionCacheChecked) {
+    sessionCacheChecked = true;
+    const cached = readSessionCache();
+    if (cached) {
+      startSessionRevalidation(cached.session);
+      return Promise.resolve({ session: cached.session, status: "ready" });
+    }
+  }
+  completedRevalidation = undefined;
+  activeResolution = resolveWorkspaceSessionSelection().then((resolution) => {
+    if (resolution.status === "ready") writeSessionCache(resolution.session);
+    return resolution;
+  }).finally(() => {
     activeResolution = undefined;
   });
   return activeResolution;
+}
+
+export function onSessionRevalidated(
+  handler: (resolution: WorkspaceSessionResolution) => void,
+): void {
+  if (activeRevalidation) {
+    void activeRevalidation.then((resolution) => {
+      if (resolution) handler(resolution);
+    });
+    return;
+  }
+  const resolution = completedRevalidation;
+  if (resolution) queueMicrotask(() => handler(resolution));
 }
 
 export function requestWorkspaceChange(

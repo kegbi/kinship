@@ -4,9 +4,11 @@ import {
   signOut,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import {
-  ACTIVE_WORKSPACE_KEY,
+  clearActiveWorkspace,
+  onSessionRevalidated,
   requestWorkspaceChange,
   resolveWorkspaceSession,
+  setActiveWorkspace,
 } from "./workspace-context.ts";
 import { clearToasts, showToast } from "./toasts.ts";
 
@@ -156,10 +158,60 @@ function renderRouteForbidden(elements: ShellElements): void {
   elements.access.focus();
 }
 
-function renderSession(
+function applySessionGating(
   elements: ShellElements,
   session: SessionContext,
-  firstName?: string,
+  navigate: Navigate,
+): "blocked" | "allowed" {
+  const isWorkspaceAdmin = session.member.role === "owner" ||
+    session.member.role === "admin";
+  const isWorkspaceOwner = session.member.role === "owner";
+  if (!isWorkspaceAdmin) {
+    document.querySelectorAll("[data-requires-workspace-admin]").forEach(
+      (node) => node.remove(),
+    );
+  }
+  if (!isWorkspaceOwner) {
+    document.querySelectorAll("[data-requires-workspace-owner]").forEach(
+      (node) => node.remove(),
+    );
+  }
+  if (
+    (document.body.dataset.pageId === "settings.members" ||
+      document.body.dataset.pageId === "settings.workspace" ||
+      document.body.dataset.pageId === "settings.personalization" ||
+      document.body.dataset.pageId === "settings.storage" ||
+      document.body.dataset.pageId?.startsWith("settings.import") === true ||
+      document.body.dataset.pageId === "settings.export" ||
+      document.body.dataset.pageId === "people.audit" ||
+      document.body.dataset.pageId === "settings.audit") &&
+    !isWorkspaceAdmin
+  ) {
+    renderRouteForbidden(elements);
+    return "blocked";
+  }
+  if (
+    document.body.dataset.pageId === "settings.workspace-danger" &&
+    !isWorkspaceOwner
+  ) {
+    renderRouteForbidden(elements);
+    return "blocked";
+  }
+  const requiredLegalDocuments = session.requiredLegalDocuments ?? [];
+  if (
+    requiredLegalDocuments.length > 0 &&
+    document.body.dataset.pageId !== "compliance.accept"
+  ) {
+    const next = `${globalThis.location.pathname}${globalThis.location.search}`;
+    navigate(`/app/compliance?next=${encodeURIComponent(next)}`);
+    return "blocked";
+  }
+  return "allowed";
+}
+
+function renderWorkspacePresentation(
+  elements: ShellElements,
+  session: SessionContext,
 ): void {
   for (
     const target of document.querySelectorAll<HTMLElement>(
@@ -178,6 +230,14 @@ function renderSession(
     }),
   );
   elements.switcher.hidden = session.workspaces.length <= 1;
+}
+
+function renderSession(
+  elements: ShellElements,
+  session: SessionContext,
+  firstName?: string,
+): void {
+  renderWorkspacePresentation(elements, session);
   elements.access.hidden = true;
   elements.root.hidden = false;
   const heading = document.querySelector<HTMLElement>("#today-heading");
@@ -217,51 +277,24 @@ export async function mountApplicationShell(
     renderAccessFailure(elements);
     return;
   }
-  const isWorkspaceAdmin = resolved.session.member.role === "owner" ||
-    resolved.session.member.role === "admin";
-  const isWorkspaceOwner = resolved.session.member.role === "owner";
-  if (!isWorkspaceAdmin) {
-    document.querySelectorAll("[data-requires-workspace-admin]").forEach(
-      (node) => node.remove(),
-    );
-  }
-  if (!isWorkspaceOwner) {
-    document.querySelectorAll("[data-requires-workspace-owner]").forEach(
-      (node) => node.remove(),
-    );
-  }
-  if (
-    (document.body.dataset.pageId === "settings.members" ||
-      document.body.dataset.pageId === "settings.workspace" ||
-      document.body.dataset.pageId === "settings.personalization" ||
-      document.body.dataset.pageId === "settings.storage" ||
-      document.body.dataset.pageId?.startsWith("settings.import") === true ||
-      document.body.dataset.pageId === "settings.export" ||
-      document.body.dataset.pageId === "people.audit" ||
-      document.body.dataset.pageId === "settings.audit") &&
-    !isWorkspaceAdmin
-  ) {
-    renderRouteForbidden(elements);
-    return;
-  }
-  if (
-    document.body.dataset.pageId === "settings.workspace-danger" &&
-    !isWorkspaceOwner
-  ) {
-    renderRouteForbidden(elements);
-    return;
-  }
-  const requiredLegalDocuments = resolved.session.requiredLegalDocuments ?? [];
-  if (
-    requiredLegalDocuments.length > 0 &&
-    document.body.dataset.pageId !== "compliance.accept"
-  ) {
-    const next = `${globalThis.location.pathname}${globalThis.location.search}`;
-    navigate(`/app/compliance?next=${encodeURIComponent(next)}`);
+  if (applySessionGating(elements, resolved.session, navigate) === "blocked") {
     return;
   }
   renderSession(elements, resolved.session, resolved.firstName);
   let activeWorkspaceId = resolved.session.workspace.id;
+  onSessionRevalidated((revalidated) => {
+    if (revalidated.status === "access-lost") {
+      renderAccessFailure(elements);
+    } else if (revalidated.status === "ready") {
+      if (
+        applySessionGating(elements, revalidated.session, navigate) ===
+          "allowed"
+      ) {
+        renderWorkspacePresentation(elements, revalidated.session);
+        activeWorkspaceId = revalidated.session.workspace.id;
+      }
+    }
+  });
 
   const menuToggle = document.querySelector<HTMLButtonElement>(
     "#member-menu-toggle",
@@ -297,10 +330,7 @@ export async function mountApplicationShell(
     if (selected?.ok) {
       change.proceed();
       activeWorkspaceId = selected.value.workspace.id;
-      sessionStorage.setItem(
-        ACTIVE_WORKSPACE_KEY,
-        activeWorkspaceId,
-      );
+      setActiveWorkspace(activeWorkspaceId);
       elements.select.disabled = false;
       navigate(`${globalThis.location.pathname}${globalThis.location.search}`);
       return;
@@ -322,7 +352,7 @@ export async function mountApplicationShell(
     showToast({ message: "Signing out securely…", tone: "info" });
     const result = await signOut().catch(() => undefined);
     if (result?.ok) {
-      sessionStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+      clearActiveWorkspace();
       navigate(result.value.next);
       return;
     }

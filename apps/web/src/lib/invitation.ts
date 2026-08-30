@@ -3,8 +3,8 @@ import {
   getSession,
   inspectWorkspaceInvitation,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import { setActiveWorkspace } from "./workspace-context.ts";
 
-const ACTIVE_WORKSPACE_KEY = "kinship.active-workspace";
 const SCRUBBED_INVITATION_PATH = "/invite/continue";
 type Navigate = (path: string) => void;
 const browserNavigate: Navigate = (path) => globalThis.location.assign(path);
@@ -97,10 +97,7 @@ export async function mountInvitationAcceptance(
     );
     if (result?.ok) {
       token = undefined;
-      sessionStorage.setItem(
-        ACTIVE_WORKSPACE_KEY,
-        result.value.workspace.id,
-      );
+      setActiveWorkspace(result.value.workspace.id);
       heading.textContent = `Welcome to ${result.value.workspace.name}`;
       detail.textContent =
         "Your active membership was created. This invitation cannot be used again.";

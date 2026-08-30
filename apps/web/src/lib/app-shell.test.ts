@@ -63,6 +63,13 @@ function session(
   };
 }
 
+function cacheSession(value: unknown): void {
+  sessionStorage.setItem(
+    "kinship.session",
+    JSON.stringify({ savedAt: Date.now(), session: value }),
+  );
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -107,6 +114,161 @@ describe("APP-002C protected application shell", () => {
     );
     expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
       .toBe(true);
+  });
+
+  it("renders access lost when cached session revalidation returns 401", async () => {
+    shellMarkup();
+    cacheSession(session());
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(
+          response({ code: "session_invalid", status: 401 }, 401),
+        )
+        .mockResolvedValueOnce(
+          response({ code: "entry_invalid", status: 409 }, 409),
+        ),
+    );
+    vi.resetModules();
+    const { mountApplicationShell: mountFreshShell } = await import(
+      "./app-shell.ts"
+    );
+
+    await mountFreshShell(vi.fn());
+
+    await vi.waitFor(() =>
+      expect(document.querySelector("#access-state")?.textContent).toMatch(
+        /session is missing, expired, revoked/i,
+      )
+    );
+    expect(sessionStorage.getItem("kinship.session")).toBeNull();
+  });
+
+  it("reapplies route gating when cached admin access is demoted", async () => {
+    shellMarkup();
+    document.body.dataset.pageId = "settings.members";
+    document.querySelector("#protected-shell")?.insertAdjacentHTML(
+      "beforeend",
+      "<article data-requires-workspace-admin>Privileged members UI</article>",
+    );
+    cacheSession(session());
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        ...(session() as Record<string, unknown>),
+        member: { id: "member", role: "member" },
+      })),
+    );
+    vi.resetModules();
+    const { mountApplicationShell: mountFreshShell } = await import(
+      "./app-shell.ts"
+    );
+
+    await mountFreshShell(vi.fn());
+
+    await vi.waitFor(() =>
+      expect(document.querySelector("#access-state")?.textContent).toContain(
+        "You don’t have access to Members",
+      )
+    );
+    expect(document.body.textContent).not.toContain("Privileged members UI");
+  });
+
+  it("reapplies compliance gating after cached session revalidation", async () => {
+    shellMarkup();
+    history.replaceState({}, "", "/app/journal?view=recent");
+    document.body.dataset.pageId = "journal.index";
+    cacheSession(session());
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        ...(session() as Record<string, unknown>),
+        requiredLegalDocuments: [{
+          content: "Exact terms",
+          documentType: "terms",
+          id: "00000000-0000-4000-8000-000000000101",
+          version: "2026-09",
+        }],
+      })),
+    );
+    const navigate = vi.fn();
+    vi.resetModules();
+    const { mountApplicationShell: mountFreshShell } = await import(
+      "./app-shell.ts"
+    );
+
+    await mountFreshShell(navigate);
+
+    await vi.waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith(
+        "/app/compliance?next=%2Fapp%2Fjournal%3Fview%3Drecent",
+      )
+    );
+  });
+
+  it("keeps the rendered cached session when revalidation is unavailable", async () => {
+    shellMarkup();
+    cacheSession(session());
+    const fetchMock = vi.fn().mockRejectedValue(new Error("offline"));
+    vi.stubGlobal("fetch", fetchMock);
+    const navigate = vi.fn();
+    vi.resetModules();
+    const { mountApplicationShell: mountFreshShell } = await import(
+      "./app-shell.ts"
+    );
+
+    await mountFreshShell(navigate);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
+      .toBe(false);
+    expect(document.querySelector("#access-state")?.hasAttribute("hidden"))
+      .toBe(true);
+    expect(sessionStorage.getItem("kinship.session")).not.toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("repaints the workspace presentation when revalidation adds a workspace", async () => {
+    shellMarkup();
+    const workspaces = [
+      {
+        id: "00000000-0000-4000-8000-000000000001",
+        name: "Renamed family circle",
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000002",
+        name: "Community circle",
+      },
+    ];
+    cacheSession(session());
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response(session(workspaces[0]!.id, workspaces)),
+      ),
+    );
+    vi.resetModules();
+    const { mountApplicationShell: mountFreshShell } = await import(
+      "./app-shell.ts"
+    );
+
+    await mountFreshShell(vi.fn());
+
+    const select = document.querySelector<HTMLSelectElement>(
+      "#workspace-switcher",
+    )!;
+    await vi.waitFor(() => expect(select.options.length).toBe(2));
+    expect([...select.options].map((option) => option.textContent)).toEqual([
+      "Renamed family circle",
+      "Community circle",
+    ]);
+    expect(document.querySelector("[data-workspace-name]")?.textContent).toBe(
+      "Renamed family circle",
+    );
+    expect(
+      document.querySelector<HTMLElement>("#workspace-switcher-container")
+        ?.hidden,
+    ).toBe(false);
   });
   it.each(["people.audit", "settings.audit"])(
     "renders an audit-specific whole-route forbidden state for members on %s",
@@ -379,6 +541,7 @@ describe("APP-002C protected application shell", () => {
     await vi.waitFor(() =>
       expect(navigate).toHaveBeenCalledWith("/auth/sign-in")
     );
+    expect(sessionStorage.getItem("kinship.session")).toBeNull();
     expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/v1/sign-out");
     expect(fetchMock.mock.calls[1]?.[1]?.method).toBe("POST");
   });
@@ -438,6 +601,7 @@ describe("APP-002C protected application shell", () => {
     expect(sessionStorage.getItem("kinship.active-workspace")).toBe(
       workspaces[1]!.id,
     );
+    expect(sessionStorage.getItem("kinship.session")).toBeNull();
     expect(fetchMock.mock.calls[2]?.[1]?.headers).toEqual({
       "X-Workspace-Id": workspaces[1]!.id,
       "content-type": "application/json",

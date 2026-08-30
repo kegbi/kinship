@@ -33,6 +33,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
   history.replaceState({}, "", "/");
+  sessionStorage.clear();
 });
 
 describe("GOVERNANCE-001 legal review", () => {
@@ -140,12 +141,14 @@ describe("GOVERNANCE-001 legal review", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
     const navigate = vi.fn();
+    sessionStorage.setItem("kinship.session", "cached session");
 
     await mountCompliance(navigate);
     document.querySelector<HTMLButtonElement>("[data-compliance-decline]")!
       .click();
 
     await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith("/sign-in"));
+    expect(sessionStorage.getItem("kinship.session")).toBeNull();
   });
 
   it("renders unavailable public state without interpreting response content", async () => {
@@ -203,6 +206,7 @@ describe("GOVERNANCE-001 legal review", () => {
       .mockResolvedValueOnce(response({ documents: [legal], status: "ready" }))
       .mockRejectedValueOnce(new Error("offline"));
     vi.stubGlobal("fetch", fetchMock);
+    sessionStorage.setItem("kinship.session", "live session");
 
     await mountCompliance(vi.fn());
     document.querySelector<HTMLButtonElement>("[data-compliance-decline]")!
@@ -212,5 +216,6 @@ describe("GOVERNANCE-001 legal review", () => {
       expect(document.querySelector("[data-compliance-state]")?.textContent)
         .toContain("Sign-out could not be completed");
     });
+    expect(sessionStorage.getItem("kinship.session")).toBe("live session");
   });
 });

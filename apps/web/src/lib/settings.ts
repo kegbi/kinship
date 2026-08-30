@@ -12,8 +12,9 @@ import {
   updateWorkspaceSettings,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import {
-  ACTIVE_WORKSPACE_KEY,
+  clearActiveWorkspace,
   resolveWorkspaceSession,
+  setActiveWorkspace,
   WORKSPACE_CHANGE_REQUEST_EVENT,
   type WorkspaceChangeRequestDetail,
 } from "./workspace-context.ts";
@@ -117,12 +118,9 @@ export async function mountPersonalLifecycle(
       return;
     }
     if (result.value.nextWorkspaceId) {
-      sessionStorage.setItem(
-        ACTIVE_WORKSPACE_KEY,
-        result.value.nextWorkspaceId,
-      );
+      setActiveWorkspace(result.value.nextWorkspaceId);
     } else {
-      sessionStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+      clearActiveWorkspace();
     }
     navigate(result.value.next);
   });
@@ -141,7 +139,7 @@ export async function mountPersonalLifecycle(
       deleteButton.disabled = deleteBlocked;
       return;
     }
-    sessionStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+    clearActiveWorkspace();
     navigate(result.value.next);
   });
 }

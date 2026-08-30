@@ -3,6 +3,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 
+const SESSION_CACHE_KEY = "kinship.session";
+
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
@@ -19,6 +21,7 @@ const session = {
 };
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   sessionStorage.clear();
 });
@@ -53,5 +56,81 @@ describe("protected workspace session resolution", () => {
       "/api/v1/application-entry",
       "/api/v1/session",
     ]);
+    expect(JSON.parse(sessionStorage.getItem(SESSION_CACHE_KEY) ?? "null"))
+      .toEqual({ savedAt: expect.any(Number), session });
+  });
+
+  it("serves a fresh cached session without awaiting its revalidation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response(session));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await resolveWorkspaceSession();
+
+    expect(JSON.parse(sessionStorage.getItem(SESSION_CACHE_KEY) ?? "null"))
+      .toEqual({ savedAt: expect.any(Number), session });
+
+    vi.resetModules();
+    let finishRevalidation!: (value: Response) => void;
+    const revalidation = new Promise<Response>((resolve) => {
+      finishRevalidation = resolve;
+    });
+    const revalidationFetch = vi.fn(() => revalidation);
+    vi.stubGlobal("fetch", revalidationFetch);
+    const nextModule = await import("./workspace-context.ts");
+
+    const cachedPromise = nextModule.resolveWorkspaceSession();
+    const concurrentPromise = nextModule.resolveWorkspaceSession();
+    const [cached, concurrent] = await Promise.all([
+      cachedPromise,
+      concurrentPromise,
+    ]);
+
+    expect(cached).toEqual({ session, status: "ready" });
+    expect(concurrent).toEqual(cached);
+    expect(revalidationFetch).toHaveBeenCalledTimes(1);
+    finishRevalidation(response(session));
+    await Promise.resolve();
+  });
+
+  it("treats expired, malformed, and workspace-mismatched entries as cache misses", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T12:00:00Z"));
+    const cases = [
+      {
+        cached: JSON.stringify({ savedAt: Date.now() - 60_000, session }),
+      },
+      { cached: "{malformed" },
+      { cached: JSON.stringify({ savedAt: Date.now(), session: {} }) },
+      { cached: JSON.stringify({ savedAt: Date.now() + 1, session }) },
+      {
+        activeWorkspace: "other-workspace",
+        cached: JSON.stringify({ savedAt: Date.now(), session }),
+      },
+    ];
+
+    for (const { activeWorkspace, cached } of cases) {
+      sessionStorage.clear();
+      sessionStorage.setItem(SESSION_CACHE_KEY, cached);
+      if (activeWorkspace) {
+        sessionStorage.setItem("kinship.active-workspace", activeWorkspace);
+      }
+      const freshSession = activeWorkspace
+        ? {
+          ...session,
+          workspace: { id: activeWorkspace, name: "Other circle" },
+          workspaces: [{ id: activeWorkspace, name: "Other circle" }],
+        }
+        : session;
+      const fetchMock = vi.fn().mockResolvedValue(response(freshSession));
+      vi.stubGlobal("fetch", fetchMock);
+      vi.resetModules();
+      const currentModule = await import("./workspace-context.ts");
+
+      await expect(currentModule.resolveWorkspaceSession()).resolves.toEqual({
+        session: freshSession,
+        status: "ready",
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
   });
 });
