@@ -11,9 +11,9 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **DOC-001 — Refresh the planning entry-point baseline**. The
-  review's top five, `UXD-001` through `UXD-005`, and all of `UXD-003` are
-  integrated.
+- Current leaf: **none open**. Awaiting direction. The review's top five,
+  `UXD-001` through `UXD-005`, all of `UXD-003`, and the queue through `DOC-001`
+  are integrated.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -1435,13 +1435,44 @@ asserts, so it runs that spec on its candidate.
       sort are product scope, not design debt. They stay parked until their
       product contracts exist; life-event mutation still depends on the open
       flow decision in [`traceability.md`](traceability.md).
-- [ ] **DOC-001 — Refresh the planning entry-point baseline.** The Current
-      Baseline table in [`README.md`](README.md) still describes a pre-scaffold
+- [x] **DOC-001 — Refresh the planning entry-point baseline.** The Current
+      Baseline table in [`README.md`](README.md) described a pre-scaffold
       repository with zero delivered flows, and
-      `tools/product/PRODUCT-001/release_contract_test.ts` pins that zero. Fix
-      the table and its pinning assertion together so the two planning documents
-      stop contradicting each other. This continues review §5.3 item 5 beyond
-      the traceability correction shipped with this queue.
+      `tools/product/PRODUCT-001/release_contract_test.ts` pinned that zero, so
+      the executable check was defending the wrong document. Both are fixed
+      together. This continues review §5.3 item 5 beyond the traceability
+      correction shipped with this queue.
+  - [x] The delivered-flow assertion no longer pins a literal. It derives the
+        count and the total from the flow catalog the same test already parses,
+        so a newly delivered flow fails loudly until the baseline records it,
+        rather than silently agreeing with a stale number.
+  - [x] **A third stale row the ticket had protected.** The controller's ticket
+        listed the schema row as still true and told the implementer to leave it
+        alone; the implementer checked it anyway and stopped. It was stale three
+        ways — v6's 87-table and 811-column counts, and v6's PostgreSQL 17.10
+        compatibility result attributed to the current baseline.
+        `personal_crm_schema_v7_validation.json` records 89 tables and 843
+        columns, the field catalog has 843 rows, and `AGENTS.md` assigns the
+        17.10 result to the immutable v6 baseline. Corrected under explicit
+        authorization.
+  - [x] **A correction to the ticket in the other direction.** It asserted every
+        item on the missing-scaffold list now exists. Two do not: there is no
+        `.github/workflows` and no lefthook configuration, so CI and hooks stay
+        recorded as pending rather than being quietly claimed.
+  - [x] Gates: the focused `release_contract_test.ts` run 5 passed, `fmt:check`,
+        and `lint`. No other gate applies — see `REL-023`.
+
+- [ ] **REL-023 — Give the PRODUCT-001 release contract a gate that runs it.**
+      No `deno task` executes
+      `tools/product/PRODUCT-001/release_contract_test.ts`. That is why its
+      `Delivered flows | 0` pin stayed wrong long enough for `DOC-001` to exist,
+      and why nothing will catch the next drift either: an executable contract
+      no task runs is documentation with extra steps. Wiring it into
+      `test:unit:api` and `test:coverage:api:direct` means adding the six
+      planning and product documents it reads to both `--allow-read` allowlists,
+      which is the omission the ledger already records as having broken three
+      tickets. Bounded, but its own candidate. Second gate-shaped defect found
+      this phase after `REL-022`.
 - [ ] **Phase 12 accepted:** the person workspace reads as grouped zones rather
       than peer cards, first paint no longer waits on the full section fan-out,
       tokens back every surface, and no leaf above is unchecked without a
