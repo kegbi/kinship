@@ -1628,6 +1628,49 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
   flex-wrap: wrap;
 }
 
+.person-menu {
+  position: relative;
+}
+
+.person-menu > button {
+  width: 44px;
+  padding-inline: 0;
+}
+
+.person-menu-popover {
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + .65rem);
+  right: 0;
+  display: grid;
+  width: 12rem;
+  padding: .55rem;
+  border: 1px solid var(--line-1);
+  border-radius: .9rem;
+  background: white;
+  box-shadow: var(--shadow-2);
+}
+
+.person-workspace .person-menu-popover > :is(button, a:is(.button-primary, .button-secondary, .button-danger)) {
+  width: 100%;
+  min-height: 44px;
+  padding: .7rem;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.person-workspace .person-menu-popover > :is(button, a:is(.button-primary, .button-secondary, .button-danger)).button-danger {
+  color: var(--danger);
+  background: white;
+}
+
+.person-workspace .person-menu-popover > :is(button, a:is(.button-primary, .button-secondary, .button-danger)):hover {
+  background: var(--surface-3);
+  filter: none;
+}
+
 .person-profile-badges,
 .profile-tag-list {
   display: flex;

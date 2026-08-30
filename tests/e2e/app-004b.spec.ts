@@ -61,6 +61,14 @@ async function signIn(page: Page, email: string): Promise<void> {
   await expect(page).toHaveURL(/\/app$/);
 }
 
+async function openPersonMenu(page: Page): Promise<void> {
+  const toggle = page.getByRole("button", { name: "Open person menu" });
+  if (await toggle.getAttribute("aria-expanded") !== "true") {
+    await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+}
+
 async function expectAccessible(page: Page): Promise<void> {
   await page.addScriptTag({ content: axe.source });
   const violations = await page.evaluate(async () =>
@@ -261,6 +269,7 @@ test(
     ).toBe(true);
     await expectAccessible(page);
 
+    await openPersonMenu(page);
     await page.getByRole("button", { name: "Archive person" }).click();
     await expect(page.getByText("Archived person · read-only")).toBeVisible();
     await expect(section.getByText(

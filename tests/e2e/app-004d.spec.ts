@@ -1,9 +1,18 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import axe from "axe-core";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
 const password = "correct horse battery staple";
+
+async function openPersonMenu(page: Page): Promise<void> {
+  const toggle = page.getByRole("button", { name: "Open person menu" });
+  if (await toggle.getAttribute("aria-expanded") !== "true") {
+    await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+}
+
 test(
   "[RELATIONSHIP-001] creates, changes, inversely displays, and unlinks relationships",
   { annotation: { type: "flow", description: "RELATIONSHIP-001" } },
@@ -150,6 +159,7 @@ test(
     await page.goto(sourcePath);
     await expect(section).toContainText("grandparent: Charles Babbage");
 
+    await openPersonMenu(page);
     await page.getByRole("button", { name: "Archive person" }).click();
     await expect(section).toHaveAttribute("data-section-state", "read-only");
     await expect(section).toContainText(
@@ -169,6 +179,7 @@ test(
     })).toBeVisible();
 
     await page.goto(targetPath);
+    await openPersonMenu(page);
     await page.getByRole("button", { name: "Archive person" }).click();
     await expect(page.locator("#profile-section-relationships"))
       .toHaveAttribute("data-section-state", "read-only");

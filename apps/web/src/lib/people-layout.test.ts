@@ -94,6 +94,60 @@ describe("people form layout regressions", () => {
     }
   });
 
+  it("UXD-002A2 keeps two peer actions and moves lifecycle actions into one person menu", () => {
+    const actions = profilePage.slice(
+      profilePage.indexOf('class="person-profile-actions"'),
+      profilePage.indexOf('<dl class="person-vital-stats"'),
+    );
+    expect(actions).toContain('aria-label="Open person menu"');
+    expect(actions).toContain('aria-expanded="false"');
+    expect(actions).toContain('aria-controls="person-menu"');
+    expect(actions).toContain('<span aria-hidden="true">…</span>');
+    expect(actions).toContain(
+      '<div id="person-menu" class="person-menu-popover" hidden>',
+    );
+    const menu = actions.slice(actions.indexOf('id="person-menu"'));
+    const orderedItems = [
+      "Edit person",
+      "Export vCard",
+      "Archive person",
+      "Audit history",
+      "Delete person",
+    ];
+    let previous = -1;
+    for (const item of orderedItems) {
+      const current = menu.indexOf(item);
+      expect(current).toBeGreaterThan(previous);
+      previous = current;
+    }
+    expect(menu).not.toContain("Restore person");
+    expect(menu).toMatch(
+      /<button[^>]*id="person-audit-history"[^>]*>Audit history<\/button>/,
+    );
+    expect(menu).not.toMatch(/<a[^>]*>Audit history<\/a>/);
+    expect(applicationStyles).toMatch(
+      /\.person-profile-actions\s*\{[^}]*flex-wrap:\s*wrap;/s,
+    );
+    expect(applicationStyles).toMatch(
+      /\.person-menu\s*\{[^}]*position:\s*relative;/s,
+    );
+    expect(applicationStyles).toMatch(
+      /\.person-menu-popover\s*\{[^}]*position:\s*absolute;[^}]*top:\s*calc\(100% \+ \.65rem\);[^}]*right:\s*0;/s,
+    );
+    const menuItemSelector =
+      ".person-workspace .person-menu-popover > :is(button, a:is(.button-primary, .button-secondary, .button-danger))";
+    expect(applicationStyles).toContain(`${menuItemSelector} {`);
+    expect(applicationStyles).toMatch(
+      /\.person-workspace \.person-menu-popover > :is\(button, a:is\(\.button-primary, \.button-secondary, \.button-danger\)\)\s*\{[^}]*width:\s*100%;[^}]*justify-content:\s*flex-start;/s,
+    );
+    expect(applicationStyles).toContain(
+      `${menuItemSelector}.button-danger {\n  color: var(--danger);`,
+    );
+    expect(applicationStyles).toContain(
+      `${menuItemSelector}:hover {`,
+    );
+  });
+
   it("styles profile form fields without turning checkboxes into text fields", () => {
     expect(applicationStyles).toMatch(
       /\.profile-fact-form input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\),\s*\.profile-fact-form select,\s*\.profile-fact-form textarea\s*\{[^}]*padding:[^;]+;[^}]*border:[^;]+;[^}]*border-radius:[^;]+;[^}]*background:\s*white;[^}]*font-family:\s*inherit;/s,
