@@ -54,6 +54,17 @@ const personIdSchema = z.uuid();
 const personReadQuerySchema = z.object({
   include: z.literal("summary").optional(),
 }).strict();
+const personTimelineQuerySchema = z.object({
+  cursor: z.string().max(2_000).optional(),
+  kind: z.enum([
+    "activity",
+    "call",
+    "conversation",
+    "life-event",
+    "note",
+  ]).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+}).strict();
 const expectedUpdatedAtSchema = z.iso.datetime({ offset: true });
 const editPersonSchema = personSchema.omit({ duplicateOverride: true }).extend({
   expectedUpdatedAt: expectedUpdatedAtSchema,
@@ -724,6 +735,76 @@ export function createPeopleRoutes(services: PeopleHttpServices): Hono {
         "person_not_found",
         "Person not found",
         "No active person with this identifier exists in the current workspace.",
+      );
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
+  routes.get("/api/v1/people/:personId/timeline", async (context) => {
+    const personId = personIdSchema.safeParse(context.req.param("personId"));
+    const input = personTimelineQuerySchema.safeParse(context.req.query());
+    if (!personId.success || !input.success) {
+      return problem(
+        context,
+        400,
+        "person_timeline_query_invalid",
+        "Invalid person timeline",
+        "Use a canonical person, supported kind, and bounded page size.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "person_timeline_authentication_required",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const result = await services.profile.listTimeline(
+      resolved,
+      personId.data,
+      {
+        ...(input.data.cursor ? { cursor: input.data.cursor } : {}),
+        ...(input.data.kind ? { kind: input.data.kind } : {}),
+        limit: input.data.limit,
+      },
+    ).catch(() => undefined);
+    if (!result) {
+      return problem(
+        context,
+        503,
+        "person_timeline_unavailable",
+        "Person timeline unavailable",
+        "Other person sections remain available.",
+      );
+    }
+    if (result.status === "forbidden") {
+      return problem(
+        context,
+        403,
+        "person_timeline_forbidden",
+        "Person timeline unavailable",
+        "Your active workspace membership no longer permits this view.",
+      );
+    }
+    if (result.status === "not-found") {
+      return problem(
+        context,
+        404,
+        "person_timeline_not_found",
+        "Person not found",
+        "No active person with this identifier exists in the current workspace.",
+      );
+    }
+    if (result.status === "stale-cursor") {
+      return problem(
+        context,
+        409,
+        "person_timeline_stale_cursor",
+        "Person timeline changed",
+        "Refresh the timeline before continuing from this page.",
       );
     }
     context.header("Cache-Control", "private, no-store");

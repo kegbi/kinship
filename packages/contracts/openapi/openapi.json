@@ -1538,6 +1538,141 @@
         }
       }
     },
+    "/api/v1/people/{personId}/timeline": {
+      "get": {
+        "operationId": "listPersonTimeline",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "personId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "activity",
+                "call",
+                "conversation",
+                "life-event",
+                "note"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reverse-chronological tenant-scoped person timeline page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonTimelinePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/people/{personId}/view": {
       "post": {
         "operationId": "recordPersonView",
@@ -16626,6 +16761,81 @@
             "type": "string",
             "enum": [
               "hidden",
+              "ready"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "PersonTimelineItem": {
+        "type": "object",
+        "required": [
+          "datePrecision",
+          "id",
+          "kind",
+          "occurredAt"
+        ],
+        "properties": {
+          "datePrecision": {
+            "type": "string",
+            "enum": [
+              "day",
+              "full",
+              "month",
+              "month_day",
+              "unknown",
+              "year",
+              "year_month"
+            ]
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "activity",
+              "call",
+              "conversation",
+              "life-event",
+              "note"
+            ]
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PersonTimelinePage": {
+        "type": "object",
+        "required": [
+          "items",
+          "status"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/PersonTimelineItem"
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "archived",
               "ready"
             ]
           }

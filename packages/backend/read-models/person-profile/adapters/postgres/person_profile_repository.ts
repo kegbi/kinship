@@ -4,6 +4,7 @@ import type { ApplicationDatabase } from "../../../../platform/postgres/database
 import {
   PERSON_PROFILE_TAG_PREVIEW_LIMIT,
   type PersonLifeEvent,
+  type PersonLifeEventPrecision,
   type PersonPrimaryContactMethod,
   type PersonProfileIdentity,
   type PersonProfileRepository,
@@ -12,6 +13,7 @@ import {
   type PersonProfileTag,
   type PersonRelationshipCount,
 } from "../../application/get_person_profile.ts";
+import type { PersonTimelineItem } from "../../application/list_person_timeline.ts";
 
 interface PersonProfileRow {
   readonly archived_at: Date | null;
@@ -45,6 +47,31 @@ interface PersonLifeEventsRow {
   readonly events: readonly PersonLifeEvent[];
   readonly module_is_active: boolean;
   readonly person_id: string | null;
+}
+
+interface PersonTimelineContextRow {
+  readonly archived_at: Date | null;
+  readonly id: string | null;
+}
+
+interface PersonTimelineRow {
+  readonly date_precision: PersonLifeEventPrecision;
+  readonly excerpt: string | null;
+  readonly id: string;
+  readonly kind: PersonTimelineItem["kind"];
+  readonly occurred_at: string;
+  readonly title: string | null;
+}
+
+function timelineItem(row: PersonTimelineRow): PersonTimelineItem {
+  return {
+    datePrecision: row.date_precision,
+    ...(row.excerpt !== null ? { excerpt: row.excerpt } : {}),
+    id: row.id,
+    kind: row.kind,
+    occurredAt: row.occurred_at,
+    ...(row.title !== null ? { title: row.title } : {}),
+  };
 }
 
 function identity(row: PersonProfileRow): PersonProfileIdentity | undefined {
@@ -429,5 +456,248 @@ export class PostgresPersonProfileRepository
     if (!row.person_id) return { status: "not-found" };
     if (!row.module_is_active) return { events: [], status: "hidden" };
     return { events: row.events, status: "ready" };
+  }
+
+  async listTimeline(
+    command: Parameters<PersonProfileRepository["listTimeline"]>[0],
+  ): Promise<Awaited<ReturnType<PersonProfileRepository["listTimeline"]>>> {
+    const context = await sql<PersonTimelineContextRow>`
+      select person.id::text, person.archived_at
+      from crm.users account
+      join crm.workspace_members member on member.user_id = account.id
+      join crm.workspaces workspace on workspace.id = member.workspace_id
+      left join crm.people person
+        on person.id = ${command.personId}::uuid
+        and person.workspace_id = workspace.id and person.deleted_at is null
+      where account.id = ${command.userId}::uuid
+        and account.status = 'active' and account.deleted_at is null
+        and member.id = ${command.memberId}::uuid
+        and member.workspace_id = ${command.workspaceId}::uuid
+        and member.role = ${command.role}
+        and member.status = 'active' and member.left_at is null
+        and workspace.id = ${command.workspaceId}::uuid
+        and workspace.status = 'active' and workspace.deleted_at is null
+    `.execute(this.database);
+    const resolved = context.rows[0];
+    if (!resolved) return { status: "forbidden" };
+    if (!resolved.id) return { status: "not-found" };
+
+    if (command.after) {
+      const anchor = await sql<{ readonly valid: boolean }>`
+        select exists (
+          select 1 from crm.activities activity
+          join crm.activity_participants participant
+            on participant.activity_id = activity.id
+            and participant.person_id = ${command.personId}::uuid
+          join crm.people participant_person
+            on participant_person.id = participant.person_id
+            and participant_person.workspace_id = activity.workspace_id
+          left join crm.workspace_profile_modules profile_module
+            on profile_module.workspace_id = activity.workspace_id
+            and profile_module.key = 'activities'
+          where activity.id = ${command.after.id}::uuid
+            and activity.workspace_id = ${command.workspaceId}::uuid
+            and coalesce(profile_module.is_active, true)
+            and (${command.kind ?? null}::text is null or ${
+        command.kind ?? null
+      }::text = 'activity')
+            and activity.happened_at = ${command.after.timestamp}::timestamptz
+          union all
+          select 1 from crm.notes note
+          join crm.people note_person on note_person.id = note.person_id
+            and note_person.workspace_id = note.workspace_id
+          left join crm.workspace_profile_modules profile_module
+            on profile_module.workspace_id = note.workspace_id
+            and profile_module.key = 'notes'
+          where note.id = ${command.after.id}::uuid
+            and note.workspace_id = ${command.workspaceId}::uuid
+            and note.person_id = ${command.personId}::uuid
+            and coalesce(profile_module.is_active, true)
+            and (${command.kind ?? null}::text is null or ${
+        command.kind ?? null
+      }::text = 'note')
+            and note.created_at = ${command.after.timestamp}::timestamptz
+          union all
+          select 1 from crm.calls call
+          join crm.people call_person on call_person.id = call.person_id
+            and call_person.workspace_id = call.workspace_id
+          left join crm.workspace_profile_modules profile_module
+            on profile_module.workspace_id = call.workspace_id
+            and profile_module.key = 'calls'
+          where call.id = ${command.after.id}::uuid
+            and call.workspace_id = ${command.workspaceId}::uuid
+            and call.person_id = ${command.personId}::uuid
+            and coalesce(profile_module.is_active, true)
+            and (${command.kind ?? null}::text is null or ${
+        command.kind ?? null
+      }::text = 'call')
+            and call.called_at = ${command.after.timestamp}::timestamptz
+          union all
+          select 1 from crm.conversation_threads thread
+          join crm.people thread_person on thread_person.id = thread.person_id
+            and thread_person.workspace_id = thread.workspace_id
+          left join crm.workspace_profile_modules profile_module
+            on profile_module.workspace_id = thread.workspace_id
+            and profile_module.key = 'conversations'
+          where thread.id = ${command.after.id}::uuid
+            and thread.workspace_id = ${command.workspaceId}::uuid
+            and thread.person_id = ${command.personId}::uuid
+            and coalesce(profile_module.is_active, true)
+            and (${command.kind ?? null}::text is null or ${
+        command.kind ?? null
+      }::text = 'conversation')
+            and thread.happened_at = ${command.after.timestamp}::timestamptz
+          union all
+          select 1 from crm.life_events event
+          join crm.people event_person on event_person.id = event.person_id
+            and event_person.workspace_id = event.workspace_id
+          left join crm.workspace_profile_modules profile_module
+            on profile_module.workspace_id = event.workspace_id
+            and profile_module.key = 'life-events'
+          cross join lateral (
+            select case
+              when event.happened_at is not null then event.happened_at
+              when event.year is not null then make_timestamptz(
+                event.year::integer, coalesce(event.month, 1)::integer,
+                coalesce(event.day, 1)::integer, 0, 0, 0, 'UTC'
+              )
+              else event.created_at
+            end as occurred_at
+          ) resolved_event
+          where event.id = ${command.after.id}::uuid
+            and event.workspace_id = ${command.workspaceId}::uuid
+            and event.person_id = ${command.personId}::uuid
+            and coalesce(profile_module.is_active, true)
+            and (${command.kind ?? null}::text is null or ${
+        command.kind ?? null
+      }::text = 'life-event')
+            and resolved_event.occurred_at = ${command.after.timestamp}::timestamptz
+        ) as valid
+      `.execute(this.database);
+      if (!anchor.rows[0]?.valid) return { status: "stale-cursor" };
+    }
+
+    const result = await sql<PersonTimelineRow>`
+      with projection as (
+        select activity.id, 'activity'::text as kind,
+          activity.happened_at as occurred_at, activity.summary as title,
+          activity.description as excerpt, 'full'::text as date_precision
+        from crm.activities activity
+        join crm.activity_participants participant
+          on participant.activity_id = activity.id
+          and participant.person_id = ${command.personId}::uuid
+        join crm.people participant_person
+          on participant_person.id = participant.person_id
+          and participant_person.workspace_id = activity.workspace_id
+        left join crm.workspace_profile_modules profile_module
+          on profile_module.workspace_id = activity.workspace_id
+          and profile_module.key = 'activities'
+        where activity.workspace_id = ${command.workspaceId}::uuid
+          and coalesce(profile_module.is_active, true)
+          and (${command.kind ?? null}::text is null or ${
+      command.kind ?? null
+    }::text = 'activity')
+        union all
+        select note.id, 'note'::text, note.created_at, null::text, note.body,
+          'full'::text
+        from crm.notes note
+        join crm.people note_person on note_person.id = note.person_id
+          and note_person.workspace_id = note.workspace_id
+        left join crm.workspace_profile_modules profile_module
+          on profile_module.workspace_id = note.workspace_id
+          and profile_module.key = 'notes'
+        where note.workspace_id = ${command.workspaceId}::uuid
+          and note.person_id = ${command.personId}::uuid
+          and coalesce(profile_module.is_active, true)
+          and (${command.kind ?? null}::text is null or ${
+      command.kind ?? null
+    }::text = 'note')
+        union all
+        select call.id, 'call'::text, call.called_at, null::text, call.content,
+          'full'::text
+        from crm.calls call
+        join crm.people call_person on call_person.id = call.person_id
+          and call_person.workspace_id = call.workspace_id
+        left join crm.workspace_profile_modules profile_module
+          on profile_module.workspace_id = call.workspace_id
+          and profile_module.key = 'calls'
+        where call.workspace_id = ${command.workspaceId}::uuid
+          and call.person_id = ${command.personId}::uuid
+          and coalesce(profile_module.is_active, true)
+          and (${command.kind ?? null}::text is null or ${
+      command.kind ?? null
+    }::text = 'call')
+        union all
+        select thread.id, 'conversation'::text, thread.happened_at,
+          thread.title, null::text, 'full'::text
+        from crm.conversation_threads thread
+        join crm.people thread_person on thread_person.id = thread.person_id
+          and thread_person.workspace_id = thread.workspace_id
+        left join crm.workspace_profile_modules profile_module
+          on profile_module.workspace_id = thread.workspace_id
+          and profile_module.key = 'conversations'
+        where thread.workspace_id = ${command.workspaceId}::uuid
+          and thread.person_id = ${command.personId}::uuid
+          and coalesce(profile_module.is_active, true)
+          and (${command.kind ?? null}::text is null or ${
+      command.kind ?? null
+    }::text = 'conversation')
+        union all
+        select event.id, 'life-event'::text, resolved_event.occurred_at,
+          coalesce(event.name, event_type.name), event.note,
+          resolved_event.date_precision
+        from crm.life_events event
+        join crm.people event_person on event_person.id = event.person_id
+          and event_person.workspace_id = event.workspace_id
+        left join crm.life_event_types event_type
+          on event_type.id = event.life_event_type_id
+          and event_type.workspace_id = event.workspace_id
+        left join crm.workspace_profile_modules profile_module
+          on profile_module.workspace_id = event.workspace_id
+          and profile_module.key = 'life-events'
+        cross join lateral (
+          select case
+            when event.happened_at is not null then event.happened_at
+            when event.year is not null then make_timestamptz(
+              event.year::integer, coalesce(event.month, 1)::integer,
+              coalesce(event.day, 1)::integer, 0, 0, 0, 'UTC'
+            )
+            else event.created_at
+          end as occurred_at,
+          case when event.happened_at is null and event.year is null
+            then 'unknown'::text else event.precision end as date_precision
+        ) resolved_event
+        where event.workspace_id = ${command.workspaceId}::uuid
+          and event.person_id = ${command.personId}::uuid
+          and coalesce(profile_module.is_active, true)
+          and (${command.kind ?? null}::text is null or ${
+      command.kind ?? null
+    }::text = 'life-event')
+      ), page as (
+        select * from projection
+        ${
+      command.after
+        ? sql`where (occurred_at, id) < (${command.after.timestamp}::timestamptz, ${command.after.id}::uuid)`
+        : sql``
+    }
+        order by occurred_at desc, id desc
+        limit ${command.limit + 1}
+      )
+      select page.id::text, page.kind, page.title, page.excerpt,
+        page.date_precision,
+        to_char(page.occurred_at at time zone 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as occurred_at
+      from page
+      order by page.occurred_at desc, page.id desc
+    `.execute(this.database);
+    const visible = result.rows.slice(0, command.limit);
+    const final = visible.at(-1);
+    return {
+      items: visible.map(timelineItem),
+      ...(result.rows.length > command.limit && final
+        ? { next: { id: final.id, timestamp: final.occurred_at } }
+        : {}),
+      status: resolved.archived_at ? "archived" : "ready",
+    };
   }
 }

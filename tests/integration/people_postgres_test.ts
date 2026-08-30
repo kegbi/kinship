@@ -216,6 +216,25 @@ async function listPersonLifeEvents(
   );
 }
 
+async function listPersonTimeline(
+  fixture: Fixture,
+  personId: string,
+  query = "",
+  workspaceId = fixture.workspaceId,
+): Promise<Response> {
+  return await configured.app.request(
+    `http://localhost/api/v1/people/${personId}/timeline${
+      query ? `?${query}` : ""
+    }`,
+    {
+      headers: {
+        cookie: fixture.cookie,
+        "X-Workspace-Id": workspaceId,
+      },
+    },
+  );
+}
+
 async function listPeople(
   fixture: Fixture,
   query = "",
@@ -2039,6 +2058,231 @@ Deno.test({
     assert(
       (await getPerson(owner, personId)).status === 404,
       "soft-deleted person is not exposed",
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "[UXD-002C2A] real PostgreSQL person timeline merges, pages, personalizes, and isolates tenants",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await sql`truncate table crm.users, crm.workspaces restart identity cascade`;
+    const owner = await register(
+      `timeline-owner-${crypto.randomUUID()}@example.test`,
+      "Timeline circle",
+    );
+    const foreign = await register(
+      `timeline-foreign-${crypto.randomUUID()}@example.test`,
+      "Foreign timeline circle",
+    );
+    const personId = "00000000-0000-4000-8000-000000000100";
+    const foreignPersonId = "00000000-0000-4000-8000-000000000101";
+    const activityId = "00000000-0000-4000-8000-000000000900";
+    const noteId = "00000000-0000-4000-8000-000000000800";
+    const callId = "00000000-0000-4000-8000-000000000700";
+    const conversationId = "00000000-0000-4000-8000-000000000600";
+    const happenedLifeEventId = "00000000-0000-4000-8000-000000000500";
+    const unknownLifeEventId = "00000000-0000-4000-8000-000000000400";
+    const partialLifeEventId = "00000000-0000-4000-8000-000000000300";
+    const lifeEventTypeId = crypto.randomUUID();
+
+    await sql.begin(async (transaction) => {
+      await transaction`
+        insert into crm.people (
+          id, workspace_id, created_by_member_id, given_name
+        ) values
+          (${personId}, ${owner.workspaceId}, ${owner.memberId}, 'Ada'),
+          (${foreignPersonId}, ${foreign.workspaceId}, ${foreign.memberId},
+            'Private')
+      `;
+      await transaction`
+        insert into crm.workspace_profile_modules (
+          workspace_id, key, is_active
+        ) values
+          (${owner.workspaceId}, 'activities', true),
+          (${owner.workspaceId}, 'notes', true),
+          (${owner.workspaceId}, 'calls', true),
+          (${owner.workspaceId}, 'conversations', true),
+          (${owner.workspaceId}, 'life-events', true)
+        on conflict (workspace_id, key) do update set is_active = true,
+          updated_at = now()
+      `;
+      await transaction`
+        insert into crm.activities (
+          id, workspace_id, summary, description, happened_at,
+          created_by_member_id
+        ) values (
+          ${activityId}, ${owner.workspaceId}, 'Analytical engine review',
+          'Compared the latest plans.', '2026-08-25T12:00:00.000Z',
+          ${owner.memberId}
+        )
+      `;
+      await transaction`
+        insert into crm.activity_participants (activity_id, person_id)
+        values (${activityId}, ${personId})
+      `;
+      await transaction`
+        insert into crm.notes (
+          id, workspace_id, person_id, body, created_by_member_id, created_at
+        ) values (
+          ${noteId}, ${owner.workspaceId}, ${personId},
+          'A note sharing the call timestamp.', ${owner.memberId},
+          '2026-08-24T12:00:00.000Z'
+        )
+      `;
+      await transaction`
+        insert into crm.calls (
+          id, workspace_id, person_id, called_at, content,
+          created_by_member_id
+        ) values (
+          ${callId}, ${owner.workspaceId}, ${personId},
+          '2026-08-24T12:00:00.000Z', 'Discussed correspondence.',
+          ${owner.memberId}
+        )
+      `;
+      await transaction`
+        insert into crm.conversation_threads (
+          id, workspace_id, person_id, happened_at, title
+        ) values (
+          ${conversationId}, ${owner.workspaceId}, ${personId},
+          '2026-08-23T12:00:00.000Z', 'Letters about mathematics'
+        )
+      `;
+      await transaction`
+        insert into crm.life_event_types (id, workspace_id, name)
+        values (${lifeEventTypeId}, ${owner.workspaceId}, 'Publication')
+      `;
+      await transaction`
+        insert into crm.life_events (
+          id, workspace_id, person_id, life_event_type_id, name, note, year,
+          month, day, happened_at, precision, created_at
+        ) values
+          (${happenedLifeEventId}, ${owner.workspaceId}, ${personId},
+            ${lifeEventTypeId}, 'Full dated event', 'Known timestamp', null,
+            null, null, '2026-08-22T12:00:00.000Z', 'full',
+            '2026-01-01T00:00:00.000Z'),
+          (${unknownLifeEventId}, ${owner.workspaceId}, ${personId},
+            ${lifeEventTypeId}, 'Undated event', 'Recorded without a date',
+            null, null, null, null, 'unknown',
+            '2026-08-21T12:00:00.000Z'),
+          (${partialLifeEventId}, ${owner.workspaceId}, ${personId},
+            ${lifeEventTypeId}, null, 'Known only to a month', 1843, 12, null,
+            null, 'year_month', '2026-08-20T12:00:00.000Z')
+      `;
+    });
+
+    const merged = await listPersonTimeline(owner, personId, "limit=50");
+    const mergedBody = await merged.json() as {
+      readonly items: readonly {
+        readonly datePrecision: string;
+        readonly id: string;
+        readonly kind: string;
+        readonly occurredAt: string;
+        readonly title?: string;
+      }[];
+      readonly status: string;
+    };
+    assert(
+      merged.status === 200 && mergedBody.status === "ready" &&
+        mergedBody.items.map((item) => item.kind).join(",") ===
+          "activity,note,call,conversation,life-event,life-event,life-event",
+      "all five enabled kinds merge in reverse chronological keyset order",
+    );
+    const happened = mergedBody.items.find((item) =>
+      item.id === happenedLifeEventId
+    );
+    const unknown = mergedBody.items.find((item) =>
+      item.id === unknownLifeEventId
+    );
+    const partial = mergedBody.items.find((item) =>
+      item.id === partialLifeEventId
+    );
+    assert(
+      happened?.occurredAt.startsWith("2026-08-22T12:00:00") === true &&
+        happened.datePrecision === "full" &&
+        unknown?.occurredAt.startsWith("2026-08-21T12:00:00") === true &&
+        unknown.datePrecision === "unknown" &&
+        partial?.occurredAt.startsWith("1843-12-01T00:00:00") === true &&
+        partial.datePrecision === "year_month" &&
+        partial.title === "Publication",
+      "life events resolve happened_at, partial UTC components, then recorded date with exact precision",
+    );
+
+    const firstPage = await listPersonTimeline(owner, personId, "limit=2");
+    const firstPageBody = await firstPage.json() as {
+      readonly items: readonly { readonly id: string }[];
+      readonly nextCursor?: string;
+    };
+    assert(
+      firstPage.status === 200 && firstPageBody.items[0]?.id === activityId &&
+        firstPageBody.items[1]?.id === noteId && firstPageBody.nextCursor,
+      "first page ends on the higher id at the duplicate timestamp",
+    );
+    const secondPage = await listPersonTimeline(
+      owner,
+      personId,
+      `limit=2&cursor=${encodeURIComponent(firstPageBody.nextCursor ?? "")}`,
+    );
+    const secondPageBody = await secondPage.json() as {
+      readonly items: readonly { readonly id: string }[];
+    };
+    assert(
+      secondPage.status === 200 && secondPageBody.items[0]?.id === callId &&
+        secondPageBody.items[1]?.id === conversationId,
+      "the lower id at a duplicate timestamp begins the next page without a gap",
+    );
+
+    const anchorPage = await listPersonTimeline(owner, personId, "limit=4");
+    const anchorPageBody = await anchorPage.json() as {
+      readonly nextCursor?: string;
+    };
+    assert(anchorPageBody.nextCursor, "conversation anchor cursor exists");
+    await sql`
+      update crm.workspace_profile_modules set is_active = false,
+        updated_at = now()
+      where workspace_id = ${owner.workspaceId} and key = 'conversations'
+    `;
+    const personalized = await listPersonTimeline(owner, personId, "limit=50");
+    const personalizedBody = await personalized.json() as {
+      readonly items: readonly { readonly kind: string }[];
+    };
+    assert(
+      personalized.status === 200 &&
+        personalizedBody.items.every((item) => item.kind !== "conversation"),
+      "a disabled profile module contributes no retained rows",
+    );
+    const hiddenAnchor = await listPersonTimeline(
+      owner,
+      personId,
+      `cursor=${encodeURIComponent(anchorPageBody.nextCursor ?? "")}`,
+    );
+    assert(
+      hiddenAnchor.status === 409 &&
+        (await hiddenAnchor.json() as { readonly code: string }).code ===
+          "person_timeline_stale_cursor",
+      "a cursor anchored to a newly hidden kind becomes stale",
+    );
+
+    assert(
+      (await listPersonTimeline(owner, foreignPersonId)).status === 404,
+      "a foreign-workspace person is indistinguishable from a missing person",
+    );
+    const [ownerUser] = await sql<{ readonly id: string }[]>`
+      select user_id::text as id from crm.workspace_members
+      where id = ${owner.memberId}
+    `;
+    assert(ownerUser, "timeline owner user exists");
+    const forged = await personProfile.listTimeline({
+      memberId: owner.memberId,
+      role: "owner",
+      userId: ownerUser.id,
+      workspaceId: foreign.workspaceId,
+    }, foreignPersonId);
+    assert(
+      forged.status === "forbidden",
+      "a forged workspace context is refused before timeline projection",
     );
   },
 });
