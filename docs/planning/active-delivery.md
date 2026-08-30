@@ -11,7 +11,8 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-005 — Feedback pass**, the last of the review's top five
+- Current leaf: **UXD-003C — Cache the resolved session**. The review's top
+  five, `UXD-001` through `UXD-005`, are all integrated.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -945,7 +946,7 @@ asserts, so it runs that spec on its candidate.
         rather than inside a rendering candidate. It must invalidate on sign-out
         and on workspace switch, and `auth-003`, `app-002e`, and `app-002c` are
         its owning flows.
-- [ ] **UXD-005 — Feedback pass.** (§11; effort M; depends on `UXD-001` and
+- [x] **UXD-005 — Feedback pass.** (§11; effort M; depends on `UXD-001` and
       `UXD-003`) Delivered in two slices, because the toast region and the
       empty-state work touch different surfaces and each needs its own browser
       evidence.
