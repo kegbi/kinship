@@ -94,8 +94,34 @@ function markup(path = `/app/people/${personId}`): void {
         <p id="person-profile-section-notice" role="status" tabindex="-1" hidden></p>
       </nav>
       <section id="profile-section-important-dates" data-profile-section="important-dates" tabindex="-1"><h2>Important dates</h2></section>
-      <section id="profile-section-documents" data-profile-section="documents" data-load-mode="independent" tabindex="-1"><h2>Documents</h2></section>
-      <section id="profile-section-photos" data-profile-section="photos" data-load-mode="independent" tabindex="-1"><h2>Photos</h2></section>
+      <div class="profile-section-list">
+        <div class="zone-switcher">
+          <div data-zone-mini-identity aria-hidden="true" hidden>
+            <span data-zone-mini-avatar></span><span data-zone-mini-name></span>
+          </div>
+          <div role="group" aria-label="Filter person sections">
+            <button class="button-primary" data-zone-filter="all" type="button" aria-pressed="true">All</button>
+            <button class="button-secondary" data-zone-filter="timeline" type="button" aria-pressed="false">Timeline</button>
+            <button class="button-secondary" data-zone-filter="planning" type="button" aria-pressed="false">Planning</button>
+            <button class="button-secondary" data-zone-filter="things" type="button" aria-pressed="false">Things</button>
+            <button class="button-secondary" data-zone-filter="admin" type="button" aria-pressed="false">Admin</button>
+          </div>
+        </div>
+        <section class="person-zone" data-zone="timeline" aria-labelledby="person-zone-timeline-heading">
+          <h2 id="person-zone-timeline-heading">Timeline</h2>
+        </section>
+        <section class="person-zone" data-zone="planning" aria-labelledby="person-zone-planning-heading">
+          <h2 id="person-zone-planning-heading">Planning</h2>
+        </section>
+        <section class="person-zone" data-zone="things" aria-labelledby="person-zone-things-heading">
+          <h2 id="person-zone-things-heading">Things</h2>
+          <section id="profile-section-documents" data-profile-section="documents" tabindex="-1"><h3>Documents</h3></section>
+          <section id="profile-section-photos" data-profile-section="photos" tabindex="-1"><h3>Photos</h3></section>
+        </section>
+        <section class="person-zone" data-zone="admin" aria-labelledby="person-zone-admin-heading">
+          <h2 id="person-zone-admin-heading">Admin</h2>
+        </section>
+      </div>
     </section>`;
 }
 
@@ -105,7 +131,7 @@ function interactionSectionMarkup(): void {
     `<li><a href="?section=activities" data-section-link="activities">Activities</a></li>
      <li><a href="?section=notes" data-section-link="notes">Notes</a></li>`,
   );
-  document.querySelector("#person-profile-ready")?.insertAdjacentHTML(
+  document.querySelector('[data-zone="timeline"]')?.insertAdjacentHTML(
     "beforeend",
     `<section data-profile-section="activities" tabindex="-1">
        <p id="person-activities-state"></p><ul id="person-activities-list"></ul>
@@ -148,14 +174,17 @@ function reminderSectionMarkup(): void {
     "beforeend",
     `<li><a href="?section=reminders" data-section-link="reminders">Reminders</a></li>`,
   );
-  document.querySelector("#person-profile-ready")?.insertAdjacentHTML(
+  document.querySelector('[data-zone="planning"]')?.insertAdjacentHTML(
     "beforeend",
     `<section data-profile-section="reminders" tabindex="-1">
        <form data-reminder-form>
          <input name="title"><button type="submit">Save reminder</button>
        </form>
-     </section>
-     <section data-person-audit-summary>
+     </section>`,
+  );
+  document.querySelector('[data-zone="admin"]')?.insertAdjacentHTML(
+    "beforeend",
+    `<section data-person-audit-summary>
        <p data-person-audit-state></p><span data-person-audit-badge></span>
        <ol data-person-audit-list></ol><a data-person-audit-link></a>
        <button data-person-audit-retry type="button">Retry audit</button>
@@ -163,7 +192,40 @@ function reminderSectionMarkup(): void {
   );
 }
 
+function stubReadyProfile(
+  profileSections: readonly { readonly id: string; readonly status: string }[] =
+    [],
+): ReturnType<typeof vi.fn> {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(response(session))
+    .mockResolvedValueOnce(response({
+      dueInformation: {
+        detail: "No due information.",
+        openTaskCount: 0,
+        status: "ready",
+      },
+      person: {
+        familyName: "Lovelace",
+        givenName: "Ada",
+        id: personId,
+        isDeceased: false,
+        isPartial: false,
+        isSelf: false,
+        isStarred: false,
+        profileSections,
+        tagCount: 0,
+        tags: [],
+        updatedAt: "2026-08-15T08:00:00.000Z",
+      },
+      status: "ready",
+    }))
+    .mockResolvedValue(undefined as never);
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   sessionStorage.clear();
   history.replaceState({}, "", "/");
@@ -453,6 +515,214 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     ).toBe(true);
   });
 
+  it("UXD-002C defaults invalid and missing views to All, filters zones, and restores popstate", async () => {
+    markup(`/app/people/${personId}?view=unknown`);
+    stubReadyProfile();
+
+    await mountPeopleProfile();
+
+    const zones = [...document.querySelectorAll<HTMLElement>("[data-zone]")];
+    const all = document.querySelector<HTMLButtonElement>(
+      '[data-zone-filter="all"]',
+    )!;
+    const planning = document.querySelector<HTMLButtonElement>(
+      '[data-zone-filter="planning"]',
+    )!;
+    expect(location.search).toBe("?view=unknown");
+    expect(all.getAttribute("aria-pressed")).toBe("true");
+    expect(all.classList.contains("button-primary")).toBe(true);
+    expect(zones.every((zone) => !zone.hidden)).toBe(true);
+
+    planning.click();
+    expect(new URLSearchParams(location.search).get("view")).toBe("planning");
+    expect(planning.getAttribute("aria-pressed")).toBe("true");
+    expect(planning.classList.contains("button-primary")).toBe(true);
+    expect(
+      document.querySelector<HTMLElement>('[data-zone="planning"]')?.hidden,
+    ).toBe(false);
+    expect(
+      zones.filter((zone) => zone.dataset.zone !== "planning").every((zone) =>
+        zone.hidden
+      ),
+    ).toBe(true);
+    expect(
+      document.querySelector<HTMLElement>(
+        '[data-profile-section="important-dates"]',
+      )?.hidden,
+    ).toBe(false);
+
+    history.replaceState({}, "", `/app/people/${personId}`);
+    globalThis.dispatchEvent(new PopStateEvent("popstate"));
+    expect(location.search).toBe("");
+    expect(all.getAttribute("aria-pressed")).toBe("true");
+    expect(zones.every((zone) => !zone.hidden)).toBe(true);
+  });
+
+  it("UXD-002C writes one history entry when section navigation changes zones", async () => {
+    markup();
+    stubReadyProfile();
+    const pushState = vi.spyOn(history, "pushState");
+
+    await mountPeopleProfile();
+
+    document.querySelector<HTMLButtonElement>(
+      '[data-zone-filter="planning"]',
+    )?.click();
+    pushState.mockClear();
+    document.querySelector<HTMLAnchorElement>(
+      '[data-section-link="photos"]',
+    )?.click();
+
+    expect(pushState).toHaveBeenCalledTimes(1);
+    expect(new URLSearchParams(location.search).get("section")).toBe("photos");
+    expect(new URLSearchParams(location.search).get("view")).toBe("things");
+  });
+
+  it("UXD-002C keeps All visible when section navigation does not need a zone change", async () => {
+    markup();
+    stubReadyProfile();
+    const pushState = vi.spyOn(history, "pushState");
+
+    await mountPeopleProfile();
+    pushState.mockClear();
+    document.querySelector<HTMLAnchorElement>(
+      '[data-section-link="photos"]',
+    )?.click();
+
+    expect(pushState).toHaveBeenCalledTimes(1);
+    expect(new URLSearchParams(location.search).get("section")).toBe("photos");
+    expect(new URLSearchParams(location.search).has("view")).toBe(false);
+    expect(
+      [...document.querySelectorAll<HTMLElement>("[data-zone]")].every(
+        (zone) => !zone.hidden,
+      ),
+    ).toBe(true);
+    expect(
+      document.querySelector('[data-zone-filter="all"]')?.getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
+  });
+
+  it("UXD-002C does not write history while popstate restores a section", async () => {
+    markup();
+    stubReadyProfile();
+    await mountPeopleProfile();
+    history.replaceState(
+      {},
+      "",
+      `/app/people/${personId}?section=photos&view=planning`,
+    );
+    const pushState = vi.spyOn(history, "pushState");
+    const replaceState = vi.spyOn(history, "replaceState");
+
+    globalThis.dispatchEvent(new PopStateEvent("popstate"));
+
+    expect(pushState).not.toHaveBeenCalled();
+    expect(replaceState).not.toHaveBeenCalled();
+    expect(
+      document.querySelector<HTMLElement>('[data-zone="things"]')?.hidden,
+    ).toBe(false);
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-profile-section="photos"]'),
+    );
+  });
+
+  it("UXD-002C activates the mapped zone before focusing a section deep link", async () => {
+    markup(`/app/people/${personId}?view=planning&section=photos`);
+    stubReadyProfile();
+    const pushState = vi.spyOn(history, "pushState");
+    const replaceState = vi.spyOn(history, "replaceState");
+
+    await mountPeopleProfile();
+
+    expect(pushState).not.toHaveBeenCalled();
+    expect(replaceState).toHaveBeenCalledTimes(1);
+    expect(new URLSearchParams(location.search).get("view")).toBe("things");
+    expect(
+      document.querySelector<HTMLElement>('[data-zone="things"]')?.hidden,
+    ).toBe(false);
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-profile-section="photos"]'),
+    );
+    expect(
+      document.querySelector('[data-section-link="photos"]')?.getAttribute(
+        "aria-current",
+      ),
+    ).toBe("location");
+  });
+
+  it("UXD-002C does not let missing filter chrome gate the person page", async () => {
+    markup();
+    document.querySelector(".profile-section-list")?.remove();
+    stubReadyProfile();
+
+    await mountPeopleProfile();
+
+    expect(
+      document.querySelector<HTMLElement>("#person-profile-ready")?.hidden,
+    ).toBe(false);
+    expect(document.querySelector("#person-profile-name")?.textContent).toBe(
+      "Ada Lovelace",
+    );
+  });
+
+  it("UXD-002C renders page errors without filter chrome", async () => {
+    markup("/app/people/not-a-person-id");
+    document.querySelector(".profile-section-list")?.remove();
+
+    await mountPeopleProfile();
+
+    expect(document.querySelector("#person-profile-state h1")?.textContent)
+      .toBe("Person not found");
+  });
+
+  it("UXD-002C shows the mini identity only after the hero leaves view", async () => {
+    let callback!: IntersectionObserverCallback;
+    const observe = vi.fn();
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(next: IntersectionObserverCallback) {
+          callback = next;
+        }
+        observe = observe;
+        disconnect = vi.fn();
+        root = null;
+        rootMargin = "0px";
+        thresholds = [0];
+        takeRecords = () => [];
+        unobserve = vi.fn();
+      },
+    );
+    markup();
+    stubReadyProfile();
+
+    await mountPeopleProfile();
+
+    const mini = document.querySelector<HTMLElement>(
+      "[data-zone-mini-identity]",
+    )!;
+    const observer = {} as IntersectionObserver;
+    expect(observe).toHaveBeenCalledWith(
+      document.querySelector(".person-profile-hero"),
+    );
+    callback(
+      [{ isIntersecting: false } as IntersectionObserverEntry],
+      observer,
+    );
+    expect(mini.hidden).toBe(false);
+    expect(mini.getAttribute("aria-hidden")).toBe("true");
+    expect(mini.querySelector("[data-zone-mini-avatar]")?.textContent).toBe(
+      "AL",
+    );
+    expect(mini.querySelector("[data-zone-mini-name]")?.textContent).toBe(
+      "Ada Lovelace",
+    );
+    callback([{ isIntersecting: true } as IntersectionObserverEntry], observer);
+    expect(mini.hidden).toBe(true);
+  });
+
   it("[APP-003C] renders orientation first and focuses stable section deep links", async () => {
     markup(`/app/people/${personId}?section=documents`);
     vi.stubGlobal(
@@ -519,14 +789,15 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     document.querySelector<HTMLAnchorElement>(
       '[data-section-link="photos"]',
     )?.click();
-    expect(location.search).toBe("?section=photos");
+    expect(new URLSearchParams(location.search).get("section")).toBe("photos");
+    expect(new URLSearchParams(location.search).has("view")).toBe(false);
     expect(document.activeElement).toBe(
       document.querySelector("#profile-section-photos"),
     );
   });
 
   it("UXD-002A opens and focuses the edit affordance for the absorbed identity deep link", async () => {
-    markup(`/app/people/${personId}?section=identity-summary`);
+    markup(`/app/people/${personId}?view=planning&section=identity-summary`);
     vi.stubGlobal(
       "fetch",
       vi.fn()
@@ -566,10 +837,11 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       document.querySelector('[data-section-link="identity-summary"]')
         ?.getAttribute("aria-current"),
     ).toBe("location");
+    expect(new URLSearchParams(location.search).get("view")).toBe("admin");
   });
 
   it("UXD-006 explains an admin deep link to a personalization-hidden section", async () => {
-    markup(`/app/people/${personId}?section=documents`);
+    markup(`/app/people/${personId}?view=planning&section=documents`);
     reminderSectionMarkup();
     let releaseSecondary!: (value: Response) => void;
     const pendingSecondary = new Promise<Response>((resolve) => {
@@ -636,6 +908,13 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(notice?.querySelector("a")?.getAttribute("href")).toBe(
       "/app/settings/personalization?section=profile-modules",
     );
+    expect(new URLSearchParams(location.search).get("view")).toBe("planning");
+    expect(
+      document.querySelector<HTMLElement>('[data-zone="planning"]')?.hidden,
+    ).toBe(false);
+    expect(
+      document.querySelector<HTMLElement>('[data-zone="things"]')?.hidden,
+    ).toBe(true);
     expect(document.activeElement).toBe(notice);
     const personalization = notice?.querySelector<HTMLAnchorElement>("a");
     personalization?.focus();
@@ -800,7 +1079,8 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       '[data-section-link="photos"]',
     );
     photos?.click();
-    expect(location.search).toBe("?section=photos");
+    expect(new URLSearchParams(location.search).get("section")).toBe("photos");
+    expect(new URLSearchParams(location.search).has("view")).toBe(false);
     expect(photos?.getAttribute("aria-current")).toBe("location");
 
     history.back();

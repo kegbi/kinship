@@ -221,10 +221,8 @@ test(
       .toHaveAttribute("data-section-state", "ready");
     await expect(page.locator("#profile-section-notes"))
       .toHaveAttribute("data-section-state", "ready");
-    await expect(page.locator("#profile-section-documents")).toHaveAttribute(
-      "data-load-mode",
-      "independent",
-    );
+    await expect(page.locator("#profile-section-documents").locator(".."))
+      .toHaveAttribute("data-zone", "things");
     await expect(page.locator("#profile-section-documents")).toBeFocused();
     await expect(
       page.locator('[data-section-link="documents"]'),

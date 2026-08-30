@@ -60,6 +60,15 @@ type ProfileState = "forbidden" | "not-found" | "unavailable";
 interface SectionNavigationContext {
   readonly hiddenSectionIds: ReadonlySet<string>;
   memberRole: SessionContext["member"]["role"];
+  readonly zoneFilter?: ZoneFilterContext;
+}
+
+type Zone = "timeline" | "planning" | "things" | "admin";
+type ZoneView = Zone | "all";
+
+interface ZoneFilterContext {
+  readonly buttons: readonly HTMLButtonElement[];
+  readonly zones: readonly HTMLElement[];
 }
 
 interface LifecycleElements {
@@ -87,6 +96,92 @@ const summaryRailSectionIds = new Set<PersonFactRailSectionId>([
   "food-preferences",
   "first-meeting",
 ]);
+
+const SECTION_ZONE = {
+  "contact-methods": "facts",
+  addresses: "facts",
+  relationships: "facts",
+  "important-dates": "facts",
+  work: "facts",
+  pets: "facts",
+  "food-preferences": "facts",
+  "first-meeting": "facts",
+  "stay-in-touch": "facts",
+  "life-events": "timeline",
+  notes: "timeline",
+  conversations: "timeline",
+  calls: "timeline",
+  activities: "timeline",
+  tasks: "planning",
+  reminders: "planning",
+  gifts: "things",
+  debts: "things",
+  documents: "things",
+  photos: "things",
+  "audit-summary": "admin",
+  "identity-summary": "admin",
+} as const;
+
+function currentView(): ZoneView {
+  const view = new URLSearchParams(globalThis.location.search).get("view");
+  return view === "timeline" || view === "planning" || view === "things" ||
+      view === "admin"
+    ? view
+    : "all";
+}
+
+function applyZoneView(filter: ZoneFilterContext, view: ZoneView): void {
+  for (const button of filter.buttons) {
+    const selected = button.dataset.zoneFilter === view;
+    button.setAttribute("aria-pressed", String(selected));
+    button.classList.toggle("button-primary", selected);
+    button.classList.toggle("button-secondary", !selected);
+  }
+  for (const zone of filter.zones) {
+    zone.hidden = view !== "all" && zone.dataset.zone !== view;
+  }
+}
+
+function selectZone(filter: ZoneFilterContext, view: ZoneView): void {
+  applyZoneView(filter, view);
+  const url = new URL(globalThis.location.href);
+  url.searchParams.set("view", view);
+  globalThis.history.pushState({}, "", url);
+}
+
+function mountZoneFilter(): ZoneFilterContext | undefined {
+  const buttons = [...document.querySelectorAll<HTMLButtonElement>(
+    "[data-zone-filter]",
+  )];
+  const zones = [...document.querySelectorAll<HTMLElement>("[data-zone]")];
+  if (buttons.length === 0 || zones.length === 0) return undefined;
+  const filter = { buttons, zones };
+  applyZoneView(filter, currentView());
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      const view = button.dataset.zoneFilter;
+      if (
+        view === "all" || view === "timeline" || view === "planning" ||
+        view === "things" || view === "admin"
+      ) selectZone(filter, view);
+    });
+  }
+  return filter;
+}
+
+function mountZoneMiniIdentity(): void {
+  const hero = document.querySelector<HTMLElement>(".person-profile-hero");
+  const mini = document.querySelector<HTMLElement>(
+    "[data-zone-mini-identity]",
+  );
+  if (!hero || !mini || typeof globalThis.IntersectionObserver !== "function") {
+    return;
+  }
+  const observer = new IntersectionObserver(([entry]) => {
+    mini.hidden = entry?.isIntersecting !== false;
+  });
+  observer.observe(hero);
+}
 
 function seedRailSummary(
   summary: PersonProfileSummary | undefined,
@@ -252,6 +347,15 @@ function initials(person: PersonIdentity): string {
     .toLocaleUpperCase();
 }
 
+function renderZoneMiniIdentity(person: PersonIdentity): void {
+  const avatar = document.querySelector<HTMLElement>(
+    "[data-zone-mini-avatar]",
+  );
+  const name = document.querySelector<HTMLElement>("[data-zone-mini-name]");
+  if (avatar) avatar.textContent = initials(person);
+  if (name) name.textContent = displayName(person);
+}
+
 function renderState(profile: ProfileElements, state: ProfileState): void {
   const copy = {
     forbidden: {
@@ -373,12 +477,37 @@ function hasMeaningfulInteractiveFocus(): boolean {
     );
 }
 
+function activateSectionZone(
+  navigation: SectionNavigationContext,
+  id: string | null,
+): Zone | undefined {
+  if (
+    !id || navigation.hiddenSectionIds.has(id) || !navigation.zoneFilter ||
+    !(id in SECTION_ZONE)
+  ) return undefined;
+  const zone = SECTION_ZONE[id as keyof typeof SECTION_ZONE];
+  if (zone === "facts") return undefined;
+  const targetZone = navigation.zoneFilter.zones.find((candidate) =>
+    candidate.dataset.zone === zone
+  );
+  if (!targetZone?.hidden) return undefined;
+  applyZoneView(navigation.zoneFilter, zone);
+  return zone;
+}
+
 function focusSection(
   profile: ProfileElements,
   navigation: SectionNavigationContext,
   id: string | null,
   preserveInteractiveFocus = false,
+  replaceActivatedView = false,
 ): boolean {
+  const activatedZone = activateSectionZone(navigation, id);
+  if (activatedZone && replaceActivatedView) {
+    const url = new URL(globalThis.location.href);
+    url.searchParams.set("view", activatedZone);
+    globalThis.history.replaceState({}, "", url);
+  }
   const target = section(id);
   if (!target) {
     clearSectionNotice(profile);
@@ -472,10 +601,18 @@ function mountSectionNavigation(
     event.preventDefault();
     const url = new URL(globalThis.location.href);
     url.searchParams.set("section", id);
+    const zone = SECTION_ZONE[id as keyof typeof SECTION_ZONE];
+    const view = currentView();
+    if (view !== "all" && zone !== "facts" && zone !== view) {
+      url.searchParams.set("view", zone);
+    }
     globalThis.history.pushState({}, "", url);
     focusSection(profile, navigation, id);
   });
   globalThis.addEventListener("popstate", () => {
+    if (navigation.zoneFilter) {
+      applyZoneView(navigation.zoneFilter, currentView());
+    }
     reconcileSectionLocation(profile, navigation);
   });
 }
@@ -519,6 +656,7 @@ function renderReady(
   profile.nickname.textContent = person.nickname ? `“${person.nickname}”` : "";
   profile.nickname.hidden = !person.nickname;
   profile.avatar.textContent = initials(person);
+  renderZoneMiniIdentity(person);
   for (
     const field of [
       "givenName",
@@ -581,7 +719,7 @@ function renderReady(
     vcard.hidden = false;
   }
   document.title = `${name} — Kinship`;
-  if (!focusSection(profile, navigation, currentSection())) {
+  if (!focusSection(profile, navigation, currentSection(), false, true)) {
     profile.heading.focus();
   }
 }
@@ -626,6 +764,7 @@ function updateIdentity(
   profile.nickname.textContent = person.nickname ? `“${person.nickname}”` : "";
   profile.nickname.hidden = !person.nickname;
   profile.avatar.textContent = initials(person);
+  renderZoneMiniIdentity(person);
   for (
     const field of [
       "givenName",
@@ -870,6 +1009,8 @@ function problemState(problem: ProblemDetails): ProfileState {
 export async function mountPeopleProfile(): Promise<void> {
   const profile = elements();
   if (!profile) return;
+  const zoneFilter = mountZoneFilter();
+  mountZoneMiniIdentity();
   const id = personId();
   if (!id) {
     renderState(profile, "not-found");
@@ -879,6 +1020,7 @@ export async function mountPeopleProfile(): Promise<void> {
   const sectionNavigation: SectionNavigationContext = {
     hiddenSectionIds,
     memberRole: "member",
+    ...(zoneFilter ? { zoneFilter } : {}),
   };
   mountSectionNavigation(profile, sectionNavigation);
   const session = await resolveWorkspaceSession();

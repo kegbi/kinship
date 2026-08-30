@@ -16,6 +16,10 @@ const profilePage = readFileSync(
   resolve("apps/web/src/pages/internal/person-profile-shell.astro"),
   "utf8",
 );
+const profileController = readFileSync(
+  resolve("apps/web/src/lib/people-profile.ts"),
+  "utf8",
+);
 
 describe("people form layout regressions", () => {
   it("aligns directory controls to their first field row and styles retry actions", () => {
@@ -184,5 +188,151 @@ describe("people form layout regressions", () => {
     expect(applicationStyles).toMatch(
       /\.profile-rail-block\[data-rail-empty="true"\] > \.section-state:empty \+ #relationships-list\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*1;/s,
     );
+  });
+
+  it("UXD-002C groups the twelve stream cards under legal headings and retires load-mode metadata", () => {
+    const zoneDefinition = profilePage.slice(
+      profilePage.indexOf("const streamZones = ["),
+      profilePage.indexOf(
+        "] as const;",
+        profilePage.indexOf("const streamZones = ["),
+      ),
+    );
+    const orderedZones = ["timeline", "planning", "things", "admin"];
+    let previousZone = -1;
+    for (const zone of orderedZones) {
+      const currentZone = zoneDefinition.indexOf(`"${zone}"`);
+      expect(currentZone).toBeGreaterThan(previousZone);
+      previousZone = currentZone;
+    }
+    const main = profilePage.slice(
+      profilePage.indexOf('class="profile-section-list"'),
+    );
+    expect(main).toContain(
+      '<section class="person-zone" data-zone={zone} aria-labelledby={`person-zone-${zone}-heading`}>',
+    );
+    expect(main).toContain(
+      "<h2 id={`person-zone-${zone}-heading`}>{zoneTitle}</h2>",
+    );
+    expect(main).not.toContain("section-kicker");
+    expect(main).not.toContain("<h2 id={`profile-section-");
+    expect(main).toContain("<h3 id={`profile-section-${id}-heading`}");
+    expect(main).toContain(
+      '<h3 id="profile-section-life-events-heading">Life events</h3>',
+    );
+    expect(main).toContain(
+      '<h3 id="profile-section-tasks-heading">Tasks</h3>',
+    );
+    expect(main).toContain(
+      "<div><h4>Open</h4><ul data-task-open-list",
+    );
+    expect(main).toContain(
+      "<div><h4>Completed</h4><ul data-task-completed-list",
+    );
+    expect(main).toContain(
+      "<div><h4>Cancelled</h4><ul data-task-cancelled-list",
+    );
+    expect(profilePage).not.toContain("data-load-mode");
+  });
+
+  it("UXD-002C maps every stable profile section to its filter zone", () => {
+    const sectionZone = profileController.slice(
+      profileController.indexOf("const SECTION_ZONE = {"),
+      profileController.indexOf(
+        "} as const;",
+        profileController.indexOf("const SECTION_ZONE = {"),
+      ),
+    );
+    const expectedSections = [
+      "contact-methods",
+      "addresses",
+      "relationships",
+      "important-dates",
+      "work",
+      "pets",
+      "food-preferences",
+      "first-meeting",
+      "stay-in-touch",
+      "life-events",
+      "notes",
+      "conversations",
+      "calls",
+      "activities",
+      "tasks",
+      "reminders",
+      "gifts",
+      "debts",
+      "documents",
+      "photos",
+      "audit-summary",
+      "identity-summary",
+    ];
+    expect(sectionZone.match(/^\s{2}(?:"[^"]+"|[a-z-]+):/gm)).toHaveLength(
+      22,
+    );
+    for (const id of expectedSections) {
+      expect(sectionZone).toMatch(
+        new RegExp(
+          `(?:"${id}"|${id}): "(?:facts|timeline|planning|things|admin)"`,
+        ),
+      );
+    }
+  });
+
+  it("UXD-002C uses an accessible sticky filter without introducing tabs or a second heading", () => {
+    const switcher = profilePage.slice(
+      profilePage.indexOf('class="zone-switcher"'),
+      profilePage.indexOf('<section class="person-zone"'),
+    );
+    expect(switcher).toContain(
+      '<div class="zone-filter" role="group" aria-label="Filter person sections">',
+    );
+    expect(switcher.match(/<button\b/g)).toHaveLength(5);
+    for (const view of ["all", "timeline", "planning", "things", "admin"]) {
+      expect(switcher).toContain(`data-zone-filter="${view}"`);
+    }
+    expect(switcher).not.toContain('role="tablist"');
+    expect(switcher).not.toContain('role="tab"');
+    expect(switcher).toContain(
+      '<div class="zone-mini-identity" data-zone-mini-identity aria-hidden="true" hidden>',
+    );
+    expect(switcher).not.toMatch(/<h[1-6]\b/);
+    expect(applicationStyles).toMatch(
+      /\.zone-switcher\s*\{[^}]*position:\s*sticky;[^}]*top:\s*6rem;[^}]*overflow-x:\s*auto;[^}]*background:\s*var\(--surface-page\);/s,
+    );
+    expect(applicationStyles).toMatch(
+      /\.zone-mini-identity\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*0 1 auto;/s,
+    );
+    expect(applicationStyles).toMatch(
+      /\.zone-mini-avatar\s*\{[^}]*width:\s*1\.5rem;[^}]*aspect-ratio:\s*1;/s,
+    );
+    expect(applicationStyles).toMatch(
+      /\.person-zone \.profile-section-heading h3\s*\{[^}]*font-size:\s*clamp\(1\.45rem, 3vw, 2rem\);/s,
+    );
+    expect(applicationStyles).not.toMatch(
+      /(?:^|\n)\.profile-section-heading h3\s*\{/,
+    );
+    expect(applicationStyles).toMatch(
+      /\.profile-section-card\s*\{[^}]*scroll-margin-top:\s*6\.5rem;/s,
+    );
+    expect(applicationStyles).toMatch(
+      /\.person-zone \.profile-section-card\s*\{[^}]*scroll-margin-top:\s*10\.5rem;/s,
+    );
+    const mobileSwitcher = applicationStyles.slice(
+      applicationStyles.indexOf(
+        ".zone-switcher {",
+        applicationStyles.indexOf("@media (max-width: 760px)"),
+      ),
+      applicationStyles.indexOf(
+        "}",
+        applicationStyles.indexOf(
+          ".zone-switcher {",
+          applicationStyles.indexOf("@media (max-width: 760px)"),
+        ),
+      ),
+    );
+    expect(mobileSwitcher).toContain("top: 6rem;");
+    expect(mobileSwitcher).toContain("scroll-snap-type: x proximity;");
+    expect(mobileSwitcher).not.toContain("overflow-x");
   });
 });

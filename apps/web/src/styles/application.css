@@ -1872,7 +1872,7 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
   }
 }
 
-.profile-section-heading h2 {
+.person-zone .profile-section-heading h3 {
   margin: 0;
   font-family: Georgia, serif;
   font-size: clamp(1.45rem, 3vw, 2rem);
@@ -1995,12 +1995,94 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
   min-width: 0;
 }
 
+.zone-switcher {
+  position: sticky;
+  top: 6rem;
+  z-index: 2;
+  display: flex;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding-block: .5rem;
+  overflow-x: auto;
+  align-items: center;
+  background: var(--surface-page);
+}
+
+.zone-mini-identity {
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+  align-items: center;
+  flex: 0 1 auto;
+  font-weight: 750;
+}
+
+.zone-mini-identity[hidden] {
+  display: none;
+}
+
+.zone-mini-avatar {
+  display: grid;
+  width: 1.5rem;
+  aspect-ratio: 1;
+  border-radius: var(--radius-pill);
+  place-items: center;
+  color: var(--ink-inverse);
+  background: var(--accent);
+  font-size: .65rem;
+}
+
+.zone-mini-name {
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zone-filter {
+  display: flex;
+  gap: var(--space-1);
+  min-width: max-content;
+  padding: .25rem;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+.zone-filter button {
+  flex: none;
+  scroll-snap-align: start;
+}
+
+.person-zone {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.person-zone[hidden] {
+  display: none;
+}
+
+.person-zone > h2 {
+  margin: 0;
+  font-family: Georgia, serif;
+  font-size: clamp(1.65rem, 3vw, 2.2rem);
+  font-weight: 500;
+}
+
 .profile-section-card {
   scroll-margin-top: 6.5rem;
   padding: clamp(1.1rem, 3vw, 1.6rem);
   border: 1px solid rgb(32 53 45 / 13%);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
+}
+
+.person-zone .profile-section-card {
+  scroll-margin-top: 10.5rem;
 }
 
 .profile-rail-block {
@@ -3011,6 +3093,12 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
     overflow: visible;
   }
 
+  .zone-switcher {
+    position: sticky;
+    top: 6rem;
+    scroll-snap-type: x proximity;
+  }
+
   .profile-section-directory nav ul {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3019,7 +3107,7 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
     min-height: 44px;
   }
 
-  .profile-section-card {
+  .person-zone .profile-section-card {
     scroll-margin-top: 11rem;
   }
 
