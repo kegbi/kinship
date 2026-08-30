@@ -17,6 +17,7 @@ function response(body: unknown, status = 200): Response {
 
 function markup(): void {
   document.body.innerHTML = `
+    <ul id="app-toasts"></ul>
     <section data-profile-section="contact-methods" data-profile-fact-section="contact-methods" data-section-state="loading">
       <span data-profile-fact-badge>Loading</span>
       <span data-profile-rail-count hidden></span>
@@ -59,6 +60,267 @@ afterEach(() => {
 });
 
 describe("PEOPLE-006 profile-fact sections", () => {
+  it("renders primary contact links and copy controls while expanding every other record", async () => {
+    markup();
+    const primaryId = "00000000-0000-4000-8000-000000000301";
+    const phoneId = "00000000-0000-4000-8000-000000000302";
+    const secondaryId = "00000000-0000-4000-8000-000000000306";
+    const phoneTypeId = "00000000-0000-4000-8000-000000000201";
+    const records = [
+      {
+        id: primaryId,
+        section: "contact-methods",
+        updatedAt: revision,
+        value: {
+          isPrimary: true,
+          labelIds: [],
+          typeId,
+          value: "ada@example.test",
+        },
+      },
+      {
+        id: phoneId,
+        section: "contact-methods",
+        updatedAt: revision,
+        value: {
+          isPrimary: true,
+          labelIds: [],
+          typeId: phoneTypeId,
+          value: "+44 20 7946 0958",
+        },
+      },
+      {
+        id: secondaryId,
+        section: "contact-methods",
+        updatedAt: revision,
+        value: {
+          isPrimary: false,
+          labelIds: [],
+          typeId,
+          value: "other@example.test",
+        },
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        options: [
+          { id: typeId, kind: "contact-type", name: "Email" },
+          { id: phoneTypeId, kind: "contact-type", name: "Phone" },
+        ],
+        personUpdatedAt: revision,
+        records,
+        status: "ready",
+      })),
+    );
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    await mountProfileFacts(personId, workspaceId, false, revision, [{
+      href: "mailto:ada@example.test",
+      id: primaryId,
+      kind: "email",
+      label: "Email",
+      value: "ada@example.test",
+    }, {
+      id: phoneId,
+      kind: "phone",
+      label: "Phone",
+      value: "+44 20 7946 0958",
+    }]);
+
+    const primary = document.querySelector<HTMLAnchorElement>(
+      `[data-profile-fact-list] a[href="mailto:ada@example.test"]`,
+    );
+    expect(primary?.textContent).toBe("ada@example.test");
+    const copy = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Copy ada@example.test"]',
+    )!;
+    copy.click();
+    await vi.waitFor(() =>
+      expect(document.querySelector("#app-toasts")?.textContent).toContain(
+        "Copied ada@example.test",
+      )
+    );
+    expect(writeText).toHaveBeenCalledWith("ada@example.test");
+    document.querySelector<HTMLButtonElement>(".app-toast-dismiss")?.click();
+
+    const phone = [...document.querySelectorAll<HTMLLIElement>(
+      "[data-profile-fact-list] > li",
+    )].find((item) => item.textContent?.includes("+44 20 7946 0958"))!;
+    expect(phone.hidden).toBe(false);
+    expect(phone.querySelector("a")).toBeNull();
+    expect(
+      phone.querySelector('[aria-label="Copy +44 20 7946 0958"]'),
+    ).not.toBeNull();
+
+    const secondary = [...document.querySelectorAll<HTMLLIElement>(
+      "[data-profile-fact-list] > li",
+    )].find((item) => item.textContent?.includes("other@example.test"))!;
+    expect(secondary.hidden).toBe(true);
+    const edit = [...secondary.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.startsWith("Edit"))!;
+    expect(edit).not.toBeUndefined();
+    const expander = document.querySelector<HTMLButtonElement>(
+      "[data-profile-fact-expander]",
+    )!;
+    expect(expander.hasAttribute("aria-label")).toBe(false);
+    expect(expander.firstChild?.textContent).toBe("+ 1 more");
+    expect(expander.querySelector(".sr-only")?.textContent).toBe(
+      " contact methods",
+    );
+    expect(expander.textContent).toBe("+ 1 more contact methods");
+    expect(expander.getAttribute("aria-expanded")).toBe("false");
+    expander.click();
+    expect(secondary.hidden).toBe(false);
+    expect(expander.getAttribute("aria-expanded")).toBe("true");
+    expect(expander.firstChild?.textContent).toBe("Show fewer");
+    expect(expander.textContent).toBe("Show fewer contact methods");
+  });
+
+  it("keeps the current contact rendering when no summary was supplied", async () => {
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        options: [{ id: typeId, kind: "contact-type", name: "Email" }],
+        personUpdatedAt: revision,
+        records: [
+          {
+            id: "00000000-0000-4000-8000-000000000303",
+            section: "contact-methods",
+            updatedAt: revision,
+            value: {
+              isPrimary: true,
+              labelIds: [],
+              typeId,
+              value: "ada@example.test",
+            },
+          },
+          {
+            id: "00000000-0000-4000-8000-000000000304",
+            section: "contact-methods",
+            updatedAt: revision,
+            value: {
+              isPrimary: false,
+              labelIds: [],
+              typeId,
+              value: "other@example.test",
+            },
+          },
+        ],
+        status: "ready",
+      })),
+    );
+
+    await mountProfileFacts(personId, workspaceId, false, revision);
+
+    expect(
+      [...document.querySelectorAll<HTMLLIElement>(
+        "[data-profile-fact-list] > li",
+      )].every((item) => !item.hidden),
+    ).toBe(true);
+    expect(document.querySelector("[data-profile-fact-list] a")).toBeNull();
+    expect(document.querySelector('[aria-label^="Copy "]')).toBeNull();
+    expect(document.querySelector('[aria-label*="more contact methods"]'))
+      .toBeNull();
+  });
+
+  it("renders every contact unchanged when the primary summary is empty", async () => {
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        options: [{ id: typeId, kind: "contact-type", name: "Email" }],
+        personUpdatedAt: revision,
+        records: [
+          {
+            id: "00000000-0000-4000-8000-000000000307",
+            section: "contact-methods",
+            updatedAt: revision,
+            value: {
+              isPrimary: false,
+              labelIds: [],
+              typeId,
+              value: "ada@example.test",
+            },
+          },
+          {
+            id: "00000000-0000-4000-8000-000000000308",
+            section: "contact-methods",
+            updatedAt: revision,
+            value: {
+              isPrimary: false,
+              labelIds: [],
+              typeId,
+              value: "other@example.test",
+            },
+          },
+        ],
+        status: "ready",
+      })),
+    );
+
+    await mountProfileFacts(personId, workspaceId, false, revision, []);
+
+    expect(
+      [...document.querySelectorAll<HTMLLIElement>(
+        "[data-profile-fact-list] > li",
+      )].every((item) => !item.hidden),
+    ).toBe(true);
+    expect(document.querySelector("[data-profile-fact-list] a")).toBeNull();
+    expect(document.querySelector('[aria-label^="Copy "]')).toBeNull();
+    expect(document.querySelector("[data-profile-fact-expander]")).toBeNull();
+  });
+
+  it("reports a rejected contact copy through the toast region", async () => {
+    markup();
+    const primaryId = "00000000-0000-4000-8000-000000000305";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        options: [{ id: typeId, kind: "contact-type", name: "Email" }],
+        personUpdatedAt: revision,
+        records: [{
+          id: primaryId,
+          section: "contact-methods",
+          updatedAt: revision,
+          value: {
+            isPrimary: true,
+            labelIds: [],
+            typeId,
+            value: "ada@example.test",
+          },
+        }],
+        status: "ready",
+      })),
+    );
+    vi.stubGlobal("navigator", {
+      clipboard: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+    });
+
+    await mountProfileFacts(personId, workspaceId, false, revision, [{
+      href: "mailto:ada@example.test",
+      id: primaryId,
+      kind: "email",
+      label: "Email",
+      value: "ada@example.test",
+    }]);
+    document.querySelector<HTMLButtonElement>(
+      '[aria-label="Copy ada@example.test"]',
+    )!.click();
+
+    await vi.waitFor(() =>
+      expect(document.querySelector("#app-toasts")?.textContent).toContain(
+        "Copy failed. Select the value and copy it manually.",
+      )
+    );
+    expect(
+      document.querySelector("#app-toasts > li")?.getAttribute("data-tone"),
+    ).toBe("error");
+    document.querySelector<HTMLButtonElement>(".app-toast-dismiss")?.click();
+  });
+
   it("UXD-002B publishes rail state, icon labels, and live hero facts", async () => {
     allMarkup();
     let workPresent = true;
@@ -914,6 +1176,22 @@ describe("PEOPLE-006 profile-fact sections", () => {
         ...empty,
         options: [{ id: typeId, kind: "contact-type", name: "Email" }],
         records: [record],
+      }))
+      .mockResolvedValueOnce(response({
+        dueInformation: {},
+        person: {},
+        status: "ready",
+        summary: {
+          primaryContactMethods: [{
+            href: "mailto:ada@example.test",
+            id: record.id,
+            kind: "email",
+            label: "Email",
+            value: "ada@example.test",
+          }],
+          relationshipCounts: [],
+          sectionCounts: [],
+        },
       }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -937,15 +1215,19 @@ describe("PEOPLE-006 profile-fact sections", () => {
         new SubmitEvent("submit", { bubbles: true, cancelable: true }),
       );
 
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
     expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
       `/api/v1/people/${personId}/facts/contact-methods`,
       `/api/v1/people/${personId}/facts/contact-methods?includeOptions=true`,
       `/api/v1/people/${personId}/facts/contact-methods`,
       `/api/v1/people/${personId}/facts/contact-methods`,
+      `/api/v1/people/${personId}?include=summary`,
     ]);
-    expect(document.querySelector("[data-profile-fact-list]")?.textContent)
-      .toContain("Email: ada@example.test");
+    expect(
+      document.querySelector<HTMLAnchorElement>(
+        '[data-profile-fact-list] a[href="mailto:ada@example.test"]',
+      )?.textContent,
+    ).toBe("ada@example.test");
     expect(document.querySelector("[data-profile-fact-state]")?.textContent)
       .toBe("Profile fact saved.");
   });

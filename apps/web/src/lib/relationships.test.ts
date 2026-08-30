@@ -69,6 +69,187 @@ afterEach(() => {
 });
 
 describe("relationship profile section", () => {
+  it("groups relationship types and expands rows beyond the five-row summary", async () => {
+    markup();
+    const colleagueTypeId = "00000000-0000-4000-8000-000000000201";
+    const friendTypeId = "00000000-0000-4000-8000-000000000202";
+    const neighborTypeId = "00000000-0000-4000-8000-000000000203";
+    const records = [
+      [typeId, "parent", "Ada"],
+      [colleagueTypeId, "colleague", "Grace"],
+      [typeId, "parent", "Charles"],
+      [colleagueTypeId, "colleague", "Alan"],
+      [friendTypeId, "friend", "Dorothy"],
+      [typeId, "parent", "Mary"],
+      [colleagueTypeId, "colleague", "Katherine"],
+      [neighborTypeId, "neighbor", "Emmy"],
+    ].map(([relationshipTypeId, label, name], index) => {
+      const suffix = String(index + 400).padStart(12, "0");
+      const id = `00000000-0000-4000-8000-${suffix}`;
+      return {
+        ...relationship,
+        display: { label, name, personId: id, relationshipId: id },
+        id,
+        relationshipTypeId,
+        toPersonId: id,
+      };
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response({ options: [], status: "ready" }))
+        .mockResolvedValueOnce(
+          response({ relationships: records, status: "ready" }),
+        ),
+    );
+
+    await mountRelationships(personId, workspaceId, false);
+
+    const groups = document.querySelectorAll<HTMLLIElement>(
+      "#relationships-list > [data-relationship-group]",
+    );
+    expect(groups).toHaveLength(4);
+    expect(groups[0]?.firstElementChild?.textContent).toBe("parent (3)");
+    expect(groups[1]?.firstElementChild?.textContent).toBe("colleague (3)");
+    expect(groups[2]?.firstElementChild?.textContent).toBe("friend (1)");
+    expect(groups[3]?.firstElementChild?.textContent).toBe("neighbor (1)");
+    expect(groups[3]?.hidden).toBe(true);
+    expect(
+      [...document.querySelector("#relationships-list")!.children].every(
+        (child) => child.tagName === "LI",
+      ),
+    ).toBe(true);
+    const rows = document.querySelectorAll<HTMLLIElement>(
+      "#relationships-list [data-relationship-id]",
+    );
+    expect(rows).toHaveLength(8);
+    expect([...rows].filter((row) => row.hidden)).toHaveLength(3);
+    expect(
+      [...rows].find((row) => row.textContent?.includes("Dorothy"))?.hidden,
+    ).toBe(false);
+    expect(
+      [...rows].find((row) => row.textContent?.includes("Mary"))?.hidden,
+    ).toBe(true);
+    const expander = document.querySelector<HTMLButtonElement>(
+      ".relationship-summary-expander button",
+    )!;
+    expect(expander.hasAttribute("aria-label")).toBe(false);
+    expect(expander.firstChild?.textContent).toBe("+ 3 more");
+    expect(expander.querySelector(".sr-only")?.textContent).toBe(
+      " relationships",
+    );
+    expect(expander.textContent).toBe("+ 3 more relationships");
+    expect(expander.getAttribute("aria-expanded")).toBe("false");
+    expander.click();
+    expect([...rows].filter((row) => row.hidden)).toHaveLength(0);
+    expect(groups[3]?.hidden).toBe(false);
+    expect(expander.getAttribute("aria-expanded")).toBe("true");
+    expect(expander.firstChild?.textContent).toBe("Show fewer");
+    expect(expander.textContent).toBe("Show fewer relationships");
+  });
+
+  it("separates opposite directional labels for one relationship type", async () => {
+    markup();
+    const inverseId = "00000000-0000-4000-8000-000000000401";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response({ options: [], status: "ready" }))
+        .mockResolvedValueOnce(response({
+          relationships: [relationship, {
+            ...relationship,
+            display: {
+              label: "child",
+              name: "Mary Lovelace",
+              personId: inverseId,
+              relationshipId: inverseId,
+            },
+            fromPersonId: inverseId,
+            id: inverseId,
+            toPersonId: personId,
+          }],
+          status: "ready",
+        })),
+    );
+
+    await mountRelationships(personId, workspaceId, false);
+
+    const labels = [...document.querySelectorAll(
+      "#relationships-list > [data-relationship-group] > :first-child",
+    )].map((label) => label.textContent);
+    expect(labels).toEqual(["parent (1)", "child (1)"]);
+  });
+
+  it("keeps the empty relationship list as one direct list item", async () => {
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response({ options: [], status: "ready" }))
+        .mockResolvedValueOnce(
+          response({ relationships: [], status: "ready" }),
+        ),
+    );
+
+    await mountRelationships(personId, workspaceId, false);
+
+    const list = document.querySelector("#relationships-list")!;
+    expect(list.children).toHaveLength(1);
+    expect(list.firstElementChild?.tagName).toBe("LI");
+    expect(list.firstElementChild?.textContent).toBe(
+      "No relationships saved.",
+    );
+  });
+
+  it("keeps grouped relationship editor failures in the section state", async () => {
+    markup();
+    const problem = (detail: string) => ({
+      code: "relationship_conflict",
+      detail,
+      status: 409,
+      title: "Relationship conflict",
+      type: "about:blank",
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({ options: [], status: "ready" }))
+      .mockResolvedValueOnce(
+        response({ relationships: [relationship], status: "ready" }),
+      )
+      .mockResolvedValueOnce(response(problem("Update conflicted."), 409))
+      .mockRejectedValueOnce(new Error("update unavailable"))
+      .mockResolvedValueOnce(response(problem("Unlink conflicted."), 409))
+      .mockRejectedValueOnce(new Error("unlink unavailable"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountRelationships(personId, workspaceId, false);
+    const state = document.querySelector("#relationships-state")!;
+    const save = [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) =>
+        button.textContent === "Save relationship with Ada Lovelace"
+      )!;
+    save.click();
+    await vi.waitFor(() =>
+      expect(state.textContent).toBe("Update conflicted.")
+    );
+    save.click();
+    await vi.waitFor(() =>
+      expect(state.textContent).toBe(
+        "Relationship change is temporarily unavailable.",
+      )
+    );
+
+    const unlink = [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Unlink Ada Lovelace")!;
+    unlink.click();
+    await vi.waitFor(() =>
+      expect(state.textContent).toBe("Unlink conflicted.")
+    );
+    unlink.click();
+    await vi.waitFor(() =>
+      expect(state.textContent).toBe("Unlink is temporarily unavailable.")
+    );
+  });
+
   it("loads bounded continuation pages without replacing the profile DOM", async () => {
     markup();
     const fetchMock = vi.fn()
