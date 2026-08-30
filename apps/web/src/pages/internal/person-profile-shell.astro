@@ -364,10 +364,11 @@ const railSections = [
                   <header class="profile-section-heading">
                     <h3 id="profile-section-stay-in-touch-heading">Stay in touch</h3>
                     <span class="profile-rail-count" data-profile-rail-count hidden></span>
+                    <button data-cadence-add class="button-primary profile-rail-add" type="button" aria-label="Add stay-in-touch cadence" hidden><span aria-hidden="true">+</span></button>
                   </header>
                   <p data-cadence-state class="section-state"><span class="sr-only">Loading stay-in-touch cadence…</span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span></p>
                   <ul data-cadence-list class="task-list" aria-label="Stay-in-touch cadence"></ul>
-                  <form data-cadence-form class="profile-fact-form" novalidate>
+                  <form data-cadence-form class="profile-fact-form" hidden novalidate>
                     <label>Reconnect every <input name="intervalCount" type="number" min="1" max="100" value="1" required /></label>
                     <label>Calendar unit
                       <select name="intervalUnit">
@@ -377,7 +378,7 @@ const railSections = [
                         <option value="day">Day</option>
                       </select>
                     </label>
-                    <div class="form-actions"><button class="button-primary" type="submit">Save cadence</button></div>
+                    <div class="form-actions"><button class="button-primary" type="submit">Save cadence</button><button data-cadence-cancel class="button-secondary" type="button">Cancel</button></div>
                   </form>
                 </section>
               )
@@ -598,7 +599,8 @@ const railSections = [
                 </header>
                 <p data-reminder-state class="section-state"><span class="sr-only">Loading reminders…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
                 <ul data-reminder-list class="task-list" aria-label="Person reminders"></ul>
-                <form data-reminder-form class="profile-fact-form" novalidate>
+                <button data-reminder-add class="button-primary" type="button" hidden>Add reminder</button>
+                <form data-reminder-form class="profile-fact-form" hidden novalidate>
                   <label>Title <input name="title" maxlength="500" required /></label>
                   <label>First date <input name="anchorOn" type="date" required /></label>
                   <label>Send time <input name="sendTime" type="time" value="09:00" required /></label>
@@ -612,7 +614,7 @@ const railSections = [
                     </select>
                   </label>
                   <label>Every <input name="recurrenceInterval" type="number" min="1" max="100" value="1" required /></label>
-                  <div class="form-actions"><button class="button-primary" type="submit">Save reminder</button></div>
+                  <div class="form-actions"><button class="button-primary" type="submit">Save reminder</button><button data-reminder-cancel class="button-secondary" type="button">Cancel</button></div>
                 </form>
               </section>
             )

@@ -24,12 +24,14 @@ function personMarkup(): void {
   document.body.innerHTML = `
     <section data-profile-section="reminders">
       <p data-reminder-state></p><ul data-reminder-list></ul>
-      <form data-reminder-form><input name="title"><input name="anchorOn"><input name="sendTime"><select name="recurrenceUnit"><option value="month">month</option></select><input name="recurrenceInterval"><button type="submit">Save</button></form>
+      <button data-reminder-add type="button" hidden>Add reminder</button>
+      <form data-reminder-form hidden><input name="title"><input name="anchorOn"><input name="sendTime"><select name="recurrenceUnit"><option value="month">month</option></select><input name="recurrenceInterval"><button type="submit">Save</button><button data-reminder-cancel type="button">Cancel</button></form>
     </section>
     <section data-profile-section="stay-in-touch">
       <span data-profile-rail-count hidden></span>
       <p data-cadence-state></p><ul data-cadence-list></ul>
-      <form data-cadence-form><input name="intervalCount"><select name="intervalUnit"><option value="month">month</option></select><button type="submit">Save</button></form>
+      <button data-cadence-add type="button" hidden>Add stay-in-touch cadence</button>
+      <form data-cadence-form hidden><input name="intervalCount" value="1"><select name="intervalUnit"><option value="month">month</option></select><button type="submit">Save</button><button data-cadence-cancel type="button">Cancel</button></form>
     </section>`;
 }
 
@@ -145,6 +147,104 @@ afterEach(() => {
 });
 
 describe("PLANNING-002 reminder browser behavior", () => {
+  it("uses the shared add-form pattern for reminders and cadence", async () => {
+    personMarkup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        cadences: [],
+        reminders: [],
+        status: "ready",
+      })),
+    );
+
+    await mountPersonReminders({ archived: false, personId, workspaceId });
+
+    for (const kind of ["reminder", "cadence"] as const) {
+      const add = document.querySelector<HTMLButtonElement>(
+        `[data-${kind}-add]`,
+      )!;
+      const form = document.querySelector<HTMLFormElement>(
+        `[data-${kind}-form]`,
+      )!;
+      const firstControl = form.querySelector<HTMLInputElement>("input")!;
+      const initialValue = firstControl.defaultValue;
+      const reset = vi.fn();
+      form.addEventListener("reset", reset);
+
+      expect(add.hidden).toBe(false);
+      expect(form.hidden).toBe(true);
+      add.click();
+      expect(form.hidden).toBe(false);
+      expect(document.activeElement).toBe(firstControl);
+
+      firstControl.value = "draft";
+      form.querySelector<HTMLButtonElement>(`[data-${kind}-cancel]`)!.click();
+      expect(form.hidden).toBe(true);
+      expect(firstControl.value).toBe(initialValue);
+      expect(reset).toHaveBeenCalledOnce();
+      expect(document.activeElement).toBe(add);
+    }
+  });
+
+  it("hides each editor after its save succeeds", async () => {
+    personMarkup();
+    const cadence = {
+      id: "cadence",
+      intervalCount: 1,
+      intervalUnit: "day",
+      nextDueAt: "2026-08-19T10:00:00.000Z",
+      personId,
+    };
+    const emptySnapshot = { cadences: [], reminders: [], status: "ready" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(emptySnapshot))
+      .mockResolvedValueOnce(response({ reminder, status: "created" }, 201))
+      .mockResolvedValueOnce(response(emptySnapshot))
+      .mockResolvedValueOnce(response({ cadence, status: "created" }, 201))
+      .mockResolvedValueOnce(response(emptySnapshot));
+    vi.stubGlobal("fetch", fetchMock);
+    await mountPersonReminders({ archived: false, personId, workspaceId });
+
+    const reminderForm = document.querySelector<HTMLFormElement>(
+      "[data-reminder-form]",
+    )!;
+    document.querySelector<HTMLButtonElement>("[data-reminder-add]")!.click();
+    reminderForm.dispatchEvent(
+      new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(reminderForm.hidden).toBe(true);
+    });
+
+    const cadenceForm = document.querySelector<HTMLFormElement>(
+      "[data-cadence-form]",
+    )!;
+    document.querySelector<HTMLButtonElement>("[data-cadence-add]")!.click();
+    cadenceForm.dispatchEvent(
+      new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+    );
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(5);
+      expect(cadenceForm.hidden).toBe(true);
+    });
+  });
+
+  it("keeps add controls hidden when reminders fail to load", async () => {
+    personMarkup();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({}, 503)));
+
+    await mountPersonReminders({ archived: false, personId, workspaceId });
+
+    expect(
+      document.querySelector<HTMLButtonElement>("[data-reminder-add]")?.hidden,
+    ).toBe(true);
+    expect(
+      document.querySelector<HTMLButtonElement>("[data-cadence-add]")?.hidden,
+    ).toBe(true);
+  });
+
   it("loads reminder and cadence and keeps archived mutations disabled", async () => {
     personMarkup();
     vi.stubGlobal(
@@ -187,6 +287,17 @@ describe("PLANNING-002 reminder browser behavior", () => {
       document.querySelector<HTMLButtonElement>(
         "[data-reminder-form] [type=submit]",
       )?.disabled,
+    ).toBe(true);
+    expect(
+      document.querySelector<HTMLButtonElement>(
+        "[data-cadence-form] [type=submit]",
+      )?.disabled,
+    ).toBe(true);
+    expect(
+      document.querySelector<HTMLButtonElement>("[data-reminder-add]")?.hidden,
+    ).toBe(true);
+    expect(
+      document.querySelector<HTMLButtonElement>("[data-cadence-add]")?.hidden,
     ).toBe(true);
   });
 
@@ -291,6 +402,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
       document.querySelector<HTMLButtonElement>(
         "[data-cadence-form] [type=submit]",
       )?.disabled,
+    ).toBe(true);
+    expect(
+      document.querySelector<HTMLButtonElement>("[data-reminder-add]")?.hidden,
+    ).toBe(true);
+    expect(
+      document.querySelector<HTMLButtonElement>("[data-cadence-add]")?.hidden,
     ).toBe(true);
     expect(document.querySelectorAll("[data-reminder-list] button"))
       .toHaveLength(0);

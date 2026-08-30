@@ -2573,10 +2573,6 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
   display: none;
 }
 
-.profile-rail-block[data-rail-empty="true"] > form {
-  grid-column: 1 / -1;
-}
-
 @media (max-width: 1199px) {
   .person-workspace-layout {
     grid-template-columns: minmax(240px, 260px) minmax(0, 1fr);
