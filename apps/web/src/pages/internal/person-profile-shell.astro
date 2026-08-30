@@ -439,6 +439,27 @@ const railSections = [
           {streamZones.map(([zone, zoneTitle, zoneSectionIds]) => (
             <section class="person-zone" data-zone={zone} aria-labelledby={`person-zone-${zone}-heading`} aria-busy="true">
               <h2 id={`person-zone-${zone}-heading`}>{zoneTitle}</h2>
+              {zone === "timeline"
+                ? (
+                  <section id="person-timeline" class="profile-section-card person-timeline" aria-labelledby="person-timeline-heading">
+                    <header class="profile-section-heading">
+                      <div><h3 id="person-timeline-heading">Everything, in order</h3></div>
+                    </header>
+                    <div class="person-timeline-filters" role="group" aria-label="Filter timeline by type">
+                      <button class="button-primary" data-timeline-filter="all" type="button" aria-pressed="true">All types</button>
+                      <button class="button-secondary" data-timeline-filter="note" type="button" aria-pressed="false">Notes</button>
+                      <button class="button-secondary" data-timeline-filter="call" type="button" aria-pressed="false">Calls</button>
+                      <button class="button-secondary" data-timeline-filter="conversation" type="button" aria-pressed="false">Conversations</button>
+                      <button class="button-secondary" data-timeline-filter="activity" type="button" aria-pressed="false">Activities</button>
+                      <button class="button-secondary" data-timeline-filter="life-event" type="button" aria-pressed="false">Life events</button>
+                    </div>
+                    <p data-timeline-state class="section-state"><span class="sr-only">Loading the timeline…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
+                    <ul data-timeline-list class="person-timeline-list" aria-label="Person timeline"></ul>
+                    <button data-timeline-more class="button-secondary" type="button" hidden>Load older events</button>
+                    <button data-timeline-retry class="button-secondary" type="button" hidden>Retry the timeline</button>
+                  </section>
+                )
+                : null}
               {sections.filter(([id]) => zoneSectionIds.some((sectionId) => sectionId === id)).map(([id, title]) => id === "calls" || id === "conversations"
             ? (
               <section
