@@ -11,8 +11,9 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-002B2 — Rail summary formats**. The review's top five,
-  `UXD-001` through `UXD-005`, and all of `UXD-003` are integrated.
+- Current leaf: **UXD-007B — Reminder and cadence add-form pattern**. The
+  review's top five, `UXD-001` through `UXD-005`, and all of `UXD-003` are
+  integrated.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -792,14 +793,73 @@ asserts, so it runs that spec on its candidate.
           first full-suite run caught the `app-004b` locator ambiguity that no
           static or unit gate could see.
   - [ ] **UXD-002B2 — Rail summary formats.** (§7.2 table, §7.6) The per-row
-        "Summary shown" and "Expand rule" columns: primary contact methods as
-        `mailto:`/`tel:` links with a copy button, relationships grouped by
-        type, `+ n more` and `Show all (n)` expanders, and the two-line clamps.
-        Split out of `UXD-002B` because it needs `summary.primaryContactMethods`
-        and `summary.relationshipCounts` to become a second renderer for lists
-        `profile-facts.ts` and `relationships.ts` already own, and the copy
-        button needs the `UXD-005` feedback surface. `UXD-002B` deliberately
-        used only `sectionCounts`.
+        "Summary shown" and "Expand rule" columns. Split out of `UXD-002B`
+        because it becomes a second renderer for lists `profile-facts.ts` and
+        `relationships.ts` already own, and the copy button needs the `UXD-005`
+        feedback surface. Delivered in two slices.
+    - [x] **UXD-002B2a — Contact methods and relationships.** (§7.2 rows 1-2,
+          §7.6 rows "Contact methods" and "Relationships") Primary contact
+          methods render as `mailto:`/`tel:` links with a copy button; the rest
+          sit behind one `+ n more` expander. Relationships group by type and
+          cap at five rows behind the same expander shape.
+      - [x] The email/phone distinction reaches the client through exactly one
+            channel. `ProfileFactOption.kind` is `"contact-type"` — it says what
+            kind of _option_ a row is, not what kind of contact it holds — so
+            the `href` computed by the `UXD-013` projection is the only source.
+            It arrives as a parameter from the `getPerson` call the page already
+            makes, costing no request on the load path, and is refreshed with
+            one summary call after a contact-methods mutation only.
+            `profile-facts.ts` stays the single owner of that block.
+      - [x] **Correction to review §7.2:** the row reads "primary per type (1
+            email, 1 phone)", which assumes primaries are derived. They are not:
+            the projection selects `method.is_primary`, an explicit member
+            choice, capped at three. The first implementation collapsed every
+            record whenever that set came back empty, so a person who had never
+            ticked "Primary for this contact type" saw a block containing
+            nothing but an expander — a worse first impression than the one this
+            leaf exists to fix. An empty primary set is now treated exactly like
+            an absent one and the full list renders unchanged.
+      - [x] **Correction to this leaf's own text:** `summary.relationshipCounts`
+            is not needed and was not used. The loaded relationships already
+            carry both the type id and the directional label, so deriving the
+            groups client-side keeps one owner and stays correct after every
+            mutation without a second payload.
+      - [x] Groups are keyed on the relationship type **and** its directional
+            label, not the type alone. One type yields `Parent` in one direction
+            and `Child` in the other, so keying on the type put both under a
+            single heading carrying whichever arrived first. The API's own
+            `relationshipCounts` query already groups the same way. A group
+            whose rows are all collapsed hides with them rather than leaving a
+            heading above an empty list.
+      - [x] Both expanders compose their accessible name from the visible text
+            plus an `sr-only` suffix rather than replacing it with an
+            `aria-label`. A control reading `+ n more` under the name "Show n
+            more contact methods" fails WCAG 2.5.3 Label in Name, and default
+            axe does not run `label-content-name-mismatch`, so the suite could
+            not have caught it. The controller's ticket specified those names
+            and was wrong.
+      - [x] Every existing accessible name was preserved, so no browser spec
+            changed: `Edit Email: …`, `Delete Email: …`,
+            `Relationship type for …`, `Save relationship with …`, `Unlink …`,
+            and `No relationships saved.` `app-004c`'s archived assertion also
+            still holds, because `Copy` and `+ n more` do not match its
+            `/Add|Edit|Delete/` pattern, and its request counter filters on
+            `/facts/`, which the summary refresh is not.
+      - [x] Gates: `fmt:check`, `lint`, `check:web` (0 errors), 477 web unit
+            tests, `test:coverage:web` at 92.21/82.84/87.42/94.28, zero hex
+            literals outside `:root`, and the complete Chromium suite 44/44 with
+            no spec changed.
+    - [ ] **UXD-002B2b — The remaining seven rows.** (§7.2 rows 3-9) Important
+          dates as next upcoming plus birthday with `Show all (n)`; addresses as
+          one address over three lines with `+ n more`; work as the current role
+          with `Show history`; pets as names and species on one line; the
+          two-line clamps with `More` on food preferences and first meeting.
+          `stay-in-touch` needs nothing here — its cadence editor is `UXD-007B`.
+    - [ ] Deliberately not attempted in either slice: removing the inline
+          relationship editor from the rail. Review §7.2 wants the rail compact
+          and a type `<select>` plus two buttons per row is not that, but four
+          `app-004d` assertions drive those controls and replacing them is a
+          product decision, not a formatting one.
   - [x] **UXD-002C — Streams and zone filter.** (§7.3, §7.4, §7.5) The twelve
         main-column sections became four zones under real `<h2>` headings, with
         the section cards dropping to `<h3>` and the task columns to `<h4>` so
