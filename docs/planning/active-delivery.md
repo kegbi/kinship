@@ -11,9 +11,9 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **REL-021 — Give a lazily activated zone the current archived
-  state**. The review's top five, `UXD-001` through `UXD-005`, all of `UXD-003`,
-  `DOC-001`, and `REL-023` are integrated.
+- Current leaf: **UXD-002C2B2 — Demote the five timeline cards to editors**. The
+  review's top five, `UXD-001` through `UXD-005`, all of `UXD-003`, `DOC-001`,
+  `REL-021`, and `REL-023` are integrated.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -590,18 +590,47 @@ Report and request direction once `UXD-001` through `UXD-005` are integrated.
       the companion assertion swaps the retired attribute for `data-zone`, the
       metadata that replaced it and is read at runtime.
 
-- [ ] **REL-021 — Give a lazily activated zone the current archived state.** The
-      four lazy zone mounts receive `archived` as a value captured when
-      `register(...)` runs at initial load, and each module only corrects it
-      from a later `person-lifecycle-changed` event. A module that mounts
-      _after_ an in-page archive therefore starts from the stale snapshot and
-      never hears the event it missed, so an archived person can present enabled
-      gift, file, task, or capture controls. Reachable since `UXD-003B` made
-      `things` and `admin` activate on scroll: archive a person without
+- [x] **REL-021 — Give a lazily activated zone the current archived state.** The
+      lazy zone mounts received `archived` as
+      `result.value.status ===
+      "archived"`, an expression frozen when
+      `getPerson` resolved at initial load, and each module only corrected it
+      from a later `person-lifecycle-changed` event. A module that mounted
+      _after_ an in-page archive therefore started from the stale snapshot and
+      never heard the event it missed, so an archived person could present
+      enabled gift, file, task, or capture controls. Reachable since `UXD-003B`
+      made `things` and `admin` activate on scroll: archive a person without
       scrolling, then scroll down. Diagnosed while integrating `UXD-005B`, whose
       first-run card made one instance visible to `app-004a`; that candidate was
-      not expanded to repair it. The fix is one live archived value read at
-      activation time, not a fifth listener per module.
+      not expanded to repair it.
+  - [x] **Correction to this leaf's own text.** It said four lazy mounts. There
+        are five: `mountCommunications` passes the same argument and was missed,
+        alongside `mountPersonInteractions`, `mountTaskSurface`,
+        `mountPersonFiles`, and `mountPersonGifts`.
+  - [x] One live value read at activation time, not a fifth listener per module
+        and not a mirror variable in `people-profile.ts`.
+        `mountLifecycleActions` already owns the only mutable archived state on
+        the page and `people-profile.ts` holds the single
+        `person-lifecycle-changed` dispatcher in the application — every other
+        occurrence under `apps/web/src` is a listener. It now returns
+        `() => state === "archived"`, and the registrations call it. A mirror
+        would have been a second owner of a fact that already has one.
+  - [x] The four eager rail mounts adopted the same reader even though they
+        cannot observe the defect, because they run before any archive is
+        possible. Leaving two different expressions for one fact is how this
+        defect would survive the next edit; the frozen snapshot is now gone from
+        mount wiring entirely. `renderReady` keeps its `status` parameter, which
+        renders the load result rather than configuring a mount.
+  - [x] The evidence is a deterministic unit reproduction, not a browser scroll.
+        `stubDeferredZoneObserver` already existed for `UXD-003B`, so the test
+        archives the person while `things` is unmounted, activates the zone by
+        hand, and asserts the gift add control is hidden — after asserting it
+        exists, since a query matching nothing makes a hidden-ness assertion
+        pass while proving nothing. Without the fix it fails on
+        `hidden === false`. No `tests/e2e/` spec was touched.
+  - [x] Gates: `fmt:check` 580 files, `lint` 473 files, `check:web` 0 errors,
+        496 web unit tests, `test:coverage:web` at 92.62/83.21/87.60/94.64, and
+        the complete Chromium suite 44/44 with an empty `.artifacts/playwright`.
 
 - [ ] **REL-020 — Watch the `app-002c` header keyboard walk.** One full-suite
       run during `UXD-002C` failed `keyboardReachMemberMenuToggle` at
