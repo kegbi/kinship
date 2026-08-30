@@ -38,18 +38,19 @@ make a plan document the only record of such a decision.
 
 ## Current Baseline
 
-The repository is pre-scaffold for application code.
+The repository contains a runnable application scaffold and delivered user
+flows.
 
-| Inventory                    | Current state                                                                         |
-| ---------------------------- | ------------------------------------------------------------------------------------- |
-| Canonical PostgreSQL schema  | 87 tables and 811 columns; live validation passes on PostgreSQL 18.4 and 17.10        |
-| Backend modules              | 15 accepted module boundaries with exact table ownership                              |
-| Cross-module read models     | 6 accepted, query-only compositions                                                   |
-| Cataloged pages              | 39                                                                                    |
-| Cataloged flows              | 30 total: 17 P0, 10 P1, and 3 P2                                                      |
-| Delivered flows              | 0; every flow is still `planned` and has no E2E reference                             |
-| Existing executable code     | Schema validation tool and SQL assertions only                                        |
-| Missing application scaffold | API, worker, web app, contracts, main Compose stack, CI, hooks, and application tests |
+| Inventory                    | Current state                                                                                                                                               |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Canonical PostgreSQL schema  | 89 tables and 843 columns; current v7 passed live validation on PostgreSQL 18.4; immutable v6 additionally passed PostgreSQL 17.10 compatibility validation |
+| Backend modules              | 15 accepted module boundaries with exact table ownership                                                                                                    |
+| Cross-module read models     | 6 accepted, query-only compositions                                                                                                                         |
+| Cataloged pages              | 39                                                                                                                                                          |
+| Cataloged flows              | 30 total: 17 P0, 10 P1, and 3 P2                                                                                                                            |
+| Delivered flows              | 29 of 30; `BILLING-001` alone remains `planned` with empty `testRefs`                                                                                       |
+| Existing executable code     | Runnable Deno API and worker, Astro web app, gateway, shared contracts, and application test suites                                                         |
+| Current application scaffold | API, worker, web app, contracts, main Compose stack, and application tests are present; CI and hooks remain pending                                         |
 
 The reproducible baseline commands are:
 
