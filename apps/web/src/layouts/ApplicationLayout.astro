@@ -74,6 +74,13 @@ const { current, description, pageId, title } = Astro.props;
             <a href="/app/journal" tabindex="0" aria-current={current === "journal" ? "page" : undefined}>Journal</a>
           </nav>
 
+          <div class="global-search">
+            <input id="global-people-search-input" class="global-people-search-input" type="search" role="combobox" aria-label="Find a person" aria-expanded="false" aria-controls="global-people-search-results" placeholder="Search people…" autocomplete="off" maxlength="200" />
+            <button class="button-secondary global-people-search-open" data-global-people-search-open type="button" aria-label="Find a person" aria-expanded="false" aria-controls="global-people-search-dialog">
+              <span aria-hidden="true">⌕</span>
+            </button>
+          </div>
+
           <div class="global-actions" aria-label="Workspace actions">
             <button class="add-action" data-quick-capture type="button">Quick capture</button>
             <a class="add-action" href="/app/people/new" tabindex="0">Add person</a>
@@ -97,6 +104,23 @@ const { current, description, pageId, title } = Astro.props;
         </div>
       </header>
       <slot />
+
+      <dialog id="global-people-search-dialog" class="global-people-search-dialog" aria-labelledby="global-people-search-heading">
+        <div class="global-people-search-palette">
+          <header>
+            <div>
+              <p class="section-kicker">People</p>
+              <h2 id="global-people-search-heading">Find a person</h2>
+            </div>
+            <button class="button-secondary" data-global-people-search-close type="button">Close</button>
+          </header>
+          <div class="global-people-search-input-slot" data-global-people-search-input-slot></div>
+          <p id="global-people-search-empty" class="people-search-empty" hidden>No people match</p>
+          <p id="global-people-search-problem" class="people-search-empty" hidden>People search is temporarily unavailable. Try again.</p>
+          <ul id="global-people-search-results" class="global-people-search-results" role="listbox" aria-label="People search results"></ul>
+          <p id="global-people-search-status" class="sr-only" role="status" aria-live="polite"></p>
+        </div>
+      </dialog>
 
       <dialog id="interaction-capture-dialog" class="interaction-capture-dialog" aria-labelledby="interaction-capture-heading">
         <form id="interaction-capture-form" method="dialog" novalidate>
@@ -153,7 +177,9 @@ const { current, description, pageId, title } = Astro.props;
 
 <script>
   import { mountApplicationShell } from "../lib/app-shell.ts";
+  import { mountGlobalPeopleSearch } from "../lib/global-people-search.ts";
   import { mountInteractionCapture } from "../lib/interactions.ts";
   void mountApplicationShell();
+  void mountGlobalPeopleSearch();
   void mountInteractionCapture();
 </script>

@@ -244,7 +244,7 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
 
 .header-row {
   display: grid;
-  grid-template-columns: auto minmax(24rem, 1fr) auto;
+  grid-template-columns: auto auto minmax(20rem, 1fr) auto;
   gap: var(--space-5);
   width: min(1280px, calc(100% - 2rem));
   min-height: 4.75rem;
@@ -304,6 +304,30 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
 .future-nav small {
   font-size: .58rem;
   text-transform: uppercase;
+}
+
+.global-search {
+  min-width: 0;
+  width: 100%;
+}
+
+.global-people-search-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: .65rem 1rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  color: var(--ink-1);
+  background: var(--surface-1);
+}
+
+.global-people-search-input::placeholder {
+  color: var(--ink-3);
+}
+
+.global-search > button.global-people-search-open {
+  display: none;
 }
 
 .global-actions {
@@ -1343,6 +1367,103 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
   padding: 0;
   color: inherit;
   background: var(--surface, var(--surface-1));
+}
+
+.global-people-search-dialog {
+  width: min(42rem, calc(100% - 2rem));
+  max-width: none;
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  padding: 0;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+  color: var(--ink-1);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-2);
+}
+
+.global-people-search-dialog::backdrop {
+  background: rgb(20 25 22 / 55%);
+}
+
+.global-people-search-palette {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5);
+}
+
+.global-people-search-palette > header {
+  display: flex;
+  gap: var(--space-4);
+  align-items: start;
+  justify-content: space-between;
+}
+
+.global-people-search-palette h2,
+.global-people-search-palette .section-kicker {
+  margin: 0;
+}
+
+.global-people-search-input-slot {
+  min-width: 0;
+}
+
+.global-people-search-results {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.global-people-search-results [role="option"] {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 52px;
+  padding: .55rem .65rem;
+  border-radius: var(--radius-md);
+  align-items: center;
+  cursor: pointer;
+}
+
+.global-people-search-results [role="option"][aria-selected="true"] {
+  background: var(--surface-sunken);
+}
+
+.people-search-avatar {
+  display: grid;
+  width: 2.5rem;
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--ink-inverse);
+  background: var(--positive);
+  font-size: .75rem;
+  font-weight: 750;
+}
+
+.people-search-identity {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.people-search-identity > span {
+  color: var(--ink-2);
+  font-size: .82rem;
+}
+
+.people-search-add-option {
+  grid-template-columns: 2.5rem minmax(0, 1fr) !important;
+}
+
+.people-search-empty {
+  margin: 0;
+  padding: .65rem;
+  color: var(--ink-2);
 }
 
 .interaction-capture-dialog::backdrop {
@@ -3023,8 +3144,13 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
 
 @media (max-width: 1050px) {
   .header-row {
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     padding-block: .6rem;
+  }
+
+  .brand {
+    grid-column: 1;
+    grid-row: 1;
   }
 
   .primary-nav {
@@ -3034,7 +3160,27 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
     overflow-x: auto;
   }
 
+  .global-search {
+    grid-column: 2;
+    grid-row: 1;
+    width: auto;
+    justify-self: end;
+  }
+
+  .global-search > .global-people-search-input {
+    display: none;
+  }
+
+  .global-search > button.global-people-search-open {
+    display: inline-flex;
+    width: 44px;
+    padding: 0;
+    border-radius: 50%;
+  }
+
   .global-actions {
+    grid-column: 3;
+    grid-row: 1;
     justify-content: end;
   }
 }
@@ -3046,7 +3192,7 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
   }
 
   .header-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: auto auto minmax(0, 1fr);
     gap: var(--space-2);
     width: calc(100% - 1rem);
   }
@@ -3056,10 +3202,15 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
   }
 
   .global-actions {
-    grid-column: 1;
+    grid-column: 1 / -1;
     grid-row: 3;
     flex-wrap: wrap;
     justify-content: start;
+  }
+
+  .global-search {
+    grid-column: 2;
+    grid-row: 1;
   }
 
   .global-actions button,
@@ -3069,6 +3220,7 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
   }
 
   .primary-nav {
+    grid-column: 1 / -1;
     grid-row: 2;
     gap: 0;
   }
@@ -3087,6 +3239,15 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
     right: .5rem;
     left: .5rem;
     width: auto;
+  }
+
+  .global-people-search-dialog {
+    width: calc(100% - 1rem);
+    max-height: calc(100dvh - 1rem);
+  }
+
+  .global-people-search-palette {
+    padding: var(--space-4);
   }
 
   .page-frame,

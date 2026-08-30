@@ -55,6 +55,29 @@ afterEach(() => {
 });
 
 describe("PEOPLE-001 person creation form", () => {
+  it("prefills only the given and family names from the create URL", async () => {
+    const form = markup();
+    history.replaceState(
+      {},
+      "",
+      "/app/people/new?givenName=Marie&familyName=Dupont&nickname=Ignored",
+    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(session)));
+
+    await mountPeopleCreate();
+
+    expect((form.elements.namedItem("givenName") as HTMLInputElement).value)
+      .toBe("Marie");
+    expect((form.elements.namedItem("familyName") as HTMLInputElement).value)
+      .toBe("Dupont");
+    expect((form.elements.namedItem("middleName") as HTMLInputElement).value)
+      .toBe("");
+    expect((form.elements.namedItem("nickname") as HTMLInputElement).value)
+      .toBe("");
+    expect((form.elements.namedItem("isPartial") as HTMLInputElement).checked)
+      .toBe(false);
+  });
+
   it("creates through the generated client and opens the complete person workspace", async () => {
     const form = markup();
     set(form, "givenName", "Ada");

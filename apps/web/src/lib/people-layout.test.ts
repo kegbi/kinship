@@ -12,6 +12,10 @@ const applicationStyles = readFileSync(
   resolve("apps/web/src/styles/application.css"),
   "utf8",
 );
+const applicationLayout = readFileSync(
+  resolve("apps/web/src/layouts/ApplicationLayout.astro"),
+  "utf8",
+);
 const profilePage = readFileSync(
   resolve("apps/web/src/pages/internal/person-profile-shell.astro"),
   "utf8",
@@ -22,6 +26,26 @@ const profileController = readFileSync(
 );
 
 describe("people form layout regressions", () => {
+  it("UXD-004 keeps exactly one global finder visible and distinctly named", () => {
+    const compactButton = String
+      .raw`\.global-search > button\.global-people-search-open`;
+    expect(applicationStyles).toMatch(
+      new RegExp(`${compactButton}\\s*\\{[^}]*display:\\s*none;`, "s"),
+    );
+    expect(applicationStyles).toMatch(
+      new RegExp(
+        `@media \\(max-width: 1050px\\)[\\s\\S]*?${compactButton}\\s*\\{[^}]*display:\\s*inline-flex;`,
+        "s",
+      ),
+    );
+    expect(applicationLayout.match(/aria-label="Find a person"/g))
+      .toHaveLength(2);
+    expect(applicationLayout).toContain(
+      '<h2 id="global-people-search-heading">Find a person</h2>',
+    );
+    expect(applicationLayout).toContain('placeholder="Search people…"');
+  });
+
   it("aligns directory controls to their first field row and styles retry actions", () => {
     expect(applicationStyles).toMatch(
       /\.people-directory-controls\s*\{[^}]*align-items:\s*start/s,
