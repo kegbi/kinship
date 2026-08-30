@@ -154,10 +154,8 @@ function renderDebt(
   }
 }
 
-function populateOptions(
+function populateCurrencyOptions(
   surfaces: readonly Surface[],
-  people: readonly PeopleDirectoryPerson[],
-  files: readonly PersonFile[],
   supportedCurrencyCodes: readonly string[],
 ) {
   for (const surface of surfaces) {
@@ -173,6 +171,13 @@ function populateOptions(
       currencies.add(option(code, code));
     }
   }
+}
+
+function populateEditorOptions(
+  surfaces: readonly Surface[],
+  people: readonly PeopleDirectoryPerson[],
+  files: readonly PersonFile[],
+) {
   for (const surface of surfaces.filter((value) => value.type === "gift")) {
     const recipients = surface.form.elements.namedItem("recipientPersonId") as
       | HTMLSelectElement
@@ -212,17 +217,53 @@ export async function mountPersonGifts(options: {
   let gifts: readonly Gift[] = [];
   let debts: readonly Debt[] = [];
   let mutating = false;
+  let editorOptionsReady = false;
+  let editorOptionsPromise: Promise<boolean> | undefined;
+
+  const loadEditorOptions = (): Promise<boolean> => {
+    if (editorOptionsReady) return Promise.resolve(true);
+    if (editorOptionsPromise) return editorOptionsPromise;
+    editorOptionsPromise = (async () => {
+      const [people, files] = await Promise.all([
+        listPeople({ limit: 50 }, options.workspaceId).catch(() => undefined),
+        listPersonFiles(options.personId, options.workspaceId).catch(() =>
+          undefined
+        ),
+      ]);
+      if (!people?.ok || !files?.ok) {
+        editorOptionsPromise = undefined;
+        return false;
+      }
+      populateEditorOptions(mounted, people.value.people, files.value.files);
+      editorOptionsReady = true;
+      return true;
+    })();
+    return editorOptionsPromise;
+  };
+
+  const gateEditor = (surface: Surface, ready: boolean) => {
+    surface.form.toggleAttribute("aria-busy", !ready);
+    for (const control of [...surface.form.elements]) {
+      if (
+        control instanceof HTMLButtonElement &&
+        control.matches("[data-gift-cancel]")
+      ) continue;
+      (control as HTMLButtonElement | HTMLInputElement | HTMLSelectElement)
+        .disabled = !ready;
+    }
+  };
+
+  const restoreSurfaceState = (surface: Surface) => {
+    const count = surface.type === "gift" ? gifts.length : debts.length;
+    surface.state.textContent = count === 0
+      ? `No ${surface.type}s saved.`
+      : `${count} ${surface.type}${count === 1 ? "" : "s"} saved.`;
+  };
 
   const refresh = async (): Promise<boolean> => {
-    const [records, people, files] = await Promise.all([
-      listPersonGifts(options.personId, options.workspaceId),
-      listPeople({ limit: 50 }, options.workspaceId),
-      listPersonFiles(options.personId, options.workspaceId),
-    ]).catch(() => []);
-    if (
-      !records || !people || !files || !records.ok || !people.ok ||
-      !files.ok
-    ) {
+    const records = await listPersonGifts(options.personId, options.workspaceId)
+      .catch(() => undefined);
+    if (!records?.ok) {
       const detail = records && !records.ok
         ? records.problem.detail
         : "Gifts and debts are temporarily unavailable.";
@@ -237,12 +278,7 @@ export async function mountPersonGifts(options: {
     const value = records.value;
     gifts = value.gifts;
     debts = value.debts;
-    populateOptions(
-      mounted,
-      people.value.people,
-      files.value.files,
-      value.supportedCurrencyCodes,
-    );
+    populateCurrencyOptions(mounted, value.supportedCurrencyCodes);
     for (const surface of mounted) {
       surface.retry.hidden = true;
       if (surface.type === "gift") renderGift(surface, gifts, archived);
@@ -252,9 +288,19 @@ export async function mountPersonGifts(options: {
   };
 
   for (const surface of mounted) {
-    surface.add.addEventListener("click", () => {
+    surface.add.addEventListener("click", async () => {
       surface.form.hidden = false;
       surface.add.hidden = true;
+      gateEditor(surface, false);
+      surface.state.textContent = "Loading gift and debt form options…";
+      const loaded = await loadEditorOptions();
+      if (!loaded) {
+        surface.state.textContent =
+          "Gift and debt form options could not be loaded. Close and reopen the editor to try again.";
+        return;
+      }
+      gateEditor(surface, true);
+      restoreSurfaceState(surface);
     });
     surface.cancel.addEventListener("click", () => {
       surface.form.reset();

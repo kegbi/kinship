@@ -141,9 +141,7 @@ async function prepareActivityCapture(fetchMock: ReturnType<typeof vi.fn>) {
   const form = document.querySelector<HTMLFormElement>(
     "#interaction-capture-form",
   )!;
-  document.querySelector<HTMLButtonElement>(
-    '[data-interaction-intended-kind="activity"]',
-  )!.click();
+  await openReadyCapture('[data-interaction-intended-kind="activity"]');
   (form.elements.namedItem("participantIds") as HTMLSelectElement).options[0]!
     .selected = true;
   (form.elements.namedItem("happenedAt") as HTMLInputElement).value =
@@ -151,6 +149,19 @@ async function prepareActivityCapture(fetchMock: ReturnType<typeof vi.fn>) {
   (form.elements.namedItem("summary") as HTMLInputElement).value =
     "Immutable intent";
   return form;
+}
+
+async function openReadyCapture(selector: string): Promise<void> {
+  document.querySelector<HTMLButtonElement>(selector)!.click();
+  const form = document.querySelector<HTMLFormElement>(
+    "#interaction-capture-form",
+  )!;
+  await vi.waitFor(() => {
+    expect(form.hasAttribute("aria-busy")).toBe(false);
+    expect(
+      form.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled,
+    ).toBe(false);
+  });
 }
 
 function todayMarkup(): void {
@@ -274,7 +285,7 @@ describe("INTERACTION-001 browser behavior", () => {
       .toContain("Recent 3");
   });
 
-  it("keeps quick capture disabled until its bounded options are ready", async () => {
+  it("keeps the opened quick capture form gated until options are ready", async () => {
     captureMarkup();
     let releasePeople!: (value: Response) => void;
     let releaseOptions!: (value: Response) => void;
@@ -287,12 +298,29 @@ describe("INTERACTION-001 browser behavior", () => {
       .mockReturnValueOnce(people)
       .mockReturnValueOnce(options);
     vi.stubGlobal("fetch", fetchMock);
-    const mounting = mountInteractionCapture();
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    await mountInteractionCapture();
     const opener = document.querySelector<HTMLButtonElement>(
       "[data-quick-capture]",
     )!;
-    expect(opener.disabled).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(opener.disabled).toBe(false);
+    opener.click();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const form = document.querySelector<HTMLFormElement>(
+      "#interaction-capture-form",
+    )!;
+    expect(
+      form.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled,
+    ).toBe(true);
+    expect(form.elements.namedItem("participantIds")).toHaveProperty(
+      "disabled",
+      true,
+    );
+    expect(form.elements.namedItem("kind")).toHaveProperty("disabled", true);
+    expect(
+      form.querySelector<HTMLButtonElement>("[data-interaction-cancel]")
+        ?.disabled,
+    ).toBe(false);
     releasePeople(
       response({ lifecycle: "active", people: [], status: "ready" }),
     );
@@ -302,11 +330,56 @@ describe("INTERACTION-001 browser behavior", () => {
       emotions: [],
       status: "ready",
     }));
-    await mounting;
+    await vi.waitFor(() =>
+      expect(
+        form.querySelector<HTMLButtonElement>('button[type="submit"]')
+          ?.disabled,
+      ).toBe(false)
+    );
     expect(opener.disabled).toBe(false);
   });
 
-  it("disables capture when access or bounded options cannot be resolved", async () => {
+  it("wires quick capture before loading and reuses first-open options", async () => {
+    captureMarkup();
+    const paths: string[] = [];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://localhost").pathname;
+      paths.push(path);
+      if (path.endsWith("/session")) {
+        return Promise.resolve(response(session()));
+      }
+      if (path.endsWith("/people")) return Promise.resolve(readyPeople());
+      if (path.endsWith("/interaction-options")) {
+        return Promise.resolve(readyInteractionOptions());
+      }
+      throw new Error(`unexpected ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountInteractionCapture();
+
+    const opener = document.querySelector<HTMLButtonElement>(
+      '[data-interaction-intended-kind="activity"]',
+    )!;
+    expect(paths.filter((path) => path.endsWith("/people"))).toHaveLength(0);
+    expect(paths.filter((path) => path.endsWith("/interaction-options")))
+      .toHaveLength(0);
+    expect(opener.disabled).toBe(false);
+    expect(opener.dataset.interactionCaptureReady).toBe("true");
+
+    opener.click();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    document.querySelector<HTMLButtonElement>("[data-interaction-cancel]")!
+      .click();
+    opener.click();
+    await Promise.resolve();
+
+    expect(paths.filter((path) => path.endsWith("/people"))).toHaveLength(1);
+    expect(paths.filter((path) => path.endsWith("/interaction-options")))
+      .toHaveLength(1);
+  });
+
+  it("fails session closed but keeps option failures retryable in the dialog", async () => {
     captureMarkup();
     vi.stubGlobal(
       "fetch",
@@ -344,11 +417,36 @@ describe("INTERACTION-001 browser behavior", () => {
         availability: { activity: true, note: true },
         emotions: [],
         status: "ready",
-      }));
+      }))
+      .mockResolvedValueOnce(readyPeople())
+      .mockResolvedValueOnce(readyInteractionOptions());
     vi.stubGlobal("fetch", fetchMock);
     await mountInteractionCapture();
-    expect(document.querySelector("#interaction-capture-status")?.textContent)
-      .toContain("could not be loaded");
+    const opener = document.querySelector<HTMLButtonElement>(
+      "[data-quick-capture]",
+    )!;
+    expect(opener.disabled).toBe(false);
+    opener.click();
+    await vi.waitFor(() =>
+      expect(document.querySelector("#interaction-capture-status")?.textContent)
+        .toContain("could not be loaded")
+    );
+    expect(
+      document.querySelector<HTMLDialogElement>(
+        "#interaction-capture-dialog",
+      )?.open,
+    ).toBe(true);
+    expect(opener.disabled).toBe(false);
+    expect(
+      document.querySelector<HTMLButtonElement>('button[type="submit"]')
+        ?.disabled,
+    ).toBe(true);
+
+    document.querySelector<HTMLButtonElement>("[data-interaction-cancel]")!
+      .click();
+    await openReadyCapture("[data-quick-capture]");
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(opener.disabled).toBe(false);
   });
 
   it("keeps activity and note availability independent and removes occurrence time from notes", async () => {
@@ -383,6 +481,7 @@ describe("INTERACTION-001 browser behavior", () => {
     const happenedAt = form.elements.namedItem(
       "happenedAt",
     ) as HTMLInputElement;
+    await openReadyCapture('[data-interaction-intended-kind="note"]');
     expect(kind.value).toBe("note");
     expect(kind.options[0]?.disabled).toBe(true);
     expect(kind.options[1]?.disabled).toBe(false);
@@ -397,8 +496,7 @@ describe("INTERACTION-001 browser behavior", () => {
       '[data-interaction-intended-kind="activity"]',
     )!;
     expect(noteOpener.disabled).toBe(false);
-    expect(activityOpener.disabled).toBe(true);
-    noteOpener.click();
+    expect(activityOpener.disabled).toBe(false);
     expect(kind.value).toBe("note");
     const hiddenModuleReconnect = reconnectOpener();
     await vi.waitFor(() =>
@@ -406,7 +504,7 @@ describe("INTERACTION-001 browser behavior", () => {
         "true",
       )
     );
-    expect(hiddenModuleReconnect.disabled).toBe(true);
+    expect(hiddenModuleReconnect.disabled).toBe(false);
 
     captureMarkup();
     const activityOnly = vi.fn()
@@ -422,6 +520,7 @@ describe("INTERACTION-001 browser behavior", () => {
       }));
     vi.stubGlobal("fetch", activityOnly);
     await mountInteractionCapture();
+    await openReadyCapture('[data-interaction-intended-kind="activity"]');
     const activityOnlyKind = document.querySelector<HTMLSelectElement>(
       "[name=kind]",
     )!;
@@ -430,7 +529,14 @@ describe("INTERACTION-001 browser behavior", () => {
     const unavailableNoteOpener = document.querySelector<HTMLButtonElement>(
       '[data-interaction-intended-kind="note"]',
     )!;
-    expect(unavailableNoteOpener.disabled).toBe(true);
+    expect(unavailableNoteOpener.disabled).toBe(false);
+    document.querySelector<HTMLButtonElement>("[data-interaction-cancel]")!
+      .click();
+    unavailableNoteOpener.click();
+    await vi.waitFor(() =>
+      expect(document.querySelector("#interaction-capture-status")?.textContent)
+        .toContain("hidden in workspace personalization")
+    );
 
     captureMarkup();
     const unavailable = vi.fn()
@@ -446,8 +552,17 @@ describe("INTERACTION-001 browser behavior", () => {
       }));
     vi.stubGlobal("fetch", unavailable);
     await mountInteractionCapture();
+    const unavailableOpener = document.querySelector<HTMLButtonElement>(
+      "[data-quick-capture]",
+    )!;
+    expect(unavailableOpener.disabled).toBe(false);
+    unavailableOpener.click();
+    await vi.waitFor(() =>
+      expect(document.querySelector("#interaction-capture-status")?.textContent)
+        .toContain("hidden in workspace personalization")
+    );
     expect(
-      document.querySelector<HTMLButtonElement>("[data-quick-capture]")
+      document.querySelector<HTMLButtonElement>('button[type="submit"]')
         ?.disabled,
     ).toBe(true);
   });
@@ -488,6 +603,7 @@ describe("INTERACTION-001 browser behavior", () => {
       }, 201));
     vi.stubGlobal("fetch", fetchMock);
     await mountInteractionCapture();
+    await openReadyCapture('[data-interaction-intended-kind="activity"]');
     const form = document.querySelector<HTMLFormElement>(
       "#interaction-capture-form",
     )!;
@@ -546,9 +662,7 @@ describe("INTERACTION-001 browser behavior", () => {
     await mountInteractionCapture();
     const kind = document.querySelector<HTMLSelectElement>("[name=kind]")!;
 
-    document.querySelector<HTMLButtonElement>(
-      '[data-interaction-intended-kind="note"]',
-    )!.click();
+    await openReadyCapture('[data-interaction-intended-kind="note"]');
     expect(kind.value).toBe("note");
     expect(
       document.querySelector<HTMLDialogElement>(
@@ -598,6 +712,13 @@ describe("INTERACTION-001 browser behavior", () => {
     });
     noteOpener.dispatchEvent(enter);
     noteOpener.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector("#interaction-capture-form")?.hasAttribute(
+          "aria-busy",
+        ),
+      ).toBe(false)
+    );
     expect(enter.defaultPrevented).toBe(true);
     expect(kind.value).toBe("note");
     expect(showModal).toHaveBeenCalledTimes(1);
@@ -662,7 +783,7 @@ describe("INTERACTION-001 browser behavior", () => {
       "participantIds",
     ) as HTMLSelectElement;
 
-    opener.click();
+    await openReadyCapture('[data-interaction-intended-kind="activity"]');
     dialog.dispatchEvent(new Event("cancel", { cancelable: true }));
     expect(dialog.open).toBe(false);
     expect(document.activeElement).toBe(opener);
@@ -765,7 +886,7 @@ describe("INTERACTION-001 browser behavior", () => {
     expect(document.querySelector("#interaction-capture-status")?.textContent)
       .toContain("Activity saved");
     await mountInteractionCapture();
-    expect(fetchMock).toHaveBeenCalledTimes(7);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(created).toHaveBeenCalledOnce();
     globalThis.removeEventListener("kinship:interaction-created", created);
   });
@@ -843,7 +964,7 @@ describe("INTERACTION-001 browser behavior", () => {
     expect((form.elements.namedItem("summary") as HTMLInputElement).disabled)
       .toBe(false);
     await mountInteractionCapture();
-    expect(fetchMock).toHaveBeenCalledTimes(9);
+    expect(fetchMock).toHaveBeenCalledTimes(7);
     expect(created).toHaveBeenCalledOnce();
     globalThis.removeEventListener("kinship:interaction-created", created);
   });
@@ -926,7 +1047,7 @@ describe("INTERACTION-001 browser behavior", () => {
     await vi.waitFor(() => expect(malformed.disabled).toBe(false));
     malformed.click();
     expect(validations).toBe(0);
-    expect(status.textContent).toMatch(/unavailable/i);
+    await vi.waitFor(() => expect(status.textContent).toMatch(/unavailable/i));
     expect(document.activeElement).toBe(status);
     expect(submit.disabled).toBe(true);
     cancel.click();
@@ -1128,6 +1249,7 @@ describe("INTERACTION-001 browser behavior", () => {
       }));
     vi.stubGlobal("fetch", fetchMock);
     await mountInteractionCapture();
+    await openReadyCapture('[data-interaction-intended-kind="activity"]');
     const participantSearch = document.querySelector<HTMLInputElement>(
       "[name=participantSearch]",
     )!;
@@ -1207,6 +1329,7 @@ describe("INTERACTION-001 browser behavior", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     await mountInteractionCapture();
+    await openReadyCapture('[data-interaction-intended-kind="activity"]');
     document.querySelector<HTMLButtonElement>("[data-participants-more]")!
       .click();
     document.querySelector<HTMLButtonElement>("[data-activity-types-more]")!
@@ -1273,12 +1396,16 @@ describe("INTERACTION-001 browser behavior", () => {
       return Promise.resolve(response(session()));
     });
     vi.stubGlobal("fetch", fetchMock);
-    const olderMount = mountInteractionCapture();
+    await mountInteractionCapture();
+    document.querySelector<HTMLButtonElement>(
+      '[data-interaction-intended-kind="activity"]',
+    )!.click();
     await vi.waitFor(() => {
       expect(peopleCalls).toBe(1);
       expect(optionCalls).toBe(1);
     });
     await mountInteractionCapture();
+    await openReadyCapture('[data-interaction-intended-kind="activity"]');
     resolveOldPeople(response({
       lifecycle: "active",
       people: [{
@@ -1304,7 +1431,7 @@ describe("INTERACTION-001 browser behavior", () => {
       }],
       status: "ready",
     }));
-    await olderMount;
+    await Promise.resolve();
     expect(document.querySelector("[name=participantIds]")?.textContent)
       .toContain("Newest person");
     expect(document.querySelector("[name=activityTypeId]")?.textContent)
@@ -1410,6 +1537,7 @@ describe("INTERACTION-001 browser behavior", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     await mountInteractionCapture();
+    await openReadyCapture('[data-interaction-intended-kind="activity"]');
 
     const searches = {
       emotion: document.querySelector<HTMLInputElement>(
@@ -1579,7 +1707,7 @@ describe("INTERACTION-001 browser behavior", () => {
       }, 201));
     vi.stubGlobal("fetch", fetchMock);
     await mountInteractionCapture();
-    document.querySelector<HTMLButtonElement>("[data-quick-capture]")!.click();
+    await openReadyCapture("[data-quick-capture]");
     const form = document.querySelector<HTMLFormElement>(
       "#interaction-capture-form",
     )!;
@@ -1650,6 +1778,7 @@ describe("INTERACTION-001 browser behavior", () => {
       }, 201));
     vi.stubGlobal("fetch", fetchMock);
     await mountInteractionCapture();
+    await openReadyCapture('[data-interaction-intended-kind="activity"]');
     const form = document.querySelector<HTMLFormElement>(
       "#interaction-capture-form",
     )!;
@@ -2872,7 +3001,7 @@ describe("INTERACTION-001 browser behavior", () => {
       .mockRejectedValueOnce(new Error("offline"));
     vi.stubGlobal("fetch", fetchMock);
     await mountInteractionCapture();
-    document.querySelector<HTMLButtonElement>("[data-quick-capture]")!.click();
+    await openReadyCapture("[data-quick-capture]");
     const summary = document.querySelector<HTMLInputElement>("[name=summary]")!;
     summary.value = "Unsaved";
     summary.dispatchEvent(new Event("input", { bubbles: true }));

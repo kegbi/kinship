@@ -68,6 +68,78 @@ describe("INTERACTION-002 person communications", () => {
     document.body.innerHTML = "";
   });
 
+  it("loads contact methods only when the conversation editor opens", async () => {
+    document.body.innerHTML = markup("call") + markup("conversation");
+    let editorOpened = false;
+    let contactCalls = 0;
+    let releaseContacts!: (value: Response) => void;
+    const contacts = new Promise<Response>((resolve) => {
+      releaseContacts = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = new URL(String(input), "http://localhost");
+        if (url.pathname.includes("/facts/contact-methods")) {
+          contactCalls += 1;
+          if (!editorOpened) return Promise.resolve(communicationGet(url)!);
+          return contactCalls === 1
+            ? contacts
+            : Promise.resolve(communicationGet(url)!);
+        }
+        const ready = communicationGet(url);
+        if (ready) return Promise.resolve(ready);
+        throw new Error(`unexpected ${url.pathname}`);
+      }),
+    );
+
+    await mountCommunications(personId, workspaceId, false, {
+      calls: false,
+      conversations: false,
+    });
+
+    expect(contactCalls).toBe(0);
+    const conversation = document.querySelector<HTMLElement>(
+      '[data-communication-kind="conversation"]',
+    )!;
+    const form = conversation.querySelector<HTMLFormElement>("form")!;
+    const method = form.elements.namedItem(
+      "contactMethodId",
+    ) as HTMLSelectElement;
+    editorOpened = true;
+    conversation.querySelector<HTMLButtonElement>("[data-communication-add]")!
+      .click();
+    await vi.waitFor(() => expect(contactCalls).toBe(1));
+    expect(method.disabled).toBe(true);
+    releaseContacts(response({
+      detail: "Contact methods unavailable",
+      status: 503,
+      title: "Unavailable",
+      type: "about:blank",
+    }, 503));
+    await vi.waitFor(() =>
+      expect(
+        form.querySelector("[data-communication-form-state]")?.textContent,
+      ).toContain("could not be loaded")
+    );
+    expect(method.disabled).toBe(true);
+    expect(conversation.dataset.sectionState).toBe("ready");
+    conversation.querySelector<HTMLButtonElement>(
+      "[data-communication-cancel]",
+    )!.click();
+    conversation.querySelector<HTMLButtonElement>("[data-communication-add]")!
+      .click();
+    await vi.waitFor(() => expect(method.disabled).toBe(false));
+    expect(contactCalls).toBe(2);
+    conversation.querySelector<HTMLButtonElement>(
+      "[data-communication-cancel]",
+    )!.click();
+    conversation.querySelector<HTMLButtonElement>("[data-communication-add]")!
+      .click();
+    await Promise.resolve();
+    expect(contactCalls).toBe(2);
+  });
+
   it("records a call with source direction/emotion and refreshes its embedded projection", async () => {
     document.body.innerHTML = markup("call") + markup("conversation");
     let saved = false;
