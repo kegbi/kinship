@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-002C2 — Merged timeline surface**, with its API side. The
+- Current leaf: **UXD-002C2B — Merged timeline surface**, the web side. The
   review's top five, `UXD-001` through `UXD-005`, and all of `UXD-003` are
   integrated.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
@@ -576,6 +576,20 @@ Report and request direction once `UXD-001` through `UXD-005` are integrated.
       template rendering twenty-two sections, `life-events` hardcodes it, and no
       runtime code reads it at all. `UXD-002` should decide whether that tuple
       field is real metadata or dead weight.
+- [x] **REL-022 — Repair the stale person-shell section assertion.**
+      `deno task test:coverage:api` had been failing on `main` at
+      `tools/gateway_contract_test.ts`'s `[APP-003C]` test since `UXD-002C`
+      retired `data-load-mode` under `REL-018`. The test extracted the shell's
+      sections with a three-field tuple whose last field was that retired value,
+      so the regex matched nothing, `declared` was empty, and the comparison
+      against twenty-two ids failed. Unnoticed because web candidates run web
+      gates, not the API ones. Reproduced on clean `main` with the concurrent
+      candidate stashed, so it was queued rather than folded into it. Extraction
+      now reads the current tuple and refuses to pass on an empty result — a
+      regex matching zero rows must never look like a passing extraction — and
+      the companion assertion swaps the retired attribute for `data-zone`, the
+      metadata that replaced it and is read at runtime.
+
 - [ ] **REL-021 — Give a lazily activated zone the current archived state.** The
       four lazy zone mounts receive `archived` as a value captured when
       `register(...)` runs at initial load, and each module only corrects it
@@ -946,15 +960,55 @@ asserts, so it runs that spec on its candidate.
           as caused by this candidate.
   - [ ] **UXD-002C2 — Merged timeline surface.** (§7.3 Timeline bullet, §7.6
         row 1) `life-events`, `notes`, `conversations`, `calls`, and
-        `activities` merged into one reverse-chronological list with type-filter
-        chips, each row a `<details>` collapsed to date, type, and a two-line
-        excerpt. Split out of `UXD-002C` because merging five independently
-        cursored lists cannot be done honestly in the client; it needs an
-        API-side chronological projection the way `UXD-013` supplied the
-        summary, and `information-architecture.md` already asks for "a compact
-        chronological projection across relevant person events". Open its API
-        side alongside it. `UXD-002C` delivered the four groups; this makes the
-        Timeline group one surface instead of five cards.
+        `activities` become one reverse-chronological list. Split out of
+        `UXD-002C` because merging five independently cursored lists cannot be
+        done honestly in the client; it needs an API-side chronological
+        projection the way `UXD-013` supplied the summary, and
+        `information-architecture.md` already asks for "a compact chronological
+        projection across relevant person events". Delivered API side first.
+    - [x] **UXD-002C2A — The projection.**
+          `GET /api/v1/people/:personId/timeline` returns the five kinds as one
+          keyset page ordered by `(occurredAt, id)` descending, with an opaque
+          cursor bound to the workspace, person, and kind filter, a limit
+          clamped to 50, and a `stale-cursor` outcome when the anchor no longer
+          resolves.
+      - [x] It is a second operation on the existing `person-profile` read model
+            rather than a new one. That entry already allowlists `journal`,
+            `interactions`, `people`, and `workspaces` — exactly the modules the
+            projection composes, since `crm.life_events` belongs to `journal`
+            and the other four tables to `interactions` — so
+            `module-boundaries.yaml` needed no amendment. A new read model would
+            have required one and bought nothing.
+      - [x] Personalization is honoured inside the projection: a kind whose
+            `workspace_profile_modules` row is inactive contributes no rows, and
+            the cursor anchor is validated against the same condition. Without
+            that, a merged list would have leaked exactly the content `UXD-006`
+            exists to hide, and a cursor into a hidden kind would have paged
+            through it.
+      - [x] Life events resolve their sort timestamp from `happened_at`, then
+            from a UTC timestamp built out of `year` with `month` and `day`
+            defaulted, and finally from `created_at` with precision `unknown`.
+            The last case is deliberate: an undated milestone stays reachable
+            and the keyset stays total, while the precision stops a client from
+            rendering a date the member never entered.
+      - [x] **Known limitation, recorded rather than fixed:** an event with a
+            `month_day` precision but no year sorts by `created_at` and reports
+            `unknown`, so its real day is not renderable from the timeline item.
+            The item carries `occurredAt` as a sort key and a precision, not the
+            raw date parts. `UXD-002C2B` must keep the life-events section
+            reachable, or carry the parts, rather than silently losing that
+            date.
+      - [x] Gates: `check:api`, `contracts:check`, `test:contract` 122 passed,
+            `fmt:check`, `lint`, and `test:coverage:api` against a real
+            PostgreSQL at 85.0 branches / 82.1 / 87.2 lines aggregate, covering
+            the five kinds merging, a turned-off module contributing nothing,
+            paging across a duplicate timestamp, a foreign-workspace person, and
+            a forged workspace context.
+    - [ ] **UXD-002C2B — The merged surface.** (§7.6 row 1) Type-filter chips,
+          each row a `<details>` collapsed to date, type, and a two-line
+          excerpt, `Load older` through the projection's cursor. `UXD-002C`
+          delivered the four groups; this makes the Timeline group one surface
+          instead of five cards.
   - [ ] **UXD-002C3 — Remember the member's zone choice.** (§7.4) The review
         asks for the last choice to persist in `member_preferences.ui_state`,
         the mechanism `person-workspace.md` reserves. No read or
