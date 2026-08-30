@@ -411,9 +411,10 @@ function zeroProfile(
 function stubReadyProfile(
   profileSections: readonly { readonly id: string; readonly status: string }[] =
     [],
+  readySession: Record<string, unknown> = session,
 ): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn()
-    .mockResolvedValueOnce(response(session))
+    .mockResolvedValueOnce(response(readySession))
     .mockResolvedValueOnce(response({
       dueInformation: {
         detail: "No due information.",
@@ -610,6 +611,8 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       `/api/v1/people/${personId}/view`,
       `/api/v1/people/${personId}/files`,
       `/api/v1/people/${personId}/gifts`,
+      "/api/v1/member/ui-state",
+      "/api/v1/member/ui-state",
       `/api/v1/people/${personId}/audit?limit=3`,
     ]);
   });
@@ -1063,6 +1066,244 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(location.search).toBe("");
     expect(all.getAttribute("aria-pressed")).toBe("true");
     expect(zones.every((zone) => !zone.hidden)).toBe(true);
+  });
+
+  it("UXD-002C3 restores a stored Timeline view without a history navigation or first-run card", async () => {
+    markup();
+    const replaceState = vi.spyOn(history, "replaceState");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response({
+          ...session,
+          uiState: { personWorkspaceView: "timeline" },
+        }))
+        .mockResolvedValueOnce(response(zeroProfile()))
+        .mockResolvedValue(undefined as never),
+    );
+
+    await mountPeopleProfile();
+
+    expect(location.search).toBe("?view=timeline");
+    expect(replaceState).toHaveBeenCalledTimes(1);
+    expect(
+      document.querySelector('[data-zone-filter="timeline"]')?.getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
+    expect(
+      document.querySelector<HTMLElement>('[data-zone="timeline"]')?.hidden,
+    ).toBe(false);
+    expect(
+      [...document.querySelectorAll<HTMLElement>("[data-zone]")]
+        .filter((zone) => zone.dataset.zone !== "timeline")
+        .every((zone) => zone.hidden),
+    ).toBe(true);
+    expect(document.querySelector<HTMLElement>("#person-first-run")?.hidden)
+      .toBe(true);
+  });
+
+  it("UXD-002C3 keeps an explicit Planning deep link ahead of stored Timeline", async () => {
+    markup(`/app/people/${personId}?view=planning`);
+    const replaceState = vi.spyOn(history, "replaceState");
+    stubReadyProfile([], {
+      ...session,
+      uiState: { personWorkspaceView: "timeline" },
+    });
+
+    await mountPeopleProfile();
+
+    expect(location.search).toBe("?view=planning");
+    expect(replaceState).not.toHaveBeenCalled();
+    expect(
+      document.querySelector('[data-zone-filter="planning"]')?.getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
+    expect(
+      document.querySelector<HTMLElement>('[data-zone="planning"]')?.hidden,
+    ).toBe(false);
+  });
+
+  it("UXD-002C3 filters immediately without persisting a click before the session resolves", async () => {
+    markup();
+    let releaseSession!: (value: Response) => void;
+    const pendingSession = new Promise<Response>((resolve) => {
+      releaseSession = resolve;
+    });
+    const fetchMock = vi.fn(
+      (resource: string | URL | Request, _init?: RequestInit) => {
+        const url = String(resource);
+        if (url === "/api/v1/session") return pendingSession;
+        if (url === `/api/v1/people/${personId}?include=summary`) {
+          return response({
+            dueInformation: {
+              detail: "No due information.",
+              openTaskCount: 0,
+              status: "ready",
+            },
+            person: {
+              familyName: "Lovelace",
+              givenName: "Ada",
+              id: personId,
+              isDeceased: false,
+              isPartial: false,
+              isSelf: false,
+              isStarred: false,
+              profileSections: [],
+              tagCount: 0,
+              tags: [],
+              updatedAt: "2026-08-15T08:00:00.000Z",
+            },
+            status: "ready",
+          });
+        }
+        return Promise.resolve(undefined as never);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const mounting = mountPeopleProfile();
+    document.querySelector<HTMLButtonElement>(
+      '[data-zone-filter="planning"]',
+    )?.click();
+    const earlyState = {
+      patchCount:
+        fetchMock.mock.calls.filter(([resource, init]) =>
+          String(resource) === "/api/v1/member/ui-state" &&
+          init?.method === "PATCH"
+        ).length,
+      planningPressed: document.querySelector(
+        '[data-zone-filter="planning"]',
+      )?.getAttribute("aria-pressed"),
+      search: location.search,
+      visibleZones: [...document.querySelectorAll<HTMLElement>("[data-zone]")]
+        .filter((zone) => !zone.hidden)
+        .map((zone) => zone.dataset.zone),
+    };
+    releaseSession(response(session));
+    await mounting;
+
+    expect(earlyState).toEqual({
+      patchCount: 0,
+      planningPressed: "true",
+      search: "?view=planning",
+      visibleZones: ["planning"],
+    });
+    expect(
+      fetchMock.mock.calls.filter(([resource, init]) =>
+        String(resource) === "/api/v1/member/ui-state" &&
+        init?.method === "PATCH"
+      ),
+    ).toHaveLength(0);
+  });
+
+  it.each([
+    ["stored All", { ...session, uiState: { personWorkspaceView: "all" } }],
+    ["an absent UI state", session],
+  ])(
+    "UXD-002C3 leaves a queryless URL untouched for %s",
+    async (_name, value) => {
+      markup();
+      const replaceState = vi.spyOn(history, "replaceState");
+      stubReadyProfile([], value);
+
+      await mountPeopleProfile();
+
+      expect(location.search).toBe("");
+      expect(replaceState).not.toHaveBeenCalled();
+    },
+  );
+
+  it("UXD-002C3 persists a selected zone and updates the existing session cache after success", async () => {
+    markup();
+    stubReadyProfile();
+    await mountPeopleProfile();
+    const savedAt = Date.now() - 12_000;
+    sessionStorage.setItem(
+      "kinship.session",
+      JSON.stringify({
+        savedAt,
+        session: {
+          ...session,
+          uiState: { personWorkspaceView: "planning" },
+        },
+      }),
+    );
+    const postMountFetch = vi.fn(
+      (resource: string | URL | Request, init?: RequestInit) =>
+        String(resource) === "/api/v1/member/ui-state" &&
+          init?.method === "PATCH"
+          ? response({
+            status: "ready",
+            uiState: { personWorkspaceView: "timeline" },
+          })
+          : Promise.resolve(undefined as never),
+    );
+    vi.stubGlobal("fetch", postMountFetch);
+
+    document.querySelector<HTMLButtonElement>(
+      '[data-zone-filter="timeline"]',
+    )?.click();
+
+    await vi.waitFor(() => {
+      expect(
+        JSON.parse(sessionStorage.getItem("kinship.session") ?? "null"),
+      ).toEqual({
+        savedAt,
+        session: {
+          ...session,
+          uiState: { personWorkspaceView: "timeline" },
+        },
+      });
+    });
+    const patch = postMountFetch.mock.calls.find(([resource, init]) =>
+      String(resource) === "/api/v1/member/ui-state" &&
+      init?.method === "PATCH"
+    );
+    expect(patch?.[1]).toMatchObject({
+      body: JSON.stringify({ personWorkspaceView: "timeline" }),
+      headers: {
+        "content-type": "application/json",
+        "X-Workspace-Id": workspaceId,
+      },
+      method: "PATCH",
+    });
+  });
+
+  it("UXD-002C3 keeps a rejected preference save invisible and leaves the cache honest", async () => {
+    markup(`/app/people/${personId}?view=planning`);
+    stubReadyProfile();
+    await mountPeopleProfile();
+    const cached = {
+      savedAt: Date.now() - 12_000,
+      session: {
+        ...session,
+        uiState: { personWorkspaceView: "planning" },
+      },
+    };
+    sessionStorage.setItem("kinship.session", JSON.stringify(cached));
+    const postMountFetch = vi.fn().mockRejectedValue(new Error("offline"));
+    vi.stubGlobal("fetch", postMountFetch);
+
+    document.querySelector<HTMLButtonElement>('[data-zone-filter="all"]')
+      ?.click();
+    await vi.waitFor(() => expect(postMountFetch).toHaveBeenCalledTimes(1));
+
+    expect(location.search).toBe("?view=all");
+    expect(
+      document.querySelector('[data-zone-filter="all"]')?.getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
+    expect(
+      [...document.querySelectorAll<HTMLElement>("[data-zone]")].every(
+        (zone) => !zone.hidden,
+      ),
+    ).toBe(true);
+    expect(document.querySelectorAll("#app-toasts > li")).toHaveLength(0);
+    expect(JSON.parse(sessionStorage.getItem("kinship.session") ?? "null"))
+      .toEqual(cached);
   });
 
   it("UXD-005B replaces empty stream zones and restores them on dismissal", async () => {
