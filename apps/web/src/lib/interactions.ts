@@ -209,6 +209,18 @@ export async function mountInteractionCapture(): Promise<void> {
     !signal.aborted && request.generation === state.generation &&
     request.search === searchValue(input);
   let availability = { activity: false, note: false };
+  let captureOptionsReady = false;
+  let captureOptionsPromise: Promise<boolean> | undefined;
+  let initialPeople: readonly { readonly id: string; readonly name: string }[] =
+    [];
+  let initialActivityTypes: readonly {
+    readonly id: string;
+    readonly name: string;
+  }[] = [];
+  let initialEmotions: readonly {
+    readonly id: string;
+    readonly name: string;
+  }[] = [];
   for (const opener of openers) {
     opener.disabled = true;
     opener.dataset.interactionCaptureReady = "false";
@@ -220,7 +232,7 @@ export async function mountInteractionCapture(): Promise<void> {
     activityFields.hidden = note;
     noteFields.hidden = !note;
     if (occurrence) occurrence.hidden = note;
-    happenedAt.disabled = note;
+    happenedAt.disabled = !captureOptionsReady || note;
     happenedAt.required = !note;
     if (note) {
       happenedAt.removeAttribute("aria-invalid");
@@ -248,63 +260,7 @@ export async function mountInteractionCapture(): Promise<void> {
   }
   const workspaceId = session.session.workspace.id;
   const preferred = profilePersonId();
-  const [people, interactionOptions] = await Promise.all([
-    listPeople({
-      limit: 20,
-      ...(preferred ? { selectedPersonId: preferred } : {}),
-    }, workspaceId).catch(() => undefined),
-    listInteractionOptions({ limit: 20 }, workspaceId).catch(() => undefined),
-  ]);
-  if (signal.aborted) return;
-  if (!people?.ok || !interactionOptions?.ok) {
-    status.textContent =
-      "Quick capture options could not be loaded. Reload to try again.";
-    for (const opener of openers) opener.disabled = true;
-    return;
-  }
-  const initialPeople = [
-    ...people.value.people.map((person) => ({
-      id: person.id,
-      name: displayName(person),
-    })),
-    ...(people.value.selected
-      ? [{
-        id: people.value.selected.id,
-        name: displayName(people.value.selected),
-      }]
-      : []),
-  ];
-  renderOptionPage(participants, initialPeople);
-  renderOptionPage(
-    activityType,
-    interactionOptions.value.activityTypes,
-    "No category",
-  );
-  renderOptionPage(emotionIds, interactionOptions.value.emotions);
-  participantCursor = people.value.nextCursor;
-  activityTypeCursor = interactionOptions.value.activityTypesNextCursor;
-  emotionCursor = interactionOptions.value.emotionsNextCursor;
-  participantLoad.cursorSearch = "";
-  activityTypeLoad.cursorSearch = "";
-  emotionLoad.cursorSearch = "";
-  availability = interactionOptions.value.availability;
-  if (participantsMore) participantsMore.hidden = !participantCursor;
-  if (activityTypesMore) activityTypesMore.hidden = !activityTypeCursor;
-  if (emotionsMore) emotionsMore.hidden = !emotionCursor;
-  for (const entry of kind.options) {
-    entry.disabled = entry.value === "activity"
-      ? !availability.activity
-      : !availability.note;
-  }
-  if (!availability.activity && availability.note) kind.value = "note";
-  if (availability.activity) kind.value = "activity";
   happenedAt.value = localDateTime();
-  if (preferred) {
-    const selected = [...participants.options].find((entry) =>
-      entry.value === preferred
-    );
-    if (selected) selected.selected = true;
-  }
   setKind();
 
   let activeOpener: HTMLButtonElement | undefined;
@@ -315,20 +271,17 @@ export async function mountInteractionCapture(): Promise<void> {
     "button[data-quick-capture]",
   )];
   const openerAvailable = (opener: HTMLButtonElement): boolean => {
-    const intended = opener.dataset.interactionIntendedKind as
-      | "activity"
-      | "note"
-      | undefined;
-    return !opener.hidden &&
-      (intended
-        ? availability[intended]
-        : availability.activity || availability.note);
+    return !opener.hidden;
   };
   const setIntentLock = (phase?: CaptureIntent["phase"]) => {
     for (const control of [...form.elements]) {
       (control as HTMLButtonElement | HTMLInputElement | HTMLSelectElement)
-        .disabled = Boolean(phase);
+        .disabled = Boolean(phase) || !captureOptionsReady;
     }
+    const cancel = form.querySelector<HTMLButtonElement>(
+      "[data-interaction-cancel]",
+    );
+    if (!phase && !captureOptionsReady && cancel) cancel.disabled = false;
     for (const opener of currentOpeners()) {
       opener.disabled = Boolean(phase) || !openerAvailable(opener);
     }
@@ -339,9 +292,11 @@ export async function mountInteractionCapture(): Promise<void> {
           ? !availability.activity
           : !availability.note;
       }
-      kind.disabled = Boolean(activeReconnectPersonId) || reconnectDegraded;
+      kind.disabled = !captureOptionsReady ||
+        Boolean(activeReconnectPersonId) || reconnectDegraded;
       setKind();
-      submit.disabled = reconnectDegraded;
+      submit.disabled = reconnectDegraded ||
+        (!availability.activity && !availability.note);
     }
   };
   const resetDraft = () => {
@@ -353,20 +308,19 @@ export async function mountInteractionCapture(): Promise<void> {
     renderOptionPage(participants, initialPeople);
     renderOptionPage(
       activityType,
-      interactionOptions.value.activityTypes,
+      initialActivityTypes,
       "No category",
     );
-    renderOptionPage(emotionIds, interactionOptions.value.emotions);
-    participantCursor = people.value.nextCursor;
-    activityTypeCursor = interactionOptions.value.activityTypesNextCursor;
-    emotionCursor = interactionOptions.value.emotionsNextCursor;
+    renderOptionPage(emotionIds, initialEmotions);
     participantLoad.cursorSearch = "";
     activityTypeLoad.cursorSearch = "";
     emotionLoad.cursorSearch = "";
     if (participantsMore) participantsMore.hidden = !participantCursor;
     if (activityTypesMore) activityTypesMore.hidden = !activityTypeCursor;
     if (emotionsMore) emotionsMore.hidden = !emotionCursor;
-    kind.value = availability.activity ? "activity" : "note";
+    if (captureOptionsReady) {
+      kind.value = availability.activity ? "activity" : "note";
+    }
     kind.disabled = false;
     happenedAt.value = localDateTime();
     if (preferred) {
@@ -495,6 +449,78 @@ export async function mountInteractionCapture(): Promise<void> {
     ) void loadVocabulary("emotion", emotionCursor);
   }, { signal });
 
+  const loadCaptureOptions = (): Promise<boolean> => {
+    if (captureOptionsReady) return Promise.resolve(true);
+    if (captureOptionsPromise) return captureOptionsPromise;
+    form.setAttribute("aria-busy", "true");
+    status.textContent = "Loading quick capture options…";
+    status.tabIndex = -1;
+    status.focus();
+    setIntentLock();
+    captureOptionsPromise = (async () => {
+      const [people, interactionOptions] = await Promise.all([
+        listPeople({
+          limit: 20,
+          ...(preferred ? { selectedPersonId: preferred } : {}),
+        }, workspaceId).catch(() => undefined),
+        listInteractionOptions({ limit: 20 }, workspaceId).catch(() =>
+          undefined
+        ),
+      ]);
+      if (signal.aborted) return false;
+      if (!people?.ok || !interactionOptions?.ok) {
+        captureOptionsPromise = undefined;
+        form.removeAttribute("aria-busy");
+        status.textContent =
+          "Quick capture options could not be loaded. Close and open Quick capture to try again.";
+        setIntentLock();
+        status.focus();
+        return false;
+      }
+      initialPeople = [
+        ...people.value.people.map((person) => ({
+          id: person.id,
+          name: displayName(person),
+        })),
+        ...(people.value.selected
+          ? [{
+            id: people.value.selected.id,
+            name: displayName(people.value.selected),
+          }]
+          : []),
+      ];
+      initialActivityTypes = interactionOptions.value.activityTypes;
+      initialEmotions = interactionOptions.value.emotions;
+      participantCursor = people.value.nextCursor;
+      activityTypeCursor = interactionOptions.value.activityTypesNextCursor;
+      emotionCursor = interactionOptions.value.emotionsNextCursor;
+      availability = interactionOptions.value.availability;
+      renderOptionPage(participants, initialPeople);
+      renderOptionPage(activityType, initialActivityTypes, "No category");
+      renderOptionPage(emotionIds, initialEmotions);
+      participantLoad.cursorSearch = "";
+      activityTypeLoad.cursorSearch = "";
+      emotionLoad.cursorSearch = "";
+      if (participantsMore) participantsMore.hidden = !participantCursor;
+      if (activityTypesMore) activityTypesMore.hidden = !activityTypeCursor;
+      if (emotionsMore) emotionsMore.hidden = !emotionCursor;
+      kind.value = availability.activity ? "activity" : "note";
+      happenedAt.value = localDateTime();
+      if (preferred) {
+        const selected = [...participants.options].find((entry) =>
+          entry.value === preferred
+        );
+        if (selected) selected.selected = true;
+      }
+      captureOptionsReady = true;
+      form.removeAttribute("aria-busy");
+      status.textContent = "";
+      setIntentLock();
+      return true;
+    })();
+    return captureOptionsPromise;
+  };
+
   const selectOnly = (personId: string): boolean => {
     const selected = [...participants.options].find((entry) =>
       entry.value.toLowerCase() === personId
@@ -521,23 +547,40 @@ export async function mountInteractionCapture(): Promise<void> {
     intended: "activity" | "note" | undefined,
   ): Promise<void> => {
     if (opener.disabled || captureIntent) return;
-    if (
-      dialog.open && activeOpener === opener &&
-      (!intended || kind.value === intended)
-    ) return;
+    if (dialog.open && activeOpener === opener) return;
     activeOpener = opener;
     const current = ++openGeneration;
     activeReconnectPersonId = undefined;
     reconnectDegraded = false;
-    form.removeAttribute("aria-busy");
-    submit.disabled = false;
-    kind.disabled = false;
-    if (intended && availability[intended]) {
-      kind.value = intended;
-      setKind();
-    }
-    status.textContent = "";
     setDialogOpen(dialog, true);
+    setIntentLock();
+    const loaded = captureOptionsReady || await loadCaptureOptions();
+    if (
+      !loaded || signal.aborted || current !== openGeneration ||
+      activeOpener !== opener
+    ) return;
+    if (
+      (intended && !availability[intended]) ||
+      (!intended && !availability.activity && !availability.note)
+    ) {
+      if (intended) {
+        kind.value = intended;
+        setKind();
+      }
+      for (const control of [...form.elements]) {
+        (control as HTMLButtonElement | HTMLInputElement | HTMLSelectElement)
+          .disabled = true;
+      }
+      form.querySelector<HTMLButtonElement>("[data-interaction-cancel]")!
+        .disabled = false;
+      status.textContent =
+        "This interaction kind is hidden in workspace personalization.";
+      status.focus();
+      return;
+    }
+    if (intended) kind.value = intended;
+    setKind();
+    status.textContent = "";
     kind.focus();
     if (opener.dataset.todayReconnectCapture === undefined) return;
     kind.value = "activity";
@@ -615,6 +658,7 @@ export async function mountInteractionCapture(): Promise<void> {
     opener.dataset.interactionCaptureReady = "true";
     opener.disabled = Boolean(captureIntent) || !openerAvailable(opener);
   };
+  setIntentLock();
   currentOpeners().forEach(configureOpener);
   if (captureIntent) {
     status.textContent = captureIntent.phase === "ambiguous"

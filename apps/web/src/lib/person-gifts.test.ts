@@ -13,6 +13,12 @@ function response(body: unknown, status = 200): Response {
   });
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => resolve = done);
+  return { promise, resolve };
+}
+
 function markup() {
   document.body.innerHTML = ["gift", "debt"].map((type) => `
     <section data-person-gifts="${type}">
@@ -42,6 +48,73 @@ describe("GIFTS-001 person gifts and debts", () => {
     await mountPersonGifts({ archived: false, personId, workspaceId });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("renders records before lazily gating and reusing editor options", async () => {
+    markup();
+    const people = deferred<Response>();
+    const files = deferred<Response>();
+    let editorOpened = false;
+    let peopleCalls = 0;
+    let fileCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = new URL(String(input), "http://localhost");
+        if (url.pathname.endsWith("/gifts")) {
+          return Promise.resolve(response({
+            debts: [],
+            gifts: [{ id: giftId, name: "Tickets", personId, status: "idea" }],
+            status: "ready",
+            supportedCurrencyCodes: ["EUR"],
+          }));
+        }
+        if (url.pathname.endsWith("/people")) {
+          peopleCalls += 1;
+          return editorOpened
+            ? people.promise
+            : Promise.reject(new Error("people unavailable"));
+        }
+        if (url.pathname.endsWith("/files")) {
+          fileCalls += 1;
+          return editorOpened
+            ? files.promise
+            : Promise.reject(new Error("files unavailable"));
+        }
+        throw new Error(`unexpected ${url.pathname}`);
+      }),
+    );
+
+    await mountPersonGifts({ archived: false, personId, workspaceId });
+
+    expect(document.querySelector(`[data-gift-id="${giftId}"]`)?.textContent)
+      .toContain("Tickets");
+    expect([peopleCalls, fileCalls]).toEqual([0, 0]);
+    const gift = document.querySelector<HTMLElement>(
+      '[data-person-gifts="gift"]',
+    )!;
+    const form = gift.querySelector<HTMLFormElement>("form")!;
+    editorOpened = true;
+    gift.querySelector<HTMLButtonElement>("[data-gift-add]")!.click();
+    await vi.waitFor(() => expect([peopleCalls, fileCalls]).toEqual([1, 1]));
+    expect(
+      form.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled,
+    )
+      .toBe(true);
+    people.resolve(response({ people: [], status: "ready" }));
+    files.resolve(response({ files: [], status: "ready" }));
+    await vi.waitFor(() =>
+      expect(
+        form.querySelector<HTMLButtonElement>('button[type="submit"]')
+          ?.disabled,
+      )
+        .toBe(false)
+    );
+    gift.querySelector<HTMLButtonElement>("[data-gift-cancel]")!.click();
+    gift.querySelector<HTMLButtonElement>("[data-gift-add]")!.click();
+    await Promise.resolve();
+    expect([peopleCalls, fileCalls]).toEqual([1, 1]);
+  });
+
   it("renders unknown amount/no recipient and serializes create through authoritative refresh", async () => {
     markup();
     const empty = {
@@ -72,9 +145,16 @@ describe("GIFTS-001 person gifts and debts", () => {
     const form = document.querySelector<HTMLFormElement>(
       '[data-person-gifts="gift"] form',
     )!;
+    await vi.waitFor(() =>
+      expect(
+        form.querySelector<HTMLButtonElement>('button[type="submit"]')
+          ?.disabled,
+      )
+        .toBe(false)
+    );
     (form.elements.namedItem("name") as HTMLInputElement).value = "Tickets";
     form.requestSubmit();
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(7));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
     expect(fetchMock.mock.calls[3]?.[1]?.method).toBe("POST");
     expect(
       document.querySelector('[data-person-gifts="gift"] [data-gift-state]')
@@ -219,12 +299,8 @@ describe("GIFTS-001 person gifts and debts", () => {
       files,
       { status: "saved" },
       records,
-      people,
-      files,
       { status: "saved" },
       records,
-      people,
-      files,
     ];
     vi.stubGlobal(
       "fetch",
@@ -233,6 +309,16 @@ describe("GIFTS-001 person gifts and debts", () => {
       ),
     );
     await mountPersonGifts({ archived: false, personId, workspaceId });
+    document.querySelector<HTMLButtonElement>(
+      '[data-person-gifts="gift"] [data-gift-add]',
+    )!.click();
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector<HTMLSelectElement>(
+          'select[name="recipientPersonId"]',
+        )?.disabled,
+      ).toBe(false)
+    );
     expect(
       document.querySelector<HTMLSelectElement>(
         'select[name="recipientPersonId"]',
@@ -257,6 +343,9 @@ describe("GIFTS-001 person gifts and debts", () => {
     const giftStatus = document.querySelector<HTMLButtonElement>(
       `[data-gift-status-save="${giftId}"]`,
     )!;
+    document.querySelector<HTMLButtonElement>(
+      '[data-person-gifts="gift"] [data-gift-cancel]',
+    )!.click();
     expect(giftStatus.classList.contains("button-secondary")).toBe(true);
     giftStatus.click();
     await vi.waitFor(() =>
@@ -304,6 +393,13 @@ describe("GIFTS-001 person gifts and debts", () => {
     )!;
     debt.querySelector<HTMLButtonElement>("[data-gift-add]")?.click();
     const form = debt.querySelector<HTMLFormElement>("form")!;
+    await vi.waitFor(() =>
+      expect(
+        form.querySelector<HTMLButtonElement>('button[type="submit"]')
+          ?.disabled,
+      )
+        .toBe(false)
+    );
     (form.elements.namedItem("amount") as HTMLInputElement).value = "12";
     (form.elements.namedItem("currencyCode") as HTMLSelectElement).value =
       "EUR";
@@ -334,6 +430,13 @@ describe("GIFTS-001 person gifts and debts", () => {
     )!;
     gift.querySelector<HTMLButtonElement>("[data-gift-add]")?.click();
     const giftForm = gift.querySelector<HTMLFormElement>("form")!;
+    await vi.waitFor(() =>
+      expect(
+        giftForm.querySelector<HTMLButtonElement>('button[type="submit"]')
+          ?.disabled,
+      )
+        .toBe(false)
+    );
     (giftForm.elements.namedItem("name") as HTMLInputElement).value = "Book";
     giftForm.requestSubmit();
     await vi.waitFor(() =>

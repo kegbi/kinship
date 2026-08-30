@@ -197,15 +197,14 @@ export async function mountCommunications(
   const initial = await Promise.all([
     listPersonCommunications(personId, workspaceId),
     listCommunicationOptions(workspaceId),
-    listProfileFacts(personId, "contact-methods", {}, workspaceId),
   ]).catch(() => undefined);
   if (!initial) {
     if (!signal.aborted) renderLoadError();
     return;
   }
-  const [history, options, contacts] = initial;
+  const [history, options] = initial;
   if (signal.aborted) return;
-  if (!history.ok || !options.ok || !contacts.ok) {
+  if (!history.ok || !options.ok) {
     renderLoadError();
     return;
   }
@@ -233,13 +232,40 @@ export async function mountCommunications(
     }
     return refreshed?.ok === true && profile?.ok === true;
   };
-  const contactMethods = contacts.value.records.filter((record) =>
-    record.section === "contact-methods"
-  ).map((record) => ({
-    id: record.id,
-    typeId: record.value.typeId,
-    value: record.value.value,
-  }));
+  let contactMethods: readonly {
+    readonly id: string;
+    readonly typeId: string;
+    readonly value: string;
+  }[] = [];
+  let contactMethodsReady = false;
+  let contactMethodsPromise: Promise<boolean> | undefined;
+  const loadContactMethods = (): Promise<boolean> => {
+    if (contactMethodsReady) return Promise.resolve(true);
+    if (contactMethodsPromise) return contactMethodsPromise;
+    contactMethodsPromise = (async () => {
+      const contacts = await listProfileFacts(
+        personId,
+        "contact-methods",
+        {},
+        workspaceId,
+      ).catch(() => undefined);
+      if (signal.aborted) return false;
+      if (!contacts?.ok) {
+        contactMethodsPromise = undefined;
+        return false;
+      }
+      contactMethods = contacts.value.records.filter((record) =>
+        record.section === "contact-methods"
+      ).map((record) => ({
+        id: record.id,
+        typeId: record.value.typeId,
+        value: record.value.value,
+      }));
+      contactMethodsReady = true;
+      return true;
+    })();
+    return contactMethodsPromise;
+  };
   for (const section of sections) {
     const kind = section.dataset.communicationKind as "call" | "conversation";
     const add = section.querySelector<HTMLButtonElement>(
@@ -266,6 +292,7 @@ export async function mountCommunications(
     let pending = false;
     let requestId: string | undefined;
     const available = options.value.availability[kind];
+    let prepareEditor = (): Promise<void> => Promise.resolve();
     const resetDraft = () => {
       requestId = undefined;
       form.reset();
@@ -317,6 +344,21 @@ export async function mountCommunications(
         );
       channel.addEventListener("change", refreshMethods, { signal });
       refreshMethods();
+      method.disabled = true;
+      prepareEditor = async () => {
+        method.disabled = true;
+        formState.textContent = "Loading specific contact methods…";
+        const loaded = await loadContactMethods();
+        if (signal.aborted) return;
+        if (!loaded) {
+          formState.textContent =
+            "Specific contact methods could not be loaded. Close and reopen the editor to try again.";
+          return;
+        }
+        refreshMethods();
+        method.disabled = false;
+        formState.textContent = "";
+      };
       form.querySelector<HTMLButtonElement>("[data-add-message]")
         ?.addEventListener(
           "click",
@@ -333,6 +375,7 @@ export async function mountCommunications(
       form.hidden = false;
       applyWriteState();
       happenedAt.focus();
+      void prepareEditor();
     }, { signal });
     cancel.addEventListener("click", () => {
       resetDraft();
