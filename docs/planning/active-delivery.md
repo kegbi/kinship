@@ -858,9 +858,34 @@ asserts, so it runs that spec on its candidate.
 
 - [ ] **UXD-003 — Staged loading.** (§9.2, §9.3; effort M; the prefetch
       deletions are independent, zone laziness depends on `UXD-002`)
-  - [ ] Delete the duplicate contact-methods fetch, the gifts prefetch, and the
-        global quick-capture prefetch, including the failure path that disables
-        quick capture application-wide.
+  - [x] **UXD-003A — Delete the three eager prefetches.** (§9.1) Shipped as the
+        independent slice this leaf already allowed for. Five eager requests
+        leave a person-page open.
+    - [x] The global one was the robustness bug, not a perf nit.
+          `mountInteractionCapture` runs on every authenticated page and awaited
+          `listPeople` plus `listInteractionOptions` before enabling anything;
+          on failure it disabled the quick-capture openers and left them there,
+          so a transient failure of a prefetch nobody asked for disabled the
+          primary capture action application-wide. Openers are now wired and
+          enabled immediately, options load on first open and are cached for the
+          mount, and a failure is retryable inside the dialog with the form
+          gated until the selects are populated — the `REL-019` and `REL-007`
+          rule.
+    - [x] Module availability travelled with that request, so a turned-off
+          interaction kind now says so in the dialog instead of silently
+          disabling a header button. `app-002c` and `auth-003` both Tab onto
+          Quick capture and assert it is focused, and a disabled button is not
+          focusable, so those two flows previously depended on the prefetch
+          succeeding. Removing the dependency made them more robust.
+    - [x] `communications` stopped refetching the `contact-methods` section that
+          `profile-facts` already loads for the rail. A contact-methods failure
+          used to fail the whole communications section; it can now only affect
+          the one select it feeds.
+    - [x] `person-gifts` stopped fetching people and files on every refresh, so
+          the list and its states no longer depend on either being reachable.
+    - [x] Gates: `fmt:check`, `lint`, `check:web`, 424 web unit tests,
+          `test:coverage:web` at 91.65/82.26/85.82/93.71, and the complete
+          Chromium suite 44/44 on the first run, with no spec changed.
   - [ ] Replace the full-page takeover with a shell and skeletons, cache the
         session, and load only the visible zone eagerly.
   - [ ] Keep the initial fan-out silent for assistive technology while
