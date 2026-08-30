@@ -11,8 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-004 — Global people search and command palette**, the last
-  top-five leaf
+- Current leaf: **UXD-005 — Feedback pass**, the last of the review's top five
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -952,9 +951,54 @@ asserts, so it runs that spec on its candidate.
       scheme is approved, so anonymous reads still fail. Found only because
       `UXD-013` required a gate the earlier candidates had not been running.
 
-- [ ] **UXD-004 — Global people search and command palette.** (§8; effort M; no
-      dependency) The only design-document requirement that is unimplemented and
-      untracked elsewhere.
+- [x] **UXD-004 — Global people search and command palette.** (§8; effort M; no
+      dependency) The only design-document requirement that was unimplemented
+      and untracked elsewhere. The header's middle track had been sized
+      `minmax(24rem, 1fr)` for a search field that was never built.
+  - [x] One combobox serves both breakpoints by relocating into the dialog when
+        it opens, so there is one input, one listbox, and one result renderer
+        instead of two of each. The `.global-search > input` child selector
+        stops applying once the input moves, which is what makes the single
+        control work below 1050px where an icon button replaces it in the
+        header.
+  - [x] `Ctrl`/`Cmd+K` opens the palette from anywhere and `/` focuses the field
+        unless a text control already has focus. Queries debounce at 200ms with
+        an `AbortController` per keystroke; an empty query offers the five most
+        recently viewed people from the read model Today already uses. No exact
+        match appends Monica's synthetic add row, and the create form prefills
+        from the names it passes.
+  - [x] **Correction to review §8:** the row's secondary line is the nickname
+        alone. §8 asks for "nickname · last contact", but `listPeople` returns
+        `PeopleDirectoryPerson`, which carries no last-contact value. Inventing
+        one, or firing a request per row to fetch it, would both be worse than
+        showing less. A real last-contact column is a separate API leaf, the way
+        `UXD-013` was.
+  - [x] **The control is named "Find a person", not "Search people".** The
+        people directory already owns that name for its own field, so two
+        different controls would have shared one accessible name — something a
+        screen-reader user hears directly. The palette dialog's heading had to
+        move with them, because `aria-labelledby` kept the dialog matching the
+        old name too.
+  - [x] One specificity defect, measured rather than guessed. The icon button's
+        `display: none` never applied:
+        `:is(a, button):is(.button-primary,
+        .button-secondary, .button-danger)`
+        is (0,2,0) and `.global-people-search-open` is (0,1,0), so the button
+        was focusable at every width and the keyboard walks gained two Tab steps
+        instead of one. This is the third time the shared control rule has
+        out-ranked a single-class rule in this phase; the fix is specificity,
+        never source order, because `UXD-012` will reorder this stylesheet.
+  - [x] Three specs changed: the `app-002c` and `auth-003` header keyboard walks
+        each gained the one Tab step the new control earns — the `REL-001` and
+        `REL-014` rule, where the walk is corrected and the tab order is not —
+        and `app-003b` gained coverage of the search, the palette, Escape focus
+        restoration, and the synthetic add row. `PEOPLE-002`'s trigger already
+        reads "The member searches, filters, sorts, or browses people", so
+        global search belongs to that flow rather than a new ID, and no new
+        route means no new page-catalog entry.
+  - [x] Gates: `fmt:check`, `lint`, `check:web`, 439 web unit tests,
+        `test:coverage:web` at 91.79/82.27/86.67/93.87, zero hex literals
+        outside `:root`, and the complete Chromium suite 44/44.
 - [ ] **UXD-008 — Persistent settings sidebar.** (§8; effort M; depends on
       `UXD-001`)
 - [ ] **UXD-009 — Breadcrumbs on routes at least two levels deep.** (§8; effort
