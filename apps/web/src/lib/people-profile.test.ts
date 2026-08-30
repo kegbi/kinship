@@ -13,6 +13,7 @@ function response(body: unknown, status = 200): Response {
 
 const workspaceId = "00000000-0000-4000-8000-000000000003";
 const personId = "00000000-0000-4000-8000-000000000100";
+const firstRunPersonId = "00000000-0000-4000-8000-000000000101";
 const session = {
   member: { id: "member", role: "member" },
   principal: { userId: "user" },
@@ -110,8 +111,8 @@ function markup(path = `/app/people/${personId}`): void {
         <p id="person-profile-section-notice" role="status" tabindex="-1" hidden></p>
       </nav>
       <section id="profile-section-important-dates" data-profile-section="important-dates" tabindex="-1"><h2>Important dates</h2></section>
-      <div class="profile-section-list">
-        <div class="zone-switcher">
+       <div class="profile-section-list">
+         <div class="zone-switcher">
           <div data-zone-mini-identity aria-hidden="true" hidden>
             <span data-zone-mini-avatar></span><span data-zone-mini-name></span>
           </div>
@@ -121,9 +122,19 @@ function markup(path = `/app/people/${personId}`): void {
             <button class="button-secondary" data-zone-filter="planning" type="button" aria-pressed="false">Planning</button>
             <button class="button-secondary" data-zone-filter="things" type="button" aria-pressed="false">Things</button>
             <button class="button-secondary" data-zone-filter="admin" type="button" aria-pressed="false">Admin</button>
+           </div>
+         </div>
+        <section id="person-first-run" class="person-first-run" aria-labelledby="person-first-run-heading" hidden>
+          <h2 id="person-first-run-heading">Start this person's story</h2>
+          <p>Nothing is recorded for this person yet. These three make everything else useful.</p>
+          <div class="person-first-run-actions" role="group" aria-label="First actions">
+            <button class="button-primary" data-first-run-action="first-meeting" type="button">Log how you met</button>
+            <button class="button-secondary" data-first-run-action="important-dates" type="button">Add a birthday</button>
+            <button class="button-secondary" data-first-run-action="stay-in-touch" type="button">Set a stay-in-touch cadence</button>
           </div>
-        </div>
-        <section class="person-zone" data-zone="timeline" aria-labelledby="person-zone-timeline-heading">
+          <button class="button-secondary" data-first-run-dismiss type="button">Show all sections</button>
+        </section>
+         <section class="person-zone" data-zone="timeline" aria-labelledby="person-zone-timeline-heading">
           <h2 id="person-zone-timeline-heading">Timeline</h2>
           <p class="section-state" data-test-section-state>Loading timeline…</p>
         </section>
@@ -298,6 +309,103 @@ function reminderSectionMarkup(): void {
        <button data-person-audit-retry type="button">Retry audit</button>
      </section>`,
   );
+}
+
+function firstRunActionMarkup(): {
+  readonly birthday: HTMLButtonElement;
+  readonly cadence: HTMLInputElement;
+  readonly firstMeeting: HTMLButtonElement;
+} {
+  document.querySelector("#person-profile-sections ul")?.insertAdjacentHTML(
+    "beforeend",
+    `<li><a href="?section=first-meeting" data-section-link="first-meeting">First meeting</a></li>
+     <li><a href="?section=stay-in-touch" data-section-link="stay-in-touch">Stay in touch</a></li>
+     <li><a href="?section=reminders" data-section-link="reminders">Reminders</a></li>`,
+  );
+  document.querySelector("#profile-section-important-dates")
+    ?.insertAdjacentHTML(
+      "beforeend",
+      '<button id="important-date-add" type="button" hidden>Add important date</button>',
+    );
+  document.querySelector("#person-profile-ready")?.insertAdjacentHTML(
+    "beforeend",
+    `<section data-profile-section="first-meeting" tabindex="-1">
+       <button data-profile-fact-add type="button" hidden>Add first meeting</button>
+     </section>
+     <section data-profile-section="stay-in-touch" tabindex="-1">
+       <p data-cadence-state></p><ul data-cadence-list></ul>
+       <form data-cadence-form><input name="intervalCount"><button type="submit">Save cadence</button></form>
+     </section>`,
+  );
+  document.querySelector('[data-zone="planning"]')?.insertAdjacentHTML(
+    "beforeend",
+    `<section data-profile-section="reminders" tabindex="-1">
+       <p data-reminder-state></p><ul data-reminder-list></ul>
+       <form data-reminder-form><input name="title"><button type="submit">Save reminder</button></form>
+     </section>`,
+  );
+  return {
+    birthday: document.querySelector<HTMLButtonElement>(
+      "#important-date-add",
+    )!,
+    cadence: document.querySelector<HTMLInputElement>(
+      '[data-cadence-form] input[name="intervalCount"]',
+    )!,
+    firstMeeting: document.querySelector<HTMLButtonElement>(
+      '[data-profile-section="first-meeting"] [data-profile-fact-add]',
+    )!,
+  };
+}
+
+const zeroSummary = {
+  primaryContactMethods: [],
+  relationshipCounts: [],
+  sectionCounts: [
+    { count: 0, id: "contact-methods", status: "ready" },
+    { count: 0, id: "addresses", status: "ready" },
+    { count: 0, id: "first-meeting", status: "ready" },
+    { count: 0, id: "relationships", status: "ready" },
+    { count: 0, id: "work", status: "ready" },
+    { count: 0, id: "food-preferences", status: "ready" },
+    { count: 0, id: "pets", status: "ready" },
+    { id: "tags", status: "hidden" },
+    { count: 0, id: "notes", status: "ready" },
+    { count: 0, id: "activities", status: "ready" },
+    { count: 0, id: "conversations", status: "ready" },
+    { count: 0, id: "calls", status: "ready" },
+    { count: 0, id: "tasks", status: "ready" },
+    { count: 0, id: "life-events", status: "ready" },
+  ],
+} as const;
+
+function zeroProfile(
+  overrides: {
+    readonly status?: "archived" | "ready";
+    readonly summary?: Record<string, unknown>;
+  } = {},
+): Record<string, unknown> {
+  return {
+    dueInformation: {
+      detail: "No due information.",
+      openTaskCount: 0,
+      status: "ready",
+    },
+    person: {
+      familyName: "Profile",
+      givenName: "Empty",
+      id: personId,
+      isDeceased: false,
+      isPartial: false,
+      isSelf: false,
+      isStarred: false,
+      profileSections: [],
+      tagCount: 0,
+      tags: [],
+      updatedAt: "2026-08-15T08:00:00.000Z",
+    },
+    status: overrides.status ?? "ready",
+    summary: { ...zeroSummary, ...overrides.summary },
+  };
 }
 
 function stubReadyProfile(
@@ -955,6 +1063,211 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(location.search).toBe("");
     expect(all.getAttribute("aria-pressed")).toBe("true");
     expect(zones.every((zone) => !zone.hidden)).toBe(true);
+  });
+
+  it("UXD-005B replaces empty stream zones and restores them on dismissal", async () => {
+    markup(`/app/people/${personId}?section=important-dates`);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockResolvedValueOnce(response(zeroProfile()))
+        .mockResolvedValue(undefined as never),
+    );
+
+    await mountPeopleProfile();
+
+    const card = document.querySelector<HTMLElement>("#person-first-run")!;
+    const switcher = document.querySelector<HTMLElement>(".zone-switcher")!;
+    const zones = [...document.querySelectorAll<HTMLElement>("[data-zone]")];
+    expect(card.hidden).toBe(false);
+    expect(switcher.hidden).toBe(true);
+    expect(zones.every((zone) => zone.hidden)).toBe(true);
+
+    document.querySelector<HTMLButtonElement>("[data-first-run-dismiss]")
+      ?.click();
+    expect(card.hidden).toBe(true);
+    expect(switcher.hidden).toBe(false);
+    expect(zones.every((zone) => !zone.hidden)).toBe(true);
+  });
+
+  it.each([
+    [
+      "a populated summary",
+      `/app/people/${personId}`,
+      zeroProfile({
+        summary: {
+          sectionCounts: [
+            ...zeroSummary.sectionCounts.slice(0, -1),
+            { count: 1, id: "life-events", status: "ready" },
+          ],
+        },
+      }),
+    ],
+    [
+      "a stay-in-touch cadence",
+      `/app/people/${personId}`,
+      zeroProfile({ summary: { stayInTouchAt: "2026-09-01T09:00:00Z" } }),
+    ],
+    [
+      "a next reminder",
+      `/app/people/${personId}`,
+      zeroProfile({ summary: { nextReminderAt: "2026-09-01T09:00:00Z" } }),
+    ],
+    [
+      "an archived person",
+      `/app/people/${personId}`,
+      zeroProfile({ status: "archived" }),
+    ],
+    [
+      "a filtered view",
+      `/app/people/${personId}?view=planning`,
+      zeroProfile(),
+    ],
+    [
+      "a stream-section deep link",
+      `/app/people/${personId}?section=photos`,
+      zeroProfile(),
+    ],
+  ])(
+    "UXD-005B does not present first-run for %s",
+    async (_name, path, value) => {
+      markup(path);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn()
+          .mockResolvedValueOnce(response(session))
+          .mockResolvedValueOnce(response(value))
+          .mockResolvedValue(undefined as never),
+      );
+
+      await mountPeopleProfile();
+
+      expect(document.querySelector<HTMLElement>("#person-first-run")?.hidden)
+        .toBe(true);
+      expect(document.querySelector<HTMLElement>(".zone-switcher")?.hidden)
+        .toBe(false);
+    },
+  );
+
+  it.each(["section", "filter"])(
+    "UXD-005B exits first-run through %s navigation",
+    async (path) => {
+      markup();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn()
+          .mockResolvedValueOnce(response(session))
+          .mockResolvedValueOnce(response(zeroProfile()))
+          .mockResolvedValue(undefined as never),
+      );
+      await mountPeopleProfile();
+
+      if (path === "section") {
+        document.querySelector<HTMLAnchorElement>(
+          '[data-section-link="photos"]',
+        )?.click();
+        expect(document.activeElement).toBe(
+          document.querySelector('[data-profile-section="photos"]'),
+        );
+      } else {
+        document.querySelector<HTMLButtonElement>(
+          '[data-zone-filter="planning"]',
+        )?.click();
+        expect(
+          document.querySelector<HTMLElement>('[data-zone="planning"]')
+            ?.hidden,
+        ).toBe(false);
+        expect(
+          [...document.querySelectorAll<HTMLElement>("[data-zone]")]
+            .filter((zone) => zone.dataset.zone !== "planning")
+            .every((zone) => zone.hidden),
+        ).toBe(true);
+      }
+      expect(document.querySelector<HTMLElement>("#person-first-run")?.hidden)
+        .toBe(true);
+      expect(document.querySelector<HTMLElement>(".zone-switcher")?.hidden)
+        .toBe(false);
+    },
+  );
+
+  it("UXD-005B waits for the eager rail before opening all three first actions", async () => {
+    markup(`/app/people/${firstRunPersonId}`);
+    const controls = firstRunActionMarkup();
+    const firstMeetingClick = vi.fn();
+    const birthdayClick = vi.fn();
+    controls.firstMeeting.addEventListener("click", firstMeetingClick);
+    controls.birthday.addEventListener("click", birthdayClick);
+    let releaseReminders!: (value: Response) => void;
+    const reminders = new Promise<Response>((resolve) => {
+      releaseReminders = resolve;
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(session))
+      .mockResolvedValueOnce(response(zeroProfile()))
+      .mockImplementation((url) =>
+        String(url).includes(`/people/${firstRunPersonId}/reminders`)
+          ? reminders
+          : Promise.resolve(response({ status: "recorded" }))
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const mounting = mountPeopleProfile();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    for (
+      const action of document.querySelectorAll<HTMLButtonElement>(
+        "[data-first-run-action]",
+      )
+    ) action.click();
+    expect(firstMeetingClick).not.toHaveBeenCalled();
+    expect(birthdayClick).not.toHaveBeenCalled();
+    expect(document.activeElement).not.toBe(controls.cadence);
+
+    controls.firstMeeting.hidden = false;
+    controls.birthday.hidden = false;
+    releaseReminders(
+      response({ cadences: [], reminders: [], status: "ready" }),
+    );
+    await mounting;
+    await vi.waitFor(() => expect(firstMeetingClick).toHaveBeenCalledOnce());
+    expect(birthdayClick).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(controls.cadence);
+  });
+
+  it("UXD-005B never clicks a hidden or disabled first-action control", async () => {
+    markup(`/app/people/${firstRunPersonId}`);
+    const controls = firstRunActionMarkup();
+    const firstMeetingClick = vi.fn();
+    const birthdayClick = vi.fn();
+    controls.firstMeeting.addEventListener("click", firstMeetingClick);
+    controls.birthday.addEventListener("click", birthdayClick);
+    controls.birthday.hidden = false;
+    controls.birthday.disabled = true;
+    controls.cadence.disabled = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockResolvedValueOnce(response(zeroProfile()))
+        .mockImplementation((url) =>
+          String(url).includes(`/people/${firstRunPersonId}/reminders`)
+            ? Promise.resolve(
+              response({ cadences: [], reminders: [], status: "ready" }),
+            )
+            : Promise.resolve(response({ status: "recorded" }))
+        ),
+    );
+    await mountPeopleProfile();
+
+    for (
+      const action of document.querySelectorAll<HTMLButtonElement>(
+        "[data-first-run-action]",
+      )
+    ) action.click();
+    await Promise.resolve();
+    expect(firstMeetingClick).not.toHaveBeenCalled();
+    expect(birthdayClick).not.toHaveBeenCalled();
+    expect(document.activeElement).not.toBe(controls.cadence);
   });
 
   it("UXD-002C writes one history entry when section navigation changes zones", async () => {

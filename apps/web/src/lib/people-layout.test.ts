@@ -363,7 +363,7 @@ describe("people form layout regressions", () => {
   it("UXD-002C uses an accessible sticky filter without introducing tabs or a second heading", () => {
     const switcher = profilePage.slice(
       profilePage.indexOf('class="zone-switcher"'),
-      profilePage.indexOf('<section class="person-zone"'),
+      profilePage.indexOf('<section id="person-first-run"'),
     );
     expect(switcher).toContain(
       '<div class="zone-filter" role="group" aria-label="Filter person sections">',

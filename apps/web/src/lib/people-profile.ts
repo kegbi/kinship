@@ -34,6 +34,7 @@ import {
   setVitalStat,
 } from "./person-facts-rail.ts";
 import { showToast } from "./toasts.ts";
+import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
@@ -144,6 +145,46 @@ function currentView(): ZoneView {
     : "all";
 }
 
+function shouldShowPersonFirstRun(
+  summary: PersonProfileSummary | undefined,
+  status: "archived" | "ready",
+): boolean {
+  if (!summary) return false;
+  const requestedSection = currentSection();
+  // Accepted boundary: sectionCounts omits important dates, gifts, debts,
+  // documents, photos, and reminders without a next occurrence because it is
+  // also the personalization key set; the per-visit exit keeps them reachable.
+  return summary.sectionCounts.every((entry) =>
+    entry.status === "hidden" || entry.count === 0
+  ) && !summary.stayInTouchAt && !summary.nextReminderAt &&
+    status !== "archived" && currentView() === "all" &&
+    (!requestedSection ||
+      SECTION_ZONE[requestedSection as keyof typeof SECTION_ZONE] === "facts");
+}
+
+function showPersonFirstRun(): void {
+  const card = document.querySelector<HTMLElement>("#person-first-run");
+  if (!card) return;
+  card.hidden = false;
+  const switcher = document.querySelector<HTMLElement>(".zone-switcher");
+  if (switcher) switcher.hidden = true;
+  for (const zone of document.querySelectorAll<HTMLElement>("[data-zone]")) {
+    zone.hidden = true;
+  }
+}
+
+function exitPersonFirstRun(): boolean {
+  const card = document.querySelector<HTMLElement>("#person-first-run");
+  if (!card || card.hidden) return false;
+  card.hidden = true;
+  const switcher = document.querySelector<HTMLElement>(".zone-switcher");
+  if (switcher) switcher.hidden = false;
+  for (const zone of document.querySelectorAll<HTMLElement>("[data-zone]")) {
+    zone.hidden = false;
+  }
+  return true;
+}
+
 function applyZoneView(filter: ZoneFilterContext, view: ZoneView): void {
   for (const button of filter.buttons) {
     const selected = button.dataset.zoneFilter === view;
@@ -157,6 +198,7 @@ function applyZoneView(filter: ZoneFilterContext, view: ZoneView): void {
 }
 
 function selectZone(filter: ZoneFilterContext, view: ZoneView): void {
+  exitPersonFirstRun();
   applyZoneView(filter, view);
   if (view !== "all") void filter.activate?.(view);
   const url = new URL(globalThis.location.href);
@@ -599,6 +641,9 @@ function activateSectionZone(
   ) return undefined;
   const zone = SECTION_ZONE[id as keyof typeof SECTION_ZONE];
   if (zone === "facts") return undefined;
+  if (exitPersonFirstRun() && navigation.zoneFilter) {
+    applyZoneView(navigation.zoneFilter, currentView());
+  }
   void navigation.activateZone?.(zone);
   if (!navigation.zoneFilter) return undefined;
   const targetZone = navigation.zoneFilter.zones.find((candidate) =>
@@ -731,6 +776,53 @@ function mountSectionNavigation(
     }
     reconcileSectionLocation(profile, navigation);
   });
+}
+
+const FIRST_RUN_ACTIONS = {
+  "first-meeting": {
+    control: '[data-profile-section="first-meeting"] [data-profile-fact-add]',
+    section: "first-meeting",
+  },
+  "important-dates": {
+    control: "#important-date-add",
+    section: "important-dates",
+  },
+  "stay-in-touch": {
+    control: '[data-cadence-form] input[name="intervalCount"]',
+    section: "stay-in-touch",
+  },
+} as const;
+
+function mountPersonFirstRunActions(
+  profile: ProfileElements,
+  navigation: SectionNavigationContext,
+  eagerRail: Promise<unknown>,
+): void {
+  document.querySelector<HTMLButtonElement>("[data-first-run-dismiss]")
+    ?.addEventListener("click", exitPersonFirstRun);
+  for (
+    const button of document.querySelectorAll<HTMLButtonElement>(
+      "[data-first-run-action]",
+    )
+  ) {
+    button.addEventListener("click", async () => {
+      const action = button.dataset.firstRunAction;
+      if (!action || !(action in FIRST_RUN_ACTIONS)) return;
+      const target =
+        FIRST_RUN_ACTIONS[action as keyof typeof FIRST_RUN_ACTIONS];
+      focusSection(profile, navigation, target.section);
+      await eagerRail;
+      const control = document.querySelector<
+        HTMLButtonElement | HTMLInputElement
+      >(target.control);
+      if (
+        !control || control.hidden || control.disabled ||
+        control.closest("[hidden]")
+      ) return;
+      if (control instanceof HTMLButtonElement) control.click();
+      else control.focus();
+    });
+  }
 }
 
 function mountPersonMenu(
@@ -1227,6 +1319,9 @@ export async function mountPeopleProfile(): Promise<void> {
     renderState(profile, problemState(result.problem));
     return;
   }
+  if (shouldShowPersonFirstRun(result.value.summary, result.value.status)) {
+    showPersonFirstRun();
+  }
   for (const section of result.value.person.profileSections ?? []) {
     if (section.status === "hidden") {
       hiddenSectionIds.add(section.id);
@@ -1324,6 +1419,11 @@ export async function mountPeopleProfile(): Promise<void> {
     session.session.workspace.id,
     sectionNavigation,
   );
+  mountUnsavedChangesGuard({
+    confirmMessage:
+      "You have unsaved changes on this person. Discard them and switch workspaces?",
+    root: profile.ready,
+  });
   seedRailSummary(result.value.summary);
   deferPersonView(id, session.session.workspace.id);
   const eagerRail = Promise.all([
@@ -1357,6 +1457,7 @@ export async function mountPeopleProfile(): Promise<void> {
       '[data-profile-fact-section="tags"]',
     )?.removeAttribute("aria-busy");
   });
+  mountPersonFirstRunActions(profile, sectionNavigation, eagerRail);
   await Promise.all([eagerRail, afterFirstPaint()]);
   await zoneRegistry.settled();
   promoteSectionStatusRegions();

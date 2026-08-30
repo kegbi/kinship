@@ -425,6 +425,16 @@ const railSections = [
               <button class="button-secondary" data-zone-filter="admin" type="button" aria-pressed="false">Admin</button>
             </div>
           </div>
+          <section id="person-first-run" class="person-first-run" aria-labelledby="person-first-run-heading" hidden>
+            <h2 id="person-first-run-heading">Start this person's story</h2>
+            <p>Nothing is recorded for this person yet. These three make everything else useful.</p>
+            <div class="person-first-run-actions" role="group" aria-label="First actions">
+              <button class="button-primary" data-first-run-action="first-meeting" type="button">Log how you met</button>
+              <button class="button-secondary" data-first-run-action="important-dates" type="button">Add a birthday</button>
+              <button class="button-secondary" data-first-run-action="stay-in-touch" type="button">Set a stay-in-touch cadence</button>
+            </div>
+            <button class="button-secondary" data-first-run-dismiss type="button">Show all sections</button>
+          </section>
           {streamZones.map(([zone, zoneTitle, zoneSectionIds]) => (
             <section class="person-zone" data-zone={zone} aria-labelledby={`person-zone-${zone}-heading`} aria-busy="true">
               <h2 id={`person-zone-${zone}-heading`}>{zoneTitle}</h2>
