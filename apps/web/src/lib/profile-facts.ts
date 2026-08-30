@@ -1,9 +1,11 @@
 import {
   createProfileFact,
   deleteProfileFact,
+  getPerson,
   listPeople,
   listPeopleTagOptions,
   listProfileFacts,
+  type PersonPrimaryContactMethod,
   type ProfileFactCreateInputBySection,
   type ProfileFactOption,
   type ProfileFactRecord,
@@ -18,6 +20,7 @@ import {
   setRailEmpty,
   setVitalStat,
 } from "./person-facts-rail.ts";
+import { showToast } from "./toasts.ts";
 
 interface FactElements {
   readonly add: HTMLButtonElement;
@@ -673,9 +676,12 @@ export async function mountProfileFacts(
   workspaceId: string,
   initiallyArchived: boolean,
   initialPersonUpdatedAt: string,
+  initialPrimaryContactMethods?: readonly PersonPrimaryContactMethod[],
 ): Promise<void> {
   let archived = initiallyArchived;
   let personUpdatedAt = initialPersonUpdatedAt;
+  let primaryContactMethods = initialPrimaryContactMethods;
+  let renderContactMethods: (() => void) | undefined;
   const snapshots = new Map<ProfileFactSectionId, ProfileFactSection>();
   const applyPersonRevision = (
     candidate: string,
@@ -694,10 +700,22 @@ export async function mountProfileFacts(
     }
     return personUpdatedAt;
   };
+  const refreshPrimaryContactMethods = async (): Promise<void> => {
+    const result = await getPerson(personId, workspaceId, "summary").catch(
+      () => undefined,
+    );
+    const refreshed = result?.ok
+      ? result.value.summary?.primaryContactMethods
+      : undefined;
+    if (refreshed === undefined) return;
+    primaryContactMethods = refreshed;
+    renderContactMethods?.();
+  };
 
   const load = async (section: ProfileFactSectionId): Promise<void> => {
     const target = elements(section);
     if (!target) return;
+    if (section === "contact-methods") renderContactMethods = undefined;
     target.root.dataset.sectionState = "loading";
     target.state.textContent = `Loading ${section.replaceAll("-", " ")}…`;
     target.badge && (target.badge.textContent = "Loading");
@@ -1137,11 +1155,59 @@ export async function mountProfileFacts(
     }
     const renderRecords = () => {
       target.list?.replaceChildren();
+      target.root.querySelector("[data-profile-fact-expander]")?.remove();
+      const summarizedById = section === "contact-methods" &&
+          primaryContactMethods?.length
+        ? new Map(primaryContactMethods.map((method) => [method.id, method]))
+        : undefined;
+      const primaryById = summarizedById &&
+          snapshot.records.some((record) => summarizedById.has(record.id))
+        ? summarizedById
+        : undefined;
+      const hiddenItems: HTMLLIElement[] = [];
       for (const record of snapshot.records) {
         const item = document.createElement("li");
-        const copy = document.createElement("p");
-        copy.textContent = summary(record, snapshot.options);
-        item.append(copy);
+        const description = document.createElement("p");
+        const primary = primaryById?.get(record.id);
+        if (record.section === "contact-methods" && primary) {
+          const value = record.value.value ?? "";
+          const label = snapshot.options.find((option) =>
+            option.id === record.value.typeId
+          )
+            ?.name ?? "Contact";
+          description.append(document.createTextNode(`${label}: `));
+          if (primary.href) {
+            const link = document.createElement("a");
+            link.href = primary.href;
+            link.textContent = value;
+            description.append(link);
+          } else description.append(document.createTextNode(value));
+          const copyButton = document.createElement("button");
+          copyButton.type = "button";
+          copyButton.className =
+            "button-secondary profile-rail-summary-control profile-contact-copy";
+          copyButton.textContent = "Copy";
+          copyButton.setAttribute("aria-label", `Copy ${value}`);
+          copyButton.addEventListener("click", async () => {
+            try {
+              await navigator.clipboard.writeText(value);
+              showToast({ message: `Copied ${value}`, tone: "success" });
+            } catch {
+              showToast({
+                message: "Copy failed. Select the value and copy it manually.",
+                tone: "error",
+              });
+            }
+          });
+          item.append(description, copyButton);
+        } else {
+          description.textContent = summary(record, snapshot.options);
+          item.append(description);
+        }
+        if (primaryById && !primary) {
+          item.hidden = true;
+          hiddenItems.push(item);
+        }
         if (!archived && snapshot.status !== "archived") {
           const edit = document.createElement("button");
           edit.type = "button";
@@ -1198,7 +1264,12 @@ export async function mountProfileFacts(
                 return;
               }
               applyPersonRevision(deleted.value.personUpdatedAt, true);
-              await load(section);
+              if (section === "contact-methods") {
+                await Promise.all([
+                  load(section),
+                  refreshPrimaryContactMethods(),
+                ]);
+              } else await load(section);
               target.state.textContent = "Profile fact deleted.";
               target.state.focus();
             });
@@ -1207,10 +1278,37 @@ export async function mountProfileFacts(
         }
         target.list?.append(item);
       }
+      if (target.list && hiddenItems.length) {
+        const expander = document.createElement("button");
+        expander.type = "button";
+        expander.className =
+          "button-secondary profile-rail-summary-control profile-rail-expander";
+        expander.dataset.profileFactExpander = "";
+        const suffix = document.createElement("span");
+        suffix.className = "sr-only";
+        suffix.textContent = " contact methods";
+        const setExpanded = (expanded: boolean) => {
+          for (const item of hiddenItems) item.hidden = !expanded;
+          expander.setAttribute("aria-expanded", String(expanded));
+          expander.replaceChildren(
+            document.createTextNode(
+              expanded ? "Show fewer" : `+ ${hiddenItems.length} more`,
+            ),
+            suffix,
+          );
+        };
+        setExpanded(false);
+        expander.addEventListener(
+          "click",
+          () => setExpanded(expander.getAttribute("aria-expanded") !== "true"),
+        );
+        target.list.insertAdjacentElement("afterend", expander);
+      }
       if (section !== "tags") {
         publishRailPresentation(section, snapshot);
       }
     };
+    if (section === "contact-methods") renderContactMethods = renderRecords;
     renderRecords();
     target.root.querySelector("[data-profile-fact-pagination]")?.remove();
     if (target.list) {
@@ -1395,7 +1493,9 @@ export async function mountProfileFacts(
       renderFieldErrors(target.form);
       applyPersonRevision(saved.value.personUpdatedAt, true);
       target.form.hidden = true;
-      await load(section);
+      if (section === "contact-methods") {
+        await Promise.all([load(section), refreshPrimaryContactMethods()]);
+      } else await load(section);
       target.state.textContent = "Profile fact saved.";
       target.state.focus();
     };

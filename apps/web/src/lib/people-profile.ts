@@ -1437,6 +1437,7 @@ export async function mountPeopleProfile(): Promise<void> {
       session.session.workspace.id,
       result.value.status === "archived",
       result.value.person.updatedAt,
+      result.value.summary?.primaryContactMethods,
     ),
     mountRelationships(
       id,

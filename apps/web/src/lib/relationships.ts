@@ -239,92 +239,176 @@ export async function mountRelationships(
       const empty = document.createElement("li");
       empty.textContent = "No relationships saved.";
       ui.list.append(empty);
+      return;
     }
-    for (const relationship of relationships) {
-      const item = document.createElement("li");
-      item.dataset.relationshipId = relationship.id;
-      const name = relationship.display.name ?? "Related person";
-      const text = document.createElement("p");
-      text.textContent = `${relationship.display.label}: ${name}`;
-      item.append(text);
-      if (
-        listState === "ready" && currentStatus === "ready" &&
-        typeState === "ready"
-      ) {
-        const editor = document.createElement("select");
-        editor.ariaLabel = `Relationship type for ${name}`;
-        populateTypes(editor, relationship.relationshipTypeId, {
-          archived: relationship.relationshipTypeArchived,
-          forwardLabel: relationship.forwardLabel,
-          id: relationship.relationshipTypeId,
-          reverseLabel: relationship.reverseLabel,
-        });
-        const save = document.createElement("button");
-        save.type = "button";
-        save.className = "button-primary";
-        save.textContent = `Save relationship with ${name}`;
-        const selectable = () =>
-          Boolean(editor.value) && !editor.selectedOptions[0]?.disabled;
-        save.disabled = !selectable();
-        editor.onchange = () => save.disabled = !selectable();
-        save.onclick = async () => {
-          if (!selectable()) {
-            ui.state.textContent =
-              "Choose an active relationship type before saving.";
-            ui.state.focus();
-            return;
-          }
-          const result = await updateRelationship(personId, relationship.id, {
-            expectedUpdatedAt: relationship.updatedAt,
-            relationshipTypeId: editor.value,
-          }, workspaceId).catch(() => undefined);
-          if (!result || !result.ok) {
-            ui.state.textContent = result && !result.ok
-              ? result.problem.detail
-              : "Relationship change is temporarily unavailable.";
-            ui.state.focus();
-            return;
-          }
-          await load();
-          if (
-            listState === "ready" && currentStatus === "ready" &&
-            typeState === "ready"
-          ) {
-            ui.state.textContent =
-              "Relationship updated on both person workspaces.";
-            ui.state.focus();
-          }
-        };
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.className = "button-danger";
-        remove.textContent = `Unlink ${name}`;
-        remove.onclick = async () => {
-          const result = await deleteRelationship(personId, relationship.id, {
-            expectedUpdatedAt: relationship.updatedAt,
-          }, workspaceId).catch(() => undefined);
-          if (!isCurrentMount()) return;
-          if (!result || !result.ok) {
-            ui.state.textContent = result && !result.ok
-              ? result.problem.detail
-              : "Unlink is temporarily unavailable.";
-            ui.state.focus();
-            return;
-          }
-          await load();
-          if (!isCurrentMount()) return;
-          if (
-            listState === "ready" && currentStatus === "ready" &&
-            typeState === "ready"
-          ) {
-            ui.state.textContent =
-              "People unlinked. Neither person was deleted.";
-            ui.state.focus();
-          }
-        };
-        item.append(editor, save, remove);
+    const groups = new Map<
+      string,
+      {
+        readonly label: string;
+        readonly relationshipTypeId: string;
+        readonly relationships: Array<
+          Relationship & { readonly display: RelationshipDisplay }
+        >;
       }
-      ui.list.append(item);
+    >();
+    for (const relationship of relationships) {
+      const groupKey = JSON.stringify([
+        relationship.relationshipTypeId,
+        relationship.display.label,
+      ]);
+      const existing = groups.get(groupKey);
+      if (existing) existing.relationships.push(relationship);
+      else {
+        groups.set(groupKey, {
+          label: relationship.display.label,
+          relationshipTypeId: relationship.relationshipTypeId,
+          relationships: [relationship],
+        });
+      }
+    }
+    const hiddenRows: HTMLLIElement[] = [];
+    const hiddenGroups: HTMLLIElement[] = [];
+    const visibleRelationshipIds = new Set(
+      relationships.slice(0, 5).map((relationship) => relationship.id),
+    );
+    for (const group of groups.values()) {
+      const groupItem = document.createElement("li");
+      groupItem.dataset.relationshipGroup = group.relationshipTypeId;
+      groupItem.className = "relationship-summary-group";
+      if (
+        !group.relationships.some((relationship) =>
+          visibleRelationshipIds.has(relationship.id)
+        )
+      ) {
+        groupItem.hidden = true;
+        hiddenGroups.push(groupItem);
+      }
+      const groupLabel = document.createElement("p");
+      groupLabel.className = "relationship-summary-group-label";
+      groupLabel.textContent = `${group.label} (${group.relationships.length})`;
+      const groupList = document.createElement("ul");
+      groupList.className = "relationship-summary-group-list";
+      groupItem.append(groupLabel, groupList);
+      for (const relationship of group.relationships) {
+        const item = document.createElement("li");
+        item.dataset.relationshipId = relationship.id;
+        if (!visibleRelationshipIds.has(relationship.id)) {
+          item.hidden = true;
+          hiddenRows.push(item);
+        }
+        const name = relationship.display.name ?? "Related person";
+        const text = document.createElement("p");
+        text.textContent = `${relationship.display.label}: ${name}`;
+        item.append(text);
+        if (
+          listState === "ready" && currentStatus === "ready" &&
+          typeState === "ready"
+        ) {
+          const editor = document.createElement("select");
+          editor.ariaLabel = `Relationship type for ${name}`;
+          populateTypes(editor, relationship.relationshipTypeId, {
+            archived: relationship.relationshipTypeArchived,
+            forwardLabel: relationship.forwardLabel,
+            id: relationship.relationshipTypeId,
+            reverseLabel: relationship.reverseLabel,
+          });
+          const save = document.createElement("button");
+          save.type = "button";
+          save.className = "button-primary";
+          save.textContent = `Save relationship with ${name}`;
+          const selectable = () =>
+            Boolean(editor.value) && !editor.selectedOptions[0]?.disabled;
+          save.disabled = !selectable();
+          editor.onchange = () => save.disabled = !selectable();
+          save.onclick = async () => {
+            if (!selectable()) {
+              ui.state.textContent =
+                "Choose an active relationship type before saving.";
+              ui.state.focus();
+              return;
+            }
+            const result = await updateRelationship(personId, relationship.id, {
+              expectedUpdatedAt: relationship.updatedAt,
+              relationshipTypeId: editor.value,
+            }, workspaceId).catch(() => undefined);
+            if (!result || !result.ok) {
+              ui.state.textContent = result && !result.ok
+                ? result.problem.detail
+                : "Relationship change is temporarily unavailable.";
+              ui.state.focus();
+              return;
+            }
+            await load();
+            if (
+              listState === "ready" && currentStatus === "ready" &&
+              typeState === "ready"
+            ) {
+              ui.state.textContent =
+                "Relationship updated on both person workspaces.";
+              ui.state.focus();
+            }
+          };
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.className = "button-danger";
+          remove.textContent = `Unlink ${name}`;
+          remove.onclick = async () => {
+            const result = await deleteRelationship(personId, relationship.id, {
+              expectedUpdatedAt: relationship.updatedAt,
+            }, workspaceId).catch(() => undefined);
+            if (!isCurrentMount()) return;
+            if (!result || !result.ok) {
+              ui.state.textContent = result && !result.ok
+                ? result.problem.detail
+                : "Unlink is temporarily unavailable.";
+              ui.state.focus();
+              return;
+            }
+            await load();
+            if (!isCurrentMount()) return;
+            if (
+              listState === "ready" && currentStatus === "ready" &&
+              typeState === "ready"
+            ) {
+              ui.state.textContent =
+                "People unlinked. Neither person was deleted.";
+              ui.state.focus();
+            }
+          };
+          item.append(editor, save, remove);
+        }
+        groupList.append(item);
+      }
+      ui.list.append(groupItem);
+    }
+    if (hiddenRows.length) {
+      const expanderItem = document.createElement("li");
+      expanderItem.className = "relationship-summary-expander";
+      const expander = document.createElement("button");
+      expander.type = "button";
+      expander.className =
+        "button-secondary profile-rail-summary-control profile-rail-expander";
+      const suffix = document.createElement("span");
+      suffix.className = "sr-only";
+      suffix.textContent = " relationships";
+      const setExpanded = (expanded: boolean) => {
+        for (const row of hiddenRows) row.hidden = !expanded;
+        for (const group of hiddenGroups) group.hidden = !expanded;
+        expander.setAttribute("aria-expanded", String(expanded));
+        expander.replaceChildren(
+          document.createTextNode(
+            expanded ? "Show fewer" : `+ ${hiddenRows.length} more`,
+          ),
+          suffix,
+        );
+      };
+      setExpanded(false);
+      expander.addEventListener(
+        "click",
+        () => setExpanded(expander.getAttribute("aria-expanded") !== "true"),
+      );
+      expanderItem.append(expander);
+      ui.list.append(expanderItem);
     }
   };
   const disableForm = (disabled: boolean) => {
