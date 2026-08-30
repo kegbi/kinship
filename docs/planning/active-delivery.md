@@ -11,8 +11,8 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-003C — Cache the resolved session**. The review's top
-  five, `UXD-001` through `UXD-005`, are all integrated.
+- Current leaf: **UXD-002B2 — Rail summary formats**. The review's top five,
+  `UXD-001` through `UXD-005`, and all of `UXD-003` are integrated.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -869,7 +869,7 @@ asserts, so it runs that spec on its candidate.
         client-side persistence, so `UXD-002C` made `?view=` the whole state.
         This leaf adds the API surface and the preference.
 
-- [ ] **UXD-003 — Staged loading.** (§9.2, §9.3; effort M; the prefetch
+- [x] **UXD-003 — Staged loading.** (§9.2, §9.3; effort M; the prefetch
       deletions are independent, zone laziness depends on `UXD-002`)
   - [x] **UXD-003A — Delete the three eager prefetches.** (§9.1) Shipped as the
         independent slice this leaf already allowed for. Five eager requests
@@ -937,15 +937,61 @@ asserts, so it runs that spec on its candidate.
     - [x] Gates: `fmt:check`, `lint`, `check:web`, 431 web unit tests,
           `test:coverage:web` at 91.68/82.23/86.44/93.79, zero hex literals
           outside `:root`, and the complete Chromium suite 44/44.
-  - [ ] **UXD-003C — Cache the resolved session.** (§9.2 stage 2) Persist the
-        resolved `SessionContext` to `sessionStorage` with a short TTL, use it
-        optimistically, revalidate in the background, and fall through to the
-        existing access-lost path on 401. Split out of `UXD-003B` because it
-        changes the one function all 34 pages await and touches session and
-        workspace context, which `AGENTS.md` requires be evidenced on its own
-        rather than inside a rendering candidate. It must invalidate on sign-out
-        and on workspace switch, and `auth-003`, `app-002e`, and `app-002c` are
-        its owning flows.
+  - [x] **UXD-003C — Cache the resolved session.** (§9.2 stage 2) The resolved
+        `SessionContext` persists to `sessionStorage` under `kinship.session`
+        for sixty seconds and is served to the first resolution of each
+        document, which removes one blocking round trip from all thirty-four
+        page loads. A 401 during revalidation falls through to the existing
+        access-lost render; a transient failure changes nothing and leaves the
+        working page alone.
+    - [x] The cache is a cross-document accelerator, not a same-document memo. A
+          second resolution inside one long-lived document makes a real round
+          trip, which bounds how long a stale session can be served and keeps
+          the existing in-flight deduplication as the only same-document
+          sharing. The flag that does this carries a comment saying so, because
+          a resolver that ignores a warm cache otherwise reads as a defect.
+    - [x] The active workspace and the cached session can no longer be changed
+          independently. Every write of `kinship.active-workspace` — in
+          `app-shell`, `settings`, `workspace-lifecycle`, `invitation`, and
+          `workspace-context` itself — now goes through `setActiveWorkspace` or
+          `clearActiveWorkspace`, which clear the cache with it. `invitation.ts`
+          had declared its own duplicate copy of the key; there is now one
+          definition.
+    - [x] A successful sign-in and every sign-out path clear the cache, so a
+          second identity in the same tab can never be served the first's
+          optimistic session. Sign-in is the backstop that makes the four
+          sign-out sites non-load-bearing; a _failed_ sign-out clears nothing,
+          because that session is still live.
+    - [x] Revalidation re-runs the role, forbidden-route, and compliance gating
+          through one extracted `applySessionGating`, so a demoted role, a newly
+          forbidden route, and a newly required legal version are all corrected
+          rather than skipped. It reports through one `onSessionRevalidated`
+          subscription that fires even when the outcome landed before the shell
+          subscribed — a plain event would have raced the `await` the shell
+          already performs.
+    - [x] **Correction to this ticket's own instructions:** the controller wrote
+          that a stale workspace _name_ was an accepted cosmetic limitation and
+          that revalidation should not repaint the header. The suite disproved
+          it. The same render call owns the switcher's `<select>` options and
+          its `hidden` state, so a member added to a second workspace kept a
+          hidden switcher, which left the tab order and failed the header
+          keyboard walks in `app-002c` and `auth-003` and the switch in
+          `app-004e`. Revalidation now repaints workspace name, options, and
+          visibility — but only after gating returns `allowed`, and never
+          through `renderSession`, whose `clearToasts()` would wipe an unread
+          error and whose welcome text comes from a one-shot `entryFirstName`.
+    - [x] Three specs gained one option-count wait each, before the first
+          switcher interaction that follows a workspace-set change made through
+          a channel the client cannot observe. They prove the revalidation
+          repopulates the switcher rather than merely delaying;
+          `expect(switcher).toBeHidden()` could not gate it, because that passes
+          in both worlds while the popover is closed. Real-world exposure is one
+          round trip, not the sixty-second TTL, because every cached page load
+          revalidates immediately.
+    - [x] Gates: `fmt:check`, `lint`, `check:web` (0 errors), 469 web unit
+          tests, `test:coverage:web` at 91.99/82.51/87.19/94.08 with
+          `workspace-context.ts` at 97.05 lines and `app-shell.ts` at 98.86, and
+          the complete Chromium suite 44/44.
 - [x] **UXD-005 — Feedback pass.** (§11; effort M; depends on `UXD-001` and
       `UXD-003`) Delivered in two slices, because the toast region and the
       empty-state work touch different surfaces and each needs its own browser
