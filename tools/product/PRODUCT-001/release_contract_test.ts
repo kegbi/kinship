@@ -688,6 +688,9 @@ Deno.test("PRODUCT-001 AC-03 synchronizes subordinate planning without delivery 
   );
   const flowMatrix = markdownSection(traceability, "Flow-To-Slice Matrix");
   const pageMatrix = markdownSection(traceability, "Page Delivery Matrix");
+  const deliveredFlowCount =
+    flows.filter((flow) => scalar(flow.block, "deliveryStatus") === "delivered")
+      .length;
 
   assertMatches(
     planningReadme,
@@ -701,8 +704,8 @@ Deno.test("PRODUCT-001 AC-03 synchronizes subordinate planning without delivery 
   );
   assertIncludes(
     planningReadme,
-    "Delivered flows              | 0",
-    "planning keeps zero delivered flows",
+    `Delivered flows              | ${deliveredFlowCount} of ${flows.length};`,
+    "planning delivered flow total matches catalog",
   );
   assertNotMatches(
     roadmapAssumption,
