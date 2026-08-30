@@ -25,6 +25,7 @@ import { mountPersonReminders } from "./reminders.ts";
 import { mountPersonFiles } from "./person-files.ts";
 import { mountPersonGifts } from "./person-gifts.ts";
 import { mountPersonLifeEvents } from "./person-life-events.ts";
+import { mountPersonTimeline } from "./person-timeline.ts";
 import {
   type PersonFactRailSectionId,
   setFirstMeetingDate,
@@ -1339,6 +1340,14 @@ export async function mountPeopleProfile(): Promise<void> {
   const { activate, register } = zoneRegistry;
   sectionNavigation.activateZone = activate;
   if (zoneFilter) zoneFilter.activate = activate;
+  register(
+    "timeline",
+    () =>
+      mountPersonTimeline({
+        personId: id,
+        workspaceId: session.session.workspace.id,
+      }),
+  );
   register(
     "timeline",
     () =>
