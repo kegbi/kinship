@@ -304,7 +304,7 @@ test(
     await page.setViewportSize({ width: 1280, height: 900 });
     await expect(switcher).toBeFocused();
     await switcher.selectOption(secondWorkspaceId);
-    await expect(page.locator("#shell-status")).toBeEmpty();
+    await expect(page.locator("#app-toasts > li")).toHaveCount(0);
     await expect(switcher).toHaveValue(secondWorkspaceId);
     const originalWorkspaceId = await switcher.locator("option").first()
       .getAttribute("value");
@@ -323,7 +323,7 @@ test(
     await page.keyboard.press("Tab");
     await expect(switcher).toBeFocused();
     await switcher.selectOption(originalWorkspaceId!);
-    await expect(page.locator("#shell-status")).toContainText(
+    await expect(page.locator("#app-toasts")).toContainText(
       "current workspace was not changed",
     );
     await expect(switcher).toHaveValue(secondWorkspaceId);
@@ -364,7 +364,7 @@ test(
     const signOutButton = page.getByRole("button", { name: "Sign out" });
     await keyboardReachSignOutWithMultipleWorkspaces(page);
     await page.keyboard.press("Enter");
-    await expect(page.locator("#shell-status")).toContainText(
+    await expect(page.locator("#app-toasts")).toContainText(
       "could not be revoked",
     );
     await expect(signOutButton).toBeFocused();

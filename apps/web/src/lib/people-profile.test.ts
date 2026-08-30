@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountPeopleProfile } from "./people-profile.ts";
+import { clearToasts } from "./toasts.ts";
 
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -30,6 +31,7 @@ function markup(path = `/app/people/${personId}`): void {
   );
   history.replaceState({}, "", path);
   document.body.innerHTML = `
+    <ul id="app-toasts" aria-live="polite" aria-label="Notifications"></ul>
     <section id="person-profile-state" tabindex="-1" hidden></section>
     <section id="person-profile-ready" aria-busy="true">
       <header class="person-profile-hero">
@@ -331,6 +333,7 @@ function stubReadyProfile(
 }
 
 afterEach(() => {
+  clearToasts();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   sessionStorage.clear();
@@ -1887,15 +1890,29 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       personUpdatedAt: archived.updatedAt,
       state: "archived",
     });
-    document.querySelector<HTMLButtonElement>("#person-restore")?.click();
+    expect(document.querySelector("#app-toasts")?.textContent).toContain(
+      "Person archived. They now appear in Archived people.",
+    );
+    const undo = document.querySelector<HTMLButtonElement>(
+      "#app-toasts .app-toast-action",
+    )!;
+    expect(undo.textContent).toBe("Undo");
+    undo.click();
     await vi.waitFor(() =>
       expect(document.querySelector<HTMLElement>("#person-edit-open")?.hidden)
         .toBe(false)
+    );
+    expect(fetchMock.mock.calls[5]?.[0]).toBe(
+      `/api/v1/people/${personId}/restore`,
     );
     expect(
       document.querySelector<HTMLElement>("[data-person-archived-banner]")
         ?.hidden,
     ).toBe(true);
+    expect(document.querySelector("#app-toasts")?.textContent).toContain(
+      "Person restored. They now appear in People.",
+    );
+    expect(document.querySelector("#app-toasts .app-toast-action")).toBeNull();
     expect(lifecycleEvents[1]).toEqual({
       archived: false,
       personId,

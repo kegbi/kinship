@@ -8,6 +8,7 @@ import {
   requestWorkspaceChange,
   resolveWorkspaceSession,
 } from "./workspace-context.ts";
+import { clearToasts, showToast } from "./toasts.ts";
 
 type Navigate = (path: string) => void;
 
@@ -18,7 +19,6 @@ interface ShellElements {
   readonly root: HTMLElement;
   readonly select: HTMLSelectElement;
   readonly signOutButton: HTMLButtonElement;
-  readonly status: HTMLElement;
   readonly switcher: HTMLElement;
 }
 
@@ -38,12 +38,11 @@ function shellElements(): ShellElements | undefined {
   const signOutButton = document.querySelector<HTMLButtonElement>(
     "#member-sign-out",
   );
-  const status = document.querySelector<HTMLElement>("#shell-status");
   const switcher = document.querySelector<HTMLElement>(
     "#workspace-switcher-container",
   );
-  return access && root && select && signOutButton && status && switcher
-    ? { access, root, select, signOutButton, status, switcher }
+  return access && root && select && signOutButton && switcher
+    ? { access, root, select, signOutButton, switcher }
     : undefined;
 }
 
@@ -187,7 +186,7 @@ function renderSession(
       ? `Welcome, ${firstName}.`
       : "Welcome back.";
   }
-  elements.status.textContent = "";
+  clearToasts();
 }
 
 async function resolveSession(): Promise<ShellResolution> {
@@ -262,9 +261,6 @@ export async function mountApplicationShell(
     return;
   }
   renderSession(elements, resolved.session, resolved.firstName);
-  const setStatus = (message: string): void => {
-    elements.status.textContent = message;
-  };
   let activeWorkspaceId = resolved.session.workspace.id;
 
   const menuToggle = document.querySelector<HTMLButtonElement>(
@@ -285,14 +281,16 @@ export async function mountApplicationShell(
     );
     if (!change.allowed) {
       elements.select.value = activeWorkspaceId;
-      setStatus(
-        "Workspace switch canceled. Your unsaved changes and active workspace were kept.",
-      );
+      showToast({
+        message:
+          "Workspace switch canceled. Your unsaved changes and active workspace were kept.",
+        tone: "warning",
+      });
       if (hadFocus) elements.select.focus();
       return;
     }
     elements.select.disabled = true;
-    setStatus("Switching workspace…");
+    showToast({ message: "Switching workspace…", tone: "info" });
     const selected = await getSession(elements.select.value).catch(() =>
       undefined
     );
@@ -307,9 +305,11 @@ export async function mountApplicationShell(
       navigate(`${globalThis.location.pathname}${globalThis.location.search}`);
       return;
     } else {
-      setStatus(
-        "That workspace is no longer available. Your current workspace was not changed.",
-      );
+      showToast({
+        message:
+          "That workspace is no longer available. Your current workspace was not changed.",
+        tone: "error",
+      });
       elements.select.value = activeWorkspaceId;
     }
     elements.select.disabled = false;
@@ -319,7 +319,7 @@ export async function mountApplicationShell(
   elements.signOutButton.addEventListener("click", async () => {
     const hadFocus = document.activeElement === elements.signOutButton;
     elements.signOutButton.disabled = true;
-    setStatus("Signing out securely…");
+    showToast({ message: "Signing out securely…", tone: "info" });
     const result = await signOut().catch(() => undefined);
     if (result?.ok) {
       sessionStorage.removeItem(ACTIVE_WORKSPACE_KEY);
@@ -327,9 +327,11 @@ export async function mountApplicationShell(
       return;
     }
     elements.signOutButton.disabled = false;
-    setStatus(
-      "Your session could not be revoked. Check your connection and try again.",
-    );
+    showToast({
+      message:
+        "Your session could not be revoked. Check your connection and try again.",
+      tone: "error",
+    });
     if (hadFocus) elements.signOutButton.focus();
   });
 }

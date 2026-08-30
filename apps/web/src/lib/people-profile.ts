@@ -33,6 +33,7 @@ import {
   setRailEmpty,
   setVitalStat,
 } from "./person-facts-rail.ts";
+import { showToast } from "./toasts.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
@@ -1070,11 +1071,21 @@ function mountLifecycleActions(
         },
       }),
     );
-    announce(
-      action === "archive"
-        ? "Person archived. They now appear in Archived people."
-        : "Person restored. They now appear in People.",
-    );
+    if (action === "archive") {
+      showToast({
+        action: {
+          label: "Undo",
+          onSelect: () => void transition("restore"),
+        },
+        message: "Person archived. They now appear in Archived people.",
+        tone: "success",
+      });
+    } else {
+      showToast({
+        message: "Person restored. They now appear in People.",
+        tone: "success",
+      });
+    }
     profile.heading.focus();
   };
   lifecycle.archive.addEventListener("click", () => void transition("archive"));

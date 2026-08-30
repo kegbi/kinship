@@ -168,13 +168,13 @@ test(
       "data-page-id",
       "app.today",
     );
-    await expect(page.locator("#shell-status")).toBeEmpty();
+    await expect(page.locator("#app-toasts > li")).toHaveCount(0);
     await page.reload();
     await expect(page.locator("body")).toHaveAttribute(
       "data-page-id",
       "app.today",
     );
-    await expect(page.locator("#shell-status")).toBeEmpty();
+    await expect(page.locator("#app-toasts > li")).toHaveCount(0);
     await expect(page.locator("main#main-content > section h2")).toHaveText([
       "Needs attention",
       "People to reconnect",
