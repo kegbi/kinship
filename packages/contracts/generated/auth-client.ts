@@ -36,6 +36,7 @@ export interface SessionContext {
   readonly workspace: Authenticated["workspace"];
   readonly member: Authenticated["member"];
   readonly workspaces: readonly Authenticated["workspace"][];
+  readonly uiState?: MemberUiState;
 }
 
 export type ApiResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly problem: ProblemDetails };
@@ -203,6 +204,12 @@ export interface MemberPreferences {
   readonly measurementSystem: "metric" | "imperial";
   readonly temperatureScale: "celsius" | "fahrenheit";
   readonly timezone?: string;
+}
+
+export type PersonWorkspaceView = "all" | "timeline" | "planning" | "things" | "admin";
+
+export interface MemberUiState {
+  readonly personWorkspaceView?: PersonWorkspaceView;
 }
 
 export interface MemberSession {
@@ -480,6 +487,14 @@ export function deleteWorkspace(input: { readonly confirmation: string; readonly
 
 export function getMemberPreferences(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: MemberPreferences }>> {
   return request("/api/v1/settings/preferences", { headers: workspaceHeader(workspaceId) });
+}
+
+export function getMemberUiState(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly uiState: MemberUiState }>> {
+  return request("/api/v1/member/ui-state", { headers: workspaceHeader(workspaceId) });
+}
+
+export function saveMemberUiState(input: { readonly personWorkspaceView: PersonWorkspaceView }, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly uiState: MemberUiState }>> {
+  return request("/api/v1/member/ui-state", { method: "PATCH", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
 }
 
 export function updateMemberPreferences(input: MemberPreferences, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: MemberPreferences }>> {

@@ -716,6 +716,172 @@
         }
       }
     },
+    "/api/v1/member/ui-state": {
+      "get": {
+        "operationId": "getMemberUiState",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current member settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberUiStateReady"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "saveMemberUiState",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "description": "Must exactly match the configured public web origin.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "X-Workspace-Id",
+            "in": "header",
+            "required": false,
+            "description": "Optional requested workspace; validated against active membership.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberUiStateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Settings saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberUiStateReady"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/people": {
       "get": {
         "operationId": "listPeople",
@@ -12766,6 +12932,9 @@
             "items": {
               "$ref": "#/components/schemas/LegalDocument"
             }
+          },
+          "uiState": {
+            "$ref": "#/components/schemas/MemberUiState"
           }
         },
         "additionalProperties": false
@@ -19115,6 +19284,57 @@
           },
           "status": {
             "const": "deleted"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MemberUiState": {
+        "type": "object",
+        "properties": {
+          "personWorkspaceView": {
+            "type": "string",
+            "enum": [
+              "all",
+              "timeline",
+              "planning",
+              "things",
+              "admin"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "MemberUiStateInput": {
+        "type": "object",
+        "required": [
+          "personWorkspaceView"
+        ],
+        "properties": {
+          "personWorkspaceView": {
+            "type": "string",
+            "enum": [
+              "all",
+              "timeline",
+              "planning",
+              "things",
+              "admin"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "MemberUiStateReady": {
+        "type": "object",
+        "required": [
+          "status",
+          "uiState"
+        ],
+        "properties": {
+          "status": {
+            "const": "ready"
+          },
+          "uiState": {
+            "$ref": "#/components/schemas/MemberUiState"
           }
         },
         "additionalProperties": false
