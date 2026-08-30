@@ -11,8 +11,8 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-002C — Streams and zone filter**, the last slice of
-  `UXD-002` before the top-five block is complete
+- Current leaf: **UXD-002A2 — Overflow menu**, the last slice of `UXD-002`
+  before `UXD-003` opens
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -575,6 +575,15 @@ Report and request direction once `UXD-001` through `UXD-005` are integrated.
       template rendering twenty-two sections, `life-events` hardcodes it, and no
       runtime code reads it at all. `UXD-002` should decide whether that tuple
       field is real metadata or dead weight.
+- [ ] **REL-020 — Watch the `app-002c` header keyboard walk.** One full-suite
+      run during `UXD-002C` failed `keyboardReachMemberMenuToggle` at
+      `tests/e2e/app-002c.spec.ts:127`: the brand link never took focus after
+      the first Tab. The candidate touched neither the application shell nor the
+      header, the same suite had passed that spec three times that day, and it
+      passed again on the very next run with no change to that surface. Recorded
+      rather than diagnosed, so a recurrence has a trail. This walk has been
+      wrong twice before for real reasons — `REL-001` and `REL-014` — so treat a
+      second occurrence as a stale walk before assuming flake.
 - [x] **REL-019 — Gate settings forms until they are wired.** All three settings
       mounts awaited two sequential round trips, assigned values, and only then
       attached the submit handler, while the form shipped visible and enabled. A
@@ -736,11 +745,74 @@ asserts, so it runs that spec on its candidate.
         `profile-facts.ts` and `relationships.ts` already own, and the copy
         button needs the `UXD-005` feedback surface. `UXD-002B` deliberately
         used only `sectionCounts`.
-  - [ ] **UXD-002C — Streams and zone filter.** (§7.3, §7.4, §7.5) Thirteen
-        sections into four groups, the segmented filter, the section-to-zone
-        map, and the breakpoint collapse order. Also decides what happens to the
-        audit-summary section's own audit link, and whether the section tuple's
-        load-mode field is real metadata or dead weight, per `REL-018`.
+  - [x] **UXD-002C — Streams and zone filter.** (§7.3, §7.4, §7.5) The twelve
+        main-column sections became four zones under real `<h2>` headings, with
+        the section cards dropping to `<h3>` and the task columns to `<h4>` so
+        axe's heading order stays legal behind the rail's own `<h3>` blocks.
+        Fourteen kickers are gone. The sections were already in the right DOM
+        order, so this wrapped them rather than moving them.
+    - [x] The switcher is a segmented filter, not a tab set: five `aria-pressed`
+          buttons in a `role="group"`, `All` first-class and default, `?view=`
+          as the whole state, and the `hidden` attribute on the groups that are
+          off so they leave the accessibility tree and the tab order. It sticks
+          below the app header with a 24px avatar and name once an
+          IntersectionObserver sees the hero leave. The mini identity is
+          `aria-hidden` and not a heading, because the hero `<h1>` already names
+          the page and a second live copy of the name is the locator ambiguity
+          that cost `UXD-002B` a full-suite failure.
+    - [x] `?section=` resolves through the static twenty-two entry map from
+          §7.4. `focusSection` gained exactly one new step at the front, and it
+          fires only when the current filter is actually hiding the target — a
+          section link clicked from `All` does not silently filter the page, and
+          a section a workspace has turned off keeps `UXD-006`'s turned-off
+          notice instead of switching the view to reveal nothing.
+    - [x] One history entry per navigation. The first attempt pushed from inside
+          `focusSection`, which both double-pushed on every click and re-pushed
+          from the `popstate` handler, so Back restored a view and was
+          immediately overwritten and the member was trapped. Navigation now
+          writes `section` and `view` in one `pushState`, a deep link that needs
+          a zone activated reconciles with `replaceState`, and `popstate` writes
+          nothing. `app-003c` never caught it because it only exercises Back
+          under the default `All`, where no zone is hidden.
+    - [x] `data-load-mode` is retired, per `REL-018`. No runtime code ever read
+          it, it covered three of twenty-two sections, and `data-zone` is the
+          structural metadata that earns its place by being read — by the filter
+          and by the section-to-zone map. `app-003c`'s assertion now pins
+          `data-zone` rather than being deleted.
+    - [x] The audit-summary section keeps its own link to the full audit
+          history. `information-architecture.md` reserves separate pages for
+          scale-heavy audit history, and `app-003c` pins the person page at
+          exactly two `/app/people/<id>/…` links.
+    - [x] Two style leaks were caught in review before they shipped. Renaming
+          `.profile-section-heading h2` to `h3` put it at identical specificity
+          to `.profile-rail-block h3`, which also matches a rail block, so the
+          rail kept its .95rem only by source order — and `UXD-012` is a
+          scheduled task that reorders this stylesheet. Both that rule and the
+          raised `scroll-margin-top` are now scoped to `.person-zone`.
+    - [x] Gates: `fmt:check`, `lint`, `check:web`, 419 web unit tests,
+          `test:coverage:web` at 91.69/82.23/86.07/93.69, and the complete
+          Chromium suite 44/44. The first full-suite run also failed
+          `app-002c`'s header keyboard walk once; it passed on the re-run with
+          no change to that surface, so it is recorded below rather than treated
+          as caused by this candidate.
+  - [ ] **UXD-002C2 — Merged timeline surface.** (§7.3 Timeline bullet, §7.6
+        row 1) `life-events`, `notes`, `conversations`, `calls`, and
+        `activities` merged into one reverse-chronological list with type-filter
+        chips, each row a `<details>` collapsed to date, type, and a two-line
+        excerpt. Split out of `UXD-002C` because merging five independently
+        cursored lists cannot be done honestly in the client; it needs an
+        API-side chronological projection the way `UXD-013` supplied the
+        summary, and `information-architecture.md` already asks for "a compact
+        chronological projection across relevant person events". Open its API
+        side alongside it. `UXD-002C` delivered the four groups; this makes the
+        Timeline group one surface instead of five cards.
+  - [ ] **UXD-002C3 — Remember the member's zone choice.** (§7.4) The review
+        asks for the last choice to persist in `member_preferences.ui_state`,
+        the mechanism `monica-person-profile-analysis.md` reserves. No read or
+        write API surface for that column exists — it is currently written only
+        by the recent-people use case — and `AGENTS.md` forbids inventing
+        client-side persistence, so `UXD-002C` made `?view=` the whole state.
+        This leaf adds the API surface and the preference.
 
 - [ ] **UXD-003 — Staged loading.** (§9.2, §9.3; effort M; the prefetch
       deletions are independent, zone laziness depends on `UXD-002`)
