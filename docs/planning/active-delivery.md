@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-007B — Reminder and cadence add-form pattern**. The
+- Current leaf: **UXD-002C2 — Merged timeline surface**, with its API side. The
   review's top five, `UXD-001` through `UXD-005`, and all of `UXD-003` are
   integrated.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
@@ -626,18 +626,52 @@ asserts, so it runs that spec on its candidate.
   - [x] Move sign out and the workspace switcher into the member popover so
         header height stops changing between accounts.
   - [x] Widen the person workspace frame to the header width.
-- [ ] **UXD-007B — Give the reminder and cadence editors the shared add-form
+- [x] **UXD-007B — Give the reminder and cadence editors the shared add-form
       pattern.** (§6.8, §7.7; effort M; split out of `UXD-007`; no dependency)
-  - [ ] The review asks for the `hidden` attribute on the two always-open forms
-        so all twenty-two behave identically. Adding the attribute alone would
-        strand them: unlike the other twenty sections these two have no add
-        button, and `apps/web/src/lib/reminders.ts` never toggles their
-        visibility, so a hidden form would be unreachable.
-  - [ ] Deliver the same add-button, hidden-form, and focus behavior the other
-        sections already use, and update the `PLANNING-002` browser flow that
-        drives those forms directly.
-  - [ ] Split out of `UXD-007` because it changes a delivered P0 flow's UI and
+  - [x] The review asks only for the `hidden` attribute on the two always-open
+        forms so all twenty-two behave identically. Adding the attribute alone
+        would have stranded them: unlike the other twenty sections these two had
+        no add button, and `reminders.ts` never toggled their visibility, so a
+        hidden form would have been unreachable. The whole pattern shipped
+        instead — add control, hidden form, cancel, focus.
+  - [x] Each section took the shape of the column it lives in rather than a
+        third convention. Reminders is a Planning stream card, so it gained a
+        `button-primary` "Add reminder" between its list and its form, modelled
+        on `data-communication-add`. Stay in touch is a rail block, so it gained
+        the rail's 44x44 icon control with the accessible name "Add
+        stay-in-touch cadence", modelled on `#important-date-add`.
+  - [x] Cancel hides the form, calls `reset()`, and returns focus to the add
+        control. The `reset()` is load-bearing beyond tidiness: `UXD-005B`'s
+        unsaved-changes guard re-baselines a form on its `reset` event, so a
+        cancelled draft stops blocking navigation.
+  - [x] An archived person loses both add controls and keeps both submits
+        disabled, through the `person-lifecycle-changed` listener that already
+        toggled the submits rather than a second listener. A failed load leaves
+        the add control hidden, matching what `profile-facts.ts` does with a
+        section that did not become ready.
+  - [x] The empty stay-in-touch block can finally collapse to the single muted
+        row `UXD-002B` built for the rail. It was the one rail block that could
+        never collapse, because its cadence form was always open — which is the
+        user-visible reason this leaf existed. The now-dead
+        `.profile-rail-block[data-rail-empty="true"] > form` rule, which only
+        existed to lay that permanently-open form out inside a collapsed block,
+        was removed.
+  - [x] Two specs were amended, both proving the new behavior rather than
+        dropping an old assertion. `app-006b` opens each form through its add
+        control and asserts the first control takes focus, which is the point of
+        the pattern. Its archived assertion could no longer read
+        `cadenceForm.getByRole("button", { name: "Save cadence" })`, because
+        saving now closes the form and `getByRole` does not match inside a
+        `hidden` container; it proves the add control exists and is hidden —
+        `toHaveCount(1)` first, since `toBeHidden()` passes against zero
+        elements — and that the submit is still disabled. `app-004c` opens the
+        cadence form before measuring its controls, and needed nothing else.
+  - [x] Split out of `UXD-007` because it changes a delivered P0 flow's UI and
         needs its own browser evidence, which is not a same-day quick win.
+  - [x] Gates: `fmt:check`, `lint`, `check:web` (0 errors), 480 web unit tests,
+        `test:coverage:web` at 92.52/83.05/87.57/94.57 with `reminders.ts` at
+        95.25 lines, zero hex literals outside `:root`, and the complete
+        Chromium suite 44/44.
 
 - [x] **UXD-010 — Remove dead dependencies and amend the component clause.**
       (§10.6; effort S; no dependency)
