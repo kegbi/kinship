@@ -11,9 +11,13 @@ import {
   type ProblemDetails,
   recordPersonView,
   restorePerson,
+  saveMemberUiState,
   type SessionContext,
 } from "../../../../packages/contracts/generated/auth-client.ts";
-import { resolveWorkspaceSession } from "./workspace-context.ts";
+import {
+  resolveWorkspaceSession,
+  updateCachedSessionUiState,
+} from "./workspace-context.ts";
 import { mountImportantDates } from "./important-dates.ts";
 import { mountProfileFacts } from "./profile-facts.ts";
 import { mountRelationships } from "./relationships.ts";
@@ -73,6 +77,7 @@ type ZoneView = Zone | "all";
 interface ZoneFilterContext {
   activate?: (zone: Zone) => Promise<void>;
   readonly buttons: readonly HTMLButtonElement[];
+  workspaceId?: string;
   readonly zones: readonly HTMLElement[];
 }
 
@@ -205,6 +210,13 @@ function selectZone(filter: ZoneFilterContext, view: ZoneView): void {
   const url = new URL(globalThis.location.href);
   url.searchParams.set("view", view);
   globalThis.history.pushState({}, "", url);
+  if (!filter.workspaceId) return;
+  void saveMemberUiState({ personWorkspaceView: view }, filter.workspaceId)
+    .then(
+      (result) => {
+        if (result.ok) updateCachedSessionUiState(result.value.uiState);
+      },
+    ).catch(() => undefined);
 }
 
 function mountZoneFilter(): ZoneFilterContext | undefined {
@@ -1306,6 +1318,17 @@ export async function mountPeopleProfile(): Promise<void> {
       session.status === "access-lost" ? "forbidden" : "unavailable",
     );
     return;
+  }
+  if (zoneFilter) zoneFilter.workspaceId = session.session.workspace.id;
+  const storedView = session.session.uiState?.personWorkspaceView;
+  if (
+    !new URLSearchParams(globalThis.location.search).has("view") &&
+    storedView && storedView !== "all"
+  ) {
+    const url = new URL(globalThis.location.href);
+    url.searchParams.set("view", storedView);
+    globalThis.history.replaceState({}, "", url);
+    if (zoneFilter) applyZoneView(zoneFilter, storedView);
   }
   const result = await getPerson(
     id,

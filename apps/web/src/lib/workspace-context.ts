@@ -1,6 +1,7 @@
 import {
   consumeApplicationEntry,
   getSession,
+  type MemberUiState,
   type SessionContext,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 
@@ -76,22 +77,23 @@ function isSessionCacheEntry(value: unknown): value is SessionCacheEntry {
       Array.isArray(session.requiredLegalDocuments));
 }
 
+function isCurrentSessionCacheEntry(
+  value: unknown,
+): value is SessionCacheEntry {
+  if (!isSessionCacheEntry(value)) return false;
+  const age = Date.now() - value.savedAt;
+  const activeWorkspace = sessionStorage.getItem(ACTIVE_WORKSPACE_KEY);
+  return age >= 0 && age < SESSION_CACHE_TTL_MS &&
+    (activeWorkspace === null ||
+      activeWorkspace === value.session.workspace.id);
+}
+
 function readSessionCache(): SessionCacheEntry | undefined {
   try {
     const raw = sessionStorage.getItem(SESSION_CACHE_KEY);
     if (!raw) return undefined;
     const entry: unknown = JSON.parse(raw);
-    if (!isSessionCacheEntry(entry)) {
-      clearSessionCache();
-      return undefined;
-    }
-    const age = Date.now() - entry.savedAt;
-    const activeWorkspace = sessionStorage.getItem(ACTIVE_WORKSPACE_KEY);
-    if (
-      age < 0 || age >= SESSION_CACHE_TTL_MS ||
-      (activeWorkspace !== null &&
-        activeWorkspace !== entry.session.workspace.id)
-    ) {
+    if (!isCurrentSessionCacheEntry(entry)) {
       clearSessionCache();
       return undefined;
     }
@@ -110,6 +112,24 @@ function writeSessionCache(session: SessionContext): void {
     );
   } catch {
     // Storage can be full or disabled without preventing session resolution.
+  }
+}
+
+export function updateCachedSessionUiState(uiState: MemberUiState): void {
+  try {
+    const raw = sessionStorage.getItem(SESSION_CACHE_KEY);
+    if (!raw) return;
+    const entry: unknown = JSON.parse(raw);
+    if (!isCurrentSessionCacheEntry(entry)) return;
+    sessionStorage.setItem(
+      SESSION_CACHE_KEY,
+      JSON.stringify({
+        savedAt: entry.savedAt,
+        session: { ...entry.session, uiState },
+      }),
+    );
+  } catch {
+    // Disabled storage degrades to an unchanged cached session.
   }
 }
 

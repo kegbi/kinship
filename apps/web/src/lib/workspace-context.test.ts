@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolveWorkspaceSession } from "./workspace-context.ts";
+import {
+  resolveWorkspaceSession,
+  updateCachedSessionUiState,
+} from "./workspace-context.ts";
 
 const SESSION_CACHE_KEY = "kinship.session";
 
@@ -27,6 +30,50 @@ afterEach(() => {
 });
 
 describe("protected workspace session resolution", () => {
+  it("updates a valid cached UI state without refreshing its age", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T12:00:00Z"));
+    const savedAt = Date.now() - 12_000;
+    sessionStorage.setItem(
+      SESSION_CACHE_KEY,
+      JSON.stringify({
+        savedAt,
+        session: {
+          ...session,
+          uiState: { personWorkspaceView: "planning" },
+        },
+      }),
+    );
+
+    updateCachedSessionUiState({ personWorkspaceView: "timeline" });
+
+    expect(JSON.parse(sessionStorage.getItem(SESSION_CACHE_KEY) ?? "null"))
+      .toEqual({
+        savedAt,
+        session: {
+          ...session,
+          uiState: { personWorkspaceView: "timeline" },
+        },
+      });
+  });
+
+  it("does not rewrite an empty or expired session cache", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T12:00:00Z"));
+    const setItem = vi.spyOn(sessionStorage, "setItem");
+
+    updateCachedSessionUiState({ personWorkspaceView: "timeline" });
+    expect(setItem).not.toHaveBeenCalled();
+
+    sessionStorage.setItem(
+      SESSION_CACHE_KEY,
+      JSON.stringify({ savedAt: Date.now() - 60_000, session }),
+    );
+    setItem.mockClear();
+    updateCachedSessionUiState({ personWorkspaceView: "timeline" });
+    expect(setItem).not.toHaveBeenCalled();
+  });
+
   it("serializes concurrent first-entry consumers through one application handoff", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(
