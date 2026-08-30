@@ -11,9 +11,9 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **none open**. Awaiting direction. The review's top five,
-  `UXD-001` through `UXD-005`, all of `UXD-003`, and the queue through `DOC-001`
-  are integrated.
+- Current leaf: **REL-021 — Give a lazily activated zone the current archived
+  state**. The review's top five, `UXD-001` through `UXD-005`, all of `UXD-003`,
+  `DOC-001`, and `REL-023` are integrated.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -1462,17 +1462,57 @@ asserts, so it runs that spec on its candidate.
   - [x] Gates: the focused `release_contract_test.ts` run 5 passed, `fmt:check`,
         and `lint`. No other gate applies — see `REL-023`.
 
-- [ ] **REL-023 — Give the PRODUCT-001 release contract a gate that runs it.**
-      No `deno task` executes
+- [x] **REL-023 — Give the PRODUCT-001 release contract a gate that runs it.**
+      No `deno task` executed
       `tools/product/PRODUCT-001/release_contract_test.ts`. That is why its
       `Delivered flows | 0` pin stayed wrong long enough for `DOC-001` to exist,
-      and why nothing will catch the next drift either: an executable contract
-      no task runs is documentation with extra steps. Wiring it into
-      `test:unit:api` and `test:coverage:api:direct` means adding the six
-      planning and product documents it reads to both `--allow-read` allowlists,
-      which is the omission the ledger already records as having broken three
-      tickets. Bounded, but its own candidate. Second gate-shaped defect found
-      this phase after `REL-022`.
+      and why nothing would have caught the next drift either: an executable
+      contract no task runs is documentation with extra steps. Second
+      gate-shaped defect found this phase after `REL-022`.
+  - [x] The contract now sits in the file list of both `test:unit:api` and
+        `test:coverage:api:direct`, and all six documents it reads —
+        `user-flows.yaml`, `page-catalog.yaml`, and `release-slices.md` under
+        `docs/product/`, plus `README.md`, `roadmap.md`, and `traceability.md`
+        under `docs/planning/` — are in both `--allow-read` allowlists. Adding a
+        `tools/*_test.ts` that reads a new file to only one of the two is the
+        omission this ledger already records as having broken three tickets, so
+        every path was proven load-bearing by an omit-one probe returning
+        `NotCapable` for exactly the withheld document.
+  - [x] `tools/product` is deliberately absent from the coverage `--include=`
+        flags, so the wiring adds an executed contract without moving the
+        coverage denominator. The diff is four additions inside two task strings
+        and touches nothing else.
+  - [x] The gate was proven to catch the drift it exists for rather than merely
+        to run. Reinstating `DOC-001`'s defect by changing the delivered-flow
+        pin in [`README.md`](README.md) to `28 of 30` fails `AC-03` on
+        `planning delivered flow total matches catalog`; the document was
+        restored immediately.
+  - [x] **The implementer's two reported failures were sandbox-only.** It
+        measured `test:unit:api` at `293 passed | 2 failed` and attributed the
+        two to the environment: both
+        `E2E canonical Astro child remains live outside CI` and
+        `Windows cleanup terminates and proves absence of the exact PID tree`
+        spawn `pnpm exec astro dev`, which that sandbox cannot reach. Rerun by
+        the controller the same task is `295 passed | 0 failed`, exactly five
+        more than the 290 it ran before this leaf.
+  - [x] Gates: `test:unit:api` 295 passed / 0 failed with the five `PRODUCT-001`
+        tests among them, `test:coverage:api` against real PostgreSQL 526 passed
+        / 0 failed at 85.1 / 82.2 / 87.3, `fmt:check` 580 files, and `lint` 473
+        files. No web or browser gate applies.
+- [ ] **REL-024 — Run the five remaining unreferenced architecture contracts.**
+      Found while wiring `REL-023`, by asking its question of every `*_test.ts`
+      in the repository rather than only the one file the ticket named. Five
+      more executable contracts are in no `deno task`:
+      `tools/architecture/APP-004C/profile_fact_configuration_boundary_test.ts`,
+      `APP-004E/personalization_boundary_test.ts`,
+      `APP-005A/interaction_write_ownership_test.ts`,
+      `FND-001S/astro_rendering_topology_contract_test.ts`, and
+      `FND-002/coordination_contract_test.ts`. All five pass when run by hand
+      today, so this is wiring rather than repair, but each needs its own read
+      allowlist derived and added to both lists. Kept out of `REL-023` because
+      five contracts with five different permission sets are a different size of
+      change from one, and the candidate that wires a passing contract should
+      not be the candidate that discovers a failing one.
 - [ ] **Phase 12 accepted:** the person workspace reads as grouped zones rather
       than peer cards, first paint no longer waits on the full section fan-out,
       tokens back every surface, and no leaf above is unchecked without a
