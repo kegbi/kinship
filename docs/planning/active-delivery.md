@@ -933,12 +933,63 @@ asserts, so it runs that spec on its candidate.
         and on workspace switch, and `auth-003`, `app-002e`, and `app-002c` are
         its owning flows.
 - [ ] **UXD-005 — Feedback pass.** (§11; effort M; depends on `UXD-001` and
-      `UXD-003`)
-  - [ ] Promote the existing status region into a dismissible toast region for
-        off-screen and undoable outcomes only, keeping inline form feedback
-        authoritative.
-  - [ ] Deliver the person-level first-run empty state, collapsed empty rail
-        rows, and the dirty-state guard the settings design already requires.
+      `UXD-003`) Delivered in two slices, because the toast region and the
+      empty-state work touch different surfaces and each needs its own browser
+      evidence.
+  - [x] **UXD-005A — Toast region.** (§11 "Inline vs toasts") `#shell-status`
+        became `#app-toasts`, a permanent `aria-live="polite"` `<ul>` sitting
+        last inside `#protected-shell`. Items auto-dismiss after six seconds
+        except errors, cap at three stacked with the oldest dropped, pause on
+        hover and focus, and carry a keyboard-reachable dismiss control. Inline
+        form feedback is untouched and stays authoritative: every other
+        `announce(...)` on the person page — edit saved, edit cancelled, delete
+        cancelled, and every failure path — still writes to
+        `#person-lifecycle-status`.
+    - [x] The region carries no `role="status"` and no `role="alert"`.
+          `auth-001` uses a page-wide `getByRole("status")`, and `REL-015` is
+          the recorded defect from giving a standing region an announcement
+          role; a bare `aria-live` list is both what §11 asks for and the only
+          shape that cannot become a second matching element.
+    - [x] Two consumers, and only two. The application shell's five workspace
+          and sign-out outcomes, and person archive/restore, where archiving now
+          offers the `Undo` the review's own example asks for. `Undo` does not
+          collide with `Restore person`, which stays in the archived banner
+          where `UXD-002A2` put it.
+    - [x] **Correction found in review:** the first candidate deleted the
+          "Signing out securely…" announcement while keeping its twin "Switching
+          workspace…". The ticket had listed four status writes and the file had
+          five; an omission in the ticket is not permission to drop
+          member-facing feedback, so both progress messages now ship as `info`
+          toasts.
+    - [x] **Second correction found in review:** the two retargeted `app-004a`
+          assertions were left in their original position, several assertions
+          and an `openPersonMenu` round trip after the action. The old
+          `#person-lifecycle-status` text never expired; a six-second toast
+          does, so each assertion now sits immediately after the archive or
+          restore it proves. The class of bug is new to this surface: moving an
+          outcome onto an expiring element makes assertion _position_
+          load-bearing.
+    - [x] Tone is carried by a left border in `--danger`, `--warning`,
+          `--positive`, or `--line-2`, never by body text colour, so the
+          `--ink-inverse`-on-`--ink-1` contrast is identical in all four tones
+          and axe sees one value. `.app-toasts` keeps `pointer-events: none` and
+          only `.app-toast` takes `auto`, so an empty region never intercepts
+          clicks in the page corner — the invariant `people-layout.test.ts` used
+          to pin on `#shell-status`.
+    - [x] Nine browser assertions across six specs moved to the new surface,
+          each proving the same thing it proved before. Six emptiness checks
+          became `toHaveCount(0)` on `#app-toasts > li` rather than
+          `toBeHidden`, per the recorded trap that `toBeHidden()` passes against
+          zero elements.
+    - [x] Gates: `fmt:check`, `lint`, `check:web`, 447 web unit tests,
+          `test:coverage:web` at 91.84/82.28/86.78/93.92 with the new module at
+          97.89/86.11/100/97.64, zero hex literals outside `:root`, and the
+          complete Chromium suite 44/44 on the first run.
+  - [ ] **UXD-005B — First-run empty state and the unsaved-changes guard.** (§11
+        "Empty states" and "Form UX" fix a) The person-level onboarding card and
+        a `beforeunload` plus workspace-switch guard for the person workspace's
+        twenty toggled-in-place forms. The collapsed empty rail rows the review
+        also lists here already shipped with `UXD-002B`.
 
 ### Then
 
