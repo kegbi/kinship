@@ -617,6 +617,67 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     ]);
   });
 
+  it("REL-021 gives a deferred Things mount the current archived state", async () => {
+    markup();
+    deferredZoneMarkup();
+    const zoneObserver = stubDeferredZoneObserver();
+    const archivedAt = "2026-08-15T09:00:00.000Z";
+    const fetchMock = vi.fn(
+      (resource: string | URL | Request, init?: RequestInit) => {
+        const url = String(resource);
+        if (url.endsWith("/api/v1/session")) return response(session);
+        if (url === `/api/v1/people/${personId}?include=summary`) {
+          return response(zeroProfile());
+        }
+        if (url.endsWith(`/${personId}/archive`)) {
+          return response({
+            person: {
+              familyName: "Profile",
+              givenName: "Empty",
+              id: personId,
+              isPartial: false,
+              lifecycle: "archived",
+              updatedAt: archivedAt,
+            },
+            status: "archived",
+          });
+        }
+        if (url.endsWith(`/${personId}/files`)) {
+          return response({ files: [], status: "ready" });
+        }
+        if (url.endsWith(`/${personId}/gifts`)) {
+          return response({
+            debts: [],
+            gifts: [],
+            status: "ready",
+            supportedCurrencyCodes: ["USD"],
+          });
+        }
+        if (init?.method === "POST" && url.endsWith(`/${personId}/view`)) {
+          return response({ status: "recorded" });
+        }
+        return Promise.resolve(undefined as never);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountPeopleProfile();
+    document.querySelector<HTMLButtonElement>("#person-archive")?.click();
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector<HTMLElement>("[data-person-archived-banner]")
+          ?.hidden,
+      ).toBe(false)
+    );
+
+    zoneObserver.activate("things");
+    const giftAdd = document.querySelector<HTMLButtonElement>(
+      '[data-person-gifts="gift"] [data-gift-add]',
+    );
+    expect(giftAdd).not.toBeNull();
+    await vi.waitFor(() => expect(giftAdd!.hidden).toBe(true));
+  });
+
   it("UXD-003B activates a deep-linked zone without delaying section focus", async () => {
     markup(`/app/people/${personId}?section=photos`);
     deferredZoneMarkup();

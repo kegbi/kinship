@@ -1065,9 +1065,9 @@ function mountLifecycleActions(
   initialState: "archived" | "ready",
   personId: string,
   workspaceId: string,
-): void {
+): () => boolean {
   const lifecycle = lifecycleElements();
-  if (!lifecycle) return;
+  if (!lifecycle) return () => initialState === "archived";
   let person: PersonIdentity = initialPerson;
   let updatedAt = initialPerson.updatedAt;
   let state: "active" | "archived" = initialState === "archived"
@@ -1285,6 +1285,7 @@ function mountLifecycleActions(
     lifecycle.deleteDialog.close();
     globalThis.location.assign(result.value.next);
   });
+  return () => state === "archived";
 }
 
 function problemState(problem: ProblemDetails): ProfileState {
@@ -1352,7 +1353,7 @@ export async function mountPeopleProfile(): Promise<void> {
     }
   }
   sectionNavigation.memberRole = session.session.member.role;
-  mountLifecycleActions(
+  const isArchived = mountLifecycleActions(
     profile,
     result.value.person,
     result.value.status,
@@ -1377,7 +1378,7 @@ export async function mountPeopleProfile(): Promise<void> {
       mountPersonInteractions(
         id,
         session.session.workspace.id,
-        result.value.status === "archived",
+        isArchived(),
         {
           activities: sectionNavigation.hiddenSectionIds.has("activities"),
           notes: sectionNavigation.hiddenSectionIds.has("notes"),
@@ -1399,7 +1400,7 @@ export async function mountPeopleProfile(): Promise<void> {
       mountCommunications(
         id,
         session.session.workspace.id,
-        result.value.status === "archived",
+        isArchived(),
         {
           calls: sectionNavigation.hiddenSectionIds.has("calls"),
           conversations: sectionNavigation.hiddenSectionIds.has(
@@ -1412,7 +1413,7 @@ export async function mountPeopleProfile(): Promise<void> {
     "planning",
     () =>
       mountTaskSurface({
-        archived: result.value.status === "archived",
+        archived: isArchived(),
         hidden: sectionNavigation.hiddenSectionIds.has("tasks"),
         personId: id,
         workspaceId: session.session.workspace.id,
@@ -1422,7 +1423,7 @@ export async function mountPeopleProfile(): Promise<void> {
     "things",
     () =>
       mountPersonFiles({
-        archived: result.value.status === "archived",
+        archived: isArchived(),
         personId: id,
         workspaceId: session.session.workspace.id,
       }),
@@ -1431,7 +1432,7 @@ export async function mountPeopleProfile(): Promise<void> {
     "things",
     () =>
       mountPersonGifts({
-        archived: result.value.status === "archived",
+        archived: isArchived(),
         personId: id,
         workspaceId: session.session.workspace.id,
       }),
@@ -1462,24 +1463,24 @@ export async function mountPeopleProfile(): Promise<void> {
     mountImportantDates(
       id,
       session.session.workspace.id,
-      result.value.status === "archived",
+      isArchived(),
     ),
     mountProfileFacts(
       id,
       session.session.workspace.id,
-      result.value.status === "archived",
+      isArchived(),
       result.value.person.updatedAt,
       result.value.summary?.primaryContactMethods,
     ),
     mountRelationships(
       id,
       session.session.workspace.id,
-      result.value.status === "archived",
+      isArchived(),
       sectionNavigation.hiddenSectionIds.has("relationships"),
       result.value.person.updatedAt,
     ),
     mountPersonReminders({
-      archived: result.value.status === "archived",
+      archived: isArchived(),
       personId: id,
       workspaceId: session.session.workspace.id,
     }),
