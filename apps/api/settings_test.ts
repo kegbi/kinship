@@ -1,4 +1,8 @@
-import type { SettingsManagement } from "../../packages/backend/modules/workspaces/public.ts";
+import type {
+  MemberUiState,
+  MemberUiStateManagement,
+  SettingsManagement,
+} from "../../packages/backend/modules/workspaces/public.ts";
 import { browserSecurityPolicy } from "./security_config.ts";
 import { createSettingsRoutes, type SettingsHttpServices } from "./settings.ts";
 
@@ -63,11 +67,24 @@ function settings(
   return { ...base, ...overrides };
 }
 
+function memberUiState(
+  overrides: Partial<MemberUiStateManagement> = {},
+): MemberUiStateManagement {
+  return {
+    read: () => Promise.resolve({ status: "ready", uiState: {} }),
+    save: (_actor, input) =>
+      Promise.resolve({ status: "ready", uiState: input }),
+    ...overrides,
+  };
+}
+
 function services(
   settingsService: SettingsManagement = settings(),
+  memberUiStateService: MemberUiStateManagement = memberUiState(),
 ): SettingsHttpServices {
   return {
     browserSecurity: browserSecurityPolicy("test", "http://localhost"),
+    memberUiState: memberUiStateService,
     personalization: {
       isSection: (value): value is "tags" => value === "tags",
       list: () =>
@@ -96,6 +113,168 @@ const headers = {
   "content-type": "application/json",
   origin: "http://localhost",
 };
+
+Deno.test("UXD-002C3 HTTP reads and saves private member UI state", async () => {
+  let current: MemberUiState = { personWorkspaceView: "timeline" };
+  const app = createSettingsRoutes(services(
+    settings(),
+    memberUiState({
+      read: () => Promise.resolve({ status: "ready", uiState: current }),
+      save: (_actor, input) => {
+        current = input;
+        return Promise.resolve({ status: "ready", uiState: current });
+      },
+    }),
+  ));
+
+  const read = await app.request("http://localhost/api/v1/member/ui-state", {
+    headers,
+  });
+  assert(read.status === 200, "member UI state reads");
+  assert(
+    read.headers.get("cache-control") === "private, no-store",
+    "member UI state read is private and uncached",
+  );
+  assert(
+    (await read.json()).uiState.personWorkspaceView === "timeline",
+    "read response exposes the recognised state",
+  );
+
+  const saved = await app.request(
+    "http://localhost/api/v1/member/ui-state",
+    {
+      body: JSON.stringify({ personWorkspaceView: "admin" }),
+      headers,
+      method: "PATCH",
+    },
+  );
+  assert(saved.status === 200, "member UI state saves");
+  assert(
+    saved.headers.get("cache-control") === "private, no-store",
+    "member UI state write is private and uncached",
+  );
+  assert(
+    (await saved.json()).uiState.personWorkspaceView === "admin",
+    "write response returns saved state",
+  );
+});
+
+Deno.test("UXD-002C3 HTTP validates and attributes every member UI-state problem", async () => {
+  const invalid = await createSettingsRoutes(services()).request(
+    "http://localhost/api/v1/member/ui-state",
+    {
+      body: JSON.stringify({
+        personWorkspaceView: "timeline",
+        recentPersonIds: [],
+      }),
+      headers,
+      method: "PATCH",
+    },
+  );
+  assert(invalid.status === 400, "unknown body key is rejected");
+
+  const unauthenticatedServices = services();
+  const unauthenticated = await createSettingsRoutes({
+    ...unauthenticatedServices,
+    protectedSessions: {
+      ...unauthenticatedServices.protectedSessions,
+      resolve: () => Promise.resolve(undefined),
+    },
+  }).request("http://localhost/api/v1/member/ui-state", { headers });
+  assert(unauthenticated.status === 401, "missing actor is unauthenticated");
+
+  const forbidden = await createSettingsRoutes(
+    services(
+      settings(),
+      memberUiState({
+        read: () => Promise.resolve({ status: "forbidden" }),
+        save: () => Promise.resolve({ status: "forbidden" }),
+      }),
+    ),
+  ).request("http://localhost/api/v1/member/ui-state", { headers });
+  assert(forbidden.status === 403, "facade denial is forbidden");
+
+  const unavailable = await createSettingsRoutes(
+    services(
+      settings(),
+      memberUiState({
+        read: () => Promise.reject(new Error("private database detail")),
+      }),
+    ),
+  ).request("http://localhost/api/v1/member/ui-state", { headers });
+  assert(unavailable.status === 503, "dependency failure is retryable");
+
+  const badOrigin = await createSettingsRoutes(services()).request(
+    "http://localhost/api/v1/member/ui-state",
+    {
+      body: JSON.stringify({ personWorkspaceView: "all" }),
+      headers: { ...headers, origin: "https://attacker.test" },
+      method: "PATCH",
+    },
+  );
+  assert(badOrigin.status === 403, "write requires the configured origin");
+
+  const unresolvedServices = services();
+  const unresolvedWrite = await createSettingsRoutes({
+    ...unresolvedServices,
+    protectedSessions: {
+      ...unresolvedServices.protectedSessions,
+      resolve: () => Promise.resolve(undefined),
+    },
+  }).request("http://localhost/api/v1/member/ui-state", {
+    body: JSON.stringify({ personWorkspaceView: "all" }),
+    headers,
+    method: "PATCH",
+  });
+  assert(unresolvedWrite.status === 401, "write requires an active actor");
+
+  const forbiddenWrite = await createSettingsRoutes(
+    services(
+      settings(),
+      memberUiState({
+        save: () => Promise.resolve({ status: "forbidden" }),
+      }),
+    ),
+  ).request("http://localhost/api/v1/member/ui-state", {
+    body: JSON.stringify({ personWorkspaceView: "all" }),
+    headers,
+    method: "PATCH",
+  });
+  assert(forbiddenWrite.status === 403, "write denial is forbidden");
+
+  const unavailableWrite = await createSettingsRoutes(
+    services(
+      settings(),
+      memberUiState({
+        save: () => Promise.reject(new Error("private database detail")),
+      }),
+    ),
+  ).request("http://localhost/api/v1/member/ui-state", {
+    body: JSON.stringify({ personWorkspaceView: "all" }),
+    headers,
+    method: "PATCH",
+  });
+  assert(unavailableWrite.status === 503, "write outage is retryable");
+
+  for (
+    const response of [
+      invalid,
+      unauthenticated,
+      forbidden,
+      unavailable,
+      badOrigin,
+      unresolvedWrite,
+      forbiddenWrite,
+      unavailableWrite,
+    ]
+  ) {
+    const body = await response.json() as { readonly code?: string };
+    assert(
+      body.code?.startsWith("member_ui_state_") === true,
+      `${response.status} problem is attributable`,
+    );
+  }
+});
 
 Deno.test("AUTH-004 HTTP lists ISO sessions and clears only a revoked current cookie", async () => {
   const app = createSettingsRoutes(services());

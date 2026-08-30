@@ -5,6 +5,7 @@ import type { LegalAcceptance } from "../../packages/backend/modules/governance/
 import {
   type AuthenticationRequestStatusCode,
   type createProtectedSessionCoordinator,
+  type MemberUiStateManagement,
   protectedSessionHttpStatus,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
@@ -34,6 +35,7 @@ type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface AuthenticationHttpServices {
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly legal?: LegalAcceptance;
+  readonly memberUiState?: MemberUiStateManagement;
   readonly passwordRecovery: PasswordRecoveryFacade;
   readonly protectedSessions: ProtectedSessions;
 }
@@ -453,12 +455,23 @@ export function createAuthenticationRoutes(
           : "Required legal documents cannot be confirmed right now.",
       );
     }
+    const memberUiState = services.memberUiState
+      ? await services.memberUiState.read({
+        memberId: resolved.memberId,
+        role: resolved.role,
+        userId: resolved.userId,
+        workspaceId: resolved.workspaceId,
+      }).catch(() => undefined)
+      : undefined;
     context.header("Cache-Control", "private, no-store");
     return context.json({
       status: "authenticated",
       principal: { userId: resolved.userId },
       member: { id: resolved.memberId, role: resolved.role },
       requiredLegalDocuments: requirements.documents,
+      ...(memberUiState?.status === "ready"
+        ? { uiState: memberUiState.uiState }
+        : {}),
       workspace: { id: resolved.workspaceId, name: resolved.workspaceName },
       workspaces: resolved.accessibleWorkspaces.map((workspace) => ({
         id: workspace.workspaceId,

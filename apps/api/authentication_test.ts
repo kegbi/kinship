@@ -177,6 +177,29 @@ Deno.test("session context exposes the active workspace and accessible switcher 
     id: "00000000-0000-4000-8000-000000000005",
     name: "Community circle",
   };
+  const resolvedSession = {
+    accessibleWorkspaces: [
+      {
+        memberId: "00000000-0000-4000-8000-000000000002",
+        role: "owner" as const,
+        userId: "00000000-0000-4000-8000-000000000001",
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+      },
+      {
+        memberId: "00000000-0000-4000-8000-000000000004",
+        role: "member" as const,
+        userId: "00000000-0000-4000-8000-000000000001",
+        workspaceId: second.id,
+        workspaceName: second.name,
+      },
+    ],
+    memberId: "00000000-0000-4000-8000-000000000002",
+    role: "owner" as const,
+    userId: "00000000-0000-4000-8000-000000000001",
+    workspaceId: workspace.id,
+    workspaceName: workspace.name,
+  };
   const app = createAuthenticationRoutes({
     ...base,
     legal: {
@@ -193,32 +216,23 @@ Deno.test("session context exposes the active workspace and accessible switcher 
           status: "ready",
         }),
     },
+    memberUiState: {
+      read: (actor) => {
+        assert(
+          actor.memberId === resolvedSession.memberId &&
+            actor.workspaceId === resolvedSession.workspaceId,
+          "session preference read receives the resolved actor",
+        );
+        return Promise.resolve({
+          status: "ready",
+          uiState: { personWorkspaceView: "things" },
+        });
+      },
+      save: () => Promise.resolve({ status: "forbidden" }),
+    },
     protectedSessions: {
       ...base.protectedSessions,
-      resolve: () =>
-        Promise.resolve({
-          accessibleWorkspaces: [
-            {
-              memberId: "00000000-0000-4000-8000-000000000002",
-              role: "owner" as const,
-              userId: "00000000-0000-4000-8000-000000000001",
-              workspaceId: workspace.id,
-              workspaceName: workspace.name,
-            },
-            {
-              memberId: "00000000-0000-4000-8000-000000000004",
-              role: "member" as const,
-              userId: "00000000-0000-4000-8000-000000000001",
-              workspaceId: second.id,
-              workspaceName: second.name,
-            },
-          ],
-          memberId: "00000000-0000-4000-8000-000000000002",
-          role: "owner" as const,
-          userId: "00000000-0000-4000-8000-000000000001",
-          workspaceId: workspace.id,
-          workspaceName: workspace.name,
-        }),
+      resolve: () => Promise.resolve(resolvedSession),
     },
   });
 
@@ -227,10 +241,15 @@ Deno.test("session context exposes the active workspace and accessible switcher 
   });
   const body = await response.json() as {
     readonly requiredLegalDocuments?: readonly { readonly id?: string }[];
+    readonly uiState?: { readonly personWorkspaceView?: string };
     readonly workspace?: { readonly id?: string };
     readonly workspaces?: readonly { readonly id?: string }[];
   };
   assert(response.status === 200, "active session resolves");
+  assert(
+    body.uiState?.personWorkspaceView === "things",
+    "session refresh omitted ready member UI state",
+  );
   assert(
     body.requiredLegalDocuments?.[0]?.id ===
       "00000000-0000-4000-8000-000000000101",
@@ -242,4 +261,52 @@ Deno.test("session context exposes the active workspace and accessible switcher 
       `${workspace.id},${second.id}`,
     "accessible workspace choices are ordered and explicit",
   );
+
+  const withoutService = createAuthenticationRoutes({
+    ...base,
+    protectedSessions: {
+      ...base.protectedSessions,
+      resolve: () => Promise.resolve(resolvedSession),
+    },
+  });
+  const withoutResponse = await withoutService.request(
+    "http://localhost/api/v1/session",
+    { headers: { cookie: "kinship_session=active-session-token" } },
+  );
+  const withoutBody = await withoutResponse.json() as Record<string, unknown>;
+  assert(
+    withoutResponse.status === 200 && !("uiState" in withoutBody),
+    "session without the optional preference service changed shape",
+  );
+
+  for (
+    const read of [
+      () => Promise.resolve({ status: "forbidden" as const }),
+      () => Promise.reject(new Error("private database detail")),
+    ]
+  ) {
+    const degraded = createAuthenticationRoutes({
+      ...base,
+      memberUiState: {
+        read,
+        save: () => Promise.resolve({ status: "forbidden" }),
+      },
+      protectedSessions: {
+        ...base.protectedSessions,
+        resolve: () => Promise.resolve(resolvedSession),
+      },
+    });
+    const degradedResponse = await degraded.request(
+      "http://localhost/api/v1/session",
+      { headers: { cookie: "kinship_session=active-session-token" } },
+    );
+    const degradedBody = await degradedResponse.json() as Record<
+      string,
+      unknown
+    >;
+    assert(
+      degradedResponse.status === 200 && !("uiState" in degradedBody),
+      "non-ready preference state broke the resolved session",
+    );
+  }
 });

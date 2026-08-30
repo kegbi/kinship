@@ -140,6 +140,16 @@ export type {
   RecentPeopleTransaction,
 } from "./application/recent_people.ts";
 export { PostgresRecentPeopleRepository } from "./adapters/postgres/recent_people.ts";
+export { createMemberUiStateManagement } from "./application/member_ui_state.ts";
+export type {
+  MemberUiState,
+  MemberUiStateActor,
+  MemberUiStateManagement,
+  MemberUiStateRepository,
+  MemberUiStateTransaction,
+  PersonWorkspaceView,
+} from "./application/member_ui_state.ts";
+export { PostgresMemberUiStateRepository } from "./adapters/postgres/member_ui_state.ts";
 export type {
   ActiveWorkspaceContext,
   ActiveWorkspaceResolver,

@@ -2,6 +2,7 @@ import {
   buildOpenApiDocument,
   renderGeneratedClient,
   renderInvitationClient,
+  renderSettingsClient,
 } from "./generate.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -172,5 +173,88 @@ Deno.test("AUTH-001/AUTH-002/AUTH-003 OpenAPI is deterministic and secret-safe",
       responseContracts["/api/v1/mfa-challenges"]?.post?.responses?.["200"],
     ).includes("Set-Cookie"),
     "successful MFA must document session issuance and challenge deletion",
+  );
+});
+
+Deno.test("UXD-002C3 OpenAPI publishes member UI state and optional session composition", () => {
+  const document = buildOpenApiDocument();
+  const paths = document.paths as Record<
+    string,
+    Record<string, {
+      readonly operationId?: string;
+      readonly parameters?: readonly { readonly name?: string }[];
+      readonly responses?: Readonly<Record<string, unknown>>;
+      readonly security?: readonly Readonly<
+        Record<string, readonly unknown[]>
+      >[];
+    }>
+  >;
+  const member = paths["/api/v1/member/ui-state"];
+  const settings = paths["/api/v1/settings/preferences"];
+  assert(
+    member?.get?.operationId === "getMemberUiState" &&
+      member.patch?.operationId === "saveMemberUiState",
+    "member UI-state read and write operations are published",
+  );
+  assert(
+    JSON.stringify(member.get?.security) ===
+        JSON.stringify(settings?.get?.security) &&
+      JSON.stringify(member.patch?.security) ===
+        JSON.stringify(settings?.put?.security),
+    "member UI-state operations inherit their sibling auth schemes",
+  );
+  assert(
+    member.get?.parameters?.some((parameter) =>
+      parameter.name === "X-Workspace-Id"
+    ) &&
+      ["Origin", "X-Workspace-Id"].every((name) =>
+        member.patch?.parameters?.some((parameter) => parameter.name === name)
+      ) &&
+      ["200", "401", "403", "503"].every((status) =>
+        member.get?.responses?.[status] !== undefined
+      ) &&
+      ["200", "400", "401", "403", "503"].every((status) =>
+        member.patch?.responses?.[status] !== undefined
+      ) && JSON.stringify(member.patch).includes("MemberUiStateInput"),
+    "member UI-state operations publish tenant, origin, and failure contracts",
+  );
+
+  const schemas = (document.components as {
+    readonly schemas: Readonly<
+      Record<string, {
+        readonly additionalProperties?: boolean;
+        readonly properties?: Readonly<Record<string, unknown>>;
+        readonly required?: readonly string[];
+      }>
+    >;
+  }).schemas;
+  const state = schemas.MemberUiState;
+  const input = schemas.MemberUiStateInput;
+  const session = schemas.SessionContext;
+  assert(
+    state?.additionalProperties === false &&
+      JSON.stringify(state.properties?.personWorkspaceView).includes(
+        '"all","timeline","planning","things","admin"',
+      ),
+    "member UI state is a strict one-key presentation contract",
+  );
+  assert(
+    input?.additionalProperties === false &&
+      input.required?.includes("personWorkspaceView") === true,
+    "member UI-state writes require the one recognised key",
+  );
+  assert(
+    JSON.stringify(session?.properties?.uiState).includes("MemberUiState") &&
+      !session?.required?.includes("uiState"),
+    "session context composes UI state without making preference reads fatal",
+  );
+
+  const client = renderGeneratedClient() + renderSettingsClient();
+  assert(
+    client.includes("export interface MemberUiState") &&
+      client.includes("getMemberUiState(") &&
+      client.includes("saveMemberUiState(") &&
+      client.includes("readonly uiState?: MemberUiState"),
+    "generated client exposes both operations and optional session UI state",
   );
 });

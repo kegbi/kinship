@@ -4,6 +4,12 @@ import {
   createConfiguredApiApp,
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
+import {
+  createMemberUiStateManagement,
+  PostgresMemberUiStateRepository,
+  PostgresRegistrationTransaction,
+} from "../../packages/backend/modules/workspaces/public.ts";
+import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -168,6 +174,99 @@ Deno.test({
       "settings-foreign@example.test",
       "Foreign circle",
     );
+    await sql`
+      update crm.member_preferences
+      set ui_state = '{"dismissedWelcome":true}'::jsonb
+      where member_id = ${owner.memberId}::uuid
+    `;
+    const savedUiState = await settingsRequest(
+      owner.cookie,
+      "/api/v1/member/ui-state",
+      {
+        body: { personWorkspaceView: "planning" },
+        method: "PATCH",
+      },
+    );
+    const readUiState = await settingsRequest(
+      owner.cookie,
+      "/api/v1/member/ui-state",
+    );
+    const readUiStateBody = await readUiState.json() as {
+      readonly uiState?: { readonly personWorkspaceView?: string };
+    };
+    const [preservedUiState] = await sql<{
+      readonly dismissedWelcome: boolean;
+    }[]>`
+      select (ui_state ->> 'dismissedWelcome')::boolean as "dismissedWelcome"
+      from crm.member_preferences where member_id = ${owner.memberId}::uuid
+    `;
+    assert(
+      savedUiState.status === 200 && readUiState.status === 200 &&
+        readUiStateBody.uiState?.personWorkspaceView === "planning" &&
+        preservedUiState?.dismissedWelcome === true,
+      "member UI state round-trips without replacing sparse stored state",
+    );
+
+    const recentPersonId = crypto.randomUUID();
+    await sql`
+      insert into crm.people (id, workspace_id, given_name)
+      values (${recentPersonId}, ${owner.workspaceId}, 'Recent UI state race')
+    `;
+    const [recentResponse, uiStateResponse] = await Promise.all([
+      configured.app.request(
+        `http://localhost/api/v1/people/${recentPersonId}/view`,
+        {
+          headers: {
+            cookie: owner.cookie,
+            origin: "http://localhost",
+            "X-Workspace-Id": owner.workspaceId,
+          },
+          method: "POST",
+        },
+      ),
+      settingsRequest(
+        owner.cookie,
+        "/api/v1/member/ui-state",
+        {
+          body: { personWorkspaceView: "things" },
+          method: "PATCH",
+        },
+      ),
+    ]);
+    const [serializedState] = await sql<{
+      readonly personWorkspaceView: string | null;
+      readonly recentPersonId: string | null;
+    }[]>`
+      select ui_state ->> 'personWorkspaceView' as "personWorkspaceView",
+        ui_state -> 'recentPersonIds' ->> 0 as "recentPersonId"
+      from crm.member_preferences where member_id = ${owner.memberId}::uuid
+    `;
+    assert(
+      recentResponse.status === 200 && uiStateResponse.status === 200 &&
+        serializedState?.personWorkspaceView === "things" &&
+        serializedState.recentPersonId === recentPersonId,
+      "concurrent recent-person state was lost by member UI-state save",
+    );
+
+    const boundaryConnection = connectDatabase(databaseUrl);
+    try {
+      const memberUiState = createMemberUiStateManagement({
+        repository: new PostgresMemberUiStateRepository(),
+        transaction: new PostgresRegistrationTransaction(boundaryConnection.db),
+      });
+      const forged = await memberUiState.read({
+        memberId: owner.memberId,
+        role: "owner",
+        userId: owner.userId,
+        workspaceId: foreign.workspaceId,
+      });
+      assert(
+        forged.status === "forbidden",
+        "forged workspace context crossed the member UI-state predicate",
+      );
+    } finally {
+      await boundaryConnection.destroy();
+    }
     const adminMemberId = await addMembership(
       adminIdentity,
       owner.workspaceId,

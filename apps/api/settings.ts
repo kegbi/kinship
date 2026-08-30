@@ -2,6 +2,7 @@ import { type Context, Hono } from "hono";
 import { z } from "zod";
 import type {
   createProtectedSessionCoordinator,
+  MemberUiStateManagement,
   PersonalizationManagement,
   PersonalizationSection,
   SettingsManagement,
@@ -12,6 +13,7 @@ type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
 export interface SettingsHttpServices {
   readonly browserSecurity: BrowserSecurityPolicy;
+  readonly memberUiState: MemberUiStateManagement;
   readonly personalization: PersonalizationManagement;
   readonly protectedSessions: ProtectedSessions;
   readonly settings: SettingsManagement;
@@ -20,6 +22,15 @@ export interface SettingsHttpServices {
 const profileSchema = z.object({
   firstName: z.string().trim().min(1).max(100),
   lastName: z.string().trim().max(100),
+}).strict();
+const memberUiStateSchema = z.object({
+  personWorkspaceView: z.enum([
+    "all",
+    "timeline",
+    "planning",
+    "things",
+    "admin",
+  ]),
 }).strict();
 
 const timezone = z.string().trim().min(1).max(100).refine((value) => {
@@ -229,6 +240,90 @@ function privateJson(context: Context, value: unknown): Response {
 
 export function createSettingsRoutes(services: SettingsHttpServices): Hono {
   const routes = new Hono();
+  routes.get("/api/v1/member/ui-state", async (context) => {
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "member_ui_state_session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const result = await services.memberUiState.read(resolved.actor).catch(
+      () => undefined,
+    );
+    if (result?.status === "ready") return privateJson(context, result);
+    return result?.status === "forbidden"
+      ? problem(
+        context,
+        403,
+        "member_ui_state_forbidden",
+        "UI state unavailable",
+        "The requested member UI state is not available in this workspace.",
+      )
+      : problem(
+        context,
+        503,
+        "member_ui_state_unavailable",
+        "UI state unavailable",
+        "Your member UI state could not be loaded.",
+      );
+  });
+  routes.patch("/api/v1/member/ui-state", async (context) => {
+    if (context.req.header("Origin") !== services.browserSecurity.origin) {
+      return problem(
+        context,
+        403,
+        "member_ui_state_origin_invalid",
+        "Request forbidden",
+        "This request did not come from the configured application origin.",
+      );
+    }
+    const parsed = memberUiStateSchema.safeParse(
+      await context.req.json().catch(() => undefined),
+    );
+    if (!parsed.success) {
+      return problem(
+        context,
+        400,
+        "member_ui_state_validation_failed",
+        "Invalid UI state",
+        "Choose one recognised person-workspace view.",
+      );
+    }
+    const resolved = await actor(context, services);
+    if (!resolved) {
+      return problem(
+        context,
+        401,
+        "member_ui_state_session_invalid",
+        "Authentication required",
+        "Sign in with an active workspace membership.",
+      );
+    }
+    const result = await services.memberUiState.save(
+      resolved.actor,
+      parsed.data,
+    ).catch(() => undefined);
+    if (result?.status === "ready") return privateJson(context, result);
+    return result?.status === "forbidden"
+      ? problem(
+        context,
+        403,
+        "member_ui_state_forbidden",
+        "UI state unavailable",
+        "The requested member UI state is not available in this workspace.",
+      )
+      : problem(
+        context,
+        503,
+        "member_ui_state_unavailable",
+        "UI state unavailable",
+        "Your member UI state could not be saved.",
+      );
+  });
   routes.get("/api/v1/settings/profile", async (context) => {
     const resolved = await actor(context, services);
     if (!resolved) return authenticationRequired(context);

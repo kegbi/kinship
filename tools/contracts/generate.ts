@@ -646,6 +646,14 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
         },
       },
+      "/api/v1/member/ui-state": {
+        ...securedRead("getMemberUiState", "MemberUiStateReady"),
+        patch: securedPut(
+          "saveMemberUiState",
+          "MemberUiStateInput",
+          "MemberUiStateReady",
+        ),
+      },
       "/api/v1/people": {
         get: {
           operationId: "listPeople",
@@ -4201,6 +4209,7 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
               type: "array",
               items: { $ref: "#/components/schemas/LegalDocument" },
             },
+            uiState: { $ref: "#/components/schemas/MemberUiState" },
           },
           additionalProperties: false,
         },
@@ -7021,6 +7030,36 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        MemberUiState: {
+          type: "object",
+          properties: {
+            personWorkspaceView: {
+              type: "string",
+              enum: ["all", "timeline", "planning", "things", "admin"],
+            },
+          },
+          additionalProperties: false,
+        },
+        MemberUiStateInput: {
+          type: "object",
+          required: ["personWorkspaceView"],
+          properties: {
+            personWorkspaceView: {
+              type: "string",
+              enum: ["all", "timeline", "planning", "things", "admin"],
+            },
+          },
+          additionalProperties: false,
+        },
+        MemberUiStateReady: {
+          type: "object",
+          required: ["status", "uiState"],
+          properties: {
+            status: { const: "ready" },
+            uiState: { $ref: "#/components/schemas/MemberUiState" },
+          },
+          additionalProperties: false,
+        },
         PreferencesInput: {
           type: "object",
           required: [
@@ -8014,6 +8053,10 @@ export function renderGeneratedClient(): string {
     .replace(
       "async function request<T>(path: string, init?: RequestInit)",
       'type RequestOptions = Omit<RequestInit, "headers"> & { readonly headers?: HeadersInit | undefined };\n\nasync function request<T>(path: string, init?: RequestOptions)',
+    )
+    .replace(
+      '  readonly workspaces: readonly Authenticated["workspace"][];\n}',
+      '  readonly workspaces: readonly Authenticated["workspace"][];\n  readonly uiState?: MemberUiState;\n}',
     );
 }
 
@@ -8043,7 +8086,7 @@ export function inspectWorkspaceInvitation`,
   );
 }
 
-function renderSettingsClient(): string {
+export function renderSettingsClient(): string {
   return `
 export interface ProfileSettings {
   readonly email: string;
@@ -8115,6 +8158,12 @@ export interface MemberPreferences {
   readonly measurementSystem: "metric" | "imperial";
   readonly temperatureScale: "celsius" | "fahrenheit";
   readonly timezone?: string;
+}
+
+export type PersonWorkspaceView = "all" | "timeline" | "planning" | "things" | "admin";
+
+export interface MemberUiState {
+  readonly personWorkspaceView?: PersonWorkspaceView;
 }
 
 export interface MemberSession {
@@ -8392,6 +8441,14 @@ export function deleteWorkspace(input: { readonly confirmation: string; readonly
 
 export function getMemberPreferences(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: MemberPreferences }>> {
   return request("/api/v1/settings/preferences", { headers: workspaceHeader(workspaceId) });
+}
+
+export function getMemberUiState(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly uiState: MemberUiState }>> {
+  return request("/api/v1/member/ui-state", { headers: workspaceHeader(workspaceId) });
+}
+
+export function saveMemberUiState(input: { readonly personWorkspaceView: PersonWorkspaceView }, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly uiState: MemberUiState }>> {
+  return request("/api/v1/member/ui-state", { method: "PATCH", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
 }
 
 export function updateMemberPreferences(input: MemberPreferences, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: MemberPreferences }>> {

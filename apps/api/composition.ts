@@ -19,13 +19,16 @@ import {
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import {
   type AuthenticationResponseEqualizer,
+  createMemberUiStateManagement,
   createPersonalizationManagement,
   createPersonalLifecycle,
   createProtectedSessionCoordinator,
   createRecentPeopleManagement,
   createVerificationDeliveryRetry,
   createWorkspaceLifecycle,
+  type MemberUiStateManagement,
   PostgresActiveWorkspaceResolver,
+  PostgresMemberUiStateRepository,
   PostgresPersonalLifecycleMemberships,
   PostgresProfileFactConfiguration,
   PostgresRecentPeopleRepository,
@@ -296,6 +299,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly imports?: ImportManagement;
   readonly exports?: ExportManagement;
   readonly legal?: LegalAcceptance;
+  readonly memberUiState?: MemberUiStateManagement;
   readonly invitations?: InvitationHttpServices["invitations"];
   readonly importantDates?: ImportantDateManagement;
   readonly interactions?: InteractionManagement & CommunicationManagement;
@@ -408,6 +412,9 @@ export function createApiApp(services?: ApiServices): Hono {
         createAuthenticationRoutes({
           browserSecurity: services.browserSecurity,
           ...(services.legal ? { legal: services.legal } : {}),
+          ...(services.memberUiState
+            ? { memberUiState: services.memberUiState }
+            : {}),
           passwordRecovery: services.passwordRecovery,
           protectedSessions: services.protectedSessions,
         }),
@@ -423,11 +430,14 @@ export function createApiApp(services?: ApiServices): Hono {
           }),
         );
       }
-      if (services.settings && services.personalization) {
+      if (
+        services.settings && services.personalization && services.memberUiState
+      ) {
         api.route(
           "/",
           createSettingsRoutes({
             browserSecurity: services.browserSecurity,
+            memberUiState: services.memberUiState,
             protectedSessions: services.protectedSessions,
             personalization: services.personalization,
             settings: services.settings,
@@ -943,6 +953,10 @@ export function createConfiguredApiApp(
     repository: new PostgresRecentPeopleRepository(),
     transaction,
   });
+  const memberUiState = createMemberUiStateManagement({
+    repository: new PostgresMemberUiStateRepository(),
+    transaction,
+  });
   const peopleLifecycle = createPersonLifecycle({
     audit: new PostgresPersonLifecycleAudit(),
     clock,
@@ -1170,6 +1184,7 @@ export function createConfiguredApiApp(
     journal,
     journalTimeline,
     legal,
+    memberUiState,
     passwordRecovery,
     personalLifecycle,
     workspaceLifecycle,
