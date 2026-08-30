@@ -296,6 +296,7 @@ test(
     const closeFriendsDraft = page.getByLabel("Name for Close friends");
     await closeFriendsDraft.fill("Workspace switch draft");
     const workspaceSwitcher = page.getByLabel("Active workspace");
+    await expect(workspaceSwitcher.locator("option")).toHaveCount(2);
     await openMemberPopover(page);
     await workspaceSwitcher.focus();
     let switchDialog = page.waitForEvent("dialog");

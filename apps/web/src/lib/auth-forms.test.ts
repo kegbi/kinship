@@ -37,6 +37,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
   history.replaceState({}, "", "/");
+  sessionStorage.clear();
 });
 
 describe("AUTH-003 forms", () => {
@@ -101,12 +102,14 @@ describe("AUTH-003 forms", () => {
     const target = form(`
       <form><input name="email" value="OWNER@EXAMPLE.TEST">
       <input name="password" value="secret"><button type="submit">Sign in</button></form>`);
+    sessionStorage.setItem("kinship.session", "stale identity");
     mountSignIn(target, navigate);
     await submit(target);
     expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({
       email: "owner@example.test",
       password: "secret",
     }));
+    expect(sessionStorage.getItem("kinship.session")).toBeNull();
     expect(navigate).toHaveBeenCalledWith("/auth/mfa");
   });
 
@@ -193,7 +196,9 @@ describe("AUTH-003 forms", () => {
     expect(document.querySelector("#auth-status")?.textContent).toMatch(
       /not valid/i,
     );
+    sessionStorage.setItem("kinship.session", "stale identity");
     await submit(target);
+    expect(sessionStorage.getItem("kinship.session")).toBeNull();
     expect(navigate).toHaveBeenCalledWith("/app");
   });
 
@@ -368,6 +373,7 @@ describe("AUTH-003 forms", () => {
         next: "/auth/sign-in",
       }));
     vi.stubGlobal("fetch", fetchMock);
+    sessionStorage.setItem("kinship.session", "cached session");
     await mountProtectedEntry(navigate);
     expect(document.querySelector("#entry-status")?.textContent).toMatch(
       /protected session/i,
@@ -376,6 +382,7 @@ describe("AUTH-003 forms", () => {
     await vi.waitFor(() =>
       expect(navigate).toHaveBeenCalledWith("/auth/sign-in")
     );
+    expect(sessionStorage.getItem("kinship.session")).toBeNull();
 
     document.body.innerHTML = `
       <h1 id="entry-heading">Preparing</h1>
@@ -411,6 +418,7 @@ describe("AUTH-003 forms", () => {
         }))
         .mockRejectedValueOnce(new Error("offline")),
     );
+    sessionStorage.setItem("kinship.session", "live session");
     await mountProtectedEntry(navigate);
     expect(document.querySelector("#entry-heading")?.textContent).toBe(
       "Welcome, Avery.",
@@ -427,6 +435,7 @@ describe("AUTH-003 forms", () => {
     expect(document.querySelector("#entry-status")?.textContent).toMatch(
       /could not be revoked/i,
     );
+    expect(sessionStorage.getItem("kinship.session")).toBe("live session");
   });
 
   it("does not mount when required page elements are absent", async () => {

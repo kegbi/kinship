@@ -4,7 +4,7 @@ import {
   resetWorkspace,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import {
-  ACTIVE_WORKSPACE_KEY,
+  clearActiveWorkspace,
   resolveWorkspaceSession,
 } from "./workspace-context.ts";
 
@@ -90,7 +90,7 @@ export async function mountWorkspaceDanger(
         button.disabled = false;
         return;
       }
-      sessionStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+      clearActiveWorkspace();
       navigate(result.value.next);
     };
   resetForm.addEventListener("submit", submit("reset", resetForm));

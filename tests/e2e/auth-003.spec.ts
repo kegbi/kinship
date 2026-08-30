@@ -293,6 +293,8 @@ async function keyboardFinishSignOut(page: Page): Promise<void> {
 async function keyboardSignOutWithMultipleWorkspaces(
   page: Page,
 ): Promise<void> {
+  await expect(page.getByLabel("Active workspace").locator("option"))
+    .toHaveCount(2);
   await keyboardOpenMemberMenu(page);
   await page.keyboard.press("Tab");
   await expect(page.getByLabel("Active workspace")).toBeFocused();

@@ -9,6 +9,7 @@ import {
   signIn,
   signOut,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import { clearSessionCache } from "./workspace-context.ts";
 
 interface FormUi {
   readonly output: HTMLElement;
@@ -78,6 +79,7 @@ export function mountSignIn(
             : "/invite/continue"
           : result.value.next;
         invitation = { active: false };
+        clearSessionCache();
         navigate(next);
         return;
       }
@@ -117,6 +119,7 @@ export function mountMfa(
       if (result.ok) {
         const next = invitation.active ? "/invite/continue" : result.value.next;
         invitation = { active: false };
+        clearSessionCache();
         navigate(next);
         return;
       }
@@ -234,6 +237,7 @@ function renderWorkspace(
     button.disabled = true;
     const result = await signOut().catch(() => undefined);
     if (result?.ok) {
+      clearSessionCache();
       navigate(result.value.next);
       return;
     }

@@ -291,6 +291,7 @@ test(
     await page.goto("/app");
     const switcher = page.getByLabel("Active workspace");
     await expect(switcher).toBeHidden();
+    await expect(switcher.locator("option")).toHaveCount(2);
     await keyboardOpenMemberMenu(page);
     await page.keyboard.press("Tab");
     await expect(switcher).toBeFocused();
