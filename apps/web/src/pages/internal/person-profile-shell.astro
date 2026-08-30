@@ -4,28 +4,34 @@ import ApplicationLayout from "../../layouts/ApplicationLayout.astro";
 export const prerender = true;
 
 const sections = [
-  ["identity-summary", "Identity summary", "core"],
-  ["important-dates", "Important dates", "core"],
-  ["contact-methods", "Contact methods", "core"],
-  ["addresses", "Addresses", "core"],
-  ["relationships", "Relationships", "core"],
-  ["first-meeting", "First meeting", "core"],
-  ["work", "Work", "core"],
-  ["food-preferences", "Food preferences", "core"],
-  ["pets", "Pets", "core"],
-  ["life-events", "Life events", "independent"],
-  ["notes", "Notes", "independent"],
-  ["conversations", "Conversations", "independent"],
-  ["calls", "Calls", "independent"],
-  ["activities", "Activities", "independent"],
-  ["tasks", "Tasks", "independent"],
-  ["reminders", "Reminders", "independent"],
-  ["stay-in-touch", "Stay in touch", "core"],
-  ["gifts", "Gifts", "independent"],
-  ["debts", "Debts", "independent"],
-  ["documents", "Documents", "independent"],
-  ["photos", "Photos", "independent"],
-  ["audit-summary", "Audit summary", "independent"],
+  ["identity-summary", "Identity summary"],
+  ["important-dates", "Important dates"],
+  ["contact-methods", "Contact methods"],
+  ["addresses", "Addresses"],
+  ["relationships", "Relationships"],
+  ["first-meeting", "First meeting"],
+  ["work", "Work"],
+  ["food-preferences", "Food preferences"],
+  ["pets", "Pets"],
+  ["life-events", "Life events"],
+  ["notes", "Notes"],
+  ["conversations", "Conversations"],
+  ["calls", "Calls"],
+  ["activities", "Activities"],
+  ["tasks", "Tasks"],
+  ["reminders", "Reminders"],
+  ["stay-in-touch", "Stay in touch"],
+  ["gifts", "Gifts"],
+  ["debts", "Debts"],
+  ["documents", "Documents"],
+  ["photos", "Photos"],
+  ["audit-summary", "Audit summary"],
+] as const;
+const streamZones = [
+  ["timeline", "Timeline", ["life-events", "notes", "conversations", "calls", "activities"]],
+  ["planning", "Planning", ["tasks", "reminders"]],
+  ["things", "Things", ["gifts", "debts", "documents", "photos"]],
+  ["admin", "Admin", ["audit-summary"]],
 ] as const;
 const railSections = [
   ["contact-methods", "Contact methods"],
@@ -38,7 +44,6 @@ const railSections = [
   ["first-meeting", "First meeting"],
   ["stay-in-touch", "Stay in touch"],
 ] as const;
-const railSectionIds = new Set<string>(railSections.map(([id]) => id));
 ---
 
 <ApplicationLayout
@@ -402,7 +407,23 @@ const railSectionIds = new Set<string>(railSections.map(([id]) => id));
         </div>
 
         <div class="profile-section-list">
-          {sections.filter(([id]) => id !== "identity-summary" && !railSectionIds.has(id)).map(([id, title, loadMode]) => id === "calls" || id === "conversations"
+          <div class="zone-switcher">
+            <div class="zone-mini-identity" data-zone-mini-identity aria-hidden="true" hidden>
+              <span class="zone-mini-avatar" data-zone-mini-avatar></span>
+              <span class="zone-mini-name" data-zone-mini-name></span>
+            </div>
+            <div class="zone-filter" role="group" aria-label="Filter person sections">
+              <button class="button-primary" data-zone-filter="all" type="button" aria-pressed="true">All</button>
+              <button class="button-secondary" data-zone-filter="timeline" type="button" aria-pressed="false">Timeline</button>
+              <button class="button-secondary" data-zone-filter="planning" type="button" aria-pressed="false">Planning</button>
+              <button class="button-secondary" data-zone-filter="things" type="button" aria-pressed="false">Things</button>
+              <button class="button-secondary" data-zone-filter="admin" type="button" aria-pressed="false">Admin</button>
+            </div>
+          </div>
+          {streamZones.map(([zone, zoneTitle, zoneSectionIds]) => (
+            <section class="person-zone" data-zone={zone} aria-labelledby={`person-zone-${zone}-heading`}>
+              <h2 id={`person-zone-${zone}-heading`}>{zoneTitle}</h2>
+              {sections.filter(([id]) => zoneSectionIds.some((sectionId) => sectionId === id)).map(([id, title]) => id === "calls" || id === "conversations"
             ? (
               <section
                 id={`profile-section-${id}`}
@@ -414,7 +435,7 @@ const railSectionIds = new Set<string>(railSections.map(([id]) => id));
                 aria-labelledby={`profile-section-${id}-heading`}
               >
                 <header class="profile-section-heading">
-                  <div><p class="section-kicker">Communication history</p><h2 id={`profile-section-${id}-heading`}>{title}</h2></div>
+                  <div><h3 id={`profile-section-${id}-heading`}>{title}</h3></div>
                   <span data-communication-badge class="state-badge">Loading</span>
                 </header>
                 <p data-communication-state class="section-state" role="status" aria-live="polite">Loading {title.toLowerCase()}…</p>
@@ -457,8 +478,7 @@ const railSectionIds = new Set<string>(railSections.map(([id]) => id));
               >
                 <header class="profile-section-heading">
                   <div>
-                    <p class="section-kicker">Shared context</p>
-                    <h2 id={`profile-section-${id}-heading`}>{title}</h2>
+                    <h3 id={`profile-section-${id}-heading`}>{title}</h3>
                   </div>
                   <span class="state-badge calm">Available</span>
                 </header>
@@ -501,15 +521,13 @@ const railSectionIds = new Set<string>(railSections.map(([id]) => id));
                 class="profile-section-card life-events-card"
                 data-profile-section="life-events"
                 data-person-life-events
-                data-load-mode="independent"
                 data-section-state="loading"
                 tabindex="-1"
                 aria-labelledby="profile-section-life-events-heading"
               >
                 <header class="profile-section-heading">
                   <div>
-                    <p class="section-kicker">Precision-aware history</p>
-                    <h2 id="profile-section-life-events-heading">Life events</h2>
+                    <h3 id="profile-section-life-events-heading">Life events</h3>
                   </div>
                   <span data-life-event-badge class="state-badge">Loading</span>
                 </header>
@@ -529,7 +547,7 @@ const railSectionIds = new Set<string>(railSections.map(([id]) => id));
                 aria-labelledby="profile-section-tasks-heading"
               >
                 <header class="profile-section-heading">
-                  <div><p class="section-kicker">Person planning</p><h2 id="profile-section-tasks-heading">Tasks</h2></div>
+                  <div><h3 id="profile-section-tasks-heading">Tasks</h3></div>
                   <span class="state-badge calm">Open and completed</span>
                 </header>
                 <p data-task-state class="section-state" role="status" aria-live="polite">Loading tasks…</p>
@@ -544,9 +562,9 @@ const railSectionIds = new Set<string>(railSections.map(([id]) => id));
                   <div class="form-actions"><button class="button-primary" type="submit">Save task</button><button data-task-cancel class="button-secondary" type="button">Cancel</button></div>
                 </form>
                 <div class="task-columns">
-                  <div><h3>Open</h3><ul data-task-open-list class="task-list" aria-label="Open person tasks"></ul></div>
-                  <div><h3>Completed</h3><ul data-task-completed-list class="task-list" aria-label="Completed person tasks"></ul></div>
-                  <div><h3>Cancelled</h3><ul data-task-cancelled-list class="task-list" aria-label="Cancelled person tasks"></ul></div>
+                  <div><h4>Open</h4><ul data-task-open-list class="task-list" aria-label="Open person tasks"></ul></div>
+                  <div><h4>Completed</h4><ul data-task-completed-list class="task-list" aria-label="Completed person tasks"></ul></div>
+                  <div><h4>Cancelled</h4><ul data-task-cancelled-list class="task-list" aria-label="Cancelled person tasks"></ul></div>
                   <button data-task-more class="button-secondary" type="button" hidden>Load more tasks</button>
                 </div>
               </section>
@@ -562,7 +580,7 @@ const railSectionIds = new Set<string>(railSections.map(([id]) => id));
                 aria-labelledby="profile-section-reminders-heading"
               >
                 <header class="profile-section-heading">
-                  <div><p class="section-kicker">Calendar planning</p><h2 id="profile-section-reminders-heading">Reminders</h2></div>
+                  <div><h3 id="profile-section-reminders-heading">Reminders</h3></div>
                   <span class="state-badge calm">Calendar recurrence</span>
                 </header>
                 <p data-reminder-state class="section-state" role="status" aria-live="polite">Loading reminders…</p>
@@ -598,8 +616,7 @@ const railSectionIds = new Set<string>(railSections.map(([id]) => id));
               >
                 <header class="profile-section-heading">
                   <div>
-                    <p class="section-kicker">Practical relationship detail</p>
-                    <h2 id={`profile-section-${id}-heading`}>{title}</h2>
+                    <h3 id={`profile-section-${id}-heading`}>{title}</h3>
                   </div>
                   <span data-gift-badge class="state-badge">Loading</span>
                 </header>
@@ -667,15 +684,13 @@ const railSectionIds = new Set<string>(railSections.map(([id]) => id));
                 class="profile-section-card person-files-card"
                 data-profile-section={id}
                 data-person-files={id === "documents" ? "document" : "photo"}
-                data-load-mode={loadMode}
                 data-section-state="loading"
                 tabindex="-1"
                 aria-labelledby={`profile-section-${id}-heading`}
               >
                 <header class="profile-section-heading">
                   <div>
-                    <p class="section-kicker">Private person attachment</p>
-                    <h2 id={`profile-section-${id}-heading`}>{title}</h2>
+                    <h3 id={`profile-section-${id}-heading`}>{title}</h3>
                   </div>
                   <span data-file-badge class="state-badge">Loading</span>
                 </header>
@@ -715,8 +730,7 @@ const railSectionIds = new Set<string>(railSections.map(([id]) => id));
               >
                 <header class="profile-section-heading">
                   <div>
-                    <p class="section-kicker">Administrative history</p>
-                    <h2 id="profile-section-audit-summary-heading">Audit summary</h2>
+                    <h3 id="profile-section-audit-summary-heading">Audit summary</h3>
                   </div>
                   <span data-person-audit-badge class="state-badge">Loading</span>
                 </header>
@@ -733,21 +747,21 @@ const railSectionIds = new Set<string>(railSections.map(([id]) => id));
                 id={`profile-section-${id}`}
                 class="profile-section-card unavailable-section-card"
                 data-profile-section={id}
-                data-load-mode={loadMode}
                 data-section-state="unavailable"
                 tabindex="-1"
                 aria-labelledby={`profile-section-${id}-heading`}
               >
                 <header class="profile-section-heading">
                   <div>
-                    <p class="section-kicker">Person workspace section</p>
-                    <h2 id={`profile-section-${id}-heading`}>{title}</h2>
+                    <h3 id={`profile-section-${id}-heading`}>{title}</h3>
                   </div>
                   <span class="state-badge">Unavailable</span>
                 </header>
                 <p>This section is not available yet. No empty result is being inferred and no saved data has changed.</p>
               </section>
-            ))}
+              ))}
+            </section>
+          ))}
         </div>
       </div>
     </section>
