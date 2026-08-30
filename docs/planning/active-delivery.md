@@ -574,6 +574,19 @@ Report and request direction once `UXD-001` through `UXD-005` are integrated.
       template rendering twenty-two sections, `life-events` hardcodes it, and no
       runtime code reads it at all. `UXD-002` should decide whether that tuple
       field is real metadata or dead weight.
+- [ ] **REL-021 — Give a lazily activated zone the current archived state.** The
+      four lazy zone mounts receive `archived` as a value captured when
+      `register(...)` runs at initial load, and each module only corrects it
+      from a later `person-lifecycle-changed` event. A module that mounts
+      _after_ an in-page archive therefore starts from the stale snapshot and
+      never hears the event it missed, so an archived person can present enabled
+      gift, file, task, or capture controls. Reachable since `UXD-003B` made
+      `things` and `admin` activate on scroll: archive a person without
+      scrolling, then scroll down. Diagnosed while integrating `UXD-005B`, whose
+      first-run card made one instance visible to `app-004a`; that candidate was
+      not expanded to repair it. The fix is one live archived value read at
+      activation time, not a fifth listener per module.
+
 - [ ] **REL-020 — Watch the `app-002c` header keyboard walk.** One full-suite
       run during `UXD-002C` failed `keyboardReachMemberMenuToggle` at
       `tests/e2e/app-002c.spec.ts:127`: the brand link never took focus after
@@ -985,11 +998,64 @@ asserts, so it runs that spec on its candidate.
           `test:coverage:web` at 91.84/82.28/86.78/93.92 with the new module at
           97.89/86.11/100/97.64, zero hex literals outside `:root`, and the
           complete Chromium suite 44/44 on the first run.
-  - [ ] **UXD-005B — First-run empty state and the unsaved-changes guard.** (§11
-        "Empty states" and "Form UX" fix a) The person-level onboarding card and
-        a `beforeunload` plus workspace-switch guard for the person workspace's
-        twenty toggled-in-place forms. The collapsed empty rail rows the review
-        also lists here already shipped with `UXD-002B`.
+  - [x] **UXD-005B — First-run empty state and the unsaved-changes guard.** (§11
+        "Empty states" and "Form UX" fix a) A person with nothing recorded opens
+        on one onboarding card instead of twelve section cards that each say
+        nothing. The collapsed empty rail rows the review also lists here
+        already shipped with `UXD-002B` and were not rebuilt.
+    - [x] The card offers the review's three first actions. Each targets an
+          eagerly mounted rail section, awaits the eager-rail promise before
+          clicking that section's add control, and does nothing beyond focusing
+          the section if the control is still hidden — an archived person or a
+          failed section load never gets a click on a hidden control.
+          `stay-in-touch` is focused rather than clicked, because it has no add
+          button until `UXD-007B`.
+    - [x] **Correction to review §11:** "zero records anywhere" is not knowable
+          from what the page has. `?include=summary` counts fourteen of the
+          twenty-two sections; important dates, gifts, debts, documents, photos,
+          and a reminder with no next occurrence are outside it. Widening the
+          projection means widening `PersonProfileSectionId`, which is also the
+          personalization module key set that `profileSections` and `UXD-006`'s
+          turned-off notice read, so it is an API leaf rather than a detail of
+          this one. The card is therefore decided from those fourteen counts
+          plus `stayInTouchAt` and `nextReminderAt`, and it is built so a wrong
+          answer costs nothing: all four zones stay in the DOM,
+          `[data-profile-section]` still counts 22, and the card gives way to
+          `Show all sections`, to any zone filter button, and to any `?section=`
+          link or deep link that targets a stream section.
+    - [x] **Second correction to §11:** the section asks for `beforeunload`
+          _plus_ intercepted in-page navigation. On the person page there is
+          nothing to intercept — `?section=` and `?view=` are `pushState` only
+          and never discard a form's values — so a confirm there would prompt
+          about a loss that cannot happen. The two real exits are a document
+          unload and a workspace switch, which is exactly the pair `settings.ts`
+          already guards, and `unsaved-changes.ts` follows that module's shape
+          rather than inventing a second one.
+    - [x] A form is baselined when focus first enters it, not from
+          `defaultValue`: the person page fills its edit forms by assigning
+          `.value`, so a `defaultValue` comparison would report every opened
+          edit form as dirty. Dirtiness is evaluated lazily and only counts a
+          form that is still connected and visible, so a form the member opened,
+          typed into, and cancelled blocks nothing.
+    - [x] Known limitation, deliberate: the guard re-baselines on `submit`,
+          which it cannot tell from a _successful_ save. A save that fails
+          server-side leaves a visible form whose values are no longer
+          protected. The alternative — never re-baselining — would prompt on
+          every navigation after every successful save, which is worse.
+    - [x] The full suite caught what static and unit gates could not: two flows
+          create a person through `/app/people/new` and then reach a control
+          inside a stream zone, which is now behind the card. `app-004a` failed
+          `toBeDisabled` on the activities capture button and `app-004c` could
+          not find `Log activity` at all, because `getByRole` does not match
+          inside a `hidden` container. Both now walk the card the way a member
+          does, proving it is there and then clicking `Show all sections`; no
+          assertion was weakened. `app-003c` gained an axe scan of the card
+          while it is on screen.
+    - [x] Gates: `fmt:check`, `lint`, `check:web` (0 errors, 3 pre-existing
+          `returnValue` deprecation hints), 462 web unit tests,
+          `test:coverage:web` at 91.96/82.44/87.05/94.03 with the new guard
+          module at 100/86.48/100, zero hex literals outside `:root`, and the
+          complete Chromium suite 44/44.
 
 ### Then
 
