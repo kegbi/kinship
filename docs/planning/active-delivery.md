@@ -11,8 +11,8 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-002A2 — Overflow menu**, the last slice of `UXD-002`
-  before `UXD-003` opens
+- Current leaf: **UXD-003 — Staged loading**, with `UXD-004` the only remaining
+  top-five leaf that does not touch the person workspace
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -670,21 +670,63 @@ asserts, so it runs that spec on its candidate.
         person with `include=summary` returns 404 and a forged workspace context
         is forbidden.
 
-- [ ] **UXD-002 — Person workspace three-zone layout.** (§7; effort L; depends
-      on `UXD-001` and `UXD-006`) Delivered in slices, because a single
-      candidate rewriting the 726-line shell, `people-profile.ts`, and the
-      stylesheet at once would be unreviewable and the `?section=` contract must
-      stay provable at every step.
+- [x] **UXD-002 — Person workspace three-zone layout.** (§7; effort L; depends
+      on `UXD-001` and `UXD-006`) Accepted: the workspace reads as a hero, a
+      nine-block rail, and four grouped zones behind a filter. `UXD-002B2`,
+      `UXD-002C2`, and `UXD-002C3` are named refinements, not unfinished parts
+      of this item. Delivered in slices, because a single candidate rewriting
+      the 726-line shell, `people-profile.ts`, and the stylesheet at once would
+      be unreviewable and the `?section=` contract must stay provable at every
+      step.
   - [x] **UXD-002A — Hero.** (§7.1) Absorbs the lifecycle panel, the
         due-information card, the identity-summary card, and the back link.
         Breadcrumb, vital-stats strip, tags, archived banner. Every id the
         browser flows drive survives, so eight specs needed no change.
-  - [ ] **UXD-002A2 — Overflow menu.** (§7.1) Move the five lifecycle controls
-        and Audit history behind `⋯`. Deferred from A because hiding them
-        requires an open-the-menu step in eight cataloged flows: `app-004a`,
-        `app-004b`, `app-004c`, `app-004d`, `app-006a`, `app-006b`, `app-007b`,
-        and `app-009b`. Use one idempotent helper per spec, modelled on the
-        `openMemberPopover` helper `UXD-007` established.
+  - [x] **UXD-002A2 — Overflow menu.** (§7.1) The hero action cluster is now
+        `Log interaction`, `Add note`, and a `⋯` menu holding Edit person,
+        Export vCard, Archive person, Audit history, and Delete person. Delete
+        stops being the second-most prominent control on the page.
+    - [x] The menu mirrors the shipped member popover exactly — toggle with
+          `aria-expanded` and `aria-controls`, a `hidden` container, one click
+          handler. Escape and outside-click dismissal were deliberately not
+          added, because the member popover has neither; a later leaf should
+          give both menus the same dismissal behavior at once rather than
+          leaving two menus that behave differently.
+    - [x] Cancelling an edit or a delete reopens the menu before restoring
+          focus, so focus never lands on a control inside a closed container.
+    - [x] Audit history reveals the Admin zone through `UXD-002C`'s
+          section-to-zone map instead of linking to the audit-history route. The
+          audit-summary card already owns that link and `app-003c` pins the page
+          at exactly two person-scoped links, so a menu link would have been
+          both a duplicate and a failure. Restore stays in the archived banner,
+          where review §7.1 puts it and where it cannot collide with a second
+          control carrying the same accessible name.
+    - [x] Ten browser flows reach these controls, not the eight this leaf
+          originally listed: `app-003a` and `app-005c` were missing from the
+          count. Each of the ten gained one idempotent `openPersonMenu` helper
+          modelled on `openMemberPopover`; `app-005c` reaches the audit link
+          inside its own card and needed no change.
+    - [x] No assertion was weakened. `app-004a`'s archived-Edit check now proves
+          the control exists before proving it is hidden: `getByRole` does not
+          match inside a `hidden` container, so `toBeHidden()` would otherwise
+          have passed against zero elements and proved nothing.
+    - [x] One specificity defect was caught by the suite and one token-family
+          defect by review. `.person-menu-popover > :is(button, a)` is (0,1,1)
+          and loses to the shared control rule's anchor branch at (0,2,1), so
+          every menu-item declaration was landing on the buttons only and the
+          vCard link kept a different border radius; the rule is now strictly
+          more specific on both branches rather than relying on source order,
+          which `UXD-012` will reshuffle. The Delete item was reading
+          `--accent-hover` rather than `--danger` — the same family-pairing
+          mistake `UXD-001` recorded and repaired, and one that would follow the
+          accent into dark mode.
+    - [x] Known and left for `UXD-016`: `.person-menu-popover` and
+          `.member-popover` both use the `white` keyword rather than
+          `--surface-1`. Changing one without the other would make two popovers
+          visibly different surfaces, and dark mode has to convert both anyway.
+    - [x] Gates: `fmt:check`, `lint`, `check:web`, 421 web unit tests,
+          `test:coverage:web` at 91.69/82.24/86.15/93.72, and the complete
+          Chromium suite 44/44.
   - [x] **UXD-002B — Profile-facts rail.** (§7.2) The nine sections left the
         main column for one sticky column holding the workspace-section
         directory and the rail. Block chrome is an `<h3>` at .95rem, a count,
