@@ -339,9 +339,16 @@ Deno.test("[APP-003C] static person shell keeps the accepted canonical sections"
     "photos",
     "audit-summary",
   ];
-  const declared = [...shell.matchAll(
-    /\["([a-z-]+)", "[^"]+", "(?:core|independent)"\]/g,
+  const sectionDeclaration = shell.match(
+    /const sections = \[([\s\S]*?)\] as const;/,
+  )?.[1] ?? "";
+  const declared = [...sectionDeclaration.matchAll(
+    /\["([a-z-]+)", "[^"]+"\]/g,
   )].map((match) => match[1]);
+  assert(
+    declared.length > 0,
+    "the shell section extraction found no declarations",
+  );
   assert(
     JSON.stringify(declared) === JSON.stringify(expected),
     "the shell declares every page-catalog section once and in order",
@@ -349,9 +356,9 @@ Deno.test("[APP-003C] static person shell keeps the accepted canonical sections"
   assert(
     shell.includes("href={`?section=${id}`}") &&
       shell.includes("data-profile-section={id}") &&
-      shell.includes("data-load-mode={loadMode}") &&
+      shell.includes("data-zone={zone}") &&
       shell.includes("No empty result is being inferred"),
-    "sections use canonical query deep links and honest independent states",
+    "sections use canonical query deep links, structural zone metadata, and honest unavailable states",
   );
   assert(
     !shell.includes("/app/people/:personId/") &&
