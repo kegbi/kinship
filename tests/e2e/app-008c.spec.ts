@@ -167,6 +167,8 @@ test("[PEOPLE-003] reads the complete canonical person workspace", {
 
   const sections = page.locator("[data-profile-section]");
   await expect(sections).toHaveCount(22);
+  await page.locator('[data-zone="things"]').scrollIntoViewIfNeeded();
+  await page.locator('[data-zone="admin"]').scrollIntoViewIfNeeded();
   await expect.poll(async () =>
     await sections.evaluateAll((nodes) =>
       nodes.map((node) => (node as HTMLElement).dataset.sectionState)

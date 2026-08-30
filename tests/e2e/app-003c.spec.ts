@@ -184,9 +184,12 @@ test(
       await route.continue();
     });
     await page.goto(`/app/people/${personId}?section=documents`);
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Opening person…" }),
-    ).toBeVisible();
+    await expect(page.locator("#person-profile-ready")).toBeVisible();
+    await expect(page.locator("#person-profile-ready")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    await expect(page.locator("#person-profile-state")).toBeHidden();
     releaseProfile();
 
     await expect(page.locator("body")).toHaveAttribute(
