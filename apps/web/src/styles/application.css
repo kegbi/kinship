@@ -1491,6 +1491,64 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
   gap: var(--space-5);
 }
 
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-3) 50%,
+    var(--surface-2) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+.skeleton-lines {
+  display: grid;
+  width: 100%;
+  gap: var(--space-2);
+}
+
+.skeleton-line {
+  display: block;
+  width: 100%;
+  height: .9rem;
+}
+
+.skeleton-line-80 {
+  width: 80%;
+}
+
+.skeleton-line-60 {
+  width: 60%;
+}
+
+.skeleton-avatar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.skeleton-chip {
+  display: inline-block;
+  width: 5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-pill);
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
 .person-workspace button,
 .person-workspace a:is(.button-primary, .button-secondary, .button-danger) {
   align-items: center;
@@ -1611,6 +1669,18 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
   font-weight: 500;
   line-height: 1.05;
   letter-spacing: -.025em;
+}
+
+#person-profile-name .skeleton-line {
+  width: 12rem;
+}
+
+.person-profile-breadcrumb .skeleton-chip {
+  width: 7rem;
+}
+
+.person-vital-stats .skeleton-line {
+  min-width: 5rem;
 }
 
 #person-profile-nickname {

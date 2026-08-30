@@ -263,7 +263,7 @@ describe("people form layout regressions", () => {
       profilePage.indexOf('class="profile-section-list"'),
     );
     expect(main).toContain(
-      '<section class="person-zone" data-zone={zone} aria-labelledby={`person-zone-${zone}-heading`}>',
+      '<section class="person-zone" data-zone={zone} aria-labelledby={`person-zone-${zone}-heading`} aria-busy="true">',
     );
     expect(main).toContain(
       "<h2 id={`person-zone-${zone}-heading`}>{zoneTitle}</h2>",
@@ -388,5 +388,55 @@ describe("people form layout regressions", () => {
     expect(mobileSwitcher).toContain("top: 6rem;");
     expect(mobileSwitcher).toContain("scroll-snap-type: x proximity;");
     expect(mobileSwitcher).not.toContain("overflow-x");
+  });
+
+  it("UXD-003B ships the visible busy shell, silent section states, and reduced-motion skeletons", () => {
+    const stateTag = profilePage.match(
+      /<section id="person-profile-state"[^>]*>/,
+    )?.[0];
+    const readyTag = profilePage.match(
+      /<section id="person-profile-ready"[^>]*>/,
+    )?.[0];
+    expect(stateTag).toContain("hidden");
+    expect(readyTag).not.toContain("hidden");
+    expect(readyTag).toContain('aria-busy="true"');
+    expect(profilePage).not.toContain("Opening person…");
+    expect(profilePage).toMatch(
+      /<h1 id="person-profile-name"[^>]*>[\s\S]*?class="[^"]*skeleton[^"]*"[^>]*aria-hidden="true"[\s\S]*?Loading person…[\s\S]*?<\/h1>/,
+    );
+
+    const initialSectionStates = [
+      ...profilePage.matchAll(
+        /<p\b[^>]*\bclass="[^"]*\bsection-state\b[^"]*"[^>]*>/gs,
+      ),
+    ].map(([tag]) => tag).filter((tag) =>
+      !tag.includes('id="person-lifecycle-status"') &&
+      !tag.includes('role="alert"')
+    );
+    expect(initialSectionStates.length).toBeGreaterThan(10);
+    expect(
+      initialSectionStates.every((tag) =>
+        !tag.includes('role="status"') && !tag.includes("aria-live")
+      ),
+    ).toBe(true);
+    expect(profilePage).toMatch(
+      /id="person-lifecycle-status"[^>]*role="status"[^>]*aria-live="polite"/,
+    );
+    expect(profilePage).toMatch(
+      /id="person-delete-impact"[^>]*role="status"/,
+    );
+
+    expect(applicationStyles).toMatch(
+      /\.skeleton\s*\{[^}]*linear-gradient\(90deg, var\(--surface-2\) 0%, var\(--surface-3\) 50%,\s*var\(--surface-2\) 100%\);[^}]*background-size:\s*200% 100%;[^}]*animation:\s*skeleton-sweep 1\.4s ease-in-out infinite;/s,
+    );
+    expect(applicationStyles).toMatch(/@keyframes skeleton-sweep\s*\{/);
+    expect(applicationStyles).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.skeleton\s*\{[^}]*animation:\s*none;/,
+    );
+    expect(applicationStyles).toMatch(
+      /\.skeleton-line\s*\{[^}]*height:\s*\.9rem;/s,
+    );
+    expect(applicationStyles).toContain(".skeleton-avatar");
+    expect(applicationStyles).toContain(".skeleton-chip");
   });
 });

@@ -21,10 +21,17 @@ const session = {
 };
 
 function markup(path = `/app/people/${personId}`): void {
+  vi.stubGlobal(
+    "requestIdleCallback",
+    (callback: IdleRequestCallback) => {
+      callback({ didTimeout: false, timeRemaining: () => 50 });
+      return 1;
+    },
+  );
   history.replaceState({}, "", path);
   document.body.innerHTML = `
-    <section id="person-profile-state" tabindex="-1"><h1>Opening person…</h1></section>
-    <section id="person-profile-ready" hidden>
+    <section id="person-profile-state" tabindex="-1" hidden></section>
+    <section id="person-profile-ready" aria-busy="true">
       <header class="person-profile-hero">
         <nav aria-label="Breadcrumb">
           <a href="/app/people">People</a><span aria-hidden="true">/</span>
@@ -32,7 +39,7 @@ function markup(path = `/app/people/${personId}`): void {
         </nav>
         <div id="person-profile-avatar"></div>
         <div>
-          <h1 id="person-profile-name" tabindex="-1"></h1>
+          <h1 id="person-profile-name" tabindex="-1"><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span><span class="sr-only">Loading person…</span></h1>
           <p id="person-profile-nickname" hidden></p>
           <div class="person-profile-badges" role="group" aria-label="Person states">
             <p class="state-badge calm">Identity saved</p>
@@ -116,6 +123,7 @@ function markup(path = `/app/people/${personId}`): void {
         </div>
         <section class="person-zone" data-zone="timeline" aria-labelledby="person-zone-timeline-heading">
           <h2 id="person-zone-timeline-heading">Timeline</h2>
+          <p class="section-state" data-test-section-state>Loading timeline…</p>
         </section>
         <section class="person-zone" data-zone="planning" aria-labelledby="person-zone-planning-heading">
           <h2 id="person-zone-planning-heading">Planning</h2>
@@ -131,6 +139,96 @@ function markup(path = `/app/people/${personId}`): void {
         </section>
       </div>
     </section>`;
+}
+
+function deferredZoneMarkup(): void {
+  for (const [id, kind] of [["documents", "document"], ["photos", "photo"]]) {
+    const root = document.querySelector<HTMLElement>(
+      `[data-profile-section="${id}"]`,
+    )!;
+    root.dataset.personFiles = kind;
+    root.dataset.sectionState = "loading";
+    root.insertAdjacentHTML(
+      "beforeend",
+      `<span data-file-badge></span><p data-file-state class="section-state"></p>
+       <button data-file-refresh type="button" hidden>Retry</button>
+       <ul data-file-list></ul><button data-file-add type="button">Add</button>
+       <form data-file-form hidden><input name="title"><input name="file" type="file"><button data-file-cancel type="button">Cancel</button></form>`,
+    );
+  }
+  document.querySelector('[data-zone="things"]')?.insertAdjacentHTML(
+    "beforeend",
+    [["gifts", "gift"], ["debts", "debt"]].map(([id, kind]) =>
+      `<section data-profile-section="${id}" data-person-gifts="${kind}" data-section-state="loading">
+           <span data-gift-badge></span><p data-gift-state class="section-state"></p>
+           <button data-gift-retry type="button" hidden>Retry</button>
+           <ul data-gift-list></ul><button data-gift-add type="button">Add</button>
+           <form data-gift-form hidden><button data-gift-cancel type="button">Cancel</button></form>
+         </section>`
+    ).join(""),
+  );
+  const audit = document.querySelector<HTMLElement>(
+    '[data-profile-section="audit-summary"]',
+  )!;
+  audit.dataset.personAuditSummary = "";
+  audit.insertAdjacentHTML(
+    "beforeend",
+    `<span data-person-audit-badge></span><p data-person-audit-state class="section-state"></p>
+     <ol data-person-audit-list></ol><a data-person-audit-link></a>
+     <button data-person-audit-retry type="button" hidden>Retry</button>`,
+  );
+}
+
+function stubDeferredZoneObserver(): {
+  readonly activate: (
+    zone: "timeline" | "planning" | "things" | "admin",
+  ) => void;
+  readonly observed: readonly Element[];
+} {
+  let zoneCallback: IntersectionObserverCallback | undefined;
+  let zoneObserver: IntersectionObserver | undefined;
+  const observed: Element[] = [];
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      readonly root = null;
+      readonly rootMargin: string;
+      readonly thresholds = [0];
+
+      constructor(
+        callback: IntersectionObserverCallback,
+        options?: IntersectionObserverInit,
+      ) {
+        this.rootMargin = options?.rootMargin ?? "0px";
+        if (this.rootMargin === "400px") {
+          zoneCallback = callback;
+          zoneObserver = this as unknown as IntersectionObserver;
+        }
+      }
+
+      disconnect = vi.fn();
+      observe = (target: Element) => {
+        if (this.rootMargin === "400px") observed.push(target);
+      };
+      takeRecords = () => [];
+      unobserve = vi.fn();
+    },
+  );
+  return {
+    activate(zone) {
+      const target = document.querySelector<HTMLElement>(
+        `[data-zone="${zone}"]`,
+      )!;
+      zoneCallback?.(
+        [{
+          isIntersecting: true,
+          target,
+        } as unknown as IntersectionObserverEntry],
+        zoneObserver!,
+      );
+    },
+    observed,
+  };
 }
 
 function interactionSectionMarkup(): void {
@@ -241,6 +339,297 @@ afterEach(() => {
 });
 
 describe("PEOPLE-001 canonical person identity shell", () => {
+  it("UXD-003B paints a busy shell before identity resolves and clears it with the hero", async () => {
+    markup();
+    let releaseProfile!: (value: Response) => void;
+    const pendingProfile = new Promise<Response>((resolve) => {
+      releaseProfile = resolve;
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(session))
+      .mockReturnValueOnce(pendingProfile)
+      .mockResolvedValue(undefined as never);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const mounting = mountPeopleProfile();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const ready = document.querySelector<HTMLElement>(
+      "#person-profile-ready",
+    )!;
+    expect(ready.hidden).toBe(false);
+    expect(ready.getAttribute("aria-busy")).toBe("true");
+    expect(document.querySelector<HTMLElement>("#person-profile-state")?.hidden)
+      .toBe(true);
+    expect(document.querySelector("#person-profile-name")?.textContent).toBe(
+      "Loading person…",
+    );
+    expect(document.querySelector("#person-profile-name .skeleton")).not
+      .toBeNull();
+
+    releaseProfile(response({
+      dueInformation: { detail: "No due information.", status: "ready" },
+      person: {
+        familyName: "Lovelace",
+        givenName: "Ada",
+        id: personId,
+        isDeceased: false,
+        isPartial: false,
+        isSelf: false,
+        isStarred: false,
+        tagCount: 0,
+        tags: [],
+        updatedAt: "2026-08-15T08:00:00.000Z",
+      },
+      status: "ready",
+    }));
+    await mounting;
+    expect(ready.hasAttribute("aria-busy")).toBe(false);
+    expect(document.querySelector("#person-profile-name")?.textContent).toBe(
+      "Ada Lovelace",
+    );
+  });
+
+  it("UXD-003B defers Things and Admin, settles Things sections, activates each once, and records the view when idle", async () => {
+    markup();
+    deferredZoneMarkup();
+    const zoneObserver = stubDeferredZoneObserver();
+    let idleCallback: IdleRequestCallback | undefined;
+    vi.stubGlobal(
+      "requestIdleCallback",
+      vi.fn((callback: IdleRequestCallback) => {
+        idleCallback = callback;
+        return 1;
+      }),
+    );
+    const fetchMock = vi.fn(
+      (resource: string | URL | Request, init?: RequestInit) => {
+        const url = String(resource);
+        if (url.endsWith("/api/v1/session")) return response(session);
+        if (url === `/api/v1/people/${personId}?include=summary`) {
+          return response({
+            dueInformation: { detail: "No due information.", status: "ready" },
+            person: {
+              familyName: "Lovelace",
+              givenName: "Ada",
+              id: personId,
+              isDeceased: false,
+              isPartial: false,
+              isSelf: false,
+              isStarred: false,
+              tagCount: 0,
+              tags: [],
+              updatedAt: "2026-08-15T08:00:00.000Z",
+            },
+            status: "ready",
+          });
+        }
+        if (url.endsWith(`/${personId}/files`)) {
+          return response({ files: [], status: "ready" });
+        }
+        if (url.endsWith(`/${personId}/gifts`)) {
+          return response({
+            debts: [],
+            gifts: [],
+            status: "ready",
+            supportedCurrencyCodes: ["USD"],
+          });
+        }
+        if (url.includes(`/${personId}/audit`)) {
+          return response({ items: [], status: "ready" });
+        }
+        if (init?.method === "POST" && url.endsWith(`/${personId}/view`)) {
+          return response({ status: "recorded" });
+        }
+        return Promise.resolve(undefined as never);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountPeopleProfile();
+    const count = (suffix: string) =>
+      fetchMock.mock.calls.filter(([resource]) =>
+        String(resource).includes(suffix)
+      ).length;
+    expect(zoneObserver.observed).toHaveLength(4);
+    expect(count(`/${personId}/files`)).toBe(0);
+    expect(count(`/${personId}/gifts`)).toBe(0);
+    expect(count(`/${personId}/audit`)).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const thingsSections = [...document.querySelectorAll<HTMLElement>(
+      '[data-zone="things"] [data-profile-section]',
+    )];
+    expect(thingsSections).toHaveLength(4);
+    expect(
+      thingsSections.every((section) =>
+        section.dataset.sectionState === "loading"
+      ),
+    ).toBe(true);
+
+    idleCallback?.({
+      didTimeout: false,
+      timeRemaining: () => 50,
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+
+    zoneObserver.activate("things");
+    await vi.waitFor(() => {
+      expect(count(`/${personId}/files`)).toBe(1);
+      expect(count(`/${personId}/gifts`)).toBe(1);
+      expect(
+        thingsSections.filter((section) =>
+          section.dataset.sectionState === "loading"
+        ),
+      ).toHaveLength(0);
+    });
+    document.querySelector<HTMLButtonElement>(
+      '[data-zone-filter="things"]',
+    )?.click();
+    document.querySelector<HTMLButtonElement>(
+      '[data-zone-filter="things"]',
+    )?.click();
+    await Promise.resolve();
+    expect(count(`/${personId}/files`)).toBe(1);
+    expect(count(`/${personId}/gifts`)).toBe(1);
+
+    zoneObserver.activate("admin");
+    await vi.waitFor(() => expect(count(`/${personId}/audit`)).toBe(1));
+    expect(fetchMock.mock.calls.map(([resource]) => String(resource))).toEqual([
+      "/api/v1/session",
+      `/api/v1/people/${personId}?include=summary`,
+      `/api/v1/people/${personId}/view`,
+      `/api/v1/people/${personId}/files`,
+      `/api/v1/people/${personId}/gifts`,
+      `/api/v1/people/${personId}/audit?limit=3`,
+    ]);
+  });
+
+  it("UXD-003B activates a deep-linked zone without delaying section focus", async () => {
+    markup(`/app/people/${personId}?section=photos`);
+    deferredZoneMarkup();
+    stubDeferredZoneObserver();
+    const fetchMock = stubReadyProfile();
+
+    await mountPeopleProfile();
+
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-profile-section="photos"]'),
+    );
+    expect(
+      fetchMock.mock.calls.filter(([resource]) =>
+        String(resource).endsWith(`/${personId}/files`)
+      ),
+    ).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.filter(([resource]) =>
+        String(resource).endsWith(`/${personId}/gifts`)
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("UXD-003B activates the selected zone without fetching other deferred zones", async () => {
+    markup(`/app/people/${personId}?view=admin`);
+    deferredZoneMarkup();
+    stubDeferredZoneObserver();
+    const fetchMock = stubReadyProfile();
+
+    await mountPeopleProfile();
+
+    const requested = (suffix: string) =>
+      fetchMock.mock.calls.filter(([resource]) =>
+        String(resource).includes(suffix)
+      );
+    expect(requested(`/${personId}/audit`)).toHaveLength(1);
+    expect(requested(`/${personId}/files`)).toHaveLength(0);
+    expect(requested(`/${personId}/gifts`)).toHaveLength(0);
+  });
+
+  it("UXD-003B records the view through the timeout fallback", async () => {
+    markup();
+    vi.stubGlobal("requestIdleCallback", undefined);
+    const fetchMock = stubReadyProfile();
+
+    await mountPeopleProfile();
+
+    expect(
+      fetchMock.mock.calls.filter(([resource, init]) =>
+        init?.method === "POST" &&
+        String(resource).endsWith(`/${personId}/view`)
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("UXD-003B promotes section states only after the initial fan-out settles", async () => {
+    markup();
+    deferredZoneMarkup();
+    vi.stubGlobal("IntersectionObserver", undefined);
+    let releaseFiles!: (value: Response) => void;
+    const pendingFiles = new Promise<Response>((resolve) => {
+      releaseFiles = resolve;
+    });
+    const fetchMock = vi.fn(
+      (resource: string | URL | Request, init?: RequestInit) => {
+        const url = String(resource);
+        if (url.endsWith("/api/v1/session")) return response(session);
+        if (url === `/api/v1/people/${personId}?include=summary`) {
+          return response({
+            dueInformation: { detail: "No due information.", status: "ready" },
+            person: {
+              givenName: "Ada",
+              id: personId,
+              isDeceased: false,
+              isPartial: false,
+              isSelf: false,
+              isStarred: false,
+              tagCount: 0,
+              tags: [],
+              updatedAt: "2026-08-15T08:00:00.000Z",
+            },
+            status: "ready",
+          });
+        }
+        if (url.endsWith(`/${personId}/files`)) return pendingFiles;
+        if (url.endsWith(`/${personId}/gifts`)) {
+          return response({
+            debts: [],
+            gifts: [],
+            status: "ready",
+            supportedCurrencyCodes: [],
+          });
+        }
+        if (url.includes(`/${personId}/audit`)) {
+          return response({ items: [], status: "ready" });
+        }
+        if (init?.method === "POST" && url.endsWith(`/${personId}/view`)) {
+          return response({ status: "recorded" });
+        }
+        return Promise.resolve(undefined as never);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const mounting = mountPeopleProfile();
+    await vi.waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([resource]) =>
+          String(resource).endsWith(`/${personId}/files`)
+        ),
+      ).toBe(true)
+    );
+    const states = [...document.querySelectorAll<HTMLElement>(
+      ".section-state",
+    )];
+    expect(states.every((state) => !state.hasAttribute("role"))).toBe(true);
+
+    releaseFiles(response({ files: [], status: "ready" }));
+    await mounting;
+    expect(states.every((state) => state.getAttribute("role") === "status"))
+      .toBe(true);
+    expect(
+      states.every((state) => state.getAttribute("aria-live") === "polite"),
+    )
+      .toBe(true);
+  });
+
   it("UXD-002B requests summary and seeds visible and hidden rail counts before fact refresh", async () => {
     markup();
     summaryRailMarkup();
@@ -447,10 +836,9 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     vi.stubGlobal("fetch", fetchMock);
     const mounting = mountPeopleProfile();
     await vi.waitFor(() => {
-      expect(
-        document.querySelector<HTMLElement>("#person-profile-ready")?.hidden,
-      )
-        .toBe(false);
+      expect(document.querySelector("#person-profile-name")?.textContent).toBe(
+        "Ada Lovelace",
+      );
     });
     expect(
       fetchMock.mock.calls.some(([url, init]) =>
@@ -745,14 +1133,21 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     vi.stubGlobal(
       "IntersectionObserver",
       class {
-        constructor(next: IntersectionObserverCallback) {
-          callback = next;
+        readonly root = null;
+        readonly rootMargin: string;
+        readonly thresholds = [0];
+
+        constructor(
+          next: IntersectionObserverCallback,
+          options?: IntersectionObserverInit,
+        ) {
+          this.rootMargin = options?.rootMargin ?? "0px";
+          if (this.rootMargin === "0px") callback = next;
         }
-        observe = observe;
         disconnect = vi.fn();
-        root = null;
-        rootMargin = "0px";
-        thresholds = [0];
+        observe = (target: Element) => {
+          if (this.rootMargin === "0px") observe(target);
+        };
         takeRecords = () => [];
         unobserve = vi.fn();
       },
@@ -947,9 +1342,9 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
     const mounting = mountPeopleProfile();
     await vi.waitFor(() =>
-      expect(
-        document.querySelector("[data-person-audit-state]")?.textContent,
-      ).toContain("Loading")
+      expect(document.querySelector("#person-profile-name")?.textContent).toBe(
+        "Ada",
+      )
     );
     expect(
       document.querySelector<HTMLAnchorElement>(
@@ -1030,8 +1425,9 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
     const mounting = mountPeopleProfile();
     await vi.waitFor(() =>
-      expect(document.querySelector("[data-person-audit-state]")?.textContent)
-        .toContain("Loading")
+      expect(document.querySelector("#person-profile-name")?.textContent).toBe(
+        "Ada",
+      )
     );
     const notice = document.querySelector<HTMLElement>(
       "#person-profile-section-notice",
@@ -1090,8 +1486,9 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
     const mounting = mountPeopleProfile();
     await vi.waitFor(() =>
-      expect(document.querySelector("[data-person-audit-state]")?.textContent)
-        .toContain("Loading")
+      expect(document.querySelector("#person-profile-name")?.textContent).toBe(
+        "Ada",
+      )
     );
     const title = document.querySelector<HTMLInputElement>(
       '[data-reminder-form] [name="title"]',
@@ -1275,6 +1672,17 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       await mountPeopleProfile();
       expect(document.querySelector("#person-profile-state h1")?.textContent)
         .toBe(state.heading);
+      expect(
+        document.querySelector<HTMLElement>("#person-profile-state")?.hidden,
+      ).toBe(false);
+      expect(
+        document.querySelector<HTMLElement>("#person-profile-ready")?.hidden,
+      ).toBe(true);
+      expect(
+        document.querySelector("#person-profile-ready")?.hasAttribute(
+          "aria-busy",
+        ),
+      ).toBe(false);
       expect(
         fetchMock.mock.calls.some(([url, init]) =>
           init?.method === "POST" && String(url).endsWith("/view")

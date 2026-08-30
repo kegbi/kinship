@@ -58,6 +58,7 @@ interface ProfileElements {
 type ProfileState = "forbidden" | "not-found" | "unavailable";
 
 interface SectionNavigationContext {
+  activateZone?: (zone: Zone) => Promise<void>;
   readonly hiddenSectionIds: ReadonlySet<string>;
   memberRole: SessionContext["member"]["role"];
   readonly zoneFilter?: ZoneFilterContext;
@@ -67,8 +68,20 @@ type Zone = "timeline" | "planning" | "things" | "admin";
 type ZoneView = Zone | "all";
 
 interface ZoneFilterContext {
+  activate?: (zone: Zone) => Promise<void>;
   readonly buttons: readonly HTMLButtonElement[];
   readonly zones: readonly HTMLElement[];
+}
+
+interface ZoneRegistry {
+  readonly activate: (zone: Zone) => Promise<void>;
+  readonly register: (zone: Zone, mount: () => Promise<void>) => void;
+  readonly settled: () => Promise<void>;
+}
+
+interface ZoneRegistryEntry {
+  activation?: Promise<void>;
+  readonly mounts: Array<() => Promise<void>>;
 }
 
 interface LifecycleElements {
@@ -144,6 +157,7 @@ function applyZoneView(filter: ZoneFilterContext, view: ZoneView): void {
 
 function selectZone(filter: ZoneFilterContext, view: ZoneView): void {
   applyZoneView(filter, view);
+  if (view !== "all") void filter.activate?.(view);
   const url = new URL(globalThis.location.href);
   url.searchParams.set("view", view);
   globalThis.history.pushState({}, "", url);
@@ -181,6 +195,103 @@ function mountZoneMiniIdentity(): void {
     mini.hidden = entry?.isIntersecting !== false;
   });
   observer.observe(hero);
+}
+
+function createZoneRegistry(): ZoneRegistry {
+  const zones = new Map<Zone, ZoneRegistryEntry>();
+  const entry = (zone: Zone) => {
+    const current = zones.get(zone);
+    if (current) return current;
+    const created: ZoneRegistryEntry = { mounts: [] };
+    zones.set(zone, created);
+    return created;
+  };
+  const register = (zone: Zone, mount: () => Promise<void>): void => {
+    entry(zone).mounts.push(mount);
+  };
+  const activate = (zone: Zone): Promise<void> => {
+    const current = entry(zone);
+    current.activation ??= Promise.all(
+      current.mounts.map((mount) => Promise.resolve().then(mount)),
+    ).then(() => undefined).finally(() => {
+      document.querySelector<HTMLElement>(`[data-zone="${zone}"]`)
+        ?.removeAttribute("aria-busy");
+    });
+    return current.activation;
+  };
+  return {
+    activate,
+    register,
+    settled: () =>
+      Promise.all(
+        [...zones.values()].flatMap((zone) =>
+          zone.activation ? [zone.activation] : []
+        ),
+      ).then(() => undefined),
+  };
+}
+
+function mountZoneVisibilityActivation(
+  activate: (zone: Zone) => Promise<void>,
+): void {
+  const zones = [...document.querySelectorAll<HTMLElement>("[data-zone]")]
+    .flatMap<{ readonly element: HTMLElement; readonly zone: Zone }>(
+      (element) => {
+        const zone = element.dataset.zone;
+        return zone === "timeline" || zone === "planning" ||
+            zone === "things" ||
+            zone === "admin"
+          ? [{ element, zone }]
+          : [];
+      },
+    );
+  if (typeof globalThis.IntersectionObserver !== "function") {
+    for (const { zone } of zones) void activate(zone);
+    return;
+  }
+  const observer = new IntersectionObserver((entries) => {
+    for (const observed of entries) {
+      if (!observed.isIntersecting) continue;
+      const match = zones.find(({ element }) => element === observed.target);
+      if (!match) continue;
+      observer.unobserve(match.element);
+      void activate(match.zone);
+    }
+  }, { rootMargin: "400px" });
+  for (const { element } of zones) observer.observe(element);
+}
+
+function promoteSectionStatusRegions(): void {
+  for (
+    const state of document.querySelectorAll<HTMLElement>(
+      '.section-state:not(#person-lifecycle-status):not([role="alert"])',
+    )
+  ) {
+    state.setAttribute("role", "status");
+    state.setAttribute("aria-live", "polite");
+  }
+}
+
+function afterFirstPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    const painted = () => globalThis.setTimeout(resolve, 0);
+    if (typeof globalThis.requestAnimationFrame === "function") {
+      globalThis.requestAnimationFrame(painted);
+      return;
+    }
+    painted();
+  });
+}
+
+function deferPersonView(personId: string, workspaceId: string): void {
+  const record = () => {
+    void recordPersonView(personId, workspaceId).catch(() => undefined);
+  };
+  if (typeof globalThis.requestIdleCallback === "function") {
+    globalThis.requestIdleCallback(record);
+    return;
+  }
+  globalThis.setTimeout(record, 0);
 }
 
 function seedRailSummary(
@@ -380,6 +491,7 @@ function renderState(profile: ProfileElements, state: ProfileState): void {
       linkLabel: "Try again",
     },
   }[state];
+  profile.ready.removeAttribute("aria-busy");
   profile.ready.hidden = true;
   profile.state.hidden = false;
   profile.state.replaceChildren();
@@ -482,11 +594,12 @@ function activateSectionZone(
   id: string | null,
 ): Zone | undefined {
   if (
-    !id || navigation.hiddenSectionIds.has(id) || !navigation.zoneFilter ||
-    !(id in SECTION_ZONE)
+    !id || navigation.hiddenSectionIds.has(id) || !(id in SECTION_ZONE)
   ) return undefined;
   const zone = SECTION_ZONE[id as keyof typeof SECTION_ZONE];
   if (zone === "facts") return undefined;
+  void navigation.activateZone?.(zone);
+  if (!navigation.zoneFilter) return undefined;
   const targetZone = navigation.zoneFilter.zones.find((candidate) =>
     candidate.dataset.zone === zone
   );
@@ -611,7 +724,9 @@ function mountSectionNavigation(
   });
   globalThis.addEventListener("popstate", () => {
     if (navigation.zoneFilter) {
-      applyZoneView(navigation.zoneFilter, currentView());
+      const view = currentView();
+      applyZoneView(navigation.zoneFilter, view);
+      if (view !== "all") void navigation.activateZone?.(view);
     }
     reconcileSectionLocation(profile, navigation);
   });
@@ -707,6 +822,10 @@ function renderReady(
   profile.nickname.textContent = person.nickname ? `“${person.nickname}”` : "";
   profile.nickname.hidden = !person.nickname;
   profile.avatar.textContent = initials(person);
+  const savedState = document.querySelector<HTMLElement>(
+    "#person-profile-saved-state",
+  );
+  if (savedState) savedState.textContent = "Identity saved";
   renderZoneMiniIdentity(person);
   for (
     const field of [
@@ -760,6 +879,7 @@ function renderReady(
   renderSectionNavigation(profile, navigation.hiddenSectionIds);
   profile.state.hidden = true;
   profile.ready.hidden = false;
+  profile.ready.removeAttribute("aria-busy");
   const vcard = document.querySelector<HTMLAnchorElement>(
     "#person-export-vcard",
   );
@@ -1109,6 +1229,82 @@ export async function mountPeopleProfile(): Promise<void> {
     id,
     session.session.workspace.id,
   );
+  const zoneRegistry = createZoneRegistry();
+  const { activate, register } = zoneRegistry;
+  sectionNavigation.activateZone = activate;
+  if (zoneFilter) zoneFilter.activate = activate;
+  register(
+    "timeline",
+    () =>
+      mountPersonInteractions(
+        id,
+        session.session.workspace.id,
+        result.value.status === "archived",
+        {
+          activities: sectionNavigation.hiddenSectionIds.has("activities"),
+          notes: sectionNavigation.hiddenSectionIds.has("notes"),
+        },
+      ),
+  );
+  register(
+    "timeline",
+    () =>
+      mountPersonLifeEvents(
+        id,
+        session.session.workspace.id,
+        sectionNavigation.hiddenSectionIds.has("life-events"),
+      ),
+  );
+  register(
+    "timeline",
+    () =>
+      mountCommunications(
+        id,
+        session.session.workspace.id,
+        result.value.status === "archived",
+        {
+          calls: sectionNavigation.hiddenSectionIds.has("calls"),
+          conversations: sectionNavigation.hiddenSectionIds.has(
+            "conversations",
+          ),
+        },
+      ),
+  );
+  register(
+    "planning",
+    () =>
+      mountTaskSurface({
+        archived: result.value.status === "archived",
+        hidden: sectionNavigation.hiddenSectionIds.has("tasks"),
+        personId: id,
+        workspaceId: session.session.workspace.id,
+      }),
+  );
+  register(
+    "things",
+    () =>
+      mountPersonFiles({
+        archived: result.value.status === "archived",
+        personId: id,
+        workspaceId: session.session.workspace.id,
+      }),
+  );
+  register(
+    "things",
+    () =>
+      mountPersonGifts({
+        archived: result.value.status === "archived",
+        personId: id,
+        workspaceId: session.session.workspace.id,
+      }),
+  );
+  register(
+    "admin",
+    () => mountPersonAuditSummary(id, session.session.workspace.id),
+  );
+  const selectedView = currentView();
+  if (selectedView !== "all") void activate(selectedView);
+  mountZoneVisibilityActivation(activate);
   renderReady(
     profile,
     result.value.person,
@@ -1118,10 +1314,8 @@ export async function mountPeopleProfile(): Promise<void> {
     sectionNavigation,
   );
   seedRailSummary(result.value.summary);
-  void recordPersonView(id, session.session.workspace.id).catch(() =>
-    undefined
-  );
-  await Promise.all([
+  deferPersonView(id, session.session.workspace.id);
+  const eagerRail = Promise.all([
     mountImportantDates(
       id,
       session.session.workspace.id,
@@ -1140,51 +1334,20 @@ export async function mountPeopleProfile(): Promise<void> {
       sectionNavigation.hiddenSectionIds.has("relationships"),
       result.value.person.updatedAt,
     ),
-    mountPersonInteractions(
-      id,
-      session.session.workspace.id,
-      result.value.status === "archived",
-      {
-        activities: sectionNavigation.hiddenSectionIds.has("activities"),
-        notes: sectionNavigation.hiddenSectionIds.has("notes"),
-      },
-    ),
-    mountTaskSurface({
-      archived: result.value.status === "archived",
-      hidden: sectionNavigation.hiddenSectionIds.has("tasks"),
-      personId: id,
-      workspaceId: session.session.workspace.id,
-    }),
     mountPersonReminders({
       archived: result.value.status === "archived",
       personId: id,
       workspaceId: session.session.workspace.id,
     }),
-    mountPersonFiles({
-      archived: result.value.status === "archived",
-      personId: id,
-      workspaceId: session.session.workspace.id,
-    }),
-    mountPersonGifts({
-      archived: result.value.status === "archived",
-      personId: id,
-      workspaceId: session.session.workspace.id,
-    }),
-    mountPersonLifeEvents(
-      id,
-      session.session.workspace.id,
-      sectionNavigation.hiddenSectionIds.has("life-events"),
-    ),
-    mountCommunications(
-      id,
-      session.session.workspace.id,
-      result.value.status === "archived",
-      {
-        calls: sectionNavigation.hiddenSectionIds.has("calls"),
-        conversations: sectionNavigation.hiddenSectionIds.has("conversations"),
-      },
-    ),
-    mountPersonAuditSummary(id, session.session.workspace.id),
-  ]);
+  ]).finally(() => {
+    document.querySelector<HTMLElement>(".profile-facts-rail")
+      ?.removeAttribute("aria-busy");
+    document.querySelector<HTMLElement>(
+      '[data-profile-fact-section="tags"]',
+    )?.removeAttribute("aria-busy");
+  });
+  await Promise.all([eagerRail, afterFirstPaint()]);
+  await zoneRegistry.settled();
+  promoteSectionStatusRegions();
   reconcileSectionLocation(profile, sectionNavigation, true);
 }
