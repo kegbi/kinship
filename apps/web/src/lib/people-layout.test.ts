@@ -62,12 +62,15 @@ describe("people form layout regressions", () => {
     );
   });
 
-  it("only lets the auto-clearing shell notice intercept clicks", () => {
+  it("only lets toast items in passive status surfaces intercept clicks", () => {
     expect(applicationStyles).toMatch(
       /\.sr-status\s*\{[^}]*pointer-events:\s*none/s,
     );
     expect(applicationStyles).toMatch(
-      /#shell-status\s*\{[^}]*pointer-events:\s*auto/s,
+      /\.app-toasts\s*\{[^}]*pointer-events:\s*none/s,
+    );
+    expect(applicationStyles).toMatch(
+      /\.app-toast\s*\{[^}]*pointer-events:\s*auto/s,
     );
   });
 

@@ -98,7 +98,6 @@ const { current, description, pageId, title } = Astro.props;
                 <a class="menu-item" href="/app/settings" tabindex="0" aria-current={current === "settings" && pageId !== "settings.profile" ? "page" : undefined}>Settings</a>
                 <button id="member-sign-out" class="direct-sign-out" type="button">Sign out</button>
               </div>
-              <p id="shell-status" class="sr-status" role="status" tabindex="-1" aria-live="polite"></p>
             </div>
           </div>
         </div>
@@ -171,6 +170,7 @@ const { current, description, pageId, title } = Astro.props;
           </div>
         </form>
       </dialog>
+      <ul id="app-toasts" class="app-toasts" aria-live="polite" aria-label="Notifications"></ul>
     </div>
   </body>
 </html>

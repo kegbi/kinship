@@ -169,6 +169,12 @@ test(
     await openPersonMenu(page);
     await page.getByRole("button", { name: "Archive person" }).click();
     await expect(page.getByText("Archived person · read-only")).toBeVisible();
+    await expect(page.locator("#app-toasts")).toContainText(
+      "They now appear in Archived people",
+    );
+    await expect(
+      page.locator("#app-toasts").getByRole("button", { name: "Undo" }),
+    ).toHaveCount(1);
     const logActivity = page.locator(
       '#profile-section-activities [data-person-interaction-capture][data-interaction-intended-kind="activity"]',
     );
@@ -183,9 +189,6 @@ test(
     const archivedEdit = page.locator("#person-menu #person-edit-open");
     await expect(archivedEdit).toHaveCount(1);
     await expect(archivedEdit).toBeHidden();
-    await expect(page.locator("#person-lifecycle-status")).toContainText(
-      "They now appear in Archived people",
-    );
     await expectAccessible(page);
 
     await page.goto("/app/people/archived");
@@ -200,13 +203,13 @@ test(
     await expect(page).toHaveURL(new RegExp(`${personPath}$`));
     await page.getByRole("button", { name: "Restore person" }).click();
     await expect(page.getByText("Archived person · read-only")).toBeHidden();
+    await expect(page.locator("#app-toasts")).toContainText(
+      "They now appear in People",
+    );
     await expect(logActivity).toBeVisible();
     await expect(logActivity).toBeEnabled();
     await expect(addNote).toBeVisible();
     await expect(addNote).toBeEnabled();
-    await expect(page.locator("#person-lifecycle-status")).toContainText(
-      "They now appear in People",
-    );
 
     await page.goto("/app/people");
     await expect(

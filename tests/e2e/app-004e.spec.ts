@@ -332,7 +332,7 @@ test(
     switchAction = workspaceSwitcher.selectOption(switchWorkspaceId);
     await (await switchDialog).accept();
     await switchAction;
-    await expect(page.locator("#shell-status")).toContainText(
+    await expect(page.locator("#app-toasts")).toContainText(
       "current workspace was not changed",
     );
     await expect(workspaceSwitcher).toHaveValue(ownerWorkspaceId);

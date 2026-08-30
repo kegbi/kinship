@@ -31,7 +31,7 @@ function shellMarkup(): void {
         <a href="/app/settings">Settings</a>
         <button id="member-sign-out" type="button">Sign out</button>
       </div>
-      <p id="shell-status" role="status" tabindex="-1"></p>
+      <ul id="app-toasts" aria-live="polite" aria-label="Notifications"></ul>
     </div>`;
 }
 
@@ -359,7 +359,7 @@ describe("APP-002C protected application shell", () => {
     expect(document.querySelector("[data-workspace-name]")?.textContent).toBe(
       "Family circle",
     );
-    expect(document.querySelector("#shell-status")?.textContent).toBe("");
+    expect(document.querySelectorAll("#app-toasts > li")).toHaveLength(0);
     expect(document.querySelector("#today-heading")?.textContent).toBe(
       "Welcome back.",
     );
@@ -418,7 +418,7 @@ describe("APP-002C protected application shell", () => {
     select.dispatchEvent(new Event("change", { bubbles: true }));
 
     await vi.waitFor(() =>
-      expect(document.querySelector("#shell-status")?.textContent).toMatch(
+      expect(document.querySelector("#app-toasts")?.textContent).toMatch(
         /no longer available/i,
       )
     );
@@ -497,7 +497,7 @@ describe("APP-002C protected application shell", () => {
     expect(firstName.value).toBe("Unsaved for family");
     expect(document.querySelector("#profile-form")?.getAttribute("data-dirty"))
       .toBe("true");
-    expect(document.querySelector("#shell-status")?.textContent).toMatch(
+    expect(document.querySelector("#app-toasts")?.textContent).toMatch(
       /canceled/i,
     );
     expect(document.activeElement).toBe(select);
@@ -696,7 +696,7 @@ describe("APP-002C protected application shell", () => {
     ]);
     expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
       .toBe(false);
-    expect(document.querySelector("#shell-status")?.textContent).toBe("");
+    expect(document.querySelectorAll("#app-toasts > li")).toHaveLength(0);
     expect(document.querySelector("#today-heading")?.textContent).toBe(
       "Welcome, Avery.",
     );
@@ -713,15 +713,16 @@ describe("APP-002C protected application shell", () => {
     );
 
     await mountApplicationShell(vi.fn());
-    const status = document.querySelector<HTMLElement>("#shell-status")!;
-    expect(status.textContent).toBe("");
+    const toasts = document.querySelector<HTMLElement>("#app-toasts")!;
+    expect(toasts.children).toHaveLength(0);
 
     document.querySelector<HTMLButtonElement>("#member-sign-out")!.click();
+    expect(toasts.textContent).toContain("Signing out securely…");
     await vi.advanceTimersByTimeAsync(0);
-    expect(status.textContent).toMatch(/could not be revoked/i);
+    expect(toasts.textContent).toMatch(/could not be revoked/i);
 
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(status.textContent).toMatch(/could not be revoked/i);
+    expect(toasts.textContent).toMatch(/could not be revoked/i);
   });
 
   it("keeps a failed sign-out retryable and does not navigate", async () => {
@@ -742,7 +743,7 @@ describe("APP-002C protected application shell", () => {
     signOutButton.click();
 
     await vi.waitFor(() =>
-      expect(document.querySelector("#shell-status")?.textContent).toMatch(
+      expect(document.querySelector("#app-toasts")?.textContent).toMatch(
         /could not be revoked/i,
       )
     );

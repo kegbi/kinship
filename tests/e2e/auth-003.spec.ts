@@ -350,7 +350,7 @@ test(
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
       "Welcome back.",
     );
-    await expect(page.locator("#shell-status")).toBeEmpty();
+    await expect(page.locator("#app-toasts > li")).toHaveCount(0);
     await expectAccessible(page);
     const firstCookie = (await context.cookies()).find((item) =>
       item.name === "kinship_session"
