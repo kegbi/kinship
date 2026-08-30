@@ -11,8 +11,9 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-002C3 — Remember the member's zone choice**. The review's
-  top five, `UXD-001` through `UXD-005`, and all of `UXD-003` are integrated.
+- Current leaf: **DOC-001 — Refresh the planning entry-point baseline**. The
+  review's top five, `UXD-001` through `UXD-005`, and all of `UXD-003` are
+  integrated.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -1050,13 +1051,69 @@ asserts, so it runs that spec on its candidate.
           flows to assert against the merged surface instead, and the merged
           surface must then refresh when one of the five records a change. Split
           out because that is a different risk from adding a read surface.
-  - [ ] **UXD-002C3 — Remember the member's zone choice.** (§7.4) The review
-        asks for the last choice to persist in `member_preferences.ui_state`,
-        the mechanism `monica-person-profile-analysis.md` reserves. No read or
-        write API surface for that column exists — it is currently written only
-        by the recent-people use case — and `AGENTS.md` forbids inventing
-        client-side persistence, so `UXD-002C` made `?view=` the whole state.
-        This leaf adds the API surface and the preference.
+  - [x] **UXD-002C3 — Remember the member's zone choice.** (§7.4) The last zone
+        choice now persists in `member_preferences.ui_state`, the mechanism
+        `monica-person-profile-analysis.md` reserves. No read or write surface
+        for that column existed — it was written only by the recent-people use
+        case — so this leaf added one.
+    - [x] **UXD-002C3A — The API surface.** `GET` and
+          `PATCH /api/v1/member/ui-state` in the `workspaces` module, which
+          already owns `member_preferences`, so no boundary changed. The session
+          response carries the same projection, which is what makes the
+          preference usable with no extra request on a load path `UXD-003` spent
+          three leaves shortening.
+      - [x] It is a closed set of named presentation keys, not a key-value
+            store. The column's own comment is the contract — "sparse
+            presentation state such as active tabs and dismissed feature badges;
+            never stores domain data" — so the write accepts one recognised key,
+            merges it, and leaves every other key intact under the same row lock
+            the recent-people use case takes. `recentPersonIds` shares that
+            column and must survive.
+      - [x] A failed preference read omits `uiState` rather than failing the
+            session. A session must not break because a stored view could not be
+            loaded, and it is composed in the route beside
+            `requiredLegalDocuments` rather than threaded through
+            `protectedSessions.resolve`, whose path carries the audit
+            transaction and tenant postconditions.
+      - [x] **A test removed in review, not added.** The first candidate proved
+            serialization with a three-connection choreography that read
+            `pg_stat_activity`, matched backend PIDs, and coordinated through
+            two promises — and it failed, because it modelled the UI-state
+            writer as blocking behind the recent-person writer when both take
+            `for update of member` on the same row and therefore queue behind
+            the same holder. `AGENTS.md` asks for the smallest observable
+            concurrency contract; the invariant is that two concurrent writes
+            both survive, and `Promise.all` over the two requests plus one
+            assertion on the resulting row proves exactly that.
+      - [x] Gates: `check:api`, `contracts:check`, `test:contract` 125 passed,
+            `fmt:check`, `lint`, and `test:coverage:api` against real PostgreSQL
+            at 521 passed / 0 failed, 85.1 branches / 82.1 / 87.3 lines.
+    - [x] **UXD-002C3B — The preference in the person workspace.** A page opened
+          without `?view=` adopts the stored zone through `replaceState`, so the
+          URL remains the whole state `UXD-002C` made it and Back never walks
+          through a restoration the member did not perform. `currentView()`
+          stays a pure read of the URL; a dozen call sites depend on that.
+      - [x] An explicit `?view=` always beats the stored preference: a link
+            someone was sent outranks that reader's own habit.
+      - [x] The write also rewrites the cached session, preserving its
+            `savedAt`. Without that, `UXD-003C`'s sixty-second cache would serve
+            the previous choice back on the next navigation and revert the view
+            under the member — a real regression, not a theoretical one. The
+            reader and the updater now share one `isCurrentSessionCacheEntry`
+            definition of "still usable".
+      - [x] **A defect caught in review:** the first candidate moved the zone
+            chips' click handlers behind the session resolution, so on a cold
+            load a visible, focusable control silently ignored clicks for a full
+            round trip. Handlers bind immediately again; a click in that window
+            filters the page and simply does not persist, because the member's
+            next click will.
+      - [x] A stored zone suppresses the first-run onboarding card, since the
+            restored URL makes `currentView()` something other than `all`. That
+            is deliberate — an explicit choice outranks a suggestion — and it is
+            asserted rather than incidental.
+      - [x] Gates: `fmt:check`, `lint`, `check:web` (0 errors), 495 web unit
+            tests, `test:coverage:web` at 92.62/83.19/87.67/94.64, and the
+            complete Chromium suite 44/44 with no spec changed.
 
 - [x] **UXD-003 — Staged loading.** (§9.2, §9.3; effort M; the prefetch
       deletions are independent, zone laziness depends on `UXD-002`)
