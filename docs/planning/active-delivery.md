@@ -11,8 +11,8 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-003 — Staged loading**, with `UXD-004` the only remaining
-  top-five leaf that does not touch the person workspace
+- Current leaf: **UXD-004 — Global people search and command palette**, the last
+  top-five leaf
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -886,10 +886,53 @@ asserts, so it runs that spec on its candidate.
     - [x] Gates: `fmt:check`, `lint`, `check:web`, 424 web unit tests,
           `test:coverage:web` at 91.65/82.26/85.82/93.71, and the complete
           Chromium suite 44/44 on the first run, with no spec changed.
-  - [ ] Replace the full-page takeover with a shell and skeletons, cache the
-        session, and load only the visible zone eagerly.
-  - [ ] Keep the initial fan-out silent for assistive technology while
-        user-initiated refreshes still announce.
+  - [x] **UXD-003B — Staged person-page loading.** (§9.2 stages 0, 3, 4; §9.3)
+        Six requests on open become three.
+    - [x] The shell paints from the first frame with skeletons in the hero, the
+          rail, and the streams; `#person-profile-state` is reserved for the
+          three terminal states. The `<h1>` carries a skeleton plus
+          screen-reader text so axe's `empty-heading` rule never sees an empty
+          heading now that the shell is visible during load.
+    - [x] The initial fan-out went silent. The shell carried 17 `aria-live`
+          attributes and 19 `role="status"` attributes, and `role="status"` is
+          an implicit polite region, so removing only the explicit attribute
+          would have changed nothing. Section state paragraphs now ship inert
+          and are promoted in one central place after first paint; everything
+          the member triggers still announces. `REL-015` is the same lesson in
+          the other direction.
+    - [x] The `Promise.all` fan-out became a zone registry. The rail stays
+          eager; each stream zone loads once, on the first of being the selected
+          view, a `?section=` deep link, or intersecting the viewport at a 400px
+          margin. That third condition is what keeps the default `All` honest —
+          without it every zone is visible and nothing would be deferred.
+    - [x] Deep links trigger a zone rather than awaiting it. Every section card
+          exists from first paint and renders its own loading state, so
+          `focusSection` stayed synchronous and navigation stayed authoritative,
+          avoiding the `REL-013` failure mode entirely.
+    - [x] `mountPersonReminders` stayed eager because one mount feeds both the
+          rail's stay-in-touch block and the Planning reminders card. Planning
+          is therefore half-lazy — tasks lazy, reminders eager — which is a
+          better trade than splitting that module.
+    - [x] `app-008c` was amended, not weakened. It asserts no section is left
+          loading across the complete workspace; with `things` and `admin`
+          deferred, five sections legitimately remain loading until revealed, so
+          the flow now scrolls those two zones into view first and then proves
+          the same invariant over the same twenty-two sections. Scrolling rather
+          than clicking the filter, because the spec asserts focus on the
+          deep-linked section a few lines later. `app-003c`'s takeover assertion
+          was replaced with one proving the staged shell.
+    - [x] Gates: `fmt:check`, `lint`, `check:web`, 431 web unit tests,
+          `test:coverage:web` at 91.68/82.23/86.44/93.79, zero hex literals
+          outside `:root`, and the complete Chromium suite 44/44.
+  - [ ] **UXD-003C — Cache the resolved session.** (§9.2 stage 2) Persist the
+        resolved `SessionContext` to `sessionStorage` with a short TTL, use it
+        optimistically, revalidate in the background, and fall through to the
+        existing access-lost path on 401. Split out of `UXD-003B` because it
+        changes the one function all 34 pages await and touches session and
+        workspace context, which `AGENTS.md` requires be evidenced on its own
+        rather than inside a rendering candidate. It must invalidate on sign-out
+        and on workspace switch, and `auth-003`, `app-002e`, and `app-002c` are
+        its owning flows.
 - [ ] **UXD-005 — Feedback pass.** (§11; effort M; depends on `UXD-001` and
       `UXD-003`)
   - [ ] Promote the existing status region into a dismissible toast region for
