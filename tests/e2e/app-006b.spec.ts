@@ -76,6 +76,9 @@ test(
     await expect(reminderSection.getByText("No reminders yet.")).toBeVisible();
     const reminderForm = reminderSection.locator("form");
     const reminderTitle = reminderForm.getByLabel("Title");
+    await reminderSection.getByRole("button", { name: "Add reminder" }).click();
+    await expect(reminderForm).toBeVisible();
+    await expect(reminderTitle).toBeFocused();
     await reminderTitle.pressSequentially("Call Ada once");
     await expect(reminderTitle).toHaveValue("Call Ada once");
     await reminderForm.getByLabel("First date").fill(targetDate);
@@ -90,7 +93,13 @@ test(
     await expect(cadenceSection.getByText("No stay-in-touch cadence yet."))
       .toBeVisible();
     const cadenceForm = cadenceSection.locator("form");
-    await cadenceForm.getByLabel("Reconnect every").fill("1");
+    const cadenceCount = cadenceForm.getByLabel("Reconnect every");
+    await cadenceSection.getByRole("button", {
+      name: "Add stay-in-touch cadence",
+    }).click();
+    await expect(cadenceForm).toBeVisible();
+    await expect(cadenceCount).toBeFocused();
+    await cadenceCount.fill("1");
     await cadenceForm.getByLabel("Calendar unit").selectOption("day");
     await cadenceForm.getByRole("button", { name: "Save cadence" }).click();
     await expect(cadenceSection.getByText("Stay-in-touch cadence is active."))
@@ -99,8 +108,12 @@ test(
     await openPersonMenu(page);
     await page.getByRole("button", { name: "Archive person" }).click();
     await expect(page.getByText("Archived person · read-only")).toBeVisible();
-    await expect(cadenceForm.getByRole("button", { name: "Save cadence" }))
-      .toBeDisabled();
+    const cadenceAdd = cadenceSection.locator("[data-cadence-add]");
+    await expect(cadenceAdd).toHaveCount(1);
+    await expect(cadenceAdd).toBeHidden();
+    await expect(
+      cadenceSection.locator('[data-cadence-form] button[type="submit"]'),
+    ).toBeDisabled();
     await page.getByRole("button", { name: "Restore person" }).click();
 
     await expect.poll(async () => {

@@ -63,6 +63,12 @@ export async function mountPersonReminders(options: {
   const reminderForm = document.querySelector<HTMLFormElement>(
     "[data-reminder-form]",
   );
+  const reminderAdd = document.querySelector<HTMLButtonElement>(
+    "[data-reminder-add]",
+  );
+  const reminderCancel = document.querySelector<HTMLButtonElement>(
+    "[data-reminder-cancel]",
+  );
   const cadenceState = document.querySelector<HTMLElement>(
     "[data-cadence-state]",
   );
@@ -71,6 +77,12 @@ export async function mountPersonReminders(options: {
   );
   const cadenceForm = document.querySelector<HTMLFormElement>(
     "[data-cadence-form]",
+  );
+  const cadenceAdd = document.querySelector<HTMLButtonElement>(
+    "[data-cadence-add]",
+  );
+  const cadenceCancel = document.querySelector<HTMLButtonElement>(
+    "[data-cadence-cancel]",
   );
   const reminderSection = reminderState?.closest<HTMLElement>(
     '[data-profile-section="reminders"]',
@@ -92,12 +104,16 @@ export async function mountPersonReminders(options: {
   if (lifecycleArchived) {
     reminderSubmit?.setAttribute("disabled", "");
     cadenceSubmit?.setAttribute("disabled", "");
+    reminderAdd?.setAttribute("hidden", "");
+    cadenceAdd?.setAttribute("hidden", "");
   }
   let reminderRequestId: string | undefined;
   let cadenceRequestId: string | undefined;
   let reminderSaving = false;
   let cadenceSaving = false;
   const load = async () => {
+    reminderAdd?.setAttribute("hidden", "");
+    cadenceAdd?.setAttribute("hidden", "");
     if (reminderSection) reminderSection.dataset.sectionState = "loading";
     if (cadenceSection) cadenceSection.dataset.sectionState = "loading";
     reminderState.textContent = "Loading reminders…";
@@ -163,7 +179,27 @@ export async function mountPersonReminders(options: {
       "stay-in-touch",
       result.value.cadences.length === 0,
     );
+    reminderAdd?.toggleAttribute("hidden", lifecycleArchived);
+    cadenceAdd?.toggleAttribute("hidden", lifecycleArchived);
   };
+  reminderAdd?.addEventListener("click", () => {
+    reminderForm.hidden = false;
+    reminderForm.querySelector<HTMLElement>("input, select, textarea")?.focus();
+  });
+  reminderCancel?.addEventListener("click", () => {
+    reminderForm.hidden = true;
+    reminderForm.reset();
+    reminderAdd?.focus();
+  });
+  cadenceAdd?.addEventListener("click", () => {
+    cadenceForm.hidden = false;
+    cadenceForm.querySelector<HTMLElement>("input, select, textarea")?.focus();
+  });
+  cadenceCancel?.addEventListener("click", () => {
+    cadenceForm.hidden = true;
+    cadenceForm.reset();
+    cadenceAdd?.focus();
+  });
   reminderForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (lifecycleArchived || reminderSaving) return;
@@ -189,6 +225,7 @@ export async function mountPersonReminders(options: {
     if (result?.ok) {
       reminderRequestId = undefined;
       reminderForm.reset();
+      reminderForm.hidden = true;
       await load();
     }
     reminderSaving = false;
@@ -216,6 +253,7 @@ export async function mountPersonReminders(options: {
       : "Cadence could not be saved.";
     if (result?.ok) {
       cadenceRequestId = undefined;
+      cadenceForm.hidden = true;
       await load();
     }
     cadenceSaving = false;
@@ -239,6 +277,8 @@ export async function mountPersonReminders(options: {
       "disabled",
       lifecycleArchived || cadenceSaving,
     );
+    reminderAdd?.toggleAttribute("hidden", lifecycleArchived);
+    cadenceAdd?.toggleAttribute("hidden", lifecycleArchived);
     if (lifecycleArchived) {
       reminderList.querySelectorAll("button").forEach((button) =>
         button.remove()

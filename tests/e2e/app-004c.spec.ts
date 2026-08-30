@@ -290,6 +290,8 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
   );
 
   const cadence = page.locator('[data-profile-section="stay-in-touch"]');
+  await cadence.getByRole("button", { name: "Add stay-in-touch cadence" })
+    .click();
   const [cadenceCountStyle, cadenceUnitStyle] = await Promise.all([
     controlPresentation(cadence.getByLabel("Reconnect every")),
     controlPresentation(cadence.getByLabel("Calendar unit")),
