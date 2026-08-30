@@ -1,3 +1,8 @@
+import {
+  createPersonTimeline,
+  type PersonTimelineRepository,
+} from "./list_person_timeline.ts";
+
 export const PERSON_PROFILE_TAG_PREVIEW_LIMIT = 8;
 export const PERSON_PROFILE_PRIMARY_CONTACT_LIMIT = 3;
 
@@ -114,19 +119,21 @@ export interface PersonDueProjection {
   readonly stayInTouchAt?: string;
 }
 
+export type PersonLifeEventPrecision =
+  | "day"
+  | "full"
+  | "month"
+  | "month_day"
+  | "unknown"
+  | "year"
+  | "year_month";
+
 export interface PersonLifeEvent {
   readonly date: {
     readonly day?: number;
     readonly happenedAt?: string;
     readonly month?: number;
-    readonly precision:
-      | "day"
-      | "full"
-      | "month"
-      | "month_day"
-      | "unknown"
-      | "year"
-      | "year_month";
+    readonly precision: PersonLifeEventPrecision;
     readonly year?: number;
   };
   readonly id: string;
@@ -151,7 +158,7 @@ export type PersonProfileRepositoryResult =
   | { readonly status: "not-found" }
   | { readonly status: "forbidden" };
 
-export interface PersonProfileRepository {
+export interface PersonProfileRepository extends PersonTimelineRepository {
   get(
     command: PersonProfileActor & {
       readonly includeSummary?: boolean;
@@ -270,6 +277,7 @@ export function createPersonProfile(dependencies: {
     },
     listLifeEvents: async (actor: PersonProfileActor, personId: string) =>
       await dependencies.repository.listLifeEvents({ ...actor, personId }),
+    ...createPersonTimeline(dependencies),
   };
 }
 

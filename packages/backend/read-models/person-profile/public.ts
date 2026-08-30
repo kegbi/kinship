@@ -9,6 +9,7 @@ export type {
   PersonDueInformation,
   PersonDueProjection,
   PersonLifeEvent,
+  PersonLifeEventPrecision,
   PersonPrimaryContactMethod,
   PersonProfile,
   PersonProfileActor,
@@ -24,4 +25,11 @@ export type {
   PersonProfileTag,
   PersonRelationshipCount,
 } from "./application/get_person_profile.ts";
+export { createPersonTimeline } from "./application/list_person_timeline.ts";
+export type {
+  PersonTimeline,
+  PersonTimelineItem,
+  PersonTimelineKind,
+  PersonTimelineRepository,
+} from "./application/list_person_timeline.ts";
 export { PostgresPersonProfileRepository } from "./adapters/postgres/person_profile_repository.ts";

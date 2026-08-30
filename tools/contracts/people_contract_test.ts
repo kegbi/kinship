@@ -3,6 +3,7 @@ import type {
   PersonalizationCreateInputBySection,
   PersonalizationUpdateInputBySection,
   PersonProfileSectionId,
+  PersonTimelineItem,
   ProfileFactCreateInputBySection,
   ProfileFactListInput,
   ProfileFactUpdateInputBySection,
@@ -775,6 +776,63 @@ Deno.test("[PEOPLE-003] OpenAPI publishes bounded person life-event history", ()
       JSON.stringify(schemas.PersonLifeEventsReady?.properties?.status)
         .includes("hidden"),
     "life-event history publishes bounded ready/hidden and independent failure states",
+  );
+});
+
+Deno.test("[UXD-002C2A] OpenAPI publishes the person timeline operation and accepted auth schemes", () => {
+  const document = buildOpenApiDocument();
+  const paths = document.paths as Record<string, {
+    readonly get?: {
+      readonly operationId?: string;
+      readonly parameters?: readonly { readonly name?: string }[];
+      readonly responses?: Readonly<Record<string, unknown>>;
+      readonly security?: readonly Readonly<
+        Record<string, readonly unknown[]>
+      >[];
+    };
+  }>;
+  const timeline = paths["/api/v1/people/{personId}/timeline"]?.get;
+  const sibling = paths["/api/v1/people/{personId}"]?.get;
+  const schemas = (document.components as {
+    readonly schemas: Readonly<Record<string, ObjectSchema>>;
+  }).schemas;
+  const item = schemas.PersonTimelineItem;
+  const page = schemas.PersonTimelinePage;
+  const generatedItem: PersonTimelineItem = {
+    datePrecision: "month_day",
+    excerpt: "Annual celebration",
+    id: "00000000-0000-4000-8000-000000000300",
+    kind: "life-event",
+    occurredAt: "2026-12-10T00:00:00.000000Z",
+    title: "Birthday",
+  };
+
+  assert(
+    timeline?.operationId === "listPersonTimeline" &&
+      JSON.stringify(timeline.security) === JSON.stringify(sibling?.security),
+    "timeline operation uses the canonical person-read authentication schemes",
+  );
+  assert(
+    ["X-Workspace-Id", "personId", "cursor", "kind", "limit"].every(
+      (name) =>
+        timeline.parameters?.some((parameter) => parameter.name === name),
+    ) &&
+      ["200", "400", "401", "403", "404", "409", "503"].every(
+        (status) => timeline.responses?.[status] !== undefined,
+      ),
+    "timeline publishes its tenant, filter, cursor, bound, and failure contract",
+  );
+  assert(
+    item?.additionalProperties === false &&
+      ["datePrecision", "id", "kind", "occurredAt"].every((field) =>
+        item.required?.includes(field)
+      ) &&
+      item.properties?.excerpt !== undefined &&
+      item.properties?.title !== undefined &&
+      page?.additionalProperties === false &&
+      page.properties?.items?.maxItems === 50 &&
+      generatedItem.datePrecision === "month_day",
+    "timeline item and page stay lean, strict, bounded, and generated",
   );
 });
 

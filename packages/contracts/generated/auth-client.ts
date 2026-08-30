@@ -1085,6 +1085,22 @@ export interface PersonLifeEvent {
   readonly typeName?: string;
 }
 
+export type PersonTimelineKind = "activity" | "call" | "conversation" | "life-event" | "note";
+export interface PersonTimelineItem {
+  readonly datePrecision: PersonLifeEventPrecision;
+  readonly excerpt?: string;
+  readonly id: string;
+  readonly kind: PersonTimelineKind;
+  readonly occurredAt: string;
+  readonly title?: string;
+}
+
+export interface PersonTimelinePage {
+  readonly items: readonly PersonTimelineItem[];
+  readonly nextCursor?: string;
+  readonly status: "archived" | "ready";
+}
+
 export type ImportantDateKind = "birthday" | "custom" | "deceased" | "first_met";
 export type ImportantDatePrecision = "day" | "full" | "month" | "month_day" | "unknown" | "year" | "year_month";
 
@@ -1341,6 +1357,15 @@ export function getPerson(personId: string, workspaceId?: string, include?: "sum
 
 export function listPersonLifeEvents(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly events: readonly PersonLifeEvent[]; readonly status: "hidden" | "ready" }>> {
   return request(`/api/v1/people/${encodeURIComponent(personId)}/life-events`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listPersonTimeline(personId: string, input: { readonly cursor?: string; readonly kind?: PersonTimelineKind; readonly limit?: number } = {}, workspaceId?: string): Promise<ApiResult<PersonTimelinePage>> {
+  const query = new URLSearchParams();
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.kind) query.set("kind", input.kind);
+  if (input.limit) query.set("limit", String(input.limit));
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/timeline${suffix}`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
 export function listPersonFiles(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly files: readonly PersonFile[]; readonly status: "ready" }>> {

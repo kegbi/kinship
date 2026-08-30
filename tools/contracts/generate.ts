@@ -857,6 +857,57 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
         },
       },
+      "/api/v1/people/{personId}/timeline": {
+        get: {
+          operationId: "listPersonTimeline",
+          security: [{ kinship_session: [] }],
+          parameters: [
+            workspaceParameter,
+            personIdParameter,
+            {
+              name: "cursor",
+              in: "query",
+              schema: { type: "string", maxLength: 2_000 },
+            },
+            {
+              name: "kind",
+              in: "query",
+              schema: {
+                type: "string",
+                enum: [
+                  "activity",
+                  "call",
+                  "conversation",
+                  "life-event",
+                  "note",
+                ],
+              },
+            },
+            {
+              name: "limit",
+              in: "query",
+              schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+            },
+          ],
+          responses: {
+            "200": {
+              description:
+                "Reverse-chronological tenant-scoped person timeline page",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/PersonTimelinePage" },
+                },
+              },
+            },
+            "400": problem,
+            "401": problem,
+            "403": problem,
+            "404": problem,
+            "409": problem,
+            "503": problem,
+          },
+        },
+      },
       "/api/v1/people/{personId}/view": {
         post: {
           operationId: "recordPersonView",
@@ -6142,6 +6193,53 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        PersonTimelineItem: {
+          type: "object",
+          required: ["datePrecision", "id", "kind", "occurredAt"],
+          properties: {
+            datePrecision: {
+              type: "string",
+              enum: [
+                "day",
+                "full",
+                "month",
+                "month_day",
+                "unknown",
+                "year",
+                "year_month",
+              ],
+            },
+            excerpt: { type: "string" },
+            id: { type: "string", format: "uuid" },
+            kind: {
+              type: "string",
+              enum: [
+                "activity",
+                "call",
+                "conversation",
+                "life-event",
+                "note",
+              ],
+            },
+            occurredAt: { type: "string", format: "date-time" },
+            title: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        PersonTimelinePage: {
+          type: "object",
+          required: ["items", "status"],
+          properties: {
+            items: {
+              type: "array",
+              maxItems: 50,
+              items: { $ref: "#/components/schemas/PersonTimelineItem" },
+            },
+            nextCursor: { type: "string" },
+            status: { type: "string", enum: ["archived", "ready"] },
+          },
+          additionalProperties: false,
+        },
         PersonDueInformation: {
           type: "object",
           required: ["status", "detail", "openTaskCount"],
@@ -8903,6 +9001,22 @@ export interface PersonLifeEvent {
   readonly typeName?: string;
 }
 
+export type PersonTimelineKind = "activity" | "call" | "conversation" | "life-event" | "note";
+export interface PersonTimelineItem {
+  readonly datePrecision: PersonLifeEventPrecision;
+  readonly excerpt?: string;
+  readonly id: string;
+  readonly kind: PersonTimelineKind;
+  readonly occurredAt: string;
+  readonly title?: string;
+}
+
+export interface PersonTimelinePage {
+  readonly items: readonly PersonTimelineItem[];
+  readonly nextCursor?: string;
+  readonly status: "archived" | "ready";
+}
+
 export type ImportantDateKind = "birthday" | "custom" | "deceased" | "first_met";
 export type ImportantDatePrecision = "day" | "full" | "month" | "month_day" | "unknown" | "year" | "year_month";
 
@@ -9159,6 +9273,15 @@ export function getPerson(personId: string, workspaceId?: string, include?: "sum
 
 export function listPersonLifeEvents(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly events: readonly PersonLifeEvent[]; readonly status: "hidden" | "ready" }>> {
   return request(\`/api/v1/people/\${encodeURIComponent(personId)}/life-events\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
+}
+
+export function listPersonTimeline(personId: string, input: { readonly cursor?: string; readonly kind?: PersonTimelineKind; readonly limit?: number } = {}, workspaceId?: string): Promise<ApiResult<PersonTimelinePage>> {
+  const query = new URLSearchParams();
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.kind) query.set("kind", input.kind);
+  if (input.limit) query.set("limit", String(input.limit));
+  const suffix = query.size > 0 ? \`?\${query.toString()}\` : "";
+  return request(\`/api/v1/people/\${encodeURIComponent(personId)}/timeline\${suffix}\`, { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined });
 }
 
 export function listPersonFiles(personId: string, workspaceId?: string): Promise<ApiResult<{ readonly files: readonly PersonFile[]; readonly status: "ready" }>> {
