@@ -11,9 +11,8 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-002C2B — Merged timeline surface**, the web side. The
-  review's top five, `UXD-001` through `UXD-005`, and all of `UXD-003` are
-  integrated.
+- Current leaf: **UXD-002C3 — Remember the member's zone choice**. The review's
+  top five, `UXD-001` through `UXD-005`, and all of `UXD-003` are integrated.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -1004,11 +1003,53 @@ asserts, so it runs that spec on its candidate.
             the five kinds merging, a turned-off module contributing nothing,
             paging across a duplicate timestamp, a foreign-workspace person, and
             a forged workspace context.
-    - [ ] **UXD-002C2B — The merged surface.** (§7.6 row 1) Type-filter chips,
-          each row a `<details>` collapsed to date, type, and a two-line
-          excerpt, `Load older` through the projection's cursor. `UXD-002C`
-          delivered the four groups; this makes the Timeline group one surface
-          instead of five cards.
+    - [x] **UXD-002C2B1 — The merged surface.** (§7.6 row 1) The Timeline zone
+          now leads with one reverse-chronological list: type-filter chips, each
+          row a `<details>` collapsed to date, type, and a two-line excerpt, and
+          `Load older events` through the projection's cursor.
+      - [x] Filtering goes through the API's `kind` parameter and discards the
+            current cursor, because the cursor is kind-bound server-side and
+            reusing it across filters returns `stale-cursor`. One request
+            sequence guard replaces the temptation to add a watermark.
+      - [x] Retry is offered on 5xx and on a network failure and withheld on 403
+            and 404, per §11: a terminal answer is not something to retry. A
+            failed load takes a `--danger-soft` treatment so it cannot be
+            mistaken for an empty state, which is the same paragraph's third
+            fix.
+      - [x] A partial life-event date renders at its own precision and never at
+            the timestamp `UXD-002C2A` synthesised to sort it. **A defect caught
+            in review:** the first implementation put the full synthesised
+            instant in `<time datetime>` for every precision except `unknown`,
+            so a year-only milestone visibly read "1998" while asserting
+            `1998-01-01T00:00:00Z` to assistive technology and to any parser.
+            The machine-readable value is now emitted only at a precision HTML
+            can express — `YYYY`, `YYYY-MM`, `MM-DD` — and a bare month or
+            day-of-month gets no `<time>` element at all, matching what
+            `person-life-events.ts` already does with the same data. That closes
+            the limitation `UXD-002C2A` recorded: the merged row never displays
+            or asserts a date the member did not enter.
+      - [x] The surface carries no `data-profile-section`, so it is a sixth
+            thing inside the zone rather than a twenty-third section, and
+            `app-003c`'s count of 22 and `app-008c`'s sweep over the same set
+            both still hold. It is registered in the lazy `timeline` zone, not
+            made eager.
+      - [x] The first chip is named "All types", not "All". Playwright matches
+            accessible names as a case-insensitive substring, so a locator for
+            "All" would also have matched "Log call", "Show all sections", and
+            the zone filter's own "All" button.
+      - [x] Gates: `fmt:check`, `lint`, `check:web` (0 errors), 486 web unit
+            tests, `test:coverage:web` at 92.59/83.12/87.62/94.63 with the new
+            module at 99.13 lines, zero hex literals outside `:root`, and the
+            complete Chromium suite 44/44 with no spec changed.
+    - [ ] **UXD-002C2B2 — Demote the five cards to editors.** §7.3 asks for
+          "five cards become one surface", and until this lands the Timeline
+          zone shows the merged list _and_ the five lists that feed it, which is
+          duplication rather than the consolidation the review wants. Those
+          cards own the mutations `INTERACTION-001`, `INTERACTION-002`, and
+          `PEOPLE-003` drive, so suppressing their lists means amending those
+          flows to assert against the merged surface instead, and the merged
+          surface must then refresh when one of the five records a change. Split
+          out because that is a different risk from adding a read surface.
   - [ ] **UXD-002C3 — Remember the member's zone choice.** (§7.4) The review
         asks for the last choice to persist in `member_preferences.ui_state`,
         the mechanism `monica-person-profile-analysis.md` reserves. No read or
