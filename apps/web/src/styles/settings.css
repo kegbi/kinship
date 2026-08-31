@@ -1,6 +1,6 @@
 .today-section {
   padding: clamp(1.2rem, 3vw, 2rem);
-  border: 1px solid rgb(32 53 45 / 13%);
+  border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
 }
@@ -69,7 +69,7 @@
   height: 2.1rem;
   place-items: center;
   border-radius: 50%;
-  color: white;
+  color: var(--ink-inverse);
   background: var(--positive);
   content: counter(steps);
   font-weight: 800;
@@ -113,7 +113,7 @@
   padding: .75rem .9rem;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
-  background: white;
+  background: var(--surface-1);
 }
 
 .settings-layout {
@@ -134,7 +134,7 @@
   top: 6rem;
   display: grid;
   padding: 1rem;
-  border: 1px solid rgb(32 53 45 / 13%);
+  border: 1px solid var(--line-hairline);
   border-radius: .9rem;
   background: var(--surface-1);
 }
@@ -201,7 +201,7 @@
 .settings-group {
   scroll-margin-top: 6rem;
   padding: clamp(1.2rem, 3vw, 2rem);
-  border: 1px solid rgb(32 53 45 / 13%);
+  border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
 }
@@ -269,7 +269,11 @@
 .api-access-section,
 .api-secret-panel {
   padding-top: 1.5rem;
-  border-top: 1px solid rgb(32 53 45 / 20%);
+  border-top: 1px solid color-mix(
+    in srgb,
+    var(--ink-1) 20%,
+    transparent
+  );
 }
 
 .api-access-section h2,
@@ -300,7 +304,7 @@
   padding: .7rem .8rem;
   border: 1px solid var(--line-strong);
   border-radius: .45rem;
-  background: white;
+  background: var(--surface-1);
 }
 
 .api-token-form fieldset {
@@ -348,7 +352,11 @@
   gap: var(--space-4);
   min-height: 5rem;
   padding: 1rem 0;
-  border-bottom: 1px solid rgb(32 53 45 / 14%);
+  border-bottom: 1px solid color-mix(
+    in srgb,
+    var(--ink-1) 14%,
+    transparent
+  );
   align-items: center;
   justify-content: space-between;
 }
@@ -384,7 +392,11 @@
 }
 .import-counts div {
   padding: .8rem 0;
-  border-bottom: 1px solid rgb(32 53 45 / 16%);
+  border-bottom: 1px solid color-mix(
+    in srgb,
+    var(--ink-1) 16%,
+    transparent
+  );
 }
 .import-counts dt {
   color: var(--ink-3);
@@ -407,7 +419,11 @@
   justify-content: space-between;
   gap: var(--space-4);
   padding: 1rem 0;
-  border-top: 1px solid rgb(32 53 45 / 16%);
+  border-top: 1px solid color-mix(
+    in srgb,
+    var(--ink-1) 16%,
+    transparent
+  );
 }
 .import-history span {
   color: var(--ink-3);
@@ -432,7 +448,11 @@
 
 .storage-settings-section {
   padding-top: 1.5rem;
-  border-top: 1px solid rgb(32 53 45 / 20%);
+  border-top: 1px solid color-mix(
+    in srgb,
+    var(--ink-1) 20%,
+    transparent
+  );
 }
 
 .storage-settings-section header h2 {
@@ -454,7 +474,11 @@
 .storage-object-state div {
   min-width: 0;
   padding: .9rem 0;
-  border-bottom: 1px solid rgb(32 53 45 / 14%);
+  border-bottom: 1px solid color-mix(
+    in srgb,
+    var(--ink-1) 14%,
+    transparent
+  );
 }
 
 .storage-metrics dt,
@@ -505,7 +529,11 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: .25rem 1rem;
   padding: .9rem 0;
-  border-top: 1px solid rgb(32 53 45 / 16%);
+  border-top: 1px solid color-mix(
+    in srgb,
+    var(--ink-1) 16%,
+    transparent
+  );
 }
 
 .storage-results span,
@@ -528,7 +556,7 @@
 
 .member-section {
   padding: clamp(1.2rem, 3vw, 2rem);
-  border: 1px solid rgb(32 53 45 / 13%);
+  border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
 }
@@ -561,12 +589,12 @@
   padding: .7rem .85rem;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
-  background: white;
+  background: var(--surface-1);
 }
 
 .invitation-form button {
   border-color: var(--ink-1);
-  color: white;
+  color: var(--ink-inverse);
   background: var(--ink-1);
   cursor: pointer;
 }
@@ -607,7 +635,7 @@
   padding: .65rem .9rem;
   border: 1px solid var(--ink-1);
   border-radius: .65rem;
-  color: white;
+  color: var(--ink-inverse);
   background: var(--ink-1);
   cursor: pointer;
 }
@@ -704,7 +732,7 @@
   gap: var(--space-4);
   max-width: 54rem;
   padding: clamp(1.2rem, 3vw, 2rem);
-  border: 1px solid rgb(32 53 45 / 13%);
+  border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
 }
@@ -722,7 +750,7 @@
   padding: .7rem .85rem;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
-  background: white;
+  background: var(--surface-1);
 }
 
 .settings-form .check-label {
@@ -756,7 +784,7 @@
 
 .settings-form [aria-invalid="true"] {
   border-color: var(--danger);
-  outline: 2px solid rgb(157 44 44 / 20%);
+  outline: 2px solid color-mix(in srgb, var(--danger) 20%, transparent);
 }
 
 .account-lifecycle {
@@ -777,9 +805,9 @@
 .account-lifecycle dl div,
 .lifecycle-form {
   padding: 1rem;
-  border: 1px solid rgb(32 53 45 / 18%);
+  border: 1px solid color-mix(in srgb, var(--ink-1) 18%, transparent);
   border-radius: .5rem;
-  background: white;
+  background: var(--surface-1);
 }
 
 .account-lifecycle dt {
@@ -815,7 +843,7 @@
 .lifecycle-form .button-danger {
   min-height: 44px;
   border-color: var(--accent);
-  color: white;
+  color: var(--ink-inverse);
   background: var(--accent);
 }
 
@@ -848,7 +876,7 @@
   padding: .5rem;
   border: 1px solid var(--line-strong);
   border-radius: .6rem;
-  background: white;
+  background: var(--surface-1);
 }
 
 .empty-search {

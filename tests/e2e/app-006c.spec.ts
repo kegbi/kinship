@@ -259,10 +259,25 @@ test(
     const stateFilter = page.locator("[data-task-status-filter]");
     await expect(stateFilter).toHaveCSS("min-height", "44px");
     await expect(stateFilter).toHaveCSS("cursor", "pointer");
-    await expect(stateFilter).toHaveCSS(
-      "background-color",
-      "rgb(255, 255, 255)",
-    );
+    const filterColors = await stateFilter.evaluate((element) => {
+      const normalizeColor = (value: string): string => {
+        const probe = document.createElement("span");
+        probe.style.color = value.trim();
+        document.body.append(probe);
+        const normalized = getComputedStyle(probe).color;
+        probe.remove();
+        return normalized;
+      };
+      return {
+        background: normalizeColor(getComputedStyle(element).backgroundColor),
+        surface: normalizeColor(
+          getComputedStyle(document.documentElement).getPropertyValue(
+            "--surface-1",
+          ),
+        ),
+      };
+    });
+    expect(filterColors.background).toBe(filterColors.surface);
     await stateFilter.focus();
     await expect(stateFilter).toHaveCSS("outline-offset", "0px");
     expect(
