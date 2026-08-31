@@ -2506,6 +2506,18 @@ asserts, so it runs that spec on its candidate.
       the intent — timings only from the calibrated engine — is unchanged, and a
       matrix run now reports the truth: 1 passed on chromium with real timings,
       2 skipped. Two of the checkpoint's seven failures were this.
+- [x] **REL-028 — Give the sheet bottom-alignment assertion a subpixel
+      tolerance.** `UXD-019`'s mobile-sheet check computed
+      `bounds.bottom === innerHeight`, and firefox fails that deterministically:
+      the controller instrumented the failing run and measured
+      `844.0000152587891` against `844` — fifteen millionths of a pixel of
+      fractional layout arithmetic, with the sheet's top at exactly the `80dvh`
+      cap, so the production CSS was correct and the strict equality was the
+      defect. Invisible to every chromium-only candidate gate. The assertion now
+      bounds a numeric `bottomDelta` at one pixel absolute, so a future failure
+      prints the measured number instead of `false` — the diagnosability gap
+      cost three instrumented reruns. Proven 2 passed on firefox and chromium
+      together.
 - [ ] **Phase 12 accepted:** the person workspace reads as grouped zones rather
       than peer cards, first paint no longer waits on the full section fan-out,
       tokens back every surface, and no leaf above is unchecked without a
