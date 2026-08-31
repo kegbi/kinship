@@ -11,9 +11,9 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-002B2b — The remaining seven rail rows**. The review's top
+- Current leaf: **UXD-002B2b2 — The two rail text clamps**. The review's top
   five, `UXD-001` through `UXD-005`, all of `UXD-003` and `UXD-002C2`,
-  `DOC-001`, `REL-021`, and `REL-023` are integrated.
+  `DOC-001`, `REL-021`, `REL-023`, and `UXD-002B2b1` are integrated.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -926,12 +926,64 @@ asserts, so it runs that spec on its candidate.
             tests, `test:coverage:web` at 92.21/82.84/87.42/94.28, zero hex
             literals outside `:root`, and the complete Chromium suite 44/44 with
             no spec changed.
-    - [ ] **UXD-002B2b — The remaining seven rows.** (§7.2 rows 3-9) Important
-          dates as next upcoming plus birthday with `Show all (n)`; addresses as
-          one address over three lines with `+ n more`; work as the current role
-          with `Show history`; pets as names and species on one line; the
-          two-line clamps with `More` on food preferences and first meeting.
-          `stay-in-touch` needs nothing here — its cadence editor is `UXD-007B`.
+    - [ ] **UXD-002B2b — The remaining seven rows.** (§7.2 rows 3-9) Split in
+          two: the four rows that collapse a list share one mechanism, and the
+          two-line text clamps are a different one.
+      - [x] **UXD-002B2b1 — Important dates, addresses, work, and pets.** (§7.2
+            rows 3-6) Important dates show the birthday plus the soonest
+            upcoming record behind `Show all (n)`; addresses show the first
+            record over three lines behind `+ n more`; work shows the current
+            role behind `Show history`.
+        - [x] `pets` needed nothing. It already rendered `Byron · Cat` — a name
+              and a species on one line — so the row was recorded as satisfied
+              rather than given a diff to tick it.
+        - [x] The expander `UXD-002B2a` built for contact methods became one
+              shared `insertProfileRailExpander` consumed by both
+              `profile-facts.ts` and `important-dates.ts`, rather than a second
+              implementation. It keeps the `sr-only`-suffix accessible name:
+              visible text plus a section suffix, never an `aria-label` that
+              replaces the visible text, because default axe does not run
+              `label-content-name-mismatch` and no gate would catch the WCAG
+              2.5.3 failure.
+        - [x] Selection is pure and takes the current instant as a parameter, so
+              the rule is table-tested against a fixed date instead of the clock
+              the suite happens to run on. No browser assertion says which
+              record is upcoming, for the same reason.
+        - [x] **A defect caught in review.** The first implementation resolved a
+              February 29 record to the next actual February 29, up to four
+              years away, on the stated grounds that no leap-day policy exists.
+              One does: `reminder_management.ts` generates every recurrence
+              through `Temporal.PlainDate.add`, whose default `constrain`
+              overflow lands February 29 on February 28 in a non-leap year. The
+              rail would have said a date was four years away while the reminder
+              this same section describes fired next February. It now clamps the
+              day to the target month, and the search is two candidates rather
+              than a 400-year scan.
+        - [x] **A second browser failure the suite caught, in a place the
+              amendment had not reached.** `app-004b` asserts the First meeting
+              row immediately after the third save — the save that first makes
+              the block collapse — and `getByRole` does not match inside a
+              `hidden` element, so the listitem locator resolved to nothing. The
+              spec now expands before that assertion, which proves the expander
+              at the moment it first appears and keeps the record assertion
+              intact rather than weakening it to a locator that matches hidden
+              content. Both `Show all` locators are section-scoped: the
+              first-run `Show all sections` control shares the substring.
+        - [x] `app-004c`'s address assertion moved from the joined
+              `Home, 1 Analytical Engine Way, London` to the three rendered
+              lines, proving the new format rather than dropping the old string.
+              Its `work`, `pets`, and `food-preferences` assertions needed
+              nothing, because each holds one record and no collapse applies.
+        - [x] Gates: `fmt:check` 581 files, `lint` 474 files, `check:web` 0
+              errors, 511 web unit tests, `test:coverage:web` at
+              92.66/83.22/87.71/94.68, zero hex literals outside `:root`, and
+              the complete Chromium suite 44/44 with an empty
+              `.artifacts/playwright`.
+      - [ ] **UXD-002B2b2 — The two text clamps.** (§7.2 rows 7-8) Food
+            preferences and first meeting take a two-line clamp with a `More`
+            control. Split out because a clamp is measured overflow, not a
+            collapsed list, and it needs a different test shape. `stay-in-touch`
+            needs nothing here — its cadence editor is `UXD-007B`.
     - [ ] Deliberately not attempted in either slice: removing the inline
           relationship editor from the rail. Review §7.2 wants the rail compact
           and a type `<select>` plus two buttons per row is not that, but four
