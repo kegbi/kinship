@@ -1999,17 +1999,25 @@ asserts, so it runs that spec on its candidate.
         tests among them, `test:coverage:api` against real PostgreSQL 526 passed
         / 0 failed at 85.1 / 82.2 / 87.3, `fmt:check` 580 files, and `lint` 473
         files. No web or browser gate applies.
-- [ ] **REL-026 — Declare the settings audit page's accepted access level.**
-      `page-catalog.yaml` gives `settings.audit` `access: audit-read`, which
-      `authorization-matrix.yaml` resolves to `[owner, admin]`, and the settings
-      hub already hides its card from a member. But `audit.astro` itself carries
-      no `data-requires-workspace-admin`, so a member who reaches the route
-      still gets the page shell and only the API refuses them. Found while
-      verifying `UXD-008`'s sidebar gating against each page's own declaration —
-      the sidebar is correct and the page is the outlier. Left out of that
-      candidate because a role-gating change is a security boundary and needs
-      its own focused evidence. `UXD-015` replaces this mechanism wholesale and
-      may absorb it; queued separately so it is not lost if that leaf moves.
+- [x] **REL-026 — Withdrawn; the claim was wrong.** It was queued while
+      accepting `UXD-008` on the reading that `audit.astro` carries no
+      `data-requires-workspace-admin`, so a member reaching that route would get
+      the page shell. That is false. `applySessionGating` in `app-shell.ts`
+      gates by route as well as by attribute, and `settings.audit` is in its
+      route list, so a non-admin gets `renderRouteForbidden` — the application
+      root hidden and a forbidden view — before any of the page is usable. The
+      page catalog, the authorization matrix, the settings hub card, and the new
+      sidebar entry all agree that it is `[owner, admin]`, and nothing is
+      ungated. Checked properly on the second look; recorded rather than quietly
+      deleted, because the ledger held a false claim for one commit.
+  - [x] The real observation, which belongs to `UXD-015`: this application
+        expresses role gating **two** ways — a `data-requires-workspace-*`
+        attribute that removes an element wherever it appears, and a page-id
+        allow-list inside `applySessionGating` that blocks a whole route. They
+        are not redundant, they do different jobs, but a reader must check both
+        to know whether a surface is gated, and `audit.astro` uses only the
+        second. Whatever `<template>`-based mechanism replaces this should make
+        one declaration answer the question.
 - [ ] **REL-025 — Watch the `auth-002` invitation acceptance.** One full-suite
       run during `UXD-009` failed after `Accept invitation`: the invitee page
       was the public home rather than the `Welcome to <workspace>` heading, so
