@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-019 — Mobile bottom-sheet editors**. All of `UXD-002`,
+- Current leaf: **REL-024 — Run the five unreferenced contracts**. All of
   `UXD-008`, `UXD-009`, `UXD-011`, `UXD-012`, `UXD-014`, and the complete
   `UXD-016` are integrated, alongside the review top five, `UXD-003`, `DOC-001`,
   `REL-021`, and `REL-023`; `UXD-015` is parked with its evidence.
@@ -2325,8 +2325,54 @@ asserts, so it runs that spec on its candidate.
         stylesheet invariants, the Astro production build, and the complete
         Chromium suite 44/44 with an empty `.artifacts/playwright`. No API gate
         applies.
-- [ ] **UXD-019 — Mobile bottom-sheet editors below the tablet breakpoint.**
-      (§7.7; effort M; depends on `UXD-002`)
+- [x] **UXD-019 — Mobile bottom-sheet editors below the tablet breakpoint.**
+      (§7.7; effort M; depends on `UXD-002`) Below the collapse breakpoint an
+      open rail editor — important dates, relationships, all seven profile
+      facts, and the stay-in-touch cadence — presents as a bottom sheet: fixed
+      to the viewport bottom, `--surface-1` on `--shadow-2` with rounded top
+      corners, `var(--pad-card)` padding, an `80dvh` cap with its own scroll,
+      and a pointer-inert scrim mixed from tokens dimming the page behind it. At
+      761px and up nothing changes; every form stays exactly where it was in the
+      DOM.
+  - [x] **Two corrections to §7.7's sketch, decided before dispatch.** The
+        breakpoint is 760px, not 900px: `UXD-002` deliberately kept the
+        application's established mobile step, and the sheet binds to the same
+        media block that collapses the workspace to one column rather than
+        adding a third band. And there is no `<dialog>`: wrapping a dozen forms
+        would have changed every open/close site in four modules and made mobile
+        modal where desktop is inline — a behavior divergence for a presentation
+        change. The sheet is CSS on the open in-place form.
+  - [x] **§7.7's one-open-editor rule shipped with the sheet, because the sheet
+        makes it load-bearing** — two open rail editors below 760px would be two
+        overlapping fixed sheets. `rail-editors.ts` is a stateless document
+        event carrying the opened form and a subscription helper; each owning
+        module announces on open and closes its own open editors when a foreign
+        one announces — hide plus `reset()`, which re-baselines the `UXD-005B`
+        unsaved-changes guard, and deliberately without the focus restore, which
+        belongs only to a real Cancel. The hero tags editor participates in
+        coordination because `profile-facts.ts` owns it alongside the seven rail
+        forms; the stream column is untouched and recorded as outside this leaf.
+  - [x] Before any code, every browser spec and unit test that opens a rail
+        editor was swept for an open-A-then-open-B-without-cancel sequence. One
+        existed, in `app-004c`, and nothing asserted both forms visible, so the
+        new rule changes what a member sees only in the way the review asks.
+  - [x] Two specs amended, additively. `app-004b`'s existing 390×844 section
+        opens the date editor, proves computed `position: fixed` with the form's
+        bottom on the viewport edge without pinning pixels, runs the axe scan
+        while the sheet is open, and proves Cancel hides it and restores focus
+        to the add control. `app-004c` at desktop width opens two fact editors
+        and proves the first hides — count before hidden-ness — while focus sits
+        in the second.
+  - [x] The z-order was checked against the shell's scale, not assumed: the
+        scrim at 40 and sheet at 41 sit above the sticky header and zone
+        switcher (20/30) and below the 100-level overlay. The controller's
+        rendered probe confirmed the stacking and the sheet's presentation under
+        both themes.
+  - [x] Gates: `fmt:check` 599 files, `lint` 483 files, `check:web` 0 errors,
+        555 web unit tests across 45 files, `test:coverage:web` at 92.88
+        statements with the coordinator at 100, the three stylesheet invariants,
+        the Astro production build, and the complete Chromium suite 44/44 with
+        an empty `.artifacts/playwright`. No API gate applies.
 - [ ] **UXD-020 — Deferred product features named in §12 row 20.** Notifications
       centre, people favorites, life-event mutation, and directory tag cloud and
       sort are product scope, not design debt. They stay parked until their
