@@ -11,6 +11,10 @@ import {
   updateRelationship,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { setRailCount, setRailEmpty } from "./person-facts-rail.ts";
+import {
+  announceRailEditorOpened,
+  onForeignRailEditorOpened,
+} from "./rail-editors.ts";
 
 interface Elements {
   readonly add: HTMLButtonElement;
@@ -437,6 +441,19 @@ export async function mountRelationships(
     peopleSearchState = "idle";
     peopleSearchProblem = "";
   };
+  const closeEditor = (restoreFocus: boolean) => {
+    cancelPeopleSearch();
+    restoreOpenFormAfterTypeLoad = false;
+    duplicateDraft = undefined;
+    ui.duplicateChoices.hidden = true;
+    ui.form.hidden = true;
+    ui.form.reset();
+    if (restoreFocus) ui.add.focus();
+  };
+  const removeRailEditorListener = onForeignRailEditorOpened(
+    [ui.form],
+    () => closeEditor(false),
+  );
   const clearDraftState = () => {
     cancelPeopleSearch();
     duplicateDraft = undefined;
@@ -690,19 +707,13 @@ export async function mountRelationships(
   ui.add.onclick = () => {
     ui.form.hidden = false;
     ui.form.querySelector<HTMLElement>("input, select")?.focus();
+    announceRailEditorOpened(ui.form);
   };
   const cancel = ui.form.querySelector<HTMLButtonElement>(
     "#relationship-cancel",
   );
   if (cancel) {
-    cancel.onclick = () => {
-      cancelPeopleSearch();
-      duplicateDraft = undefined;
-      ui.duplicateChoices.hidden = true;
-      ui.form.reset();
-      ui.form.hidden = true;
-      ui.add.focus();
-    };
+    cancel.onclick = () => closeEditor(true);
   }
   const search = ui.form.querySelector<HTMLInputElement>(
     "#relationship-person-search",
@@ -789,11 +800,13 @@ export async function mountRelationships(
     void Promise.all([loadTypes(undefined), load(undefined)]);
   };
   document.addEventListener("person-lifecycle-changed", onLifecycleChanged);
-  removeActiveLifecycleListener = () =>
+  removeActiveLifecycleListener = () => {
     document.removeEventListener(
       "person-lifecycle-changed",
       onLifecycleChanged,
     );
+    removeRailEditorListener();
+  };
   const saveRelatedPerson = async (
     draft: RelatedDraft,
     duplicateOverride = false,

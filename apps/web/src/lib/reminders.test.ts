@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
+import { announceRailEditorOpened } from "./rail-editors.ts";
 import { mountPersonReminders, mountTodayReminders } from "./reminders.ts";
 
 const applicationCss = readApplicationStylesheet();
@@ -182,6 +183,51 @@ describe("PLANNING-002 reminder browser behavior", () => {
       expect(reset).toHaveBeenCalledOnce();
       expect(document.activeElement).toBe(add);
     }
+  });
+
+  it("closes only the rail cadence on a foreign editor without restoring focus", async () => {
+    personMarkup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        cadences: [],
+        reminders: [],
+        status: "ready",
+      })),
+    );
+    await mountPersonReminders({ archived: false, personId, workspaceId });
+    const reminderForm = document.querySelector<HTMLFormElement>(
+      "[data-reminder-form]",
+    )!;
+    const cadenceForm = document.querySelector<HTMLFormElement>(
+      "[data-cadence-form]",
+    )!;
+    document.querySelector<HTMLButtonElement>("[data-reminder-add]")!.click();
+    const cadenceAdd = document.querySelector<HTMLButtonElement>(
+      "[data-cadence-add]",
+    )!;
+    cadenceAdd.click();
+    const cadenceCount = cadenceForm.elements.namedItem(
+      "intervalCount",
+    ) as HTMLInputElement;
+    cadenceCount.value = "4";
+    const reset = vi.fn();
+    cadenceForm.addEventListener("reset", reset);
+    const restoreFocus = vi.spyOn(cadenceAdd, "focus");
+    const foreign = document.createElement("form");
+    const foreignControl = document.createElement("input");
+    foreign.append(foreignControl);
+    document.body.append(foreign);
+    foreignControl.focus();
+
+    announceRailEditorOpened(foreign);
+
+    expect(reminderForm.hidden).toBe(false);
+    expect(cadenceForm.hidden).toBe(true);
+    expect(cadenceCount.value).toBe("1");
+    expect(reset).toHaveBeenCalledOnce();
+    expect(restoreFocus).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(foreignControl);
   });
 
   it("hides each editor after its save succeeds", async () => {

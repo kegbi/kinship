@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { announceRailEditorOpened } from "./rail-editors.ts";
 import { mountRelationships } from "./relationships.ts";
 
 const workspaceId = "00000000-0000-4000-8000-000000000003";
@@ -69,6 +70,42 @@ afterEach(() => {
 });
 
 describe("relationship profile section", () => {
+  it("resets on a foreign rail editor without restoring focus", async () => {
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response({ options: [], status: "ready" }))
+        .mockResolvedValueOnce(
+          response({ relationships: [], status: "ready" }),
+        ),
+    );
+    await mountRelationships(personId, workspaceId, false);
+    const add = document.querySelector<HTMLButtonElement>("#relationship-add")!;
+    const form = document.querySelector<HTMLFormElement>(
+      "#relationship-form",
+    )!;
+    add.click();
+    const draft = form.elements.namedItem("newGivenName") as HTMLInputElement;
+    draft.value = "Unsaved draft";
+    const reset = vi.fn();
+    form.addEventListener("reset", reset);
+    const restoreFocus = vi.spyOn(add, "focus");
+    const foreign = document.createElement("form");
+    const foreignControl = document.createElement("input");
+    foreign.append(foreignControl);
+    document.body.append(foreign);
+    foreignControl.focus();
+
+    announceRailEditorOpened(foreign);
+
+    expect(form.hidden).toBe(true);
+    expect(draft.value).toBe("");
+    expect(reset).toHaveBeenCalledOnce();
+    expect(restoreFocus).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(foreignControl);
+  });
+
   it("groups relationship types and expands rows beyond the five-row summary", async () => {
     markup();
     const colleagueTypeId = "00000000-0000-4000-8000-000000000201";

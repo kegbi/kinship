@@ -6,6 +6,7 @@ import {
   mountImportantDates,
   selectImportantDateSummaryIds,
 } from "./important-dates.ts";
+import { announceRailEditorOpened } from "./rail-editors.ts";
 import type { ImportantDate } from "../../../../packages/contracts/generated/auth-client.ts";
 
 const workspaceId = "00000000-0000-4000-8000-000000000003";
@@ -359,6 +360,42 @@ describe("PEOPLE-005 important-date presentation", () => {
       document.querySelector('[data-person-vital-value="birthday"]')
         ?.textContent,
     ).toBe("February 29 (year unknown)");
+  });
+
+  it("resets on a foreign rail editor without restoring focus", async () => {
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({ dates: [], status: "ready" })),
+    );
+    await mountImportantDates(personId, workspaceId, false);
+    const add = document.querySelector<HTMLButtonElement>(
+      "#important-date-add",
+    )!;
+    const form = document.querySelector<HTMLFormElement>(
+      "#important-date-form",
+    )!;
+    add.click();
+    const year = document.querySelector<HTMLInputElement>(
+      "#important-date-year",
+    )!;
+    year.value = "1984";
+    const reset = vi.fn();
+    form.addEventListener("reset", reset);
+    const restoreFocus = vi.spyOn(add, "focus");
+    const foreign = document.createElement("form");
+    const foreignControl = document.createElement("input");
+    foreign.append(foreignControl);
+    document.body.append(foreign);
+    foreignControl.focus();
+
+    announceRailEditorOpened(foreign);
+
+    expect(form.hidden).toBe(true);
+    expect(year.value).toBe("");
+    expect(reset).toHaveBeenCalledOnce();
+    expect(restoreFocus).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(foreignControl);
   });
 
   it("publishes exact birthday age and first-meeting values to the hero", async () => {

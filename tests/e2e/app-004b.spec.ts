@@ -276,6 +276,24 @@ test(
     ).toBe(true);
     await expectAccessible(page);
 
+    const mobileEditor = section.locator("#important-date-form");
+    await add.click();
+    await expect(mobileEditor).toHaveCount(1);
+    await expect(mobileEditor).toBeVisible();
+    expect(
+      await mobileEditor.evaluate((form) => {
+        const bounds = form.getBoundingClientRect();
+        return {
+          bottomAligned: bounds.bottom === globalThis.innerHeight,
+          position: getComputedStyle(form).position,
+        };
+      }),
+    ).toEqual({ bottomAligned: true, position: "fixed" });
+    await expectAccessible(page);
+    await mobileEditor.getByRole("button", { name: "Cancel" }).click();
+    await expect(mobileEditor).toBeHidden();
+    await expect(add).toBeFocused();
+
     await openPersonMenu(page);
     await page.getByRole("button", { name: "Archive person" }).click();
     await expect(page.getByText("Archived person · read-only")).toBeVisible();

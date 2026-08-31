@@ -269,6 +269,34 @@ describe("people form layout regressions", () => {
     );
   });
 
+  it("UXD-019 pins rail sheets to the established mobile breakpoint", () => {
+    const selector = ".profile-rail-block > form:not([hidden]) {";
+    const sheetStart = applicationStyles.indexOf(selector);
+    expect(sheetStart).toBeGreaterThan(-1);
+    expect(
+      applicationStyles.match(/\.profile-rail-block > form:not\(\[hidden\]\)/g),
+    )
+      .toHaveLength(1);
+    const mobileStart = applicationStyles.lastIndexOf(
+      "@media (max-width: 760px)",
+      sheetStart,
+    );
+    const nextMedia = applicationStyles.indexOf("@media", sheetStart);
+    const mobileRules = applicationStyles.slice(
+      mobileStart,
+      nextMedia === -1 ? undefined : nextMedia,
+    );
+    expect(mobileRules).toMatch(
+      /\.person-workspace-layout\s*\{[^}]*grid-template-columns:\s*1fr;/s,
+    );
+    expect(mobileRules).toMatch(
+      /\.profile-rail-block:has\(> form:not\(\[hidden\]\)\)::before\s*\{[^}]*position:\s*fixed;[^}]*z-index:\s*40;[^}]*background:\s*color-mix\(in srgb, var\(--ink-1\) 38%, transparent\);[^}]*pointer-events:\s*none;/s,
+    );
+    expect(mobileRules).toMatch(
+      /\.profile-rail-block > form:not\(\[hidden\]\)\s*\{[^}]*position:\s*fixed;[^}]*z-index:\s*41;[^}]*inset:\s*auto 0 0;[^}]*width:\s*100%;[^}]*max-height:\s*80dvh;[^}]*padding:\s*var\(--pad-card\);[^}]*overflow-y:\s*auto;[^}]*border-radius:\s*var\(--radius-lg\) var\(--radius-lg\) 0 0;[^}]*background:\s*var\(--surface-1\);[^}]*box-shadow:\s*var\(--shadow-2\);/s,
+    );
+  });
+
   it("UXD-002C groups the twelve stream cards under legal headings and retires load-mode metadata", () => {
     const zoneDefinition = profilePage.slice(
       profilePage.indexOf("const streamZones = ["),

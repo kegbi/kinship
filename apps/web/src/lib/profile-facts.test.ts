@@ -711,6 +711,59 @@ describe("PEOPLE-006 profile-fact sections", () => {
     expect(work.dataset.railEmpty).toBe("true");
   });
 
+  it("closes an open profile-fact editor without stealing focus when another opens", async () => {
+    allMarkup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        response({
+          options: [],
+          personUpdatedAt: revision,
+          records: [],
+          status: "ready",
+        })
+      ),
+    );
+    await mountProfileFacts(personId, workspaceId, false, revision);
+
+    const food = document.querySelector<HTMLElement>(
+      '[data-profile-fact-section="food-preferences"]',
+    )!;
+    const foodAdd = food.querySelector<HTMLButtonElement>(
+      "[data-profile-fact-add]",
+    )!;
+    const foodForm = food.querySelector<HTMLFormElement>(
+      "[data-profile-fact-form]",
+    )!;
+    foodAdd.click();
+    await vi.waitFor(() => expect(foodForm.hidden).toBe(false));
+    const foodDraft = foodForm.elements.namedItem(
+      "foodPreferences",
+    ) as HTMLTextAreaElement;
+    foodDraft.value = "Unsaved draft";
+    const reset = vi.fn();
+    foodForm.addEventListener("reset", reset);
+    const restoreFocus = vi.spyOn(foodAdd, "focus");
+
+    const addresses = document.querySelector<HTMLElement>(
+      '[data-profile-fact-section="addresses"]',
+    )!;
+    const addressForm = addresses.querySelector<HTMLFormElement>(
+      "[data-profile-fact-form]",
+    )!;
+    addresses.querySelector<HTMLButtonElement>("[data-profile-fact-add]")!
+      .click();
+    await vi.waitFor(() => expect(addressForm.hidden).toBe(false));
+
+    expect(foodForm.hidden).toBe(true);
+    expect(foodDraft.value).toBe("");
+    expect(reset).toHaveBeenCalledOnce();
+    expect(restoreFocus).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(
+      addressForm.querySelector("input, select, textarea"),
+    );
+  });
+
   it("selects an existing workspace organization from the local work editor", async () => {
     document.body.innerHTML = `
       <section data-profile-fact-section="work">
