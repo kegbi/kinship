@@ -36,7 +36,7 @@
   border-radius: 50%;
   color: white;
   background: var(--accent);
-  font-family: Inter, sans-serif;
+  font-family: "Inter Variable", Inter, sans-serif;
   font-size: .82rem;
 }
 

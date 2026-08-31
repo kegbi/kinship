@@ -1,6 +1,8 @@
+@import "./fonts.css";
+
 :root {
   color-scheme: light;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: "Inter Variable", Inter, ui-sans-serif, system-ui, sans-serif;
   color: var(--ink-1, rgb(32 53 45));
   background: var(--surface-page, rgb(244 240 231));
 }
@@ -67,7 +69,7 @@ input:focus-visible {
   border-radius: 50%;
   color: white;
   background: var(--accent, rgb(164 71 48));
-  font-family: Inter, sans-serif;
+  font-family: "Inter Variable", Inter, sans-serif;
   font-size: .85rem;
 }
 .auth-main {
