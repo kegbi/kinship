@@ -11,9 +11,9 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-002C2B2b — Carry the per-kind detail in the timeline
-  projection**. The review's top five, `UXD-001` through `UXD-005`, all of
-  `UXD-003`, `DOC-001`, `REL-021`, `REL-023`, and `UXD-002C2B2a` are integrated.
+- Current leaf: **UXD-002C2B2c — Suppress the five timeline card lists**. The
+  review's top five, `UXD-001` through `UXD-005`, all of `UXD-003`, `DOC-001`,
+  `REL-021`, `REL-023`, `UXD-002C2B2a`, and `UXD-002C2B2b` are integrated.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -1137,16 +1137,54 @@ asserts, so it runs that spec on its candidate.
               the pre-amendment candidate. The amendment was one guard inside
               the listener that run exercised, so the browser suite was not
               rerun for it, per the gate ladder.
-      - [ ] **UXD-002C2B2b — Carry the per-kind detail in the projection.** Add
-            the fields a demoted card would otherwise take with it —
-            participants, activity type, and emotions for an activity; the
-            caller direction and emotions for a call; the channel, contact
-            method, and messages for a conversation — to `PersonTimelineItem`.
-            Enrich in the final select over the already-computed `page` rows,
-            never inside the `projection` union, so the keyset and its
-            `limit + 1` stay untouched; `activity_report_repository.ts` already
-            uses exactly that lateral-over-page shape and is the pattern to
-            mirror.
+      - [x] **UXD-002C2B2b — Carry the per-kind detail in the projection.**
+            `PersonTimelineItem` now carries `activityType`, `participants`, and
+            `emotions` for an activity; `contactWasCaller` and `emotions` for a
+            call; and `channelType`, `contactMethod`, and `messages` for a
+            conversation. Notes and life events gained nothing, because they
+            already lose nothing to a merged row.
+        - [x] The enrichment is seven guarded `left join lateral` clauses on the
+              final select over `page`, so it runs over at most `limit + 1`
+              already-chosen rows and cannot reach the keyset predicate, the
+              ordering, the overfetch that decides `nextCursor`, the
+              personalization predicates, or the cursor-anchor validation. The
+              `projection` and `page` CTEs are byte-for-byte unchanged.
+              `activity_report_repository.ts` already used this shape and was
+              mirrored rather than reinvented.
+        - [x] Every value matches how the same value is already resolved
+              elsewhere rather than being invented here: the activity type is
+              the `coalesce(nullif(name, ''), translation_key)` the activity
+              report uses, and the channel name is the
+              `coalesce(nullif(name, ''), 'Communication')` the interaction
+              workspace boundary uses. A missing channel type omits the field
+              rather than falling back, which is what the section card does.
+        - [x] Tenant scope is re-asserted inside every lateral through the
+              query's workspace parameter, not inherited from the parent row.
+              The one exception is deliberate and correct:
+              `person_contact_methods` has no `workspace_id` column, so it is
+              reached through the thread's own workspace-scoped person.
+              `emotion_options` is global by schema comment and is joined
+              without a workspace predicate, as everywhere else.
+        - [x] The published `maxItems` are the bounds the write path actually
+              enforces — 20 emotions and 50 participants, from the Zod schemas
+              in `apps/api/interactions.ts` — so the contract cannot describe a
+              response the API can produce. `messages` is deliberately uncapped:
+              a cap would make the demotion lossy again, which is the reason
+              this leaf exists.
+        - [x] The real-PostgreSQL assertions were written blind, since the
+              implementer sandbox reaches no database, and passed on the first
+              controller run. They prove an activity keeps its category, both
+              ordered participants, and its emotion; a call keeps its caller
+              direction and emotion; a conversation keeps its channel, contact
+              method, and both messages in written order with their directions;
+              and that a note and a life event carry none of the seven fields at
+              all.
+        - [x] Gates: `contracts:generate` then `contracts:check`, `check:api`,
+              `test:contract` 125 passed, `test:unit:api`, `check:web` 0 errors,
+              `fmt:check` 580 files, `lint` 473 files, and `test:coverage:api`
+              against real PostgreSQL 526 passed / 0 failed at 85.1/82.1/87.3.
+              No browser gate applies: the change is additive-optional on a
+              response and touches no web code.
       - [ ] **UXD-002C2B2c — Suppress the five lists.** Keep every card, its
             heading, its state paragraph, its add control, and its form, so
             `[data-profile-section]` still counts 22 and every `?section=` id
