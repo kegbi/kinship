@@ -11,10 +11,10 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-009 — Breadcrumbs on routes at least two levels deep**.
-  All of `UXD-002`, `UXD-011`, and `UXD-012` are integrated, alongside the
-  review's top five, `UXD-003`, `DOC-001`, `REL-021`, and `REL-023`, so
-  `UXD-016` and `UXD-017` are unblocked.
+- Current leaf: **UXD-008 — Persistent settings sidebar**. All of `UXD-002`,
+  `UXD-009`, `UXD-011`, and `UXD-012` are integrated, alongside the review's top
+  five, `UXD-003`, `DOC-001`, `REL-021`, and `REL-023`, so `UXD-016` and
+  `UXD-017` are unblocked.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -1720,8 +1720,58 @@ asserts, so it runs that spec on its candidate.
         outside `:root`, and the complete Chromium suite 44/44.
 - [ ] **UXD-008 — Persistent settings sidebar.** (§8; effort M; depends on
       `UXD-001`)
-- [ ] **UXD-009 — Breadcrumbs on routes at least two levels deep.** (§8; effort
-      S; no dependency)
+- [x] **UXD-009 — Breadcrumbs on routes at least two levels deep.** (§8; effort
+      S; no dependency) Twenty deep routes gained a breadcrumb naming their real
+      position: the two person-scoped report shells, the journal item, add
+      person, archived people, and every settings page including the import and
+      workspace sub-trees. `/app`, `/app/people`, `/app/tasks`, `/app/journal`,
+      and `/app/compliance` get none — the first four are one level deep and the
+      last is a gate, not a hierarchy.
+  - [x] One component renders the shape the person hero breadcrumb already used,
+        so the application has one idiom: a `Breadcrumb`-labelled `<nav>`, links
+        for every entry but the last, `aria-hidden` separators, and a final
+        non-link entry carrying `aria-current="page"`.
+  - [x] Fourteen back links went with them, because two competing wayfinding
+        affordances are worse than either alone: eleven `All settings`, two
+        `Import history`, both `← Back to person` with the code that set their
+        `href`, and `Back to journal`. `New import` and `Create export` stayed —
+        they are actions, not wayfinding. The person hero was deliberately not
+        converted: its skeleton, `sr-only`, `data-person-breadcrumb-name`, and
+        `aria-current` markup is driven by a controller and worth more intact
+        than deduplicated. That duplication is recorded, not overlooked.
+  - [x] **A recorded behavior change.** The activity report's back link pointed
+        at `/app/people/:id?section=activities`; its breadcrumb points at
+        `/app/people/:id`. A breadcrumb names the parent in the hierarchy, and
+        review §8's actual complaint is that the back link asserted a journey
+        the reader may never have taken — it is wrong for anyone who arrived
+        from Today or from search.
+  - [x] **A defect caught in review.** Both person-scoped crumbs resolved their
+        name only on a _successful_ load, so a failed one left a link reading
+        "Loading person…" pointing at the people directory, permanently — a
+        regression against the deleted back link, whose `href` was set
+        synchronously from the URL. The `href` is set synchronously again, and a
+        terminal failure now replaces the skeleton with a plain `Person` label,
+        with a focused test per shell.
+  - [x] Every breadcrumb label was checked against every `getByRole` name in
+        `tests/e2e/`, because Playwright matches accessible names as a
+        case-insensitive substring and these labels duplicate header navigation
+        links. `People`, `Settings`, and `Journal` all have unscoped page-wide
+        locators, but each runs on `/app` or `/app/people`, neither of which has
+        a breadcrumb. No collision.
+  - [x] One spec amendment: `app-002e` proved the dirty-state guard by clicking
+        `All settings` on the profile page. It now clicks the breadcrumb's
+        `Settings` link, scoped to the breadcrumb navigation so it cannot match
+        the member-menu entry. The guard assertion is unchanged.
+  - [x] **An unrelated full-suite failure, given one bounded reproduction and
+        queued rather than folded in.** `auth-002` failed once after
+        `Accept invitation`, with the invitee on the public home instead of the
+        welcome heading. The spec passes alone on clean `main` and alone on this
+        candidate, and the whole suite passed on the very next run. Recorded as
+        `REL-025`; nothing in this candidate touches the invitation flow.
+  - [x] Gates: `fmt:check` 591 files, `lint` 476 files, `check:web` 0 errors,
+        the Astro production build, 518 web unit tests, `test:coverage:web` at
+        92.67/83.22/87.77/94.67, the hex invariant, and the complete Chromium
+        suite 44/44 with an empty `.artifacts/playwright`.
 - [x] **UXD-011 — Decide the Inter question: self-host or drop the name.**
       (§10.3; effort S; depends on `UXD-001`) **Decided: self-host.** Dropping
       the name would have made the declaration honest without fixing the defect
@@ -1895,6 +1945,16 @@ asserts, so it runs that spec on its candidate.
         tests among them, `test:coverage:api` against real PostgreSQL 526 passed
         / 0 failed at 85.1 / 82.2 / 87.3, `fmt:check` 580 files, and `lint` 473
         files. No web or browser gate applies.
+- [ ] **REL-025 — Watch the `auth-002` invitation acceptance.** One full-suite
+      run during `UXD-009` failed after `Accept invitation`: the invitee page
+      was the public home rather than the `Welcome to <workspace>` heading, so
+      the accepted session never reached the application. Given one bounded
+      reproduction — the spec passes alone on clean `main` and alone on the
+      candidate, and the whole suite passed on the next run — so it was queued
+      rather than folded into a candidate that touches no part of the invitation
+      flow. Recorded rather than diagnosed, so a recurrence has a trail. Treat a
+      second occurrence as a real ordering or shared-state defect, not a flake;
+      `REL-003` already had to serialize this stack once.
 - [ ] **REL-024 — Run the five remaining unreferenced architecture contracts.**
       Found while wiring `REL-023`, by asking its question of every `*_test.ts`
       in the repository rather than only the one file the ticket named. Five
