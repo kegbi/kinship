@@ -319,6 +319,34 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
     cadenceCountStyle.backgroundColor,
   );
 
+  const coordinationFood = page.locator(
+    "#profile-section-food-preferences",
+  );
+  const coordinationFoodEditor = coordinationFood.locator(
+    "form[data-profile-fact-form]",
+  );
+  await openLocalEditor(
+    coordinationFood.getByRole("button", { name: "Add food preferences" }),
+    coordinationFoodEditor,
+  );
+  const coordinationAddress = page.locator("#profile-section-addresses");
+  const coordinationAddressEditor = coordinationAddress.locator(
+    "form[data-profile-fact-form]",
+  );
+  await openLocalEditor(
+    coordinationAddress.getByRole("button", { name: "Add addresses" }),
+    coordinationAddressEditor,
+  );
+  await expect(coordinationFoodEditor).toHaveCount(1);
+  await expect(coordinationFoodEditor).toBeHidden();
+  await expect(
+    coordinationAddressEditor.locator(
+      'input:not([type="hidden"]), select, textarea',
+    ).first(),
+  ).toBeFocused();
+  await coordinationAddressEditor.getByRole("button", { name: "Cancel" })
+    .click();
+
   const calls: string[] = [];
   page.on("request", (outgoing) => {
     if (outgoing.url().includes("/facts/")) {

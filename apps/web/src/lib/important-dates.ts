@@ -14,6 +14,10 @@ import {
   setVitalStat,
 } from "./person-facts-rail.ts";
 import { insertProfileRailExpander } from "./profile-rail-expander.ts";
+import {
+  announceRailEditorOpened,
+  onForeignRailEditorOpened,
+} from "./rail-editors.ts";
 
 interface ImportantDateElements {
   readonly add: HTMLButtonElement;
@@ -429,6 +433,10 @@ export async function mountImportantDates(
 ): Promise<void> {
   const ui = elements();
   if (!ui) return;
+  onForeignRailEditorOpened([ui.form], (form) => {
+    form.hidden = true;
+    form.reset();
+  });
   let lifecycleArchived = archived;
   let dates: readonly ImportantDate[] = [];
   const listed = await listImportantDates(personId, workspaceId).catch(() =>
@@ -459,6 +467,7 @@ export async function mountImportantDates(
         ui.form.hidden = false;
         ui.form.querySelector<HTMLElement>("input:not([type=hidden]), select")
           ?.focus();
+        announceRailEditorOpened(ui.form);
       },
       async (date, button) => {
         if (button.dataset.confirm !== "true") {
@@ -504,9 +513,11 @@ export async function mountImportantDates(
     fill(ui);
     ui.form.hidden = false;
     ui.kind.focus();
+    announceRailEditorOpened(ui.form);
   });
   ui.cancel.addEventListener("click", () => {
     ui.form.hidden = true;
+    ui.form.reset();
     ui.add.focus();
   });
   ui.form.addEventListener("submit", async (event) => {

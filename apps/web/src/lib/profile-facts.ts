@@ -20,6 +20,10 @@ import {
   setRailEmpty,
   setVitalStat,
 } from "./person-facts-rail.ts";
+import {
+  announceRailEditorOpened,
+  onForeignRailEditorOpened,
+} from "./rail-editors.ts";
 import { insertProfileRailExpander } from "./profile-rail-expander.ts";
 import { showToast } from "./toasts.ts";
 
@@ -758,6 +762,14 @@ export async function mountProfileFacts(
   let primaryContactMethods = initialPrimaryContactMethods;
   let renderContactMethods: (() => void) | undefined;
   const snapshots = new Map<ProfileFactSectionId, ProfileFactSection>();
+  const ownForms = sections.flatMap((section) => {
+    const form = elements(section)?.form;
+    return form ? [form] : [];
+  });
+  onForeignRailEditorOpened(ownForms, (form) => {
+    form.hidden = true;
+    form.reset();
+  });
   const applyPersonRevision = (
     candidate: string,
     announce = false,
@@ -1324,6 +1336,7 @@ export async function mountProfileFacts(
             if (submit && ready) submit.disabled = false;
             target.form.querySelector<HTMLElement>("input, select, textarea")
               ?.focus();
+            announceRailEditorOpened(target.form);
           });
           item.append(edit);
           if (section !== "tags") {
@@ -1484,6 +1497,7 @@ export async function mountProfileFacts(
       if (submit && ready) submit.disabled = false;
       target.form.querySelector<HTMLElement>("input, select, textarea")
         ?.focus();
+      announceRailEditorOpened(target.form);
     };
     const cancel = target.form.querySelector<HTMLButtonElement>(
       '.form-actions button[type="button"]',
@@ -1491,6 +1505,7 @@ export async function mountProfileFacts(
     if (cancel) {
       cancel.onclick = () => {
         target.form.hidden = true;
+        target.form.reset();
         target.add.focus();
         target.state.textContent = "Edit cancelled. No changes were saved.";
       };

@@ -10,6 +10,10 @@ import {
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 import { setRailCount, setRailEmpty } from "./person-facts-rail.ts";
+import {
+  announceRailEditorOpened,
+  onForeignRailEditorOpened,
+} from "./rail-editors.ts";
 
 let todayRemindersAbort: AbortController | undefined;
 const TODAY_RECONNECT_RECORDED_EVENT = "kinship:today-reconnect-recorded";
@@ -106,6 +110,10 @@ export async function mountPersonReminders(options: {
     !reminderState || !reminderList || !reminderForm || !cadenceState ||
     !cadenceList || !cadenceForm
   ) return;
+  onForeignRailEditorOpened([cadenceForm], (form) => {
+    form.hidden = true;
+    form.reset();
+  });
   const reminderSubmit = reminderForm.querySelector<HTMLButtonElement>(
     "[type=submit]",
   );
@@ -206,6 +214,7 @@ export async function mountPersonReminders(options: {
   cadenceAdd?.addEventListener("click", () => {
     cadenceForm.hidden = false;
     cadenceForm.querySelector<HTMLElement>("input, select, textarea")?.focus();
+    announceRailEditorOpened(cadenceForm);
   });
   cadenceCancel?.addEventListener("click", () => {
     cadenceForm.hidden = true;
