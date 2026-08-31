@@ -5,7 +5,13 @@ import { readFileSync } from "node:fs";
 import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
 
 const applicationCss = readApplicationStylesheet();
+const tokensCss = readFileSync("apps/web/src/styles/tokens.css", "utf8");
 const todayPage = readFileSync("apps/web/src/pages/app.astro", "utf8");
+const layoutPaths = [
+  "apps/web/src/layouts/ApplicationLayout.astro",
+  "apps/web/src/layouts/AuthLayout.astro",
+  "apps/web/src/layouts/PublicLayout.astro",
+] as const;
 const nonTokenStylesheetPaths = [
   "apps/web/src/styles/base.css",
   "apps/web/src/styles/shell.css",
@@ -205,6 +211,53 @@ afterEach(() => {
 });
 
 describe("application control presentation", () => {
+  it("overrides every theme-dependent custom property in dark mode", () => {
+    const lightRoot = tokensCss.match(/^:root\s*\{([^}]*)\}/)?.[1] ?? "";
+    const darkRoot = tokensCss.match(
+      /@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)\s*\{\s*:root\s*\{([^}]*)\}/,
+    )?.[1] ?? "";
+    const customProperties = (block: string): string[] =>
+      Array.from(
+        block.matchAll(/(--[a-z0-9-]+)\s*:/gi),
+        (match) => match[1]!,
+      );
+    const deliberatelyInherited = (name: string): boolean =>
+      name === "--line-hairline" ||
+      name.startsWith("--radius-") ||
+      name.startsWith("--space-");
+    const lightProperties = customProperties(lightRoot).filter(
+      (name) => !deliberatelyInherited(name),
+    );
+
+    expect(lightProperties.length).toBeGreaterThan(0);
+    expect(customProperties(darkRoot).sort()).toEqual(lightProperties.sort());
+  });
+
+  it("advertises native light and dark color schemes", () => {
+    const lightRoot = tokensCss.match(/^:root\s*\{([^}]*)\}/)?.[1] ?? "";
+
+    expect(lightRoot).toMatch(/color-scheme:\s*light dark;/);
+  });
+
+  it("declares light and dark theme colors in every layout", () => {
+    for (const path of layoutPaths) {
+      const layout = readFileSync(path, "utf8");
+      const themeColorTags = Array.from(
+        layout.matchAll(/<meta\b[^>]*\bname="theme-color"[^>]*\/>/g),
+        ([tag]) => tag,
+      );
+      const mediaValues = themeColorTags.map((tag) =>
+        tag.match(/\bmedia="([^"]+)"/)?.[1]
+      ).sort();
+
+      expect(themeColorTags, path).toHaveLength(2);
+      expect(mediaValues, path).toEqual([
+        "(prefers-color-scheme: dark)",
+        "(prefers-color-scheme: light)",
+      ]);
+    }
+  });
+
   it("references only declared custom properties when no fallback is provided", () => {
     const declaredProperties = new Set(
       Array.from(
