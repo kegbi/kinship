@@ -52,6 +52,7 @@ function markup(): void {
       >
       <button class="button-secondary" data-global-people-search-open type="button" aria-label="Find a person">Find</button>
     </div>
+    <header><button data-quick-capture type="button">Quick capture</button></header>
     <button id="shortcut-opener" type="button">Open shortcut</button>
     <input id="other-input">
     <textarea id="note"></textarea>
@@ -69,10 +70,13 @@ function markup(): void {
 function fetchFor(
   people: readonly ReturnType<typeof directoryPerson>[] = [],
   recent: readonly { archived: boolean; id: string; name: string }[] = [],
+  sessionBody = session,
 ) {
   return vi.fn((request: RequestInfo | URL) => {
     const url = String(request);
-    if (url === "/api/v1/session") return Promise.resolve(response(session));
+    if (url === "/api/v1/session") {
+      return Promise.resolve(response(sessionBody));
+    }
     if (url === "/api/v1/today/recent-people") {
       return Promise.resolve(response({ people: recent, status: "ready" }));
     }
@@ -104,6 +108,172 @@ afterEach(() => {
 });
 
 describe("UXD-004 global people search", () => {
+  it("renders command rows locally for > without a people request", async () => {
+    markup();
+    const fetchMock = fetchFor();
+    vi.stubGlobal("fetch", fetchMock);
+    cleanup = await mountGlobalPeopleSearch();
+    const input = document.querySelector<HTMLInputElement>(
+      "#global-people-search-input",
+    )!;
+
+    setQuery(input, ">");
+
+    expect(document.querySelectorAll('[role="option"]')).toHaveLength(11);
+    expect(document.querySelector('[role="option"]')?.textContent).toContain(
+      "Log interaction",
+    );
+    expect(document.querySelector("#global-people-search-status")?.textContent)
+      .toBe("11 commands found");
+    expect(
+      fetchMock.mock.calls.filter(([url]) =>
+        String(url).startsWith("/api/v1/people?") ||
+        String(url) === "/api/v1/today/recent-people"
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("shows mode-specific empty copy when commands and people do not match", async () => {
+    vi.useFakeTimers();
+    markup();
+    vi.stubGlobal("fetch", fetchFor([]));
+    cleanup = await mountGlobalPeopleSearch();
+    const input = document.querySelector<HTMLInputElement>(
+      "#global-people-search-input",
+    )!;
+    const empty = document.querySelector<HTMLElement>(
+      "#global-people-search-empty",
+    )!;
+
+    setQuery(input, "> zzz");
+    expect(empty.hidden).toBe(false);
+    expect(empty.textContent).toBe("No commands match");
+
+    setQuery(input, "zzz");
+    await vi.advanceTimersByTimeAsync(200);
+    await vi.waitFor(() => expect(empty.hidden).toBe(false));
+    expect(empty.textContent).toBe("No people match");
+  });
+
+  it("filters commands case-insensitively and gates settings by role", async () => {
+    markup();
+    vi.stubGlobal("fetch", fetchFor());
+    cleanup = await mountGlobalPeopleSearch();
+    const input = document.querySelector<HTMLInputElement>(
+      "#global-people-search-input",
+    )!;
+
+    setQuery(input, "> PREFERENCES");
+    let labels = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+      .map((option) => option.querySelector("strong")?.textContent);
+    expect(labels).toEqual(["Personal · Preferences"]);
+
+    setQuery(input, ">");
+    labels = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+      .map((option) => option.querySelector("strong")?.textContent);
+    expect(labels).toContain("Personal · Preferences");
+    expect(labels).not.toContain("Workspace · General");
+    expect(labels).not.toContain("Data · Import");
+    expect(labels).not.toContain("Workspace actions · Workspace danger zone");
+
+    cleanup();
+    cleanup = undefined;
+    sessionStorage.clear();
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      fetchFor([], [], {
+        ...session,
+        member: { ...session.member, role: "admin" },
+      }),
+    );
+    cleanup = await mountGlobalPeopleSearch();
+    const adminInput = document.querySelector<HTMLInputElement>(
+      "#global-people-search-input",
+    )!;
+    setQuery(adminInput, ">");
+    labels = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+      .map((option) => option.querySelector("strong")?.textContent);
+    expect(labels).toHaveLength(20);
+    expect(labels).toContain("Workspace · General");
+    expect(labels).toContain("Data · Import");
+    expect(labels).not.toContain("Workspace actions · Workspace danger zone");
+  });
+
+  it("closes command mode and opens quick capture for Log interaction", async () => {
+    markup();
+    vi.stubGlobal("fetch", fetchFor());
+    const quickCapture = document.querySelector<HTMLButtonElement>(
+      "header [data-quick-capture]",
+    )!;
+    const openQuickCapture = vi.fn();
+    quickCapture.addEventListener("click", openQuickCapture);
+    cleanup = await mountGlobalPeopleSearch();
+    const input = document.querySelector<HTMLInputElement>(
+      "#global-people-search-input",
+    )!;
+
+    setQuery(input, "> log");
+    const dialog = document.querySelector<HTMLDialogElement>(
+      "#global-people-search-dialog",
+    )!;
+    expect(dialog.open).toBe(true);
+    document.querySelector<HTMLElement>('[role="option"]')!.click();
+
+    expect(dialog.open).toBe(false);
+    expect(openQuickCapture).toHaveBeenCalledOnce();
+  });
+
+  it("appends matching commands only when a people query has zero matches", async () => {
+    vi.useFakeTimers();
+    markup();
+    vi.stubGlobal("fetch", fetchFor([]));
+    cleanup = await mountGlobalPeopleSearch();
+    const input = document.querySelector<HTMLInputElement>(
+      "#global-people-search-input",
+    )!;
+
+    setQuery(input, "task");
+    await vi.advanceTimersByTimeAsync(200);
+    await vi.waitFor(() =>
+      expect(document.querySelectorAll('[role="option"]')).toHaveLength(3)
+    );
+    const labels = [
+      ...document.querySelectorAll<HTMLElement>('[role="option"]'),
+    ].map((option) => option.querySelector("strong")?.textContent);
+    expect(labels).toEqual([
+      'Add "task" as a new person',
+      "Add task",
+      "Tasks",
+    ]);
+    expect(document.querySelector("#global-people-search-status")?.textContent)
+      .toBe("0 people found");
+
+    cleanup();
+    cleanup = undefined;
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      fetchFor([directoryPerson(adaId, "Task", "Master")]),
+    );
+    cleanup = await mountGlobalPeopleSearch();
+    const matchedInput = document.querySelector<HTMLInputElement>(
+      "#global-people-search-input",
+    )!;
+    setQuery(matchedInput, "task");
+    await vi.advanceTimersByTimeAsync(200);
+    await vi.waitFor(() =>
+      expect(document.querySelectorAll('[role="option"]')).toHaveLength(2)
+    );
+    const matchedLabels = [
+      ...document.querySelectorAll<HTMLElement>('[role="option"]'),
+    ].map((option) => option.querySelector("strong")?.textContent);
+    expect(matchedLabels).toEqual([
+      "Task Master",
+      'Add "task" as a new person',
+    ]);
+  });
+
   it("opens from Ctrl/Cmd+K and renders recent people for an empty query", async () => {
     markup();
     const fetchMock = fetchFor([], [

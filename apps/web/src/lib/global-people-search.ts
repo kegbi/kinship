@@ -2,8 +2,10 @@ import {
   getTodayRecentPeople,
   listPeople,
   type PeopleDirectoryPerson,
+  type SessionContext,
   type TodayRecentPerson,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import { groups } from "./settings-destinations.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 
 type Navigate = (path: string) => void;
@@ -29,6 +31,76 @@ interface SearchPerson {
   readonly id: string;
   readonly name: string;
   readonly nickname?: string;
+}
+
+type MemberRole = SessionContext["member"]["role"];
+
+interface PaletteCommand {
+  readonly command?: "log-interaction";
+  readonly label: string;
+  readonly path?: string;
+}
+
+const primaryCommands: readonly PaletteCommand[] = [
+  { command: "log-interaction", label: "Log interaction" },
+  { label: "Add person", path: "/app/people/new" },
+  { label: "Add task", path: "/app/tasks" },
+  { label: "Today", path: "/app" },
+  { label: "People", path: "/app/people" },
+  { label: "Tasks", path: "/app/tasks" },
+  { label: "Journal", path: "/app/journal" },
+  { label: "Settings", path: "/app/settings" },
+];
+
+const accessRank: Readonly<Record<MemberRole, number>> = {
+  admin: 1,
+  member: 0,
+  owner: 2,
+};
+
+function commandIndex(role: MemberRole): readonly PaletteCommand[] {
+  const settingsCommands = groups.flatMap((group) =>
+    group.destinations
+      .filter((destination) =>
+        accessRank[role] >= accessRank[destination.access]
+      )
+      .map((destination) => ({
+        label: `${group.label} · ${destination.label}`,
+        path: destination.href,
+      }))
+  );
+  return [...primaryCommands, ...settingsCommands];
+}
+
+function matchingCommands(
+  commands: readonly PaletteCommand[],
+  filter: string,
+): readonly PaletteCommand[] {
+  const normalizedFilter = filter.toLocaleLowerCase();
+  return commands.filter((command) =>
+    command.label.toLocaleLowerCase().includes(normalizedFilter)
+  );
+}
+
+function commandOption(
+  command: PaletteCommand,
+  index: number,
+): HTMLLIElement {
+  const option = document.createElement("li");
+  option.id = `global-people-search-option-command-${index}`;
+  if (command.path) option.dataset.path = command.path;
+  if (command.command) option.dataset.command = command.command;
+  option.className = "people-search-add-option";
+  option.setAttribute("aria-selected", "false");
+  option.setAttribute("role", "option");
+  const avatar = document.createElement("span");
+  avatar.className = "people-search-avatar";
+  avatar.setAttribute("aria-hidden", "true");
+  avatar.textContent = ">";
+  const label = document.createElement("strong");
+  label.textContent = command.label;
+  option.append(avatar, label);
+  return option;
 }
 
 function searchElements(): SearchElements | undefined {
@@ -198,6 +270,7 @@ export async function mountGlobalPeopleSearch(
   if (!ui) return () => {};
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") return () => {};
+  const commands = commandIndex(session.session.member.role);
 
   let activeIndex = -1;
   let debounce: ReturnType<typeof setTimeout> | undefined;
@@ -246,11 +319,26 @@ export async function mountGlobalPeopleSearch(
       : true;
     const rows = people.map(personOption);
     if (query && !hasExactMatch) rows.push(addPersonOption(query));
+    if (query && people.length === 0) {
+      rows.push(...matchingCommands(commands, query).map(commandOption));
+    }
     ui.list.replaceChildren(...rows);
+    ui.empty.textContent = "No people match";
     ui.empty.hidden = people.length > 0 || !query;
     if (ui.problem) ui.problem.hidden = true;
     ui.status.textContent = `${people.length} ${
       people.length === 1 ? "person" : "people"
+    } found`;
+    setActive(0);
+  };
+  const renderCommands = (filter: string): void => {
+    const matches = matchingCommands(commands, filter);
+    ui.list.replaceChildren(...matches.map(commandOption));
+    ui.empty.textContent = "No commands match";
+    ui.empty.hidden = matches.length > 0;
+    if (ui.problem) ui.problem.hidden = true;
+    ui.status.textContent = `${matches.length} ${
+      matches.length === 1 ? "command" : "commands"
     } found`;
     setActive(0);
   };
@@ -287,10 +375,17 @@ export async function mountGlobalPeopleSearch(
   };
   const queue = (value: string): void => {
     if (debounce) clearTimeout(debounce);
+    debounce = undefined;
     requestAbort?.abort();
+    requestAbort = undefined;
+    const query = value.trim();
+    if (query.startsWith(">")) {
+      clearResults();
+      renderCommands(query.slice(1).trim());
+      return;
+    }
     const controller = new AbortController();
     requestAbort = controller;
-    const query = value.trim();
     clearResults();
     if (!query) {
       void loadRecent(controller);
@@ -328,11 +423,19 @@ export async function mountGlobalPeopleSearch(
     lastOpener = undefined;
     if (opener?.isConnected) opener.focus();
   };
-  const activate = (): void => {
-    const path = options()[activeIndex]?.dataset.path;
-    if (!path) return;
-    closeDialog(ui.dialog);
-    navigate(path);
+  const activate = (option?: HTMLElement): void => {
+    if (option?.dataset.command === "log-interaction") {
+      closeDialog(ui.dialog);
+      document.querySelector<HTMLButtonElement>(
+        "header [data-quick-capture]",
+      )?.click();
+      return;
+    }
+    const path = option?.dataset.path;
+    if (path) {
+      closeDialog(ui.dialog);
+      navigate(path);
+    }
   };
   const onInput = (): void => {
     if (!ui.dialog.open) {
@@ -354,7 +457,7 @@ export async function mountGlobalPeopleSearch(
       setActive(activeIndex + (event.key === "ArrowDown" ? 1 : -1));
     } else if (event.key === "Enter") {
       event.preventDefault();
-      activate();
+      activate(options()[activeIndex]);
     }
   };
   const onDocumentKeydown = (event: KeyboardEvent): void => {
@@ -381,10 +484,7 @@ export async function mountGlobalPeopleSearch(
     const option = event.target instanceof Element
       ? event.target.closest<HTMLElement>('[role="option"]')
       : undefined;
-    const path = option?.dataset.path;
-    if (!path) return;
-    closeDialog(ui.dialog);
-    navigate(path);
+    activate(option ?? undefined);
   };
   const onCloseClick = (): void => closeDialog(ui.dialog);
   const openHandlers = ui.openButtons.map((button) => {
