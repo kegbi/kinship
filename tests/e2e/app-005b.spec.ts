@@ -105,6 +105,7 @@ test("[INTERACTION-002] logs calls and conversations in the person workspace", {
   `);
 
   await page.goto(`${profilePath}?section=calls`);
+  const timeline = page.locator("#person-timeline");
   const calls = page.locator("#profile-section-calls");
   await expect(calls).toHaveAttribute("data-section-state", "ready");
   await calls.getByRole("button", { name: "Log call" }).click();
@@ -116,9 +117,13 @@ test("[INTERACTION-002] logs calls and conversations in the person workspace", {
   await callForm.getByLabel("Emotions (optional)").selectOption(emotionId);
   await callForm.getByRole("button", { name: "Save call" }).click();
   await expect(callForm.getByText("Call saved.")).toBeVisible();
-  await expect(calls).toContainText("Incoming call");
-  await expect(calls).toContainText("Planned the next visit.");
-  await expect(calls).toContainText("Grateful");
+  const callTimelineRow = timeline.locator("[data-timeline-id]", {
+    hasText: "Planned the next visit.",
+  });
+  await expect(callTimelineRow).toHaveCount(1);
+  await callTimelineRow.locator("summary").click();
+  await expect(callTimelineRow).toContainText("Incoming call");
+  await expect(callTimelineRow).toContainText("Emotions: Grateful");
   await expect(page.locator("[data-profile-last-contact]")).not.toHaveText(
     "None recorded",
   );
@@ -144,10 +149,14 @@ test("[INTERACTION-002] logs calls and conversations in the person workspace", {
   await conversationForm.getByRole("button", { name: "Save conversation" })
     .click();
   await expect(conversationForm.getByText("Conversation saved.")).toBeVisible();
-  await expect(conversations).toContainText("Travel details");
-  await expect(conversations).toContainText("Outbound: Did you arrive?");
-  await expect(conversations).toContainText("Inbound: Yes, safely.");
-  await expect(conversations).toContainText("Via ada@example.test");
+  const travelTimelineRow = timeline.locator("[data-timeline-id]", {
+    hasText: "Travel details",
+  });
+  await expect(travelTimelineRow).toHaveCount(1);
+  await travelTimelineRow.locator("summary").click();
+  await expect(travelTimelineRow).toContainText("Outbound: Did you arrive?");
+  await expect(travelTimelineRow).toContainText("Inbound: Yes, safely.");
+  await expect(travelTimelineRow).toContainText("Via ada@example.test");
 
   const removeMessages = conversationForm.getByRole("button", {
     name: "Remove message",
@@ -160,7 +169,14 @@ test("[INTERACTION-002] logs calls and conversations in the person workspace", {
   );
   await conversationForm.getByRole("button", { name: "Save conversation" })
     .click();
-  await expect(conversations).toContainText("Direction not recorded");
+  const unknownDirectionTimelineRow = timeline.locator("[data-timeline-id]", {
+    hasText: "Direction unknown",
+  });
+  await expect(unknownDirectionTimelineRow).toHaveCount(1);
+  await unknownDirectionTimelineRow.locator("summary").click();
+  await expect(unknownDirectionTimelineRow).toContainText(
+    "Direction not recorded",
+  );
   const invalidMethod = await page.request.post(
     `${origin}/api/v1/interactions`,
     {

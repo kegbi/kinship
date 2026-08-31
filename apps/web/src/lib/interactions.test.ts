@@ -2342,14 +2342,18 @@ describe("INTERACTION-001 browser behavior", () => {
       .toContain("Today 3");
     expect(document.querySelector("#activity-report-list")?.textContent)
       .toContain("Report");
-    expect(document.querySelector("#person-activities-list")?.textContent)
-      .toContain("Report");
+    expect(document.querySelector("#person-activities-state")?.textContent)
+      .toBe("1 recent activity. Listed in the timeline above.");
   });
 
   it("renders person activity and note sections with archive and hidden states", async () => {
     document.body.innerHTML = `
-      <p id="person-activities-state"></p><ul id="person-activities-list"></ul>
-      <p id="person-notes-state"></p><ul id="person-notes-list"></ul>
+      <section data-profile-section="activities">
+        <p id="person-activities-state"></p><ul id="person-activities-list"></ul>
+      </section>
+      <section data-profile-section="notes">
+        <p id="person-notes-state"></p><ul id="person-notes-list"></ul>
+      </section>
       <button data-person-interaction-capture></button>
       <a data-activity-report-link href="/app/people"></a>`;
     const activity = {
@@ -2379,9 +2383,12 @@ describe("INTERACTION-001 browser behavior", () => {
       activities: false,
       notes: true,
     });
-    expect(document.querySelector("#person-activities-list")?.textContent)
-      .toContain("Shared lunch");
-    expect(document.querySelector("#person-notes-list")?.textContent).toBe("");
+    expect(document.querySelector("#person-activities-state")?.textContent)
+      .toBe("1 recent activity. Listed in the timeline above.");
+    expect(
+      document.querySelector<HTMLElement>('[data-profile-section="notes"]')
+        ?.dataset.sectionState,
+    ).toBe("hidden");
     expect(document.querySelector("#person-notes-state")?.textContent)
       .toContain("hidden");
     expect(
@@ -2397,8 +2404,12 @@ describe("INTERACTION-001 browser behavior", () => {
 
   it("loads kind-scoped profile sections so a page of newer notes cannot conceal an activity", async () => {
     document.body.innerHTML = `
-      <p id="person-activities-state"></p><ul id="person-activities-list"></ul>
-      <p id="person-notes-state"></p><ul id="person-notes-list"></ul>`;
+      <section data-profile-section="activities" data-section-state="loading">
+        <p id="person-activities-state"></p><ul id="person-activities-list" hidden></ul>
+      </section>
+      <section data-profile-section="notes" data-section-state="loading">
+        <p id="person-notes-state"></p><ul id="person-notes-list" hidden></ul>
+      </section>`;
     const requestedKinds: string[] = [];
     vi.stubGlobal(
       "fetch",
@@ -2437,11 +2448,28 @@ describe("INTERACTION-001 browser behavior", () => {
     });
 
     expect(requestedKinds.sort()).toEqual(["activity", "note"]);
-    expect(document.querySelector("#person-activities-list")?.textContent)
-      .toContain("Shared lunch");
-    expect(document.querySelector("#person-notes-list")?.children).toHaveLength(
-      20,
-    );
+    const activities = document.querySelector<HTMLElement>(
+      '[data-profile-section="activities"]',
+    )!;
+    const activityList = document.querySelector<HTMLUListElement>(
+      "#person-activities-list",
+    )!;
+    expect(activityList.hidden).toBe(true);
+    expect(activityList.children).toHaveLength(0);
+    expect(document.querySelector("#person-activities-state")?.textContent)
+      .toBe("1 recent activity. Listed in the timeline above.");
+    expect(activities.dataset.sectionState).toBe("ready");
+    const notes = document.querySelector<HTMLElement>(
+      '[data-profile-section="notes"]',
+    )!;
+    const noteList = document.querySelector<HTMLUListElement>(
+      "#person-notes-list",
+    )!;
+    expect(noteList.hidden).toBe(true);
+    expect(noteList.children).toHaveLength(0);
+    expect(document.querySelector("#person-notes-state")?.textContent)
+      .toBe("20 recent notes. Listed in the timeline above.");
+    expect(notes.dataset.sectionState).toBe("ready");
   });
 
   it("renders successful activity and note projections independently when the other request fails", async () => {
@@ -2506,14 +2534,14 @@ describe("INTERACTION-001 browser behavior", () => {
       document.querySelector('[data-profile-section="activities"]')
         ?.getAttribute("data-section-state"),
     ).toBe("error");
-    expect(document.querySelector("#person-activities-list")?.textContent)
-      .toContain("Saved activity");
+    expect(document.querySelector("#person-activities-state")?.textContent)
+      .toBe("Activities could not be loaded. Saved activity is unchanged.");
     expect(
       document.querySelector<HTMLButtonElement>("#person-activities-retry")
         ?.hidden,
     ).toBe(false);
-    expect(document.querySelector("#person-notes-list")?.textContent)
-      .toContain("Fresh note");
+    expect(document.querySelector("#person-notes-state")?.textContent)
+      .toBe("1 recent note. Listed in the timeline above.");
     expect(
       document.querySelector('[data-profile-section="notes"]')?.getAttribute(
         "data-section-state",
@@ -2536,19 +2564,21 @@ describe("INTERACTION-001 browser behavior", () => {
         ?.getAttribute("data-section-state"),
     ).toBe("loading");
     await vi.waitFor(() =>
-      expect(document.querySelector("#person-activities-list")?.textContent)
-        .toContain("Retried activity")
+      expect(document.querySelector("#person-activities-state")?.textContent)
+        .toBe("1 recent activity. Listed in the timeline above.")
     );
-    expect(document.querySelector("#person-activities-list")?.textContent)
-      .toContain("Category: Shared meal");
+    expect(document.querySelector("#person-activities-state")?.textContent)
+      .toBe("1 recent activity. Listed in the timeline above.");
     expect(
       document.querySelector('[data-profile-section="activities"]')
         ?.getAttribute("data-section-state"),
     ).toBe("ready");
-    expect(document.querySelector("#person-activities-list")?.textContent)
-      .toContain("Emotions: Joy");
-    expect(document.querySelector("#person-notes-list")?.textContent)
-      .toContain("Fresh note");
+    expect(
+      document.querySelector('[data-profile-section="activities"]')
+        ?.getAttribute("data-section-state"),
+    ).toBe("ready");
+    expect(document.querySelector("#person-notes-state")?.textContent)
+      .toBe("1 recent note. Listed in the timeline above.");
 
     let noteAttempts = 0;
     vi.stubGlobal(
@@ -2576,8 +2606,8 @@ describe("INTERACTION-001 browser behavior", () => {
       activities: false,
       notes: false,
     });
-    expect(document.querySelector("#person-activities-list")?.textContent)
-      .toContain("Fresh activity");
+    expect(document.querySelector("#person-activities-state")?.textContent)
+      .toBe("1 recent activity. Listed in the timeline above.");
     expect(document.querySelector("#person-notes-state")?.textContent)
       .toContain("could not be loaded");
     expect(
@@ -2585,18 +2615,18 @@ describe("INTERACTION-001 browser behavior", () => {
         "data-section-state",
       ),
     ).toBe("error");
-    expect(document.querySelector("#person-notes-list")?.textContent)
-      .toContain("Fresh note");
+    expect(document.querySelector("#person-notes-state")?.textContent)
+      .toBe("Notes could not be loaded. Saved notes are unchanged.");
     expect(
       document.querySelector<HTMLButtonElement>("#person-notes-retry")?.hidden,
     ).toBe(false);
     document.querySelector<HTMLButtonElement>("#person-notes-retry")!.click();
     await vi.waitFor(() =>
-      expect(document.querySelector("#person-notes-list")?.textContent)
-        .toContain("Retried note")
+      expect(document.querySelector("#person-notes-state")?.textContent)
+        .toBe("1 recent note. Listed in the timeline above.")
     );
-    expect(document.querySelector("#person-activities-list")?.textContent)
-      .toContain("Fresh activity");
+    expect(document.querySelector("#person-activities-state")?.textContent)
+      .toBe("1 recent activity. Listed in the timeline above.");
     expect(
       document.querySelector('[data-profile-section="activities"]')
         ?.getAttribute("data-section-state"),
@@ -2616,16 +2646,16 @@ describe("INTERACTION-001 browser behavior", () => {
     let releaseOlder!: (value: Response) => void;
     const older = new Promise<Response>((resolve) => releaseOlder = resolve);
     let activityCalls = 0;
-    const page = (label: string) =>
+    const page = (label: string, count: number) =>
       response({
-        items: [{
+        items: Array.from({ length: count }, (_, index) => ({
           emotions: [],
           happenedAt: "2026-08-17T12:30:00.000Z",
-          id: label,
+          id: `${label}-${index}`,
           kind: "activity",
           participants: [{ id: personId, name: "Ada Lovelace" }],
-          summary: label,
-        }],
+          summary: `${label} ${index}`,
+        })),
         person: { id: personId, name: "Ada Lovelace" },
         status: "ready",
       });
@@ -2653,7 +2683,7 @@ describe("INTERACTION-001 browser behavior", () => {
           );
         }
         if (activityCalls === 2) return older;
-        return Promise.resolve(page("Newest retry"));
+        return Promise.resolve(page("Newest retry", 2));
       }),
     );
     await mountPersonInteractions(personId, workspaceId, false, {
@@ -2670,13 +2700,13 @@ describe("INTERACTION-001 browser behavior", () => {
     ).toBe("loading");
     retry.click();
     await vi.waitFor(() =>
-      expect(document.querySelector("#person-activities-list")?.textContent)
-        .toContain("Newest retry")
+      expect(document.querySelector("#person-activities-state")?.textContent)
+        .toBe("2 recent activities. Listed in the timeline above.")
     );
-    releaseOlder(page("Older retry"));
+    releaseOlder(page("Older retry", 1));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(document.querySelector("#person-activities-list")?.textContent)
-      .not.toContain("Older retry");
+    expect(document.querySelector("#person-activities-state")?.textContent)
+      .toBe("2 recent activities. Listed in the timeline above.");
     expect(
       document.querySelector('[data-profile-section="activities"]')
         ?.getAttribute("data-section-state"),
@@ -2760,26 +2790,29 @@ describe("INTERACTION-001 browser behavior", () => {
     );
     const olderNote = new Promise<Response>((resolve) => releaseNote = resolve);
     let calls = 0;
-    const result = (kind: "activity" | "note", label: string) =>
+    const result = (
+      kind: "activity" | "note",
+      label: string,
+      count: number,
+    ) =>
       response({
-        items: [
+        items: Array.from({ length: count }, (_, index) =>
           kind === "activity"
             ? {
               happenedAt: "2026-08-17T12:30:00.000Z",
-              id: label,
+              id: `${label}-${index}`,
               kind,
               participants: [{ id: personId, name: "Ada Lovelace" }],
-              summary: label,
+              summary: `${label} ${index}`,
             }
             : {
-              body: label,
+              body: `${label} ${index}`,
               createdAt: "2026-08-17T12:31:00.000Z",
-              id: label,
+              id: `${label}-${index}`,
               isFavorited: false,
               kind,
               participants: [{ id: personId, name: "Ada Lovelace" }],
-            },
-        ],
+            }),
         person: { id: personId, name: "Ada Lovelace" },
         status: "ready",
       });
@@ -2808,7 +2841,9 @@ describe("INTERACTION-001 browser behavior", () => {
       calls += 1;
       if (calls === 3) return olderActivity;
       if (calls === 4) return olderNote;
-      return Promise.resolve(result(kind, calls <= 2 ? "Initial" : "Newest"));
+      return Promise.resolve(
+        result(kind, calls <= 2 ? "Initial" : "Newest", calls <= 2 ? 1 : 2),
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
     await mountPersonInteractions(otherId, workspaceId, false, {
@@ -2819,20 +2854,20 @@ describe("INTERACTION-001 browser behavior", () => {
     await vi.waitFor(() => expect(calls).toBe(4));
     globalThis.dispatchEvent(new CustomEvent("kinship:interaction-created"));
     await vi.waitFor(() =>
-      expect(document.querySelector("#person-activities-list")?.textContent)
-        .toContain("Newest")
+      expect(document.querySelector("#person-activities-state")?.textContent)
+        .toBe("2 recent activities. Listed in the timeline above.")
     );
     await vi.waitFor(() =>
-      expect(document.querySelector("#person-notes-list")?.textContent)
-        .toContain("Newest")
+      expect(document.querySelector("#person-notes-state")?.textContent)
+        .toBe("2 recent notes. Listed in the timeline above.")
     );
-    releaseActivity(result("activity", "Older"));
-    releaseNote(result("note", "Older"));
+    releaseActivity(result("activity", "Older", 3));
+    releaseNote(result("note", "Older", 3));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(document.querySelector("#person-activities-list")?.textContent)
-      .not.toContain("Older");
-    expect(document.querySelector("#person-notes-list")?.textContent)
-      .not.toContain("Older");
+    expect(document.querySelector("#person-activities-state")?.textContent)
+      .toBe("2 recent activities. Listed in the timeline above.");
+    expect(document.querySelector("#person-notes-state")?.textContent)
+      .toBe("2 recent notes. Listed in the timeline above.");
   });
 
   it("hides each disabled profile interaction card and keeps the other intended action", async () => {

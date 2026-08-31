@@ -179,11 +179,6 @@ test(
     await page.goto(`${adaPath}?section=activities`);
     await page.reload();
     const adaActivities = page.locator("#profile-section-activities");
-    await expect(adaActivities).toContainText("Designed a compiler together");
-    await expect(adaActivities).toContainText(
-      `Category: ${activityTypeLabel}`,
-    );
-    await expect(adaActivities).not.toContainText("Emotions:");
     const timeline = page.locator("#person-timeline");
     await timeline.getByRole("button", { name: "Activities", exact: true })
       .click();
@@ -197,6 +192,7 @@ test(
         exact: true,
       }),
     ).toBeVisible();
+    await expect(compilerTimelineRow).not.toContainText("Emotions:");
     const reportPath = `${adaPath}/activity-report`;
     const reportLink = adaActivities.getByRole("link", {
       name: "Open activity report",
@@ -225,7 +221,7 @@ test(
     );
 
     await page.goto(`${gracePath}?section=activities`);
-    await expect(page.locator("#profile-section-activities")).toContainText(
+    await expect(page.locator("#person-timeline")).toContainText(
       "Designed a compiler together",
     );
 
@@ -250,9 +246,6 @@ test(
     await capture.getByRole("button", { name: "Save interaction" }).click();
     await expect(capture.getByText("Note saved.")).toBeVisible();
     await capture.getByRole("button", { name: "Cancel" }).click();
-    await expect(adaNotes).toContainText(
-      "Remember the analytical engine sketch.",
-    );
     await expect(page.locator("#person-timeline")).toContainText(
       "Remember the analytical engine sketch.",
     );
