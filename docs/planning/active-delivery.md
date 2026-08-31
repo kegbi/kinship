@@ -11,9 +11,9 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-012 — Split `application.css` into six files**. All of
-  `UXD-002` is now integrated, alongside the review's top five, `UXD-003`,
-  `DOC-001`, `REL-021`, and `REL-023`.
+- Current leaf: **UXD-011 — Decide the Inter question**, which blocks `UXD-016`
+  and `UXD-017`. All of `UXD-002` and `UXD-012` are integrated, alongside the
+  review's top five, `UXD-003`, `DOC-001`, `REL-021`, and `REL-023`.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -1723,8 +1723,50 @@ asserts, so it runs that spec on its candidate.
       S; no dependency)
 - [ ] **UXD-011 — Decide the Inter question: self-host or drop the name.**
       (§10.3; effort S; depends on `UXD-001`)
-- [ ] **UXD-012 — Split the application stylesheet into six files.** (§10.7;
-      effort S; depends on `UXD-001`)
+- [x] **UXD-012 — Split the application stylesheet into six files.** (§10.7;
+      effort S; depends on `UXD-001`) `application.css` is now six `@import`
+      lines over `tokens.css`, `base.css`, `shell.css`, `settings.css`,
+      `components.css`, and `person.css`. Scheduled before `UXD-016` and
+      `UXD-017` so both are written against the final layout.
+  - [x] The split is six **contiguous** ranges of the original file, moved
+        verbatim and imported in the original order — lines 1-45, 46-234,
+        235-586, 587-1415, 1416-1656, and 1657-3843. Nothing was reordered,
+        merged, deduplicated, or retitled. That is the entire safety argument:
+        several rules in this stylesheet have depended on source order, and
+        every specificity defect this phase produced came from a rule winning by
+        position.
+  - [x] The proof is mechanical, not a judgement. Concatenating the six files in
+        import order, with the boundary blank line restored at join time,
+        reproduces the pre-split file **byte for byte**; the controller ran that
+        diff independently and it is empty. File names therefore describe the
+        predominant content of a range, not a tidy category — `person.css` also
+        holds the directory, Today, journal, and compliance rules that follow it
+        in the original. Rehoming those is a later ticket with its own evidence.
+  - [x] The four unit tests that read the stylesheet as text now go through one
+        shared helper that inlines the imports, so they still assert against
+        "the application stylesheet" rather than against this ticket's file
+        layout. Every one of their assertions is unchanged.
+  - [x] **A defect caught in review:** the first candidate excluded five of the
+        six new files from `deno fmt`, because each ended with the blank line
+        the original had between rules. Turning a repository-wide gate off to
+        protect a proof is the same failure `REL-022` and `REL-023` already
+        recorded, and `UXD-016` and `UXD-017` are both scheduled to edit these
+        files next. The separator now lives in the join rather than in the file:
+        all six are formatter-clean, `deno.json` is untouched, and the
+        byte-identical proof still holds.
+  - [x] The hex invariant changed shape with the file. It is no longer a line
+        range inside one file but
+        `! grep -n '#[0-9a-fA-F]\{3,8\}' apps/web/src/styles/{base,shell,settings,components,person}.css`
+        — only `tokens.css` may carry a literal. It returns empty.
+  - [x] §10.7's other half, the reduced-motion rule that reset transitions but
+        not animation, was already repaired by `UXD-007` and was left alone.
+  - [x] Gates: `fmt:check` 588 files, `lint` 475 files, `check:web` 0 errors,
+        the Astro production build, 515 web unit tests, `test:coverage:web` at
+        92.68/83.25/87.77/94.69, the byte-identical concatenation, the new hex
+        gate, and the complete Chromium suite 44/44 with an empty
+        `.artifacts/playwright`. For a pure refactor the browser suite is the
+        only real evidence, which is why it ran on a candidate that changed no
+        behavior.
 - [ ] **UXD-014 — Optimistic UI on the four safe mutations only.** (§9.4; effort
       M; depends on `UXD-003` and `UXD-005`) Anything carrying an expected
       update timestamp stays non-optimistic.
