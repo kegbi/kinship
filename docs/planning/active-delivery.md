@@ -11,7 +11,7 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-018 — Command mode in the palette**. All of `UXD-002`,
+- Current leaf: **UXD-019 — Mobile bottom-sheet editors**. All of `UXD-002`,
   `UXD-008`, `UXD-009`, `UXD-011`, `UXD-012`, `UXD-014`, and the complete
   `UXD-016` are integrated, alongside the review top five, `UXD-003`, `DOC-001`,
   `REL-021`, and `REL-023`; `UXD-015` is parked with its evidence.
@@ -2280,8 +2280,51 @@ asserts, so it runs that spec on its candidate.
           `.artifacts/playwright`, and a rendered browser probe confirming the
           computed rhythm — card 20px, rail 14px, hero clamped at 32px, page
           frame 48px, §7.5 gap intact at 20px. No API gate applies.
-- [ ] **UXD-018 — Command mode in the palette.** (§8; effort M; depends on
-      `UXD-004`)
+- [x] **UXD-018 — Command mode in the palette.** (§8; effort M; depends on
+      `UXD-004`) A `>` prefix switches `UXD-004`'s palette to a local command
+      index — three actions (`Log interaction` through the header's wired
+      quick-capture opener, `Add person`, `Add task`), the five primary
+      destinations, and the thirteen settings destinations labelled
+      `<Group> · <Label>` so short names stay unambiguous in a flat list. §8's
+      other trigger ships too: a people query with zero matches appends the
+      matching command rows after the synthetic add-person row. Filtering is
+      synchronous — no request, no debounce — and the combobox pattern, key
+      handling, and focus restoration are the shipped ones, with activation
+      centralized in one helper so the Enter and click paths cannot drift.
+  - [x] **Correction to §8, recorded:** it sources commands from "the index
+        `settings/index.astro` already declares", which predates `UXD-008`. The
+        authority is now one shared module, `settings-destinations.ts`, moved
+        verbatim out of `SettingsNavigation.astro`'s frontmatter and imported by
+        both the component at build time and the palette at runtime, so the
+        labels, hrefs, and access levels cannot fork. The controller verified
+        the component's rendered HTML is byte-identical before and after by
+        hash.
+  - [x] **Role gating travels with the index:** the palette filters destinations
+        by the session's member role against each entry's access level, so a
+        member is never offered an admin or owner destination. Asserted per role
+        in unit tests.
+  - [x] **The implementer stopped on `settings-navigation.test.ts`** — outside
+        its owned paths, the controller's third owned-paths omission this phase
+        — because that test regexed the frontmatter literals the extraction
+        moved. Authorized amendment: the exhaustive 13-entry role-gating
+        expectation now derives from the shared module itself, which is strictly
+        stronger, plus an assertion that the component imports it, so an inline
+        list cannot quietly return.
+  - [x] **A defect caught in review:** command mode with zero matches left a
+        sighted member a completely blank panel — the status region is `sr-only`
+        and the empty element was forced hidden. Each render path now writes its
+        own empty text, `No commands match` against `No people match`, so the
+        two modes cannot leak copy into each other.
+  - [x] One spec amended, additively: `app-003b` filters `> import`, asserts the
+        `Data · Import` row scoped to the results list, lands on the import
+        page, then activates `Log interaction` and proves the quick-capture
+        dialog opens. Count is asserted before visibility, per the recorded
+        trap.
+  - [x] Gates: `fmt:check` 597 files, `lint` 481 files, `check:web` 0 errors,
+        548 web unit tests, `test:coverage:web` at 92.85 statements, the three
+        stylesheet invariants, the Astro production build, and the complete
+        Chromium suite 44/44 with an empty `.artifacts/playwright`. No API gate
+        applies.
 - [ ] **UXD-019 — Mobile bottom-sheet editors below the tablet breakpoint.**
       (§7.7; effort M; depends on `UXD-002`)
 - [ ] **UXD-020 — Deferred product features named in §12 row 20.** Notifications
