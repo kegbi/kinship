@@ -11,10 +11,10 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-016B — The dark theme**. All of `UXD-002`, `UXD-008`,
-  `UXD-009`, `UXD-011`, `UXD-012`, `UXD-014`, and `UXD-016A` are integrated,
-  alongside the review's top five, `UXD-003`, `DOC-001`, `REL-021`, and
-  `REL-023`; `UXD-015` is parked with its evidence.
+- Current leaf: **UXD-016C — The explicit theme toggle**. All of `UXD-002`,
+  `UXD-008`, `UXD-009`, `UXD-011`, `UXD-012`, `UXD-014`, `UXD-016A`, and
+  `UXD-016B` are integrated, alongside the review top five, `UXD-003`,
+  `DOC-001`, `REL-021`, and `REL-023`; `UXD-015` is parked with its evidence.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -1958,7 +1958,110 @@ asserts, so it runs that spec on its candidate.
         reader must check both to know whether a surface is gated. Recorded here
         rather than queued, because no active outcome consumes it.
 - [ ] **UXD-016 — Dark mode.** (§10.5; effort M; depends on `UXD-001` and
-      `UXD-011`)
+      `UXD-011`) Split in three. §10.5 calls this "one ~28-line override block
+      per mechanism", which is true only once every colour in the application
+      stylesheets comes from a token — and eighty-eight of them did not — and
+      only for the first of its two mechanisms.
+  - [x] **UXD-016A — Retire the colour literals the hex invariant never saw.**
+        **A correction to `UXD-001`.** Its entry reads "literals outside `:root`
+        are zero", which is true of hex and narrower than it sounds: the guard
+        this phase ran on every candidate only ever matched `#rrggbb`. Outside
+        `tokens.css` there were still **45** uses of the `white` keyword and
+        **43** of `rgb()` — eighty-eight hard-coded colours no theme override
+        could reach, which would have left dark mode with that many pure-white
+        and opaque-ink holes.
+    - [x] Opaque `white` became `--surface-1` or `--ink-inverse`. Both are
+          `#fffdf8`, a deliberately warm near-white, so those sites had been
+          rendering pure `#ffffff` against the palette `UXD-001` chose — a small
+          intended correction, not a no-op.
+    - [x] Translucent literals became
+          `color-mix(in srgb, var(--token) n%, transparent)` so they follow the
+          theme rather than needing a second set of values. Every alpha is
+          unchanged. One token was added, `--line-hairline`, for the 13% ink
+          hairline border that recurs across the application.
+    - [x] The grep hole is closed by making the invariant a permanent test
+          rather than a command the controller has to remember. It fails on a
+          hex literal, any of the 148 CSS named colours, or `rgb`, `rgba`,
+          `hsl`, `hsla` in any of the five non-token application stylesheets,
+          case-insensitively; `@media (forced-colors: active)` blocks are
+          excluded by balanced-brace traversal because they deliberately use
+          system colour keywords. The controller verified the guard bites:
+          appending `color: white`, `background: #ABCDEF`, and
+          `border-color: rgba(1, 2, 3, .5)` to `shell.css` reported exactly
+          three violations.
+    - [x] `auth.css` and `public.css` are deliberately out of scope. They keep
+          their own `:root` blocks and their own `var(--x, <literal>)` fallback
+          idiom, and `ApplicationLayout` never imports them.
+    - [x] **One browser assertion moved, and not to another literal.**
+          `app-006c` pinned the task status filter background to
+          `rgb(255, 255, 255)` — the pre-token value of one of those 45 sites.
+          It now reads `--surface-1` off the document and compares the two
+          normalised through a probe element, so it tracks the token rather than
+          a value. Pinning `rgb(255, 253, 248)` instead would have been the same
+          defect one theme later.
+    - [x] Gates: `fmt:check` 593 files, `lint` 477 files, `check:web` 0 errors,
+          the Astro production build, 528 web unit tests, `test:coverage:web` at
+          92.72/83.37/87.81/94.73, the widened invariant, and the complete
+          Chromium suite 44/44.
+  - [x] **UXD-016B — Dark mode for readers whose system asks for it.** One
+        `@media (prefers-color-scheme: dark)` block overriding all 24
+        theme-dependent tokens on `:root`, `color-scheme: light dark` so native
+        controls follow, and paired `theme-color` meta tags in all three
+        layouts.
+    - [x] Every token the light block declares is overridden, enforced by a test
+          that derives both sets from the file rather than listing names — a
+          token left at its light value is a bright hole no invariant could see,
+          because it lives in `tokens.css`, the one file allowed literals.
+          `--line-hairline` is deliberately inherited: it is a `color-mix` over
+          `--ink-1` and follows automatically.
+    - [x] Families stayed paired and the `-soft` tokens stayed backgrounds for
+          their own family text rather than becoming pale. `UXD-001` recorded
+          two rules that had already crossed a family; a theme that lightens one
+          half of a pair inverts them.
+    - [x] **Contrast was computed, not chosen by eye, and verified twice.**
+          `UXD-001A` is the precedent: 22 of 44 tests failed on axe colour
+          contrast because a token was picked at 3.6:1. All 28 required pairings
+          were computed by the implementer and independently recomputed by the
+          controller from the committed `tokens.css`, reproducing every ratio
+          exactly. Three values were raised before finishing: `--accent-soft`
+          from 4.051 to 4.590, `--line-1` from 2.093 to 3.064 once its dialog
+          and popover use showed it was not decorative, and `--line-2` to 3.644
+          to keep the line hierarchy. The weakest text pair is `--ink-3` on
+          `--surface-3` at 4.917:1.
+    - [x] **The browser suite cannot see this theme**, because Playwright runs
+          in the default light scheme. The controller verified it directly
+          instead: the six stylesheets were inlined into a scratch page with
+          representative markup and axe-core, opened under an emulated dark
+          colour scheme, and scanned. `prefers-color-scheme: dark` matched, the
+          dark tokens resolved, the body painted `rgb(18 25 21)`, and the axe
+          `color-contrast` rule reported **zero violations**; flipping the
+          emulation back to light also reported zero, proving the media query
+          does not leak. The scratch directory was deleted afterwards.
+    - [x] **An observed consequence, recorded rather than changed.**
+          `.app-toast` is deliberately inverted against the page —
+          `background: var(--ink-1)` with `color: var(--ink-inverse)` — so in
+          dark mode it becomes a light chip on a dark page. That is the token
+          semantics following through, it passes contrast, and changing it would
+          mean introducing a dedicated toast surface pair, which is a design
+          decision rather than a defect.
+    - [x] `auth.css` and `public.css` keep their own `:root` blocks, so the
+          authentication and marketing pages stay light while the application
+          follows the system. Their `theme-color` tags were paired anyway, since
+          leaving them light while the application flips would be an obvious
+          inconsistency.
+    - [x] Gates: `fmt:check` 593 files, `lint` 477 files, `check:web` 0 errors,
+          the Astro production build, 531 web unit tests, `test:coverage:web` at
+          92.72/83.37/87.81/94.73, the colour-literal invariant, the complete
+          Chromium suite 44/44 with an empty `.artifacts/playwright`, and the
+          dark-scheme axe probe above.
+  - [ ] **UXD-016C — The explicit theme toggle.** The `[data-theme]` mechanism,
+        a control in `settings.preferences`, somewhere durable to keep the
+        choice, and an inline first-paint script so the page does not flash the
+        wrong theme. Split out because it crosses the API boundary and adds a
+        first-paint mechanism, neither of which the system-preference theme
+        needs. `member_preferences.ui_state` is the obvious home — `UXD-002C3A`
+        built it as a closed set of named presentation keys with a write path
+        and session delivery — rather than a new preferences column.
 - [ ] **UXD-017 — Type-scale and spacing-rhythm pass.** (§10.3, §10.4; effort M;
       depends on `UXD-001` and `UXD-011`)
 - [ ] **UXD-018 — Command mode in the palette.** (§8; effort M; depends on
