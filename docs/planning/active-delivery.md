@@ -11,10 +11,10 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-014 — Optimistic UI on the four safe mutations only**. All
-  of `UXD-002`, `UXD-008`, `UXD-009`, `UXD-011`, and `UXD-012` are integrated,
-  alongside the review's top five, `UXD-003`, `DOC-001`, `REL-021`, and
-  `REL-023`; `UXD-015` is parked with its evidence.
+- Current leaf: **UXD-016 — Dark mode**. All of `UXD-002`, `UXD-008`, `UXD-009`,
+  `UXD-011`, `UXD-012`, and `UXD-014` are integrated, alongside the review's top
+  five, `UXD-003`, `DOC-001`, `REL-021`, and `REL-023`; `UXD-015` is parked with
+  its evidence.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
