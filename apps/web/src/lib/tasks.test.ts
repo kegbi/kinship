@@ -2,12 +2,10 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
 import { mountTaskSurface, mountTodayTasks } from "./tasks.ts";
 
-const applicationCss = readFileSync(
-  "apps/web/src/styles/application.css",
-  "utf8",
-);
+const applicationCss = readApplicationStylesheet();
 const todayPage = readFileSync("apps/web/src/pages/app.astro", "utf8");
 
 function response(body: unknown, status = 200): Response {

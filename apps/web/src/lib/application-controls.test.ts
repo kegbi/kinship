@@ -2,11 +2,9 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
 
-const applicationCss = readFileSync(
-  "apps/web/src/styles/application.css",
-  "utf8",
-);
+const applicationCss = readApplicationStylesheet();
 const todayPage = readFileSync("apps/web/src/pages/app.astro", "utf8");
 
 function mountStyles(): void {

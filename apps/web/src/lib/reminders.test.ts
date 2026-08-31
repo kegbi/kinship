@@ -1,13 +1,10 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
+import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
 import { mountPersonReminders, mountTodayReminders } from "./reminders.ts";
 
-const applicationCss = readFileSync(
-  "apps/web/src/styles/application.css",
-  "utf8",
-);
+const applicationCss = readApplicationStylesheet();
 
 const workspaceId = "00000000-0000-4000-8000-000000000003";
 const personId = "00000000-0000-4000-8000-000000000100";
