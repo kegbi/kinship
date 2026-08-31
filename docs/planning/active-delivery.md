@@ -11,10 +11,10 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-017 — Type-scale and spacing-rhythm pass**. All of
-  `UXD-002`, `UXD-008`, `UXD-009`, `UXD-011`, `UXD-012`, `UXD-014`, and the
-  complete `UXD-016` are integrated, alongside the review top five, `UXD-003`,
-  `DOC-001`, `REL-021`, and `REL-023`; `UXD-015` is parked with its evidence.
+- Current leaf: **UXD-017B — Spacing-rhythm pass**. All of `UXD-002`, `UXD-008`,
+  `UXD-009`, `UXD-011`, `UXD-012`, `UXD-014`, and the complete `UXD-016` are
+  integrated, alongside the review top five, `UXD-003`, `DOC-001`, `REL-021`,
+  and `REL-023`; `UXD-015` is parked with its evidence.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -2175,7 +2175,67 @@ asserts, so it runs that spec on its candidate.
           complete Chromium suite 44/44 with an empty `.artifacts/playwright`,
           and the theme-matrix browser probe above.
 - [ ] **UXD-017 — Type-scale and spacing-rhythm pass.** (§10.3, §10.4; effort M;
-      depends on `UXD-001` and `UXD-011`)
+      depends on `UXD-001` and `UXD-011`) Split in two before dispatch: the type
+      scale and weights are one mechanism and the spacing steps and card
+      densities another, and a single candidate sweeping both across five
+      stylesheets would be unreviewable.
+  - [x] **UXD-017A — Type-scale pass.** (§10.3) The display scale left the
+        application: every app page `h1` — `.page-heading`, `.settings-heading`,
+        `.access-card`, `.created-person`, `.person-profile-state` — is now
+        Georgia 1.75rem/1.15 at 500 instead of `clamp` scales peaking at 77px,
+        and the public and auth display headings took §10.3's
+        `clamp(2.4rem, 5vw, 3.4rem)`. Group `h2`s — the four person-page zones,
+        the first-run card, the settings section families, the directory states
+        — dropped Georgia for the Inter stack at 1.15rem/1.3, 700. Both `h3`
+        roles are Inter .95rem/1.35, 700 with .01em tracking; the rail `h3` had
+        quietly been Georgia and is not any more.
+    - [x] **Two interpolations the review's table lacks, recorded as such.** The
+          section-card `h3` has no row — the table predates `UXD-002C`'s heading
+          demotion — and after the zone `h2` drop to 1.15rem its Georgia
+          `clamp(1.45rem, 3vw, 2rem)` would have out-ranked its own parent, so
+          it takes the Block role. The task-board `h4`s had no size rule and the
+          UA default would likewise have out-ranked the card `h3`; they are
+          Inter .875rem/1.35, 700.
+    - [x] **The weight zoo is gone and cannot regrow.** §10.3 names only the
+          750s; the census found 46 illegal declarations — 32×750, 10×800,
+          2×850, 2×650 — across the five application stylesheets. Controls,
+          navigation, chips, and form labels took 600; headings, `dt`/`dd`
+          emphasis, badges, and status text took 700; the classification table
+          is in the candidate's review record. A permanent test beside the
+          colour invariant fails on any `font-weight` outside {500, 600, 700},
+          keywords included, and its RED run counted exactly the 46.
+    - [x] **The implementer stopped on the closed mapping, and it was right.**
+          The controller's heading census keyed on `font-size` lines and missed
+          a shared family-only rule covering `.duplicate-warning h2`,
+          `.created-person h1`, and `.profile-next-step h2`. The authorized fix
+          is the one selector split in the candidate: the `h1` keeps its Page
+          role, the two `h2`s take the Group role. Three non-heading 500s
+          surfaced by the invariant were reclassified under the same
+          authorization: two checkbox-row labels to 600 as control labels, and
+          the three small-print hints to the inherited default.
+    - [x] **Deferred with measurements recorded, not overlooked:** body text is
+          1rem/normal against §10.3's .95/1.5, `.section-state` meta inherits
+          1rem on `--ink-1` against .82/1.45 on `--ink-2`, and the three badge
+          families sit at .7/.75/.8rem against .72/1.3. Sizing running text is a
+          different risk from sizing headings, so it belongs to a later bounded
+          slice, not this one.
+    - [x] Two authorized test amendments and nothing else: the shared-control
+          computed pin moved from 750 to 600, and the card-`h3` regex from the
+          Georgia clamp to the Block role. No `tests/e2e/` file changed.
+    - [x] Gates: `fmt:check` 596 files, `lint` 480 files, `check:web` 0 errors,
+          542 web unit tests, `test:coverage:web` at 92.79/83.45/87.91/94.77,
+          the colour and weight invariants, the Astro production build, the
+          complete Chromium suite 44/44 with an empty `.artifacts/playwright`,
+          and a rendered browser probe confirming the computed hierarchy — 32px
+          person name, 28px page `h1`, 18.4px zone `h2`, 15.2px `h3`, 14px `h4`,
+          600-weight controls — with no inversions. No API gate applies: the
+          candidate touches five stylesheets and two web tests.
+  - [ ] **UXD-017B — Spacing-rhythm pass.** (§10.4) The 17 arbitrary spacing
+        steps snap to `--space-1…8`, `clamp()` survives only for page-level
+        padding, and the two card densities become tokens — `--pad-card` 1.25rem
+        for the main column, `--pad-block` .875rem for the rail. The
+        body/meta/micro measurements recorded above are decided here or in a
+        recorded deferral.
 - [ ] **UXD-018 — Command mode in the palette.** (§8; effort M; depends on
       `UXD-004`)
 - [ ] **UXD-019 — Mobile bottom-sheet editors below the tablet breakpoint.**
