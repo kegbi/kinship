@@ -175,7 +175,7 @@ describe("people form layout regressions", () => {
 
   it("styles profile form fields without turning checkboxes into text fields", () => {
     expect(applicationStyles).toMatch(
-      /\.profile-fact-form input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\),\s*\.profile-fact-form select,\s*\.profile-fact-form textarea\s*\{[^}]*padding:[^;]+;[^}]*border:[^;]+;[^}]*border-radius:[^;]+;[^}]*background:\s*white;[^}]*font-family:\s*inherit;/s,
+      /\.profile-fact-form input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\),\s*\.profile-fact-form select,\s*\.profile-fact-form textarea\s*\{[^}]*padding:[^;]+;[^}]*border:[^;]+;[^}]*border-radius:[^;]+;[^}]*background:\s*var\(--surface-1\);[^}]*font-family:\s*inherit;/s,
     );
     expect(applicationStyles).toMatch(
       /\.profile-fact-form input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\),\s*\.profile-fact-form select\s*\{[^}]*min-height:\s*44px;/s,

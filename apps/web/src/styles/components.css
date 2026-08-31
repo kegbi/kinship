@@ -31,7 +31,7 @@
 }
 
 .global-people-search-dialog::backdrop {
-  background: rgb(20 25 22 / 55%);
+  background: color-mix(in srgb, var(--ink-1) 55%, transparent);
 }
 
 .global-people-search-palette {
@@ -115,7 +115,7 @@
 }
 
 .interaction-capture-dialog::backdrop {
-  background: rgb(20 25 22 / 55%);
+  background: color-mix(in srgb, var(--ink-1) 55%, transparent);
 }
 
 .interaction-capture-dialog form {
@@ -148,7 +148,7 @@
   padding: 0.9rem 1rem;
   border: 1px solid var(--line, var(--line-1));
   border-radius: 0.75rem;
-  background: rgb(255 255 255 / 55%);
+  background: color-mix(in srgb, var(--surface-1) 55%, transparent);
 }
 
 .interaction-item p {

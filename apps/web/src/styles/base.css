@@ -27,7 +27,7 @@ select {
   border: 1px solid var(--line-strong);
   border-radius: .6rem;
   color: inherit;
-  background-color: white;
+  background-color: var(--surface-1);
   cursor: pointer;
 }
 
@@ -42,7 +42,7 @@ select:disabled {
   padding: .65rem .9rem;
   border-radius: var(--radius-pill);
   align-items: center;
-  color: white;
+  color: var(--ink-inverse);
   background: var(--ink-1);
   font-weight: 750;
   text-decoration: none;
@@ -56,7 +56,7 @@ a {
   outline: none;
   outline-offset: 0;
   box-shadow:
-    inset 0 0 0 2px white,
+    inset 0 0 0 2px var(--surface-1),
     inset 0 0 0 5px var(--focus-ring);
 }
 
@@ -79,7 +79,7 @@ a {
   z-index: 100;
   padding: .75rem 1rem;
   border-radius: var(--radius-pill);
-  color: white;
+  color: var(--ink-inverse);
   background: var(--ink-1);
   transform: translateY(-180%);
 }
@@ -111,10 +111,14 @@ a {
 .access-card {
   width: 100%;
   padding: clamp(var(--space-5), 5vw, var(--space-7));
-  border: 1px solid rgb(32 53 45 / 14%);
+  border: 1px solid color-mix(in srgb, var(--ink-1) 14%, transparent);
   border-radius: 1.5rem;
   background: var(--surface-1);
-  box-shadow: 0 2rem 6rem rgb(50 58 49 / 12%);
+  box-shadow: 0 2rem 6rem color-mix(
+    in srgb,
+    var(--ink-1) 12%,
+    transparent
+  );
 }
 
 .access-card h1,
@@ -135,7 +139,7 @@ a {
   padding: .7rem 1.1rem;
   border-radius: var(--radius-pill);
   align-items: center;
-  color: white;
+  color: var(--ink-inverse);
   background: var(--ink-1);
   font-weight: 750;
   text-decoration: none;
@@ -160,19 +164,19 @@ a {
 
 :is(a, button).button-primary {
   border-color: var(--ink-1);
-  color: white;
+  color: var(--ink-inverse);
   background: var(--ink-1);
 }
 
 :is(a, button).button-secondary {
   border-color: var(--line-strong);
   color: var(--ink-1);
-  background: white;
+  background: var(--surface-1);
 }
 
 :is(a, button).button-danger {
   border-color: var(--accent);
-  color: white;
+  color: var(--ink-inverse);
   background: var(--accent);
 }
 

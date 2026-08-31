@@ -8,6 +8,7 @@
   --surface-2: #faf8f2;
   --surface-3: #f0ece4;
   --surface-sunken: #ece5d8;
+  --line-hairline: color-mix(in srgb, var(--ink-1) 13%, transparent);
   --line-1: #ded9cd;
   --line-2: #c8ccc5;
   --line-strong: #aeb7ae;

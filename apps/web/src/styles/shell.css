@@ -2,8 +2,8 @@
   position: sticky;
   top: 0;
   z-index: 20;
-  border-bottom: 1px solid rgb(32 53 45 / 13%);
-  background: rgb(255 253 248 / 94%);
+  border-bottom: 1px solid var(--line-hairline);
+  background: color-mix(in srgb, var(--surface-1) 94%, transparent);
   box-shadow: var(--shadow-1);
   backdrop-filter: blur(16px);
 }
@@ -34,7 +34,7 @@
   height: 2rem;
   place-items: center;
   border-radius: 50%;
-  color: white;
+  color: var(--ink-inverse);
   background: var(--accent);
   font-family: "Inter Variable", Inter, sans-serif;
   font-size: .82rem;
@@ -109,7 +109,7 @@
   border: 1px solid var(--line-2);
   border-radius: var(--radius-pill);
   color: var(--ink-1);
-  background: white;
+  background: var(--surface-1);
   cursor: pointer;
 }
 
@@ -121,7 +121,7 @@
 
 .global-actions .add-action {
   border-color: var(--ink-1);
-  color: white;
+  color: var(--ink-inverse);
   background: var(--ink-1);
 }
 
@@ -144,7 +144,7 @@
   padding: .55rem;
   border: 1px solid var(--line-1);
   border-radius: .9rem;
-  background: white;
+  background: var(--surface-1);
   box-shadow: var(--shadow-2);
 }
 
@@ -218,7 +218,7 @@
   padding: .45rem 2rem .45rem .7rem;
   border: 1px solid var(--line-strong);
   border-radius: .6rem;
-  background: white;
+  background: var(--surface-1);
 }
 
 .sr-status {
@@ -231,8 +231,12 @@
   padding: .8rem 1rem;
   border-radius: var(--radius-md);
   background: var(--ink-1);
-  color: white;
-  box-shadow: 0 .8rem 2rem rgb(32 53 45 / 20%);
+  color: var(--ink-inverse);
+  box-shadow: 0 .8rem 2rem color-mix(
+    in srgb,
+    var(--ink-1) 20%,
+    transparent
+  );
   pointer-events: none;
 }
 

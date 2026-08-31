@@ -2,7 +2,7 @@
   display: grid;
   gap: var(--space-4);
   padding: clamp(1.2rem, 4vw, 2.3rem);
-  border: 1px solid rgb(32 53 45 / 13%);
+  border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
 }
@@ -103,24 +103,24 @@
 .person-workspace button {
   border-color: var(--line-strong);
   color: var(--ink-1);
-  background: white;
+  background: var(--surface-1);
 }
 
 .person-workspace .button-primary {
   border-color: var(--ink-1);
-  color: white;
+  color: var(--ink-inverse);
   background: var(--ink-1);
 }
 
 .person-workspace .button-secondary {
   border-color: var(--line-strong);
   color: var(--ink-1);
-  background: white;
+  background: var(--surface-1);
 }
 
 .person-workspace .button-danger {
   border-color: var(--accent);
-  color: white;
+  color: var(--ink-inverse);
   background: var(--accent);
 }
 
@@ -141,11 +141,15 @@
   grid-template-columns: 6rem minmax(12rem, 1fr) minmax(16rem, 24rem);
   gap: clamp(1rem, 3vw, 2rem);
   padding: clamp(1.25rem, 4vw, 2.5rem);
-  border: 1px solid rgb(32 53 45 / 13%);
+  border: 1px solid var(--line-hairline);
   border-radius: 1.25rem;
   align-items: start;
   background: var(--surface-1);
-  box-shadow: 0 1.5rem 4rem rgb(48 56 47 / 8%);
+  box-shadow: 0 1.5rem 4rem color-mix(
+    in srgb,
+    var(--ink-1) 8%,
+    transparent
+  );
 }
 
 .person-profile-breadcrumb {
@@ -245,7 +249,7 @@
   padding: .55rem;
   border: 1px solid var(--line-1);
   border-radius: .9rem;
-  background: white;
+  background: var(--surface-1);
   box-shadow: var(--shadow-2);
 }
 
@@ -261,7 +265,7 @@
 
 .person-workspace .person-menu-popover > :is(button, a:is(.button-primary, .button-secondary, .button-danger)).button-danger {
   color: var(--danger);
-  background: white;
+  background: var(--surface-1);
 }
 
 .person-workspace .person-menu-popover > :is(button, a:is(.button-primary, .button-secondary, .button-danger)):hover {
@@ -402,13 +406,13 @@
 
 .person-lifecycle-buttons .button-primary {
   border-color: var(--ink-1);
-  color: white;
+  color: var(--ink-inverse);
   background: var(--ink-1);
 }
 
 .person-lifecycle-buttons .button-danger {
   border-color: var(--accent);
-  color: white;
+  color: var(--ink-inverse);
   background: var(--accent);
 }
 
@@ -418,7 +422,7 @@
 }
 
 .person-lifecycle-form {
-  border-top: 1px solid rgb(32 53 45 / 13%);
+  border-top: 1px solid var(--line-hairline);
   display: grid;
   gap: var(--space-4);
   padding-top: 1rem;
@@ -428,15 +432,19 @@
   width: min(34rem, calc(100% - 2rem));
   max-width: none;
   padding: 1.25rem;
-  border: 1px solid rgb(32 53 45 / 20%);
+  border: 1px solid color-mix(in srgb, var(--ink-1) 20%, transparent);
   border-radius: var(--radius-lg);
   color: var(--ink-1);
   background: var(--surface-1);
-  box-shadow: 0 24px 64px rgb(32 53 45 / 28%);
+  box-shadow: 0 24px 64px color-mix(
+    in srgb,
+    var(--ink-1) 28%,
+    transparent
+  );
 }
 
 .person-delete-dialog::backdrop {
-  background: rgb(18 31 26 / 58%);
+  background: color-mix(in srgb, var(--ink-1) 58%, transparent);
 }
 
 .person-delete-dialog form {
@@ -464,7 +472,7 @@
   padding: .65rem .75rem;
   border: 1px solid var(--line-strong);
   border-radius: .6rem;
-  background: white;
+  background: var(--surface-1);
 }
 
 .person-lifecycle-form .checkbox-row {
@@ -533,7 +541,7 @@
   padding: .85rem 1rem;
   border-left: 3px solid var(--accent);
   color: var(--ink-2);
-  background: rgb(255 253 248 / 70%);
+  background: color-mix(in srgb, var(--surface-1) 70%, transparent);
 }
 
 .person-workspace-layout {
@@ -555,7 +563,7 @@
 
 .profile-section-directory {
   padding: .7rem;
-  border: 1px solid rgb(32 53 45 / 13%);
+  border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
 }
@@ -603,7 +611,7 @@
 .profile-section-notice {
   margin: .75rem .7rem .25rem;
   padding: .75rem;
-  border: 1px solid rgb(123 79 27 / 25%);
+  border: 1px solid color-mix(in srgb, var(--warning) 25%, transparent);
   border-radius: .65rem;
   color: var(--warning);
   background: var(--warning-soft);
@@ -613,7 +621,7 @@
   outline: none;
   outline-offset: 0;
   box-shadow:
-    inset 0 0 0 2px white,
+    inset 0 0 0 2px var(--surface-1),
     inset 0 0 0 5px var(--focus-ring);
 }
 
@@ -746,7 +754,7 @@
 .profile-section-card {
   scroll-margin-top: 6.5rem;
   padding: clamp(1.1rem, 3vw, 1.6rem);
-  border: 1px solid rgb(32 53 45 / 13%);
+  border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
 }
@@ -1069,7 +1077,7 @@
   outline: none;
   outline-offset: 0;
   box-shadow:
-    inset 0 0 0 2px white,
+    inset 0 0 0 2px var(--surface-1),
     inset 0 0 0 5px var(--focus-ring);
 }
 
@@ -1102,7 +1110,7 @@
   gap: 0.35rem 1rem;
   align-items: baseline;
   padding: 0.85rem;
-  border: 1px solid rgb(32 53 45 / 13%);
+  border: 1px solid var(--line-hairline);
   border-radius: 0.5rem;
   background: var(--surface-2);
 }
@@ -1135,7 +1143,7 @@
   display: grid;
   gap: 1.2rem;
   padding: clamp(1.2rem, 4vw, 2.3rem);
-  border: 1px solid rgb(32 53 45 / 13%);
+  border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
 }
@@ -1179,7 +1187,7 @@
   padding: .7rem .85rem;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
-  background: white;
+  background: var(--surface-1);
 }
 
 .partial-person-control {
@@ -1231,7 +1239,7 @@
   padding: .7rem 1rem;
   border: 1px solid var(--ink-1);
   border-radius: var(--radius-md);
-  color: white;
+  color: var(--ink-inverse);
   background: var(--ink-1);
   cursor: pointer;
 }
@@ -1244,7 +1252,7 @@
 
 .form-actions button.secondary-action {
   color: var(--ink-1);
-  background: white;
+  background: var(--surface-1);
 }
 
 .form-actions a.button-primary,
@@ -1261,25 +1269,25 @@
 
 .form-actions .button-primary {
   border-color: var(--ink-1);
-  color: white;
+  color: var(--ink-inverse);
   background: var(--ink-1);
 }
 
 .form-actions .button-secondary {
   border-color: var(--line-strong);
   color: var(--ink-1);
-  background: white;
+  background: var(--surface-1);
 }
 
 .form-actions .button-danger {
   border-color: var(--accent);
-  color: white;
+  color: var(--ink-inverse);
   background: var(--accent);
 }
 
 .person-form [aria-invalid="true"] {
   border-color: var(--danger);
-  outline: 2px solid rgb(157 44 44 / 20%);
+  outline: 2px solid color-mix(in srgb, var(--danger) 20%, transparent);
 }
 
 .created-person h1 {
@@ -1320,7 +1328,7 @@
 .important-dates-list li {
   align-items: center;
   background: var(--surface-2);
-  border: 1px solid rgb(32 53 45 / 13%);
+  border: 1px solid var(--line-hairline);
   border-radius: 0.85rem;
   display: flex;
   gap: var(--space-4);
@@ -1345,7 +1353,7 @@
 }
 
 .important-date-form {
-  border-top: 1px solid rgb(32 53 45 / 13%);
+  border-top: 1px solid var(--line-hairline);
   display: grid;
   gap: 0.9rem;
   margin-top: 1rem;
@@ -1398,7 +1406,7 @@
 .profile-fact-list li {
   align-items: center;
   background: var(--surface-2);
-  border: 1px solid rgb(32 53 45 / 18%);
+  border: 1px solid color-mix(in srgb, var(--ink-1) 18%, transparent);
   border-radius: 0.85rem;
   display: flex;
   flex-wrap: wrap;
@@ -1422,7 +1430,11 @@
 
 .person-file-list > li {
   align-items: center;
-  border-top: 1px solid rgb(32 53 45 / 18%);
+  border-top: 1px solid color-mix(
+    in srgb,
+    var(--ink-1) 18%,
+    transparent
+  );
   display: flex;
   gap: var(--space-4);
   justify-content: space-between;
@@ -1465,7 +1477,7 @@
   border: 1px solid var(--line-strong);
   border-radius: .65rem;
   color: inherit;
-  background: white;
+  background: var(--surface-1);
   font-family: inherit;
   font-size: inherit;
 }
@@ -1545,7 +1557,7 @@
   gap: var(--space-3);
   margin: 2rem 0 1.25rem;
   padding: 1rem;
-  border: 1px solid rgb(32 53 45 / 13%);
+  border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   align-items: start;
   background: var(--surface-1);
@@ -1618,14 +1630,14 @@
   padding: .7rem .85rem;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
-  background: white;
+  background: var(--surface-1);
 }
 
 .people-directory-controls button,
 .directory-pagination button,
 .directory-error button {
   border-color: var(--ink-1);
-  color: white;
+  color: var(--ink-inverse);
   background: var(--ink-1);
   cursor: pointer;
   font-weight: 750;
@@ -1707,11 +1719,15 @@
   display: grid;
   min-height: 9rem;
   padding: 1.15rem;
-  border: 1px solid rgb(32 53 45 / 14%);
+  border: 1px solid color-mix(in srgb, var(--ink-1) 14%, transparent);
   border-radius: .9rem;
   align-content: start;
   background: var(--surface-1);
-  box-shadow: 0 .5rem 1.5rem rgb(45 55 46 / 5%);
+  box-shadow: 0 .5rem 1.5rem color-mix(
+    in srgb,
+    var(--ink-1) 5%,
+    transparent
+  );
   text-decoration: none;
 }
 
@@ -2088,7 +2104,7 @@
   align-items: center;
   justify-content: center;
   color: var(--ink-1);
-  background: white;
+  background: var(--surface-1);
   cursor: pointer;
   font-weight: 750;
   overflow-wrap: anywhere;

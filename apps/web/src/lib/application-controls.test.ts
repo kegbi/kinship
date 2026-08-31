@@ -6,6 +6,192 @@ import { readApplicationStylesheet } from "./application-stylesheet.test-helper.
 
 const applicationCss = readApplicationStylesheet();
 const todayPage = readFileSync("apps/web/src/pages/app.astro", "utf8");
+const nonTokenStylesheetPaths = [
+  "apps/web/src/styles/base.css",
+  "apps/web/src/styles/shell.css",
+  "apps/web/src/styles/settings.css",
+  "apps/web/src/styles/components.css",
+  "apps/web/src/styles/person.css",
+] as const;
+const cssNamedColors = [
+  "aliceblue",
+  "antiquewhite",
+  "aqua",
+  "aquamarine",
+  "azure",
+  "beige",
+  "bisque",
+  "black",
+  "blanchedalmond",
+  "blue",
+  "blueviolet",
+  "brown",
+  "burlywood",
+  "cadetblue",
+  "chartreuse",
+  "chocolate",
+  "coral",
+  "cornflowerblue",
+  "cornsilk",
+  "crimson",
+  "cyan",
+  "darkblue",
+  "darkcyan",
+  "darkgoldenrod",
+  "darkgray",
+  "darkgreen",
+  "darkgrey",
+  "darkkhaki",
+  "darkmagenta",
+  "darkolivegreen",
+  "darkorange",
+  "darkorchid",
+  "darkred",
+  "darksalmon",
+  "darkseagreen",
+  "darkslateblue",
+  "darkslategray",
+  "darkslategrey",
+  "darkturquoise",
+  "darkviolet",
+  "deeppink",
+  "deepskyblue",
+  "dimgray",
+  "dimgrey",
+  "dodgerblue",
+  "firebrick",
+  "floralwhite",
+  "forestgreen",
+  "fuchsia",
+  "gainsboro",
+  "ghostwhite",
+  "gold",
+  "goldenrod",
+  "gray",
+  "green",
+  "greenyellow",
+  "grey",
+  "honeydew",
+  "hotpink",
+  "indianred",
+  "indigo",
+  "ivory",
+  "khaki",
+  "lavender",
+  "lavenderblush",
+  "lawngreen",
+  "lemonchiffon",
+  "lightblue",
+  "lightcoral",
+  "lightcyan",
+  "lightgoldenrodyellow",
+  "lightgray",
+  "lightgreen",
+  "lightgrey",
+  "lightpink",
+  "lightsalmon",
+  "lightseagreen",
+  "lightskyblue",
+  "lightslategray",
+  "lightslategrey",
+  "lightsteelblue",
+  "lightyellow",
+  "lime",
+  "limegreen",
+  "linen",
+  "magenta",
+  "maroon",
+  "mediumaquamarine",
+  "mediumblue",
+  "mediumorchid",
+  "mediumpurple",
+  "mediumseagreen",
+  "mediumslateblue",
+  "mediumspringgreen",
+  "mediumturquoise",
+  "mediumvioletred",
+  "midnightblue",
+  "mintcream",
+  "mistyrose",
+  "moccasin",
+  "navajowhite",
+  "navy",
+  "oldlace",
+  "olive",
+  "olivedrab",
+  "orange",
+  "orangered",
+  "orchid",
+  "palegoldenrod",
+  "palegreen",
+  "paleturquoise",
+  "palevioletred",
+  "papayawhip",
+  "peachpuff",
+  "peru",
+  "pink",
+  "plum",
+  "powderblue",
+  "purple",
+  "rebeccapurple",
+  "red",
+  "rosybrown",
+  "royalblue",
+  "saddlebrown",
+  "salmon",
+  "sandybrown",
+  "seagreen",
+  "seashell",
+  "sienna",
+  "silver",
+  "skyblue",
+  "slateblue",
+  "slategray",
+  "slategrey",
+  "snow",
+  "springgreen",
+  "steelblue",
+  "tan",
+  "teal",
+  "thistle",
+  "tomato",
+  "turquoise",
+  "violet",
+  "wheat",
+  "white",
+  "whitesmoke",
+  "yellow",
+  "yellowgreen",
+].join("|");
+const colorLiteralPattern = new RegExp(
+  `#[0-9a-f]{3,8}(?![0-9a-f])|(?<![-\\w])(?:rgb|rgba|hsl|hsla)\\s*\\(|(?<![-\\w])(?:${cssNamedColors})(?![-\\w])`,
+  "gi",
+);
+
+function withoutForcedColorsBlocks(stylesheet: string): string {
+  const source = stylesheet.replace(/\/\*[\s\S]*?\*\//g, "");
+  const forcedColorsStart =
+    /@media\s*\(\s*forced-colors\s*:\s*active\s*\)\s*\{/gi;
+  let result = "";
+  let sourceIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = forcedColorsStart.exec(source)) !== null) {
+    result += source.slice(sourceIndex, match.index);
+    let depth = 1;
+    let blockIndex = forcedColorsStart.lastIndex;
+    while (depth > 0 && blockIndex < source.length) {
+      if (source[blockIndex] === "{") depth += 1;
+      if (source[blockIndex] === "}") depth -= 1;
+      blockIndex += 1;
+    }
+    if (depth !== 0) throw new Error("Unclosed forced-colors media block");
+    sourceIndex = blockIndex;
+    forcedColorsStart.lastIndex = blockIndex;
+  }
+
+  return result + source.slice(sourceIndex);
+}
 
 function mountStyles(): void {
   const style = document.createElement("style");
@@ -36,6 +222,21 @@ describe("application control presentation", () => {
     ).sort();
 
     expect(undeclaredProperties).toEqual([]);
+  });
+
+  it("keeps literal colors confined to the token stylesheet", () => {
+    const violations = nonTokenStylesheetPaths.flatMap((path) => {
+      const stylesheet = withoutForcedColorsBlocks(readFileSync(path, "utf8"));
+      return Array.from(
+        stylesheet.matchAll(colorLiteralPattern),
+        (match) => `${path}:${match[0]}`,
+      );
+    });
+
+    expect(
+      violations,
+      `Found ${violations.length} hard-coded color literals outside tokens.css`,
+    ).toEqual([]);
   });
 
   it("loads Inter Variable before the application root stack uses it", () => {
@@ -148,7 +349,7 @@ describe("application control presentation", () => {
     expect(
       getComputedStyle(row.querySelector(".button-secondary")!)
         .backgroundColor,
-    ).toBe("white");
+    ).toBe("#fffdf8");
     expect(
       getComputedStyle(row.querySelector(".button-danger")!)
         .backgroundColor,
@@ -167,7 +368,7 @@ describe("application control presentation", () => {
       expect(computed.minHeight).toBe("44px");
       expect(computed.font).toBe("inherit");
       expect(computed.color).toBe("inherit");
-      expect(computed.backgroundColor).toBe("white");
+      expect(computed.backgroundColor).toBe("#fffdf8");
       expect(computed.borderTopWidth).toBe("1px");
       expect(computed.borderRadius).toBe("9.6px");
       expect(computed.maxWidth).toBe("100%");
@@ -216,7 +417,7 @@ describe("application control presentation", () => {
       const computed = getComputedStyle(control);
       expect(computed.outlineStyle).toBe("none");
       expect(computed.outlineOffset).not.toBe("3px");
-      expect(computed.boxShadow).toContain("inset 0 0 0 2px white");
+      expect(computed.boxShadow).toContain("inset 0 0 0 2px #fffdf8");
       expect(computed.boxShadow).toContain("inset 0 0 0 5px #a44730");
       expect(computed.boxShadow.match(/inset/g)).toHaveLength(2);
     }
@@ -235,7 +436,7 @@ describe("application control presentation", () => {
     const computed = getComputedStyle(card);
     expect(computed.outlineStyle).toBe("none");
     expect(Number.parseFloat(computed.outlineOffset)).toBe(0);
-    expect(computed.boxShadow).toContain("inset 0 0 0 2px white");
+    expect(computed.boxShadow).toContain("inset 0 0 0 2px #fffdf8");
     expect(computed.boxShadow).toContain("inset 0 0 0 5px #a44730");
     expect(computed.boxShadow.match(/inset/g)).toHaveLength(2);
     expect(applicationCss).toMatch(
