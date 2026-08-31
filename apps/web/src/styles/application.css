@@ -2602,6 +2602,11 @@ a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
   width: 100%;
 }
 
+.profile-rail-block .profile-fact-list p.profile-address-summary {
+  display: grid;
+  gap: var(--space-1);
+}
+
 .relationship-summary-group {
   align-items: stretch;
   flex-direction: column;

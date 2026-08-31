@@ -385,7 +385,11 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
   await addressEditor.getByLabel("Primary address").check();
   await addressEditor.getByRole("button", { name: "Save profile fact" })
     .click();
-  await expect(address).toContainText("Home, 1 Analytical Engine Way, London");
+  await expect(address.locator(".profile-address-summary > span")).toHaveText([
+    "Home",
+    "1 Analytical Engine Way",
+    "London",
+  ]);
 
   const firstMeeting = page.locator("#profile-section-first-meeting");
   const firstMeetingEditor = firstMeeting.locator(

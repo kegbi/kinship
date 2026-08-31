@@ -187,6 +187,9 @@ test(
     await page.locator("#important-date-year").fill("2012");
     await page.locator("#important-date-month").selectOption("4");
     await page.getByRole("button", { name: "Save date" }).click();
+    await section.getByRole("button", {
+      name: /^Show all \(\d+\) important dates$/,
+    }).click();
     await expect(
       savedDates.getByRole("listitem").filter({
         hasText: "First meeting",
@@ -195,6 +198,10 @@ test(
 
     await page.reload();
     await expect(section).toHaveAttribute("data-section-state", "ready");
+    await expect(section.getByText("April 2012")).toBeHidden();
+    await section.getByRole("button", {
+      name: /^Show all \(\d+\) important dates$/,
+    }).click();
     await expect(section.getByText("February 29, about 1984")).toBeVisible();
     await expect(section.getByText("May 6 (year unknown)")).toBeVisible();
     await expect(section.getByText("April 2012")).toBeVisible();

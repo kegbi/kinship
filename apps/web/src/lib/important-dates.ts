@@ -13,6 +13,7 @@ import {
   setRailEmpty,
   setVitalStat,
 } from "./person-facts-rail.ts";
+import { insertProfileRailExpander } from "./profile-rail-expander.ts";
 
 interface ImportantDateElements {
   readonly add: HTMLButtonElement;
@@ -174,6 +175,54 @@ function title(date: ImportantDate): string {
   return date.label ?? "Custom date";
 }
 
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function nextAnnualOccurrence(
+  date: ImportantDate,
+  now: Date,
+): number | undefined {
+  const { day, month } = date;
+  if (month === undefined || day === undefined) return undefined;
+  const currentYear = now.getUTCFullYear();
+  const today = Date.UTC(
+    currentYear,
+    now.getUTCMonth(),
+    now.getUTCDate(),
+  );
+  const occurrence = (year: number): number => {
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return Date.UTC(year, month - 1, Math.min(day, lastDay));
+  };
+  const thisYear = occurrence(currentYear);
+  return thisYear >= today ? thisYear : occurrence(currentYear + 1);
+}
+
+export function selectImportantDateSummaryIds(
+  dates: readonly ImportantDate[],
+  now: Date,
+): readonly string[] {
+  const birthday = dates.find((date) => date.kind === "birthday");
+  const upcoming = dates.map((date) => ({
+    date,
+    occurrence: nextAnnualOccurrence(date, now),
+  })).filter(
+    (candidate): candidate is { date: ImportantDate; occurrence: number } =>
+      candidate.occurrence !== undefined,
+  ).sort((left, right) =>
+    left.occurrence - right.occurrence ||
+    compareText(title(left.date), title(right.date)) ||
+    compareText(left.date.id, right.date.id)
+  )[0]?.date;
+  return [birthday, upcoming]
+    .filter((date): date is ImportantDate => date !== undefined)
+    .filter((date, index, selected) =>
+      selected.findIndex((candidate) => candidate.id === date.id) === index
+    )
+    .map((date) => date.id);
+}
+
 function problemMessage(problem: ProblemDetails): string {
   if (problem.status === 404) return "This person is no longer available.";
   if (problem.status === 401 || problem.status === 403) {
@@ -299,10 +348,16 @@ function render(
   ui: ImportantDateElements,
   dates: readonly ImportantDate[],
   archived: boolean,
+  now: Date,
   onEdit: (date: ImportantDate) => void,
   onDelete: (date: ImportantDate, button: HTMLButtonElement) => void,
 ): void {
   ui.list.replaceChildren();
+  ui.section.querySelector("[data-important-dates-expander]")?.remove();
+  const summaryIds = dates.length > 2
+    ? new Set(selectImportantDateSummaryIds(dates, now))
+    : undefined;
+  const collapsedItems: HTMLLIElement[] = [];
   for (const date of dates) {
     const item = document.createElement("li");
     const content = document.createElement("div");
@@ -332,8 +387,17 @@ function render(
       actions.append(edit, remove);
       item.append(actions);
     }
+    if (summaryIds && !summaryIds.has(date.id)) {
+      item.hidden = true;
+      collapsedItems.push(item);
+    }
     ui.list.append(item);
   }
+  insertProfileRailExpander(ui.list, collapsedItems, {
+    accessibleSuffix: "important dates",
+    collapsedLabel: `Show all (${collapsedItems.length})`,
+    datasetKey: "importantDatesExpander",
+  });
   ui.state.textContent = archived
     ? dates.length === 0
       ? "No important dates recorded. This archived person is read-only."
@@ -348,7 +412,10 @@ function render(
   setRailCount("important-dates", dates.length);
   setRailEmpty("important-dates", dates.length === 0);
   const birthday = dates.find((date) => date.kind === "birthday");
-  setVitalStat("birthday", birthday ? formatBirthday(birthday) : undefined);
+  setVitalStat(
+    "birthday",
+    birthday ? formatBirthday(birthday, now) : undefined,
+  );
   const firstMeeting = dates.find((date) => date.kind === "first_met");
   setFirstMeetingDate(
     firstMeeting ? formatImportantDate(firstMeeting) : undefined,
@@ -386,6 +453,7 @@ export async function mountImportantDates(
       ui,
       dates,
       lifecycleArchived,
+      new Date(),
       (date) => {
         fill(ui, date);
         ui.form.hidden = false;
