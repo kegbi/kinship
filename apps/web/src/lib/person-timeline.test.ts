@@ -176,6 +176,78 @@ describe("merged person timeline", () => {
     expect(all.classList.contains("button-secondary")).toBe(true);
   });
 
+  it("reloads when a changed timeline includes the mounted person", async () => {
+    const root = markup();
+    const original = item({
+      excerpt: "Original note",
+      id: "00000000-0000-4000-8000-000000000203",
+    });
+    const created = item({
+      excerpt: "Newly created note",
+      id: "00000000-0000-4000-8000-000000000204",
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({
+        items: [original],
+        status: "ready",
+      }))
+      .mockResolvedValueOnce(response({
+        items: [created, original],
+        status: "ready",
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountPersonTimeline({ personId, workspaceId });
+    document.dispatchEvent(
+      new CustomEvent("person-timeline-changed", {
+        detail: { personIds: [crypto.randomUUID(), personId] },
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(root.querySelector("[data-timeline-list]")?.textContent).toContain(
+        "Newly created note",
+      );
+    });
+  });
+
+  it("ignores a changed timeline for another person", async () => {
+    markup();
+    const fetchMock = vi.fn().mockResolvedValue(response({
+      items: [item()],
+      status: "ready",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountPersonTimeline({ personId, workspaceId });
+    fetchMock.mockClear();
+    document.dispatchEvent(
+      new CustomEvent("person-timeline-changed", {
+        detail: { personIds: [crypto.randomUUID()] },
+      }),
+    );
+    await Promise.resolve();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores a changed timeline without detail", async () => {
+    markup();
+    const fetchMock = vi.fn().mockResolvedValue(response({
+      items: [item()],
+      status: "ready",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountPersonTimeline({ personId, workspaceId });
+    fetchMock.mockClear();
+    document.dispatchEvent(new CustomEvent("person-timeline-changed"));
+    await Promise.resolve();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("appends older pages, preserves paging focus, and hides the exhausted control", async () => {
     const root = markup();
     const first = item({ id: "00000000-0000-4000-8000-000000000211" });
