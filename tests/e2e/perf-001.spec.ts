@@ -208,7 +208,10 @@ test(
   async ({ browserName, page, request }) => {
     test.setTimeout(300_000);
     page.setDefaultTimeout(15_000);
-    expect(browserName).toBe(profile.clients.timingEngine);
+    test.skip(
+      browserName !== profile.clients.timingEngine,
+      "PERF-001 timings are calibrated to the accepted profile's timing engine.",
+    );
     const email = `capacity-${Date.now()}@example.test`;
     await registerAndSignIn(request, page, email);
 
