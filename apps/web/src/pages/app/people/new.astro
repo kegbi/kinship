@@ -1,4 +1,5 @@
 ---
+import Breadcrumb from "../../../components/Breadcrumb.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
 ---
@@ -10,6 +11,10 @@ export const prerender = true;
   title="Add a person — Kinship"
 >
   <main id="main-content" class="page-frame people-create-page" tabindex="-1">
+    <Breadcrumb trail={[
+      { href: "/app/people", label: "People" },
+      { label: "Add person" },
+    ]} />
     <header id="people-create-heading" class="page-heading">
       <div>
         <p class="eyebrow">People · <span data-workspace-name></span></p>

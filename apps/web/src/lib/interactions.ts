@@ -996,6 +996,9 @@ export async function mountActivityReport(
   const more = document.querySelector<HTMLButtonElement>(
     "#activity-report-more",
   );
+  const personCrumb = document.querySelector<HTMLAnchorElement>(
+    "[data-breadcrumb-person]",
+  );
   if (!state || !heading || !list || !personId) return;
   reportAbort?.abort();
   const abort = new AbortController();
@@ -1009,6 +1012,9 @@ export async function mountActivityReport(
     const session = await resolveWorkspaceSession();
     if (abort.signal.aborted || current !== generation) return;
     if (session.status !== "ready") {
+      if (personCrumb?.querySelector(".skeleton")) {
+        personCrumb.textContent = "Person";
+      }
       state.textContent = "Activity report unavailable.";
       return;
     }
@@ -1026,12 +1032,19 @@ export async function mountActivityReport(
     ).catch(() => undefined);
     if (abort.signal.aborted || current !== generation) return;
     if (!result?.ok) {
+      if (personCrumb?.querySelector(".skeleton")) {
+        personCrumb.textContent = "Person";
+      }
       state.textContent = result && !result.ok && result.problem.status === 404
         ? "Person not found in this workspace."
         : "Activity report could not be loaded. Saved interactions are unchanged.";
       return;
     }
     heading.textContent = `${result.value.person.name} activity`;
+    if (personCrumb) {
+      personCrumb.href = `/app/people/${encodeURIComponent(personId)}`;
+      personCrumb.textContent = result.value.person.name;
+    }
     const rendered = result.value.items.map(renderInteraction);
     if (cursor) list.append(...rendered);
     else list.replaceChildren(...rendered);

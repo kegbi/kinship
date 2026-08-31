@@ -213,7 +213,8 @@ test(
         resolve();
       });
     });
-    await page.getByRole("link", { name: "All settings" }).click();
+    await page.getByRole("navigation", { name: "Breadcrumb" })
+      .getByRole("link", { name: "Settings", exact: true }).click();
     await navigationChoice;
     await expect(page).toHaveURL(/\/app\/settings\/profile$/);
     await page.getByRole("button", { name: "Save changes" }).click();

@@ -1,9 +1,14 @@
 ---
+import Breadcrumb from "../../../../components/Breadcrumb.astro";
 import ApplicationLayout from "../../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
 ---
 <ApplicationLayout current="settings" description="Review Monica import history." pageId="settings.import" title="Import history — Kinship">
   <main id="main-content" class="page-frame settings-page import-page" tabindex="-1" data-requires-workspace-admin data-import-index>
+    <Breadcrumb trail={[
+      { href: "/app/settings", label: "Settings" },
+      { label: "Import" },
+    ]} />
     <header class="settings-heading"><div><p class="eyebrow">Data settings</p><h1>Import</h1><p>Validated Monica imports and their current status.</p></div><a class="button-link" href="/app/settings/import/new">New import</a></header>
     <p data-import-state class="section-state" role="status" aria-live="polite">Loading import history…</p>
     <button data-import-retry class="button-secondary" type="button" hidden>Retry</button>

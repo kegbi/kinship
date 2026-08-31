@@ -1,10 +1,16 @@
 ---
+import Breadcrumb from "../../../../components/Breadcrumb.astro";
 import ApplicationLayout from "../../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
 ---
 <ApplicationLayout current="settings" description="Validate and commit a bounded Monica JSON export." pageId="settings.import-new" title="New import — Kinship">
   <main id="main-content" class="page-frame settings-page import-page" tabindex="-1" data-requires-workspace-admin data-import-new>
-    <header class="settings-heading"><div><p class="eyebrow">Data settings</p><h1>New import</h1><p>Monica JSON export, version 1.</p></div><a class="button-link secondary-link" href="/app/settings/import">Import history</a></header>
+    <Breadcrumb trail={[
+      { href: "/app/settings", label: "Settings" },
+      { href: "/app/settings/import", label: "Import" },
+      { label: "New import" },
+    ]} />
+    <header class="settings-heading"><div><p class="eyebrow">Data settings</p><h1>New import</h1><p>Monica JSON export, version 1.</p></div></header>
     <form data-import-form class="import-form">
       <label for="import-source">Monica JSON export</label>
       <input id="import-source" name="source" type="file" accept="application/json,.json" required />

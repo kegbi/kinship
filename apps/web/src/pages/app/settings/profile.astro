@@ -1,10 +1,15 @@
 ---
+import Breadcrumb from "../../../components/Breadcrumb.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
 ---
 <ApplicationLayout current="settings" description="Manage your Kinship identity profile." pageId="settings.profile" title="Profile — Kinship">
   <main id="main-content" class="page-frame settings-page detail-settings" tabindex="-1">
-    <header class="settings-heading"><div><p class="eyebrow">Personal settings</p><h1>Profile</h1><p>Your name is identity-wide. Your email remains the verified sign-in address.</p></div><a class="button-link secondary-link" href="/app/settings">All settings</a></header>
+    <Breadcrumb trail={[
+      { href: "/app/settings", label: "Settings" },
+      { label: "Profile" },
+    ]} />
+    <header class="settings-heading"><div><p class="eyebrow">Personal settings</p><h1>Profile</h1><p>Your name is identity-wide. Your email remains the verified sign-in address.</p></div></header>
     <form id="profile-form" class="settings-form">
       <p id="settings-errors" class="form-error-summary" role="alert" tabindex="-1" hidden></p>
       <label>Email address<input name="email" type="email" readonly disabled /></label>

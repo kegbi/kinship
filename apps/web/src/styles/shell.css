@@ -315,6 +315,22 @@
   padding: clamp(2rem, 6vw, 4.5rem) 0 5rem;
 }
 
+.page-breadcrumb {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--ink-2);
+  font-size: .82rem;
+  font-weight: 750;
+}
+
+.page-breadcrumb a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  text-underline-offset: .2em;
+}
+
 .page-heading {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(16rem, 25rem);

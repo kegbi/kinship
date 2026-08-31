@@ -1,11 +1,16 @@
 ---
+import Breadcrumb from "../../components/Breadcrumb.astro";
 import ApplicationLayout from "../../layouts/ApplicationLayout.astro";
 export const prerender = true;
 ---
 
 <ApplicationLayout current="journal" description="Read one personal journal item." pageId="journal.item" title="Journal item — Kinship">
   <main id="main-content" class="page-frame journal-page" data-journal-detail tabindex="-1">
-    <header class="page-heading"><div><p class="eyebrow">Personal history · <span data-workspace-name></span></p><h1>Journal item</h1></div><a class="button-link" href="/app/journal">Back to journal</a></header>
+    <Breadcrumb trail={[
+      { href: "/app/journal", label: "Journal" },
+      { label: "Journal item" },
+    ]} />
+    <header class="page-heading"><div><p class="eyebrow">Personal history · <span data-workspace-name></span></p><h1>Journal item</h1></div></header>
     <p data-journal-state class="section-state" role="status" aria-live="polite">Loading journal item…</p>
     <button data-journal-retry class="button-secondary" type="button" hidden>Retry item</button>
     <ol data-journal-list class="journal-list" aria-label="Journal item"></ol>

@@ -1,4 +1,5 @@
 ---
+import Breadcrumb from "../../../components/Breadcrumb.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
 ---
@@ -10,13 +11,16 @@ export const prerender = true;
   title="Members — Kinship"
 >
   <main id="main-content" class="page-frame settings-page members-page" tabindex="-1" data-requires-workspace-admin>
+    <Breadcrumb trail={[
+      { href: "/app/settings", label: "Settings" },
+      { label: "Members" },
+    ]} />
     <header class="settings-heading">
       <div>
         <p class="eyebrow">Workspace settings</p>
         <h1>Members</h1>
         <p>Invite people into this workspace and review who currently has access.</p>
       </div>
-      <a class="button-link secondary-link" href="/app/settings">All settings</a>
     </header>
 
     <section class="member-section invite-panel" aria-labelledby="invite-heading">

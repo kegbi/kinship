@@ -2048,11 +2048,16 @@ describe("INTERACTION-001 browser behavior", () => {
     expect(text).not.toContain("Deleted private identity");
   });
 
-  it("renders favorite notes and chronological activity without false empty states", async () => {
+  it("UXD-009 renders favorite notes, chronological activity, and the report breadcrumb", async () => {
     todayMarkup();
     document.body.insertAdjacentHTML(
       "beforeend",
-      `<p id="activity-report-state"></p><h1 id="activity-report-heading"></h1><ul id="activity-report-list"></ul><button id="activity-report-more" hidden></button>`,
+      `<nav aria-label="Breadcrumb">
+        <a href="/app/people">People</a><span aria-hidden="true">/</span>
+        <a data-breadcrumb-person href="/app/people">Loading person…</a><span aria-hidden="true">/</span>
+        <span aria-current="page">Activity report</span>
+      </nav>
+      <p id="activity-report-state"></p><h1 id="activity-report-heading"></h1><ul id="activity-report-list"></ul><button id="activity-report-more" hidden></button>`,
     );
     const note = {
       body: "Prefers quiet mornings",
@@ -2096,6 +2101,16 @@ describe("INTERACTION-001 browser behavior", () => {
       .toContain("Ada Lovelace");
     expect(document.querySelector("#activity-report-heading")?.textContent)
       .toContain("Ada Lovelace");
+    const personCrumb = document.querySelector("[data-breadcrumb-person]");
+    expect({
+      href: personCrumb?.getAttribute("href"),
+      tagName: personCrumb?.tagName,
+      text: personCrumb?.textContent,
+    }).toEqual({
+      href: `/app/people/${personId}`,
+      tagName: "A",
+      text: "Ada Lovelace",
+    });
     document.querySelector<HTMLButtonElement>("#activity-report-more")!.click();
     await vi.waitFor(() =>
       expect(document.querySelector("#activity-report-list")?.textContent)
@@ -2156,11 +2171,16 @@ describe("INTERACTION-001 browser behavior", () => {
       .toBe("21 recorded items.");
   });
 
-  it("keeps Today and report failures truthful and tenant-concealing", async () => {
+  it("UXD-009 keeps a failed activity-report crumb truthful and tenant-concealing", async () => {
     todayMarkup();
     document.body.insertAdjacentHTML(
       "beforeend",
-      `<p id="activity-report-state"></p><h1 id="activity-report-heading"></h1><ul id="activity-report-list"></ul>`,
+      `<nav aria-label="Breadcrumb">
+        <a href="/app/people">People</a><span aria-hidden="true">/</span>
+        <a data-breadcrumb-person href="/app/people/${personId}"><span class="skeleton skeleton-chip" aria-hidden="true"></span><span class="sr-only">Loading person…</span></a><span aria-hidden="true">/</span>
+        <span aria-current="page">Activity report</span>
+      </nav>
+      <p id="activity-report-state"></p><h1 id="activity-report-heading"></h1><ul id="activity-report-list"></ul>`,
     );
     const unauthorized = response({
       detail: "Sign in",
@@ -2197,6 +2217,16 @@ describe("INTERACTION-001 browser behavior", () => {
     await mountActivityReport(personId);
     expect(document.querySelector("#activity-report-state")?.textContent)
       .toContain("not found in this workspace");
+    const personCrumb = document.querySelector<HTMLAnchorElement>(
+      "[data-breadcrumb-person]",
+    );
+    expect({
+      href: personCrumb?.getAttribute("href"),
+      text: personCrumb?.textContent,
+    }).toEqual({
+      href: `/app/people/${personId}`,
+      text: "Person",
+    });
   });
 
   it("keeps report access loss and a real empty period distinct", async () => {

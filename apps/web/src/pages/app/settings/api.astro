@@ -1,4 +1,5 @@
 ---
+import Breadcrumb from "../../../components/Breadcrumb.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
 ---
@@ -10,9 +11,12 @@ export const prerender = true;
   title="API access — Kinship"
 >
   <main id="main-content" class="page-frame settings-page api-access-page" tabindex="-1" data-requires-workspace-admin data-api-access>
+    <Breadcrumb trail={[
+      { href: "/app/settings", label: "Settings" },
+      { label: "API access" },
+    ]} />
     <header class="settings-heading">
       <div><p class="eyebrow">Developer settings</p><h1>API access</h1><p>Personal credentials for approved programmatic access to this workspace.</p></div>
-      <a class="button-link secondary-link" href="/app/settings">All settings</a>
     </header>
     <p data-api-state class="api-access-state" role="status" aria-live="polite"></p>
 
