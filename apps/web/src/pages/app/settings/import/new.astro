@@ -1,10 +1,14 @@
 ---
 import Breadcrumb from "../../../../components/Breadcrumb.astro";
+import SettingsNavigation from "../../../../components/SettingsNavigation.astro";
 import ApplicationLayout from "../../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
 ---
 <ApplicationLayout current="settings" description="Validate and commit a bounded Monica JSON export." pageId="settings.import-new" title="New import — Kinship">
-  <main id="main-content" class="page-frame settings-page import-page" tabindex="-1" data-requires-workspace-admin data-import-new>
+  <main id="main-content" class="page-frame settings-page" tabindex="-1" data-requires-workspace-admin data-import-new>
+    <div class="settings-layout">
+      <SettingsNavigation currentPage="settings.import-new" />
+      <div class="settings-content import-page">
     <Breadcrumb trail={[
       { href: "/app/settings", label: "Settings" },
       { href: "/app/settings/import", label: "Import" },
@@ -25,6 +29,8 @@ export const prerender = true;
       <label class="confirmation-control"><input data-import-confirm type="checkbox" /> I confirm this validated import</label>
       <button data-import-commit type="button" disabled>Commit import</button>
     </section>
+      </div>
+    </div>
   </main>
 </ApplicationLayout>
 <script>import { mountImports } from "../../../../lib/imports.ts"; void mountImports();</script>

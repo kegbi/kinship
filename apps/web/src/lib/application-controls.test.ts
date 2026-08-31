@@ -19,6 +19,25 @@ afterEach(() => {
 });
 
 describe("application control presentation", () => {
+  it("references only declared custom properties when no fallback is provided", () => {
+    const declaredProperties = new Set(
+      Array.from(
+        applicationCss.matchAll(/(--[a-z0-9-]+)\s*:/gi),
+        ([, name]) => name,
+      ),
+    );
+    const undeclaredProperties = Array.from(
+      new Set(
+        Array.from(
+          applicationCss.matchAll(/var\(\s*(--[a-z0-9-]+)\s*\)/gi),
+          ([, name]) => name,
+        ).filter((name) => !declaredProperties.has(name)),
+      ),
+    ).sort();
+
+    expect(undeclaredProperties).toEqual([]);
+  });
+
   it("loads Inter Variable before the application root stack uses it", () => {
     expect(applicationCss).toMatch(
       /@font-face\s*\{[^}]*font-family:\s*"Inter Variable";[^}]*\}[\s\S]*:root\s*\{[^}]*font-family:\s*"Inter Variable",\s*Inter,\s*ui-sans-serif,\s*system-ui,\s*sans-serif;/,

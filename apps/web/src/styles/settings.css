@@ -118,9 +118,15 @@
 
 .settings-layout {
   display: grid;
-  grid-template-columns: 16rem minmax(0, 1fr);
+  grid-template-columns: minmax(15rem, 17.5rem) minmax(0, 55rem);
   gap: var(--space-6);
   align-items: start;
+}
+
+.settings-content {
+  width: 100%;
+  max-width: 55rem;
+  min-width: 0;
 }
 
 .settings-local-nav {
@@ -159,6 +165,31 @@
 .settings-local-nav small {
   color: var(--ink-2);
   font-size: .65rem;
+}
+
+.settings-navigation-group {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.settings-navigation-group + .settings-navigation-group {
+  margin-top: var(--space-3);
+}
+
+.settings-destination-nav a[aria-current="page"] {
+  color: var(--ink-1);
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 var(--accent);
+  font-weight: 750;
+}
+
+.settings-navigation-danger {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line-1);
+}
+
+.settings-navigation-danger a {
+  color: var(--danger-strong);
 }
 
 .settings-groups {
@@ -605,13 +636,13 @@
   align-items: center;
   padding: 0.65rem 0.8rem;
   border-radius: var(--radius-md);
-  color: var(--ink-muted);
+  color: var(--ink-2);
   text-decoration: none;
 }
 
 .personalization-nav a[aria-current="page"] {
-  color: var(--ink);
-  background: var(--surface-raised);
+  color: var(--ink-1);
+  background: var(--surface-1);
   box-shadow: inset 3px 0 var(--accent);
 }
 
@@ -641,9 +672,9 @@
 
 .personalization-row {
   padding: 1rem;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-1);
   border-radius: 0.9rem;
-  background: var(--surface-raised);
+  background: var(--surface-1);
 }
 
 .personalization-entry-form {

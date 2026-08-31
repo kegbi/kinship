@@ -1,5 +1,6 @@
 ---
 import Breadcrumb from "../../../components/Breadcrumb.astro";
+import SettingsNavigation from "../../../components/SettingsNavigation.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
 ---
@@ -10,7 +11,10 @@ export const prerender = true;
   pageId="settings.audit"
   title="Audit history — Kinship"
 >
-  <main id="main-content" class="page-frame audit-history-page" tabindex="-1">
+  <main id="main-content" class="page-frame settings-page" tabindex="-1">
+    <div class="settings-layout">
+      <SettingsNavigation currentPage="settings.audit" />
+      <div class="settings-content audit-history-page">
     <Breadcrumb trail={[
       { href: "/app/settings", label: "Settings" },
       { label: "Audit history" },
@@ -38,6 +42,8 @@ export const prerender = true;
     <div class="form-actions">
       <button data-audit-more class="button-secondary" type="button" hidden>Load older events</button>
       <button data-audit-retry class="button-secondary" type="button" hidden>Retry audit history</button>
+    </div>
+      </div>
     </div>
   </main>
 </ApplicationLayout>

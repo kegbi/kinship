@@ -1,5 +1,6 @@
 ---
 import Breadcrumb from "../../../components/Breadcrumb.astro";
+import SettingsNavigation from "../../../components/SettingsNavigation.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
 ---
@@ -10,7 +11,10 @@ export const prerender = true;
   pageId="settings.integrations"
   title="Integrations — Kinship"
 >
-  <main id="main-content" class="page-frame settings-page api-access-page" tabindex="-1" data-requires-workspace-admin data-integrations>
+  <main id="main-content" class="page-frame settings-page" tabindex="-1" data-requires-workspace-admin data-integrations>
+    <div class="settings-layout">
+      <SettingsNavigation currentPage="settings.integrations" />
+      <div class="settings-content api-access-page">
     <Breadcrumb trail={[
       { href: "/app/settings", label: "Settings" },
       { label: "Integrations" },
@@ -36,6 +40,8 @@ export const prerender = true;
       <p data-integration-empty hidden>No DAV connections yet.</p>
       <ul data-integration-list class="api-token-list" aria-label="DAV connections"></ul>
     </section>
+      </div>
+    </div>
   </main>
 </ApplicationLayout>
 
