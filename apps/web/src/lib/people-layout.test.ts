@@ -235,7 +235,7 @@ describe("people form layout regressions", () => {
 
   it("UXD-002B gives the rail its specified columns, density, and one sticky owner", () => {
     expect(applicationStyles).toMatch(
-      /\.person-workspace-layout\s*\{[^}]*grid-template-columns:\s*minmax\(280px, 320px\) minmax\(0, 1fr\);[^}]*gap:\s*1\.5rem;/s,
+      /\.person-workspace-layout\s*\{[^}]*grid-template-columns:\s*minmax\(280px, 320px\) minmax\(0, 1fr\);[^}]*gap:\s*var\(--space-5\);/s,
     );
     expect(applicationStyles).toMatch(
       /@media \(max-width: 1199px\)[\s\S]*?\.person-workspace-layout\s*\{[^}]*grid-template-columns:\s*minmax\(240px, 260px\) minmax\(0, 1fr\);[^}]*gap:\s*1\.25rem;/s,
@@ -247,7 +247,7 @@ describe("people form layout regressions", () => {
       /\.profile-section-directory\s*\{[^}]*(?:position:\s*sticky|max-height:|overflow:\s*auto)/s,
     );
     expect(applicationStyles).toMatch(
-      /\.profile-rail-block\s*\{[^}]*min-width:\s*0;[^}]*padding:\s*\.875rem;/s,
+      /\.profile-rail-block\s*\{[^}]*min-width:\s*0;[^}]*padding:\s*var\(--pad-block\);/s,
     );
     expect(applicationStyles).toMatch(
       /\.profile-rail-block h3\s*\{[^}]*font-size:\s*\.95rem;/s,
