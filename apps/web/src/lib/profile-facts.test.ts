@@ -226,6 +226,187 @@ describe("PEOPLE-006 profile-fact sections", () => {
       .toBeNull();
   });
 
+  it("renders the first address over three lines and expands the rest", async () => {
+    allMarkup();
+    const addressRecords = [
+      {
+        id: "00000000-0000-4000-8000-000000000401",
+        section: "addresses",
+        updatedAt: revision,
+        value: {
+          city: "London",
+          country: "United Kingdom",
+          displayName: "Home",
+          isPrimary: true,
+          labelIds: [],
+          postalCode: "SW1A 1AA",
+          region: "Greater London",
+          street: "1 Analytical Engine Way",
+        },
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000402",
+        section: "addresses",
+        updatedAt: revision,
+        value: {
+          city: "Paris",
+          country: "France",
+          displayName: "Office",
+          isPrimary: false,
+          labelIds: [],
+          street: "2 Rue de Calcul",
+        },
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((resource: string | URL | Request) => {
+        const section = /\/facts\/([^?]+)/.exec(String(resource))?.[1];
+        return response({
+          options: [],
+          personUpdatedAt: revision,
+          records: section === "addresses" ? addressRecords : [],
+          status: "ready",
+        });
+      }),
+    );
+
+    await mountProfileFacts(personId, workspaceId, false, revision);
+
+    const root = document.querySelector<HTMLElement>(
+      '[data-profile-fact-section="addresses"]',
+    )!;
+    const items = root.querySelectorAll<HTMLLIElement>(
+      "[data-profile-fact-list] > li",
+    );
+    expect(
+      [...items[0]!.querySelectorAll(".profile-address-summary > span")].map(
+        (line) => line.textContent,
+      ),
+    ).toEqual([
+      "Home",
+      "1 Analytical Engine Way",
+      "London, Greater London, SW1A 1AA, United Kingdom",
+    ]);
+    expect(items[0]!.hidden).toBe(false);
+    expect(items[1]!.hidden).toBe(true);
+    const expander = root.querySelector<HTMLButtonElement>(
+      "[data-profile-fact-expander]",
+    )!;
+    expect(expander.hasAttribute("aria-label")).toBe(false);
+    expect(expander.firstChild?.textContent).toBe("+ 1 more");
+    expect(expander.textContent).toContain(expander.firstChild?.textContent);
+  });
+
+  it("shows the deterministic current work role behind a history expander", async () => {
+    allMarkup();
+    const workRecords = [
+      {
+        id: "00000000-0000-4000-8000-000000000412",
+        section: "work",
+        updatedAt: revision,
+        value: {
+          isCurrent: true,
+          organizationName: "Difference Engines",
+          startOn: "2024-01-01",
+          title: "Director",
+        },
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000411",
+        section: "work",
+        updatedAt: revision,
+        value: {
+          isCurrent: false,
+          organizationName: "Analytical Engines",
+          startOn: "2024-01-01",
+          title: "Mathematician",
+        },
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000413",
+        section: "work",
+        updatedAt: revision,
+        value: {
+          endOn: "2026-08-01",
+          isCurrent: false,
+          organizationName: "Royal Society",
+          startOn: "2025-01-01",
+          title: "Fellow",
+        },
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((resource: string | URL | Request) => {
+        const section = /\/facts\/([^?]+)/.exec(String(resource))?.[1];
+        return response({
+          options: [],
+          personUpdatedAt: revision,
+          records: section === "work" ? workRecords : [],
+          status: "ready",
+        });
+      }),
+    );
+
+    await mountProfileFacts(personId, workspaceId, false, revision);
+
+    let root = document.querySelector<HTMLElement>(
+      '[data-profile-fact-section="work"]',
+    )!;
+    let items = [...root.querySelectorAll<HTMLLIElement>(
+      "[data-profile-fact-list] > li",
+    )];
+    expect(items.find((item) => !item.hidden)?.textContent).toContain(
+      "Mathematician at Analytical Engines",
+    );
+    expect(items.filter((item) => item.hidden)).toHaveLength(2);
+    const expander = root.querySelector<HTMLButtonElement>(
+      "[data-profile-fact-expander]",
+    )!;
+    expect(expander.hasAttribute("aria-label")).toBe(false);
+    expect(expander.firstChild?.textContent).toBe("Show history");
+    expect(expander.textContent).toContain(expander.firstChild?.textContent);
+
+    allMarkup();
+    const endedRecords = workRecords.map((record, index) => ({
+      ...record,
+      id: `00000000-0000-4000-8000-00000000042${2 - index}`,
+      value: {
+        ...record.value,
+        endOn: index === 0
+          ? "2026-08-30"
+          : index === 1
+          ? "2026-08-29"
+          : "2025-01-01",
+      },
+    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((resource: string | URL | Request) => {
+        const section = /\/facts\/([^?]+)/.exec(String(resource))?.[1];
+        return response({
+          options: [],
+          personUpdatedAt: revision,
+          records: section === "work" ? endedRecords : [],
+          status: "ready",
+        });
+      }),
+    );
+
+    await mountProfileFacts(personId, workspaceId, false, revision);
+
+    root = document.querySelector<HTMLElement>(
+      '[data-profile-fact-section="work"]',
+    )!;
+    items = [...root.querySelectorAll<HTMLLIElement>(
+      "[data-profile-fact-list] > li",
+    )];
+    expect(items.find((item) => !item.hidden)?.textContent).toContain(
+      "Director at Difference Engines",
+    );
+  });
+
   it("renders every contact unchanged when the primary summary is empty", async () => {
     markup();
     vi.stubGlobal(

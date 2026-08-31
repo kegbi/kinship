@@ -1,7 +1,11 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatImportantDate, mountImportantDates } from "./important-dates.ts";
+import {
+  formatImportantDate,
+  mountImportantDates,
+  selectImportantDateSummaryIds,
+} from "./important-dates.ts";
 import type { ImportantDate } from "../../../../packages/contracts/generated/auth-client.ts";
 
 const workspaceId = "00000000-0000-4000-8000-000000000003";
@@ -122,6 +126,186 @@ describe("PEOPLE-005 important-date presentation", () => {
     }))).toBe("Date unknown");
   });
 
+  it.each([
+    {
+      expected: [
+        "00000000-0000-4000-8000-000000000201",
+        "00000000-0000-4000-8000-000000000202",
+      ],
+      name: "birthday plus the soonest upcoming date",
+      records: [
+        date({ id: "00000000-0000-4000-8000-000000000201" }),
+        date({
+          day: 1,
+          id: "00000000-0000-4000-8000-000000000202",
+          kind: "custom",
+          label: "Citizenship day",
+          month: 9,
+        }),
+        date({
+          day: 2,
+          id: "00000000-0000-4000-8000-000000000203",
+          kind: "custom",
+          label: "Later date",
+          month: 9,
+        }),
+      ],
+    },
+    {
+      expected: ["00000000-0000-4000-8000-000000000204"],
+      name: "birthday alone when it is also soonest",
+      records: [
+        date({
+          day: 1,
+          id: "00000000-0000-4000-8000-000000000204",
+          month: 9,
+        }),
+        date({
+          day: 2,
+          id: "00000000-0000-4000-8000-000000000205",
+          kind: "custom",
+          label: "Later date",
+          month: 9,
+        }),
+      ],
+    },
+    {
+      expected: ["00000000-0000-4000-8000-000000000207"],
+      name: "a known month and day instead of an unschedulable record",
+      records: [
+        date({
+          day: undefined,
+          id: "00000000-0000-4000-8000-000000000206",
+          kind: "custom",
+          label: "Unknown day",
+          precision: "month",
+          scheduling: "not-schedulable",
+        }),
+        date({
+          day: 5,
+          id: "00000000-0000-4000-8000-000000000207",
+          kind: "custom",
+          label: "Known date",
+          month: 9,
+        }),
+      ],
+    },
+    {
+      expected: ["00000000-0000-4000-8000-000000000208"],
+      name: "displayed label and then id as deterministic tie breakers",
+      records: [
+        date({
+          day: 1,
+          id: "00000000-0000-4000-8000-000000000210",
+          kind: "custom",
+          label: "Beta",
+          month: 9,
+        }),
+        date({
+          day: 1,
+          id: "00000000-0000-4000-8000-000000000209",
+          kind: "custom",
+          label: "Alpha",
+          month: 9,
+        }),
+        date({
+          day: 1,
+          id: "00000000-0000-4000-8000-000000000208",
+          kind: "custom",
+          label: "Alpha",
+          month: 9,
+        }),
+      ],
+    },
+    {
+      expected: ["00000000-0000-4000-8000-000000000215"],
+      name: "February 29 to February 28 ahead of March in a non-leap year",
+      now: new Date("2026-01-15T12:00:00.000Z"),
+      records: [
+        date({
+          id: "00000000-0000-4000-8000-000000000215",
+          kind: "custom",
+          label: "Leap day",
+        }),
+        date({
+          day: 1,
+          id: "00000000-0000-4000-8000-000000000216",
+          kind: "custom",
+          label: "March date",
+          month: 3,
+        }),
+      ],
+    },
+  ])("selects $name", (testCase) => {
+    const { expected, records } = testCase;
+    expect(
+      selectImportantDateSummaryIds(
+        records,
+        "now" in testCase ? testCase.now : new Date("2026-08-31T12:00:00.000Z"),
+      ),
+    ).toEqual(expected);
+  });
+
+  it("collapses dates outside the birthday and next-upcoming summary", async () => {
+    markup();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(response({
+        dates: [
+          date({ id: "00000000-0000-4000-8000-000000000211" }),
+          date({
+            day: 1,
+            id: "00000000-0000-4000-8000-000000000212",
+            kind: "custom",
+            label: "Citizenship day",
+            month: 9,
+          }),
+          date({
+            day: 5,
+            id: "00000000-0000-4000-8000-000000000213",
+            kind: "custom",
+            label: "Autumn date",
+            month: 10,
+          }),
+          date({
+            day: undefined,
+            id: "00000000-0000-4000-8000-000000000214",
+            kind: "first_met",
+            month: 4,
+            precision: "year_month",
+            scheduling: "not-schedulable",
+            year: 2012,
+          }),
+        ],
+        status: "ready",
+      })),
+    );
+
+    await mountImportantDates(personId, workspaceId, false);
+
+    const items = [
+      ...document.querySelectorAll<HTMLLIElement>(
+        "#important-dates-list > li",
+      ),
+    ];
+    expect(items.filter((item) => item.hidden)).toHaveLength(2);
+    const expander = document.querySelector<HTMLButtonElement>(
+      "[data-important-dates-expander]",
+    )!;
+    expect(expander.hasAttribute("aria-label")).toBe(false);
+    expect(expander.firstChild?.textContent).toBe("Show all (2)");
+    expect(expander.textContent).toContain(expander.firstChild?.textContent);
+    expect(expander.getAttribute("aria-expanded")).toBe("false");
+
+    expander.click();
+
+    expect(items.every((item) => !item.hidden)).toBe(true);
+    expect(expander.getAttribute("aria-expanded")).toBe("true");
+    expect(expander.firstChild?.textContent).toBe("Show fewer");
+  });
+
   it("loads an honest empty state and submits only selected components", async () => {
     markup();
     const fetchMock = vi.fn()
@@ -215,6 +399,8 @@ describe("PEOPLE-005 important-date presentation", () => {
       document.querySelector('[data-person-vital-value="first-meeting"]')
         ?.textContent,
     ).toBe("June 5, 2010");
+    expect(document.querySelector("[data-important-dates-expander]"))
+      .toBeNull();
   });
 
   it("publishes a birthday without age when age display is not enabled", async () => {

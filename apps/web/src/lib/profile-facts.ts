@@ -20,6 +20,7 @@ import {
   setRailEmpty,
   setVitalStat,
 } from "./person-facts-rail.ts";
+import { insertProfileRailExpander } from "./profile-rail-expander.ts";
 import { showToast } from "./toasts.ts";
 
 interface FactElements {
@@ -610,6 +611,44 @@ function summary(
   return "Tag assignments";
 }
 
+function addressSummaryLines(
+  record: Extract<ProfileFactRecord, { readonly section: "addresses" }>,
+  options: readonly ProfileFactOption[],
+): readonly string[] {
+  const label = record.value.displayName ??
+    options.find((option) => record.value.labelIds.includes(option.id))?.name;
+  const locality = [
+    record.value.city,
+    record.value.region,
+    record.value.postalCode,
+    record.value.country,
+  ].filter((value): value is string => Boolean(value)).join(", ");
+  return [label, record.value.street, locality].filter(
+    (value): value is string => Boolean(value),
+  );
+}
+
+function selectWorkSummaryRecord(
+  records: readonly ProfileFactRecord[],
+): Extract<ProfileFactRecord, { readonly section: "work" }> | undefined {
+  const work = records.filter(
+    (record): record is Extract<
+      ProfileFactRecord,
+      { readonly section: "work" }
+    > => record.section === "work",
+  );
+  const current = work.filter((record) => record.value.endOn === undefined);
+  const candidates = current.length > 0 ? current : work;
+  const date = (record: typeof candidates[number]) =>
+    current.length > 0 ? record.value.startOn ?? "" : record.value.endOn ?? "";
+  return [...candidates].sort((left, right) => {
+    const leftDate = date(left);
+    const rightDate = date(right);
+    if (leftDate !== rightDate) return leftDate > rightDate ? -1 : 1;
+    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+  })[0];
+}
+
 type RailProfileFactSection = Exclude<ProfileFactSectionId, "tags">;
 
 function clearRailPresentation(section: RailProfileFactSection): void {
@@ -1164,6 +1203,12 @@ export async function mountProfileFacts(
           snapshot.records.some((record) => summarizedById.has(record.id))
         ? summarizedById
         : undefined;
+      const addressSummaryId = section === "addresses"
+        ? snapshot.records.find((record) => record.section === "addresses")?.id
+        : undefined;
+      const workSummaryId = section === "work"
+        ? selectWorkSummaryRecord(snapshot.records)?.id
+        : undefined;
       const hiddenItems: HTMLLIElement[] = [];
       for (const record of snapshot.records) {
         const item = document.createElement("li");
@@ -1200,11 +1245,25 @@ export async function mountProfileFacts(
             }
           });
           item.append(description, copyButton);
+        } else if (record.section === "addresses") {
+          description.className = "profile-address-summary";
+          description.append(
+            ...addressSummaryLines(record, snapshot.options).map((line) => {
+              const value = document.createElement("span");
+              value.textContent = line;
+              return value;
+            }),
+          );
+          item.append(description);
         } else {
           description.textContent = summary(record, snapshot.options);
           item.append(description);
         }
-        if (primaryById && !primary) {
+        if (
+          (primaryById && !primary) ||
+          (addressSummaryId !== undefined && record.id !== addressSummaryId) ||
+          (workSummaryId !== undefined && record.id !== workSummaryId)
+        ) {
           item.hidden = true;
           hiddenItems.push(item);
         }
@@ -1279,30 +1338,16 @@ export async function mountProfileFacts(
         target.list?.append(item);
       }
       if (target.list && hiddenItems.length) {
-        const expander = document.createElement("button");
-        expander.type = "button";
-        expander.className =
-          "button-secondary profile-rail-summary-control profile-rail-expander";
-        expander.dataset.profileFactExpander = "";
-        const suffix = document.createElement("span");
-        suffix.className = "sr-only";
-        suffix.textContent = " contact methods";
-        const setExpanded = (expanded: boolean) => {
-          for (const item of hiddenItems) item.hidden = !expanded;
-          expander.setAttribute("aria-expanded", String(expanded));
-          expander.replaceChildren(
-            document.createTextNode(
-              expanded ? "Show fewer" : `+ ${hiddenItems.length} more`,
-            ),
-            suffix,
-          );
-        };
-        setExpanded(false);
-        expander.addEventListener(
-          "click",
-          () => setExpanded(expander.getAttribute("aria-expanded") !== "true"),
-        );
-        target.list.insertAdjacentElement("afterend", expander);
+        const isWork = section === "work";
+        insertProfileRailExpander(target.list, hiddenItems, {
+          accessibleSuffix: isWork
+            ? "work roles"
+            : section.replaceAll("-", " "),
+          collapsedLabel: isWork
+            ? "Show history"
+            : `+ ${hiddenItems.length} more`,
+          datasetKey: "profileFactExpander",
+        });
       }
       if (section !== "tags") {
         publishRailPresentation(section, snapshot);
