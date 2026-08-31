@@ -123,6 +123,9 @@ export async function mountAuditHistory(personId?: string): Promise<void> {
   const retry = document.querySelector<HTMLButtonElement>("[data-audit-retry]");
   const clear = document.querySelector<HTMLButtonElement>("[data-audit-clear]");
   const heading = document.querySelector<HTMLElement>("[data-audit-heading]");
+  const personCrumb = document.querySelector<HTMLAnchorElement>(
+    "[data-breadcrumb-person]",
+  );
   if (!form || !state || !list || !more || !retry) return;
   historyAbort?.abort();
   const abort = new AbortController();
@@ -148,6 +151,9 @@ export async function mountAuditHistory(personId?: string): Promise<void> {
     const session = await resolveWorkspaceSession();
     if (abort.signal.aborted || current !== generation) return;
     if (session.status !== "ready") {
+      if (personId && personCrumb?.querySelector(".skeleton")) {
+        personCrumb.textContent = "Person";
+      }
       more.disabled = false;
       retryCursor = cursor;
       state.textContent = session.status === "access-lost"
@@ -172,6 +178,9 @@ export async function mountAuditHistory(personId?: string): Promise<void> {
     if (abort.signal.aborted || current !== generation) return;
     more.disabled = false;
     if (!result?.ok) {
+      if (personId && personCrumb?.querySelector(".skeleton")) {
+        personCrumb.textContent = "Person";
+      }
       let retryable = true;
       if (result && !result.ok && result.problem.status === 403) {
         retryCursor = undefined;
@@ -208,6 +217,12 @@ export async function mountAuditHistory(personId?: string): Promise<void> {
     }
     if (heading && result.value.person) {
       heading.textContent = `${result.value.person.name} audit history`;
+    }
+    if (personId && result.value.person) {
+      if (personCrumb) {
+        personCrumb.href = `/app/people/${encodeURIComponent(personId)}`;
+        personCrumb.textContent = result.value.person.name;
+      }
     }
     const rendered = result.value.items.map(renderEvent);
     if (cursor) list.append(...rendered);

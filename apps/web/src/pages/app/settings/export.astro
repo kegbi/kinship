@@ -1,9 +1,14 @@
 ---
+import Breadcrumb from "../../../components/Breadcrumb.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
 ---
 <ApplicationLayout current="settings" description="Create and download portable workspace exports." pageId="settings.export" title="Export — Kinship">
   <main id="main-content" class="page-frame settings-page export-page" tabindex="-1" data-requires-workspace-admin data-export-settings>
+    <Breadcrumb trail={[
+      { href: "/app/settings", label: "Settings" },
+      { label: "Export" },
+    ]} />
     <header class="settings-heading"><div><p class="eyebrow">Data settings</p><h1>Export</h1><p>Portable person data with versioned checksums and short-lived downloads.</p></div><button data-export-create class="button-primary" type="button">Create export</button></header>
     <p data-export-state class="section-state" role="status" aria-live="polite">Loading export history…</p>
     <button data-export-retry class="button-secondary" type="button" hidden>Retry</button>

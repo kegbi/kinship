@@ -50,6 +50,41 @@ describe("GOVERNANCE-002 audit history UI", () => {
     history.replaceState({}, "", "/");
   });
 
+  it("UXD-009 resolves the person-audit breadcrumb", async () => {
+    document.body.innerHTML = `${historyMarkup()}
+      <nav aria-label="Breadcrumb">
+        <a href="/app/people">People</a><span aria-hidden="true">/</span>
+        <a data-breadcrumb-person href="/app/people">Loading person…</a><span aria-hidden="true">/</span>
+        <span aria-current="page">Audit history</span>
+      </nav>`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const path = new URL(String(input), "http://localhost").pathname;
+        return Promise.resolve(response(
+          path.endsWith("/session") ? session() : {
+            items: [],
+            person: { id: personId, name: "Ada Lovelace" },
+            status: "ready",
+          },
+        ));
+      }),
+    );
+
+    await mountAuditHistory(personId);
+
+    const personCrumb = document.querySelector("[data-breadcrumb-person]");
+    expect({
+      href: personCrumb?.getAttribute("href"),
+      tagName: personCrumb?.tagName,
+      text: personCrumb?.textContent,
+    }).toEqual({
+      href: `/app/people/${personId}`,
+      tagName: "A",
+      text: "Ada Lovelace",
+    });
+  });
+
   it("renders redacted append pages and forwards accepted filters", async () => {
     document.body.innerHTML = historyMarkup();
     history.replaceState({}, "", "/app/settings/audit");
@@ -320,8 +355,13 @@ describe("GOVERNANCE-002 audit history UI", () => {
     },
   );
 
-  it("keeps forbidden and retry states local to audit", async () => {
-    document.body.innerHTML = historyMarkup();
+  it("UXD-009 keeps a failed person-audit crumb truthful and retryable", async () => {
+    document.body.innerHTML = `${historyMarkup()}
+      <nav aria-label="Breadcrumb">
+        <a href="/app/people">People</a><span aria-hidden="true">/</span>
+        <a data-breadcrumb-person href="/app/people/${personId}"><span class="skeleton skeleton-chip" aria-hidden="true"></span><span class="sr-only">Loading person…</span></a><span aria-hidden="true">/</span>
+        <span aria-current="page">Audit history</span>
+      </nav>`;
     history.replaceState({}, "", `/app/people/${personId}/audit`);
     let attempts = 0;
     vi.stubGlobal(
@@ -353,6 +393,16 @@ describe("GOVERNANCE-002 audit history UI", () => {
     expect(
       document.querySelector<HTMLButtonElement>("[data-audit-retry]")?.hidden,
     ).toBe(false);
+    const personCrumb = document.querySelector<HTMLAnchorElement>(
+      "[data-breadcrumb-person]",
+    );
+    expect({
+      href: personCrumb?.getAttribute("href"),
+      text: personCrumb?.textContent,
+    }).toEqual({
+      href: `/app/people/${personId}`,
+      text: "Person",
+    });
     document.querySelector<HTMLButtonElement>("[data-audit-retry]")!.click();
     await vi.waitFor(() => expect(attempts).toBe(2));
     expect(document.querySelector("[data-audit-state]")?.textContent).toContain(

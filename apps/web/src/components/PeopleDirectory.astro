@@ -1,4 +1,6 @@
 ---
+import Breadcrumb from "./Breadcrumb.astro";
+
 interface Props {
   readonly lifecycle: "active" | "archived";
 }
@@ -13,6 +15,12 @@ const archived = lifecycle === "archived";
   data-people-lifecycle={lifecycle}
   tabindex="-1"
 >
+  {archived && (
+    <Breadcrumb trail={[
+      { href: "/app/people", label: "People" },
+      { label: "Archived people" },
+    ]} />
+  )}
   <header class="page-heading people-directory-heading">
     <div>
       <p class="eyebrow">People · <span data-workspace-name></span></p>

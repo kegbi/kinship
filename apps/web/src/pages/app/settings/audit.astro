@@ -1,4 +1,5 @@
 ---
+import Breadcrumb from "../../../components/Breadcrumb.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
 ---
@@ -10,13 +11,16 @@ export const prerender = true;
   title="Audit history — Kinship"
 >
   <main id="main-content" class="page-frame audit-history-page" tabindex="-1">
+    <Breadcrumb trail={[
+      { href: "/app/settings", label: "Settings" },
+      { label: "Audit history" },
+    ]} />
     <header class="settings-heading">
       <div>
         <p class="eyebrow">Workspace data · <span data-workspace-name></span></p>
         <h1 data-audit-heading>Audit history</h1>
         <p>Owner and administrator access is authorized separately. Sensitive values are never displayed.</p>
       </div>
-      <a class="button-link secondary-link" href="/app/settings">All settings</a>
     </header>
     <form data-audit-filters class="audit-filters" method="get">
       <label>Person ID <input name="personId" type="text" autocomplete="off" /></label>

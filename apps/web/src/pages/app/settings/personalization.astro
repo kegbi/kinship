@@ -1,4 +1,5 @@
 ---
+import Breadcrumb from "../../../components/Breadcrumb.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 import { PERSONALIZATION_SECTIONS } from "../../../lib/personalization.ts";
 export const prerender = true;
@@ -6,7 +7,11 @@ export const prerender = true;
 
 <ApplicationLayout current="settings" description="Manage active workspace profile modules and controlled vocabularies." pageId="settings.personalization" title="Personalization — Kinship">
   <main id="main-content" class="page-frame settings-page personalization-page" tabindex="-1" data-requires-workspace-admin>
-    <header class="settings-heading"><div><p class="eyebrow">Workspace settings</p><h1>Personalization</h1><p>Manage one workspace-owned profile section at a time. Disabling a module never deletes person history.</p></div><a class="button-link secondary-link" href="/app/settings">All settings</a></header>
+    <Breadcrumb trail={[
+      { href: "/app/settings", label: "Settings" },
+      { label: "Personalization" },
+    ]} />
+    <header class="settings-heading"><div><p class="eyebrow">Workspace settings</p><h1>Personalization</h1><p>Manage one workspace-owned profile section at a time. Disabling a module never deletes person history.</p></div></header>
     <div class="personalization-layout">
       <nav class="personalization-nav" aria-label="Personalization sections">
         {PERSONALIZATION_SECTIONS.map(({ id, label }) => <a href={`/app/settings/personalization?section=${id}`} data-personalization-section={id}>{label}</a>)}
