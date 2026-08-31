@@ -11,9 +11,9 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-002C2B2 — Demote the five timeline cards to editors**. The
-  review's top five, `UXD-001` through `UXD-005`, all of `UXD-003`, `DOC-001`,
-  `REL-021`, and `REL-023` are integrated.
+- Current leaf: **UXD-002C2B2b — Carry the per-kind detail in the timeline
+  projection**. The review's top five, `UXD-001` through `UXD-005`, all of
+  `UXD-003`, `DOC-001`, `REL-021`, `REL-023`, and `UXD-002C2B2a` are integrated.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -1080,6 +1080,79 @@ asserts, so it runs that spec on its candidate.
           flows to assert against the merged surface instead, and the merged
           surface must then refresh when one of the five records a change. Split
           out because that is a different risk from adding a read surface.
+      - [x] **A correction to this leaf, found before dispatching it.**
+            Suppressing the five lists is not pure duplication removal: the
+            projection `UXD-002C2A` shipped carries only `title` and `excerpt`,
+            so a merged row shows strictly less than the card it would replace.
+            Notes and life events lose nothing, but activities lose
+            participants, category, and emotions; calls lose their direction and
+            emotions; and conversations lose the channel, the contact method,
+            and every message in the thread. Demoting all five as written would
+            remove the conversation transcript from the person workspace
+            entirely. Directed decision: enrich the projection first, then
+            demote losslessly. Hence three slices.
+      - [x] **UXD-002C2B2a — Refresh the merged surface on a mutation.** A live
+            defect on its own, not only a prerequisite: since `UXD-002C2B1`
+            shipped, logging a call, saving a conversation, or capturing a note
+            or activity updated the card below while the merged list above kept
+            its page-load state until a reload.
+        - [x] One `document` event, `person-timeline-changed`, carrying
+              `{ personIds }`, dispatched from exactly two sites — the
+              quick-capture save in `interactions.ts` and the successful
+              `recordInteraction` in `communications.ts` — and exactly one
+              listener, in `person-timeline.ts`. Life events get no dispatch
+              because they have no mutation surface, and interactions have no
+              edit or delete surface, so two sites are the complete set.
+        - [x] The detail is a list because one activity can name several
+              participants, and the listener ignores an event whose list does
+              not contain the person it was mounted for. A capture on `/app`
+              reaches no timeline at all. That negative assertion is what stops
+              the fix from degrading into "reload on any event".
+        - [x] The reload is `load({ append: false })` through the existing
+              request-sequence guard: it keeps the selected type filter, drops
+              the keyset cursor, and replaces the list. No splice, no second
+              sequence, no watermark — a new record at the head invalidates a
+              server-bound cursor, and `REL-013` is the recorded cost of the
+              alternative. A member who had paged back returns to the first
+              page; that is accepted, not overlooked.
+        - [x] `INTERACTION_CREATED_EVENT` and `TODAY_RECONNECT_RECORDED_EVENT`
+              were left exactly as they are. This candidate adds a signal rather
+              than rerouting one, so the Today page and the person cards keep
+              their existing refresh paths.
+        - [x] **A defect caught in review:** the listener asserted its detail
+              shape through a cast and read `detail.personIds` with no runtime
+              check, so an event dispatched without a detail would throw inside
+              the dispatch. Every sibling listener in this codebase guards
+              instead. Now guarded, with a focused test that a detail-less event
+              is ignored.
+        - [x] One assertion was added to `tests/e2e/app-005a.spec.ts` and
+              nothing was removed: after the note save, the merged surface must
+              contain the same text as the section card, immediately after the
+              action that produces it. It is the browser proof that the refresh
+              is real, and it is the first of the assertions `UXD-002C2B2c`
+              moves rather than deletes.
+        - [x] Gates: `fmt:check` 580 files, `lint` 473 files, `check:web` 0
+              errors, 499 web unit tests, `test:coverage:web` at
+              92.63/83.22/87.62/94.67, and the complete Chromium suite 44/44 on
+              the pre-amendment candidate. The amendment was one guard inside
+              the listener that run exercised, so the browser suite was not
+              rerun for it, per the gate ladder.
+      - [ ] **UXD-002C2B2b — Carry the per-kind detail in the projection.** Add
+            the fields a demoted card would otherwise take with it —
+            participants, activity type, and emotions for an activity; the
+            caller direction and emotions for a call; the channel, contact
+            method, and messages for a conversation — to `PersonTimelineItem`.
+            Enrich in the final select over the already-computed `page` rows,
+            never inside the `projection` union, so the keyset and its
+            `limit + 1` stay untouched; `activity_report_repository.ts` already
+            uses exactly that lateral-over-page shape and is the pattern to
+            mirror.
+      - [ ] **UXD-002C2B2c — Suppress the five lists.** Keep every card, its
+            heading, its state paragraph, its add control, and its form, so
+            `[data-profile-section]` still counts 22 and every `?section=` id
+            still resolves. Move the `INTERACTION-001`, `INTERACTION-002`, and
+            `PEOPLE-003` row assertions to the merged surface, which makes them
+            stronger because they then also prove the refresh.
   - [x] **UXD-002C3 — Remember the member's zone choice.** (§7.4) The last zone
         choice now persists in `member_preferences.ui_state`, the mechanism
         `person-workspace.md` reserves. No read or write surface for that column
