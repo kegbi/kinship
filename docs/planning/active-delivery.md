@@ -2497,6 +2497,15 @@ asserts, so it runs that spec on its candidate.
         passed / 0 failed and `test:coverage:api` against real PostgreSQL 537
         passed / 0 failed at 85.2 / 82.2 / 87.3 — with `fmt:check` 599 files and
         `lint` 483 files. No web or browser gate applies.
+- [x] **REL-027 — Skip PERF-001 off its timing engine instead of failing.** The
+      phase checkpoint's first all-browser run since `PERF-001` landed failed
+      the spec deterministically on firefox and webkit:
+      `tests/e2e/perf-001.spec.ts` pinned its measurements to the accepted
+      profile's timing engine by asserting the browser name rather than
+      skipping. The assertion became `test.skip` with the calibration reason;
+      the intent — timings only from the calibrated engine — is unchanged, and a
+      matrix run now reports the truth: 1 passed on chromium with real timings,
+      2 skipped. Two of the checkpoint's seven failures were this.
 - [ ] **Phase 12 accepted:** the person workspace reads as grouped zones rather
       than peer cards, first paint no longer waits on the full section fan-out,
       tokens back every surface, and no leaf above is unchecked without a
