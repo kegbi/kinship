@@ -116,6 +116,40 @@ function dateTimeValue(item: PersonTimelineItem): string | undefined {
   return `${month}-${day}`;
 }
 
+function detailLines(item: PersonTimelineItem): string[] {
+  const lines: string[] = [];
+  if (item.participants?.length) {
+    lines.push(
+      `Participants: ${
+        item.participants.map((entry) => entry.name).join(", ")
+      }`,
+    );
+  }
+  if (item.activityType) lines.push(`Category: ${item.activityType}`);
+  if (item.emotions?.length) {
+    lines.push(
+      `Emotions: ${item.emotions.map((entry) => entry.name).join(", ")}`,
+    );
+  }
+  if (item.contactWasCaller !== undefined) {
+    lines.push(item.contactWasCaller ? "Incoming call" : "Outgoing call");
+  }
+  if (item.channelType) lines.push(`Channel: ${item.channelType}`);
+  if (item.contactMethod) lines.push(`Via ${item.contactMethod}`);
+  if (item.messages?.length) {
+    for (const message of item.messages) {
+      lines.push(
+        `${
+          message.direction === "inbound" ? "Inbound" : "Outbound"
+        }: ${message.content}`,
+      );
+    }
+  } else if (item.kind === "conversation") {
+    lines.push("Direction not recorded");
+  }
+  return lines;
+}
+
 function renderItem(item: PersonTimelineItem): HTMLLIElement {
   const row = document.createElement("li");
   row.dataset.timelineId = item.id;
@@ -141,6 +175,16 @@ function renderItem(item: PersonTimelineItem): HTMLLIElement {
   const excerpt = document.createElement("p");
   excerpt.textContent = item.excerpt ?? "No details recorded.";
   details.append(summary, title, excerpt);
+  const lines = detailLines(item);
+  if (lines.length) {
+    const list = document.createElement("ul");
+    list.append(...lines.map((line) => {
+      const detail = document.createElement("li");
+      detail.textContent = line;
+      return detail;
+    }));
+    details.append(list);
+  }
   row.append(details);
   return row;
 }

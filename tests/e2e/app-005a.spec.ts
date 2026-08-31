@@ -184,6 +184,19 @@ test(
       `Category: ${activityTypeLabel}`,
     );
     await expect(adaActivities).not.toContainText("Emotions:");
+    const timeline = page.locator("#person-timeline");
+    await timeline.getByRole("button", { name: "Activities", exact: true })
+      .click();
+    const compilerTimelineRow = timeline.locator("[data-timeline-id]", {
+      hasText: "Designed a compiler together",
+    });
+    await expect(compilerTimelineRow).toHaveCount(1);
+    await compilerTimelineRow.locator("summary").click();
+    await expect(
+      compilerTimelineRow.getByText(`Category: ${activityTypeLabel}`, {
+        exact: true,
+      }),
+    ).toBeVisible();
     const reportPath = `${adaPath}/activity-report`;
     const reportLink = adaActivities.getByRole("link", {
       name: "Open activity report",
