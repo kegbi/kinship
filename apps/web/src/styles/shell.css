@@ -303,7 +303,7 @@
   color: var(--ink-inverse);
   background: transparent;
   cursor: pointer;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .app-toast-dismiss {
@@ -325,7 +325,7 @@
   align-items: center;
   color: var(--ink-2);
   font-size: .82rem;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .page-breadcrumb a {
@@ -349,7 +349,7 @@
   margin: 0 0 .75rem;
   color: var(--accent-hover);
   font-size: .7rem;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: .12em;
   text-transform: uppercase;
 }

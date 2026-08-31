@@ -342,6 +342,20 @@ describe("application control presentation", () => {
     ).toEqual([]);
   });
 
+  it("keeps application font weights within the approved numeric set", () => {
+    const violations = nonTokenStylesheetPaths.flatMap((path) =>
+      Array.from(
+        readFileSync(path, "utf8").matchAll(/font-weight:\s*([^;]+);/g),
+        (match) => `${path}:${match[1]?.trim()}`,
+      ).filter((entry) => !/:(?:500|600|700)$/.test(entry))
+    );
+
+    expect(
+      violations,
+      `Found ${violations.length} font weights outside 500, 600, and 700`,
+    ).toEqual([]);
+  });
+
   it("loads Inter Variable before the application root stack uses it", () => {
     expect(applicationCss).toMatch(
       /@font-face\s*\{[^}]*font-family:\s*"Inter Variable";[^}]*\}[\s\S]*:root\s*\{[^}]*font-family:\s*"Inter Variable",\s*Inter,\s*ui-sans-serif,\s*system-ui,\s*sans-serif;/,
@@ -378,7 +392,7 @@ describe("application control presentation", () => {
       expect(computed.paddingTop).toBe("10.4px");
       expect(computed.paddingRight).toBe("14.4px");
       expect(computed.borderRadius).toBe("10.4px");
-      expect(computed.fontWeight).toBe("750");
+      expect(computed.fontWeight).toBe("600");
       expect(computed.lineHeight).toBe("1.2");
       if (tagName === "a") expect(computed.textDecoration).toBe("none");
     }

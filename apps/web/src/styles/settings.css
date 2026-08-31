@@ -20,9 +20,9 @@
 .section-heading h2,
 .settings-group h2 {
   margin: 0;
-  font-family: Georgia, serif;
-  font-size: clamp(1.5rem, 4vw, 2.15rem);
-  font-weight: 500;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .state-badge,
@@ -34,7 +34,7 @@
   color: var(--accent-hover);
   background: var(--accent-soft);
   font-size: .7rem;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .state-badge.calm,
@@ -72,7 +72,7 @@
   color: var(--ink-inverse);
   background: var(--positive);
   content: counter(steps);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .success-loop span {
@@ -105,7 +105,7 @@
 
 .settings-search label {
   font-size: .78rem;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .settings-search input {
@@ -143,7 +143,7 @@
   margin: 0 0 .5rem;
   color: var(--ink-3);
   font-size: .72rem;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: .1em;
   text-transform: uppercase;
 }
@@ -180,7 +180,7 @@
   color: var(--ink-1);
   background: var(--surface-2);
   box-shadow: inset 3px 0 var(--accent);
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .settings-navigation-danger {
@@ -279,9 +279,9 @@
 .api-access-section h2,
 .api-secret-panel h2 {
   margin: .25rem 0 1rem;
-  font-family: Georgia, serif;
-  font-size: 1.6rem;
-  font-weight: 500;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .api-token-form {
@@ -295,7 +295,7 @@
 .api-token-form fieldset {
   display: grid;
   gap: .4rem;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .api-token-form input:not([type="checkbox"]),
@@ -382,7 +382,7 @@
 }
 .import-form label,
 .confirmation-control {
-  font-weight: 750;
+  font-weight: 600;
 }
 .import-counts {
   display: grid;
@@ -401,12 +401,12 @@
 .import-counts dt {
   color: var(--ink-3);
   font-size: .78rem;
-  font-weight: 750;
+  font-weight: 700;
 }
 .import-counts dd {
   margin: .35rem 0 0;
   font-size: 1.05rem;
-  font-weight: 750;
+  font-weight: 700;
 }
 .import-history {
   display: grid;
@@ -457,9 +457,9 @@
 
 .storage-settings-section header h2 {
   margin: .25rem 0 1rem;
-  font-family: Georgia, serif;
-  font-size: 1.6rem;
-  font-weight: 500;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .storage-metrics,
@@ -485,7 +485,7 @@
 .storage-object-state dt {
   color: var(--ink-3);
   font-size: .78rem;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .storage-metrics dd,
@@ -494,7 +494,7 @@
   margin: .35rem 0 0;
   overflow-wrap: anywhere;
   font-size: 1.05rem;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .storage-search-form {
@@ -503,7 +503,7 @@
 }
 
 .storage-search-form label {
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .storage-search-form > div {
@@ -563,9 +563,9 @@
 
 .member-section h2 {
   margin: 0;
-  font-family: Georgia, serif;
-  font-size: clamp(1.5rem, 4vw, 2.15rem);
-  font-weight: 500;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .invitation-form {
@@ -579,7 +579,7 @@
   display: grid;
   gap: .4rem;
   font-size: .82rem;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .invitation-form input,
@@ -741,7 +741,7 @@
   display: grid;
   gap: .4rem;
   font-size: .82rem;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .settings-form input,
@@ -779,7 +779,7 @@
 
 .settings-form #settings-dirty[data-state="dirty"] {
   color: var(--warning);
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .settings-form [aria-invalid="true"] {
@@ -813,13 +813,13 @@
 .account-lifecycle dt {
   color: var(--ink-3);
   font-size: .82rem;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .account-lifecycle dd {
   margin: .25rem 0 0;
   font-size: 1.5rem;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .lifecycle-form {
@@ -830,7 +830,7 @@
 .lifecycle-form label {
   display: grid;
   gap: .4rem;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .lifecycle-form input {
@@ -861,7 +861,7 @@
   border-radius: var(--radius-pill);
   background: var(--positive-soft);
   font-size: .75rem;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: capitalize;
 }
 

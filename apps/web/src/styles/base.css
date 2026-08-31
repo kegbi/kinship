@@ -44,7 +44,7 @@ select:disabled {
   align-items: center;
   color: var(--ink-inverse);
   background: var(--ink-1);
-  font-weight: 750;
+  font-weight: 600;
   text-decoration: none;
 }
 
@@ -126,10 +126,10 @@ a {
 .settings-heading h1 {
   margin: 0;
   font-family: Georgia, serif;
-  font-size: clamp(2.6rem, 7vw, 4.8rem);
+  font-size: 1.75rem;
   font-weight: 500;
-  line-height: 1;
-  letter-spacing: -.045em;
+  line-height: 1.15;
+  letter-spacing: -.01em;
 }
 
 .button-link {
@@ -141,7 +141,7 @@ a {
   align-items: center;
   color: var(--ink-inverse);
   background: var(--ink-1);
-  font-weight: 750;
+  font-weight: 600;
   text-decoration: none;
 }
 
@@ -155,7 +155,7 @@ a {
   align-items: center;
   justify-content: center;
   font: inherit;
-  font-weight: 750;
+  font-weight: 600;
   line-height: 1.2;
   text-align: center;
   text-decoration: none;

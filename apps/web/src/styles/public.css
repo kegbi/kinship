@@ -376,7 +376,7 @@ h3 {
 .principles h2 {
   max-width: 10ch;
   margin: 0;
-  font-size: clamp(2.3rem, 4vw, 4rem);
+  font-size: clamp(2.4rem, 5vw, 3.4rem);
   line-height: 1.05;
   letter-spacing: -0.035em;
 }
