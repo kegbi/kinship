@@ -11,10 +11,9 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-002C2B2d — Suppress the five timeline card lists**. The
-  review's top five, `UXD-001` through `UXD-005`, all of `UXD-003`, `DOC-001`,
-  `REL-021`, `REL-023`, and `UXD-002C2B2a` through `UXD-002C2B2c` are
-  integrated.
+- Current leaf: **UXD-002B2b — The remaining seven rail rows**. The review's top
+  five, `UXD-001` through `UXD-005`, all of `UXD-003` and `UXD-002C2`,
+  `DOC-001`, `REL-021`, and `REL-023` are integrated.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -988,7 +987,7 @@ asserts, so it runs that spec on its candidate.
           `app-002c`'s header keyboard walk once; it passed on the re-run with
           no change to that surface, so it is recorded below rather than treated
           as caused by this candidate.
-  - [ ] **UXD-002C2 — Merged timeline surface.** (§7.3 Timeline bullet, §7.6
+  - [x] **UXD-002C2 — Merged timeline surface.** (§7.3 Timeline bullet, §7.6
         row 1) `life-events`, `notes`, `conversations`, `calls`, and
         `activities` become one reverse-chronological list. Split out of
         `UXD-002C` because merging five independently cursored lists cannot be
@@ -1072,7 +1071,7 @@ asserts, so it runs that spec on its candidate.
             tests, `test:coverage:web` at 92.59/83.12/87.62/94.63 with the new
             module at 99.13 lines, zero hex literals outside `:root`, and the
             complete Chromium suite 44/44 with no spec changed.
-    - [ ] **UXD-002C2B2 — Demote the five cards to editors.** §7.3 asks for
+    - [x] **UXD-002C2B2 — Demote the five cards to editors.** §7.3 asks for
           "five cards become one surface", and until this lands the Timeline
           zone shows the merged list _and_ the five lists that feed it, which is
           duplication rather than the consolidation the review wants. Those
@@ -1232,14 +1231,52 @@ asserts, so it runs that spec on its candidate.
               92.66/83.29/87.67/94.67, zero hex literals outside `:root`, and
               the complete Chromium suite 44/44 with an empty
               `.artifacts/playwright`.
-      - [ ] **UXD-002C2B2d — Suppress the five lists.** Keep every card, its
-            heading, its badge, its state line, its own request and error
-            isolation, its add control, and its form, so
-            `[data-profile-section]` still counts 22 and every `?section=` id
-            still resolves. The state line gains the count and a pointer to the
-            timeline. Move the `INTERACTION-001`, `INTERACTION-002`, and
-            `PEOPLE-003` row assertions to the merged surface, which makes them
-            stronger because they then also prove the merged list refreshed.
+      - [x] **UXD-002C2B2d — Suppress the five lists.** The Timeline zone now
+            shows one list. Each of the five cards keeps its heading, badge,
+            state line, own request, error isolation, add control, and form, and
+            renders no rows; its list container carries `hidden`, so an empty
+            `<ul aria-label="Recent calls">` is not left in the accessibility
+            tree. The non-empty state line carries the count and
+            `Listed in the timeline above.` Every empty-state string is
+            unchanged, because those are asserted and are the honest message.
+        - [x] Every card kept its own request deliberately. `PEOPLE-003` proves
+              per-section failure isolation by making the life-events request
+              return 503 and asserting that card alone goes to
+              `data-section-state="error"` with a working Retry while the others
+              stay healthy. Taking the request away to save a round trip would
+              have deleted that contract; this leaf removes duplicated display,
+              not the isolation `UXD-003` left intact.
+        - [x] Ten browser assertions moved from three delivered P0 flows onto
+              the merged surface and none was deleted without a replacement
+              proving the same fact. They are stronger there: each also proves
+              the merged list refreshed through `UXD-002C2B2a`'s event, because
+              every one of them runs immediately after the mutation that
+              produced the record. `INTERACTION-002`'s `Direction not recorded`
+              is the browser proof of the absent-`messages` fix `UXD-002C2B2c`
+              made.
+        - [x] **The implementer stopped rather than guessing, and it was right
+              to.** The ticket told it to treat any failing existing unit test
+              as evidence of overreach. Seven were instead legitimately obsolete
+              observables. Their invariants — newest response wins, one section
+              failing does not take the other down, listeners survive two
+              captures — are untouched by this leaf, so each was re-pointed from
+              row text to the state line rather than deleted. Two race tests
+              could only be told apart by row text, so their fixtures now differ
+              in record **count**: the newer response returns two records and
+              the older one or three, and the assertion still fails if the older
+              one wins.
+        - [x] `renderRecord`, and life events' `displayDate` and `monthName`,
+              were deleted as unreachable. `renderInteraction` stayed: Today and
+              the activity report still call it. The one test named for
+              `Unknown channel` rendering was renamed, because the behavior it
+              named no longer exists; a conversation with no title and no
+              resolvable channel now reads `Conversation · No details recorded.`
+              on the merged row, which names the kind rather than guessing at a
+              channel.
+        - [x] Gates: `fmt:check` 580 files, `lint` 473 files, `check:web` 0
+              errors, 503 web unit tests, `test:coverage:web` at
+              92.62/83.20/87.53/94.65, and the complete Chromium suite 44/44
+              with an empty `.artifacts/playwright`.
   - [x] **UXD-002C3 — Remember the member's zone choice.** (§7.4) The last zone
         choice now persists in `member_preferences.ui_state`, the mechanism
         `monica-person-profile-analysis.md` reserves. No read or write surface
