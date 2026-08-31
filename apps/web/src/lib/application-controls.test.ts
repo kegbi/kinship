@@ -19,6 +19,12 @@ afterEach(() => {
 });
 
 describe("application control presentation", () => {
+  it("loads Inter Variable before the application root stack uses it", () => {
+    expect(applicationCss).toMatch(
+      /@font-face\s*\{[^}]*font-family:\s*"Inter Variable";[^}]*\}[\s\S]*:root\s*\{[^}]*font-family:\s*"Inter Variable",\s*Inter,\s*ui-sans-serif,\s*system-ui,\s*sans-serif;/,
+    );
+  });
+
   it("presents primary, secondary, and danger anchors and buttons consistently", () => {
     mountStyles();
     const openAllClasses = todayPage.match(

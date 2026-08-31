@@ -1,6 +1,7 @@
 .coverage/
 .worktrees/
 node_modules/
+.pnpm-store/
 apps/web/.astro/
 apps/web/dist/
 .artifacts/
