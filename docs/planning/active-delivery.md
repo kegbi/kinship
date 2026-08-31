@@ -11,9 +11,10 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-011 — Decide the Inter question**, which blocks `UXD-016`
-  and `UXD-017`. All of `UXD-002` and `UXD-012` are integrated, alongside the
-  review's top five, `UXD-003`, `DOC-001`, `REL-021`, and `REL-023`.
+- Current leaf: **UXD-009 — Breadcrumbs on routes at least two levels deep**.
+  All of `UXD-002`, `UXD-011`, and `UXD-012` are integrated, alongside the
+  review's top five, `UXD-003`, `DOC-001`, `REL-021`, and `REL-023`, so
+  `UXD-016` and `UXD-017` are unblocked.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -1721,8 +1722,53 @@ asserts, so it runs that spec on its candidate.
       `UXD-001`)
 - [ ] **UXD-009 — Breadcrumbs on routes at least two levels deep.** (§8; effort
       S; no dependency)
-- [ ] **UXD-011 — Decide the Inter question: self-host or drop the name.**
-      (§10.3; effort S; depends on `UXD-001`)
+- [x] **UXD-011 — Decide the Inter question: self-host or drop the name.**
+      (§10.3; effort S; depends on `UXD-001`) **Decided: self-host.** Dropping
+      the name would have made the declaration honest without fixing the defect
+      the review names — typography was platform-random, not merely
+      mis-declared. The rejected option was not hardened.
+  - [x] `@fontsource-variable/inter@5.3.0`, exact-pinned as a `devDependency`
+        with the lockfile committed, is the delivery mechanism. It is SIL Open
+        Font License 1.1, it is bundled at build time by the install the
+        production web image already runs, and nothing is fetched from an
+        external host at runtime — the gateway stays the only public entry
+        point.
+  - [x] One `@font-face` in a new `fonts.css`, imported first by
+        `application.css`, `auth.css`, and `public.css`. `application.css`
+        therefore carries seven imports rather than `UXD-012`'s six: `fonts.css`
+        is a shared asset declaration, not a seventh slice of that split.
+  - [x] Only the latin subset ships. The `src` is a bare package specifier to
+        the one `inter-latin-wght-normal.woff2`, with the `unicode-range` copied
+        verbatim from the package rather than retyped, and `astro build` emits
+        exactly **one** `woff2`. Importing the package's own `wght.css` would
+        have declared fourteen subsets and put every one of them in the
+        production image for an interface that fetches one.
+  - [x] **A correction to the controller's ticket.** It counted four Inter
+        stacks across three files and then forbade the file holding one of them;
+        the implementer stopped rather than either missing the outcome or
+        writing outside its allowed paths. There are eight, across four:
+        `tokens.css`, `auth.css` twice, `public.css` four times, and
+        `shell.css`. All eight now lead with `"Inter Variable"` and keep bare
+        `Inter` behind it, so a reader who has the font installed locally still
+        gets it.
+  - [x] Deliberately not shipped, each recorded rather than overlooked: no
+        italic face, so oblique stays browser-synthesised; no preload or loading
+        script, because `font-display: swap` is the accepted strategy for a
+        same-origin file; and no change to Georgia, which §10.3 keeps.
+  - [x] **A consequence for `UXD-017` to absorb:** 33 `font-weight: 750`
+        declarations now render as a genuine 750 instead of rounding to 700,
+        because a variable face supports it. §10.3 wants those at 600 for
+        controls and 700 for headings; changing them here would have mixed two
+        decisions in one unreviewable diff.
+  - [x] `.pnpm-store/` joined `.gitignore`. The dependency install populated the
+        repository-local pnpm store this checkout is already linked to with 592
+        MB of package artifacts, and an untracked directory that large is a
+        `git add -A` away from being committed.
+  - [x] Gates: `fmt:check` 589 files, `lint` 475 files, `check:web` 0 errors,
+        the Astro production build with exactly one emitted `woff2`,
+        `pnpm install --frozen-lockfile` clean, 516 web unit tests,
+        `test:coverage:web` at 92.68/83.25/87.77/94.69, the hex invariant, and
+        the complete Chromium suite 44/44 with an empty `.artifacts/playwright`.
 - [x] **UXD-012 — Split the application stylesheet into six files.** (§10.7;
       effort S; depends on `UXD-001`) `application.css` is now six `@import`
       lines over `tokens.css`, `base.css`, `shell.css`, `settings.css`,
