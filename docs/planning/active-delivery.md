@@ -11,9 +11,9 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-002B2b2 — The two rail text clamps**. The review's top
-  five, `UXD-001` through `UXD-005`, all of `UXD-003` and `UXD-002C2`,
-  `DOC-001`, `REL-021`, `REL-023`, and `UXD-002B2b1` are integrated.
+- Current leaf: **UXD-012 — Split `application.css` into six files**. All of
+  `UXD-002` is now integrated, alongside the review's top five, `UXD-003`,
+  `DOC-001`, `REL-021`, and `REL-023`.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -869,7 +869,7 @@ asserts, so it runs that spec on its candidate.
           new rail module at 100%, and the complete Chromium suite 44/44. The
           first full-suite run caught the `app-004b` locator ambiguity that no
           static or unit gate could see.
-  - [ ] **UXD-002B2 — Rail summary formats.** (§7.2 table, §7.6) The per-row
+  - [x] **UXD-002B2 — Rail summary formats.** (§7.2 table, §7.6) The per-row
         "Summary shown" and "Expand rule" columns. Split out of `UXD-002B`
         because it becomes a second renderer for lists `profile-facts.ts` and
         `relationships.ts` already own, and the copy button needs the `UXD-005`
@@ -926,7 +926,7 @@ asserts, so it runs that spec on its candidate.
             tests, `test:coverage:web` at 92.21/82.84/87.42/94.28, zero hex
             literals outside `:root`, and the complete Chromium suite 44/44 with
             no spec changed.
-    - [ ] **UXD-002B2b — The remaining seven rows.** (§7.2 rows 3-9) Split in
+    - [x] **UXD-002B2b — The remaining seven rows.** (§7.2 rows 3-9) Split in
           two: the four rows that collapse a list share one mechanism, and the
           two-line text clamps are a different one.
       - [x] **UXD-002B2b1 — Important dates, addresses, work, and pets.** (§7.2
@@ -979,11 +979,41 @@ asserts, so it runs that spec on its candidate.
               92.66/83.22/87.71/94.68, zero hex literals outside `:root`, and
               the complete Chromium suite 44/44 with an empty
               `.artifacts/playwright`.
-      - [ ] **UXD-002B2b2 — The two text clamps.** (§7.2 rows 7-8) Food
-            preferences and first meeting take a two-line clamp with a `More`
-            control. Split out because a clamp is measured overflow, not a
-            collapsed list, and it needs a different test shape. `stay-in-touch`
-            needs nothing here — its cadence editor is `UXD-007B`.
+      - [x] **UXD-002B2b2 — The two text clamps.** (§7.2 rows 7-8) Food
+            preferences and first meeting clamp to two lines and reveal in place
+            through a `More` control that becomes `Less`. `stay-in-touch` needed
+            nothing here — its cadence editor is `UXD-007B`.
+        - [x] The shared list expander was deliberately not reused. It collapses
+              whole `<li>` elements; this is one record whose text is clamped
+              and revealed in place, so forcing one mechanism to do both jobs
+              would have made both worse. The two do share the
+              `profile-rail-summary-control` treatment and the
+              visible-text-plus-`sr-only`-suffix accessible name, so
+              `More food
+              preferences` and `More first meeting`
+              stay distinguishable without an `aria-label` that would replace
+              the visible text and fail WCAG 2.5.3.
+        - [x] The control appears only on measured overflow —
+              `scrollHeight > clientHeight`, taken once per render inside one
+              `requestAnimationFrame`. No `ResizeObserver`, no `resize`
+              listener, no third async owner: a control left stale by a viewport
+              change is a smaller problem than another owner on this surface,
+              and `AGENTS.md` is explicit about which of those two to choose.
+        - [x] **Recorded limitation:** happy-dom performs no layout, so the unit
+              tests define `scrollHeight` and `clientHeight` to drive both
+              branches and the measurement itself is exercised only in a real
+              browser. The clamp is also expressed entirely in CSS, which the
+              expanded state turns off through `data-expanded` on the element
+              rather than a second rule hoping to win on order.
+        - [x] No browser spec changed. The clamp is presentation, so
+              `app-004c`'s `Tea; no shellfish` and
+              `London salon — Introduced while discussing mathematics`
+              assertions still hold against the same unchanged strings.
+        - [x] Gates: `fmt:check` 581 files, `lint` 474 files, `check:web` 0
+              errors, 515 web unit tests, `test:coverage:web` at
+              92.68/83.26/87.75/94.69, zero hex literals outside `:root`, and
+              the complete Chromium suite 44/44 with an empty
+              `.artifacts/playwright`.
     - [ ] Deliberately not attempted in either slice: removing the inline
           relationship editor from the rail. Review §7.2 wants the rail compact
           and a type `<select>` plus two buttons per row is not that, but four
