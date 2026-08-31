@@ -20,6 +20,8 @@ interface TimelineRequest {
   readonly cursor?: string;
 }
 
+let timelineAbort: AbortController | undefined;
+
 const kindLabels: Record<PersonTimelineKind, string> = {
   activity: "Activity",
   call: "Call",
@@ -167,8 +169,11 @@ export async function mountPersonTimeline(options: {
   readonly personId: string;
   readonly workspaceId: string;
 }): Promise<void> {
+  timelineAbort?.abort();
   const view = elements();
   if (!view) return;
+  const abort = new AbortController();
+  timelineAbort = abort;
   let selected: TimelineFilter = "all";
   let nextCursor: string | undefined;
   let lastRequest: TimelineRequest = { append: false };
@@ -251,5 +256,15 @@ export async function mountPersonTimeline(options: {
     if (nextCursor) void load({ append: true, cursor: nextCursor });
   });
   view.retry.addEventListener("click", () => void load(lastRequest));
+  document.addEventListener("person-timeline-changed", (event) => {
+    const detail = (event as CustomEvent<{
+      readonly personIds?: unknown;
+    }>).detail;
+    if (
+      !Array.isArray(detail?.personIds) ||
+      !detail.personIds.includes(options.personId)
+    ) return;
+    void load({ append: false });
+  }, { signal: abort.signal });
   await load({ append: false });
 }

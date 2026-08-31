@@ -1666,6 +1666,10 @@ describe("INTERACTION-001 browser behavior", () => {
 
   it("quick capture records a multi-person activity with actual time and options", async () => {
     captureMarkup();
+    const timelineChanged = vi.fn();
+    document.addEventListener("person-timeline-changed", timelineChanged, {
+      once: true,
+    });
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response(session()))
       .mockResolvedValueOnce(response({
@@ -1702,7 +1706,17 @@ describe("INTERACTION-001 browser behavior", () => {
         status: "ready",
       }))
       .mockResolvedValueOnce(response({
-        record: { id: "record", kind: "activity" },
+        record: {
+          emotions: [],
+          happenedAt: "2026-08-16T18:15:00.000Z",
+          id: "record",
+          kind: "activity",
+          participants: [
+            { id: personId, name: "Ada" },
+            { id: otherId, name: "Grace" },
+          ],
+          summary: "Dinner together",
+        },
         status: "created",
       }, 201));
     vi.stubGlobal("fetch", fetchMock);
@@ -1732,6 +1746,9 @@ describe("INTERACTION-001 browser behavior", () => {
       expect(document.querySelector("#interaction-capture-status")?.textContent)
         .toContain("saved")
     );
+    expect(
+      (timelineChanged.mock.calls[0]?.[0] as CustomEvent).detail,
+    ).toEqual({ personIds: [personId, otherId] });
   });
 
   it("records one favorite note and validates participants without sending", async () => {

@@ -240,6 +240,9 @@ test(
     await expect(adaNotes).toContainText(
       "Remember the analytical engine sketch.",
     );
+    await expect(page.locator("#person-timeline")).toContainText(
+      "Remember the analytical engine sketch.",
+    );
 
     await page.goto("/app");
     await expect(page.locator("#today-favorite-notes")).toContainText(

@@ -142,6 +142,10 @@ describe("INTERACTION-002 person communications", () => {
 
   it("records a call with source direction/emotion and refreshes its embedded projection", async () => {
     document.body.innerHTML = markup("call") + markup("conversation");
+    const timelineChanged = vi.fn();
+    document.addEventListener("person-timeline-changed", timelineChanged, {
+      once: true,
+    });
     let saved = false;
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input), "http://localhost");
@@ -244,6 +248,9 @@ describe("INTERACTION-002 person communications", () => {
         '[data-communication-kind="call"] [data-communication-list]',
       )?.textContent,
     ).toContain("Joy");
+    expect(
+      (timelineChanged.mock.calls[0]?.[0] as CustomEvent).detail,
+    ).toEqual({ personIds: [personId] });
   });
 
   it("submits multiple directed messages and permits an unknown-direction empty thread", async () => {

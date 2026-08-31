@@ -465,6 +465,11 @@ export async function mountCommunications(
           formState.focus();
           return;
         }
+        document.dispatchEvent(
+          new CustomEvent("person-timeline-changed", {
+            detail: { personIds: [personId] },
+          }),
+        );
         requestId = undefined;
         const current = await refreshAuthoritative();
         refresh.hidden = current;

@@ -709,6 +709,16 @@ export async function mountInteractionCapture(): Promise<void> {
           detail: result.value.record,
         }),
       );
+      const timelinePersonIds = result.value.record.kind === "activity"
+        ? result.value.record.participants.map((participant) => participant.id)
+        : result.value.record.kind === "note" && result.value.record.person
+        ? [result.value.record.person.id]
+        : [];
+      document.dispatchEvent(
+        new CustomEvent("person-timeline-changed", {
+          detail: { personIds: timelinePersonIds },
+        }),
+      );
       if (intent.reconnectPersonId) {
         focusSubmit = false;
         setDialogOpen(dialog, false);
