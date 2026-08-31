@@ -47,6 +47,14 @@ const { current, description, pageId, title } = Astro.props;
     <meta name="robots" content="noindex" />
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f0e7" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121915" />
+    <script is:inline>
+      try {
+        const theme = localStorage.getItem("kinship.theme");
+        if (theme === "light" || theme === "dark") {
+          document.documentElement.dataset.theme = theme;
+        }
+      } catch {}
+    </script>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>{title}</title>
   </head>
@@ -180,7 +188,9 @@ const { current, description, pageId, title } = Astro.props;
   import { mountApplicationShell } from "../lib/app-shell.ts";
   import { mountGlobalPeopleSearch } from "../lib/global-people-search.ts";
   import { mountInteractionCapture } from "../lib/interactions.ts";
+  import { mountThemeSync } from "../lib/theme.ts";
   void mountApplicationShell();
   void mountGlobalPeopleSearch();
   void mountInteractionCapture();
+  void mountThemeSync();
 </script>

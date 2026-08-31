@@ -223,6 +223,7 @@ Deno.test("UXD-002C3 OpenAPI publishes member UI state and optional session comp
     readonly schemas: Readonly<
       Record<string, {
         readonly additionalProperties?: boolean;
+        readonly minProperties?: number;
         readonly properties?: Readonly<Record<string, unknown>>;
         readonly required?: readonly string[];
       }>
@@ -235,13 +236,18 @@ Deno.test("UXD-002C3 OpenAPI publishes member UI state and optional session comp
     state?.additionalProperties === false &&
       JSON.stringify(state.properties?.personWorkspaceView).includes(
         '"all","timeline","planning","things","admin"',
+      ) &&
+      JSON.stringify(state.properties?.theme).includes(
+        '"system","light","dark"',
       ),
-    "member UI state is a strict one-key presentation contract",
+    "member UI state is a strict recognised presentation contract",
   );
   assert(
     input?.additionalProperties === false &&
-      input.required?.includes("personWorkspaceView") === true,
-    "member UI-state writes require the one recognised key",
+      input.minProperties === 1 &&
+      input.required === undefined &&
+      JSON.stringify(input.properties) === JSON.stringify(state.properties),
+    "member UI-state writes require at least one recognised key",
   );
   assert(
     JSON.stringify(session?.properties?.uiState).includes("MemberUiState") &&

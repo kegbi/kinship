@@ -2,6 +2,7 @@ import { type Context, Hono } from "hono";
 import { z } from "zod";
 import type {
   createProtectedSessionCoordinator,
+  MemberUiState,
   MemberUiStateManagement,
   PersonalizationManagement,
   PersonalizationSection,
@@ -30,8 +31,12 @@ const memberUiStateSchema = z.object({
     "planning",
     "things",
     "admin",
-  ]),
-}).strict();
+  ]).optional(),
+  theme: z.enum(["system", "light", "dark"]).optional(),
+}).strict().refine(
+  (value) =>
+    value.personWorkspaceView !== undefined || value.theme !== undefined,
+);
 
 const timezone = z.string().trim().min(1).max(100).refine((value) => {
   try {
@@ -290,7 +295,7 @@ export function createSettingsRoutes(services: SettingsHttpServices): Hono {
         400,
         "member_ui_state_validation_failed",
         "Invalid UI state",
-        "Choose one recognised person-workspace view.",
+        "Choose at least one recognised UI setting.",
       );
     }
     const resolved = await actor(context, services);
@@ -303,10 +308,14 @@ export function createSettingsRoutes(services: SettingsHttpServices): Hono {
         "Sign in with an active workspace membership.",
       );
     }
-    const result = await services.memberUiState.save(
-      resolved.actor,
-      parsed.data,
-    ).catch(() => undefined);
+    const input: MemberUiState = {
+      ...(parsed.data.personWorkspaceView === undefined
+        ? {}
+        : { personWorkspaceView: parsed.data.personWorkspaceView }),
+      ...(parsed.data.theme === undefined ? {} : { theme: parsed.data.theme }),
+    };
+    const result = await services.memberUiState.save(resolved.actor, input)
+      .catch(() => undefined);
     if (result?.status === "ready") return privateJson(context, result);
     return result?.status === "forbidden"
       ? problem(

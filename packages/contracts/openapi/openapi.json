@@ -19357,15 +19357,20 @@
               "things",
               "admin"
             ]
+          },
+          "theme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
           }
         },
         "additionalProperties": false
       },
       "MemberUiStateInput": {
         "type": "object",
-        "required": [
-          "personWorkspaceView"
-        ],
         "properties": {
           "personWorkspaceView": {
             "type": "string",
@@ -19376,9 +19381,18 @@
               "things",
               "admin"
             ]
+          },
+          "theme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
           }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "minProperties": 1
       },
       "MemberUiStateReady": {
         "type": "object",

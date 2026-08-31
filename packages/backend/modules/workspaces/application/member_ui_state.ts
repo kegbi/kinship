@@ -7,6 +7,7 @@ export type PersonWorkspaceView =
 
 export interface MemberUiState {
   readonly personWorkspaceView?: PersonWorkspaceView;
+  readonly theme?: "system" | "light" | "dark";
 }
 
 export interface MemberUiStateActor {
@@ -65,21 +66,35 @@ function isPersonWorkspaceView(value: unknown): value is PersonWorkspaceView {
     value === "things" || value === "admin";
 }
 
+function isTheme(value: unknown): value is "system" | "light" | "dark" {
+  return value === "system" || value === "light" || value === "dark";
+}
+
 function projection(value: unknown): MemberUiState {
   const stored = decoded(value);
-  if (!isRecord(stored) || !isPersonWorkspaceView(stored.personWorkspaceView)) {
-    return {};
-  }
-  return { personWorkspaceView: stored.personWorkspaceView };
+  if (!isRecord(stored)) return {};
+  return {
+    ...(isPersonWorkspaceView(stored.personWorkspaceView)
+      ? { personWorkspaceView: stored.personWorkspaceView }
+      : {}),
+    ...(isTheme(stored.theme) ? { theme: stored.theme } : {}),
+  };
 }
 
 function validInput(value: unknown): value is MemberUiState {
   if (!isRecord(value)) return false;
-  if (Object.keys(value).some((key) => key !== "personWorkspaceView")) {
+  const keys = Object.keys(value);
+  if (
+    keys.length === 0 ||
+    keys.some((key) => key !== "personWorkspaceView" && key !== "theme")
+  ) {
     return false;
   }
-  return value.personWorkspaceView === undefined ||
-    isPersonWorkspaceView(value.personWorkspaceView);
+  const hasPersonWorkspaceView = Object.hasOwn(value, "personWorkspaceView");
+  const hasTheme = Object.hasOwn(value, "theme");
+  return (!hasPersonWorkspaceView ||
+    isPersonWorkspaceView(value.personWorkspaceView)) &&
+    (!hasTheme || isTheme(value.theme));
 }
 
 export function createMemberUiStateManagement(dependencies: {
@@ -113,9 +128,13 @@ export function createMemberUiStateManagement(dependencies: {
         if (locked.status !== "ready") return locked;
         const decodedState = decoded(locked.uiState);
         const stored = isRecord(decodedState) ? decodedState : {};
-        const uiState = input.personWorkspaceView === undefined
-          ? stored
-          : { ...stored, personWorkspaceView: input.personWorkspaceView };
+        const uiState = {
+          ...stored,
+          ...(input.personWorkspaceView === undefined
+            ? {}
+            : { personWorkspaceView: input.personWorkspaceView }),
+          ...(input.theme === undefined ? {} : { theme: input.theme }),
+        };
         return await dependencies.repository.save({
             ...actor,
             transaction,

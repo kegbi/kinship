@@ -157,6 +157,20 @@ Deno.test("UXD-002C3 HTTP reads and saves private member UI state", async () => 
     (await saved.json()).uiState.personWorkspaceView === "admin",
     "write response returns saved state",
   );
+
+  const themed = await app.request(
+    "http://localhost/api/v1/member/ui-state",
+    {
+      body: JSON.stringify({ theme: "dark" }),
+      headers,
+      method: "PATCH",
+    },
+  );
+  assert(themed.status === 200, "theme UI state saves");
+  assert(
+    (await themed.json()).uiState.theme === "dark",
+    "theme write response returns saved state",
+  );
 });
 
 Deno.test("UXD-002C3 HTTP validates and attributes every member UI-state problem", async () => {
@@ -172,6 +186,18 @@ Deno.test("UXD-002C3 HTTP validates and attributes every member UI-state problem
     },
   );
   assert(invalid.status === 400, "unknown body key is rejected");
+
+  for (const body of [{}, { theme: "sepia" }] as const) {
+    const rejected = await createSettingsRoutes(services()).request(
+      "http://localhost/api/v1/member/ui-state",
+      {
+        body: JSON.stringify(body),
+        headers,
+        method: "PATCH",
+      },
+    );
+    assert(rejected.status === 400, "empty or invalid theme is rejected");
+  }
 
   const unauthenticatedServices = services();
   const unauthenticated = await createSettingsRoutes({
