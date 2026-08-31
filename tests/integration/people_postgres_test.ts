@@ -2079,6 +2079,7 @@ Deno.test({
     );
     const personId = "00000000-0000-4000-8000-000000000100";
     const foreignPersonId = "00000000-0000-4000-8000-000000000101";
+    const participantId = "00000000-0000-4000-8000-000000000102";
     const activityId = "00000000-0000-4000-8000-000000000900";
     const noteId = "00000000-0000-4000-8000-000000000800";
     const callId = "00000000-0000-4000-8000-000000000700";
@@ -2087,6 +2088,15 @@ Deno.test({
     const unknownLifeEventId = "00000000-0000-4000-8000-000000000400";
     const partialLifeEventId = "00000000-0000-4000-8000-000000000300";
     const lifeEventTypeId = crypto.randomUUID();
+    const activityTypeId = crypto.randomUUID();
+    const activityEmotionId = crypto.randomUUID();
+    const callEmotionId = crypto.randomUUID();
+    const channelTypeId = crypto.randomUUID();
+    const contactMethodId = crypto.randomUUID();
+    const firstMessageId = crypto.randomUUID();
+    const secondMessageId = crypto.randomUUID();
+    const activityEmotionName = `Timeline delight ${activityEmotionId}`;
+    const callEmotionName = `Timeline gratitude ${callEmotionId}`;
 
     await sql.begin(async (transaction) => {
       await transaction`
@@ -2094,6 +2104,7 @@ Deno.test({
           id, workspace_id, created_by_member_id, given_name
         ) values
           (${personId}, ${owner.workspaceId}, ${owner.memberId}, 'Ada'),
+          (${participantId}, ${owner.workspaceId}, ${owner.memberId}, 'Grace'),
           (${foreignPersonId}, ${foreign.workspaceId}, ${foreign.memberId},
             'Private')
       `;
@@ -2110,18 +2121,40 @@ Deno.test({
           updated_at = now()
       `;
       await transaction`
+        insert into crm.activity_types (id, workspace_id, name, sort_order)
+        values (${activityTypeId}, ${owner.workspaceId}, 'Shared meal', 1)
+      `;
+      await transaction`
+        insert into crm.emotion_options (id, name, sort_order) values
+          (${activityEmotionId}, ${activityEmotionName}, 1),
+          (${callEmotionId}, ${callEmotionName}, 2)
+      `;
+      await transaction`
+        insert into crm.contact_method_types (id, workspace_id, name)
+        values (${channelTypeId}, ${owner.workspaceId}, 'Email')
+      `;
+      await transaction`
+        insert into crm.person_contact_methods (id, person_id, type_id, value)
+        values (${contactMethodId}, ${personId}, ${channelTypeId},
+          'ada@example.test')
+      `;
+      await transaction`
         insert into crm.activities (
-          id, workspace_id, summary, description, happened_at,
+          id, workspace_id, summary, description, happened_at, activity_type_id,
           created_by_member_id
         ) values (
           ${activityId}, ${owner.workspaceId}, 'Analytical engine review',
           'Compared the latest plans.', '2026-08-25T12:00:00.000Z',
-          ${owner.memberId}
+          ${activityTypeId}, ${owner.memberId}
         )
       `;
       await transaction`
         insert into crm.activity_participants (activity_id, person_id)
-        values (${activityId}, ${personId})
+        values (${activityId}, ${personId}), (${activityId}, ${participantId})
+      `;
+      await transaction`
+        insert into crm.activity_emotions (activity_id, emotion_id)
+        values (${activityId}, ${activityEmotionId})
       `;
       await transaction`
         insert into crm.notes (
@@ -2134,21 +2167,39 @@ Deno.test({
       `;
       await transaction`
         insert into crm.calls (
-          id, workspace_id, person_id, called_at, content,
+          id, workspace_id, person_id, called_at, contact_was_caller, content,
           created_by_member_id
         ) values (
           ${callId}, ${owner.workspaceId}, ${personId},
-          '2026-08-24T12:00:00.000Z', 'Discussed correspondence.',
+          '2026-08-24T12:00:00.000Z', true, 'Discussed correspondence.',
           ${owner.memberId}
         )
       `;
       await transaction`
+        insert into crm.call_emotions (call_id, emotion_id)
+        values (${callId}, ${callEmotionId})
+      `;
+      await transaction`
         insert into crm.conversation_threads (
-          id, workspace_id, person_id, happened_at, title
+          id, workspace_id, person_id, channel_type_id, contact_method_id,
+          happened_at, title
         ) values (
-          ${conversationId}, ${owner.workspaceId}, ${personId},
+          ${conversationId}, ${owner.workspaceId}, ${personId}, ${channelTypeId},
+          ${contactMethodId},
           '2026-08-23T12:00:00.000Z', 'Letters about mathematics'
         )
+      `;
+      await transaction`
+        insert into crm.messages (
+          id, conversation_id, content, written_at, direction, author_member_id,
+          created_at, updated_at
+        ) values
+          (${secondMessageId}, ${conversationId}, 'Yes, at noon.',
+            '2026-08-23T11:01:00.000Z', 'inbound', null,
+            '2026-08-23T12:00:00.000Z', '2026-08-23T12:00:00.000Z'),
+          (${firstMessageId}, ${conversationId}, 'Shall we meet?',
+            '2026-08-23T11:00:00.000Z', 'outbound', ${owner.memberId},
+            '2026-08-23T12:00:00.000Z', '2026-08-23T12:00:00.000Z')
       `;
       await transaction`
         insert into crm.life_event_types (id, workspace_id, name)
@@ -2177,9 +2228,26 @@ Deno.test({
     const mergedBody = await merged.json() as {
       readonly items: readonly {
         readonly datePrecision: string;
+        readonly activityType?: string;
+        readonly channelType?: string;
+        readonly contactMethod?: string;
+        readonly contactWasCaller?: boolean;
+        readonly emotions?: readonly {
+          readonly id: string;
+          readonly name: string;
+        }[];
         readonly id: string;
         readonly kind: string;
+        readonly messages?: readonly {
+          readonly content: string;
+          readonly direction: "inbound" | "outbound";
+          readonly writtenAt: string;
+        }[];
         readonly occurredAt: string;
+        readonly participants?: readonly {
+          readonly id: string;
+          readonly name: string;
+        }[];
         readonly title?: string;
       }[];
       readonly status: string;
@@ -2190,6 +2258,12 @@ Deno.test({
           "activity,note,call,conversation,life-event,life-event,life-event",
       "all five enabled kinds merge in reverse chronological keyset order",
     );
+    const activity = mergedBody.items.find((item) => item.id === activityId);
+    const call = mergedBody.items.find((item) => item.id === callId);
+    const conversation = mergedBody.items.find((item) =>
+      item.id === conversationId
+    );
+    const note = mergedBody.items.find((item) => item.id === noteId);
     const happened = mergedBody.items.find((item) =>
       item.id === happenedLifeEventId
     );
@@ -2198,6 +2272,54 @@ Deno.test({
     );
     const partial = mergedBody.items.find((item) =>
       item.id === partialLifeEventId
+    );
+    assert(
+      activity?.activityType === "Shared meal" &&
+        JSON.stringify(activity.participants) === JSON.stringify([
+            { id: personId, name: "Ada" },
+            { id: participantId, name: "Grace" },
+          ]) &&
+        activity.emotions?.[0]?.id === activityEmotionId &&
+        activity.emotions[0].name === activityEmotionName,
+      "activity timeline detail preserves its category, participants, and emotions",
+    );
+    assert(
+      call?.contactWasCaller === true &&
+        call.emotions?.[0]?.id === callEmotionId &&
+        call.emotions[0].name === callEmotionName,
+      "call timeline detail preserves caller direction and emotions",
+    );
+    assert(
+      conversation?.channelType === "Email" &&
+        conversation.contactMethod === "ada@example.test" &&
+        JSON.stringify(conversation.messages) === JSON.stringify([
+            {
+              content: "Shall we meet?",
+              direction: "outbound",
+              writtenAt: "2026-08-23T11:00:00.000000Z",
+            },
+            {
+              content: "Yes, at noon.",
+              direction: "inbound",
+              writtenAt: "2026-08-23T11:01:00.000000Z",
+            },
+          ]),
+      "conversation timeline detail preserves channel, contact method, and ordered messages",
+    );
+    const detailFields = [
+      "activityType",
+      "channelType",
+      "contactMethod",
+      "contactWasCaller",
+      "emotions",
+      "messages",
+      "participants",
+    ];
+    assert(
+      note !== undefined && happened !== undefined &&
+        detailFields.every((field) => !Object.hasOwn(note, field)) &&
+        detailFields.every((field) => !Object.hasOwn(happened, field)),
+      "notes and life events omit every per-kind detail field",
     );
     assert(
       happened?.occurredAt.startsWith("2026-08-22T12:00:00") === true &&

@@ -1101,12 +1101,25 @@ export interface PersonLifeEvent {
 }
 
 export type PersonTimelineKind = "activity" | "call" | "conversation" | "life-event" | "note";
+export interface PersonTimelineMessage {
+  readonly content: string;
+  readonly direction: "inbound" | "outbound";
+  readonly writtenAt: string;
+}
+
 export interface PersonTimelineItem {
+  readonly activityType?: string;
+  readonly channelType?: string;
+  readonly contactMethod?: string;
+  readonly contactWasCaller?: boolean;
   readonly datePrecision: PersonLifeEventPrecision;
+  readonly emotions?: readonly InteractionOption[];
   readonly excerpt?: string;
   readonly id: string;
   readonly kind: PersonTimelineKind;
+  readonly messages?: readonly PersonTimelineMessage[];
   readonly occurredAt: string;
+  readonly participants?: readonly InteractionParticipant[];
   readonly title?: string;
 }
 

@@ -16936,6 +16936,31 @@
         },
         "additionalProperties": false
       },
+      "PersonTimelineMessage": {
+        "type": "object",
+        "required": [
+          "content",
+          "direction",
+          "writtenAt"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "inbound",
+              "outbound"
+            ]
+          },
+          "writtenAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
       "PersonTimelineItem": {
         "type": "object",
         "required": [
@@ -16957,6 +16982,25 @@
               "year_month"
             ]
           },
+          "activityType": {
+            "type": "string"
+          },
+          "channelType": {
+            "type": "string"
+          },
+          "contactMethod": {
+            "type": "string"
+          },
+          "contactWasCaller": {
+            "type": "boolean"
+          },
+          "emotions": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/InteractionOption"
+            }
+          },
           "excerpt": {
             "type": "string"
           },
@@ -16974,9 +17018,22 @@
               "note"
             ]
           },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonTimelineMessage"
+            }
+          },
           "occurredAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "participants": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/InteractionParticipant"
+            }
           },
           "title": {
             "type": "string"

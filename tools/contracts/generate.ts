@@ -6202,6 +6202,16 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        PersonTimelineMessage: {
+          type: "object",
+          required: ["content", "direction", "writtenAt"],
+          properties: {
+            content: { type: "string" },
+            direction: { type: "string", enum: ["inbound", "outbound"] },
+            writtenAt: { type: "string", format: "date-time" },
+          },
+          additionalProperties: false,
+        },
         PersonTimelineItem: {
           type: "object",
           required: ["datePrecision", "id", "kind", "occurredAt"],
@@ -6218,6 +6228,15 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
                 "year_month",
               ],
             },
+            activityType: { type: "string" },
+            channelType: { type: "string" },
+            contactMethod: { type: "string" },
+            contactWasCaller: { type: "boolean" },
+            emotions: {
+              type: "array",
+              maxItems: 20,
+              items: { $ref: "#/components/schemas/InteractionOption" },
+            },
             excerpt: { type: "string" },
             id: { type: "string", format: "uuid" },
             kind: {
@@ -6230,7 +6249,16 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
                 "note",
               ],
             },
+            messages: {
+              type: "array",
+              items: { $ref: "#/components/schemas/PersonTimelineMessage" },
+            },
             occurredAt: { type: "string", format: "date-time" },
+            participants: {
+              type: "array",
+              maxItems: 50,
+              items: { $ref: "#/components/schemas/InteractionParticipant" },
+            },
             title: { type: "string" },
           },
           additionalProperties: false,
@@ -9059,12 +9087,25 @@ export interface PersonLifeEvent {
 }
 
 export type PersonTimelineKind = "activity" | "call" | "conversation" | "life-event" | "note";
+export interface PersonTimelineMessage {
+  readonly content: string;
+  readonly direction: "inbound" | "outbound";
+  readonly writtenAt: string;
+}
+
 export interface PersonTimelineItem {
+  readonly activityType?: string;
+  readonly channelType?: string;
+  readonly contactMethod?: string;
+  readonly contactWasCaller?: boolean;
   readonly datePrecision: PersonLifeEventPrecision;
+  readonly emotions?: readonly InteractionOption[];
   readonly excerpt?: string;
   readonly id: string;
   readonly kind: PersonTimelineKind;
+  readonly messages?: readonly PersonTimelineMessage[];
   readonly occurredAt: string;
+  readonly participants?: readonly InteractionParticipant[];
   readonly title?: string;
 }
 

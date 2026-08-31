@@ -13,7 +13,14 @@ import {
   type PersonProfileTag,
   type PersonRelationshipCount,
 } from "../../application/get_person_profile.ts";
-import type { PersonTimelineItem } from "../../application/list_person_timeline.ts";
+import type {
+  PersonTimelineItem,
+  PersonTimelineMessage,
+} from "../../application/list_person_timeline.ts";
+import type {
+  InteractionOption,
+  InteractionParticipant,
+} from "../../../../modules/interactions/public.ts";
 
 interface PersonProfileRow {
   readonly archived_at: Date | null;
@@ -55,21 +62,39 @@ interface PersonTimelineContextRow {
 }
 
 interface PersonTimelineRow {
+  readonly activity_type: string | null;
+  readonly channel_type: string | null;
+  readonly contact_method: string | null;
+  readonly contact_was_caller: boolean | null;
   readonly date_precision: PersonLifeEventPrecision;
+  readonly emotions: readonly InteractionOption[] | null;
   readonly excerpt: string | null;
   readonly id: string;
   readonly kind: PersonTimelineItem["kind"];
+  readonly messages: readonly PersonTimelineMessage[] | null;
   readonly occurred_at: string;
+  readonly participants: readonly InteractionParticipant[] | null;
   readonly title: string | null;
 }
 
 function timelineItem(row: PersonTimelineRow): PersonTimelineItem {
   return {
+    ...(row.activity_type !== null ? { activityType: row.activity_type } : {}),
+    ...(row.channel_type !== null ? { channelType: row.channel_type } : {}),
+    ...(row.contact_method !== null
+      ? { contactMethod: row.contact_method }
+      : {}),
+    ...(row.contact_was_caller !== null
+      ? { contactWasCaller: row.contact_was_caller }
+      : {}),
     datePrecision: row.date_precision,
+    ...(row.emotions !== null ? { emotions: row.emotions } : {}),
     ...(row.excerpt !== null ? { excerpt: row.excerpt } : {}),
     id: row.id,
     kind: row.kind,
+    ...(row.messages !== null ? { messages: row.messages } : {}),
     occurredAt: row.occurred_at,
+    ...(row.participants !== null ? { participants: row.participants } : {}),
     ...(row.title !== null ? { title: row.title } : {}),
   };
 }
@@ -684,10 +709,98 @@ export class PostgresPersonProfileRepository
         limit ${command.limit + 1}
       )
       select page.id::text, page.kind, page.title, page.excerpt,
-        page.date_precision,
+        page.date_precision, activity_detail.activity_type,
+        activity_participants.value as participants,
+        coalesce(activity_emotions.value, call_emotions.value) as emotions,
+        call_detail.contact_was_caller,
+        conversation_detail.channel_type, conversation_detail.contact_method,
+        conversation_messages.value as messages,
         to_char(page.occurred_at at time zone 'UTC',
           'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as occurred_at
       from page
+      left join lateral (
+        select coalesce(nullif(activity_type.name, ''),
+          activity_type.translation_key) as activity_type
+        from crm.activities activity
+        left join crm.activity_types activity_type
+          on activity_type.id = activity.activity_type_id
+          and activity_type.workspace_id = ${command.workspaceId}::uuid
+        where page.kind = 'activity' and activity.id = page.id
+          and activity.workspace_id = ${command.workspaceId}::uuid
+      ) activity_detail on true
+      left join lateral (
+        select jsonb_agg(jsonb_build_object('id', person.id::text,
+          'name', coalesce(
+            nullif(trim(concat_ws(' ', nullif(person.given_name, ''), person.family_name)), ''),
+            nullif(person.nickname, ''), 'Unnamed person'
+          )) order by lower(coalesce(
+            nullif(trim(concat_ws(' ', nullif(person.given_name, ''), person.family_name)), ''),
+            nullif(person.nickname, ''), 'Unnamed person'
+          )), person.id) as value
+        from crm.activity_participants link
+        join crm.activities activity on activity.id = link.activity_id
+          and activity.workspace_id = ${command.workspaceId}::uuid
+        join crm.people person on person.id = link.person_id
+          and person.workspace_id = ${command.workspaceId}::uuid
+          and person.deleted_at is null
+        where page.kind = 'activity' and activity.id = page.id
+      ) activity_participants on true
+      left join lateral (
+        select jsonb_agg(jsonb_build_object('id', emotion.id::text,
+          'name', emotion.name) order by emotion.sort_order,
+          lower(emotion.name), emotion.id) as value
+        from crm.activity_emotions link
+        join crm.activities activity on activity.id = link.activity_id
+          and activity.workspace_id = ${command.workspaceId}::uuid
+        join crm.emotion_options emotion on emotion.id = link.emotion_id
+        where page.kind = 'activity' and activity.id = page.id
+      ) activity_emotions on true
+      left join lateral (
+        select call.contact_was_caller
+        from crm.calls call
+        where page.kind = 'call' and call.id = page.id
+          and call.workspace_id = ${command.workspaceId}::uuid
+      ) call_detail on true
+      left join lateral (
+        select jsonb_agg(jsonb_build_object('id', emotion.id::text,
+          'name', emotion.name) order by emotion.sort_order,
+          lower(emotion.name), emotion.id) as value
+        from crm.call_emotions link
+        join crm.calls call on call.id = link.call_id
+          and call.workspace_id = ${command.workspaceId}::uuid
+        join crm.emotion_options emotion on emotion.id = link.emotion_id
+        where page.kind = 'call' and call.id = page.id
+      ) call_emotions on true
+      left join lateral (
+        select case when channel_type.id is not null
+            then coalesce(nullif(channel_type.name, ''), 'Communication')
+          end as channel_type,
+          contact_method.value as contact_method
+        from crm.conversation_threads thread
+        join crm.people thread_person on thread_person.id = thread.person_id
+          and thread_person.workspace_id = ${command.workspaceId}::uuid
+          and thread_person.deleted_at is null
+        left join crm.contact_method_types channel_type
+          on channel_type.id = thread.channel_type_id
+          and channel_type.workspace_id = ${command.workspaceId}::uuid
+        left join crm.person_contact_methods contact_method
+          on contact_method.id = thread.contact_method_id
+          and contact_method.person_id = thread_person.id
+        where page.kind = 'conversation' and thread.id = page.id
+          and thread.workspace_id = ${command.workspaceId}::uuid
+      ) conversation_detail on true
+      left join lateral (
+        select jsonb_agg(jsonb_build_object('content', message.content,
+          'direction', message.direction,
+          'writtenAt', to_char(message.written_at at time zone 'UTC',
+            'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))
+          order by message.written_at, message.id) as value
+        from crm.messages message
+        join crm.conversation_threads thread
+          on thread.id = message.conversation_id
+          and thread.workspace_id = ${command.workspaceId}::uuid
+        where page.kind = 'conversation' and thread.id = page.id
+      ) conversation_messages on true
       order by page.occurred_at desc, page.id desc
     `.execute(this.database);
     const visible = result.rows.slice(0, command.limit);
