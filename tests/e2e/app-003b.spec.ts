@@ -256,6 +256,37 @@ test(
       .toBeVisible();
     await expect(peopleNavigation).toBeFocused();
 
+    const paletteResults = page.locator("#global-people-search-results");
+    const commandInput = page.getByRole("combobox", {
+      name: "Find a person",
+    });
+    await commandInput.fill("> import");
+    const importCommand = paletteResults.getByRole("option", {
+      exact: true,
+      name: "Data · Import",
+    });
+    await expect(importCommand).toHaveCount(1);
+    await expect(importCommand).toBeVisible();
+    await commandInput.press("Enter");
+    await expect(page).toHaveURL(/\/app\/settings\/import$/);
+
+    const logCommandInput = page.getByRole("combobox", {
+      name: "Find a person",
+    });
+    await logCommandInput.fill("> log");
+    const logCommand = paletteResults.getByRole("option", {
+      exact: true,
+      name: "Log interaction",
+    });
+    await expect(logCommand).toHaveCount(1);
+    await expect(logCommand).toBeVisible();
+    await logCommandInput.press("Enter");
+    const quickCaptureDialog = page.locator("#interaction-capture-dialog");
+    await expect(quickCaptureDialog).toHaveCount(1);
+    await expect(quickCaptureDialog).toBeVisible();
+    await quickCaptureDialog.getByRole("button", { name: "Cancel" }).click();
+    await page.goto("/app/people");
+
     await page.getByRole("combobox", { name: "Find a person" }).fill(
       "Marie Dupont",
     );

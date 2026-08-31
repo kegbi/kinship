@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { groups } from "./settings-destinations.ts";
 
 const settingsNavigationPath = resolve(
   "apps/web/src/components/SettingsNavigation.astro",
@@ -25,11 +26,11 @@ describe("settings navigation component", () => {
   });
 
   it("UXD-008 exhaustively marks role-gated destinations for session gating", () => {
-    const destinations = Array.from(
-      settingsNavigation.matchAll(
-        /label: "([^"]+)",\s+href: "[^"]+",\s+access: "(member|admin|owner)"/g,
-      ),
-      ([, label, access]) => ({ access, label }),
+    expect(settingsNavigation).toContain(
+      'import { groups } from "../lib/settings-destinations.ts";',
+    );
+    const destinations = groups.flatMap((group) =>
+      group.destinations.map(({ access, label }) => ({ access, label }))
     );
 
     expect(destinations).toEqual([
