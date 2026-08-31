@@ -11,10 +11,10 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-015 — Parser-inert role gating on the application shell**.
-  All of `UXD-002`, `UXD-008`, `UXD-009`, `UXD-011`, and `UXD-012` are
-  integrated, alongside the review's top five, `UXD-003`, `DOC-001`, `REL-021`,
-  and `REL-023`.
+- Current leaf: **UXD-014 — Optimistic UI on the four safe mutations only**. All
+  of `UXD-002`, `UXD-008`, `UXD-009`, `UXD-011`, and `UXD-012` are integrated,
+  alongside the review's top five, `UXD-003`, `DOC-001`, `REL-021`, and
+  `REL-023`; `UXD-015` is parked with its evidence.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -1920,8 +1920,43 @@ asserts, so it runs that spec on its candidate.
 - [ ] **UXD-014 — Optimistic UI on the four safe mutations only.** (§9.4; effort
       M; depends on `UXD-003` and `UXD-005`) Anything carrying an expected
       update timestamp stays non-optimistic.
-- [ ] **UXD-015 — Parser-inert role gating on the application shell.** (§9.5;
-      effort M; no dependency)
+- [x] **UXD-015 — Parser-inert role gating on the application shell.** (§9.5;
+      effort M; no dependency) **Parked, with the trace recorded.** The review's
+      two stated consequences were checked against the shipped code before any
+      work was dispatched, and neither survives.
+  - [x] Consequence (a), "on slow devices a non-admin sees a flash of admin UI
+        before JS strips it", cannot occur here. `ApplicationLayout.astro` wraps
+        the header **and** the page `<slot />` in
+        `<div id="protected-shell" hidden>`; `base.css` declares
+        `[hidden] { display: none !important }`, so no author rule can reveal
+        it; and `mountApplicationShell` calls `applySessionGating` **before**
+        `renderSession`, which is the only place `root.hidden` becomes false.
+        Gated markup is therefore never painted, never focusable, and never in
+        the accessibility tree while it is still present.
+  - [x] Consequence (b), "the shape of admin surfaces ships to every
+        authenticated visitor", is real — and a `<template>` does not fix it.
+        Template content sits in the served HTML exactly as it does now. §9.5
+        itself names the actual remedy, moving those routes to on-demand
+        rendering, which `information-architecture.md` permits only by ADR and
+        which cuts against the accepted static-shell and gateway-rewrite pattern
+        this phase is required to preserve.
+  - [x] So the ticket as written would add a clone-and-remove mechanism, made
+        idempotent across the two `applySessionGating` call sites `UXD-003C`
+        created and able to withdraw a region on a role downgrade, in exchange
+        for no user-visible change. `AGENTS.md` asks for the smallest observable
+        contract and warns against adding another owner to a surface; building
+        this would be the opposite.
+  - [x] One real window exists and is **not** addressed by `<template>` either:
+        between the optimistic session and its revalidation, a member whose role
+        was downgraded sees admin UI, because the optimistic session claimed
+        admin and any mechanism would have honoured it. That is inherent to
+        optimistic rendering, not to the gating technique.
+  - [x] What remains is a maintainability observation, not the review's item:
+        role gating is declared two ways — a `data-requires-workspace-*`
+        attribute that removes an element wherever it appears, and a page-id
+        allow-list inside `applySessionGating` that blocks a whole route — so a
+        reader must check both to know whether a surface is gated. Recorded here
+        rather than queued, because no active outcome consumes it.
 - [ ] **UXD-016 — Dark mode.** (§10.5; effort M; depends on `UXD-001` and
       `UXD-011`)
 - [ ] **UXD-017 — Type-scale and spacing-rhythm pass.** (§10.3, §10.4; effort M;
