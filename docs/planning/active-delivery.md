@@ -11,9 +11,10 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-002C2B2c — Suppress the five timeline card lists**. The
+- Current leaf: **UXD-002C2B2d — Suppress the five timeline card lists**. The
   review's top five, `UXD-001` through `UXD-005`, all of `UXD-003`, `DOC-001`,
-  `REL-021`, `REL-023`, `UXD-002C2B2a`, and `UXD-002C2B2b` are integrated.
+  `REL-021`, `REL-023`, and `UXD-002C2B2a` through `UXD-002C2B2c` are
+  integrated.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -1185,12 +1186,60 @@ asserts, so it runs that spec on its candidate.
               against real PostgreSQL 526 passed / 0 failed at 85.1/82.1/87.3.
               No browser gate applies: the change is additive-optional on a
               response and touches no web code.
-      - [ ] **UXD-002C2B2c — Suppress the five lists.** Keep every card, its
-            heading, its state paragraph, its add control, and its form, so
+      - [x] **UXD-002C2B2c — Render the per-kind detail in the merged row.**
+            Expanding a row now shows what its card shows, in the card's own
+            words: `Participants:`, `Category:`, and `Emotions:` for an
+            activity; `Incoming call` or `Outgoing call` with its emotions for a
+            call; `Channel:`, `Via …`, and one `Inbound:`/`Outbound:` line per
+            message for a conversation. Notes and life events render no detail
+            list at all, which is the assertion that stops the renderer emitting
+            empty scaffolding.
+        - [x] The strings are `interactions.ts` and `communications.ts` verbatim
+              rather than a second vocabulary, because `UXD-002C2B2d` moves
+              browser assertions written against those exact strings onto this
+              surface. Nothing is re-sorted client-side either: the projection
+              already orders participants, emotions, and messages, and a second
+              opinion about an order the server owns is how two surfaces drift.
+        - [x] The collapsed `<summary>` is untouched. Detail belongs behind the
+              disclosure `UXD-002C2B1` built.
+        - [x] **A defect caught in review:** `Direction not recorded` was
+              unreachable. It was gated on `messages.length === 0`, but the
+              projection's `jsonb_agg` over zero rows yields SQL `NULL` and the
+              mapper omits a null field, so a thread with no messages arrives
+              with no `messages` key at all. The unit test asserted a payload
+              the server cannot send. A conversation now renders that line when
+              its messages are absent **or** empty, which is what makes the
+              `INTERACTION-002` assertion movable in the next leaf. The fix is
+              client-side: omitting a valueless field is the projection's
+              accepted rule, and the client knows the kind.
+        - [x] **A second defect caught in review:** the new list matched no
+              stylesheet rule, so it fell back to user-agent disc bullets and
+              ~40px padding beside content inset with `var(--space-4)`. It now
+              has one rule reaching it through
+              `.person-timeline-list > li > details > ul`, which is strictly
+              more specific than anything it competes with rather than winning
+              by position — `UXD-012` reorders this stylesheet.
+        - [x] **The controller's ticket was wrong about the data.** It specified
+              a browser assertion locating the activity row on the merged
+              surface, and the full suite failed it 1 of 44: `app-005a` seeds 21
+              notes immediately before that navigation, so the first page of
+              twenty is entirely notes and the activity is on page two. The
+              assertion now clicks the timeline's own `Activities` chip first,
+              which puts the row on the first page and makes the check prove the
+              chip filter as well. No production code was involved.
+        - [x] Gates: `fmt:check` 580 files, `lint` 473 files, `check:web` 0
+              errors, 503 web unit tests, `test:coverage:web` at
+              92.66/83.29/87.67/94.67, zero hex literals outside `:root`, and
+              the complete Chromium suite 44/44 with an empty
+              `.artifacts/playwright`.
+      - [ ] **UXD-002C2B2d — Suppress the five lists.** Keep every card, its
+            heading, its badge, its state line, its own request and error
+            isolation, its add control, and its form, so
             `[data-profile-section]` still counts 22 and every `?section=` id
-            still resolves. Move the `INTERACTION-001`, `INTERACTION-002`, and
+            still resolves. The state line gains the count and a pointer to the
+            timeline. Move the `INTERACTION-001`, `INTERACTION-002`, and
             `PEOPLE-003` row assertions to the merged surface, which makes them
-            stronger because they then also prove the refresh.
+            stronger because they then also prove the merged list refreshed.
   - [x] **UXD-002C3 — Remember the member's zone choice.** (§7.4) The last zone
         choice now persists in `member_preferences.ui_state`, the mechanism
         `monica-person-profile-analysis.md` reserves. No read or write surface
