@@ -45,7 +45,8 @@ const { current, description, pageId, title } = Astro.props;
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
     <meta name="robots" content="noindex" />
-    <meta name="theme-color" content="#f4f0e7" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f0e7" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121915" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>{title}</title>
   </head>
