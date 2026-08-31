@@ -1,7 +1,7 @@
 .person-profile-state {
   display: grid;
   gap: var(--space-4);
-  padding: clamp(1.2rem, 4vw, 2.3rem);
+  padding: var(--pad-card);
   border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
@@ -87,7 +87,7 @@
   justify-content: center;
   max-width: 100%;
   min-height: 44px;
-  padding: .7rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border-width: 1px;
   border-style: solid;
   border-radius: var(--radius-md);
@@ -141,8 +141,8 @@
 .person-profile-hero {
   display: grid;
   grid-template-columns: 6rem minmax(12rem, 1fr) minmax(16rem, 24rem);
-  gap: clamp(1rem, 3vw, 2rem);
-  padding: clamp(1.25rem, 4vw, 2.5rem);
+  gap: var(--space-5);
+  padding: clamp(var(--pad-card), 4vw, var(--space-6));
   border: 1px solid var(--line-hairline);
   border-radius: 1.25rem;
   align-items: start;
@@ -248,7 +248,7 @@
   right: 0;
   display: grid;
   width: 12rem;
-  padding: .55rem;
+  padding: var(--space-2);
   border: 1px solid var(--line-1);
   border-radius: .9rem;
   background: var(--surface-1);
@@ -258,7 +258,7 @@
 .person-workspace .person-menu-popover > :is(button, a:is(.button-primary, .button-secondary, .button-danger)) {
   width: 100%;
   min-height: 44px;
-  padding: .7rem;
+  padding: var(--space-3);
   border-color: transparent;
   border-radius: var(--radius-sm);
   justify-content: flex-start;
@@ -278,8 +278,8 @@
 .person-profile-badges,
 .profile-tag-list {
   display: flex;
-  gap: .45rem;
-  margin: 1rem 0 0;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
   padding: 0;
   flex-wrap: wrap;
 }
@@ -295,7 +295,7 @@
 
 .person-profile-description {
   max-width: 48rem;
-  margin: 1.1rem 0 0;
+  margin: var(--space-4) 0 0;
   color: var(--ink-2);
   font-size: 1.02rem;
   line-height: 1.65;
@@ -306,7 +306,7 @@
 }
 
 .profile-tag-list li {
-  padding: .35rem .65rem;
+  padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-pill);
   color: var(--ink-2);
   background: var(--positive-soft);
@@ -379,7 +379,7 @@
 .person-archived-banner {
   display: flex;
   gap: var(--space-4);
-  padding: 1rem 1.25rem;
+  padding: var(--space-4) var(--pad-card);
   border: 1px solid var(--warning);
   border-radius: var(--radius-lg);
   align-items: center;
@@ -396,13 +396,13 @@
 .person-lifecycle-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .person-lifecycle-buttons button,
 .person-lifecycle-buttons a:is(.button-primary, .button-secondary, .button-danger) {
   min-height: 44px;
-  padding: .7rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border-radius: 999px;
 }
 
@@ -427,13 +427,13 @@
   border-top: 1px solid var(--line-hairline);
   display: grid;
   gap: var(--space-4);
-  padding-top: 1rem;
+  padding-top: var(--space-4);
 }
 
 .person-delete-dialog {
   width: min(34rem, calc(100% - 2rem));
   max-width: none;
-  padding: 1.25rem;
+  padding: var(--pad-card);
   border: 1px solid color-mix(in srgb, var(--ink-1) 20%, transparent);
   border-radius: var(--radius-lg);
   color: var(--ink-1);
@@ -457,13 +457,13 @@
 .person-lifecycle-form .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: .9rem;
+  gap: var(--space-4);
 }
 
 .person-lifecycle-form label,
 .person-delete-dialog label {
   display: grid;
-  gap: .4rem;
+  gap: var(--space-2);
   font-weight: 700;
 }
 
@@ -471,7 +471,7 @@
 .person-delete-dialog input {
   width: 100%;
   min-height: 44px;
-  padding: .65rem .75rem;
+  padding: var(--space-3) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: .6rem;
   background: var(--surface-1);
@@ -532,7 +532,7 @@
 }
 
 .profile-section-heading .section-kicker {
-  margin-bottom: .35rem;
+  margin-bottom: var(--space-1);
 }
 
 .section-state {
@@ -541,7 +541,7 @@
 }
 
 .section-state.unavailable {
-  padding: .85rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border-left: 3px solid var(--accent);
   color: var(--ink-2);
   background: color-mix(in srgb, var(--surface-1) 70%, transparent);
@@ -550,7 +550,7 @@
 .person-workspace-layout {
   display: grid;
   grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
-  gap: 1.5rem;
+  gap: var(--space-5);
   align-items: start;
 }
 
@@ -565,7 +565,7 @@
 }
 
 .profile-section-directory {
-  padding: .7rem;
+  padding: var(--space-3);
   border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
@@ -579,7 +579,7 @@
 
 .profile-section-directory summary {
   min-height: 44px;
-  padding: .7rem;
+  padding: var(--space-3);
   border-radius: .65rem;
   cursor: pointer;
   font-weight: 700;
@@ -588,7 +588,7 @@
 .profile-section-directory nav ul {
   display: grid;
   gap: .1rem;
-  margin: .25rem 0 0;
+  margin: var(--space-1) 0 0;
   padding: 0;
   list-style: none;
 }
@@ -596,7 +596,7 @@
 .profile-section-directory nav a {
   display: flex;
   min-height: 40px;
-  padding: .55rem .7rem;
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   align-items: center;
   color: var(--ink-2);
@@ -612,8 +612,8 @@
 }
 
 .profile-section-notice {
-  margin: .75rem .7rem .25rem;
-  padding: .75rem;
+  margin: var(--space-3) var(--space-3) var(--space-1);
+  padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--warning) 25%, transparent);
   border-radius: .65rem;
   color: var(--warning);
@@ -685,7 +685,7 @@
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  padding-block: .5rem;
+  padding-block: var(--space-2);
   overflow-x: auto;
   align-items: center;
   background: var(--surface-page);
@@ -726,7 +726,7 @@
   display: flex;
   gap: var(--space-1);
   min-width: max-content;
-  padding: .25rem;
+  padding: var(--space-1);
   border: 1px solid var(--line-1);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
@@ -756,7 +756,7 @@
 
 .profile-section-card {
   scroll-margin-top: 6.5rem;
-  padding: clamp(1.1rem, 3vw, 1.6rem);
+  padding: var(--pad-card);
   border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
@@ -897,7 +897,7 @@
   display: grid;
   gap: var(--space-3);
   min-width: 0;
-  padding: .875rem;
+  padding: var(--pad-block);
 }
 
 .profile-rail-block h3 {
@@ -1073,7 +1073,7 @@
 @media (max-width: 1199px) {
   .person-workspace-layout {
     grid-template-columns: minmax(240px, 260px) minmax(0, 1fr);
-    gap: 1.25rem;
+    gap: 1.25rem; /* §7.5 */
   }
 }
 
@@ -1102,8 +1102,8 @@
 
 .life-event-list {
   display: grid;
-  gap: 0.75rem;
-  margin: 1rem 0 0;
+  gap: var(--space-3);
+  margin: var(--space-4) 0 0;
   padding: 0;
   list-style: none;
 }
@@ -1111,9 +1111,9 @@
 .life-event-list li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.35rem 1rem;
+  gap: var(--space-1) var(--space-4);
   align-items: baseline;
-  padding: 0.85rem;
+  padding: var(--space-3);
   border: 1px solid var(--line-hairline);
   border-radius: 0.5rem;
   background: var(--surface-2);
@@ -1130,13 +1130,13 @@
 }
 
 .unavailable-section-card > p {
-  margin: 1rem 0 0;
+  margin: var(--space-4) 0 0;
   color: var(--ink-2);
   line-height: 1.6;
 }
 
 .unavailable-section-card .independent-load-note {
-  padding: .75rem;
+  padding: var(--space-3);
   border-radius: .65rem;
   background: var(--surface-page);
   font-size: .82rem;
@@ -1145,8 +1145,8 @@
 .person-form,
 .created-person {
   display: grid;
-  gap: 1.2rem;
-  padding: clamp(1.2rem, 4vw, 2.3rem);
+  gap: var(--space-4);
+  padding: var(--pad-card);
   border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
@@ -1163,7 +1163,7 @@
 .name-grid label,
 .name-field {
   display: grid;
-  gap: .4rem;
+  gap: var(--space-2);
 }
 
 .name-grid label {
@@ -1187,7 +1187,7 @@
 
 .name-grid input {
   min-height: 48px;
-  padding: .7rem .85rem;
+  padding: var(--space-3) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
   background: var(--surface-1);
@@ -1196,8 +1196,8 @@
 .partial-person-control {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: .8rem;
-  padding: 1rem;
+  gap: var(--space-3);
+  padding: var(--space-4);
   border: 1px solid var(--line-1);
   border-radius: .75rem;
   align-items: start;
@@ -1216,7 +1216,7 @@
 
 .form-error-summary,
 .duplicate-warning {
-  padding: 1rem;
+  padding: var(--space-4);
   border: 1px solid var(--accent);
   border-radius: .75rem;
   color: var(--danger-strong);
@@ -1239,13 +1239,13 @@
 
 .form-actions {
   display: flex;
-  gap: .7rem;
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 
 .form-actions button {
   min-height: 46px;
-  padding: .7rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--ink-1);
   border-radius: var(--radius-md);
   color: var(--ink-inverse);
@@ -1255,7 +1255,7 @@
 
 .person-workspace .form-actions a:is(.button-primary, .button-secondary, .button-danger) {
   min-height: 46px;
-  padding: .7rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
 }
 
@@ -1271,7 +1271,7 @@
 .form-actions button.button-secondary,
 .form-actions button.button-danger {
   min-height: 46px;
-  padding: .7rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
   line-height: 1.2;
 }
@@ -1310,7 +1310,7 @@
 }
 
 .identity-summary div {
-  padding: .9rem;
+  padding: var(--space-4);
   border-radius: var(--radius-md);
   background: var(--surface-page);
 }
@@ -1324,15 +1324,15 @@
 }
 
 .identity-summary dd {
-  margin: .3rem 0 0;
+  margin: var(--space-1) 0 0;
   font-weight: 700;
 }
 
 .important-dates-list {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-3);
   list-style: none;
-  margin: 1rem 0;
+  margin: var(--space-4) 0;
   padding: 0;
 }
 
@@ -1344,12 +1344,12 @@
   display: flex;
   gap: var(--space-4);
   justify-content: space-between;
-  padding: 0.85rem;
+  padding: var(--space-3);
 }
 
 .important-dates-list li > div:first-child {
   display: grid;
-  gap: 0.2rem;
+  gap: var(--space-1);
 }
 
 .important-dates-list small {
@@ -1360,15 +1360,15 @@
 .important-date-form .form-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .important-date-form {
   border-top: 1px solid var(--line-hairline);
   display: grid;
-  gap: 0.9rem;
-  margin-top: 1rem;
-  padding-top: 1rem;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
 }
 
 .important-date-form[hidden] {
@@ -1377,14 +1377,14 @@
 
 .important-date-form .form-grid {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-3);
   grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
 }
 
 .important-date-form label {
   display: grid;
   font-weight: 600;
-  gap: 0.35rem;
+  gap: var(--space-1);
 }
 
 .important-date-form input,
@@ -1393,7 +1393,7 @@
   border: 1px solid var(--line-strong);
   border-radius: 0.65rem;
   font: inherit;
-  padding: 0.65rem 0.75rem;
+  padding: var(--space-3) var(--space-3);
 }
 
 .important-date-form .checkbox-row {
@@ -1408,7 +1408,7 @@
 
 .profile-fact-list {
   display: grid;
-  gap: 0.7rem;
+  gap: var(--space-3);
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1421,9 +1421,9 @@
   border-radius: 0.85rem;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.55rem;
+  gap: var(--space-2);
   justify-content: space-between;
-  padding: 0.8rem;
+  padding: var(--space-3);
 }
 
 .profile-fact-list p {
@@ -1433,9 +1433,9 @@
 
 .person-file-list {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-3);
   list-style: none;
-  margin: 0 0 1rem;
+  margin: 0 0 var(--space-4);
   padding: 0;
 }
 
@@ -1449,17 +1449,17 @@
   display: flex;
   gap: var(--space-4);
   justify-content: space-between;
-  padding-top: 0.75rem;
+  padding-top: var(--space-3);
 }
 
 .person-file-list p {
-  margin: 0.25rem 0;
+  margin: var(--space-1) 0;
 }
 
 .profile-fact-form {
   display: grid;
-  gap: 0.85rem;
-  margin-top: 1rem;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
 }
 
 .profile-fact-form[hidden] {
@@ -1469,7 +1469,7 @@
 .profile-fact-form label {
   display: grid;
   font-weight: 700;
-  gap: 0.35rem;
+  gap: var(--space-1);
 }
 
 .profile-fact-form input,
@@ -1484,7 +1484,7 @@
 .profile-fact-form input:not([type="checkbox"]):not([type="radio"]),
 .profile-fact-form select,
 .profile-fact-form textarea {
-  padding: .65rem .75rem;
+  padding: var(--space-3) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: .65rem;
   color: inherit;
@@ -1525,7 +1525,7 @@
 }
 
 .profile-next-step {
-  padding: 1rem;
+  padding: var(--space-4);
   border-left: 3px solid var(--accent);
   background: var(--accent-soft);
 }
@@ -1551,7 +1551,7 @@
 
 .directory-heading-actions {
   display: flex;
-  gap: .65rem;
+  gap: var(--space-3);
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -1566,8 +1566,8 @@
   grid-template-columns: minmax(16rem, 1fr) minmax(18rem, .75fr) minmax(10rem,
     .35fr) auto;
   gap: var(--space-3);
-  margin: 2rem 0 1.25rem;
-  padding: 1rem;
+  margin: var(--space-6) 0 var(--space-5);
+  padding: var(--space-4);
   border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   align-items: start;
@@ -1576,14 +1576,14 @@
 
 .people-directory-controls label {
   display: grid;
-  gap: .4rem;
+  gap: var(--space-2);
   color: var(--ink-2);
   font-size: .78rem;
   font-weight: 700;
 }
 
 .people-directory-controls > button[type="submit"] {
-  margin-top: 1.35rem;
+  margin-top: var(--space-5);
 }
 
 .directory-tag-picker {
@@ -1592,7 +1592,7 @@
   margin: 0;
   padding: 0;
   border: 0;
-  gap: .4rem;
+  gap: var(--space-2);
 }
 
 .directory-tag-picker legend {
@@ -1609,13 +1609,13 @@
 .directory-tag-search {
   display: grid;
   grid-template-columns: minmax(8rem, 1fr) auto;
-  gap: .4rem;
+  gap: var(--space-2);
 }
 
 .directory-tag-search button,
 .directory-tag-pagination button {
   min-height: 42px;
-  padding: .55rem .7rem;
+  padding: var(--space-2) var(--space-3);
   font-size: .75rem;
 }
 
@@ -1638,7 +1638,7 @@
 .directory-pagination button,
 .directory-error button {
   min-height: 48px;
-  padding: .7rem .85rem;
+  padding: var(--space-3) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
   background: var(--surface-1);
@@ -1664,7 +1664,7 @@
   display: flex;
   gap: var(--space-4);
   min-height: 11rem;
-  padding: clamp(1.25rem, 4vw, 2.25rem);
+  padding: var(--pad-card);
   border: 1px dashed var(--line-strong);
   border-radius: var(--radius-lg);
   align-items: center;
@@ -1685,7 +1685,7 @@
 }
 
 .directory-state p {
-  margin-top: .45rem;
+  margin-top: var(--space-2);
   color: var(--ink-2);
 }
 
@@ -1710,7 +1710,7 @@
 }
 
 .directory-error button {
-  margin-top: 1rem;
+  margin-top: var(--space-4);
 }
 
 .people-directory-list {
@@ -1729,7 +1729,7 @@
 .person-directory-link {
   display: grid;
   min-height: 9rem;
-  padding: 1.15rem;
+  padding: var(--space-4);
   border: 1px solid color-mix(in srgb, var(--ink-1) 14%, transparent);
   border-radius: .9rem;
   align-content: start;
@@ -1755,22 +1755,22 @@
 }
 
 .directory-person-details {
-  margin: .45rem 0 0;
+  margin: var(--space-2) 0 0;
   color: var(--ink-2);
   font-size: .82rem;
 }
 
 .directory-person-tags {
   display: flex;
-  gap: .4rem;
-  margin: 1rem 0 0;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
   padding: 0;
   flex-wrap: wrap;
   list-style: none;
 }
 
 .directory-person-tags li {
-  padding: .3rem .55rem;
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-pill);
   color: var(--ink-2);
   background: var(--positive-soft);
@@ -1780,14 +1780,14 @@
 
 .directory-pagination {
   display: flex;
-  margin-top: 1rem;
+  margin-top: var(--space-4);
   justify-content: center;
 }
 
 @media (max-width: 1050px) {
   .header-row {
     grid-template-columns: auto minmax(0, 1fr) auto;
-    padding-block: .6rem;
+    padding-block: var(--space-2);
   }
 
   .brand {
@@ -1858,7 +1858,7 @@
   .global-actions button,
   .member-menu > button {
     min-width: 44px;
-    padding-inline: .7rem;
+    padding-inline: var(--space-3);
   }
 
   .primary-nav {
@@ -1868,7 +1868,7 @@
   }
 
   .primary-nav > * {
-    padding-inline: .65rem;
+    padding-inline: var(--space-3);
   }
 
   .future-nav small {
@@ -1895,7 +1895,7 @@
   .page-frame,
   .settings-page {
     width: calc(100% - 1rem);
-    padding-top: 2rem;
+    padding-top: var(--space-6);
   }
 
   .personalization-layout {
@@ -1929,7 +1929,7 @@
     position: static;
     display: flex;
     gap: var(--space-1);
-    padding: .4rem;
+    padding: var(--space-2);
     overflow-x: auto;
   }
 
@@ -2067,12 +2067,12 @@
   background: var(--surface, var(--surface-1));
   border: 1px solid var(--line, var(--line-1));
   border-radius: var(--radius-lg);
-  padding: 1rem;
+  padding: var(--space-4);
 }
 
 .task-list {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-3);
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2082,11 +2082,11 @@
   display: grid;
   gap: var(--space-4);
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-block: 1rem;
+  margin-block: var(--space-4);
 }
 
 .attention-groups h3 {
-  margin-block: 0 0.65rem;
+  margin-block: 0 var(--space-3);
 }
 
 .task-item,
@@ -2094,14 +2094,14 @@
   background: var(--surface, var(--surface-1));
   border: 1px solid var(--line, var(--line-1));
   border-radius: 0.9rem;
-  padding: 1rem;
+  padding: var(--space-4);
 }
 
 .task-item h3,
 .task-item p,
 .attention-item .attention-title,
 .attention-item p {
-  margin-block: 0 0.45rem;
+  margin-block: 0 var(--space-2);
 }
 
 .attention-title {
@@ -2115,7 +2115,7 @@
   max-inline-size: 100%;
   min-width: 44px;
   min-height: 44px;
-  padding: .65rem .85rem;
+  padding: var(--space-3) var(--space-3);
   border: 1px solid var(--ink-1);
   border-radius: .65rem;
   align-items: center;
@@ -2144,7 +2144,7 @@
 }
 
 .task-form {
-  margin-block: 1rem;
+  margin-block: var(--space-4);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2159,14 +2159,14 @@
 }
 
 .journal-form {
-  margin-block: 1rem;
+  margin-block: var(--space-4);
 }
 
 .journal-list {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-3);
   list-style: none;
-  margin: 1rem 0;
+  margin: var(--space-4) 0;
   padding: 0;
 }
 
@@ -2175,7 +2175,7 @@
   border: 1px solid var(--line, var(--line-1));
   border-left: 0.3rem solid var(--positive);
   border-radius: 0.5rem;
-  padding: 1rem;
+  padding: var(--space-4);
 }
 
 select:not([multiple]) {
@@ -2187,7 +2187,7 @@ select:not([multiple]) {
 }
 
 select[multiple] {
-  padding-right: .75rem;
+  padding-right: var(--space-3);
   background-image: none;
 }
 
@@ -2201,14 +2201,14 @@ select[multiple] {
 
 .journal-list h2,
 .journal-list p {
-  margin-block: 0 0.5rem;
+  margin-block: 0 var(--space-2);
 }
 
 .journal-list time {
   color: var(--muted, var(--ink-2));
   display: block;
   font-size: 0.9rem;
-  margin-block-end: 0.6rem;
+  margin-block-end: var(--space-2);
 }
 
 .compliance-page {
@@ -2219,10 +2219,10 @@ select[multiple] {
 .compliance-page .legal-document {
   border-block: 1px solid var(--line, var(--line-1));
   line-height: 1.75;
-  margin-block: 1.5rem;
+  margin-block: var(--space-5);
   max-height: min(55vh, 36rem);
   overflow: auto;
   overflow-wrap: anywhere;
-  padding-block: 1.5rem;
+  padding-block: var(--space-5);
   white-space: pre-wrap;
 }

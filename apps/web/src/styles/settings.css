@@ -1,5 +1,5 @@
 .today-section {
-  padding: clamp(1.2rem, 3vw, 2rem);
+  padding: var(--pad-card);
   border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
@@ -29,7 +29,7 @@
 .planned-label {
   display: inline-flex;
   flex: none;
-  padding: .35rem .65rem;
+  padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-pill);
   color: var(--accent-hover);
   background: var(--accent-soft);
@@ -45,8 +45,8 @@
 
 .success-loop {
   display: grid;
-  gap: .7rem;
-  margin: 1.2rem 0;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
   padding: 0;
   list-style: none;
   counter-reset: steps;
@@ -55,8 +55,8 @@
 .success-loop li {
   display: grid;
   grid-template-columns: 2.3rem 1fr;
-  gap: .2rem .8rem;
-  padding: .9rem;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-4);
   border-radius: .75rem;
   background: var(--surface-page);
   counter-increment: steps;
@@ -100,7 +100,7 @@
 
 .settings-search {
   display: grid;
-  gap: .4rem;
+  gap: var(--space-2);
 }
 
 .settings-search label {
@@ -110,7 +110,7 @@
 
 .settings-search input {
   min-height: 48px;
-  padding: .75rem .9rem;
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
   background: var(--surface-1);
@@ -133,14 +133,14 @@
   position: sticky;
   top: 6rem;
   display: grid;
-  padding: 1rem;
+  padding: var(--space-4);
   border: 1px solid var(--line-hairline);
   border-radius: .9rem;
   background: var(--surface-1);
 }
 
 .settings-local-nav p {
-  margin: 0 0 .5rem;
+  margin: 0 0 var(--space-2);
   color: var(--ink-3);
   font-size: .72rem;
   font-weight: 700;
@@ -151,7 +151,7 @@
 .settings-local-nav a {
   display: flex;
   min-height: 44px;
-  padding: .7rem;
+  padding: var(--space-3);
   border-radius: var(--radius-sm);
   align-items: center;
   justify-content: space-between;
@@ -200,7 +200,7 @@
 
 .settings-group {
   scroll-margin-top: 6rem;
-  padding: clamp(1.2rem, 3vw, 2rem);
+  padding: var(--pad-card);
   border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
@@ -209,14 +209,14 @@
 .settings-card-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: .65rem;
+  gap: var(--space-3);
 }
 
 .settings-card {
   display: flex;
   gap: var(--space-4);
   min-height: 7rem;
-  padding: 1rem;
+  padding: var(--space-4);
   border: 1px solid var(--line-1);
   border-radius: .75rem;
   align-items: start;
@@ -230,7 +230,7 @@
 }
 
 .settings-card p {
-  margin-top: .35rem;
+  margin-top: var(--space-1);
   color: var(--ink-3);
   font-size: .84rem;
   line-height: 1.45;
@@ -268,7 +268,7 @@
 
 .api-access-section,
 .api-secret-panel {
-  padding-top: 1.5rem;
+  padding-top: var(--space-5);
   border-top: 1px solid color-mix(
     in srgb,
     var(--ink-1) 20%,
@@ -278,7 +278,7 @@
 
 .api-access-section h2,
 .api-secret-panel h2 {
-  margin: .25rem 0 1rem;
+  margin: var(--space-1) 0 var(--space-4);
   font-size: 1.15rem;
   font-weight: 700;
   line-height: 1.3;
@@ -294,14 +294,14 @@
 .api-token-form label,
 .api-token-form fieldset {
   display: grid;
-  gap: .4rem;
+  gap: var(--space-2);
   font-weight: 600;
 }
 
 .api-token-form input:not([type="checkbox"]),
 .api-secret-control input {
   min-height: 44px;
-  padding: .7rem .8rem;
+  padding: var(--space-3) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: .45rem;
   background: var(--surface-1);
@@ -310,13 +310,13 @@
 .api-token-form fieldset {
   grid-column: 1 / -1;
   margin: 0;
-  padding: .75rem 0;
+  padding: var(--space-3) 0;
   border: 0;
 }
 
 .api-token-form .scope-choice {
   display: flex;
-  gap: .55rem;
+  gap: var(--space-2);
   align-items: center;
 }
 
@@ -325,15 +325,15 @@
 }
 
 .api-secret-panel {
-  margin: 2rem 0;
+  margin: var(--space-6) 0;
 }
 
 .api-secret-control {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: .6rem;
+  gap: var(--space-2);
   max-width: 46rem;
-  margin: 1rem 0;
+  margin: var(--space-4) 0;
 }
 
 .api-secret-control input {
@@ -351,7 +351,7 @@
   display: flex;
   gap: var(--space-4);
   min-height: 5rem;
-  padding: 1rem 0;
+  padding: var(--space-4) 0;
   border-bottom: 1px solid color-mix(
     in srgb,
     var(--ink-1) 14%,
@@ -388,10 +388,10 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-4);
-  margin: 1rem 0;
+  margin: var(--space-4) 0;
 }
 .import-counts div {
-  padding: .8rem 0;
+  padding: var(--space-3) 0;
   border-bottom: 1px solid color-mix(
     in srgb,
     var(--ink-1) 16%,
@@ -404,7 +404,7 @@
   font-weight: 700;
 }
 .import-counts dd {
-  margin: .35rem 0 0;
+  margin: var(--space-1) 0 0;
   font-size: 1.05rem;
   font-weight: 700;
 }
@@ -418,7 +418,7 @@
   display: flex;
   justify-content: space-between;
   gap: var(--space-4);
-  padding: 1rem 0;
+  padding: var(--space-4) 0;
   border-top: 1px solid color-mix(
     in srgb,
     var(--ink-1) 16%,
@@ -430,9 +430,9 @@
 }
 .confirmation-control {
   display: flex;
-  gap: .55rem;
+  gap: var(--space-2);
   align-items: center;
-  margin: 1.25rem 0 .75rem;
+  margin: var(--space-5) 0 var(--space-3);
 }
 
 .storage-page-state {
@@ -443,11 +443,11 @@
 .storage-settings-sections {
   display: grid;
   gap: var(--space-6);
-  margin-top: 1rem;
+  margin-top: var(--space-4);
 }
 
 .storage-settings-section {
-  padding-top: 1.5rem;
+  padding-top: var(--space-5);
   border-top: 1px solid color-mix(
     in srgb,
     var(--ink-1) 20%,
@@ -456,7 +456,7 @@
 }
 
 .storage-settings-section header h2 {
-  margin: .25rem 0 1rem;
+  margin: var(--space-1) 0 var(--space-4);
   font-size: 1.15rem;
   font-weight: 700;
   line-height: 1.3;
@@ -473,7 +473,7 @@
 .storage-metrics div,
 .storage-object-state div {
   min-width: 0;
-  padding: .9rem 0;
+  padding: var(--space-4) 0;
   border-bottom: 1px solid color-mix(
     in srgb,
     var(--ink-1) 14%,
@@ -491,7 +491,7 @@
 .storage-metrics dd,
 .storage-object-state dd {
   min-height: 1.5rem;
-  margin: .35rem 0 0;
+  margin: var(--space-1) 0 0;
   overflow-wrap: anywhere;
   font-size: 1.05rem;
   font-weight: 700;
@@ -499,7 +499,7 @@
 
 .storage-search-form {
   display: grid;
-  gap: .45rem;
+  gap: var(--space-2);
 }
 
 .storage-search-form label {
@@ -509,7 +509,7 @@
 .storage-search-form > div {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: .65rem;
+  gap: var(--space-3);
 }
 
 .storage-search-form input {
@@ -519,7 +519,7 @@
 .storage-results {
   display: grid;
   gap: 0;
-  margin: 1rem 0 0;
+  margin: var(--space-4) 0 0;
   padding: 0;
   list-style: none;
 }
@@ -527,8 +527,8 @@
 .storage-results li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: .25rem 1rem;
-  padding: .9rem 0;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-4) 0;
   border-top: 1px solid color-mix(
     in srgb,
     var(--ink-1) 16%,
@@ -555,7 +555,7 @@
 }
 
 .member-section {
-  padding: clamp(1.2rem, 3vw, 2rem);
+  padding: var(--pad-card);
   border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
@@ -577,7 +577,7 @@
 
 .invitation-form label {
   display: grid;
-  gap: .4rem;
+  gap: var(--space-2);
   font-size: .82rem;
   font-weight: 600;
 }
@@ -586,7 +586,7 @@
 .invitation-form select,
 .invitation-form button {
   min-height: 48px;
-  padding: .7rem .85rem;
+  padding: var(--space-3) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
   background: var(--surface-1);
@@ -613,7 +613,7 @@
 .member-list {
   display: grid;
   gap: var(--space-2);
-  margin: 1rem 0 0;
+  margin: var(--space-4) 0 0;
   padding: 0;
   list-style: none;
 }
@@ -621,7 +621,7 @@
 .member-list li {
   display: flex;
   min-height: 56px;
-  padding: .75rem;
+  padding: var(--space-3);
   border: 1px solid var(--line-1);
   border-radius: .75rem;
   align-items: center;
@@ -632,7 +632,7 @@
 .member-list button,
 .settings-form button {
   min-height: 44px;
-  padding: .65rem .9rem;
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--ink-1);
   border-radius: .65rem;
   color: var(--ink-inverse);
@@ -655,14 +655,14 @@
   position: sticky;
   top: 1rem;
   display: grid;
-  gap: 0.3rem;
+  gap: var(--space-1);
 }
 
 .personalization-nav a {
   min-height: 44px;
   display: flex;
   align-items: center;
-  padding: 0.65rem 0.8rem;
+  padding: var(--space-3) var(--space-3);
   border-radius: var(--radius-md);
   color: var(--ink-2);
   text-decoration: none;
@@ -682,24 +682,24 @@
 .personalization-create,
 .personalization-entry-form {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .personalization-create {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
-  margin: 1.25rem 0;
+  margin: var(--space-5) 0;
 }
 
 .personalization-list {
   list-style: none;
   padding: 0;
   display: grid;
-  gap: 0.8rem;
+  gap: var(--space-3);
 }
 
 .personalization-row {
-  padding: 1rem;
+  padding: var(--space-4);
   border: 1px solid var(--line-1);
   border-radius: 0.9rem;
   background: var(--surface-1);
@@ -717,7 +717,7 @@
 .personalization-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .personalization-actions button,
@@ -731,7 +731,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-4);
   max-width: 54rem;
-  padding: clamp(1.2rem, 3vw, 2rem);
+  padding: var(--pad-card);
   border: 1px solid var(--line-hairline);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
@@ -739,7 +739,7 @@
 
 .settings-form label {
   display: grid;
-  gap: .4rem;
+  gap: var(--space-2);
   font-size: .82rem;
   font-weight: 600;
 }
@@ -747,7 +747,7 @@
 .settings-form input,
 .settings-form select {
   min-height: 48px;
-  padding: .7rem .85rem;
+  padding: var(--space-3) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
   background: var(--surface-1);
@@ -770,7 +770,7 @@
 }
 
 .settings-form #settings-errors {
-  padding: .75rem;
+  padding: var(--space-3);
   border: 1px solid var(--danger);
   border-radius: .65rem;
   color: var(--danger-strong);
@@ -789,10 +789,10 @@
 
 .account-lifecycle {
   display: grid;
-  gap: 1.25rem;
+  gap: var(--space-5);
   max-width: 54rem;
-  margin-top: 2rem;
-  padding-top: 2rem;
+  margin-top: var(--space-6);
+  padding-top: var(--space-6);
   border-top: 2px solid var(--accent);
 }
 
@@ -804,7 +804,7 @@
 
 .account-lifecycle dl div,
 .lifecycle-form {
-  padding: 1rem;
+  padding: var(--space-4);
   border: 1px solid color-mix(in srgb, var(--ink-1) 18%, transparent);
   border-radius: .5rem;
   background: var(--surface-1);
@@ -817,25 +817,25 @@
 }
 
 .account-lifecycle dd {
-  margin: .25rem 0 0;
+  margin: var(--space-1) 0 0;
   font-size: 1.5rem;
   font-weight: 700;
 }
 
 .lifecycle-form {
   display: grid;
-  gap: .8rem;
+  gap: var(--space-3);
 }
 
 .lifecycle-form label {
   display: grid;
-  gap: .4rem;
+  gap: var(--space-2);
   font-weight: 600;
 }
 
 .lifecycle-form input {
   min-height: 48px;
-  padding: .7rem .85rem;
+  padding: var(--space-3) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: .5rem;
 }
@@ -849,7 +849,7 @@
 
 .member-list li > span:first-child {
   display: grid;
-  gap: .2rem;
+  gap: var(--space-1);
 }
 
 .member-list small {
@@ -857,7 +857,7 @@
 }
 
 .role-badge {
-  padding: .35rem .65rem;
+  padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-pill);
   background: var(--positive-soft);
   font-size: .75rem;
@@ -867,20 +867,20 @@
 
 .member-controls {
   display: flex;
-  gap: .4rem;
+  gap: var(--space-2);
   align-items: center;
 }
 
 .member-controls select {
   min-height: 44px;
-  padding: .5rem;
+  padding: var(--space-2);
   border: 1px solid var(--line-strong);
   border-radius: .6rem;
   background: var(--surface-1);
 }
 
 .empty-search {
-  padding: 2rem;
+  padding: var(--space-6);
   border: 1px dashed var(--line-strong);
   border-radius: .9rem;
   text-align: center;

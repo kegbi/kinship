@@ -178,6 +178,70 @@ const colorLiteralPattern = new RegExp(
   `#[0-9a-f]{3,8}(?![0-9a-f])|(?<![-\\w])(?:rgb|rgba|hsl|hsla)\\s*\\(|(?<![-\\w])(?:${cssNamedColors})(?![-\\w])`,
   "gi",
 );
+const spacingPropertyPattern =
+  /^(?:padding(?:-[a-z-]+)?|margin(?:-[a-z-]+)?|gap|row-gap|column-gap)$/;
+const spacingTokenPattern = /^var\(--(?:space-[1-8]|pad-card|pad-block)\)$/;
+const percentagePattern = /^(?:\d+(?:\.\d+)?|\.\d+)%$/;
+const approvedPageLevelSpacing = [
+  {
+    path: "apps/web/src/styles/base.css",
+    selector: ".access-card",
+    property: "padding",
+    value: "clamp(var(--space-5), 5vw, var(--space-7))",
+    // Page-level access-state padding already follows the accepted responsive scale.
+  },
+  {
+    path: "apps/web/src/styles/shell.css",
+    selector: ".page-frame",
+    property: "padding",
+    value: "clamp(var(--space-6), 6vw, var(--space-8)) 0 var(--space-8)",
+    // The application page frame keeps responsive padding with grid-aligned endpoints.
+  },
+  {
+    path: "apps/web/src/styles/person.css",
+    selector: ".person-profile-hero",
+    property: "padding",
+    value: "clamp(var(--pad-card), 4vw, var(--space-6))",
+    // Review §7.1 keeps the showcase hero responsive at page-level scale.
+  },
+] as const;
+const spacingExceptions = [
+  {
+    path: "apps/web/src/styles/base.css",
+    selector: "select",
+    property: "padding",
+    value: "var(--space-3) 2.35rem var(--space-3) var(--space-3)",
+    // The second component clears the custom select caret rather than setting rhythm.
+  },
+  {
+    path: "apps/web/src/styles/base.css",
+    selector: ".sr-only",
+    property: "margin",
+    value: "-1px",
+    // The accessibility clipping offset is geometry, not visual rhythm.
+  },
+  {
+    path: "apps/web/src/styles/person.css",
+    selector: ".person-workspace-layout",
+    property: "gap",
+    value: "1.25rem",
+    // Review §7.5 fixes the 900–1199px person workspace gap at this value.
+  },
+  {
+    path: "apps/web/src/styles/person.css",
+    selector: ".profile-section-directory nav ul",
+    property: "gap",
+    value: ".1rem",
+    // Compact rail navigation relies on link padding for its visible separation.
+  },
+  {
+    path: "apps/web/src/styles/person.css",
+    selector: ".directory-tag-picker legend",
+    property: "margin",
+    value: "-1px",
+    // The visually hidden legend uses the standard clipping offset.
+  },
+] as const;
 
 function withoutForcedColorsBlocks(stylesheet: string): string {
   const source = stylesheet.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -202,6 +266,49 @@ function withoutForcedColorsBlocks(stylesheet: string): string {
   }
 
   return result + source.slice(sourceIndex);
+}
+
+interface SpacingDeclaration {
+  path: string;
+  selector: string;
+  property: string;
+  value: string;
+}
+
+function collectSpacingDeclarations(path: string): SpacingDeclaration[] {
+  const stylesheet = withoutForcedColorsBlocks(readFileSync(path, "utf8"));
+  return Array.from(stylesheet.matchAll(/([^{}]+)\{([^{}]*)\}/g)).flatMap(
+    (rule) => {
+      const selector = rule[1]!.trim().replace(/\s+/g, " ");
+      return Array.from(
+        rule[2]!.matchAll(/(?:^|;)\s*([a-z-]+)\s*:\s*([^;]+)/g),
+        (declaration): SpacingDeclaration => ({
+          path,
+          selector,
+          property: declaration[1]!,
+          value: declaration[2]!.trim().replace(/\s+/g, " "),
+        }),
+      ).filter(({ property }) => spacingPropertyPattern.test(property));
+    },
+  );
+}
+
+function isApprovedSpacing(declaration: SpacingDeclaration): boolean {
+  const matches = (approved: SpacingDeclaration): boolean =>
+    approved.path === declaration.path &&
+    approved.selector === declaration.selector &&
+    approved.property === declaration.property &&
+    approved.value === declaration.value;
+
+  if (approvedPageLevelSpacing.some(matches)) return true;
+  if (spacingExceptions.some(matches)) return true;
+
+  return declaration.value.split(/\s+/).every((component) =>
+    component === "0" ||
+    component === "auto" ||
+    spacingTokenPattern.test(component) ||
+    percentagePattern.test(component)
+  );
 }
 
 function mountStyles(): void {
@@ -232,7 +339,8 @@ describe("application control presentation", () => {
     const deliberatelyInherited = (name: string): boolean =>
       name === "--line-hairline" ||
       name.startsWith("--radius-") ||
-      name.startsWith("--space-");
+      name.startsWith("--space-") ||
+      name.startsWith("--pad-");
     const lightProperties = Object.fromEntries(
       Object.entries(customProperties(lightRoot)).filter(
         ([name]) => !deliberatelyInherited(name),
@@ -356,6 +464,21 @@ describe("application control presentation", () => {
     ).toEqual([]);
   });
 
+  it("keeps application spacing on the approved rhythm", () => {
+    const violations = nonTokenStylesheetPaths.flatMap((path) =>
+      collectSpacingDeclarations(path).filter((declaration) =>
+        !isApprovedSpacing(declaration)
+      ).map(({ path, selector, property, value }) =>
+        `${path}:${selector}:${property}: ${value}`
+      )
+    );
+
+    expect(
+      violations,
+      `Found ${violations.length} spacing declarations outside the approved rhythm`,
+    ).toEqual([]);
+  });
+
   it("loads Inter Variable before the application root stack uses it", () => {
     expect(applicationCss).toMatch(
       /@font-face\s*\{[^}]*font-family:\s*"Inter Variable";[^}]*\}[\s\S]*:root\s*\{[^}]*font-family:\s*"Inter Variable",\s*Inter,\s*ui-sans-serif,\s*system-ui,\s*sans-serif;/,
@@ -389,8 +512,8 @@ describe("application control presentation", () => {
       expect(computed.alignItems).toBe("center");
       expect(computed.justifyContent).toBe("center");
       expect(computed.minHeight).toBe("44px");
-      expect(computed.paddingTop).toBe("10.4px");
-      expect(computed.paddingRight).toBe("14.4px");
+      expect(computed.paddingTop).toBe("12px");
+      expect(computed.paddingRight).toBe("16px");
       expect(computed.borderRadius).toBe("10.4px");
       expect(computed.fontWeight).toBe("600");
       expect(computed.lineHeight).toBe("1.2");
@@ -400,7 +523,7 @@ describe("application control presentation", () => {
     const openAll = document.body.querySelector<HTMLElement>(
       "a.today-touch-target",
     )!;
-    expect(getComputedStyle(openAll).paddingRight).toBe("14.4px");
+    expect(getComputedStyle(openAll).paddingRight).toBe("16px");
     expect(
       getComputedStyle(document.body.querySelector(".button-primary")!)
         .backgroundColor,

@@ -20,7 +20,7 @@
 
 .brand {
   display: inline-flex;
-  gap: .6rem;
+  gap: var(--space-2);
   align-items: center;
   font-family: Georgia, serif;
   font-size: 1.22rem;
@@ -42,7 +42,7 @@
 
 .primary-nav {
   display: flex;
-  gap: .2rem;
+  gap: var(--space-1);
   align-items: center;
   justify-content: center;
 }
@@ -50,7 +50,7 @@
 .primary-nav > * {
   display: inline-flex;
   min-height: 44px;
-  padding: .65rem .85rem;
+  padding: var(--space-3) var(--space-3);
   border-radius: .65rem;
   align-items: center;
   text-decoration: none;
@@ -62,7 +62,7 @@
 }
 
 .future-nav {
-  gap: .35rem;
+  gap: var(--space-1);
   color: var(--ink-2);
   cursor: not-allowed;
 }
@@ -81,7 +81,7 @@
   width: 100%;
   min-width: 0;
   min-height: 44px;
-  padding: .65rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-pill);
   color: var(--ink-1);
@@ -105,7 +105,7 @@
 .global-actions button,
 .member-menu > button {
   min-height: 44px;
-  padding: .65rem .9rem;
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--line-2);
   border-radius: var(--radius-pill);
   color: var(--ink-1);
@@ -141,7 +141,7 @@
   right: 0;
   display: grid;
   width: 18rem;
-  padding: .55rem;
+  padding: var(--space-2);
   border: 1px solid var(--line-1);
   border-radius: .9rem;
   background: var(--surface-1);
@@ -150,9 +150,9 @@
 
 .menu-workspace {
   display: grid;
-  gap: .35rem;
-  margin: 0 0 .35rem;
-  padding: .7rem;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-1);
+  padding: var(--space-3);
   border-bottom: 1px solid var(--line-1);
 }
 
@@ -169,7 +169,7 @@
 .menu-item {
   display: flex;
   min-height: 44px;
-  padding: .7rem;
+  padding: var(--space-3);
   border: 0;
   border-radius: var(--radius-sm);
   align-items: center;
@@ -197,7 +197,7 @@
   display: flex;
   width: 100%;
   min-height: 44px;
-  padding: .7rem;
+  padding: var(--space-3);
   border-radius: var(--radius-sm);
   align-items: center;
   text-align: left;
@@ -206,7 +206,7 @@
 .workspace-switcher {
   display: grid;
   width: 100%;
-  margin-top: .2rem;
+  margin-top: var(--space-1);
   font-size: .78rem;
   font-weight: 700;
 }
@@ -215,7 +215,7 @@
   width: 100%;
   min-width: 0;
   min-height: 44px;
-  padding: .45rem 2rem .45rem .7rem;
+  padding: var(--space-2) var(--space-6) var(--space-2) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: .6rem;
   background: var(--surface-1);
@@ -228,7 +228,7 @@
   z-index: 30;
   max-width: 24rem;
   margin: 0;
-  padding: .8rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
   background: var(--ink-1);
   color: var(--ink-inverse);
@@ -262,7 +262,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: var(--space-2);
-  padding: .8rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border-left: .3rem solid var(--line-2);
   border-radius: var(--radius-md);
   align-items: center;
@@ -297,7 +297,7 @@
 .app-toast-dismiss {
   min-width: 44px;
   min-height: 44px;
-  padding: .5rem .75rem;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line-2);
   border-radius: var(--radius-sm);
   color: var(--ink-inverse);
@@ -316,7 +316,7 @@
   gap: var(--space-4);
   width: min(1040px, calc(100% - 2rem));
   margin: 0 auto;
-  padding: clamp(2rem, 6vw, 4.5rem) 0 5rem;
+  padding: clamp(var(--space-6), 6vw, var(--space-8)) 0 var(--space-8);
 }
 
 .page-breadcrumb {
@@ -339,14 +339,14 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(16rem, 25rem);
   gap: var(--space-6);
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
   align-items: end;
 }
 
 .eyebrow,
 .section-kicker,
 .scope-label {
-  margin: 0 0 .75rem;
+  margin: 0 0 var(--space-3);
   color: var(--accent-hover);
   font-size: .7rem;
   font-weight: 700;
@@ -356,14 +356,14 @@
 
 .page-heading time {
   display: block;
-  margin-top: .75rem;
+  margin-top: var(--space-3);
   color: var(--ink-2);
 }
 
 .honesty-note,
 .projection-note {
   margin: 0;
-  padding: 1rem;
+  padding: var(--space-4);
   border-left: 3px solid var(--accent);
   color: var(--ink-2);
   background: var(--accent-soft);
