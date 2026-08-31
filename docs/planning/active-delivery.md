@@ -1917,9 +1917,62 @@ asserts, so it runs that spec on its candidate.
         `.artifacts/playwright`. For a pure refactor the browser suite is the
         only real evidence, which is why it ran on a candidate that changed no
         behavior.
-- [ ] **UXD-014 — Optimistic UI on the four safe mutations only.** (§9.4; effort
-      M; depends on `UXD-003` and `UXD-005`) Anything carrying an expected
-      update timestamp stays non-optimistic.
+- [x] **UXD-014 — Optimistic UI on the safe mutations.** (§9.4; effort M;
+      depends on `UXD-003` and `UXD-005`) Task complete and reopen, on both the
+      task surface and the Today attention queue, and reminder and cadence
+      saves. Anything carrying an expected update timestamp stays
+      non-optimistic: person edit, archive and restore, and relationship writes
+      are untouched, because the optimistic-concurrency discipline is a strength
+      and a 409 is information rather than noise.
+  - [x] **Two of the four the review names were corrected before dispatch.**
+    - [x] **The favorite toggle does not exist.** `is_starred` has no write path
+          in `packages/contracts/generated`, `apps/api`, or `packages/backend`;
+          the client only reads it to render a badge. People favorites are
+          parked in `UXD-020` as product scope. There was nothing to make
+          optimistic, and no toggle was built to create the opportunity.
+    - [x] **Note and quick capture were deliberately excluded.** Since
+          `UXD-002C2B2d` a captured record appears in the merged timeline, whose
+          single owner is `person-timeline.ts`, and `UXD-002C2B2a` already
+          reloads it on the same successful save. A pending row written from
+          `interactions.ts` would be a second writer into a list its owner is
+          about to replace — the shape `AGENTS.md` forbids and `REL-013` prices
+          — to save one round trip on a list that is already refreshing.
+  - [x] The authoritative refresh stays the single owner everywhere. An
+        optimistic change is a transient presentation on an existing row,
+        superseded by that refresh on success and explicitly reverted on
+        failure, with the row restored to its exact prior list and position. No
+        generation, watermark, pending queue, or registry was added.
+  - [x] **A defect the browser suite caught, reproduced in isolation.** The
+        first candidate moved the completed row instantly but left its
+        `renderTask` closure holding the pre-completion snapshot, so `app-006a`
+        — and any reader — could click Edit on a row that had visibly moved
+        while it still advertised `status: "open"` and a stale `updatedAt`. The
+        save then either lost its concurrency check or flipped the task back to
+        open, and the renamed task never reached the completed list. The
+        optimistic move had made an interactive row available a round trip
+        before its data. Every mutating control in an in-flight row is now
+        disabled and the row carries `aria-busy`, both restored on failure; no
+        spec was edited, because Playwright waits for an actionable control and
+        lands on the freshly rendered one.
+  - [x] **A second defect caught in review.** The pending row was styled
+        `color: var(--muted, var(--ink-2))` with `opacity: .72`. `--muted` is
+        declared nowhere — the fallback saved it, one leaf after `UXD-008`
+        repaired four properties of that family — and compositing `--ink-2` at
+        72% yields **3.635:1** on `--surface-1` and **3.547:1** on
+        `--surface-2`, both under AA for normal text. That is the defect
+        `UXD-001A` had to repair across 22 failing tests, and no gate would have
+        caught it here: the row is transient and `aria-busy`, so no axe scan in
+        the suite ever sees one. It now uses `--ink-3` at 5.572:1 with no
+        opacity, and the candidate own test pins that and rejects any `opacity`
+        in the rule.
+  - [x] The implementer abandoned its first Today approach — detaching the row —
+        when three existing concurrency assertions failed, and reported that
+        rather than editing them. Hiding the row keeps the node and the
+        established reconciliation intact.
+  - [x] Gates: `fmt:check` 593 files, `lint` 477 files, `check:web` 0 errors,
+        527 web unit tests, `test:coverage:web` at 92.72/83.37/87.78/94.72, the
+        hex invariant, and the complete Chromium suite 44/44 with an empty
+        `.artifacts/playwright`.
 - [x] **UXD-015 — Parser-inert role gating on the application shell.** (§9.5;
       effort M; no dependency) **Parked, with the trace recorded.** The review's
       two stated consequences were checked against the shipped code before any
