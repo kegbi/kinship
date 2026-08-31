@@ -1,10 +1,14 @@
 ---
 import Breadcrumb from "../../../components/Breadcrumb.astro";
+import SettingsNavigation from "../../../components/SettingsNavigation.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
 ---
 <ApplicationLayout current="settings" description="Manage active workspace identity and defaults." pageId="settings.workspace" title="Workspace settings — Kinship">
-  <main id="main-content" class="page-frame settings-page detail-settings" tabindex="-1" data-requires-workspace-admin>
+  <main id="main-content" class="page-frame settings-page" tabindex="-1" data-requires-workspace-admin>
+    <div class="settings-layout">
+      <SettingsNavigation currentPage="settings.workspace" />
+      <div class="settings-content detail-settings">
     <Breadcrumb trail={[
       { href: "/app/settings", label: "Settings" },
       { label: "General" },
@@ -17,6 +21,8 @@ export const prerender = true;
       <label>Default currency<input name="defaultCurrencyCode" maxlength="3" pattern="[A-Za-z]{3}" aria-describedby="default-currency-error" disabled /><small id="default-currency-error" data-field-error="defaultCurrencyCode"></small></label><label>Default reminder time<input name="defaultReminderTime" type="time" required disabled /></label>
       <button type="submit" disabled>Save changes</button><p id="settings-dirty" role="status" aria-live="polite"></p><p id="settings-status" role="status" aria-live="polite">Loading workspace settings…</p>
     </form>
+      </div>
+    </div>
   </main>
 </ApplicationLayout>
 <script>import { mountWorkspaceSettings } from "../../../lib/settings.ts"; void mountWorkspaceSettings();</script>

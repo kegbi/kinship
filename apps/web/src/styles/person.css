@@ -1918,6 +1918,10 @@
     flex: none;
   }
 
+  .settings-destination-nav {
+    display: none;
+  }
+
   .settings-card-grid {
     grid-template-columns: 1fr;
   }
