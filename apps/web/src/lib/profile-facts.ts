@@ -611,6 +611,42 @@ function summary(
   return "Tag assignments";
 }
 
+type ClampedProfileFactSection = "first-meeting" | "food-preferences";
+
+function insertProfileRailTextClamp(
+  description: HTMLParagraphElement,
+  section: ClampedProfileFactSection,
+): void {
+  description.classList.add("profile-rail-clamped-summary");
+  requestAnimationFrame(() => {
+    if (
+      !description.isConnected ||
+      description.scrollHeight <= description.clientHeight
+    ) return;
+    const control = document.createElement("button");
+    control.type = "button";
+    control.className = "button-secondary profile-rail-summary-control";
+    const suffix = document.createElement("span");
+    suffix.className = "sr-only";
+    suffix.textContent = ` ${section.replaceAll("-", " ")}`;
+    const setExpanded = (expanded: boolean) => {
+      if (expanded) description.dataset.expanded = "true";
+      else delete description.dataset.expanded;
+      control.setAttribute("aria-expanded", String(expanded));
+      control.replaceChildren(
+        document.createTextNode(expanded ? "Less" : "More"),
+        suffix,
+      );
+    };
+    setExpanded(false);
+    control.addEventListener(
+      "click",
+      () => setExpanded(control.getAttribute("aria-expanded") !== "true"),
+    );
+    description.insertAdjacentElement("afterend", control);
+  });
+}
+
 function addressSummaryLines(
   record: Extract<ProfileFactRecord, { readonly section: "addresses" }>,
   options: readonly ProfileFactOption[],
@@ -1257,6 +1293,10 @@ export async function mountProfileFacts(
           item.append(description);
         } else {
           description.textContent = summary(record, snapshot.options);
+          if (
+            record.section === "first-meeting" ||
+            record.section === "food-preferences"
+          ) insertProfileRailTextClamp(description, record.section);
           item.append(description);
         }
         if (

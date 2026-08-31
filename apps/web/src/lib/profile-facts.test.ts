@@ -54,12 +54,115 @@ function allMarkup(): void {
     </div>`;
 }
 
+type ClampedProfileFactSection = "first-meeting" | "food-preferences";
+
+async function renderMeasuredSummary(
+  section: ClampedProfileFactSection,
+  overflows: boolean,
+): Promise<{ description: HTMLParagraphElement; text: string }> {
+  document.body.innerHTML = `
+    <section data-profile-fact-section="${section}"><p data-profile-fact-state></p><ul data-profile-fact-list></ul><button data-profile-fact-add></button><form data-profile-fact-form></form></section>`;
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal(
+    "requestAnimationFrame",
+    (callback: FrameRequestCallback) => frames.push(callback),
+  );
+  const value = section === "food-preferences"
+    ? {
+      foodPreferences:
+        "Tea; no shellfish; vegetarian meals preferred when sharing dinner",
+    }
+    : {
+      notes: "Introduced while discussing mathematics and analytical engines",
+      placeText: "London salon",
+    };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(response({
+      options: [],
+      personUpdatedAt: revision,
+      records: [{
+        id: personId,
+        section,
+        updatedAt: revision,
+        value,
+      }],
+      status: "ready",
+    })),
+  );
+
+  await mountProfileFacts(personId, workspaceId, false, revision);
+  const description = document.querySelector<HTMLParagraphElement>(
+    "[data-profile-fact-list] p",
+  )!;
+  const text = description.textContent ?? "";
+  Object.defineProperties(description, {
+    clientHeight: { configurable: true, value: 32 },
+    scrollHeight: { configurable: true, value: overflows ? 64 : 32 },
+  });
+  for (const frame of frames) frame(0);
+  return { description, text };
+}
+
 afterEach(() => {
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
 });
 
 describe("PEOPLE-006 profile-fact sections", () => {
+  it("expands an overflowing food-preferences summary in place", async () => {
+    const { description, text } = await renderMeasuredSummary(
+      "food-preferences",
+      true,
+    );
+    const control = document.querySelector<HTMLButtonElement>(
+      "button.profile-rail-summary-control",
+    )!;
+
+    expect(control.firstChild?.textContent).toBe("More");
+    expect(control.getAttribute("aria-expanded")).toBe("false");
+    control.click();
+    expect(description.textContent).toBe(text);
+    expect(description.dataset.expanded).toBe("true");
+    expect(control.firstChild?.textContent).toBe("Less");
+    expect(control.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("does not render a control for a food-preferences summary without overflow", async () => {
+    await renderMeasuredSummary("food-preferences", false);
+
+    expect(
+      document.querySelector("button.profile-rail-summary-control"),
+    ).toBeNull();
+  });
+
+  it("keeps the visible food-preferences label in the accessible name", async () => {
+    await renderMeasuredSummary("food-preferences", true);
+    const control = document.querySelector<HTMLButtonElement>(
+      "button.profile-rail-summary-control",
+    )!;
+
+    expect(control.hasAttribute("aria-label")).toBe(false);
+    expect(control.firstChild?.textContent).toBe("More");
+    expect(control.textContent).toContain(control.firstChild?.textContent);
+    expect(control.querySelector(".sr-only")?.textContent).toBe(
+      " food preferences",
+    );
+  });
+
+  it("uses a distinct suffix for an overflowing first-meeting summary", async () => {
+    await renderMeasuredSummary("first-meeting", true);
+    const control = document.querySelector<HTMLButtonElement>(
+      "button.profile-rail-summary-control",
+    )!;
+
+    expect(control.firstChild?.textContent).toBe("More");
+    expect(control.querySelector(".sr-only")?.textContent).toBe(
+      " first meeting",
+    );
+    expect(control.textContent).toBe("More first meeting");
+  });
+
   it("renders primary contact links and copy controls while expanding every other record", async () => {
     markup();
     const primaryId = "00000000-0000-4000-8000-000000000301";
