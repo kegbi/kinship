@@ -11,10 +11,10 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-008 — Persistent settings sidebar**. All of `UXD-002`,
-  `UXD-009`, `UXD-011`, and `UXD-012` are integrated, alongside the review's top
-  five, `UXD-003`, `DOC-001`, `REL-021`, and `REL-023`, so `UXD-016` and
-  `UXD-017` are unblocked.
+- Current leaf: **UXD-015 — Parser-inert role gating on the application shell**.
+  All of `UXD-002`, `UXD-008`, `UXD-009`, `UXD-011`, and `UXD-012` are
+  integrated, alongside the review's top five, `UXD-003`, `DOC-001`, `REL-021`,
+  and `REL-023`.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -1718,8 +1718,62 @@ asserts, so it runs that spec on its candidate.
   - [x] Gates: `fmt:check`, `lint`, `check:web`, 439 web unit tests,
         `test:coverage:web` at 91.79/82.27/86.67/93.87, zero hex literals
         outside `:root`, and the complete Chromium suite 44/44.
-- [ ] **UXD-008 — Persistent settings sidebar.** (§8; effort M; depends on
-      `UXD-001`)
+- [x] **UXD-008 — Persistent settings sidebar.** (§8; effort M; depends on
+      `UXD-001`) All fifteen settings surfaces now share one sticky grouped
+      navigation of settings destinations beside a content column capped in the
+      accepted band, implementing
+      [`dashboard-settings-design.md`](../product/dashboard-settings-design.md)
+      rather than inventing a layout. Review §8 called this "not an open
+      question" and it was right.
+  - [x] The layout classes already existed and were used on exactly one page.
+        `/app/settings` had `.settings-layout` with a `.settings-local-nav`, but
+        that nav is an in-page anchor jump, not a list of destinations. The grid
+        was reused; the destination navigation is new.
+  - [x] **Role gating travels with each entry.** Every admin-only and owner-only
+        destination carries the same `data-requires-workspace-admin` or
+        `data-requires-workspace-owner` attribute its page declares, so
+        `applySessionGating` strips it for a member who cannot open it. That
+        reuses the mechanism the settings hub's cards already use rather than
+        adding a second one, and it is asserted exhaustively over the gated
+        destinations rather than sampled. The sidebar adds no client module, no
+        fetch, and no listener.
+  - [x] Group labels are the hub's non-heading `scope-label` treatment, not
+        `<h2>`s. A second family of level-two headings on pages that already
+        have one buys nothing and risks axe's `heading-order` rule.
+  - [x] The workspace danger zone sits in its own group, because
+        `information-architecture.md` forbids placing a destructive workspace
+        action beside routine preferences.
+  - [x] Below the existing 760px breakpoint the sidebar is hidden rather than
+        stacked above the content, and `UXD-009`'s breadcrumb is the upward
+        path. That rule landed in `person.css`, which is where the trailing
+        `@media (max-width: 760px)` block lives after `UXD-012`'s contiguous
+        split — the recorded consequence of naming those files for their
+        predominant content, not a misplacement.
+  - [x] Personalization's `?section=` navigation is untouched and nests inside
+        the content column, which is the "focused subnavigator" the design
+        document places there. `WORKSPACE-003` drives it and `REL-013` is a
+        recorded race in it; restructuring it was not worth the risk for a
+        layout leaf.
+  - [x] **A correction to `UXD-001`, repaired in the same pass.** Five
+        declarations in the personalization rules referenced `--ink`,
+        `--ink-muted`, `--line`, and `--surface-raised`: four custom properties
+        that are never declared and carry no fallback, so every one of them was
+        invalid at computed-value time. The selected personalization nav item
+        had no background at all and one row border had no colour. `UXD-001`
+        verified that every declared token was referenced and never the reverse.
+        They now map to `--ink-1`, `--ink-2`, `--line-1`, and `--surface-1`, and
+        a permanent unit test fails on any fallback-less use of an undeclared
+        property — a defect invisible to every other gate. Fixing it here was a
+        precondition: generalizing a layout built on invalid properties would
+        have spread it to fifteen pages.
+  - [x] Every destination label was checked against every `getByRole` name in
+        `tests/e2e/`. The overlaps are all headings or hub content on pages
+        without a sidebar, so no locator became ambiguous and no spec changed.
+  - [x] Gates: `fmt:check` 593 files, `lint` 477 files, `check:web` 0 errors,
+        the Astro production build, 521 web unit tests, `test:coverage:web` at
+        92.68/83.23/87.77/94.68, the hex invariant, the undeclared-property
+        proof, and the complete Chromium suite 44/44 with an empty
+        `.artifacts/playwright`.
 - [x] **UXD-009 — Breadcrumbs on routes at least two levels deep.** (§8; effort
       S; no dependency) Twenty deep routes gained a breadcrumb naming their real
       position: the two person-scoped report shells, the journal item, add
@@ -1945,6 +1999,17 @@ asserts, so it runs that spec on its candidate.
         tests among them, `test:coverage:api` against real PostgreSQL 526 passed
         / 0 failed at 85.1 / 82.2 / 87.3, `fmt:check` 580 files, and `lint` 473
         files. No web or browser gate applies.
+- [ ] **REL-026 — Declare the settings audit page's accepted access level.**
+      `page-catalog.yaml` gives `settings.audit` `access: audit-read`, which
+      `authorization-matrix.yaml` resolves to `[owner, admin]`, and the settings
+      hub already hides its card from a member. But `audit.astro` itself carries
+      no `data-requires-workspace-admin`, so a member who reaches the route
+      still gets the page shell and only the API refuses them. Found while
+      verifying `UXD-008`'s sidebar gating against each page's own declaration —
+      the sidebar is correct and the page is the outlier. Left out of that
+      candidate because a role-gating change is a security boundary and needs
+      its own focused evidence. `UXD-015` replaces this mechanism wholesale and
+      may absorb it; queued separately so it is not lost if that leaf moves.
 - [ ] **REL-025 — Watch the `auth-002` invitation acceptance.** One full-suite
       run during `UXD-009` failed after `Accept invitation`: the invitee page
       was the public home rather than the `Welcome to <workspace>` heading, so
