@@ -97,6 +97,127 @@ describe("merged person timeline", () => {
     );
   });
 
+  it("renders activity participants, category, and emotions in received order", async () => {
+    const root = markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        items: [
+          item({
+            activityType: "Workshop",
+            emotions: [
+              { id: crypto.randomUUID(), name: "Inspired" },
+              { id: crypto.randomUUID(), name: "Curious" },
+            ],
+            kind: "activity",
+            participants: [
+              { id: crypto.randomUUID(), name: "Ada Lovelace" },
+              { id: crypto.randomUUID(), name: "Grace Hopper" },
+            ],
+          }),
+        ],
+        status: "ready",
+      })),
+    );
+
+    await mountPersonTimeline({ personId, workspaceId });
+
+    expect(
+      [...root.querySelectorAll("details > ul > li")].map((line) =>
+        line.textContent
+      ),
+    ).toEqual([
+      "Participants: Ada Lovelace, Grace Hopper",
+      "Category: Workshop",
+      "Emotions: Inspired, Curious",
+    ]);
+  });
+
+  it("renders incoming and outgoing call direction", async () => {
+    const root = markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        items: [
+          item({ contactWasCaller: true, kind: "call" }),
+          item({ contactWasCaller: false, kind: "call" }),
+        ],
+        status: "ready",
+      })),
+    );
+
+    await mountPersonTimeline({ personId, workspaceId });
+
+    expect(
+      [...root.querySelectorAll("details > ul")].map((list) =>
+        list.textContent
+      ),
+    ).toEqual(["Incoming call", "Outgoing call"]);
+  });
+
+  it("renders conversation metadata and messages in received order", async () => {
+    const root = markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        items: [
+          item({
+            channelType: "Email",
+            contactMethod: "ada@example.test",
+            kind: "conversation",
+            messages: [
+              {
+                content: "Can we compare notes?",
+                direction: "inbound",
+                writtenAt: "2026-01-02T14:00:00.000Z",
+              },
+              {
+                content: "Yes, tomorrow works.",
+                direction: "outbound",
+                writtenAt: "2026-01-02T14:05:00.000Z",
+              },
+            ],
+          }),
+          item({ kind: "conversation" }),
+          item({ kind: "conversation", messages: [] }),
+        ],
+        status: "ready",
+      })),
+    );
+
+    await mountPersonTimeline({ personId, workspaceId });
+
+    expect(
+      [...root.querySelectorAll("details > ul")].map((list) =>
+        [...list.children].map((line) => line.textContent)
+      ),
+    ).toEqual([
+      [
+        "Channel: Email",
+        "Via ada@example.test",
+        "Inbound: Can we compare notes?",
+        "Outbound: Yes, tomorrow works.",
+      ],
+      ["Direction not recorded"],
+      ["Direction not recorded"],
+    ]);
+  });
+
+  it("omits detail lists for notes and life events", async () => {
+    const root = markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        items: [item({ kind: "note" }), item({ kind: "life-event" })],
+        status: "ready",
+      })),
+    );
+
+    await mountPersonTimeline({ personId, workspaceId });
+
+    expect(root.querySelectorAll("details > ul")).toHaveLength(0);
+  });
+
   it("formats every date precision in UTC without inventing an unknown date", async () => {
     const root = markup();
     const occurredAt = "1999-12-31T23:59:00.000Z";
