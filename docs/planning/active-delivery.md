@@ -11,10 +11,10 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-017B — Spacing-rhythm pass**. All of `UXD-002`, `UXD-008`,
-  `UXD-009`, `UXD-011`, `UXD-012`, `UXD-014`, and the complete `UXD-016` are
-  integrated, alongside the review top five, `UXD-003`, `DOC-001`, `REL-021`,
-  and `REL-023`; `UXD-015` is parked with its evidence.
+- Current leaf: **UXD-018 — Command mode in the palette**. All of `UXD-002`,
+  `UXD-008`, `UXD-009`, `UXD-011`, `UXD-012`, `UXD-014`, and the complete
+  `UXD-016` are integrated, alongside the review top five, `UXD-003`, `DOC-001`,
+  `REL-021`, and `REL-023`; `UXD-015` is parked with its evidence.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -2174,7 +2174,7 @@ asserts, so it runs that spec on its candidate.
           against real PostgreSQL 529 passed / 0 failed at 85.1/82.2/87.3, the
           complete Chromium suite 44/44 with an empty `.artifacts/playwright`,
           and the theme-matrix browser probe above.
-- [ ] **UXD-017 — Type-scale and spacing-rhythm pass.** (§10.3, §10.4; effort M;
+- [x] **UXD-017 — Type-scale and spacing-rhythm pass.** (§10.3, §10.4; effort M;
       depends on `UXD-001` and `UXD-011`) Split in two before dispatch: the type
       scale and weights are one mechanism and the spacing steps and card
       densities another, and a single candidate sweeping both across five
@@ -2230,12 +2230,56 @@ asserts, so it runs that spec on its candidate.
           person name, 28px page `h1`, 18.4px zone `h2`, 15.2px `h3`, 14px `h4`,
           600-weight controls — with no inversions. No API gate applies: the
           candidate touches five stylesheets and two web tests.
-  - [ ] **UXD-017B — Spacing-rhythm pass.** (§10.4) The 17 arbitrary spacing
-        steps snap to `--space-1…8`, `clamp()` survives only for page-level
-        padding, and the two card densities become tokens — `--pad-card` 1.25rem
-        for the main column, `--pad-block` .875rem for the rail. The
-        body/meta/micro measurements recorded above are decided here or in a
-        recorded deferral.
+  - [x] **UXD-017B — Spacing-rhythm pass.** (§10.4) The five application
+        stylesheets' 298 spacing declarations now sit on the shared scale: every
+        on-scale literal became its `--space-1…8` token, the off-scale values
+        snapped by a fixed band map, and the two densities became tokens —
+        `--pad-card` 1.25rem replacing the uniform `clamp(1.1rem, 3vw, 1.6rem)`
+        §10.4 names as a cause of the flat feel, `--pad-block` .875rem on the
+        rail. Measured in the browser: card padding 20px against rail 14px, the
+        density contrast the review asks for, with buttons snapped from
+        10.4/14.4px to 12/16px.
+    - [x] **The census, corrected:** the review said 17 arbitrary steps; the
+          count was ~176 off-scale declarations across ~36 distinct values, and
+          the invariant's RED run flagged 233 sites including the tokenizable
+          on-scale literals.
+    - [x] **A planned checkpoint, not a stop:** the ticket required the
+          implementer to halt after the unambiguous bands and table the 23
+          decision-dependent sites. Twenty-one were approved as proposed — seven
+          card surfaces onto `--pad-card`, the `.page-frame` endpoints onto
+          tokens, the 1.2/1.25rem band split between `--space-4` and `--space-5`
+          by role. Two were amended: the `select`'s 2.35rem caret clearance
+          stays a literal exception because it is component geometry, not
+          rhythm; and the person hero keeps a responsive clamp with tokenized
+          endpoints, `clamp(var(--pad-card), 4vw,
+          var(--space-6))`,
+          rather than flattening the §7.1 showcase surface to a fixed 1.25rem.
+    - [x] **Fixed exceptions, each carrying its reason in the invariant:** the
+          §7.5 workspace grid gap 1.25rem at the 1199px step is an accepted
+          layout value and stays literal; the two −1px clipping offsets on
+          `.sr-only` and the tag-picker legend; the .1rem directory-nav gap; the
+          caret clearance. `forced-colors` blocks and `scroll-margin-top`
+          clearances are out of the invariant's property set entirely.
+    - [x] **The invariant is permanent:** beside the colour and weight tests,
+          every `padding`/`margin`/`gap` declaration in the five files must be
+          `0`, `auto`, a percentage, a `--space`/`--pad` token, an approved
+          page-level `clamp()`, or a listed exception. The dark-token derivation
+          test's deliberately-inherited filter gained the `--pad-` prefix, since
+          the density tokens are theme-independent.
+    - [x] **Recorded deferral closing the `UXD-017A` measurement note:**
+          running-text sizes stay as they are — body 1rem against §10.3's
+          .95/1.5, `.section-state` meta at inherited size on `--ink-1` against
+          .82 on `--ink-2`, badges at .7–.8rem against .72. Running text is a
+          third mechanism, none of those values is a contrast defect, and a
+          future slice can take the recorded numbers if the density of
+          information surfaces ever argues for it.
+    - [x] Gates: `fmt:check` 596 files, `lint` 480 files, `check:web` 0 errors,
+          543 web unit tests, `test:coverage:web` at 92.79/83.45/87.91/94.77,
+          the colour, weight, and new spacing invariants, the Astro production
+          build, the complete Chromium suite 44/44 with an empty
+          `.artifacts/playwright`, and a rendered browser probe confirming the
+          computed rhythm — card 20px, rail 14px, hero clamped at 32px, page
+          frame 48px, §7.5 gap intact at 20px. No API gate applies.
 - [ ] **UXD-018 — Command mode in the palette.** (§8; effort M; depends on
       `UXD-004`)
 - [ ] **UXD-019 — Mobile bottom-sheet editors below the tablet breakpoint.**
