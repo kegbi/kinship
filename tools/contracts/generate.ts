@@ -7065,19 +7065,27 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
               type: "string",
               enum: ["all", "timeline", "planning", "things", "admin"],
             },
+            theme: {
+              type: "string",
+              enum: ["system", "light", "dark"],
+            },
           },
           additionalProperties: false,
         },
         MemberUiStateInput: {
           type: "object",
-          required: ["personWorkspaceView"],
           properties: {
             personWorkspaceView: {
               type: "string",
               enum: ["all", "timeline", "planning", "things", "admin"],
             },
+            theme: {
+              type: "string",
+              enum: ["system", "light", "dark"],
+            },
           },
           additionalProperties: false,
+          minProperties: 1,
         },
         MemberUiStateReady: {
           type: "object",
@@ -8192,6 +8200,7 @@ export type PersonWorkspaceView = "all" | "timeline" | "planning" | "things" | "
 
 export interface MemberUiState {
   readonly personWorkspaceView?: PersonWorkspaceView;
+  readonly theme?: "system" | "light" | "dark";
 }
 
 export interface MemberSession {
@@ -8475,7 +8484,7 @@ export function getMemberUiState(workspaceId?: string): Promise<ApiResult<{ read
   return request("/api/v1/member/ui-state", { headers: workspaceHeader(workspaceId) });
 }
 
-export function saveMemberUiState(input: { readonly personWorkspaceView: PersonWorkspaceView }, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly uiState: MemberUiState }>> {
+export function saveMemberUiState(input: { readonly personWorkspaceView?: PersonWorkspaceView; readonly theme?: "system" | "light" | "dark" }, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly uiState: MemberUiState }>> {
   return request("/api/v1/member/ui-state", { method: "PATCH", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
 }
 

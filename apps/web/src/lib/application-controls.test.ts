@@ -6,6 +6,11 @@ import { readApplicationStylesheet } from "./application-stylesheet.test-helper.
 
 const applicationCss = readApplicationStylesheet();
 const tokensCss = readFileSync("apps/web/src/styles/tokens.css", "utf8");
+const applicationLayout = readFileSync(
+  "apps/web/src/layouts/ApplicationLayout.astro",
+  "utf8",
+);
+const themeSource = readFileSync("apps/web/src/lib/theme.ts", "utf8");
 const todayPage = readFileSync("apps/web/src/pages/app.astro", "utf8");
 const layoutPaths = [
   "apps/web/src/layouts/ApplicationLayout.astro",
@@ -213,24 +218,69 @@ afterEach(() => {
 describe("application control presentation", () => {
   it("overrides every theme-dependent custom property in dark mode", () => {
     const lightRoot = tokensCss.match(/^:root\s*\{([^}]*)\}/)?.[1] ?? "";
-    const darkRoot = tokensCss.match(
-      /@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)\s*\{\s*:root\s*\{([^}]*)\}/,
+    const mediaDarkRoot = tokensCss.match(
+      /@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)\s*\{\s*:root:not\(\[data-theme="light"\]\)\s*\{([^}]*)\}/,
     )?.[1] ?? "";
-    const customProperties = (block: string): string[] =>
-      Array.from(
-        block.matchAll(/(--[a-z0-9-]+)\s*:/gi),
-        (match) => match[1]!,
-      );
+    const explicitDarkRoot = tokensCss.match(
+      /:root\[data-theme="dark"\]\s*\{([^}]*)\}/,
+    )?.[1] ?? "";
+    const customProperties = (block: string): Record<string, string> =>
+      Object.fromEntries(Array.from(
+        block.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/gi),
+        (match) => [match[1]!, match[2]!.trim()],
+      ));
     const deliberatelyInherited = (name: string): boolean =>
       name === "--line-hairline" ||
       name.startsWith("--radius-") ||
       name.startsWith("--space-");
-    const lightProperties = customProperties(lightRoot).filter(
-      (name) => !deliberatelyInherited(name),
+    const lightProperties = Object.fromEntries(
+      Object.entries(customProperties(lightRoot)).filter(
+        ([name]) => !deliberatelyInherited(name),
+      ),
     );
 
-    expect(lightProperties.length).toBeGreaterThan(0);
-    expect(customProperties(darkRoot).sort()).toEqual(lightProperties.sort());
+    expect(Object.keys(lightProperties).length).toBeGreaterThan(0);
+    const mediaDarkProperties = customProperties(mediaDarkRoot);
+    const explicitDarkProperties = customProperties(explicitDarkRoot);
+    expect(explicitDarkProperties).toEqual(mediaDarkProperties);
+    expect(Object.keys(mediaDarkProperties).sort()).toEqual(
+      Object.keys(lightProperties).sort(),
+    );
+
+    const themeSelectorSpecificity = (selector: string) => [
+      0,
+      (selector.match(/:root/g) ?? []).length +
+      (selector.match(/\[data-theme(?:="[^"]+")?\]/g) ?? []).length,
+      0,
+    ];
+    expect(themeSelectorSpecificity(':root:not([data-theme="light"])'))
+      .toEqual([0, 2, 0]);
+    expect(themeSelectorSpecificity(':root[data-theme="dark"]')).toEqual([
+      0,
+      2,
+      0,
+    ]);
+  });
+
+  it("runs the local theme cache inline in the application head", () => {
+    const headStart = applicationLayout.indexOf("<head>");
+    const headEnd = applicationLayout.indexOf("</head>");
+    const inlineScript = applicationLayout.match(
+      /<script\s+is:inline>([\s\S]*?)<\/script>/,
+    );
+    const scriptIndex = inlineScript?.index ?? -1;
+    const layoutStorageKey = inlineScript?.[1]?.match(
+      /localStorage\.getItem\("([^"]+)"\)/,
+    )?.[1];
+    const runtimeStorageKey = themeSource.match(
+      /const THEME_STORAGE_KEY = "([^"]+)"/,
+    )?.[1];
+
+    expect(scriptIndex).toBeGreaterThan(headStart);
+    expect(scriptIndex).toBeLessThan(headEnd);
+    expect(layoutStorageKey).toBe("kinship.theme");
+    expect(runtimeStorageKey).toBe(layoutStorageKey);
+    expect(inlineScript?.[1]).not.toMatch(/matchMedia|theme-color/);
   });
 
   it("advertises native light and dark color schemes", () => {

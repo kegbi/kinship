@@ -245,6 +245,30 @@ test(
     await expect(
       page.getByRole("status").filter({ hasText: "Preferences saved" }),
     ).toBeVisible();
+    const originalBodyBackground = await page.locator("body").evaluate(
+      (body) => getComputedStyle(body).backgroundColor,
+    );
+    const theme = page.getByLabel("Theme");
+    await theme.selectOption("dark");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect.poll(() =>
+      page.locator("body").evaluate((body) =>
+        getComputedStyle(body).backgroundColor
+      )
+    ).not.toBe(originalBodyBackground);
+    await expect(
+      page.getByRole("status").filter({ hasText: "Dark theme saved" }),
+    ).toBeVisible();
+    await expectAccessible(page);
+    await page.evaluate(() => localStorage.removeItem("kinship.theme"));
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(page.getByLabel("Theme")).toHaveValue("dark");
+    await page.getByLabel("Theme").selectOption("system");
+    await expect(page.locator("html")).not.toHaveAttribute("data-theme");
+    await expect(
+      page.getByRole("status").filter({ hasText: "System theme saved" }),
+    ).toBeVisible();
 
     const otherContext = await browser.newContext({ ignoreHTTPSErrors: true });
     const otherPage = await otherContext.newPage();
