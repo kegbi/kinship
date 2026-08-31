@@ -11,9 +11,9 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **UXD-016C — The explicit theme toggle**. All of `UXD-002`,
-  `UXD-008`, `UXD-009`, `UXD-011`, `UXD-012`, `UXD-014`, `UXD-016A`, and
-  `UXD-016B` are integrated, alongside the review top five, `UXD-003`,
+- Current leaf: **UXD-017 — Type-scale and spacing-rhythm pass**. All of
+  `UXD-002`, `UXD-008`, `UXD-009`, `UXD-011`, `UXD-012`, `UXD-014`, and the
+  complete `UXD-016` are integrated, alongside the review top five, `UXD-003`,
   `DOC-001`, `REL-021`, and `REL-023`; `UXD-015` is parked with its evidence.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
@@ -2010,7 +2010,7 @@ asserts, so it runs that spec on its candidate.
         allow-list inside `applySessionGating` that blocks a whole route — so a
         reader must check both to know whether a surface is gated. Recorded here
         rather than queued, because no active outcome consumes it.
-- [ ] **UXD-016 — Dark mode.** (§10.5; effort M; depends on `UXD-001` and
+- [x] **UXD-016 — Dark mode.** (§10.5; effort M; depends on `UXD-001` and
       `UXD-011`) Split in three. §10.5 calls this "one ~28-line override block
       per mechanism", which is true only once every colour in the application
       stylesheets comes from a token — and eighty-eight of them did not — and
@@ -2107,14 +2107,73 @@ asserts, so it runs that spec on its candidate.
           92.72/83.37/87.81/94.73, the colour-literal invariant, the complete
           Chromium suite 44/44 with an empty `.artifacts/playwright`, and the
           dark-scheme axe probe above.
-  - [ ] **UXD-016C — The explicit theme toggle.** The `[data-theme]` mechanism,
-        a control in `settings.preferences`, somewhere durable to keep the
-        choice, and an inline first-paint script so the page does not flash the
-        wrong theme. Split out because it crosses the API boundary and adds a
-        first-paint mechanism, neither of which the system-preference theme
-        needs. `member_preferences.ui_state` is the obvious home — `UXD-002C3A`
-        built it as a closed set of named presentation keys with a write path
-        and session delivery — rather than a new preferences column.
+  - [x] **UXD-016C — The explicit theme toggle.** System, Light, and Dark in a
+        new Appearance block on `settings.preferences`, saved on change through
+        the existing `PATCH /api/v1/member/ui-state`, durable as a second
+        recognised `ui_state` key, and applied through `[data-theme]` on the
+        root element: the dark media block's selector became
+        `:root:not([data-theme="light"])`, an explicit
+        `:root[data-theme="dark"]` block repeats the dark declarations, and each
+        explicit block pins `color-scheme`. No token value changed.
+    - [x] **Two owners, recorded deliberately.** `kinship.theme` in localStorage
+          exists only so an inline first-paint script in `ApplicationLayout`'s
+          head can set `data-theme` before anything renders; `ui_state` owns the
+          value. Every session resolution and revalidation reconciles the
+          attribute and the cache from `session.uiState.theme` — including
+          removal when the stored choice is absent or `system` — and a
+          successful save rewrites the cached session the `UXD-002C3B` way,
+          without which the sixty-second cache would revert the theme on the
+          next navigation. The auth and public layouts carry no script and stay
+          light, per `UXD-016B`.
+    - [x] **A defect caught in review: the select dropped keyboard focus.** The
+          first candidate disabled the control while its save was in flight, and
+          disabling a focused control drops focus to the body — Chrome fires
+          `change` per arrow press on a closed select, so a keyboard member
+          stepping through the options lost focus on the first press. The
+          disable became a depth-one coalescing queue: every change applies
+          instantly, saves are issued strictly sequentially in user order, an
+          intermediate outcome never touches the status or the session cache,
+          and a failure reverts to the last durably saved theme. A regression
+          test drives two changes against a held first save and asserts order,
+          focus, and the final state.
+    - [x] **The controller's ticket omitted `deno.json` from the owned paths**,
+          so the new `member_ui_state_test.ts` arrived wired into no task — the
+          `REL-023` class exactly. Authorized in review and added to the file
+          lists of both `test:unit:api` and `test:coverage:api:direct`; the test
+          reads nothing, so neither `--allow-read` list changed. `test:unit:api`
+          went 295 to 298 and the PostgreSQL run 526 to 529.
+    - [x] The token test now derives both dark blocks and requires them
+          value-identical — drift between the media-guarded and explicit dark
+          blocks is the defect it exists to catch — and pins the first-paint
+          mechanism: the inline script sits inside `<head>`, is `is:inline`, and
+          names the same storage key as `theme.ts`, the one deliberate string
+          duplication.
+    - [x] The browser suite gained its first sight of the dark theme: `app-002e`
+          forces Dark, asserts the attribute and a changed body background
+          without pinning a literal, runs the axe scan under the forced theme,
+          and proves durability through the API by deleting the localStorage key
+          before reloading. The forced-light-under-dark-system case is invisible
+          to Playwright's light scheme, so the controller probed it directly:
+          the full two-by-three matrix of system scheme against override
+          resolves the correct palette, with forced light under an emulated dark
+          scheme rendering `#f4f0e7` and `color-scheme: light`.
+    - [x] Meta `theme-color` follows a forced theme by writing the computed
+          `--surface-page` into both tags and restoring the captured originals
+          on `system`, so no colour literal entered TypeScript.
+    - [x] Recorded limitations, deliberate: no cross-tab live sync — each tab
+          reconciles on its own resolution; a different member on the same
+          browser can see the previous member's cached theme for one round trip
+          until reconciliation rewrites it; a failed save reverts and announces,
+          with no retry queue.
+    - [x] Gates: `fmt:check` 596 files, `lint` 480 files, `check:web` 0 errors,
+          `contracts:check`, `test:contract` 125 passed, `test:unit:api` 298
+          passed / 0 failed, 541 web unit tests, `test:coverage:web` at
+          92.79/83.45/87.91/94.77 with `theme.ts` at 100/95/100/100, the
+          colour-literal invariant, the Astro production build with the inline
+          script verbatim in every prerendered app page, `test:coverage:api`
+          against real PostgreSQL 529 passed / 0 failed at 85.1/82.2/87.3, the
+          complete Chromium suite 44/44 with an empty `.artifacts/playwright`,
+          and the theme-matrix browser probe above.
 - [ ] **UXD-017 — Type-scale and spacing-rhythm pass.** (§10.3, §10.4; effort M;
       depends on `UXD-001` and `UXD-011`)
 - [ ] **UXD-018 — Command mode in the palette.** (§8; effort M; depends on
