@@ -4,6 +4,7 @@ import type {
   PersonalizationUpdateInputBySection,
   PersonProfileSectionId,
   PersonTimelineItem,
+  PersonTimelineMessage,
   ProfileFactCreateInputBySection,
   ProfileFactListInput,
   ProfileFactUpdateInputBySection,
@@ -779,7 +780,7 @@ Deno.test("[PEOPLE-003] OpenAPI publishes bounded person life-event history", ()
   );
 });
 
-Deno.test("[UXD-002C2A] OpenAPI publishes the person timeline operation and accepted auth schemes", () => {
+Deno.test("[UXD-002C2A][UXD-002C2B2b] OpenAPI publishes the person timeline operation and accepted auth schemes", () => {
   const document = buildOpenApiDocument();
   const paths = document.paths as Record<string, {
     readonly get?: {
@@ -797,14 +798,28 @@ Deno.test("[UXD-002C2A] OpenAPI publishes the person timeline operation and acce
     readonly schemas: Readonly<Record<string, ObjectSchema>>;
   }).schemas;
   const item = schemas.PersonTimelineItem;
+  const message = schemas.PersonTimelineMessage;
   const page = schemas.PersonTimelinePage;
   const generatedItem: PersonTimelineItem = {
-    datePrecision: "month_day",
-    excerpt: "Annual celebration",
+    activityType: "Shared meal",
+    datePrecision: "full",
+    emotions: [{
+      id: "00000000-0000-4000-8000-000000000302",
+      name: "Joy",
+    }],
     id: "00000000-0000-4000-8000-000000000300",
-    kind: "life-event",
-    occurredAt: "2026-12-10T00:00:00.000000Z",
-    title: "Birthday",
+    kind: "activity",
+    occurredAt: "2026-08-20T08:30:00.000000Z",
+    participants: [{
+      id: "00000000-0000-4000-8000-000000000301",
+      name: "Ada Lovelace",
+    }],
+    title: "Analytical engine review",
+  };
+  const generatedMessage: PersonTimelineMessage = {
+    content: "Arrived?",
+    direction: "outbound",
+    writtenAt: "2026-08-20T08:30:00.000000Z",
   };
 
   assert(
@@ -824,14 +839,32 @@ Deno.test("[UXD-002C2A] OpenAPI publishes the person timeline operation and acce
   );
   assert(
     item?.additionalProperties === false &&
-      ["datePrecision", "id", "kind", "occurredAt"].every((field) =>
-        item.required?.includes(field)
-      ) &&
-      item.properties?.excerpt !== undefined &&
-      item.properties?.title !== undefined &&
+      JSON.stringify(item.required) ===
+        JSON.stringify(["datePrecision", "id", "kind", "occurredAt"]) &&
+      [
+        "activityType",
+        "channelType",
+        "contactMethod",
+        "contactWasCaller",
+        "emotions",
+        "excerpt",
+        "messages",
+        "participants",
+        "title",
+      ].every((field) => item.properties?.[field] !== undefined) &&
+      item.properties?.participants?.items?.$ref ===
+        "#/components/schemas/InteractionParticipant" &&
+      item.properties?.emotions?.items?.$ref ===
+        "#/components/schemas/InteractionOption" &&
+      item.properties?.messages?.items?.$ref ===
+        "#/components/schemas/PersonTimelineMessage" &&
+      message?.additionalProperties === false &&
+      JSON.stringify(message.required) ===
+        JSON.stringify(["content", "direction", "writtenAt"]) &&
       page?.additionalProperties === false &&
       page.properties?.items?.maxItems === 50 &&
-      generatedItem.datePrecision === "month_day",
+      generatedItem.participants?.[0]?.name === "Ada Lovelace" &&
+      generatedMessage.direction === "outbound",
     "timeline item and page stay lean, strict, bounded, and generated",
   );
 });

@@ -1362,7 +1362,12 @@ Deno.test("[UXD-002C2A] HTTP returns a private filtered person timeline page", a
         received = [resolved, id, input];
         return Promise.resolve({
           items: [{
+            contactWasCaller: true,
             datePrecision: "full",
+            emotions: [{
+              id: "00000000-0000-4000-8000-000000000301",
+              name: "Grateful",
+            }],
             excerpt: "Discussed the analytical engine.",
             id: "00000000-0000-4000-8000-000000000300",
             kind: "call",
@@ -1380,7 +1385,14 @@ Deno.test("[UXD-002C2A] HTTP returns a private filtered person timeline page", a
     { headers },
   );
   const body = await response.json() as {
-    readonly items?: readonly { readonly kind?: string }[];
+    readonly items?: readonly {
+      readonly contactWasCaller?: boolean;
+      readonly emotions?: readonly {
+        readonly id: string;
+        readonly name: string;
+      }[];
+      readonly kind?: string;
+    }[];
     readonly nextCursor?: string;
   };
   const input = (received as [typeof actor, string, {
@@ -1390,9 +1402,11 @@ Deno.test("[UXD-002C2A] HTTP returns a private filtered person timeline page", a
   }])[2];
   assert(
     response.status === 200 && body.items?.[0]?.kind === "call" &&
+      body.items[0].contactWasCaller === true &&
+      body.items[0].emotions?.[0]?.name === "Grateful" &&
       body.nextCursor === "opaque-next" &&
       response.headers.get("cache-control") === "private, no-store",
-    "timeline page is returned without public caching",
+    "timeline detail passes through unchanged without public caching",
   );
   assert(
     (received as [typeof actor, string])[0].workspaceId === actor.workspaceId &&
