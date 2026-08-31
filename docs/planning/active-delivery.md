@@ -11,10 +11,10 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current leaf: **REL-024 — Run the five unreferenced contracts**. All of
-  `UXD-008`, `UXD-009`, `UXD-011`, `UXD-012`, `UXD-014`, and the complete
-  `UXD-016` are integrated, alongside the review top five, `UXD-003`, `DOC-001`,
-  `REL-021`, and `REL-023`; `UXD-015` is parked with its evidence.
+- Current work: **the Phase 12 acceptance checkpoint**. Every `UXD` leaf through
+  `UXD-019` is integrated or parked with a recorded reason, and `REL-024` closed
+  the reliability queue; the phase box awaits the aggregate checkpoint gates on
+  `main`.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -2471,7 +2471,7 @@ asserts, so it runs that spec on its candidate.
       flow. Recorded rather than diagnosed, so a recurrence has a trail. Treat a
       second occurrence as a real ordering or shared-state defect, not a flake;
       `REL-003` already had to serialize this stack once.
-- [ ] **REL-024 — Run the five remaining unreferenced architecture contracts.**
+- [x] **REL-024 — Run the five remaining unreferenced architecture contracts.**
       Found while wiring `REL-023`, by asking its question of every `*_test.ts`
       in the repository rather than only the one file the ticket named. Five
       more executable contracts are in no `deno task`:
@@ -2485,6 +2485,18 @@ asserts, so it runs that spec on its candidate.
       five contracts with five different permission sets are a different size of
       change from one, and the candidate that wires a passing contract should
       not be the candidate that discovers a failing one.
+  - [x] Delivered as a two-line `deno.json` diff: the five files joined the test
+        lists of both `test:unit:api` and `test:coverage:api:direct`, and
+        nineteen new read grants — nine adapter and facade sources, `AGENTS.md`,
+        and nine architecture documents — joined both `--allow-read` allowlists,
+        each proven load-bearing by an omit-one probe returning `NotCapable` for
+        exactly the withheld path. `docs/product/page-catalog.yaml` was already
+        granted and was not duplicated. `tools/architecture` stays out of every
+        coverage `--include=`, so the executed contracts moved no denominator.
+  - [x] Gates: the five contracts pass inside both tasks — `test:unit:api` 306
+        passed / 0 failed and `test:coverage:api` against real PostgreSQL 537
+        passed / 0 failed at 85.2 / 82.2 / 87.3 — with `fmt:check` 599 files and
+        `lint` 483 files. No web or browser gate applies.
 - [ ] **Phase 12 accepted:** the person workspace reads as grouped zones rather
       than peer cards, first paint no longer waits on the full section fan-out,
       tokens back every surface, and no leaf above is unchecked without a
