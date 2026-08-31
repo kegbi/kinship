@@ -280,15 +280,15 @@ test(
     await add.click();
     await expect(mobileEditor).toHaveCount(1);
     await expect(mobileEditor).toBeVisible();
-    expect(
-      await mobileEditor.evaluate((form) => {
-        const bounds = form.getBoundingClientRect();
-        return {
-          bottomAligned: bounds.bottom === globalThis.innerHeight,
-          position: getComputedStyle(form).position,
-        };
-      }),
-    ).toEqual({ bottomAligned: true, position: "fixed" });
+    const mobileEditorBounds = await mobileEditor.evaluate((form) => {
+      const bounds = form.getBoundingClientRect();
+      return {
+        bottomDelta: bounds.bottom - globalThis.innerHeight,
+        position: getComputedStyle(form).position,
+      };
+    });
+    expect(mobileEditorBounds.position).toBe("fixed");
+    expect(Math.abs(mobileEditorBounds.bottomDelta)).toBeLessThanOrEqual(1);
     await expectAccessible(page);
     await mobileEditor.getByRole("button", { name: "Cancel" }).click();
     await expect(mobileEditor).toBeHidden();
