@@ -2106,6 +2106,10 @@
   font-size: 0.9rem;
 }
 
+.optimistic-save {
+  color: var(--ink-3);
+}
+
 .task-form {
   margin-block: 1rem;
 }

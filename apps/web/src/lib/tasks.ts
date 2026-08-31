@@ -66,7 +66,12 @@ function localDateTime(value: string | undefined): string {
 function renderTask(
   task: Task,
   mutable: boolean,
-  onComplete: (task: Task, completed: boolean) => void,
+  onComplete: (
+    task: Task,
+    completed: boolean,
+    item: HTMLLIElement,
+    control: HTMLButtonElement,
+  ) => void,
   onEdit?: (task: Task) => void,
 ): HTMLLIElement {
   const item = document.createElement("li");
@@ -98,7 +103,7 @@ function renderTask(
     completion.textContent = task.status === "open" ? "Complete" : "Reopen";
     completion.addEventListener(
       "click",
-      () => onComplete(task, task.status === "open"),
+      () => onComplete(task, task.status === "open", item, completion),
     );
     actions.append(completion);
     if (onEdit) {
@@ -294,7 +299,21 @@ export async function mountTaskSurface(options: {
         }
       }
     }
-    const complete = async (task: Task, completed: boolean) => {
+    const complete = async (
+      task: Task,
+      completed: boolean,
+      item: HTMLLIElement,
+      control: HTMLButtonElement,
+    ) => {
+      if (control.disabled || !item.parentElement) return;
+      const priorList = item.parentElement;
+      const priorNext = item.nextSibling;
+      const mutationControls = item.querySelectorAll<HTMLButtonElement>(
+        "button",
+      );
+      item.setAttribute("aria-busy", "true");
+      mutationControls.forEach((candidate) => candidate.disabled = true);
+      (completed ? completedList : openList).append(item);
       formState.textContent = completed
         ? "Completing task…"
         : "Reopening task…";
@@ -305,11 +324,21 @@ export async function mountTaskSurface(options: {
             changed.problem.code === "archived_write_rejected"
           ? "Restore the linked person before changing this task."
           : "Task state could not be changed.";
+        priorList.insertBefore(
+          item,
+          priorNext?.parentNode === priorList ? priorNext : null,
+        );
+        item.removeAttribute("aria-busy");
+        mutationControls.forEach((candidate) => candidate.disabled = false);
         return;
       }
       formState.textContent = completed ? "Task completed." : "Task reopened.";
       globalThis.dispatchEvent(new CustomEvent(TASK_CHANGED_EVENT));
-      await load(true);
+      try {
+        await load(true);
+      } finally {
+        control.disabled = false;
+      }
     };
     const edit = (task: Task) => {
       createRequestId = undefined;
@@ -820,6 +849,8 @@ export async function mountTodayAttention(): Promise<void> {
     const snapshot = result.value;
     const complete = async (
       item: Extract<TodayAttentionItem, { kind: "task" }>,
+      row: HTMLLIElement,
+      control: HTMLButtonElement,
     ) => {
       if (completionOwners.has(activeWorkspaceId)) return;
       completionFailures.delete(activeWorkspaceId);
@@ -836,6 +867,7 @@ export async function mountTodayAttention(): Promise<void> {
         taskId: item.id,
       };
       present();
+      row.hidden = true;
       const changed = await setTaskCompletion(
         item.id,
         true,
@@ -849,6 +881,8 @@ export async function mountTodayAttention(): Promise<void> {
             0,
           taskId: item.id,
         });
+        control.disabled = false;
+        row.hidden = false;
         if (currentTodaySurface?.workspaceId === activeWorkspaceId) {
           currentTodaySurface.present(focusToken);
         }
@@ -862,6 +896,7 @@ export async function mountTodayAttention(): Promise<void> {
       if (currentTodaySurface?.workspaceId === activeWorkspaceId) {
         await currentTodaySurface.refresh("initial", focusToken);
       }
+      if (!completionOwners.has(activeWorkspaceId)) control.disabled = false;
     };
     const attentionRow = (item: TodayAttentionItem) => {
       const element = document.createElement("li");
@@ -894,7 +929,10 @@ export async function mountTodayAttention(): Promise<void> {
         button.dataset.taskId = item.id;
         button.disabled = completionOwners.has(activeWorkspaceId);
         button.textContent = "Complete";
-        button.addEventListener("click", () => void complete(item));
+        button.addEventListener(
+          "click",
+          () => void complete(item, element, button),
+        );
         actions.append(button);
         element.append(actions);
       }
