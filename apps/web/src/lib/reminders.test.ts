@@ -228,6 +228,157 @@ describe("PLANNING-002 reminder browser behavior", () => {
     });
   });
 
+  it("shows a muted busy reminder row before save and removes it on failure", async () => {
+    personMarkup();
+    const failedSave = deferredResponse();
+    const successfulSave = deferredResponse();
+    const refresh = deferredResponse();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({
+        cadences: [],
+        reminders: [],
+        status: "ready",
+      }))
+      .mockReturnValueOnce(failedSave.promise)
+      .mockReturnValueOnce(successfulSave.promise)
+      .mockReturnValueOnce(refresh.promise);
+    vi.stubGlobal("fetch", fetchMock);
+    await mountPersonReminders({ archived: false, personId, workspaceId });
+    document.querySelector<HTMLButtonElement>("[data-reminder-add]")!.click();
+    const form = document.querySelector<HTMLFormElement>(
+      "[data-reminder-form]",
+    )!;
+    (form.elements.namedItem("title") as HTMLInputElement).value = "Call Ada";
+    (form.elements.namedItem("anchorOn") as HTMLInputElement).value =
+      "2026-08-20";
+    (form.elements.namedItem("sendTime") as HTMLInputElement).value = "09:00";
+    (form.elements.namedItem("recurrenceInterval") as HTMLInputElement).value =
+      "1";
+    const submit = form.querySelector<HTMLButtonElement>("[type=submit]")!;
+    const list = document.querySelector<HTMLUListElement>(
+      "[data-reminder-list]",
+    )!;
+
+    form.dispatchEvent(
+      new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+    );
+
+    const failedRow = list.querySelector<HTMLLIElement>("[aria-busy=true]")!;
+    expect(failedRow.textContent).toContain("Call Ada");
+    expect(failedRow.classList).toContain("optimistic-save");
+    expect(submit.disabled).toBe(true);
+    expect(applicationCss).toMatch(
+      /\.optimistic-save\s*\{[^}]*color:\s*var\(--ink-3\)/s,
+    );
+    expect(applicationCss).not.toMatch(
+      /\.optimistic-save\s*\{[^}]*opacity\s*:/s,
+    );
+
+    failedSave.resolve(response({}, 503));
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+    expect(failedRow.isConnected).toBe(false);
+    expect(list.querySelector("[aria-busy=true]")).toBeNull();
+    expect(form.hidden).toBe(false);
+    expect(document.querySelector("[data-reminder-state]")?.textContent).toBe(
+      "Reminder could not be saved. Review the calendar fields.",
+    );
+
+    form.dispatchEvent(
+      new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+    );
+    const successfulRow = list.querySelector<HTMLLIElement>(
+      "[aria-busy=true]",
+    )!;
+    expect(successfulRow.textContent).toContain("Call Ada");
+    expect(submit.disabled).toBe(true);
+    successfulSave.resolve(response({ reminder, status: "created" }, 201));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(successfulRow.isConnected).toBe(true);
+
+    refresh.resolve(response({
+      cadences: [],
+      reminders: [reminder],
+      status: "ready",
+    }));
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+    expect(successfulRow.isConnected).toBe(false);
+    expect(list.querySelector("[aria-busy=true]")).toBeNull();
+    expect(list.textContent).toContain("Call Ada");
+  });
+
+  it("shows a muted busy cadence row before save and removes it on failure", async () => {
+    personMarkup();
+    const failedSave = deferredResponse();
+    const successfulSave = deferredResponse();
+    const refresh = deferredResponse();
+    const cadence = {
+      id: "cadence",
+      intervalCount: 1,
+      intervalUnit: "month",
+      nextDueAt: "2026-09-18T10:00:00.000Z",
+      personId,
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({
+        cadences: [],
+        reminders: [],
+        status: "ready",
+      }))
+      .mockReturnValueOnce(failedSave.promise)
+      .mockReturnValueOnce(successfulSave.promise)
+      .mockReturnValueOnce(refresh.promise);
+    vi.stubGlobal("fetch", fetchMock);
+    await mountPersonReminders({ archived: false, personId, workspaceId });
+    document.querySelector<HTMLButtonElement>("[data-cadence-add]")!.click();
+    const form = document.querySelector<HTMLFormElement>(
+      "[data-cadence-form]",
+    )!;
+    const submit = form.querySelector<HTMLButtonElement>("[type=submit]")!;
+    const list = document.querySelector<HTMLUListElement>(
+      "[data-cadence-list]",
+    )!;
+
+    form.dispatchEvent(
+      new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+    );
+
+    const failedRow = list.querySelector<HTMLLIElement>("[aria-busy=true]")!;
+    expect(failedRow.textContent).toContain("Every 1 month");
+    expect(failedRow.classList).toContain("optimistic-save");
+    expect(submit.disabled).toBe(true);
+
+    failedSave.resolve(response({}, 503));
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+    expect(failedRow.isConnected).toBe(false);
+    expect(list.querySelector("[aria-busy=true]")).toBeNull();
+    expect(form.hidden).toBe(false);
+    expect(document.querySelector("[data-cadence-state]")?.textContent).toBe(
+      "Cadence could not be saved.",
+    );
+
+    form.dispatchEvent(
+      new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+    );
+    const successfulRow = list.querySelector<HTMLLIElement>(
+      "[aria-busy=true]",
+    )!;
+    expect(successfulRow.textContent).toContain("Every 1 month");
+    expect(submit.disabled).toBe(true);
+    successfulSave.resolve(response({ cadence, status: "created" }, 201));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(successfulRow.isConnected).toBe(true);
+
+    refresh.resolve(response({
+      cadences: [cadence],
+      reminders: [],
+      status: "ready",
+    }));
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+    expect(successfulRow.isConnected).toBe(false);
+    expect(list.querySelector("[aria-busy=true]")).toBeNull();
+    expect(list.textContent).toContain("Every 1 month");
+  });
+
   it("keeps add controls hidden when reminders fail to load", async () => {
     personMarkup();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({}, 503)));

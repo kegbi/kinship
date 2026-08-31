@@ -18,6 +18,18 @@ function formValue(form: HTMLFormElement, name: string): string {
   return String(new FormData(form).get(name) ?? "").trim();
 }
 
+function optimisticSaveRow(title: string, detail: string): HTMLLIElement {
+  const row = document.createElement("li");
+  row.className = "optimistic-save";
+  row.setAttribute("aria-busy", "true");
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  const state = document.createElement("p");
+  state.textContent = detail;
+  row.append(heading, state);
+  return row;
+}
+
 function reminderItem(
   reminder: Reminder,
   mutable: boolean,
@@ -207,29 +219,47 @@ export async function mountPersonReminders(options: {
     reminderSubmit?.setAttribute("disabled", "");
     reminderState.textContent = "Saving reminder…";
     reminderRequestId ??= crypto.randomUUID();
-    const result = await createReminder({
-      anchorOn: formValue(reminderForm, "anchorOn"),
-      personId: options.personId,
-      recurrenceInterval: Number(formValue(reminderForm, "recurrenceInterval")),
-      recurrenceUnit: formValue(
-        reminderForm,
-        "recurrenceUnit",
-      ) as Reminder["recurrenceUnit"],
-      requestId: reminderRequestId,
-      sendTime: formValue(reminderForm, "sendTime"),
-      title: formValue(reminderForm, "title"),
-    }, options.workspaceId).catch(() => undefined);
-    reminderState.textContent = result?.ok
-      ? "Reminder created."
-      : "Reminder could not be saved. Review the calendar fields.";
-    if (result?.ok) {
-      reminderRequestId = undefined;
-      reminderForm.reset();
-      reminderForm.hidden = true;
-      await load();
+    const title = formValue(reminderForm, "title");
+    const anchorOn = formValue(reminderForm, "anchorOn");
+    const recurrenceInterval = Number(
+      formValue(reminderForm, "recurrenceInterval"),
+    );
+    const recurrenceUnit = formValue(
+      reminderForm,
+      "recurrenceUnit",
+    ) as Reminder["recurrenceUnit"];
+    const sendTime = formValue(reminderForm, "sendTime");
+    const optimisticRow = optimisticSaveRow(
+      title || "Untitled reminder",
+      `Saving for ${anchorOn || "the selected date"} at ${
+        sendTime || "the selected time"
+      }…`,
+    );
+    reminderList.append(optimisticRow);
+    try {
+      const result = await createReminder({
+        anchorOn,
+        personId: options.personId,
+        recurrenceInterval,
+        recurrenceUnit,
+        requestId: reminderRequestId,
+        sendTime,
+        title,
+      }, options.workspaceId).catch(() => undefined);
+      reminderState.textContent = result?.ok
+        ? "Reminder created."
+        : "Reminder could not be saved. Review the calendar fields.";
+      if (result?.ok) {
+        reminderRequestId = undefined;
+        reminderForm.reset();
+        reminderForm.hidden = true;
+        await load();
+      }
+    } finally {
+      optimisticRow.remove();
+      reminderSaving = false;
+      if (!lifecycleArchived) reminderSubmit?.removeAttribute("disabled");
     }
-    reminderSaving = false;
-    if (!lifecycleArchived) reminderSubmit?.removeAttribute("disabled");
   });
   cadenceForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -238,26 +268,37 @@ export async function mountPersonReminders(options: {
     cadenceSubmit?.setAttribute("disabled", "");
     cadenceState.textContent = "Saving cadence…";
     cadenceRequestId ??= crypto.randomUUID();
-    const result = await createStayInTouchCadence({
-      intervalCount: Number(formValue(cadenceForm, "intervalCount")),
-      intervalUnit: formValue(cadenceForm, "intervalUnit") as
-        | "day"
-        | "week"
-        | "month"
-        | "year",
-      personId: options.personId,
-      requestId: cadenceRequestId,
-    }, options.workspaceId).catch(() => undefined);
-    cadenceState.textContent = result?.ok
-      ? "Cadence saved."
-      : "Cadence could not be saved.";
-    if (result?.ok) {
-      cadenceRequestId = undefined;
-      cadenceForm.hidden = true;
-      await load();
+    const intervalCount = Number(formValue(cadenceForm, "intervalCount"));
+    const intervalUnit = formValue(cadenceForm, "intervalUnit") as
+      | "day"
+      | "week"
+      | "month"
+      | "year";
+    const optimisticRow = optimisticSaveRow(
+      `Every ${intervalCount} ${intervalUnit}${intervalCount === 1 ? "" : "s"}`,
+      "Saving stay-in-touch cadence…",
+    );
+    cadenceList.append(optimisticRow);
+    try {
+      const result = await createStayInTouchCadence({
+        intervalCount,
+        intervalUnit,
+        personId: options.personId,
+        requestId: cadenceRequestId,
+      }, options.workspaceId).catch(() => undefined);
+      cadenceState.textContent = result?.ok
+        ? "Cadence saved."
+        : "Cadence could not be saved.";
+      if (result?.ok) {
+        cadenceRequestId = undefined;
+        cadenceForm.hidden = true;
+        await load();
+      }
+    } finally {
+      optimisticRow.remove();
+      cadenceSaving = false;
+      if (!lifecycleArchived) cadenceSubmit?.removeAttribute("disabled");
     }
-    cadenceSaving = false;
-    if (!lifecycleArchived) cadenceSubmit?.removeAttribute("disabled");
   });
   document.addEventListener("person-lifecycle-changed", (event) => {
     const detail = (event as CustomEvent<{

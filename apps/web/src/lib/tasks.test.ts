@@ -139,6 +139,123 @@ describe("PLANNING-001 task browser behavior", () => {
     expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: "PUT" });
   });
 
+  it.each(
+    [
+      ["completes", "open", "completed", true],
+      ["reopens", "completed", "open", false],
+    ] as const,
+  )(
+    "%s a task row before the mutation resolves",
+    async (_label, initialStatus, optimisticList, completed) => {
+      surfaceMarkup();
+      const mutation = deferredResponse();
+      const initial = { ...task, status: initialStatus };
+      const reconciled = { ...task, status: optimisticList };
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(
+          response({ items: [initial], status: "ready" }),
+        )
+        .mockReturnValueOnce(mutation.promise)
+        .mockResolvedValueOnce(
+          response({ items: [reconciled], status: "ready" }),
+        );
+      vi.stubGlobal("fetch", fetchMock);
+      await mountTaskSurface({ personId, workspaceId });
+      const source = document.querySelector<HTMLUListElement>(
+        `[data-task-${initialStatus === "open" ? "open" : "completed"}-list]`,
+      )!;
+      const destination = document.querySelector<HTMLUListElement>(
+        `[data-task-${optimisticList}-list]`,
+      )!;
+      const row = source.querySelector<HTMLLIElement>("li")!;
+      const control = row.querySelector<HTMLButtonElement>("button")!;
+      const controlText = control.textContent;
+
+      control.click();
+
+      expect(source.contains(row)).toBe(false);
+      expect(destination.firstElementChild).toBe(row);
+      expect(control.disabled).toBe(true);
+      expect(control.textContent).toBe(controlText);
+      expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+        completed,
+      });
+
+      mutation.resolve(response({ status: "saved", task: reconciled }));
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+      await vi.waitFor(() => expect(control.disabled).toBe(false));
+      expect(destination.textContent).toContain(task.title);
+      expect(destination.querySelector<HTMLButtonElement>("button")?.disabled)
+        .toBe(false);
+    },
+  );
+
+  it.each([
+    [
+      "a server failure",
+      response({}, 503),
+      "Task state could not be changed.",
+    ],
+    [
+      "an archived-person rejection",
+      response({
+        code: "archived_write_rejected",
+        detail: "Restore the person first.",
+        status: 409,
+        title: "Archived person is read-only",
+        type: "about:blank",
+      }, 409),
+      "Restore the linked person before changing this task.",
+    ],
+  ])(
+    "restores the exact task row after %s",
+    async (_label, failure, message) => {
+      surfaceMarkup();
+      const mutation = deferredResponse();
+      const laterTask = {
+        ...task,
+        id: "00000000-0000-4000-8000-000000000901",
+        title: "Later task",
+      };
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(
+          response({ items: [task, laterTask], status: "ready" }),
+        )
+        .mockReturnValueOnce(mutation.promise);
+      vi.stubGlobal("fetch", fetchMock);
+      await mountTaskSurface({ personId, workspaceId });
+      const openList = document.querySelector<HTMLUListElement>(
+        "[data-task-open-list]",
+      )!;
+      const completedList = document.querySelector<HTMLUListElement>(
+        "[data-task-completed-list]",
+      )!;
+      const row = openList.firstElementChild as HTMLLIElement;
+      const nextRow = row.nextElementSibling;
+      const control = row.querySelector<HTMLButtonElement>("button")!;
+      const editControl = row.querySelectorAll<HTMLButtonElement>("button")[1]!;
+      const priorPresentation = row.innerHTML;
+
+      control.click();
+
+      expect(completedList.firstElementChild).toBe(row);
+      expect(control.disabled).toBe(true);
+      expect(editControl.disabled).toBe(true);
+      expect(row.getAttribute("aria-busy")).toBe("true");
+      mutation.resolve(failure);
+
+      await vi.waitFor(() => expect(control.disabled).toBe(false));
+      expect(openList.firstElementChild).toBe(row);
+      expect(row.nextElementSibling).toBe(nextRow);
+      expect(editControl.disabled).toBe(false);
+      expect(row.hasAttribute("aria-busy")).toBe(false);
+      expect(row.innerHTML).toBe(priorPresentation);
+      expect(completedList.children).toHaveLength(0);
+      expect(document.querySelector("[data-task-form-state]")?.textContent)
+        .toBe(message);
+    },
+  );
+
   it("edits global tasks and keeps archived person tasks read-only", async () => {
     surfaceMarkup(true);
     vi.stubGlobal(
@@ -960,12 +1077,18 @@ describe("PLANNING-001 task browser behavior", () => {
       document.querySelector<HTMLButtonElement>(
         "#today-overdue-list button[data-today-complete]",
       )!;
-    complete().click();
-    expect(complete().disabled).toBe(true);
+    const optimisticRow = complete().closest("li")!;
+    const optimisticControl = complete();
+    optimisticControl.click();
+    expect(optimisticControl.disabled).toBe(true);
+    expect(optimisticRow.hidden).toBe(true);
     expect(document.querySelector("#today-attention-state")?.textContent)
       .toBe("Completing task…");
     first.resolve(response({}, 503));
     await vi.waitFor(() => expect(complete().disabled).toBe(false));
+    expect(complete()).toBe(optimisticControl);
+    expect(complete().closest("li")).toBe(optimisticRow);
+    expect(optimisticRow.hidden).toBe(false);
     expect(document.querySelector("#today-attention-state")?.textContent)
       .toMatch(/1 relationship priority.*could not be completed/i);
     expect(document.activeElement).toBe(complete());
@@ -975,11 +1098,16 @@ describe("PLANNING-001 task browser behavior", () => {
     ).toBe(true);
     expect(document.getElementById("today-upcoming-retry")!.hidden).toBe(true);
 
-    complete().click();
+    const successfulControl = complete();
+    const successfulRow = successfulControl.closest("li")!;
+    successfulControl.click();
+    expect(successfulControl.disabled).toBe(true);
+    expect(successfulRow.hidden).toBe(true);
     second.resolve(response({ status: "saved", task }));
     await vi.waitFor(() =>
       expect(document.querySelectorAll(".attention-item")).toHaveLength(0)
     );
+    expect(successfulControl.disabled).toBe(false);
     expect(document.querySelector("#today-attention-state")?.textContent)
       .toMatch(/All clear/i);
     expect(document.activeElement?.id).toBe("today-attention-state");
