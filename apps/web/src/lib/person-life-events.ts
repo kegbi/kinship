@@ -24,37 +24,6 @@ function elements(): LifeEventElements | undefined {
     : undefined;
 }
 
-const month = new Intl.DateTimeFormat("en", {
-  month: "long",
-  timeZone: "UTC",
-});
-
-function monthName(value: number): string {
-  return month.format(new Date(Date.UTC(2000, value - 1, 1)));
-}
-
-function displayDate(event: PersonLifeEvent): string {
-  const { date } = event;
-  if (date.precision === "full" && date.happenedAt) {
-    return new Intl.DateTimeFormat("en", {
-      day: "numeric",
-      month: "long",
-      timeZone: "UTC",
-      year: "numeric",
-    }).format(new Date(date.happenedAt));
-  }
-  if (date.precision === "year_month" && date.year && date.month) {
-    return `${monthName(date.month)} ${date.year}`;
-  }
-  if (date.precision === "month_day" && date.month && date.day) {
-    return `${monthName(date.month)} ${date.day}`;
-  }
-  if (date.precision === "year" && date.year) return String(date.year);
-  if (date.precision === "month" && date.month) return monthName(date.month);
-  if (date.precision === "day" && date.day) return `Day ${date.day}`;
-  return "Date unknown";
-}
-
 function render(
   view: LifeEventElements,
   events: readonly PersonLifeEvent[],
@@ -65,29 +34,9 @@ function render(
   view.root.dataset.sectionState = events.length === 0 ? "empty" : "ready";
   view.state.textContent = events.length === 0
     ? "No life events saved."
-    : `${events.length} life event${events.length === 1 ? "" : "s"}`;
-  for (const event of events) {
-    const item = document.createElement("li");
-    item.dataset.lifeEventId = event.id;
-    const heading = document.createElement("strong");
-    heading.textContent = event.name ?? event.typeName ?? "Life event";
-    const date = document.createElement("time");
-    date.textContent = displayDate(event);
-    if (event.date.happenedAt) date.dateTime = event.date.happenedAt;
-    item.append(heading, date);
-    if (event.typeName && event.typeName !== event.name) {
-      const type = document.createElement("span");
-      type.className = "state-badge calm";
-      type.textContent = event.typeName;
-      item.append(type);
-    }
-    if (event.note) {
-      const note = document.createElement("p");
-      note.textContent = event.note;
-      item.append(note);
-    }
-    view.list.append(item);
-  }
+    : `${events.length} life event${
+      events.length === 1 ? "" : "s"
+    }. Listed in the timeline above.`;
 }
 
 export async function mountPersonLifeEvents(

@@ -181,8 +181,13 @@ test("[PEOPLE-003] reads the complete canonical person workspace", {
   const history = page.locator("#profile-section-life-events");
   await expect(history).toHaveAttribute("data-section-state", "ready");
   await expect(history).toBeFocused();
-  await expect(history).toContainText("December 1843");
-  await expect(history).toContainText("Published Notes");
+  const timeline = page.locator("#person-timeline");
+  const publishedNotesTimelineRow = timeline.locator("[data-timeline-id]", {
+    hasText: "Published Notes",
+  });
+  await expect(publishedNotesTimelineRow).toHaveCount(1);
+  await expect(publishedNotesTimelineRow).toContainText("December 1843");
+  await expect(publishedNotesTimelineRow).toContainText("Published Notes");
   await expect(history.getByRole("button", { name: /add/i })).toHaveCount(0);
 
   const tasks = page.locator("#profile-section-tasks");

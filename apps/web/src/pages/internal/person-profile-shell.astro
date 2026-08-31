@@ -477,7 +477,7 @@ const railSections = [
                 </header>
                 <p data-communication-state class="section-state"><span class="sr-only">Loading {title.toLowerCase()}…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
                 <button data-communication-load-retry class="button-secondary" type="button" hidden>Retry loading communications</button>
-                <ul data-communication-list class="interaction-list" aria-label={`Recent ${title.toLowerCase()}`}></ul>
+                <ul data-communication-list class="interaction-list" aria-label={`Recent ${title.toLowerCase()}`} hidden></ul>
                 <button data-communication-add class="button-primary" type="button" hidden>{id === "calls" ? "Log call" : "Log conversation"}</button>
                 <form data-communication-form class="profile-fact-form" hidden novalidate>
                   <label>When it happened <input name="happenedAt" type="datetime-local" required /></label>
@@ -527,6 +527,7 @@ const railSections = [
                   id={id === "activities" ? "person-activities-list" : "person-notes-list"}
                   class="interaction-list"
                   aria-label={`Recent ${title.toLowerCase()}`}
+                  hidden
                 ></ul>
                 <button
                   id={id === "activities" ? "person-activities-retry" : "person-notes-retry"}
@@ -568,7 +569,7 @@ const railSections = [
                 </header>
                 <p data-life-event-state class="section-state"><span class="sr-only">Loading life events…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
                 <button data-life-event-retry class="button-secondary" type="button" hidden>Retry life events</button>
-                <ol data-life-event-list class="life-event-list" aria-label="Saved life events"></ol>
+                <ol data-life-event-list class="life-event-list" aria-label="Saved life events" hidden></ol>
               </section>
             )
             : id === "tasks"

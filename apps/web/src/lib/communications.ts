@@ -1,7 +1,6 @@
 import {
   type CommunicationList,
   getPerson,
-  type Interaction,
   listCommunicationOptions,
   listPersonCommunications,
   listProfileFacts,
@@ -65,47 +64,6 @@ function messageRow(): HTMLElement {
   return row;
 }
 
-function renderRecord(record: Interaction): HTMLLIElement {
-  const item = document.createElement("li");
-  if (record.kind === "call") {
-    item.textContent = `${
-      record.contactWasCaller ? "Incoming" : "Outgoing"
-    } call · ${new Date(record.calledAt).toLocaleString()}`;
-    if (record.content) {
-      item.append(document.createElement("br"), record.content);
-    }
-    if (record.emotions.length) {
-      item.append(
-        document.createElement("br"),
-        `Emotions: ${record.emotions.map((entry) => entry.name).join(", ")}`,
-      );
-    }
-    return item;
-  }
-  if (record.kind !== "conversation") return item;
-  item.textContent = `${
-    record.title || record.channelType?.name || "Unknown channel"
-  } · ${new Date(record.happenedAt).toLocaleString()}`;
-  if (record.contactMethod) {
-    item.append(
-      document.createElement("br"),
-      `Via ${record.contactMethod.value}`,
-    );
-  }
-  if (record.messages.length === 0) {
-    item.append(document.createElement("br"), "Direction not recorded");
-  }
-  for (const message of record.messages) {
-    item.append(
-      document.createElement("br"),
-      `${
-        message.direction === "inbound" ? "Inbound" : "Outbound"
-      }: ${message.content}`,
-    );
-  }
-  return item;
-}
-
 function renderLists(list: CommunicationList): void {
   for (const kind of ["call", "conversation"] as const) {
     const section = document.querySelector<HTMLElement>(
@@ -122,9 +80,11 @@ function renderLists(list: CommunicationList): void {
     );
     if (!section || !target || !state || !badge) continue;
     const records = list.items.filter((entry) => entry.kind === kind);
-    target.replaceChildren(...records.map(renderRecord));
+    target.replaceChildren();
     state.textContent = records.length
-      ? ""
+      ? `${records.length} recent ${kind}${
+        records.length === 1 ? "" : "s"
+      }. Listed in the timeline above.`
       : `No ${kind === "call" ? "calls" : "conversations"} recorded yet.`;
     badge.textContent = records.length ? `${records.length} recent` : "Empty";
     section.dataset.sectionState = "ready";

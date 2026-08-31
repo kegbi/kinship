@@ -19,7 +19,7 @@ function markup(): HTMLElement {
       <span data-life-event-badge>Loading</span>
       <p data-life-event-state></p>
       <button data-life-event-retry hidden>Retry life events</button>
-      <ol data-life-event-list></ol>
+      <ol data-life-event-list hidden></ol>
     </section>`;
   return document.querySelector("[data-person-life-events]")!;
 }
@@ -30,7 +30,7 @@ afterEach(() => {
 });
 
 describe("complete person life-event history", () => {
-  it("[PEOPLE-003] renders ordered precision-aware events from the profile read model", async () => {
+  it("[PEOPLE-003] keeps loaded life events in the timeline while the card stays ready", async () => {
     const root = markup();
     const fetchMock = vi.fn().mockResolvedValue(response({
       events: [{
@@ -74,13 +74,12 @@ describe("complete person life-event history", () => {
 
     expect(root.dataset.sectionState).toBe("ready");
     expect(root.querySelector("[data-life-event-state]")?.textContent)
-      .toBe("7 life events");
-    expect(root.querySelector("[data-life-event-list]")?.textContent)
-      .toContain("December 1843");
-    expect(root.querySelector("[data-life-event-list]")?.textContent)
-      .toContain("Published Notes");
-    expect(root.querySelector("[data-life-event-list]")?.textContent)
-      .toContain("Date unknown");
+      .toBe("7 life events. Listed in the timeline above.");
+    const list = root.querySelector<HTMLOListElement>(
+      "[data-life-event-list]",
+    )!;
+    expect(list.hidden).toBe(true);
+    expect(list.children).toHaveLength(0);
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/v1/people/${personId}/life-events`,
       {

@@ -20,7 +20,7 @@ function markup(kind: "call" | "conversation") {
   <section data-communication-kind="${kind}" data-profile-section="${
     kind === "call" ? "calls" : "conversations"
   }">
-    <span data-communication-badge></span><p data-communication-state></p><button data-communication-load-retry type="button" hidden>Retry loading communications</button><ul data-communication-list></ul>
+    <span data-communication-badge></span><p data-communication-state></p><button data-communication-load-retry type="button" hidden>Retry loading communications</button><ul data-communication-list hidden></ul>
     <button data-communication-add>${
     kind === "call" ? "Log call" : "Log conversation"
   }</button>
@@ -199,6 +199,7 @@ describe("INTERACTION-002 person communications", () => {
         const body = JSON.parse(String(init.body));
         expect(body).toMatchObject({
           contactWasCaller: true,
+          emotionIds: [channelTypeId],
           kind: "call",
           personId,
         });
@@ -236,18 +237,17 @@ describe("INTERACTION-002 person communications", () => {
     (form.elements.namedItem("emotionIds") as HTMLSelectElement).options[0]!
       .selected = true;
     form.requestSubmit();
+    const callSection = document.querySelector<HTMLElement>(
+      '[data-communication-kind="call"]',
+    )!;
     await vi.waitFor(() =>
       expect(
-        document.querySelector(
-          '[data-communication-kind="call"] [data-communication-list]',
-        )?.textContent,
-      ).toContain("Incoming call")
+        callSection.querySelector("[data-communication-state]")?.textContent,
+      ).toBe("1 recent call. Listed in the timeline above.")
     );
     expect(
-      document.querySelector(
-        '[data-communication-kind="call"] [data-communication-list]',
-      )?.textContent,
-    ).toContain("Joy");
+      callSection.querySelector("[data-communication-badge]")?.textContent,
+    ).toBe("1 recent");
     expect(
       (timelineChanged.mock.calls[0]?.[0] as CustomEvent).detail,
     ).toEqual({ personIds: [personId] });
@@ -479,13 +479,21 @@ describe("INTERACTION-002 person communications", () => {
     );
   });
 
-  it("renders imported conversation history whose channel is unknown", async () => {
-    document.body.innerHTML = markup("conversation");
+  it("keeps successful communication cards ready while their records are listed in the timeline", async () => {
+    document.body.innerHTML = markup("call") + markup("conversation");
     vi.stubGlobal(
       "fetch",
       vi.fn((input: RequestInfo | URL) => {
         const url = new URL(String(input), "http://localhost");
         const ready = communicationGet(url, [{
+          calledAt: "2026-08-16T17:15:00.000Z",
+          contactWasCaller: true,
+          createdAt: "2026-08-16T17:15:00.000Z",
+          emotions: [],
+          id: crypto.randomUUID(),
+          kind: "call",
+          person: { id: personId, name: "Ada" },
+        }, {
           createdAt: "2026-08-16T18:15:00.000Z",
           happenedAt: "2026-08-16T18:15:00.000Z",
           id: crypto.randomUUID(),
@@ -501,9 +509,27 @@ describe("INTERACTION-002 person communications", () => {
       calls: false,
       conversations: false,
     });
-    expect(
-      document.querySelector("[data-communication-list]")?.textContent,
-    ).toContain("Unknown channel");
+    for (
+      const [kind, stateText] of [
+        ["call", "1 recent call. Listed in the timeline above."],
+        [
+          "conversation",
+          "1 recent conversation. Listed in the timeline above.",
+        ],
+      ] as const
+    ) {
+      const section = document.querySelector<HTMLElement>(
+        `[data-communication-kind="${kind}"]`,
+      )!;
+      const list = section.querySelector<HTMLUListElement>(
+        "[data-communication-list]",
+      )!;
+      expect(list.hidden).toBe(true);
+      expect(list.children).toHaveLength(0);
+      expect(section.querySelector("[data-communication-state]")?.textContent)
+        .toBe(stateText);
+      expect(section.dataset.sectionState).toBe("ready");
+    }
   });
 
   it("retries a rejected initial load from a visible section control without duplicate handlers", async () => {
@@ -572,8 +598,16 @@ describe("INTERACTION-002 person communications", () => {
         )].every((section) => section.dataset.sectionState === "ready"),
       ).toBe(true)
     );
-    expect(document.body.textContent).toContain("Incoming call");
-    expect(document.body.textContent).toContain("Email");
+    expect(
+      document.querySelector(
+        '[data-communication-kind="call"] [data-communication-state]',
+      )?.textContent,
+    ).toBe("1 recent call. Listed in the timeline above.");
+    expect(
+      document.querySelector(
+        '[data-communication-kind="conversation"] [data-communication-state]',
+      )?.textContent,
+    ).toBe("1 recent conversation. Listed in the timeline above.");
     expect(retries.every((retry) => retry.hidden)).toBe(true);
     const optionsPath = [...requests.keys()].find((path) =>
       path.endsWith("/communication-options")

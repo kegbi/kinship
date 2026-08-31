@@ -1170,12 +1170,12 @@ export async function mountPersonInteractions(
       const activities = result.value.items.filter((entry) =>
         entry.kind === "activity"
       );
-      activityList.replaceChildren(...activities.map(renderInteraction));
+      activityList.replaceChildren();
       activityState.textContent = activities.length === 0
         ? "No activities recorded yet."
         : `${activities.length} recent activit${
           activities.length === 1 ? "y" : "ies"
-        }.`;
+        }. Listed in the timeline above.`;
       if (activityRetry) activityRetry.hidden = true;
     }
   };
@@ -1203,10 +1203,12 @@ export async function mountPersonInteractions(
     } else {
       if (sections.notes) sections.notes.dataset.sectionState = "ready";
       const notes = result.value.items.filter((entry) => entry.kind === "note");
-      noteList.replaceChildren(...notes.map(renderInteraction));
+      noteList.replaceChildren();
       noteState.textContent = notes.length === 0
         ? "No notes recorded yet."
-        : `${notes.length} recent note${notes.length === 1 ? "" : "s"}.`;
+        : `${notes.length} recent note${
+          notes.length === 1 ? "" : "s"
+        }. Listed in the timeline above.`;
       if (noteRetry) noteRetry.hidden = true;
     }
   };
