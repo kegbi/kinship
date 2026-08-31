@@ -3,15 +3,13 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
 
 const createPage = readFileSync(
   resolve("apps/web/src/pages/app/people/new.astro"),
   "utf8",
 );
-const applicationStyles = readFileSync(
-  resolve("apps/web/src/styles/application.css"),
-  "utf8",
-);
+const applicationStyles = readApplicationStylesheet();
 const applicationLayout = readFileSync(
   resolve("apps/web/src/layouts/ApplicationLayout.astro"),
   "utf8",
