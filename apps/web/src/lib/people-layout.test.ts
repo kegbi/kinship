@@ -386,7 +386,7 @@ describe("people form layout regressions", () => {
       /\.zone-mini-avatar\s*\{[^}]*width:\s*1\.5rem;[^}]*aspect-ratio:\s*1;/s,
     );
     expect(applicationStyles).toMatch(
-      /\.person-zone \.profile-section-heading h3\s*\{[^}]*font-size:\s*clamp\(1\.45rem, 3vw, 2rem\);/s,
+      /\.person-zone \.profile-section-heading h3\s*\{[^}]*font-size:\s*\.95rem;/s,
     );
     expect(applicationStyles).not.toMatch(
       /(?:^|\n)\.profile-section-heading h3\s*\{/,
