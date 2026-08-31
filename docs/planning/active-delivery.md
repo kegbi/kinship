@@ -11,10 +11,9 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- Current work: **the Phase 12 acceptance checkpoint**. Every `UXD` leaf through
-  `UXD-019` is integrated or parked with a recorded reason, and `REL-024` closed
-  the reliability queue; the phase box awaits the aggregate checkpoint gates on
-  `main`.
+- **Phase 12 is accepted.** The next open leaf is Phase 11's `OPS-001E`
+  deployment work, which starts only on explicit direction; `REL-029` is the
+  open fixture-hardening leaf, and `REL-020` and `REL-025` remain watches.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -2471,6 +2470,18 @@ asserts, so it runs that spec on its candidate.
       flow. Recorded rather than diagnosed, so a recurrence has a trail. Treat a
       second occurrence as a real ordering or shared-state defect, not a flake;
       `REL-003` already had to serialize this stack once.
+  - [ ] **Second occurrence, investigated at the Phase 12 checkpoint.** The
+        first all-browser aggregate failed `auth-002` on chromium at a different
+        step: the owner's mismatched-email acceptance never showed
+        `Invitation unavailable` within its five-second expectation. The
+        controller traced the client path — the accept handler is provably wired
+        before the button becomes visible, so the only way the heading stays
+        stale is `acceptWorkspaceInvitation` not resolving in time under the
+        132-run marathon's load. The spec passed alone and passed the full
+        rerun. Still a watch, now with a mechanism: an await-bound render behind
+        a tight expectation under sustained load, not an ordering defect the
+        client can fix. A third occurrence should consider the expectation
+        budget on this step before anything else.
 - [x] **REL-024 — Run the five remaining unreferenced architecture contracts.**
       Found while wiring `REL-023`, by asking its question of every `*_test.ts`
       in the repository rather than only the one file the ticket named. Five
@@ -2518,10 +2529,46 @@ asserts, so it runs that spec on its candidate.
       prints the measured number instead of `false` — the diagnosability gap
       cost three instrumented reruns. Proven 2 passed on firefox and chromium
       together.
-- [ ] **Phase 12 accepted:** the person workspace reads as grouped zones rather
+- [ ] **REL-029 — Harden the direct-psql fixture channel against transient exec
+      failure.** Ten browser specs duplicate a `databaseValue` / `databaseSql`
+      helper that shells out to `docker compose exec -T postgres psql` for
+      fixture reads and writes. In each of the two all-browser marathon runs at
+      the Phase 12 checkpoint, exactly one such call failed transiently —
+      `app-004e` on firefox in the first run and `app-003a` on firefox in the
+      second, the latter at a point where the queried row provably existed,
+      since the member had already signed in and created a person through the UI
+      — and both specs pass alone. The class is transport, not data:
+      `docker compose exec` under a sustained multi-engine run. The remedy is
+      one bounded retry with backoff in the helper, applied to every copy or to
+      one extracted shared helper — `REL-014` is the recorded cost of fixing one
+      duplicate and missing the rest. Queued open rather than blocking
+      acceptance: the channel predates this phase, nothing in the phase touches
+      it, and 264 engine-runs at the checkpoint produced zero application
+      failures.
+- [x] **Phase 12 accepted:** the person workspace reads as grouped zones rather
       than peer cards, first paint no longer waits on the full section fan-out,
       tokens back every surface, and no leaf above is unchecked without a
       recorded parked reason.
+  - [x] The checkpoint aggregate ran on `main` after `REL-027` and `REL-028`:
+        the full three-engine browser suite 129 passed / 0 failed / 2
+        deliberately skipped (the `PERF-001` calibration skips) with an empty
+        `.artifacts/playwright` except the one `REL-029` transport incident
+        reproduced to pass alone; `test:coverage:web` 555 tests at
+        92.89/83.55/88.10 with the colour, weight, and spacing invariants;
+        `test:coverage:api` on real PostgreSQL 537 passed / 0 failed at
+        85.2/82.2/87.3; `test:unit:api` 306 passed / 0 failed; `test:contract`
+        125 passed; `contracts:check`; `check:web` and `check:api` clean;
+        `fmt:check` 599 files; `lint` 483 files; and the Astro production build.
+        The production-like `api`, `web`, `gateway`, `worker`, and `migrate`
+        images are built fresh by every browser run. The schema matrix was
+        deliberately not run: Phase 12 changed no schema, and the matrix belongs
+        to the schema and release checkpoints.
+  - [x] The first aggregate run found seven failures, every one dispositioned
+        rather than waved through: two deterministic spec defects repaired and
+        proven (`REL-027`, `REL-028`), one transport class queued with its
+        evidence (`REL-029`), and four load-shaped single incidents — all four
+        passed alone and passed the rerun, with the `auth-002` recurrence
+        analysed under `REL-025`.
 
 ### Recorded Correction To The Owning Review
 
