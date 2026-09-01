@@ -18,29 +18,44 @@ const composeArgs = [
   "compose.test.yaml",
 ] as const;
 
+function withExecRetry<T>(operation: () => T): T {
+  for (let attempt = 1;; attempt += 1) {
+    try {
+      return operation();
+    } catch (error) {
+      if (attempt === 3) {
+        throw error;
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+    }
+  }
+}
+
 function sqlLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
 function databaseSql(statement: string): void {
-  execFileSync(
-    "docker",
-    [
-      ...composeArgs,
-      "exec",
-      "-T",
-      "postgres",
-      "psql",
-      "-U",
-      process.env.POSTGRES_USER ?? "kinship_e2e",
-      "-d",
-      process.env.POSTGRES_DB ?? "kinship_e2e",
-      "-v",
-      "ON_ERROR_STOP=1",
-      "-c",
-      statement,
-    ],
-    { cwd: process.cwd(), env: process.env, stdio: "pipe" },
+  withExecRetry(() =>
+    execFileSync(
+      "docker",
+      [
+        ...composeArgs,
+        "exec",
+        "-T",
+        "postgres",
+        "psql",
+        "-U",
+        process.env.POSTGRES_USER ?? "kinship_e2e",
+        "-d",
+        process.env.POSTGRES_DB ?? "kinship_e2e",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-c",
+        statement,
+      ],
+      { cwd: process.cwd(), env: process.env, stdio: "pipe" },
+    )
   );
 }
 
