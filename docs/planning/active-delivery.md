@@ -11,9 +11,9 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 12 — UX And Design Integration**
-- **Phase 12 is accepted.** The next open leaf is Phase 11's `OPS-001E`
-  deployment work, which starts only on explicit direction; `REL-029` is the
-  open fixture-hardening leaf, and `REL-020` and `REL-025` remain watches.
+- **Phase 12 is accepted.** `REL-029` is delivered; the only open leaf is Phase
+  11's `OPS-001E` deployment work, which starts only on explicit direction, and
+  `REL-020` and `REL-025` remain watches.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -2529,7 +2529,7 @@ asserts, so it runs that spec on its candidate.
       prints the measured number instead of `false` — the diagnosability gap
       cost three instrumented reruns. Proven 2 passed on firefox and chromium
       together.
-- [ ] **REL-029 — Harden the direct-psql fixture channel against transient exec
+- [x] **REL-029 — Harden the direct-psql fixture channel against transient exec
       failure.** Ten browser specs duplicate a `databaseValue` / `databaseSql`
       helper that shells out to `docker compose exec -T postgres psql` for
       fixture reads and writes. In each of the two all-browser marathon runs at
@@ -2545,6 +2545,30 @@ asserts, so it runs that spec on its candidate.
       acceptance: the channel predates this phase, nothing in the phase touches
       it, and 264 engine-runs at the checkpoint produced zero application
       failures.
+  - [x] Delivered as one bounded retry around every copy in place, not an
+        extracted module: `tests/e2e` deliberately holds only self-contained
+        specs with zero cross-spec imports, and a reliability leaf does not
+        introduce the directory's first shared module. Each carrier spec gained
+        an identical local `withExecRetry` — three attempts, retrying only a
+        thrown `execFileSync`, a synchronous 250 ms `Atomics.wait` backoff, and
+        successful-but-empty output returned untouched, because empty stdout is
+        data. A genuine SQL error under `ON_ERROR_STOP` still fails three times
+        fast, which is honest.
+  - [x] The `REL-014` rule found the count wrong here too: an exhaustive
+        `execFileSync` sweep turned up sixteen carrier specs, not the ten the
+        evidence grep named. `auth-002` hides the read channel as
+        `databaseWorkspaceId`, and `app-005b`, `app-005c`, `app-008b`,
+        `app-008c`, `app-009c`, and `app-009d` carry it as a combined
+        `database(statement, tuples)` helper. All twenty-five psql exec sites
+        are wrapped; `perf-001`'s `runWorkerTick` execs a side-effectful worker
+        tick, not the psql channel, and deliberately stays unwrapped.
+  - [x] No unit test and no injectable exec seam: the retry cannot be forced
+        without fault injection, and an infrastructure change takes an
+        executable smoke. Evidence is the mechanical diff — every assertion, SQL
+        statement, and call site byte-identical — Playwright `--list` collecting
+        all sixteen specs, `deno fmt --check` and `deno lint` over the touched
+        files, and the full chromium suite 44 passed / 0 failed with an empty
+        `.artifacts/playwright`.
 - [x] **Phase 12 accepted:** the person workspace reads as grouped zones rather
       than peer cards, first paint no longer waits on the full section fan-out,
       tokens back every surface, and no leaf above is unchecked without a
