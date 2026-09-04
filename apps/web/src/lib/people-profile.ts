@@ -764,6 +764,15 @@ function mountSectionNavigation(
   profile: ProfileElements,
   navigation: SectionNavigationContext,
 ): void {
+  const directory = profile.sections.closest("details");
+  directory?.addEventListener("toggle", () => {
+    if (directory.open) {
+      directory.closest(".person-workspace-navigation")?.scrollIntoView({
+        block: "start",
+        behavior: "instant",
+      });
+    }
+  });
   profile.sections.addEventListener("click", (event) => {
     const link = (event.target as Element | null)?.closest<HTMLAnchorElement>(
       "[data-section-link]",
@@ -779,6 +788,7 @@ function mountSectionNavigation(
       url.searchParams.set("view", zone);
     }
     globalThis.history.pushState({}, "", url);
+    if (directory) directory.open = false;
     focusSection(profile, navigation, id);
   });
   globalThis.addEventListener("popstate", () => {

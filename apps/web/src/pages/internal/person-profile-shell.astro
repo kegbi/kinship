@@ -196,9 +196,8 @@ const railSections = [
         <button id="person-restore" class="button-secondary" type="button">Restore person</button>
       </aside>
 
-      <div class="person-workspace-layout">
-        <div class="profile-facts-column">
-          <details class="profile-section-directory" open>
+      <div class="person-workspace-navigation">
+          <details class="profile-section-directory">
             <summary>Workspace sections</summary>
             <nav id="person-profile-sections" aria-label="Person workspace sections">
               <ul>
@@ -206,12 +205,31 @@ const railSections = [
                   <li><a href={`?section=${id}`} data-section-link={id}>{title}</a></li>
                 ))}
               </ul>
-              <p id="person-profile-section-notice" class="profile-section-notice" role="status" aria-live="polite" tabindex="-1" hidden></p>
             </nav>
           </details>
+          <div class="zone-switcher">
+            <div class="zone-mini-identity" data-zone-mini-identity aria-hidden="true" hidden>
+              <span class="zone-mini-avatar" data-zone-mini-avatar></span>
+              <span class="zone-mini-name" data-zone-mini-name></span>
+            </div>
+            <div class="zone-filter" role="group" aria-label="Filter person sections">
+              <button class="button-primary" data-zone-filter="all" type="button" aria-pressed="true">All</button>
+              <button class="button-secondary" data-zone-filter="timeline" type="button" aria-pressed="false">Timeline</button>
+              <button class="button-secondary" data-zone-filter="planning" type="button" aria-pressed="false">Planning</button>
+              <button class="button-secondary" data-zone-filter="things" type="button" aria-pressed="false">Things</button>
+              <button class="button-secondary" data-zone-filter="admin" type="button" aria-pressed="false">Admin</button>
+            </div>
+          </div>
+      </div>
+      <p id="person-profile-section-notice" class="profile-section-notice" role="status" aria-live="polite" tabindex="-1" hidden></p>
 
+      <div class="person-workspace-layout">
+        <section class="profile-facts-column" aria-labelledby="profile-facts-heading">
+          <header class="profile-facts-heading">
+            <h2 id="profile-facts-heading">Profile facts</h2>
+            <p>The people, places, and details that matter.</p>
+          </header>
           <div class="profile-facts-rail" aria-busy="true">
-            <h2 class="sr-only">Profile facts</h2>
             {railSections.map(([id, title]) => id === "important-dates"
               ? (
                 <section
@@ -410,22 +428,9 @@ const railSections = [
                 </section>
               ))}
           </div>
-        </div>
+        </section>
 
         <div class="profile-section-list">
-          <div class="zone-switcher">
-            <div class="zone-mini-identity" data-zone-mini-identity aria-hidden="true" hidden>
-              <span class="zone-mini-avatar" data-zone-mini-avatar></span>
-              <span class="zone-mini-name" data-zone-mini-name></span>
-            </div>
-            <div class="zone-filter" role="group" aria-label="Filter person sections">
-              <button class="button-primary" data-zone-filter="all" type="button" aria-pressed="true">All</button>
-              <button class="button-secondary" data-zone-filter="timeline" type="button" aria-pressed="false">Timeline</button>
-              <button class="button-secondary" data-zone-filter="planning" type="button" aria-pressed="false">Planning</button>
-              <button class="button-secondary" data-zone-filter="things" type="button" aria-pressed="false">Things</button>
-              <button class="button-secondary" data-zone-filter="admin" type="button" aria-pressed="false">Admin</button>
-            </div>
-          </div>
           <section id="person-first-run" class="person-first-run" aria-labelledby="person-first-run-heading" hidden>
             <h2 id="person-first-run-heading">Start this person's story</h2>
             <p>Nothing is recorded for this person yet. These three make everything else useful.</p>

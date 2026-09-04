@@ -10,7 +10,9 @@ prerequisite queues.
 
 ## Cursor
 
-- Current phase: **Phase 12 — UX And Design Integration**
+- Current phase: **Phase 13 — Person Blocks And Usability Repair**
+- User-directed follow-up: responsive person blocks, focus-border repair, then
+  an evidence-backed application repair plan and execution in a clean task.
 - **Phase 12 is accepted.** `REL-029` is delivered; the only open leaf is Phase
   11's `OPS-001E` deployment work, which starts only on explicit direction, and
   `REL-020` and `REL-025` remain watches.
@@ -2612,3 +2614,28 @@ pass changed exactly one character of prose: a wrapped continuation line in §7.
 began with `+ name appear alongside`, which every CommonMark parser reads as a
 nested list item, and it now reads `and name appear alongside`. No other wording
 changed.
+
+## Phase 13 — Person Blocks And Usability Repair
+
+User-directed on 2026-09-05. This work follows the accepted Phase 12 checkpoint
+and takes priority over the parked deployment work.
+
+- [x] **PRF-001 — Present the person workspace as responsive blocks.**
+  - [x] Pair readable fact cards beside wider timeline content on large screens;
+        stack them on phones and keep natural page scrolling. Put the section
+        directory above the blocks and close it when selecting a destination.
+  - [x] Preserve canonical section IDs, lazy loading, role gating, local
+        actions, deep links, and mobile editors. Present saved contact labels,
+        work dates and description, pet notes, and introducer links in labeled
+        details.
+  - [x] Focused rendering and navigation regressions observed RED, then GREEN;
+        affected layout expectations updated. Browser coverage checks 1440, 768,
+        and 390 widths, long values, editing, and keyboard cancellation.
+- [ ] **PRF-002 — Remove focus borders that cover content.** Keep visible
+      keyboard focus, skip links, section navigation, and forced-colors support;
+      distinguish interactive controls from programmatic navigation targets.
+- [ ] **APR-000 — Review the application and dispatch its repair plan.** Check
+      remaining composition, architecture, and UX defects against current code
+      and rendered behavior. Write a prioritized sequence with evidence,
+      acceptance criteria, and focused verification, then start its execution in
+      a new project task with a clean context.

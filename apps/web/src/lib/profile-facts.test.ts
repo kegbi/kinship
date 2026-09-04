@@ -110,6 +110,143 @@ afterEach(() => {
 });
 
 describe("PEOPLE-006 profile-fact sections", () => {
+  it("PRF-001 exposes saved work, pet, contact, address, and introducer details in their blocks", async () => {
+    allMarkup();
+    const labelId = "00000000-0000-4000-8000-000000000299";
+    const records = [
+      {
+        section: "work",
+        value: {
+          title: "Mathematician",
+          organizationName: "Analytical Engines",
+          startOn: "1833-06-05",
+          endOn: "1852-11-27",
+          isCurrent: false,
+          description: "Translated and expanded the engine notes.",
+        },
+      },
+      {
+        section: "pets",
+        value: { name: "Byron", notes: "A shy cat; let him approach first." },
+      },
+      {
+        section: "contact-methods",
+        value: {
+          typeId,
+          value: "ada@example.test",
+          labelIds: [labelId],
+          isPrimary: true,
+          notes: "Best for arranging a visit.",
+        },
+      },
+      {
+        section: "addresses",
+        value: { city: "London", labelIds: [labelId], isPrimary: false },
+      },
+      {
+        section: "first-meeting",
+        value: {
+          introducedByPersonId: typeId,
+          placeText: "London salon",
+          notes: "Discussed the difference engine.",
+        },
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((resource: string | URL | Request) => {
+        const section = /\/facts\/([^?]+)/.exec(String(resource))?.[1];
+        return response({
+          options: [{ id: typeId, kind: "contact-type", name: "Email" }, {
+            id: labelId,
+            kind: "contact-label",
+            name: "Personal",
+          }],
+          records: records.filter((record) => record.section === section).map((
+            record,
+          ) => ({ ...record, id: personId, updatedAt: revision })),
+          personUpdatedAt: revision,
+          status: "ready",
+        });
+      }),
+    );
+    await mountProfileFacts(personId, workspaceId, false, revision);
+    const details = (section: string) =>
+      Object.fromEntries(
+        [...document.querySelectorAll(
+          `[data-profile-fact-section="${section}"] .profile-fact-details > div`,
+        )].map((
+          row,
+        ) => [
+          row.querySelector("dt")?.textContent,
+          row.querySelector("dd")?.textContent,
+        ]),
+      );
+    expect(details("work")).toEqual({
+      Started: "Jun 5, 1833",
+      Ended: "Nov 27, 1852",
+      "Current role": "No",
+      Details: "Translated and expanded the engine notes.",
+    });
+    expect(details("pets")).toEqual({
+      Notes: "A shy cat; let him approach first.",
+    });
+    expect(details("contact-methods")).toEqual({
+      Labels: "Personal",
+      Primary: "Yes",
+      Notes: "Best for arranging a visit.",
+    });
+    expect(details("addresses")).toEqual({ Labels: "Personal", Primary: "No" });
+    const introducer = document.querySelector<HTMLAnchorElement>(
+      '[data-profile-fact-section="first-meeting"] .profile-fact-details a',
+    );
+    expect(introducer?.getAttribute("href")).toBe(`/app/people/${typeId}`);
+    expect(details("first-meeting")).toEqual({
+      "Introduced by": "View person",
+    });
+  });
+
+  it("PRF-001 separates contact labels and values from compact local actions", async () => {
+    markup();
+    const value = "ada.lovelace.correspondence@analytical-engines.example.test";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        options: [{ id: typeId, kind: "contact-type", name: "Personal email" }],
+        personUpdatedAt: revision,
+        records: [{
+          id: personId,
+          section: "contact-methods",
+          updatedAt: revision,
+          value: { isPrimary: true, labelIds: [], typeId, value },
+        }],
+        status: "ready",
+      })),
+    );
+
+    await mountProfileFacts(personId, workspaceId, false, revision);
+
+    const item = document.querySelector("[data-profile-fact-list] > li")!;
+    expect(item.querySelector(".profile-fact-label")?.textContent).toBe(
+      "Personal email: ",
+    );
+    expect(item.querySelector(".profile-fact-value")?.textContent).toBe(value);
+    const actions = item.querySelector(".profile-fact-actions")!;
+    expect(actions).not.toBeNull();
+    const edit = actions.querySelector<HTMLButtonElement>(".button-secondary")!;
+    const remove = actions.querySelector<HTMLButtonElement>(".button-danger")!;
+    expect(edit.firstChild?.textContent).toBe("Edit");
+    expect(edit.querySelector(".sr-only")?.textContent).toBe(
+      ` Personal email: ${value}`,
+    );
+    expect(remove.firstChild?.textContent).toBe("Delete");
+    remove.click();
+    expect(remove.firstChild?.textContent).toBe("Confirm delete");
+    expect(remove.querySelector(".sr-only")?.textContent).toBe(
+      ` Personal email: ${value}`,
+    );
+  });
+
   it("expands an overflowing food-preferences summary in place", async () => {
     const { description, text } = await renderMeasuredSummary(
       "food-preferences",

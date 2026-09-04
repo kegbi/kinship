@@ -220,6 +220,259 @@ async function expectAlignedControls(
   }
 }
 
+test(
+  "[PEOPLE-006] PRF-001 scans profile blocks and edits long facts across screen sizes",
+  {
+    annotation: { type: "flow", description: "PEOPLE-006" },
+  },
+  async ({ browserName, page, request }, testInfo) => {
+    test.setTimeout(180_000);
+    const email = `profile-blocks-${browserName}-${Date.now()}@example.test`;
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await registerVerified(request, email);
+    await signIn(page, email);
+    const workspaceId = databaseValue(
+      `select w.id::text from crm.workspaces w join crm.users u on u.id = w.created_by_user_id where u.email = ${
+        sqlLiteral(email)
+      }`,
+    );
+    const personId = randomUUID();
+    const typeId = randomUUID();
+    const revision = "2026-08-16T12:00:00.000000Z";
+    const longEmail =
+      "ada.lovelace.correspondence@analytical-engines.example.test";
+    databaseSql(
+      `insert into crm.people (id, workspace_id, given_name, family_name, description)
+    values ('${personId}'::uuid, '${workspaceId}'::uuid, 'Ada', 'Lovelace', 'Mathematician, writer, and a friend from the Analytical Society.');
+    insert into crm.notes (workspace_id, person_id, body)
+    select '${workspaceId}'::uuid, '${personId}'::uuid,
+      'Conversation ' || sequence || ': discussed mathematics and plans for the next visit.'
+    from generate_series(1, 8) sequence;`,
+    );
+    await page.route(`**/people/${personId}/facts/*`, async (route) => {
+      const section = new URL(route.request().url()).pathname.split("/").at(
+        -1,
+      )!;
+      const values: Record<string, unknown> = {
+        "contact-methods": {
+          typeId,
+          labelIds: [],
+          isPrimary: true,
+          value: longEmail,
+        },
+        addresses: {
+          displayName: "Home",
+          street: "1 Analytical Engine Way, Apartment 123",
+          city: "London",
+          region: "Greater London",
+          postalCode: "SW1A 1AA",
+          country: "United Kingdom",
+          isPrimary: true,
+          labelIds: [],
+        },
+        work: {
+          title: "Mathematician and scientific correspondent",
+          organizationName: "Analytical Engines Research Society",
+          isCurrent: true,
+        },
+        "food-preferences": {
+          foodPreferences:
+            "Vegetarian meals; no shellfish. Loves a pot of tea after a long walk.",
+        },
+      };
+      await route.fulfill({
+        json: {
+          options: section === "contact-methods"
+            ? [{ id: typeId, kind: "contact-type", name: "Personal email" }]
+            : [],
+          personUpdatedAt: revision,
+          status: "ready",
+          records: values[section]
+            ? [{
+              id: randomUUID(),
+              section,
+              updatedAt: revision,
+              value: values[section],
+            }]
+            : [],
+        },
+      });
+    });
+    await page.goto(`/app/people/${personId}`);
+    const contacts = page.locator("#profile-section-contact-methods");
+    const relationships = page.locator("#profile-section-relationships");
+    const address = page.locator("#profile-section-addresses");
+    await expect(contacts).toContainText(longEmail);
+    await expect(address).toContainText("Greater London");
+    await expect(page.locator("[data-timeline-list] > li")).toHaveCount(8);
+    await expect(
+      page.locator('.profile-facts-rail [data-section-state="loading"]'),
+    ).toHaveCount(0);
+    if (await page.locator("#person-first-run").isVisible()) {
+      await page.getByRole("button", { name: "Show all sections" }).click();
+    }
+    const directory = page.locator(".profile-section-directory");
+    for (
+      const viewport of [
+        { width: 1440, height: 900 },
+        { width: 390, height: 844 },
+        { width: 768, height: 900 },
+        { width: 1050, height: 900 },
+      ]
+    ) {
+      const { width } = viewport;
+      await page.setViewportSize(viewport);
+      const layout = await page.locator(".profile-facts-column").evaluate((
+        element,
+      ) => ({
+        position: getComputedStyle(element).position,
+        overflow: getComputedStyle(element).overflowY,
+        maxHeight: getComputedStyle(element).maxHeight,
+      }));
+      expect(layout).toEqual({
+        position: "static",
+        overflow: "visible",
+        maxHeight: "none",
+      });
+      const [contactBox, relationshipBox, streamBox] = await Promise.all([
+        contacts.boundingBox(),
+        relationships.boundingBox(),
+        page.locator(".profile-section-list").boundingBox(),
+      ]);
+      expect(contactBox!.width).toBeGreaterThanOrEqual(
+        width >= 1200 ? 245 : 300,
+      );
+      if (width >= 1200) {
+        expect(relationshipBox!.x).toBeGreaterThan(
+          contactBox!.x + contactBox!.width,
+        );
+        expect(Math.abs(relationshipBox!.y - contactBox!.y)).toBeLessThan(2);
+        expect(streamBox!.width).toBeGreaterThanOrEqual(640);
+      } else if (width < 600) {
+        expect(relationshipBox!.x).toBe(contactBox!.x);
+        expect(relationshipBox!.y).toBeGreaterThan(
+          contactBox!.y + contactBox!.height,
+        );
+      }
+      expect(
+        await contacts.locator(".profile-fact-actions > button").evaluateAll((
+          buttons,
+        ) => buttons.map((button) => button.firstChild?.textContent)),
+      ).toEqual(["Edit", "Delete"]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth))
+        .toBeLessThanOrEqual(width);
+
+      await page.locator("#profile-section-stay-in-touch")
+        .scrollIntoViewIfNeeded();
+      const summary = directory.locator("summary");
+      expect.soft(
+        await summary.evaluate((element) => {
+          const bounds = element.getBoundingClientRect();
+          return document.elementFromPoint(
+            bounds.x + bounds.width / 2,
+            bounds.y + bounds.height / 2,
+          )?.closest("summary") === element;
+        }),
+      ).toBe(true);
+      if (
+        !await directory.evaluate((element) =>
+          (element as HTMLDetailsElement).open
+        )
+      ) {
+        await summary.click({ timeout: 5_000 });
+      }
+      await page.locator('[data-section-link="addresses"]').click();
+      await expect(address).toBeFocused();
+      await expect(page).toHaveURL(/section=addresses/);
+      {
+        const navigatorBounds = await page.locator(
+          ".person-workspace-navigation",
+        ).boundingBox();
+        const headingBounds = await address.getByRole("heading", {
+          name: "Addresses",
+          exact: true,
+        }).boundingBox();
+        expect.soft(headingBounds!.y).toBeGreaterThanOrEqual(
+          navigatorBounds!.y + navigatorBounds!.height + 8,
+        );
+      }
+      await address.getByRole("button", { name: /^Edit Home/ }).click();
+      const editor = address.locator("form[data-profile-fact-form]");
+      await expect(editor).toBeVisible();
+      for (
+        const control of await editor.locator(
+          "input:visible, select:visible, textarea:visible, button:visible",
+        ).all()
+      ) {
+        const bounds = await control.boundingBox();
+        expect(bounds!.x).toBeGreaterThanOrEqual(0);
+        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+      }
+      if (width < 600) {
+        expect(
+          await editor.evaluate((element) =>
+            getComputedStyle(element).position
+          ),
+        ).toBe("fixed");
+      }
+      await editor.getByRole("button", { name: "Cancel" }).press("Enter");
+      await expect(editor).toBeHidden();
+      if (
+        await directory.evaluate((element) =>
+          (element as HTMLDetailsElement).open
+        )
+      ) {
+        await directory.locator("summary").click();
+      }
+      await page.evaluate(() => globalThis.scrollTo(0, 0));
+      await testInfo.attach(`profile-blocks-${width}`, {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: "image/png",
+      });
+      if (width === 1440) {
+        await page.locator('[data-person-vital-value="work"]').click();
+        await expect(page.locator("#profile-section-work")).toBeFocused();
+        await expect(page.locator("[data-timeline-list] > li")).toHaveCount(8);
+        const navigatorBounds = await page.locator(
+          ".person-workspace-navigation",
+        ).boundingBox();
+        const headingBounds = await page.locator(
+          "#profile-section-work-heading",
+        ).boundingBox();
+        expect.soft(headingBounds!.y).toBeGreaterThanOrEqual(
+          navigatorBounds!.y + navigatorBounds!.height + 8,
+        );
+      }
+    }
+    await page.setViewportSize({ width: 375, height: 667 });
+    // Development chrome must not intercept the production menu's pointer test.
+    await page.addStyleTag({
+      content: "astro-dev-toolbar { display: none !important; }",
+    });
+    await directory.locator("summary").scrollIntoViewIfNeeded();
+    await directory.locator("summary").click({ timeout: 5_000 });
+    const menu = directory.locator("nav");
+    await expect.poll(async () => {
+      const bounds = await menu.boundingBox();
+      return bounds!.y + bounds!.height;
+    }).toBeLessThanOrEqual(659);
+    const auditLink = menu.locator('[data-section-link="audit-summary"]');
+    await auditLink.click({ timeout: 5_000 });
+    await expect(page.locator("#profile-section-audit-summary")).toBeFocused();
+    await expect(page).toHaveURL(/section=audit-summary/);
+    await expect(menu).toBeHidden();
+    // Reopen after the navigator has stuck while viewing the final section.
+    await directory.locator("summary").click({ timeout: 5_000 });
+    await expect.poll(async () => {
+      const bounds = await menu.boundingBox();
+      return bounds!.y + bounds!.height;
+    }).toBeLessThanOrEqual(659);
+    await auditLink.click();
+    await expect(page.locator("#profile-section-audit-summary")).toBeFocused();
+    await expect(menu).toBeHidden();
+  },
+);
+
 test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
   annotation: { type: "flow", description: "PEOPLE-006" },
 }, async ({ browserName, page, request }) => {
