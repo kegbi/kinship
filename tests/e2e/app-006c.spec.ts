@@ -247,13 +247,36 @@ test(
     expect(Number.parseFloat(openAllPresentation.paddingRight)).toBeGreaterThan(
       0,
     );
+    if (browserName === "webkit") {
+      // Exercise focus presentation with an explicit WebKit fixture tab stop;
+      // default implicit-anchor reachability is outside this assertion.
+      await openAllTasks.evaluate((element) => element.tabIndex = 0);
+    }
     await openAllTasks.focus();
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    await expect(openAllTasks).toBeFocused();
+    expect(
+      await openAllTasks.evaluate((element) =>
+        element.matches(":focus-visible")
+      ),
+    )
+      .toBe(true);
     const focusedOpenAll = await openAllTasks.evaluate((element) => {
       const style = getComputedStyle(element);
-      return { boxShadow: style.boxShadow, outlineOffset: style.outlineOffset };
+      return {
+        boxShadow: style.boxShadow,
+        outlineOffset: style.outlineOffset,
+        outlineStyle: style.outlineStyle,
+        outlineWidth: style.outlineWidth,
+      };
     });
-    expect(focusedOpenAll.outlineOffset).not.toBe("3px");
-    expect(focusedOpenAll.boxShadow).toContain("inset");
+    expect(focusedOpenAll).toMatchObject({
+      outlineOffset: "2px",
+      outlineStyle: "solid",
+      outlineWidth: "2px",
+    });
+    expect(focusedOpenAll.boxShadow).not.toContain("inset");
     await openAllTasks.click();
     await expect(page).toHaveURL(/\/app\/tasks$/);
     const stateFilter = page.locator("[data-task-status-filter]");
@@ -279,12 +302,15 @@ test(
     });
     expect(filterColors.background).toBe(filterColors.surface);
     await stateFilter.focus();
-    await expect(stateFilter).toHaveCSS("outline-offset", "0px");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await expect(stateFilter).toHaveCSS("outline-offset", "2px");
+    await expect(stateFilter).toHaveCSS("outline-style", "solid");
     expect(
       await stateFilter.evaluate((element) =>
         getComputedStyle(element).boxShadow
       ),
-    ).toContain("inset");
+    ).not.toContain("inset");
     await page.goBack();
     await expect(page).toHaveURL(/\/app$/);
 

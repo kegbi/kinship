@@ -241,6 +241,13 @@ const spacingExceptions = [
     value: "-1px",
     // The visually hidden legend uses the standard clipping offset.
   },
+  {
+    path: "apps/web/src/styles/person.css",
+    selector: ".primary-nav",
+    property: "margin",
+    value: "calc(-1 * var(--space-1))",
+    // Compensates the matching focus-outline clearance padding inside its scrollport.
+  },
 ] as const;
 
 function withoutForcedColorsBlocks(stylesheet: string): string {
@@ -625,7 +632,7 @@ describe("application control presentation", () => {
     expect(Number(getComputedStyle(single).opacity)).toBe(.65);
   });
 
-  it("keeps the keyboard focus indicator inside interactive controls only", () => {
+  it("keeps keyboard focus outside interactive content, including programmatic menu controls", () => {
     mountStyles();
     const buttons = ["primary", "secondary", "danger"].map((variant) => {
       const button = document.createElement("button");
@@ -638,6 +645,9 @@ describe("application control presentation", () => {
     const link = document.createElement("a");
     link.href = "#target";
     const summary = document.createElement("summary");
+    const menuButton = document.createElement("button");
+    menuButton.tabIndex = -1;
+    menuButton.setAttribute("role", "menuitem");
     const status = document.createElement("main");
     status.tabIndex = -1;
     document.body.append(
@@ -647,40 +657,118 @@ describe("application control presentation", () => {
       textarea,
       link,
       summary,
+      menuButton,
       status,
     );
 
     for (
-      const control of [...buttons, input, select, textarea, link, summary]
+      const control of [
+        ...buttons,
+        input,
+        select,
+        textarea,
+        link,
+        summary,
+        menuButton,
+      ]
     ) {
       control.focus();
       const computed = getComputedStyle(control);
-      expect(computed.outlineStyle).toBe("none");
-      expect(computed.outlineOffset).not.toBe("3px");
-      expect(computed.boxShadow).toContain("inset 0 0 0 2px #fffdf8");
-      expect(computed.boxShadow).toContain("inset 0 0 0 5px #a44730");
-      expect(computed.boxShadow.match(/inset/g)).toHaveLength(2);
+      expect(computed.outlineStyle).toBe("solid");
+      expect(computed.outlineWidth).toBe("2px");
+      expect(computed.outlineOffset).toBe("2px");
+      expect(computed.outlineColor).toBe("#a44730");
+      expect(computed.boxShadow).not.toContain("inset");
     }
     status.focus();
+    expect(getComputedStyle(status).outlineStyle).toBe("none");
     expect(getComputedStyle(status).boxShadow).not.toContain("inset");
+    expect(applicationCss).toMatch(
+      /@media \(forced-colors: active\)[\s\S]*:where\(a\[href\], button, input, select, textarea, summary\):focus-visible\s*\{[^}]*outline-color:\s*Highlight;/,
+    );
   });
 
-  it("keeps programmatic profile-section focus inside the card", () => {
-    mountStyles();
-    const card = document.createElement("section");
-    card.className = "profile-section-card";
-    card.tabIndex = -1;
-    document.body.append(card);
-    card.focus();
+  it.each(["person-form", "settings-form"])(
+    "keeps full-strength keyboard focus on invalid controls in %s",
+    (formClass) => {
+      mountStyles();
+      // Happy DOM does not compute color-mix outlines, so also verify that the
+      // actual error-outline selector cannot override a keyboard-focused control.
+      const invalidOutlineSelector = Array.from(
+        applicationCss.matchAll(/([^{}]+)\{([^{}]*)\}/g),
+      ).find((rule) =>
+        rule[1]!.includes(`.${formClass} [aria-invalid="true"]`) &&
+        /\boutline\s*:/.test(rule[2]!)
+      )?.[1]?.trim();
+      expect(invalidOutlineSelector).toBeTruthy();
+      const form = document.createElement("form");
+      form.className = formClass;
+      document.body.append(form);
+      // Native select focus selectors are covered by the browser regression.
+      for (const tagName of ["input", "textarea"] as const) {
+        const control = document.createElement(tagName);
+        control.setAttribute("aria-invalid", "true");
+        form.append(control);
+        control.focus();
+        expect(
+          control.matches(invalidOutlineSelector!),
+          `${tagName}: ${invalidOutlineSelector}`,
+        )
+          .toBe(false);
+        const computed = getComputedStyle(control);
+        expect(computed.outlineColor).toBe("#a44730");
+        expect(computed.outlineStyle).toBe("solid");
+        expect(computed.outlineWidth).toBe("2px");
+        expect(computed.outlineOffset).toBe("2px");
+        expect(computed.borderColor).toBe("#9d2c2c");
+      }
+      const unfocused = document.createElement("input");
+      unfocused.setAttribute("aria-invalid", "true");
+      form.append(unfocused);
+      expect(unfocused.matches(invalidOutlineSelector!)).toBe(true);
+      expect(getComputedStyle(unfocused).borderColor).toBe("#9d2c2c");
+    },
+  );
 
-    const computed = getComputedStyle(card);
-    expect(computed.outlineStyle).toBe("none");
-    expect(Number.parseFloat(computed.outlineOffset)).toBe(0);
-    expect(computed.boxShadow).toContain("inset 0 0 0 2px #fffdf8");
-    expect(computed.boxShadow).toContain("inset 0 0 0 5px #a44730");
-    expect(computed.boxShadow.match(/inset/g)).toHaveLength(2);
+  it("cues page, heading, status, and profile-section focus with localized text decoration", () => {
+    mountStyles();
+    for (
+      const [markup, cueSelector] of [
+        ['<main tabindex="-1"><h1>Ada Focus</h1></main>', "h1"],
+        ['<main><h1 tabindex="-1">Ada Focus</h1></main>', "h1"],
+        [
+          '<section class="profile-section-card" tabindex="-1"><header class="profile-section-heading"><h3>Contact methods</h3><button>Add</button></header></section>',
+          "h3",
+        ],
+        [
+          '<p class="profile-section-notice" role="status" tabindex="-1">Section turned off</p>',
+          "p",
+        ],
+      ]
+    ) {
+      document.body.innerHTML = markup!;
+      const destination = document.querySelector<HTMLElement>(
+        '[tabindex="-1"]',
+      )!;
+      const cue = document.querySelector(cueSelector!)!;
+      destination.focus();
+      expect(getComputedStyle(destination).outlineStyle, destination.outerHTML)
+        .toBe("none");
+      expect(getComputedStyle(destination).boxShadow).not.toContain("inset");
+      const cueStyle = getComputedStyle(cue);
+      expect(cueStyle.textDecoration).toBe("underline");
+      expect(cueStyle.textDecorationColor).toBe("#a44730");
+      expect(cueStyle.getPropertyValue("text-decoration-thickness")).toBe(
+        "2px",
+      );
+      expect(cueStyle.getPropertyValue("text-underline-offset")).toBe(".2em");
+      const button = destination.querySelector("button");
+      if (button) {
+        expect(getComputedStyle(button).textDecoration).not.toBe("underline");
+      }
+    }
     expect(applicationCss).toMatch(
-      /@media \(forced-colors: active\)[\s\S]*\.profile-section-card:focus[\s\S]*outline-offset:\s*-3px/,
+      /@media \(forced-colors: active\)[\s\S]*\.profile-section-card:focus-visible[^}]*text-decoration-color:\s*Highlight;/,
     );
   });
 });

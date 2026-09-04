@@ -667,22 +667,6 @@
   background: var(--warning-soft);
 }
 
-.profile-section-notice:focus {
-  outline: none;
-  outline-offset: 0;
-  box-shadow:
-    inset 0 0 0 2px var(--surface-1),
-    inset 0 0 0 5px var(--focus-ring);
-}
-
-@media (forced-colors: active) {
-  .profile-section-notice:focus {
-    outline: 3px solid Highlight;
-    outline-offset: -3px;
-    box-shadow: none;
-  }
-}
-
 .profile-section-notice a {
   color: inherit;
   font-weight: 700;
@@ -730,6 +714,7 @@
   min-width: 0;
   max-width: 100%;
   overflow-x: auto;
+  scroll-padding-inline: var(--space-1);
   align-items: center;
   background: var(--surface-page);
 }
@@ -1238,17 +1223,18 @@
 
 .profile-section-card:focus {
   outline: none;
-  outline-offset: 0;
-  box-shadow:
-    inset 0 0 0 2px var(--surface-1),
-    inset 0 0 0 5px var(--focus-ring);
+}
+
+.profile-section-card:focus-visible > .profile-section-heading :is(h2, h3) {
+  text-decoration: underline;
+  text-decoration-color: var(--focus-ring);
+  text-decoration-thickness: 2px;
+  text-underline-offset: .2em;
 }
 
 @media (forced-colors: active) {
-  .profile-section-card:focus {
-    outline: 3px solid Highlight;
-    outline-offset: -3px;
-    box-shadow: none;
+  .profile-section-card:focus-visible > .profile-section-heading :is(h2, h3) {
+    text-decoration-color: Highlight;
   }
 }
 
@@ -1455,6 +1441,9 @@
 
 .person-form [aria-invalid="true"] {
   border-color: var(--danger);
+}
+
+.person-form [aria-invalid="true"]:not(:focus) {
   outline: 2px solid color-mix(in srgb, var(--danger) 20%, transparent);
 }
 
@@ -1966,6 +1955,9 @@
     grid-column: 1 / -1;
     grid-row: 2;
     justify-content: start;
+    /* Leave room for the outline inside the horizontal scrollport. */
+    padding: var(--space-1);
+    margin: calc(-1 * var(--space-1));
     overflow-x: auto;
   }
 

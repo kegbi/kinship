@@ -54,18 +54,31 @@ a {
 }
 
 :where(a[href], button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Navigation and status destinations keep focus without framing a whole page. */
+:where(main, h1, h2, h3, [role="status"], [role="alert"], .section-state)[tabindex="-1"]:focus {
   outline: none;
-  outline-offset: 0;
-  box-shadow:
-    inset 0 0 0 2px var(--surface-1),
-    inset 0 0 0 5px var(--focus-ring);
+}
+
+:where(h1, h2, h3, [role="status"], [role="alert"], .section-state)[tabindex="-1"]:focus-visible,
+main[tabindex="-1"]:focus-visible h1 {
+  text-decoration: underline;
+  text-decoration-color: var(--focus-ring);
+  text-decoration-thickness: 2px;
+  text-underline-offset: .2em;
 }
 
 @media (forced-colors: active) {
   :where(a[href], button, input, select, textarea, summary):focus-visible {
-    outline: 3px solid Highlight;
-    outline-offset: -3px;
-    box-shadow: none;
+    outline-color: Highlight;
+  }
+
+  :where(h1, h2, h3, [role="status"], [role="alert"], .section-state)[tabindex="-1"]:focus-visible,
+  main[tabindex="-1"]:focus-visible h1 {
+    text-decoration-color: Highlight;
   }
 }
 

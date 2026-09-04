@@ -2631,9 +2631,17 @@ and takes priority over the parked deployment work.
   - [x] Focused rendering and navigation regressions observed RED, then GREEN;
         affected layout expectations updated. Browser coverage checks 1440, 768,
         and 390 widths, long values, editing, and keyboard cancellation.
-- [ ] **PRF-002 — Remove focus borders that cover content.** Keep visible
+- [x] **PRF-002 — Remove focus borders that cover content.** Keep visible
       keyboard focus, skip links, section navigation, and forced-colors support;
       distinguish interactive controls from programmatic navigation targets.
+  - [x] Use external control outlines and localized text cues for navigation
+        destinations, with clearance inside scrollable navigation. Focused
+        browser regression, 16 control tests, and five product-contract checks
+        pass; the existing PEOPLE-002 catalog references the new regression.
+  - [x] Invalid person/settings fields retain the full focus outline. The
+        focus/Today regressions pass across three browser engines. WebKit uses
+        explicit fixture tab stops for focus presentation and activation; that
+        fixture does not establish default native anchor tab reachability.
 - [ ] **APR-000 — Review the application and dispatch its repair plan.** Check
       remaining composition, architecture, and UX defects against current code
       and rendered behavior. Write a prioritized sequence with evidence,
