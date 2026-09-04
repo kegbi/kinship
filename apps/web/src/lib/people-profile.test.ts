@@ -2432,6 +2432,33 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     ).toBe("true");
   });
 
+  it("APR-001 explicitly discards the identity draft on Cancel", async () => {
+    markup();
+    stubReadyProfile();
+    await mountPeopleProfile();
+    document.querySelector<HTMLButtonElement>("#person-edit-open")!.click();
+    const form = document.querySelector<HTMLFormElement>("#person-edit-form")!;
+    const field = form.elements.namedItem("givenName") as HTMLInputElement;
+    const originalName = field.value;
+    field.value = "Discard this draft";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(
+      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
+    ).toBe(false);
+    document.querySelector<HTMLButtonElement>("#person-edit-cancel")!.click();
+    await Promise.resolve();
+    expect(form.hidden).toBe(true);
+    expect(field.value).toBe(originalName);
+    expect(
+      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
+    ).toBe(true);
+    document.querySelector<HTMLButtonElement>("#person-edit-open")!.click();
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(
+      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
+    ).toBe(true);
+  });
+
   it("[PEOPLE-004] edits, archives, restores, and cancels explicit deletion", async () => {
     markup();
     const initial = {
@@ -2496,12 +2523,19 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     )!;
     (editForm.elements.namedItem("familyName") as HTMLInputElement).value =
       "Byron";
+    editForm.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(
+      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
+    ).toBe(false);
     editForm.requestSubmit();
     await vi.waitFor(() =>
       expect(document.querySelector("#person-profile-name")?.textContent)
         .toBe("Ada Byron")
     );
     expect(fetchMock.mock.calls[3]?.[1]?.method).toBe("PATCH");
+    expect(
+      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
+    ).toBe(true);
 
     const factRevision = "2026-08-15T09:00:00.000001Z";
     document.dispatchEvent(

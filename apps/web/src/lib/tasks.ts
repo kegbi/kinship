@@ -1,3 +1,4 @@
+import { markFormSaved, saveWithLockedForm } from "./unsaved-changes.ts";
 import {
   changeTask,
   createTask,
@@ -462,28 +463,34 @@ export async function mountTaskSurface(options: {
     const selectedStatus = formValue(form, "status") === "cancelled"
       ? "cancelled" as const
       : "open" as const;
-    const result = await (form.dataset.taskId
-      ? changeTask(
-        form.dataset.taskId,
-        {
-          description: description || null,
-          ...(dueDirty ? { dueAt: dueAt ?? null } : {}),
-          expectedUpdatedAt: form.dataset.updatedAt!,
-          ...(!options.personId ? { personId: selectedPersonId ?? null } : {}),
-          ...(editingStatus === "completed" && selectedStatus === "open"
-            ? {}
-            : { status: selectedStatus }),
-          title,
-        } satisfies TaskChangeInput,
-        workspaceId,
-      )
-      : createTask({
-        ...(description ? { description } : {}),
-        ...(dueAt ? { dueAt } : {}),
-        ...(selectedPersonId ? { personId: selectedPersonId } : {}),
-        requestId: createRequestId ??= crypto.randomUUID(),
-        title,
-      }, workspaceId)).catch(() => undefined);
+    const result = await saveWithLockedForm(
+      form,
+      async () =>
+        form.dataset.taskId
+          ? await changeTask(
+            form.dataset.taskId,
+            {
+              description: description || null,
+              ...(dueDirty ? { dueAt: dueAt ?? null } : {}),
+              expectedUpdatedAt: form.dataset.updatedAt!,
+              ...(!options.personId
+                ? { personId: selectedPersonId ?? null }
+                : {}),
+              ...(editingStatus === "completed" && selectedStatus === "open"
+                ? {}
+                : { status: selectedStatus }),
+              title,
+            } satisfies TaskChangeInput,
+            workspaceId,
+          )
+          : await createTask({
+            ...(description ? { description } : {}),
+            ...(dueAt ? { dueAt } : {}),
+            ...(selectedPersonId ? { personId: selectedPersonId } : {}),
+            requestId: createRequestId ??= crypto.randomUUID(),
+            title,
+          }, workspaceId),
+    ).catch(() => undefined);
     submitting = false;
     if (submit) submit.disabled = false;
     if (cancel) cancel.disabled = false;
@@ -501,6 +508,7 @@ export async function mountTaskSurface(options: {
     createRequestId = undefined;
     dueDirty = false;
     editingStatus = undefined;
+    markFormSaved(form);
     form.hidden = true;
     globalThis.dispatchEvent(new CustomEvent(TASK_CHANGED_EVENT));
     await load(true);

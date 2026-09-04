@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountCommunications } from "./communications.ts";
+import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 
 const workspaceId = "00000000-0000-4000-8000-000000000003";
 const personId = "00000000-0000-4000-8000-000000000100";
@@ -675,6 +676,10 @@ describe("INTERACTION-002 person communications", () => {
     "reports a saved-but-degraded state when %s refresh fails",
     async (_label, failHistory, failProfile) => {
       document.body.innerHTML = markup("call");
+      mountUnsavedChangesGuard({
+        confirmMessage: "Discard?",
+        root: document.body,
+      });
       let saved = false;
       vi.stubGlobal(
         "fetch",
@@ -732,6 +737,12 @@ describe("INTERACTION-002 person communications", () => {
       const form = section.querySelector<HTMLFormElement>("form")!;
       (form.elements.namedItem("happenedAt") as HTMLInputElement).value =
         "2026-08-16T18:15";
+      form.dispatchEvent(new Event("input", { bubbles: true }));
+      expect(
+        globalThis.dispatchEvent(
+          new Event("beforeunload", { cancelable: true }),
+        ),
+      ).toBe(false);
       form.requestSubmit();
       const state = section.querySelector<HTMLElement>(
         "[data-communication-form-state]",
@@ -740,6 +751,11 @@ describe("INTERACTION-002 person communications", () => {
         expect(state.textContent).toMatch(/saved.*refresh/i)
       );
       expect(document.activeElement).toBe(state);
+      expect(
+        globalThis.dispatchEvent(
+          new Event("beforeunload", { cancelable: true }),
+        ),
+      ).toBe(true);
       expect(
         section.querySelector<HTMLButtonElement>("[data-communication-refresh]")
           ?.hidden,

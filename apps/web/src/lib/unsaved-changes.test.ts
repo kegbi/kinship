@@ -1,7 +1,11 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
+import {
+  markFormSaved,
+  mountUnsavedChangesGuard,
+  saveWithLockedForm,
+} from "./unsaved-changes.ts";
 import { requestWorkspaceChange } from "./workspace-context.ts";
 
 function markup(): {
@@ -46,7 +50,29 @@ afterEach(() => {
 });
 
 describe("person workspace unsaved-changes guard", () => {
-  it("uses the first focused values as the baseline and evaluates visible connected dirtiness lazily", () => {
+  it.each([false, true])(
+    "restores prior inert=%s after a failed pending save without clearing the draft",
+    async (wasInert) => {
+      const { first, firstName, root } = markup();
+      mountUnsavedChangesGuard({ confirmMessage: "Discard?", root });
+      firstName.focus();
+      edit(firstName, "Pending draft");
+      first.inert = wasInert;
+      let reject!: (reason: Error) => void;
+      const request = new Promise<void>((_resolve, rejectRequest) =>
+        reject = rejectRequest
+      );
+      const saved = saveWithLockedForm(first, () => request);
+      expect(first.inert).toBe(true);
+      expect(new FormData(first).get("name")).toBe("Pending draft");
+      expect(beforeUnload().defaultPrevented).toBe(true);
+      reject(new Error("Network unavailable"));
+      await expect(saved).rejects.toThrow("Network unavailable");
+      expect(first.inert).toBe(wasInert);
+      expect(beforeUnload().defaultPrevented).toBe(true);
+    },
+  );
+  it("uses the first focused values as the baseline and protects hidden connected drafts", () => {
     const { first, firstName, root } = markup();
     mountUnsavedChangesGuard({
       confirmMessage: "Discard person changes?",
@@ -65,17 +91,17 @@ describe("person workspace unsaved-changes guard", () => {
 
     edit(firstName, "Another draft");
     first.hidden = true;
-    expect(beforeUnload().defaultPrevented).toBe(false);
+    expect(beforeUnload().defaultPrevented).toBe(true);
     first.hidden = false;
     first.parentElement!.hidden = true;
-    expect(beforeUnload().defaultPrevented).toBe(false);
+    expect(beforeUnload().defaultPrevented).toBe(true);
     first.parentElement!.hidden = false;
     expect(beforeUnload().defaultPrevented).toBe(true);
     first.remove();
     expect(beforeUnload().defaultPrevented).toBe(false);
   });
 
-  it("re-baselines bubbling submit and reset events", async () => {
+  it("keeps submitted drafts dirty until an explicit reset", async () => {
     const { first, firstName, root } = markup();
     mountUnsavedChangesGuard({
       confirmMessage: "Discard person changes?",
@@ -86,7 +112,7 @@ describe("person workspace unsaved-changes guard", () => {
 
     edit(firstName, "Submitted draft");
     first.dispatchEvent(new Event("submit", { bubbles: true }));
-    expect(beforeUnload().defaultPrevented).toBe(false);
+    expect(beforeUnload().defaultPrevented).toBe(true);
     edit(firstName, "Reset draft");
     expect(beforeUnload().defaultPrevented).toBe(true);
 
@@ -125,6 +151,24 @@ describe("person workspace unsaved-changes guard", () => {
     expect(confirm).toHaveBeenCalledTimes(2);
     second.hidden = false;
     expect(beforeUnload().defaultPrevented).toBe(false);
+  });
+
+  it("clears only the acknowledged form and protects subsequent edits", () => {
+    const { first, firstName, root, second, secondName } = markup();
+    mountUnsavedChangesGuard({ confirmMessage: "Discard?", root });
+    firstName.focus();
+    secondName.focus();
+    edit(firstName, "First draft");
+    edit(secondName, "Second draft");
+
+    markFormSaved(first);
+    expect(beforeUnload().defaultPrevented).toBe(true);
+    markFormSaved(second);
+    expect(beforeUnload().defaultPrevented).toBe(false);
+    edit(firstName, "First draft");
+    expect(beforeUnload().defaultPrevented).toBe(false);
+    edit(firstName, "Another edit");
+    expect(beforeUnload().defaultPrevented).toBe(true);
   });
 
   it("replaces global listeners when mounted twice", () => {

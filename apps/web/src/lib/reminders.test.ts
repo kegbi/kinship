@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
@@ -354,6 +355,10 @@ describe("PLANNING-002 reminder browser behavior", () => {
 
   it("shows a muted busy cadence row before save and removes it on failure", async () => {
     personMarkup();
+    mountUnsavedChangesGuard({
+      confirmMessage: "Discard?",
+      root: document.body,
+    });
     const failedSave = deferredResponse();
     const successfulSave = deferredResponse();
     const refresh = deferredResponse();
@@ -383,15 +388,23 @@ describe("PLANNING-002 reminder browser behavior", () => {
     const list = document.querySelector<HTMLUListElement>(
       "[data-cadence-list]",
     )!;
+    const intervalCount = form.elements.namedItem(
+      "intervalCount",
+    ) as HTMLInputElement;
+    intervalCount.value = "2";
+    intervalCount.dispatchEvent(new Event("input", { bubbles: true }));
 
     form.dispatchEvent(
       new SubmitEvent("submit", { bubbles: true, cancelable: true }),
     );
 
     const failedRow = list.querySelector<HTMLLIElement>("[aria-busy=true]")!;
-    expect(failedRow.textContent).toContain("Every 1 month");
+    expect(failedRow.textContent).toContain("Every 2 months");
     expect(failedRow.classList).toContain("optimistic-save");
     expect(submit.disabled).toBe(true);
+    expect(
+      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
+    ).toBe(false);
 
     failedSave.resolve(response({}, 503));
     await vi.waitFor(() => expect(submit.disabled).toBe(false));
@@ -401,6 +414,9 @@ describe("PLANNING-002 reminder browser behavior", () => {
     expect(document.querySelector("[data-cadence-state]")?.textContent).toBe(
       "Cadence could not be saved.",
     );
+    expect(
+      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
+    ).toBe(false);
 
     form.dispatchEvent(
       new SubmitEvent("submit", { bubbles: true, cancelable: true }),
@@ -408,10 +424,13 @@ describe("PLANNING-002 reminder browser behavior", () => {
     const successfulRow = list.querySelector<HTMLLIElement>(
       "[aria-busy=true]",
     )!;
-    expect(successfulRow.textContent).toContain("Every 1 month");
+    expect(successfulRow.textContent).toContain("Every 2 months");
     expect(submit.disabled).toBe(true);
     successfulSave.resolve(response({ cadence, status: "created" }, 201));
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(
+      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
+    ).toBe(true);
     expect(successfulRow.isConnected).toBe(true);
 
     refresh.resolve(response({

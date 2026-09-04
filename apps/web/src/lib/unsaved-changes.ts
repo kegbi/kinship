@@ -8,6 +8,27 @@ export interface UnsavedChangesGuardOptions {
   readonly root: HTMLElement;
 }
 
+const FORM_SAVED_EVENT = "kinship:form-saved";
+
+/** Call only after the owning mutation acknowledges a successful save. */
+export function markFormSaved(form: HTMLFormElement): void {
+  form.dispatchEvent(new Event(FORM_SAVED_EVENT, { bubbles: true }));
+}
+
+/** Keep the submitted values stable until the owning mutation settles. */
+export async function saveWithLockedForm<T>(
+  form: HTMLFormElement,
+  save: () => Promise<T>,
+): Promise<T> {
+  const wasInert = form.inert;
+  form.inert = true;
+  try {
+    return await save();
+  } finally {
+    form.inert = wasInert;
+  }
+}
+
 let activeBeforeUnload: ((event: Event) => void) | undefined;
 let activeWorkspaceChangeRequest: ((event: Event) => void) | undefined;
 let activeRootCleanup: (() => void) | undefined;
@@ -45,9 +66,7 @@ export function mountUnsavedChangesGuard(
     else dirtyForms.add(form);
   };
   const hasUnsavedChanges = (): boolean =>
-    [...dirtyForms].some((form) =>
-      form.isConnected && !form.hidden && !form.closest("[hidden]")
-    );
+    [...dirtyForms].some((form) => form.isConnected);
   const focusin = (event: Event): void => {
     const form = eventForm(options.root, event);
     if (form && !baselines.has(form)) rebaseline(form);
@@ -56,7 +75,7 @@ export function mountUnsavedChangesGuard(
     const form = eventForm(options.root, event);
     if (form) updateDirty(form);
   };
-  const submitted = (event: Event): void => {
+  const saved = (event: Event): void => {
     const form = eventForm(options.root, event);
     if (form) rebaseline(form);
   };
@@ -69,13 +88,13 @@ export function mountUnsavedChangesGuard(
   options.root.addEventListener("focusin", focusin);
   options.root.addEventListener("input", changed);
   options.root.addEventListener("change", changed);
-  options.root.addEventListener("submit", submitted);
+  options.root.addEventListener(FORM_SAVED_EVENT, saved);
   options.root.addEventListener("reset", reset);
   activeRootCleanup = () => {
     options.root.removeEventListener("focusin", focusin);
     options.root.removeEventListener("input", changed);
     options.root.removeEventListener("change", changed);
-    options.root.removeEventListener("submit", submitted);
+    options.root.removeEventListener(FORM_SAVED_EVENT, saved);
     options.root.removeEventListener("reset", reset);
   };
 

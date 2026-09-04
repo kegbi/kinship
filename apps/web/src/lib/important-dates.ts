@@ -1,3 +1,4 @@
+import { markFormSaved, saveWithLockedForm } from "./unsaved-changes.ts";
 import {
   createImportantDate,
   deleteImportantDate,
@@ -524,20 +525,25 @@ export async function mountImportantDates(
     event.preventDefault();
     if (!ui.form.reportValidity()) return;
     const dateId = ui.form.dataset.dateId;
-    const result = dateId
-      ? await updateImportantDate(
-        personId,
-        dateId,
-        { ...input(ui), expectedUpdatedAt: ui.version.value },
-        workspaceId,
-      ).catch(() => undefined)
-      : await createImportantDate(personId, input(ui), workspaceId).catch(() =>
-        undefined
-      );
+    const result = await saveWithLockedForm(
+      ui.form,
+      async () =>
+        dateId
+          ? await updateImportantDate(
+            personId,
+            dateId,
+            { ...input(ui), expectedUpdatedAt: ui.version.value },
+            workspaceId,
+          ).catch(() => undefined)
+          : await createImportantDate(personId, input(ui), workspaceId).catch(
+            () => undefined,
+          ),
+    );
     if (!result || !result.ok) {
       showFormProblem(ui, result?.problem);
       return;
     }
+    markFormSaved(ui.form);
     dates = dateId
       ? dates.map((date) => date.id === dateId ? result.value.date : date)
       : [...dates, result.value.date];
