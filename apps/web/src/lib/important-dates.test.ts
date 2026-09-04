@@ -7,6 +7,7 @@ import {
   selectImportantDateSummaryIds,
 } from "./important-dates.ts";
 import { announceRailEditorOpened } from "./rail-editors.ts";
+import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 import type { ImportantDate } from "../../../../packages/contracts/generated/auth-client.ts";
 
 const workspaceId = "00000000-0000-4000-8000-000000000003";
@@ -561,6 +562,10 @@ describe("PEOPLE-005 important-date presentation", () => {
 
   it("edits optional custom data and renders every kind and scheduling outcome", async () => {
     markup();
+    mountUnsavedChangesGuard({
+      confirmMessage: "Discard?",
+      root: document.body,
+    });
     const customId = "00000000-0000-4000-8000-000000000201";
     const existing = [
       date({
@@ -628,6 +633,7 @@ describe("PEOPLE-005 important-date presentation", () => {
       .toBe(true);
 
     button("Edit Custom date").click();
+    await Promise.resolve();
     const kind = document.querySelector(
       "#important-date-kind",
     ) as HTMLSelectElement;
@@ -641,6 +647,12 @@ describe("PEOPLE-005 important-date presentation", () => {
       .value = "  Graduation  ";
     (document.querySelector("#important-date-notes") as HTMLTextAreaElement)
       .value = "  Updated note  ";
+    document.querySelector("#important-date-notes")!.dispatchEvent(
+      new Event("input", { bubbles: true }),
+    );
+    expect(
+      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
+    ).toBe(false);
     (document.querySelector("#important-date-form") as HTMLFormElement)
       .dispatchEvent(
         new SubmitEvent("submit", { bubbles: true, cancelable: true }),
@@ -663,6 +675,9 @@ describe("PEOPLE-005 important-date presentation", () => {
       expect(document.querySelector("#important-dates-list")?.textContent)
         .toContain("Graduation")
     );
+    expect(
+      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
+    ).toBe(true);
 
     document.dispatchEvent(
       new CustomEvent("person-lifecycle-changed", {

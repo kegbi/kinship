@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
 import { mountTaskSurface, mountTodayTasks } from "./tasks.ts";
+import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 
 const applicationCss = readApplicationStylesheet();
 const todayPage = readFileSync("apps/web/src/pages/app.astro", "utf8");
@@ -112,6 +113,10 @@ describe("PLANNING-001 task browser behavior", () => {
 
   it("loads a person task, creates a task, and completes idempotently", async () => {
     surfaceMarkup();
+    mountUnsavedChangesGuard({
+      confirmMessage: "Discard?",
+      root: document.body,
+    });
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response({ items: [task], status: "ready" }))
       .mockResolvedValueOnce(response({ status: "created", task }, 201))
@@ -125,13 +130,21 @@ describe("PLANNING-001 task browser behavior", () => {
     expect(document.querySelector("[data-task-open-list]")?.textContent)
       .toContain("Call Ada");
     document.querySelector<HTMLButtonElement>("[data-task-add]")!.click();
+    await Promise.resolve();
     const form = document.querySelector<HTMLFormElement>("[data-task-form]")!;
     (form.elements.namedItem("title") as HTMLInputElement).value =
       "Send Ada notes";
+    form.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(
+      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
+    ).toBe(false);
     form.dispatchEvent(
       new SubmitEvent("submit", { bubbles: true, cancelable: true }),
     );
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(
+      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
+    ).toBe(true);
     document.querySelector<HTMLButtonElement>("[data-task-open-list] button")!
       .click();
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));

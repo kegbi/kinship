@@ -1,3 +1,4 @@
+import { markFormSaved, saveWithLockedForm } from "./unsaved-changes.ts";
 import {
   createReminder,
   createStayInTouchCadence,
@@ -276,7 +277,7 @@ export async function mountPersonReminders(options: {
     cadenceSaving = true;
     cadenceSubmit?.setAttribute("disabled", "");
     cadenceState.textContent = "Saving cadence…";
-    cadenceRequestId ??= crypto.randomUUID();
+    const requestId = cadenceRequestId ??= crypto.randomUUID();
     const intervalCount = Number(formValue(cadenceForm, "intervalCount"));
     const intervalUnit = formValue(cadenceForm, "intervalUnit") as
       | "day"
@@ -289,17 +290,22 @@ export async function mountPersonReminders(options: {
     );
     cadenceList.append(optimisticRow);
     try {
-      const result = await createStayInTouchCadence({
-        intervalCount,
-        intervalUnit,
-        personId: options.personId,
-        requestId: cadenceRequestId,
-      }, options.workspaceId).catch(() => undefined);
+      const result = await saveWithLockedForm(
+        cadenceForm,
+        () =>
+          createStayInTouchCadence({
+            intervalCount,
+            intervalUnit,
+            personId: options.personId,
+            requestId,
+          }, options.workspaceId),
+      ).catch(() => undefined);
       cadenceState.textContent = result?.ok
         ? "Cadence saved."
         : "Cadence could not be saved.";
       if (result?.ok) {
         cadenceRequestId = undefined;
+        markFormSaved(cadenceForm);
         cadenceForm.hidden = true;
         await load();
       }

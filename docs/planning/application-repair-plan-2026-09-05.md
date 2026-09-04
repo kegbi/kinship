@@ -62,7 +62,14 @@ established in this pass.
 
 ### APR-001 — Keep failed or pending saves marked as unsaved
 
-- [ ] **P1, ready.**
+- [x] **P1, delivered.** Submit and hidden forms retain dirty state;
+      acknowledged writes and explicit reset clear the relevant draft. Pending
+      non-resetting editors lock their submitted values. The Chromium
+      `PEOPLE-006` failure, declined-navigation, retry, and persisted-reload
+      regression passes in the isolated production stack. All 570 web tests pass
+      at 94.91% line, 83.72% branch, and 88.44% function coverage; affected
+      static and five product-contract checks pass. No schema or API boundary
+      changed.
 - Evidence: `submitted` in
   [unsaved-changes.ts](../../apps/web/src/lib/unsaved-changes.ts) calls
   `rebaseline` on every bubbling submit, before validation or an awaited write.

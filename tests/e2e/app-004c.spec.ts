@@ -221,6 +221,106 @@ async function expectAlignedControls(
 }
 
 test(
+  "[PEOPLE-006] APR-001 preserves a failed save through declined navigation and retry",
+  {
+    annotation: { type: "flow", description: "PEOPLE-006" },
+  },
+  async ({ browserName, page, request }) => {
+    test.setTimeout(120_000);
+    const email = `unsaved-facts-${browserName}-${Date.now()}@example.test`;
+    await registerVerified(request, email);
+    await signIn(page, email);
+    await page.goto("/app/people/new");
+    await page.getByLabel("Given name").fill("Unsaved");
+    await page.getByLabel("Family name").fill("Draft");
+    await page.getByRole("button", { name: "Save person", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
+    const profilePath = new URL(page.url()).pathname;
+    const food = page.locator("#profile-section-food-preferences");
+    const form = food.locator("form[data-profile-fact-form]");
+    const addFood = food.getByRole("button", {
+      name: "Add food preferences",
+      exact: true,
+    });
+    await expect(addFood).toBeVisible();
+    await openLocalEditor(addFood, form);
+    await form.getByLabel("Food, allergy, and dietary preferences").fill(
+      "Tea with lunch",
+    );
+    await form.getByRole("button", { name: "Save profile fact", exact: true })
+      .click();
+    await expect(form).toBeHidden();
+    await expect(food.getByText("Profile fact saved.", { exact: true }))
+      .toBeVisible();
+    await openLocalEditor(
+      food.getByRole("button", { name: "Edit food preferences", exact: true }),
+      form,
+    );
+    await form.getByLabel("Food, allergy, and dietary preferences").fill(
+      "Vegetarian meals; no shellfish",
+    );
+    let releaseSave!: () => void;
+    const saveReleased = new Promise<void>((resolve) => releaseSave = resolve);
+    let failSave = true;
+    await page.route("**/facts/food-preferences/**", async (route) => {
+      if (failSave && route.request().method() === "PUT") {
+        failSave = false;
+        await saveReleased;
+        await route.abort("failed");
+      } else await route.continue();
+    });
+    await form.getByRole("button", { name: "Save profile fact", exact: true })
+      .click();
+    await expect(form).toHaveAttribute("inert", "");
+    expect(
+      await page.evaluate(() =>
+        !globalThis.dispatchEvent(
+          new Event("beforeunload", { cancelable: true }),
+        )
+      ),
+    ).toBe(true);
+    releaseSave();
+    await expect(form.getByText("Save is temporarily unavailable."))
+      .toBeVisible();
+    await expect(form).not.toHaveAttribute("inert");
+    const navigation = page.waitForEvent("dialog").then(async (dialog) => {
+      expect(dialog.type()).toBe("beforeunload");
+      await dialog.dismiss();
+    });
+    await Promise.all([
+      navigation,
+      page.locator('a[href="/app/people"]').first().click(),
+    ]);
+    await expect(page).toHaveURL(new RegExp(`${profilePath}$`));
+    await expect(form.getByLabel("Food, allergy, and dietary preferences"))
+      .toHaveValue(
+        "Vegetarian meals; no shellfish",
+      );
+    await form.getByRole("button", { name: "Save profile fact", exact: true })
+      .click();
+    await expect(form).toBeHidden();
+    await expect(food.getByText("Profile fact saved.", { exact: true }))
+      .toBeVisible();
+    expect(
+      await page.evaluate(() =>
+        !globalThis.dispatchEvent(
+          new Event("beforeunload", { cancelable: true }),
+        )
+      ),
+    ).toBe(false);
+    await page.locator('a[href="/app/people"]').first().click();
+    await expect(page).toHaveURL(/\/app\/people$/);
+    await page.goto(profilePath);
+    await expect(
+      food.getByRole("paragraph").filter({
+        hasText: /^Vegetarian meals; no shellfish$/,
+      }),
+    ).toBeVisible();
+  },
+);
+
+test(
   "[PEOPLE-006] PRF-001 scans profile blocks and edits long facts across screen sizes",
   {
     annotation: { type: "flow", description: "PEOPLE-006" },

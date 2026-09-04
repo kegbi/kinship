@@ -1,3 +1,4 @@
+import { markFormSaved, saveWithLockedForm } from "./unsaved-changes.ts";
 import {
   createProfileFact,
   deleteProfileFact,
@@ -1647,20 +1648,24 @@ export async function mountProfileFacts(
       if (section === "tags" && selectedTagIds) {
         input = { ...input, section: "tags", tagIds: selectedTagIds };
       }
-      const saved = "id" in input
-        ? await updateProfileFact(
-          personId,
-          section,
-          input.id,
-          input as ProfileFactUpdateInputBySection[typeof section],
-          workspaceId,
-        ).catch(() => undefined)
-        : await createProfileFact(
-          personId,
-          section,
-          input as ProfileFactCreateInputBySection[typeof section],
-          workspaceId,
-        ).catch(() => undefined);
+      const saved = await saveWithLockedForm(
+        target.form,
+        () =>
+          "id" in input
+            ? updateProfileFact(
+              personId,
+              section,
+              input.id,
+              input as ProfileFactUpdateInputBySection[typeof section],
+              workspaceId,
+            ).catch(() => undefined)
+            : createProfileFact(
+              personId,
+              section,
+              input as ProfileFactCreateInputBySection[typeof section],
+              workspaceId,
+            ).catch(() => undefined),
+      );
       if (!saved || !saved.ok) {
         if (formState) {
           formState.textContent = saved && !saved.ok
@@ -1674,6 +1679,7 @@ export async function mountProfileFacts(
         return;
       }
       renderFieldErrors(target.form);
+      markFormSaved(target.form);
       applyPersonRevision(saved.value.personUpdatedAt, true);
       target.form.hidden = true;
       if (section === "contact-methods") {

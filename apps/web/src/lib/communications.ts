@@ -1,3 +1,4 @@
+import { markFormSaved, saveWithLockedForm } from "./unsaved-changes.ts";
 import {
   type CommunicationList,
   getPerson,
@@ -419,12 +420,16 @@ export async function mountCommunications(
       submit.disabled = true;
       cancel.disabled = true;
       try {
-        const result = await recordInteraction(input, workspaceId);
+        const result = await saveWithLockedForm(
+          form,
+          () => recordInteraction(input, workspaceId),
+        );
         if (!result.ok) {
           formState.textContent = result.problem.detail;
           formState.focus();
           return;
         }
+        markFormSaved(form);
         document.dispatchEvent(
           new CustomEvent("person-timeline-changed", {
             detail: { personIds: [personId] },

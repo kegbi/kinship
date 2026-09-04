@@ -2,6 +2,8 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountProfileFacts } from "./profile-facts.ts";
+import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
+import { requestWorkspaceChange } from "./workspace-context.ts";
 
 const personId = "00000000-0000-4000-8000-000000000100";
 const workspaceId = "00000000-0000-4000-8000-000000000003";
@@ -110,6 +112,105 @@ afterEach(() => {
 });
 
 describe("PEOPLE-006 profile-fact sections", () => {
+  it.each(["transport", "validation", "forbidden", "conflict", "server"])(
+    "APR-001 protects a pending and %s-failed draft until a successful retry",
+    async (failure) => {
+      document.body.innerHTML = `
+        <section data-profile-fact-section="food-preferences"><p data-profile-fact-state></p><ul data-profile-fact-list></ul><button data-profile-fact-add>Add</button><form data-profile-fact-form hidden></form></section>`;
+      mountUnsavedChangesGuard({
+        confirmMessage: "Discard?",
+        root: document.body,
+      });
+      let settle!: () => void;
+      let saved = false;
+      let writes = 0;
+      const record = {
+        id: personId,
+        section: "food-preferences",
+        updatedAt: revision,
+        value: { foodPreferences: "Vegetarian" },
+      };
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_resource, init?: RequestInit) => {
+          if (["POST", "PUT"].includes(init?.method ?? "")) {
+            writes++;
+            if (writes === 1) {
+              return new Promise<Response>((resolve, reject) => {
+                settle = () => {
+                  if (failure === "transport") reject(new Error("Offline"));
+                  else {
+                    const status = {
+                      validation: 400,
+                      forbidden: 403,
+                      conflict: 409,
+                      server: 503,
+                    }[failure]!;
+                    resolve(
+                      response({
+                        code: failure,
+                        detail: "Save rejected.",
+                        status,
+                        title: "Rejected",
+                        type: "about:blank",
+                      }, status),
+                    );
+                  }
+                };
+              });
+            }
+            saved = true;
+            return response({
+              record,
+              personUpdatedAt: revision,
+              status: "saved",
+            });
+          }
+          return response({
+            options: [],
+            personUpdatedAt: revision,
+            records: saved ? [record] : [],
+            status: "ready",
+          });
+        }),
+      );
+      await mountProfileFacts(personId, workspaceId, false, revision);
+      document.querySelector<HTMLButtonElement>("[data-profile-fact-add]")!
+        .click();
+      const form = document.querySelector<HTMLFormElement>("form")!;
+      await vi.waitFor(() => expect(form.hidden).toBe(false));
+      const field = form.elements.namedItem(
+        "foodPreferences",
+      ) as HTMLTextAreaElement;
+      field.value = "Vegetarian";
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      form.requestSubmit();
+      expect(form.inert).toBe(true);
+      const protectedDraft = () =>
+        !globalThis.dispatchEvent(
+          new Event("beforeunload", { cancelable: true }),
+        );
+      expect(protectedDraft()).toBe(true);
+      settle();
+      await vi.waitFor(() => expect(form.inert).toBe(false));
+      expect(form.hidden).toBe(false);
+      expect(form.textContent).toContain(
+        failure === "transport"
+          ? "Save is temporarily unavailable."
+          : "Save rejected.",
+      );
+      expect(protectedDraft()).toBe(true);
+      vi.stubGlobal("confirm", vi.fn(() => false));
+      expect(requestWorkspaceChange(workspaceId, "another-workspace").allowed)
+        .toBe(false);
+      expect(field.value).toBe("Vegetarian");
+      expect(protectedDraft()).toBe(true);
+      form.requestSubmit();
+      await vi.waitFor(() => expect(form.hidden).toBe(true));
+      expect(writes).toBe(2);
+      expect(protectedDraft()).toBe(false);
+    },
+  );
   it("PRF-001 exposes saved work, pet, contact, address, and introducer details in their blocks", async () => {
     allMarkup();
     const labelId = "00000000-0000-4000-8000-000000000299";
@@ -2056,6 +2157,10 @@ describe("PEOPLE-006 profile-fact sections", () => {
     document.body.innerHTML = `
       <section data-profile-fact-section="food-preferences"><p data-profile-fact-state></p><ul data-profile-fact-list></ul><button data-profile-fact-add>Add</button><form data-profile-fact-form></form></section>`;
     let writes = 0;
+    mountUnsavedChangesGuard({
+      confirmMessage: "Discard?",
+      root: document.body,
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn((_resource, init?: RequestInit) => {
@@ -2080,9 +2185,13 @@ describe("PEOPLE-006 profile-fact sections", () => {
     );
     (foodForm.elements.namedItem("foodPreferences") as HTMLTextAreaElement)
       .value = "   ";
+    foodForm.dispatchEvent(new Event("input", { bubbles: true }));
     foodForm.requestSubmit();
     expect(writes).toBe(0);
     expect(foodForm.textContent).toContain("food preferences");
+    expect(
+      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
+    ).toBe(false);
   });
 
   it("rejects more than 500 durable tag selections before transport", async () => {

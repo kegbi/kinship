@@ -413,12 +413,15 @@ flows:
     steps:
       - Validate the owning workspace vocabulary and target person.
       - Apply the local profile change through its owning use case.
+      - Keep a pending or failed save protected as an unsaved draft until acknowledged success or explicit discard.
       - Respect disabled profile modules without treating hidden data as deleted.
       - Refresh only the affected profile section.
     alternateOutcomes: [
       custom-type-disabled,
       hidden-section,
       cross-workspace-link,
+      failed-save-retry,
+      declined-draft-navigation,
     ]
     result: Profile facts remain available from the single person workspace and use current workspace terminology.
     auditEffect: person-profile-fact-updated

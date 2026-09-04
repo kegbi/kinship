@@ -39,7 +39,11 @@ import {
   setVitalStat,
 } from "./person-facts-rail.ts";
 import { showToast } from "./toasts.ts";
-import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
+import {
+  markFormSaved,
+  mountUnsavedChangesGuard,
+  saveWithLockedForm,
+} from "./unsaved-changes.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
@@ -1115,6 +1119,8 @@ function mountLifecycleActions(
       .focus();
   });
   lifecycle.editCancel.addEventListener("click", () => {
+    lifecycle.editForm.reset();
+    fillEditForm(lifecycle, person);
     lifecycle.editForm.hidden = true;
     focusPersonMenuItem(lifecycle.editOpen);
     announce("Edit cancelled. No changes were saved.");
@@ -1122,14 +1128,18 @@ function mountLifecycleActions(
   lifecycle.editForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const data = new FormData(lifecycle.editForm);
-    const result = await editPerson(personId, {
-      expectedUpdatedAt: updatedAt,
-      familyName: String(data.get("familyName") ?? ""),
-      givenName: String(data.get("givenName") ?? ""),
-      isPartial: data.get("isPartial") === "on",
-      middleName: String(data.get("middleName") ?? ""),
-      nickname: String(data.get("nickname") ?? ""),
-    }, workspaceId).catch(() => undefined);
+    const result = await saveWithLockedForm(
+      lifecycle.editForm,
+      () =>
+        editPerson(personId, {
+          expectedUpdatedAt: updatedAt,
+          familyName: String(data.get("familyName") ?? ""),
+          givenName: String(data.get("givenName") ?? ""),
+          isPartial: data.get("isPartial") === "on",
+          middleName: String(data.get("middleName") ?? ""),
+          nickname: String(data.get("nickname") ?? ""),
+        }, workspaceId),
+    ).catch(() => undefined);
     if (!result || !result.ok) {
       announce(
         result && !result.ok
@@ -1139,6 +1149,7 @@ function mountLifecycleActions(
       return;
     }
     person = result.value.person;
+    markFormSaved(lifecycle.editForm);
     updatedAt = result.value.person.updatedAt;
     document.dispatchEvent(
       new CustomEvent("person-revision-changed", {
@@ -1278,10 +1289,14 @@ function mountLifecycleActions(
     if (deleteSubmitting) return;
     deleteSubmitting = true;
     lifecycle.deleteConfirm.disabled = true;
-    const result = await deletePerson(personId, {
-      confirmation: lifecycle.deleteInput.value,
-      expectedUpdatedAt: updatedAt,
-    }, workspaceId).catch(() => undefined);
+    const result = await saveWithLockedForm(
+      lifecycle.deleteForm,
+      () =>
+        deletePerson(personId, {
+          confirmation: lifecycle.deleteInput.value,
+          expectedUpdatedAt: updatedAt,
+        }, workspaceId),
+    ).catch(() => undefined);
     if (!result || !result.ok) {
       deleteSubmitting = false;
       lifecycle.deleteConfirm.disabled = false;
@@ -1292,6 +1307,7 @@ function mountLifecycleActions(
       return;
     }
     deleteRequestSequence += 1;
+    markFormSaved(lifecycle.deleteForm);
     lifecycle.deleteDialog.close();
     globalThis.location.assign(result.value.next);
   });
