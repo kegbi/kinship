@@ -784,6 +784,9 @@
 
 .settings-form [aria-invalid="true"] {
   border-color: var(--danger);
+}
+
+.settings-form [aria-invalid="true"]:not(:focus) {
   outline: 2px solid color-mix(in srgb, var(--danger) 20%, transparent);
 }
 

@@ -314,7 +314,10 @@ flows:
     moduleIds: [people]
     permissions: [people.read]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-003b.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/app-003b.spec.ts, tests/e2e/prf-002.spec.ts],
+    }
 
   - id: PEOPLE-003
     title: Read the complete person workspace
