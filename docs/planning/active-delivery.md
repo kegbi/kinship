@@ -1,6 +1,6 @@
 # Active Application Delivery Plan
 
-Status: Accepted execution ledger, revised 2026-08-24
+Status: Accepted execution ledger, revised 2026-09-05
 
 This is the authoritative delivery checklist. Select the first unchecked leaf in
 the current phase and deliver it as a complete vertical behavior. The larger
@@ -13,9 +13,13 @@ prerequisite queues.
 - Current phase: **Phase 13 — Person Blocks And Usability Repair**
 - User-directed follow-up: responsive person blocks, focus-border repair, then
   an evidence-backed application repair plan and execution in a clean task.
-- **Phase 12 is accepted.** `REL-029` is delivered; the only open leaf is Phase
-  11's `OPS-001E` deployment work, which starts only on explicit direction, and
-  `REL-020` and `REL-025` remain watches.
+- Remaining repair statuses and execution order belong to the
+  [application repair plan](application-repair-plan-2026-09-05.md). Start with
+  its first unchecked item, **APR-001**, after the Phase 13 profile fixes pass
+  their integration checkpoint.
+- **Phase 12 is accepted.** `REL-029` is delivered; `REL-020` and `REL-025`
+  remain watches. Phase 11's `OPS-001E` deployment work stays parked until
+  explicitly requested.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
@@ -2629,8 +2633,11 @@ and takes priority over the parked deployment work.
         work dates and description, pet notes, and introducer links in labeled
         details.
   - [x] Focused rendering and navigation regressions observed RED, then GREEN;
-        affected layout expectations updated. Browser coverage checks 1440, 768,
-        and 390 widths, long values, editing, and keyboard cancellation.
+        affected layout expectations updated. Browser coverage checks 1440,
+        1050, 768, 390, and short 375 widths, long values, editing, and keyboard
+        cancellation. Real pointer checks prove menu access after scrolling;
+        selected headings clear the navigator. On smaller person pages, the
+        global header scrolls away and the local navigator is the sticky owner.
 - [x] **PRF-002 — Remove focus borders that cover content.** Keep visible
       keyboard focus, skip links, section navigation, and forced-colors support;
       distinguish interactive controls from programmatic navigation targets.
@@ -2642,8 +2649,20 @@ and takes priority over the parked deployment work.
         focus/Today regressions pass across three browser engines. WebKit uses
         explicit fixture tab stops for focus presentation and activation; that
         fixture does not establish default native anchor tab reachability.
-- [ ] **APR-000 — Review the application and dispatch its repair plan.** Check
+- [x] **APR-000 — Review the application and dispatch its repair plan.** Check
       remaining composition, architecture, and UX defects against current code
       and rendered behavior. Write a prioritized sequence with evidence,
       acceptance criteria, and focused verification, then start its execution in
       a new project task with a clean context.
+  - [x] The independently reviewed
+        [application repair plan](application-repair-plan-2026-09-05.md)
+        contains 11 ordered repairs with reproduced evidence, scope, outcomes,
+        and verification. It owns the remaining checkboxes, starting at APR-001;
+        parked deployment and UI-framework decisions remain outside execution.
+- [x] **Profile repair checkpoint:** 561 web tests pass at 94.87% line, 83.68%
+      branch, and 88.26% function coverage. Web checks, formatting, lint, and
+      product-contract validation pass. The production-stack matrix passed all
+      12 profile engine cases; the six focus/Today engine cases passed their
+      focused rerun after correcting keyboard fixtures and invalid-field focus.
+      No schema or backend boundary changed, so their release gates were not
+      repeated. Both implementation candidates received independent review.

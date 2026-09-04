@@ -1,0 +1,278 @@
+# Application Repair Plan — 2026-09-05
+
+Status: User-requested execution plan. Work through the unchecked items in
+order, one candidate and independent review at a time. The active-delivery
+cursor links here; this document owns the remaining item statuses.
+
+## Review baseline and method
+
+This follows the person block layout (`PRF-001`) and focus-border repair
+(`PRF-002`) in [active-delivery.md](active-delivery.md). Their candidate
+revisions and integration results belong to Git and that ledger. Do not redo the
+completed Phase 12 design review or restore its narrow, internally scrolling
+facts rail.
+
+The review inspected rendered person, directory, shell, and settings behavior;
+the web controllers, styles, templates, and tests; API composition, public
+module interfaces and read-model imports; and the root test-task graph. Browser
+probes used a fresh local Compose project with synthetic records, at 1440, 768,
+390, and short-phone sizes. Failure probes intercepted only requests in that
+test browser. Existing user data and deployed services were not changed.
+
+The composition a returning Monica user expects is a compact collection of
+contact facts beside larger activity modules, with local context retained on one
+contact screen; see the repository's
+[person workspace rule](../product/person-workspace.md). The new layout follows
+that organization while retaining Kinship's tokens, canonical section links, and
+responsive editors.
+
+This is a risk-based application review, with reproduction evidence below. It
+does not claim that every backend branch or production deployment has been
+audited. No new schema, tenant-isolation defect, or need for an SPA rewrite was
+established in this pass.
+
+## Composition and architecture assessment
+
+- Keep Astro's static shells, the private API/renderer topology, generated
+  client contracts, and owner-module mutation facades. The inspected backend
+  application imports use public module interfaces; read-model adapters compose
+  queries. A broad backend rewrite would not address the demonstrated defects.
+- The frontend's main weakness is ownership of interaction state. A DOM `submit`
+  event is treated as persistence success, and opening a fact editor resets
+  other editors without consulting the draft guard. Repair those observable
+  behaviors in APR-001 and APR-002 with one coordinated decision.
+- Mobile sheet presentation is CSS applied to ordinary forms. It has visual
+  modality without dialog behavior. APR-004 should give that existing feature
+  one small shared presentation owner; it must not add another application-wide
+  registry or a second mutation path.
+- `person.css` also contains responsive header, directory, and settings rules.
+  `application.css` imports every application stylesheet. During APR-007 move
+  the affected shell rules beside their base rules in `shell.css`. Extract
+  profile markup/components only where a repair actually consumes the shared
+  behavior. File size alone is not a refactoring ticket.
+- Coverage is useful but does not establish UX correctness. The old layout
+  assertions passed with an inaccessible short-phone dropdown; a dirty-guard
+  test explicitly expects submit to clear dirty state. Tests below assert user
+  outcomes, negative paths, and rendered geometry where relevant.
+
+## Ordered repairs
+
+### APR-001 — Keep failed or pending saves marked as unsaved
+
+- [ ] **P1, ready.**
+- Evidence: `submitted` in
+  [unsaved-changes.ts](../../apps/web/src/lib/unsaved-changes.ts) calls
+  `rebaseline` on every bubbling submit, before validation or an awaited write.
+  A real food-preference edit with its update request aborted displayed “Save is
+  temporarily unavailable”; a cancellable `beforeunload` probe changed from
+  prevented before Submit to unprevented after failure while the draft remained
+  in the editor. The current unit test pins this faulty behavior.
+- Outcome: pending, rejected, invalid, and failed saves remain dirty. Only an
+  acknowledged save or explicit discard/reset clears the relevant draft.
+  Preserve the draft when the user declines navigation or a workspace change.
+- Scope: guard and the consuming profile save handlers. Introduce one explicit
+  successful-save signal if necessary; do not infer success from DOM hiding.
+- Verify: focused guard tests for pending/validation/transport/conflict/success;
+  one `PEOPLE-006` browser regression for a failed save followed by navigation
+  and retry. Run affected web coverage and static checks.
+
+### APR-002 — Confirm before switching away from a dirty local editor
+
+- [ ] **P1, ready after APR-001.**
+- Evidence: [rail-editors.ts](../../apps/web/src/lib/rail-editors.ts) broadcasts
+  an opened form; handlers in `profile-facts.ts`, `important-dates.ts`, and
+  other consumers hide/reset previously open forms. Typing a food-preference
+  draft then opening Pets left the old form hidden and its textarea empty
+  without a discard decision. The navigation guard cannot protect a draft after
+  it is hidden and reset.
+- Outcome: one editor remains active. Request the switch before resetting the
+  old editor; declining keeps its values and focus, accepting opens the
+  requested editor. Explicit Cancel remains an intentional discard. Do not
+  persist drafts across page or process lifetimes.
+- Verify: dirty and clean transitions between two fact editors and between a
+  fact/date/cadence editor; keyboard focus and accept/decline behavior. Reuse
+  the guard's dirty-state decision rather than creating another competing owner.
+
+### APR-003 — Provide a working retry after a profile fact fails to load
+
+- [ ] **P1, ready.**
+- Evidence: `load` in
+  [profile-facts.ts](../../apps/web/src/lib/profile-facts.ts) sets an error
+  message and returns before wiring an action. Aborting the initial Pets GET
+  produced “This profile section is temporarily unavailable. Try again.” with
+  **zero visible buttons** in that block. Recovery currently requires a page
+  reload.
+- Outcome: each failed fact block offers a local retry which resolves into
+  populated/empty/read-only/hidden state correctly. Other sections and drafts
+  remain usable. Access denial must not become an endless retry loop.
+- Verify: initial GET failure then success, repeated failure, and revoked/hidden
+  state; verify neighboring values and draft stay intact. Extend `PEOPLE-006`.
+
+### APR-004 — Make mobile fact editors behave as actual dialogs
+
+- [ ] **P1, ready after APR-002.**
+- Evidence: mobile `.profile-rail-block > form:not([hidden])` rules in
+  [person.css](../../apps/web/src/styles/person.css) fix a normal form to the
+  viewport and draw a scrim with `pointer-events: none`. At 390×844, three Tabs
+  from the food textarea reached Save, Cancel, then a background section's Add
+  button. Escape left the Pets sheet open. There is no dialog/inert boundary.
+- Outcome: a labeled modal sheet keeps focus within its controls, excludes the
+  background from interaction, scrolls its own content, handles Escape through
+  the discard policy, and restores focus to the opener. Desktop inline editing
+  remains available. Keep one editor and the same module-owned mutations.
+- Verify: Tab and Shift+Tab loop, Escape, Cancel, dirty-draft decision, focus
+  restoration, background inertness, 320/390 widths and a short viewport; check
+  accessibility while the sheet is open. Preserve the PRF-002 ring fix.
+
+### APR-005 — Allow authenticated use when browser storage is unavailable
+
+- [ ] **P1, ready.**
+- Evidence: [workspace-context.ts](../../apps/web/src/lib/workspace-context.ts)
+  catches failures in its optional session cache, but directly reads/writes
+  `sessionStorage` in workspace selection and clear/set helpers. In an
+  authenticated browser with storage reads throwing `SecurityError`, navigation
+  to `/app` raised a page error and left “Opening Kinship…” visible.
+- Outcome: unavailable or quota-limited storage disables the cache/preference
+  accelerator; session resolution still reaches the API and a usable workspace
+  or explicit recoverable error. Clearing storage must not prevent sign-out. The
+  server remains the authorization authority.
+- Verify: throwing reads, writes, and removals; sign-in, workspace selection,
+  revalidation, and sign-out. Use focused unit tests and one authenticated
+  browser test with storage disabled. Do not retain a second session registry.
+
+### APR-011 — Include API-token and DAV checks in aggregate test commands
+
+- [ ] **P1, ready; no dependency on APR-006 through APR-010.**
+- Evidence: traversing `deno task` references from both root `test` and root
+  `test:coverage` leaves `test:unit:api-access`, `test:unit:integrations`, and
+  their dedicated coverage paths unreachable. For example,
+  `apps/api/api_tokens_test.ts` is otherwise named only by its dedicated
+  coverage task; `packages/contracts/api_tokens_test.ts` only by its dedicated
+  unit task. Type-checking DAV tests does not execute them.
+- Outcome: the owning aggregate commands run the existing API-token/DAV unit and
+  coverage gates once, with required permissions and their current coverage
+  scope. Keep the focused tasks for fast inner loops. Correct any documentation
+  that claims aggregate checks include these paths.
+- Verify: run the affected dedicated gates and the amended aggregate once at
+  this repair checkpoint. Verify task reachability and collection; avoid adding
+  a general task-orchestration framework or duplicate test executions.
+
+### APR-006 — Make profile summary labels and counts truthful
+
+- [ ] **P2, ready.**
+- Evidence: the hero labels `person-profile-due-state` as “Stay in touch”, but
+  `renderReady` in [people-profile.ts](../../apps/web/src/lib/people-profile.ts)
+  fills it from aggregate `dueInformation.detail`. A person without cadence
+  displayed “0 open tasks”; with a reminder it included a raw six-digit ISO
+  timestamp. The tags block simultaneously displayed “No tags saved” and “1
+  saved” because the singleton tag-assignment record was counted as a tag.
+- Outcome: show the actual cadence or a clear unset value under Stay in touch;
+  keep tasks/reminders under matching labels. Count assigned tags rather than
+  transport records, and distinguish a limited preview from a known total.
+  Refresh the affected hero values after local edits through existing owners.
+- Verify: zero/many tags, no cadence, active cadence, tasks-only,
+  reminders-only, and local updates. No raw timestamps or contradictory
+  empty/count text.
+
+### APR-007 — Reduce mobile shell chrome and fix stylesheet ownership
+
+- [ ] **P2, ready.**
+- Evidence: at 390×844 the shared header occupied approximately **220px** before
+  any page content: brand/search, primary navigation, quick actions, then a
+  wrapped Member menu. Its responsive rules live in `person.css`, even though
+  every application route uses them.
+- Outcome: a compact mobile header keeps primary navigation, person search,
+  capture, add-person, and account/workspace actions reachable with clear
+  labels. Group secondary actions in the existing menu or one intentional
+  disclosure. Move the affected responsive shell rules into `shell.css`.
+  Preserve Today/People/Tasks/Journal routes and all role gates.
+- Verify: 320/390/768 widths on Today, people, tasks, and settings; long
+  workspace labels, keyboard navigation, visible focus, menu dismissal, and no
+  horizontal overflow or sticky-content occlusion. Capture before/after rendered
+  evidence.
+
+### APR-008 — Apply saved person-name and default-sort preferences
+
+- [ ] **P2, ready.**
+- Evidence: `settings.ts` reads/saves `contactNameOrder` and `contactSortOrder`,
+  but other web controllers do not consume them. `hydrateControls` in
+  [people-directory.ts](../../apps/web/src/lib/people-directory.ts) defaults to
+  `given-name`; person, search, and participant labels concatenate given/family
+  names directly. The backend read-model search did not reveal preference use.
+- Outcome: saved membership preferences determine default order and display;
+  explicit directory URL sorting wins. Apply one small shared display function
+  to the affected directory/profile/search/capture surfaces. Handle partial
+  identities without inventing missing names.
+- Verify: change preferences, revisit views, explicit URL override, partial
+  names, and switching between memberships with different settings.
+
+### APR-009 — Use consistent locale and time-zone presentation
+
+- [ ] **P2, ready.**
+- Evidence: `person-timeline.ts` formats event instants in hard-coded English
+  and UTC, while profile/reminder/audit controllers use browser-local formats.
+  The synthetic note appeared at 22:10 in the timeline and 00:10 in audit on the
+  same browser. Saved locale/time-zone preferences are edited in settings but
+  are not passed to these formatters.
+- Outcome: format instants using the accepted membership/workspace preference
+  fallback consistently. Keep partial dates and date-only work/birthday values
+  as calendar dates, without time-zone conversion or invented components. A
+  small formatter must receive explicit preferences; avoid hidden global state.
+- Verify: an instant crossing midnight in two time zones, locale differences,
+  daylight-saving boundaries, unknown date components, and date-only stability.
+  Start with profile/timeline/reminders/audit, then update remaining existing
+  instant displays in the same bounded presentation pass.
+
+### APR-010 — Honor the saved fluid-layout preference
+
+- [ ] **P2, ready.**
+- Evidence: Preferences offers “Use fluid layout”; only `settings.ts` reads or
+  writes `fluidLayout`. Application widths remain fixed in CSS regardless of the
+  saved value. This is an offered control with no visible effect.
+- Outcome: apply the existing membership preference to application width with
+  sensible reading limits inside text-heavy blocks. Keep mobile stacking and the
+  PRF-001 minimum useful card widths. Workspace changes refresh the setting.
+- Verify: constrained and fluid modes at wide desktop and mobile widths,
+  persistence through navigation, and membership switching. No schema change.
+
+## Decisions and existing deferrals
+
+These are deliberately outside the ready repair sequence:
+
+- **UI dependency contract conflict:** `AGENTS.md` and `technology-baseline.md`
+  still require shadcn/ui, while the accepted Phase 12 ledger explicitly selects
+  vanilla TypeScript/tokens and removes the unused dependencies. Resolve and
+  synchronize the authoritative decision before any UI framework migration.
+  Routine repairs above use the existing implementation and require no new
+  dependencies; this is not permission to rewrite either accepted contract
+  silently.
+- **Identity editing breadth:** Edit person currently exposes names and the
+  partial-identity flag, while the read view includes description, gender and
+  other identity states. Compare each missing mutation with the product/API
+  contract before scheduling additions. Favorites and life-event mutations
+  already have explicit deferrals; do not recast them as newly approved fixes.
+- **CI/hooks and deployment:** the planning baseline already records absent CI
+  and Lefthook wiring. They remain an integration/release concern, not a newly
+  discovered completed capability. `OPS-001E`, billing, and AI work stay parked.
+
+## Execution handoff
+
+Read `AGENTS.md`, `docs/development/autonomous-delivery.md`, the
+repository-local `run-tdd-ticket-loop` skill, the active cursor, and this
+document. Start with APR-001. The user has requested execution in a new task
+with a clean context; there is no need to repeat this audit or ask whether to
+begin.
+
+For each item, reproduce its failure with the narrowest useful test, implement
+the observable repair, run affected gates, create one candidate, and obtain a
+separate clean read-only review before integration. Tick its checkbox here only
+with evidence and acceptance. Reuse the same implementer/reviewer for localized
+amendments. Full coverage and browser matrices run at the owning integration
+checkpoint, not after every cosmetic amendment. If an unrelated gate fails,
+reproduce once, establish causality, and queue it separately.
+
+Preserve canonical v7 and module/tenant boundaries. A required new API/schema or
+material product decision must be made explicit before extending scope. Do not
+deploy, resume parked product work, or migrate UI frameworks as part of this
+repair sequence. Keep evidence concise in the ticket status and Git; create no
+workflow packets or parallel state ledgers.
