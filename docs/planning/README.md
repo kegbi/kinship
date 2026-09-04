@@ -15,6 +15,11 @@ release references, not a list of prerequisites for starting application code.
 The existing `tickets/` tree is historical evidence from the retired workflow;
 new tickets do not use its packets, IDs, dispatch files, or evidence logs.
 
+The current user-requested follow-up is the
+[application repair plan](application-repair-plan-2026-09-05.md), covering
+reproduced usability and composition defects after the responsive person-block
+and focus-border repairs. Its ordered checklist owns those repair statuses.
+
 The plan has two jobs:
 
 1. propose an explicit, testable definition and path for the first MVP; and
