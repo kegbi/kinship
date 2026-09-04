@@ -615,6 +615,64 @@ function summary(
   return "Tag assignments";
 }
 
+function setFactActionLabel(
+  button: HTMLButtonElement,
+  action: string,
+  context: string,
+): void {
+  const suffix = document.createElement("span");
+  suffix.className = "sr-only";
+  suffix.textContent = ` ${context}`;
+  button.replaceChildren(action, suffix);
+}
+
+function renderFactDetails(
+  record: ProfileFactRecord,
+  options: readonly ProfileFactOption[],
+): HTMLDListElement {
+  const details = document.createElement("dl");
+  details.className = "profile-fact-details";
+  const add = (label: string, value: string | HTMLElement | undefined) => {
+    if (!value) return;
+    const row = document.createElement("div");
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const definition = document.createElement("dd");
+    definition.append(value);
+    row.append(term, definition);
+    details.append(row);
+  };
+  if (record.section === "work") {
+    const date = (value: string) =>
+      new Intl.DateTimeFormat("en", {
+        dateStyle: "medium",
+        timeZone: "UTC",
+      }).format(new Date(`${value}T00:00:00Z`));
+    if (record.value.startOn) add("Started", date(record.value.startOn));
+    if (record.value.endOn) add("Ended", date(record.value.endOn));
+    add("Current role", record.value.isCurrent ? "Yes" : "No");
+    add("Details", record.value.description);
+  }
+  if (record.section === "pets") add("Notes", record.value.notes);
+  if (record.section === "contact-methods" || record.section === "addresses") {
+    add(
+      "Labels",
+      record.value.labelIds.map((id) =>
+        options.find((option) => option.id === id)?.name
+      ).filter(Boolean).join(", "),
+    );
+    add("Primary", record.value.isPrimary ? "Yes" : "No");
+    if (record.section === "contact-methods") add("Notes", record.value.notes);
+  }
+  if (record.section === "first-meeting" && record.value.introducedByPersonId) {
+    const link = document.createElement("a");
+    link.href = `/app/people/${record.value.introducedByPersonId}`;
+    link.textContent = "View person";
+    add("Introduced by", link);
+  }
+  return details;
+}
+
 type ClampedProfileFactSection = "first-meeting" | "food-preferences";
 
 function insertProfileRailTextClamp(
@@ -1261,38 +1319,50 @@ export async function mountProfileFacts(
       for (const record of snapshot.records) {
         const item = document.createElement("li");
         const description = document.createElement("p");
+        const actions = document.createElement("div");
+        actions.className = "profile-fact-actions";
         const primary = primaryById?.get(record.id);
-        if (record.section === "contact-methods" && primary) {
+        if (record.section === "contact-methods") {
           const value = record.value.value ?? "";
           const label = snapshot.options.find((option) =>
             option.id === record.value.typeId
           )
             ?.name ?? "Contact";
-          description.append(document.createTextNode(`${label}: `));
-          if (primary.href) {
+          description.className = "profile-contact-summary";
+          const labelElement = document.createElement("span");
+          labelElement.className = "profile-fact-label";
+          labelElement.textContent = `${label}: `;
+          const valueElement = document.createElement("span");
+          valueElement.className = "profile-fact-value";
+          description.append(labelElement, valueElement);
+          if (primary?.href) {
             const link = document.createElement("a");
             link.href = primary.href;
             link.textContent = value;
-            description.append(link);
-          } else description.append(document.createTextNode(value));
-          const copyButton = document.createElement("button");
-          copyButton.type = "button";
-          copyButton.className =
-            "button-secondary profile-rail-summary-control profile-contact-copy";
-          copyButton.textContent = "Copy";
-          copyButton.setAttribute("aria-label", `Copy ${value}`);
-          copyButton.addEventListener("click", async () => {
-            try {
-              await navigator.clipboard.writeText(value);
-              showToast({ message: `Copied ${value}`, tone: "success" });
-            } catch {
-              showToast({
-                message: "Copy failed. Select the value and copy it manually.",
-                tone: "error",
-              });
-            }
-          });
-          item.append(description, copyButton);
+            valueElement.append(link);
+          } else valueElement.textContent = value;
+          item.append(description);
+          if (primary) {
+            const copyButton = document.createElement("button");
+            copyButton.type = "button";
+            copyButton.className =
+              "button-secondary profile-rail-summary-control profile-contact-copy";
+            copyButton.textContent = "Copy";
+            copyButton.setAttribute("aria-label", `Copy ${value}`);
+            copyButton.addEventListener("click", async () => {
+              try {
+                await navigator.clipboard.writeText(value);
+                showToast({ message: `Copied ${value}`, tone: "success" });
+              } catch {
+                showToast({
+                  message:
+                    "Copy failed. Select the value and copy it manually.",
+                  tone: "error",
+                });
+              }
+            });
+            actions.append(copyButton);
+          }
         } else if (record.section === "addresses") {
           description.className = "profile-address-summary";
           description.append(
@@ -1311,6 +1381,8 @@ export async function mountProfileFacts(
           ) insertProfileRailTextClamp(description, record.section);
           item.append(description);
         }
+        const details = renderFactDetails(record, snapshot.options);
+        if (details.childElementCount) item.append(details);
         if (
           (primaryById && !primary) ||
           (addressSummaryId !== undefined && record.id !== addressSummaryId) ||
@@ -1323,7 +1395,7 @@ export async function mountProfileFacts(
           const edit = document.createElement("button");
           edit.type = "button";
           edit.className = "button-secondary";
-          edit.textContent = `Edit ${summary(record, snapshot.options)}`;
+          setFactActionLabel(edit, "Edit", summary(record, snapshot.options));
           edit.addEventListener("click", async () => {
             const submit = target.form.querySelector<HTMLButtonElement>(
               'button[type="submit"]',
@@ -1338,21 +1410,31 @@ export async function mountProfileFacts(
               ?.focus();
             announceRailEditorOpened(target.form);
           });
-          item.append(edit);
+          actions.append(edit);
           if (section !== "tags") {
             const remove = document.createElement("button");
             remove.type = "button";
             remove.className = "button-danger";
-            remove.textContent = section === "food-preferences"
-              ? "Clear food preferences"
-              : `Delete ${summary(record, snapshot.options)}`;
+            setFactActionLabel(
+              remove,
+              section === "food-preferences" ? "Clear" : "Delete",
+              section === "food-preferences"
+                ? "food preferences"
+                : summary(record, snapshot.options),
+            );
             let confirming = false;
             remove.addEventListener("click", async () => {
               if (!confirming) {
                 confirming = true;
-                remove.textContent = section === "food-preferences"
-                  ? "Confirm clear food preferences"
-                  : `Confirm delete ${summary(record, snapshot.options)}`;
+                setFactActionLabel(
+                  remove,
+                  section === "food-preferences"
+                    ? "Confirm clear"
+                    : "Confirm delete",
+                  section === "food-preferences"
+                    ? "food preferences"
+                    : summary(record, snapshot.options),
+                );
                 target.state.textContent =
                   "Press the delete button again to confirm.";
                 target.state.focus();
@@ -1385,9 +1467,10 @@ export async function mountProfileFacts(
               target.state.textContent = "Profile fact deleted.";
               target.state.focus();
             });
-            item.append(remove);
+            actions.append(remove);
           }
         }
+        if (actions.childElementCount) item.append(actions);
         target.list?.append(item);
       }
       if (target.list && hiddenItems.length) {

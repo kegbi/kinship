@@ -1572,6 +1572,52 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(document.activeElement).not.toBe(controls.cadence);
   });
 
+  it("PRF-001 aligns the shared navigator only when opening its directory", async () => {
+    markup();
+    stubReadyProfile();
+    const navigation = document.querySelector("#person-profile-sections")!;
+    const container = document.createElement("div");
+    container.className = "person-workspace-navigation";
+    const directory = document.createElement("details");
+    navigation.replaceWith(container);
+    container.append(directory);
+    directory.append(navigation);
+    const scroll = vi.fn();
+    container.scrollIntoView = scroll;
+
+    await mountPeopleProfile();
+    directory.open = true;
+    directory.dispatchEvent(new Event("toggle"));
+    expect(scroll).toHaveBeenCalledWith({
+      block: "start",
+      behavior: "instant",
+    });
+    scroll.mockClear();
+    directory.open = false;
+    directory.dispatchEvent(new Event("toggle"));
+    expect(scroll).not.toHaveBeenCalled();
+  });
+
+  it("PRF-001 closes the section directory before focusing the selected block", async () => {
+    markup();
+    stubReadyProfile();
+    const navigation = document.querySelector("#person-profile-sections")!;
+    const directory = document.createElement("details");
+    directory.open = true;
+    navigation.replaceWith(directory);
+    directory.append(navigation);
+
+    await mountPeopleProfile();
+    document.querySelector<HTMLAnchorElement>('[data-section-link="photos"]')
+      ?.click();
+
+    expect(directory.open).toBe(false);
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-profile-section="photos"]'),
+    );
+    expect(new URLSearchParams(location.search).get("section")).toBe("photos");
+  });
+
   it("UXD-002C writes one history entry when section navigation changes zones", async () => {
     markup();
     stubReadyProfile();

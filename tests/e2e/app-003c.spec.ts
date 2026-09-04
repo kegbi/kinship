@@ -257,6 +257,7 @@ test(
     await page.unroute(profilePattern);
     await expectAccessible(page);
 
+    await page.locator(".profile-section-directory summary").click();
     await page.locator('[data-section-link="photos"]').click();
     await expect(page).toHaveURL(
       new RegExp(`/app/people/${personId}\\?section=photos$`),
@@ -271,6 +272,7 @@ test(
     const importantDatesLink = page.locator(
       '[data-section-link="important-dates"]',
     );
+    await page.locator(".profile-section-directory summary").click();
     await importantDatesLink.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(
@@ -288,6 +290,7 @@ test(
       name: "Ada Lovelace",
     });
     await expect(profileHeading).toBeFocused();
+    await page.locator(".profile-section-directory summary").click();
     await page.locator('[data-section-link="photos"]').click();
     await expect(page).toHaveURL(
       new RegExp(`/app/people/${personId}\\?section=photos$`),
@@ -300,6 +303,7 @@ test(
     await expect(profileHeading).toBeFocused();
 
     await page.setViewportSize({ height: 844, width: 390 });
+    await page.locator(".profile-section-directory summary").click();
     await expect(page.locator("#person-profile-sections")).toBeVisible();
     expect(
       await page.evaluate(() =>

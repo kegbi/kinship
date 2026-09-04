@@ -188,7 +188,7 @@ describe("people form layout regressions", () => {
     );
   });
 
-  it("UXD-002B keeps the directory and ordered profile facts in one compact rail", () => {
+  it("PRF-001 gives ordered facts a visible heading and puts navigation before the blocks", () => {
     const railStart = profilePage.indexOf('class="profile-facts-rail"');
     const mainStart = profilePage.indexOf('class="profile-section-list"');
     const rail = profilePage.slice(railStart, mainStart);
@@ -197,7 +197,14 @@ describe("people form layout regressions", () => {
     expect(profilePage.slice(0, railStart)).toContain(
       'class="profile-facts-column"',
     );
-    expect(rail).toContain('<h2 class="sr-only">Profile facts</h2>');
+    expect(profilePage.slice(0, railStart)).toContain(
+      '<h2 id="profile-facts-heading">Profile facts</h2>',
+    );
+    expect(profilePage.indexOf('class="person-workspace-navigation"'))
+      .toBeLessThan(railStart);
+    expect(profilePage).toContain(
+      '<details class="profile-section-directory">',
+    );
     const railDefinition = profilePage.slice(
       profilePage.indexOf("const railSections = ["),
       profilePage.indexOf(
@@ -233,15 +240,18 @@ describe("people form layout regressions", () => {
     expect(rail).toContain('<span aria-hidden="true">+</span>');
   });
 
-  it("UXD-002B gives the rail its specified columns, density, and one sticky owner", () => {
+  it("PRF-001 stacks the mobile workspace and gives desktop facts paired cards without nested scrolling", () => {
     expect(applicationStyles).toMatch(
-      /\.person-workspace-layout\s*\{[^}]*grid-template-columns:\s*minmax\(280px, 320px\) minmax\(0, 1fr\);[^}]*gap:\s*var\(--space-5\);/s,
+      /\.person-workspace-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);[^}]*gap:\s*var\(--space-5\);/s,
     );
     expect(applicationStyles).toMatch(
-      /@media \(max-width: 1199px\)[\s\S]*?\.person-workspace-layout\s*\{[^}]*grid-template-columns:\s*minmax\(240px, 260px\) minmax\(0, 1fr\);[^}]*gap:\s*1\.25rem;/s,
+      /@media \(min-width: 1200px\)[\s\S]*?\.person-workspace-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0, 5fr\) minmax\(0, 7fr\);/s,
     );
     expect(applicationStyles).toMatch(
-      /\.profile-facts-column\s*\{[^}]*position:\s*sticky;[^}]*top:\s*6rem;[^}]*max-height:\s*calc\(100vh - 7rem\);[^}]*overflow:\s*auto;/s,
+      /@media \(min-width: 600px\)[\s\S]*?\.profile-facts-rail\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/s,
+    );
+    expect(applicationStyles).not.toMatch(
+      /\.profile-facts-column\s*\{[^}]*(?:position:\s*sticky|overflow:\s*auto)/s,
     );
     expect(applicationStyles).not.toMatch(
       /\.profile-section-directory\s*\{[^}]*(?:position:\s*sticky|max-height:|overflow:\s*auto)/s,
@@ -259,13 +269,7 @@ describe("people form layout regressions", () => {
       /\.profile-rail-block\[data-rail-empty="true"\][\s\S]*?\[data-profile-fact-list\][\s\S]*?display:\s*none;/s,
     );
     expect(applicationStyles).toMatch(
-      /\.profile-rail-block\[data-rail-empty="true"\] > \.section-state\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*1;/s,
-    );
-    expect(applicationStyles).toMatch(
-      /\.profile-rail-block\[data-rail-empty="true"\] \.profile-rail-add\s*\{[^}]*grid-column:\s*4;[^}]*grid-row:\s*1;/s,
-    );
-    expect(applicationStyles).toMatch(
-      /\.profile-rail-block\[data-rail-empty="true"\] > \.section-state:empty \+ #relationships-list\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*1;/s,
+      /\.profile-rail-block\[data-rail-empty="true"\] > \.profile-section-heading\s*\{[^}]*border-bottom:\s*0;/s,
     );
   });
 
@@ -389,7 +393,7 @@ describe("people form layout regressions", () => {
   it("UXD-002C uses an accessible sticky filter without introducing tabs or a second heading", () => {
     const switcher = profilePage.slice(
       profilePage.indexOf('class="zone-switcher"'),
-      profilePage.indexOf('<section id="person-first-run"'),
+      profilePage.indexOf('<p id="person-profile-section-notice"'),
     );
     expect(switcher).toContain(
       '<div class="zone-filter" role="group" aria-label="Filter person sections">',
@@ -405,7 +409,16 @@ describe("people form layout regressions", () => {
     );
     expect(switcher).not.toMatch(/<h[1-6]\b/);
     expect(applicationStyles).toMatch(
-      /\.zone-switcher\s*\{[^}]*position:\s*sticky;[^}]*top:\s*6rem;[^}]*overflow-x:\s*auto;[^}]*background:\s*var\(--surface-page\);/s,
+      /\.person-workspace-navigation\s*\{[^}]*--person-navigation-top:\s*6rem;[^}]*position:\s*sticky;[^}]*top:\s*var\(--person-navigation-top\);[^}]*background:\s*var\(--surface-page\);/s,
+    );
+    expect(applicationStyles).toMatch(
+      /@media \(max-width: 1050px\)[\s\S]*?\[data-page-id="people.profile"\] \.app-header\s*\{[^}]*position:\s*static;/s,
+    );
+    expect(applicationStyles).toMatch(
+      /@media \(max-width: 1050px\)[\s\S]*?\.person-workspace-navigation\s*\{[^}]*--person-navigation-top:\s*var\(--space-2\);/s,
+    );
+    expect(applicationStyles).toMatch(
+      /\.zone-switcher\s*\{[^}]*overflow-x:\s*auto;/s,
     );
     expect(applicationStyles).toMatch(
       /\.zone-mini-identity\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*0 1 auto;/s,
@@ -438,7 +451,6 @@ describe("people form layout regressions", () => {
         ),
       ),
     );
-    expect(mobileSwitcher).toContain("top: 6rem;");
     expect(mobileSwitcher).toContain("scroll-snap-type: x proximity;");
     expect(mobileSwitcher).not.toContain("overflow-x");
   });
