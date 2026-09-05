@@ -63,7 +63,16 @@ test(
       preferences: Record<string, unknown>;
     }).preferences;
     expect((await page.request.put(`${origin}/api/v1/settings/preferences`, {
-      data: { ...preferences, timezone: "Europe/Belgrade" },
+      data: {
+        contactNameOrder: preferences.contactNameOrder,
+        contactSortOrder: preferences.contactSortOrder,
+        currencyCode: preferences.currencyCode,
+        fluidLayout: preferences.fluidLayout,
+        locale: preferences.locale,
+        measurementSystem: preferences.measurementSystem,
+        temperatureScale: preferences.temperatureScale,
+        timezone: "Europe/Belgrade",
+      },
       headers: { origin },
     })).status()).toBe(200);
 

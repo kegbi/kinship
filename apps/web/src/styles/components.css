@@ -1,9 +1,9 @@
 .people-create-page {
-  width: min(900px, calc(100% - 2rem));
+  width: min(var(--application-width, 900px), calc(100% - 2rem));
 }
 
 .people-profile-page {
-  width: min(1280px, calc(100% - 2rem));
+  width: min(var(--application-width, 1280px), calc(100% - 2rem));
 }
 
 .interaction-capture-dialog {
@@ -175,7 +175,7 @@
 }
 
 .audit-history-page {
-  max-width: 1120px;
+  max-width: var(--application-width, 1120px);
 }
 
 .audit-filters {

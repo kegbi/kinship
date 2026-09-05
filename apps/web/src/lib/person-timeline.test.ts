@@ -17,12 +17,12 @@ function markup(): HTMLElement {
   document.body.innerHTML = `
     <section id="person-timeline" class="profile-section-card person-timeline">
       <div class="person-timeline-filters" role="group" aria-label="Filter timeline by type">
-        <button class="button-primary" data-timeline-filter="all" type="button" aria-pressed="true">All types</button>
-        <button class="button-secondary" data-timeline-filter="note" type="button" aria-pressed="false">Notes</button>
-        <button class="button-secondary" data-timeline-filter="call" type="button" aria-pressed="false">Calls</button>
-        <button class="button-secondary" data-timeline-filter="conversation" type="button" aria-pressed="false">Conversations</button>
-        <button class="button-secondary" data-timeline-filter="activity" type="button" aria-pressed="false">Activities</button>
-        <button class="button-secondary" data-timeline-filter="life-event" type="button" aria-pressed="false">Life events</button>
+        <button class="button-primary" data-timeline-filter="all" type="button" aria-pressed="true" disabled>All types</button>
+        <button class="button-secondary" data-timeline-filter="note" type="button" aria-pressed="false" disabled>Notes</button>
+        <button class="button-secondary" data-timeline-filter="call" type="button" aria-pressed="false" disabled>Calls</button>
+        <button class="button-secondary" data-timeline-filter="conversation" type="button" aria-pressed="false" disabled>Conversations</button>
+        <button class="button-secondary" data-timeline-filter="activity" type="button" aria-pressed="false" disabled>Activities</button>
+        <button class="button-secondary" data-timeline-filter="life-event" type="button" aria-pressed="false" disabled>Life events</button>
       </div>
       <p data-timeline-state class="section-state">Loading the timeline…</p>
       <ul data-timeline-list class="person-timeline-list"></ul>
@@ -50,6 +50,61 @@ afterEach(() => {
 });
 
 describe("merged person timeline", () => {
+  it("accepts an immediate bound filter click and supersedes the initial request", async () => {
+    const root = markup();
+    const filters = [...root.querySelectorAll<HTMLButtonElement>(
+      "[data-timeline-filter]",
+    )];
+    expect(filters.every((button) => button.disabled)).toBe(true);
+    let resolveInitial!: (response: Response) => void;
+    const initialResponse = new Promise<Response>((resolve) => {
+      resolveInitial = resolve;
+    });
+    const activity = item({
+      kind: "activity",
+      excerpt: "Designed a compiler together",
+    });
+    const fetchMock = vi.fn()
+      .mockReturnValueOnce(initialResponse)
+      .mockResolvedValueOnce(response({ items: [activity], status: "ready" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const mounted = mountPersonTimeline({ personId, workspaceId });
+    expect(filters.every((button) => !button.disabled)).toBe(true);
+    expect(root.dataset.timelineState).toBe("loading");
+    const activities = root.querySelector<HTMLButtonElement>(
+      '[data-timeline-filter="activity"]',
+    )!;
+    activities.click();
+
+    await vi.waitFor(() => expect(root.dataset.timelineState).toBe("ready"));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      `/api/v1/people/${personId}/timeline?kind=activity&limit=20`,
+    );
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get(
+      "X-Workspace-Id",
+    )).toBe(workspaceId);
+    expect(activities.getAttribute("aria-pressed")).toBe("true");
+
+    resolveInitial(response({
+      items: [item({ excerpt: "A newer unfiltered note" })],
+      nextCursor: "older-unfiltered-events",
+      status: "ready",
+    }));
+    await mounted;
+    expect(root.querySelector("[data-timeline-list]")?.textContent).toContain(
+      "Designed a compiler together",
+    );
+    expect(root.querySelector("[data-timeline-list]")?.textContent)
+      .not.toContain("A newer unfiltered note");
+    expect(activities.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      root.querySelector<HTMLButtonElement>("[data-timeline-more]")?.hidden,
+    )
+      .toBe(true);
+  });
+
   it.each(["America/Los_Angeles", "Europe/Belgrade"])(
     "APR-009 keeps calendar components stable in %s and preserves actual event instants",
     async (effectiveTimezone) => {

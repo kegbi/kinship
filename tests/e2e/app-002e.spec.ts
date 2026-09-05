@@ -7,6 +7,7 @@ import {
 } from "@playwright/test";
 import axe from "axe-core";
 import { execFileSync } from "node:child_process";
+import { mkdirSync } from "node:fs";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -154,6 +155,162 @@ async function expectAccessible(page: Page): Promise<void> {
   );
   expect(violations).toEqual([]);
 }
+
+test(
+  "[AUTH-004] APR-010 fluid layout follows saved membership preferences across desktop, mobile, and navigation",
+  { annotation: [{ type: "flow", description: "AUTH-004" }] },
+  async ({ page, request, browserName }) => {
+    test.setTimeout(180_000);
+    page.setDefaultTimeout(15_000);
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    const suffix = `${browserName}-${Date.now()}`;
+    const email = `layout-${suffix}@example.test`;
+    const otherEmail = `layout-other-${suffix}@example.test`;
+    await registerVerified(request, email, `Layout ${suffix}`);
+    await registerVerified(request, otherEmail, `Other layout ${suffix}`);
+    const workspaceId = databaseValue(
+      `select w.id::text from crm.workspaces w join crm.users u on u.id = w.created_by_user_id where u.email = ${
+        sqlLiteral(email)
+      }`,
+    );
+    const otherWorkspaceId = databaseValue(
+      `select w.id::text from crm.workspaces w join crm.users u on u.id = w.created_by_user_id where u.email = ${
+        sqlLiteral(otherEmail)
+      }`,
+    );
+    databaseSql(
+      `with inserted as (insert into crm.workspace_members (id, workspace_id, user_id, role, status, joined_at, created_at, updated_at) select gen_random_uuid(), ${
+        sqlLiteral(otherWorkspaceId)
+      }::uuid, id, 'member', 'active', now(), now(), now() from crm.users where email = ${
+        sqlLiteral(email)
+      } returning id) insert into crm.member_preferences (member_id) select id from inserted`,
+    );
+    await signIn(page, email);
+    const created = await page.request.post(`${origin}/api/v1/people`, {
+      headers: { "X-Workspace-Id": workspaceId, Origin: origin },
+      data: { givenName: "Layout", familyName: "Person", isPartial: false },
+    });
+    expect(created.status()).toBe(201);
+    const personId = (await created.json()).person.id;
+    const frame = page.locator(".page-frame");
+    const width = (selector: string) =>
+      page.locator(selector).evaluate((element) =>
+        element.getBoundingClientRect().width
+      );
+    const noOverflow = async () =>
+      expect(
+        await page.evaluate(() =>
+          document.documentElement.scrollWidth <= innerWidth
+        ),
+      ).toBe(true);
+    const snapshotDirectory = ".artifacts/apr-010-review";
+    mkdirSync(snapshotDirectory, { recursive: true });
+    const snapshot = (name: string) =>
+      page.screenshot({
+        path: `${snapshotDirectory}/${browserName}-${name}.png`,
+        fullPage: true,
+      });
+
+    await page.goto("/app/settings/preferences");
+    const checkbox = page.getByLabel("Use fluid layout");
+    await expect(checkbox).toBeEnabled();
+    await expect(checkbox).not.toBeChecked();
+    await expect.poll(() => width(".page-frame")).toBe(1180);
+    await snapshot("constrained-desktop");
+    await checkbox.check();
+    expect(await width(".page-frame")).toBe(1180);
+    await page.getByRole("button", { name: "Save changes", exact: true })
+      .click();
+    await expect(page.locator("#settings-status")).toHaveText(
+      "Preferences saved.",
+    );
+    await expect.poll(() => width(".page-frame")).toBe(1888);
+    expect(await width(".header-row")).toBe(1888);
+    expect(await width("#preferences-form")).toBeLessThanOrEqual(864);
+    await noOverflow();
+    await snapshot("fluid-desktop");
+
+    await page.getByRole("navigation", { name: "Primary navigation" })
+      .getByRole("link", { name: "People", exact: true }).click();
+    await expect(page).toHaveURL(/\/app\/people$/);
+    await expect.poll(() => width(".page-frame")).toBe(1888);
+    await page.goto(`/app/people/${personId}`);
+    await expect(page.locator(".person-workspace")).toBeVisible();
+    await expect.poll(() => width(".page-frame")).toBe(1888);
+    const cards = page.locator(".profile-rail-block:visible");
+    expect(await cards.count()).toBeGreaterThan(1);
+    expect(
+      await cards.evaluateAll((items) =>
+        items.every((item) => item.getBoundingClientRect().width >= 210)
+      ),
+    ).toBe(true);
+    const prose = page.locator(".page-frame p").first();
+    expect(
+      await prose.evaluate((element) =>
+        parseFloat(getComputedStyle(element).maxInlineSize)
+      ),
+    ).toBeLessThan(900);
+    await noOverflow();
+    await snapshot("profile-fluid-desktop");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect.poll(() => width(".page-frame")).toBeLessThanOrEqual(374);
+    const stacked = () =>
+      page.locator(".profile-facts-rail").evaluate((element) =>
+        getComputedStyle(element).gridTemplateColumns.split(" ").length
+      );
+    expect(await stacked()).toBe(1);
+    await noOverflow();
+    await snapshot("profile-fluid-mobile");
+    await page.goto("/app/settings/preferences");
+    await expect(checkbox).toBeChecked();
+    await noOverflow();
+    await openMemberPopover(page);
+    await page.getByLabel("Active workspace").selectOption(otherWorkspaceId);
+    await expect(checkbox).toBeEnabled();
+    await expect(checkbox).not.toBeChecked();
+    await expect(page.locator("#protected-shell")).toHaveAttribute(
+      "data-fluid-layout",
+      "false",
+    );
+    await noOverflow();
+    await snapshot("constrained-mobile");
+
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await expect.poll(() => width(".page-frame")).toBe(1180);
+    await openMemberPopover(page);
+    await page.getByLabel("Active workspace").selectOption(workspaceId);
+    await expect(checkbox).toBeChecked();
+    await expect.poll(() => width(".page-frame")).toBe(1888);
+    await checkbox.uncheck();
+    await page.getByRole("button", { name: "Save changes", exact: true })
+      .click();
+    await expect(page.locator("#settings-status")).toHaveText(
+      "Preferences saved.",
+    );
+    await expect.poll(() => width(".page-frame")).toBe(1180);
+    await page.goto(`/app/people/${personId}`);
+    await expect(page.locator(".person-workspace")).toBeVisible();
+    await expect.poll(() => width(".page-frame")).toBe(1280);
+    expect(
+      await cards.evaluateAll((items) =>
+        items.every((item) => item.getBoundingClientRect().width >= 210)
+      ),
+    ).toBe(true);
+    await snapshot("profile-constrained-desktop");
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await stacked()).toBe(1);
+    await noOverflow();
+    await snapshot("profile-constrained-mobile");
+    await page.goto("/app");
+    await expect(frame).toBeVisible();
+    await expect(page.locator("#protected-shell")).toHaveAttribute(
+      "data-fluid-layout",
+      "false",
+    );
+    await noOverflow();
+  },
+);
 
 test(
   "[AUTH-004] APR-009 saved locale and effective timezone agree across profile, timeline, reminders, and audit",

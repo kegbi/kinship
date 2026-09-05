@@ -347,8 +347,8 @@ test(
     await page.getByLabel("Sort by").selectOption("family-name");
     await page.getByRole("button", { name: "Find people" }).click();
     await expect(page.locator("#people-directory-list h2")).toHaveText([
-      "Grace Hopper",
-      "Ada Lovelace",
+      "Grace Hopper “Scientist”",
+      "Ada Lovelace “Scientist”",
     ]);
     await expect(page).toHaveURL(/search=Scientist.*sort=family-name/);
 
@@ -359,7 +359,11 @@ test(
     await page.getByRole("button", { name: "Find people" }).click();
     await expect(page.locator("#people-directory-list > li")).toHaveCount(1);
     await expect(
-      page.getByRole("heading", { level: 2, name: "Ada Lovelace" }),
+      page.getByRole("heading", {
+        level: 2,
+        name: "Ada Lovelace “Scientist”",
+        exact: true,
+      }),
     ).toBeVisible();
     const filteredAdaLink = page.locator(
       `#people-directory-list a[href="/app/people/${adaId}"]`,

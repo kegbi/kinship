@@ -1,3 +1,14 @@
+.application[data-fluid-layout="true"] {
+  --application-width: 100%;
+  --settings-content-track: 1fr;
+}
+
+/* Wide surfaces can expand while prose keeps comfortable reading lines. */
+.application :is(p, blockquote, .profile-fact-details dd) {
+  max-inline-size: 75ch;
+  overflow-wrap: anywhere;
+}
+
 .app-header {
   position: sticky;
   top: 0;
@@ -12,7 +23,7 @@
   display: grid;
   grid-template-columns: auto auto minmax(20rem, 1fr) auto;
   gap: var(--space-5);
-  width: min(1280px, calc(100% - 2rem));
+  width: min(var(--application-width, 1280px), calc(100% - 2rem));
   min-height: 4.75rem;
   margin: auto;
   align-items: center;
@@ -324,7 +335,7 @@
 .page-frame {
   display: grid;
   gap: var(--space-4);
-  width: min(1040px, calc(100% - 2rem));
+  width: min(var(--application-width, 1040px), calc(100% - 2rem));
   margin: 0 auto;
   padding: clamp(var(--space-6), 6vw, var(--space-8)) 0 var(--space-8);
 }

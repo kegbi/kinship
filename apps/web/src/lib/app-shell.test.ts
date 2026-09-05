@@ -1,6 +1,22 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Layout reads have focused coverage in app-shell-layout.test.ts; these cases
+// exercise session, access, and menu requests independently.
+vi.mock(
+  "../../../../packages/contracts/generated/auth-client.ts",
+  async (original) => ({
+    ...await original<
+      typeof import("../../../../packages/contracts/generated/auth-client.ts")
+    >(),
+    getMemberPreferences: vi.fn().mockResolvedValue({
+      ok: true,
+      value: { preferences: { fluidLayout: false } },
+    }),
+  }),
+);
+
 import { mountApplicationShell, mountSettingsSearch } from "./app-shell.ts";
 import { mountProfileSettings } from "./settings.ts";
 
@@ -138,6 +154,33 @@ describe("APP-002C protected application shell", () => {
       if (action === "workspace") expect(control.value).toBe(workspaces[0]!.id);
     },
   );
+
+  it("APR-007 handles Escape after pointer activation without native button focus", async () => {
+    shellMarkup();
+    cacheSession(session());
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(session())));
+    await mountApplicationShell(vi.fn());
+    const toggle = document.querySelector<HTMLButtonElement>(
+      "#member-menu-toggle",
+    )!;
+    const menu = document.querySelector<HTMLElement>("#member-popover")!;
+    expect(document.activeElement).toBe(document.body);
+    // Like a WebKit pointer click, DOM click() does not focus the button itself.
+    toggle.click();
+    expect(menu.hidden).toBe(false);
+    const focusAfterOpening = document.activeElement;
+    document.activeElement!.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    expect(menu.hidden).toBe(true);
+    expect(focusAfterOpening).toBe(toggle);
+    expect(document.activeElement).toBe(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
 
   it("APR-007 dismisses the member menu with Escape and restores its toggle", async () => {
     shellMarkup();

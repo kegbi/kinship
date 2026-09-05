@@ -1684,7 +1684,7 @@
 }
 
 .people-directory-page {
-  width: min(1120px, calc(100% - 2rem));
+  width: min(var(--application-width, 1120px), calc(100% - 2rem));
 }
 
 .people-directory-heading {

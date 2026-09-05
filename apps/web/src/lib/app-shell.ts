@@ -1,4 +1,5 @@
 import {
+  getMemberPreferences,
   getSession,
   type SessionContext,
   signOut,
@@ -15,6 +16,13 @@ import { clearToasts, showToast } from "./toasts.ts";
 type Navigate = (path: string) => void;
 
 const browserNavigate: Navigate = (path) => globalThis.location.assign(path);
+
+export const MEMBER_LAYOUT_SAVED_EVENT = "kinship:member-layout-saved";
+
+export interface MemberLayoutSavedDetail {
+  readonly workspaceId: string;
+  readonly fluidLayout: boolean;
+}
 
 interface ShellElements {
   readonly access: HTMLElement;
@@ -268,6 +276,7 @@ export async function mountApplicationShell(
 ): Promise<void> {
   const elements = shellElements();
   if (!elements) return;
+  elements.root.dataset.fluidLayout = "false";
   const resolved = await resolveSession();
   if (resolved === "unavailable") {
     renderSessionUnavailable(elements);
@@ -282,8 +291,33 @@ export async function mountApplicationShell(
   }
   renderSession(elements, resolved.session, resolved.firstName);
   let activeWorkspaceId = resolved.session.workspace.id;
+  let activeMemberId = resolved.session.member.id;
+  let layoutRevision = 0;
+  const resetLayout = (): void => {
+    layoutRevision += 1;
+    elements.root.dataset.fluidLayout = "false";
+  };
+  const loadLayout = async (): Promise<void> => {
+    const revision = ++layoutRevision;
+    const result = await getMemberPreferences(activeWorkspaceId).catch(() =>
+      undefined
+    );
+    if (revision !== layoutRevision || !elements.root.isConnected) return;
+    elements.root.dataset.fluidLayout = String(
+      result?.ok ? result.value.preferences.fluidLayout : false,
+    );
+  };
+  elements.root.addEventListener(MEMBER_LAYOUT_SAVED_EVENT, (event) => {
+    const saved = (event as CustomEvent<MemberLayoutSavedDetail>).detail;
+    if (saved.workspaceId !== activeWorkspaceId || elements.root.hidden) return;
+    // A completed save supersedes any older preference read on this page.
+    layoutRevision += 1;
+    elements.root.dataset.fluidLayout = String(saved.fluidLayout);
+  });
+  void loadLayout();
   onSessionRevalidated((revalidated) => {
     if (revalidated.status === "access-lost") {
+      resetLayout();
       renderAccessFailure(elements);
     } else if (revalidated.status === "ready") {
       if (
@@ -291,7 +325,17 @@ export async function mountApplicationShell(
           "allowed"
       ) {
         renderWorkspacePresentation(elements, revalidated.session);
+        const membershipChanged = activeWorkspaceId !==
+            revalidated.session.workspace.id ||
+          activeMemberId !== revalidated.session.member.id;
         activeWorkspaceId = revalidated.session.workspace.id;
+        activeMemberId = revalidated.session.member.id;
+        if (membershipChanged) {
+          resetLayout();
+          void loadLayout();
+        }
+      } else {
+        resetLayout();
       }
     }
   });
@@ -311,6 +355,7 @@ export async function mountApplicationShell(
     if (!menu) return;
     menu.hidden = !menu.hidden;
     menuToggle.setAttribute("aria-expanded", String(!menu.hidden));
+    menuToggle.focus();
   });
   elements.root.addEventListener("keydown", (event) => {
     if (event.key !== "Escape" || menu?.hidden !== false) return;
@@ -356,6 +401,7 @@ export async function mountApplicationShell(
       if (setActiveWorkspace(selected.value.workspace.id)) {
         change.proceed();
         activeWorkspaceId = selected.value.workspace.id;
+        resetLayout();
         elements.select.disabled = false;
         navigate(
           `${globalThis.location.pathname}${globalThis.location.search}`,
@@ -386,6 +432,7 @@ export async function mountApplicationShell(
     const result = await signOut().catch(() => undefined);
     if (result?.ok) {
       clearActiveWorkspace();
+      resetLayout();
       navigate(result.value.next);
       return;
     }

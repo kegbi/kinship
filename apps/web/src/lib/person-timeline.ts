@@ -296,6 +296,7 @@ export async function mountPersonTimeline(options: {
       applyFilter(view.filters, selected);
       void load({ append: false });
     });
+    button.disabled = false;
   }
   view.more.addEventListener("click", () => {
     if (nextCursor) void load({ append: true, cursor: nextCursor });

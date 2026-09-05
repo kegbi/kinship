@@ -159,7 +159,7 @@ describe("AUTH-004 personal settings", () => {
       mount: mountPreferenceSettings,
       name: "preferences",
       page: preferencePage,
-      saved: { status: "ready" },
+      saved: { status: "ready", preferences: { fluidLayout: false } },
       savedStatus: /preferences saved/i,
     },
     {
@@ -649,7 +649,9 @@ describe("AUTH-004 personal settings", () => {
           temperatureScale: "celsius",
         },
       }))
-      .mockResolvedValueOnce(response({ status: "ready" }));
+      .mockResolvedValueOnce(
+        response({ status: "ready", preferences: { fluidLayout: false } }),
+      );
     vi.stubGlobal("fetch", preferenceFetch);
     await mountPreferenceSettings();
     expect(

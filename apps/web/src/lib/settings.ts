@@ -1,5 +1,9 @@
 import { formatInstant, loadTimePreferences } from "./time-presentation.ts";
 import {
+  MEMBER_LAYOUT_SAVED_EVENT,
+  type MemberLayoutSavedDetail,
+} from "./app-shell.ts";
+import {
   deletePersonalIdentity,
   getMemberPreferences,
   getPersonalLifecyclePreview,
@@ -393,7 +397,21 @@ export async function mountPreferenceSettings(): Promise<void> {
     ) {
       return setUnavailable(result.problem.detail);
     }
-    if (result?.ok) guard.markSaved();
+    if (result?.ok) {
+      guard.markSaved();
+      form.dispatchEvent(
+        new CustomEvent<MemberLayoutSavedDetail>(
+          MEMBER_LAYOUT_SAVED_EVENT,
+          {
+            bubbles: true,
+            detail: {
+              workspaceId,
+              fluidLayout: result.value.preferences.fluidLayout,
+            },
+          },
+        ),
+      );
+    }
     setUnavailable(
       result?.ok
         ? "Preferences saved."

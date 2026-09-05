@@ -354,7 +354,17 @@ test(
       await expect(target).toBeFocused();
       await expect(target).toBeInViewport();
     }
+    const outsideLink = page.getByRole("link", {
+      name: "Open all tasks",
+      exact: true,
+    });
+    if (browserName === "webkit") {
+      // Exercise a concrete outside tab stop, not WebKit's default implicit-anchor policy.
+      await outsideLink.evaluate((element) => element.tabIndex = 0);
+    }
     await page.keyboard.press("Tab");
+    await expect(outsideLink).toBeFocused();
+    await expect(outsideLink).toBeInViewport();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await toggle.click();
     await page.locator(".app-header").click({ position: { x: 4, y: 4 } });

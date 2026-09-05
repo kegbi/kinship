@@ -23,8 +23,11 @@ prerequisite queues.
   truthful. **APR-007** compacts the mobile header and corrects shared
   stylesheet ownership. **APR-008** applies saved person-name and sort
   preferences. **APR-009** applies consistent locale/time-zone presentation and
-  explicit calendar-date semantics. Continue with **APR-010**, honoring the
-  saved fluid-layout preference.
+  explicit calendar-date semantics. **APR-010** honors the saved fluid-layout
+  preference. All 11 repair candidates are independently reviewed and accepted;
+  the repair plan records the completed affected integration verification. Full
+  repository aggregate acceptance remains blocked by the unrelated failures
+  tracked by `REL-030/031`.
 - **Phase 12 is accepted.** `REL-029` is delivered; `REL-020` and `REL-025`
   remain watches. Phase 11's `OPS-001E` deployment work stays parked until
   explicitly requested.
