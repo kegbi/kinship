@@ -112,6 +112,206 @@ afterEach(() => {
 });
 
 describe("PEOPLE-006 profile-fact sections", () => {
+  it.each([
+    ["food-preferences", "pets", "clean"],
+    ["food-preferences", "pets", "declined"],
+    ["food-preferences", "pets", "accepted"],
+    ["pets", "food-preferences", "clean"],
+    ["pets", "food-preferences", "declined"],
+    ["pets", "food-preferences", "accepted"],
+    ["food-preferences", "food-preferences", "declined"],
+    ["food-preferences", "food-preferences", "accepted"],
+  ])("APR-002 guards %s to %s when %s", async (from, to, decision) => {
+    allMarkup();
+    mountUnsavedChangesGuard({
+      confirmMessage: "Discard?",
+      root: document.body,
+    });
+    const confirm = vi.fn(() => decision === "accepted");
+    vi.stubGlobal("confirm", confirm);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() =>
+        response({
+          options: [],
+          records: [],
+          personUpdatedAt: revision,
+          status: "ready",
+        })
+      ),
+    );
+    await mountProfileFacts(personId, workspaceId, false, revision);
+    const source = document.querySelector<HTMLElement>(
+      `[data-profile-fact-section="${from}"]`,
+    )!;
+    const target = document.querySelector<HTMLElement>(
+      `[data-profile-fact-section="${to}"]`,
+    )!;
+    source.querySelector<HTMLButtonElement>("[data-profile-fact-add]")!.click();
+    const form = source.querySelector("form")!;
+    await vi.waitFor(() => expect(form.hidden).toBe(false));
+    const field = form.querySelector("textarea")!;
+    field.focus();
+    if (decision !== "clean") {
+      field.value = "Keep this draft";
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    const add = target.querySelector<HTMLButtonElement>(
+      "[data-profile-fact-add]",
+    )!;
+    add.focus();
+    add.click();
+    const targetForm = target.querySelector("form")!;
+    if (decision === "declined") {
+      expect(confirm).toHaveBeenCalledOnce();
+      expect(form.hidden).toBe(false);
+      expect(field.value).toBe("Keep this draft");
+      expect(document.activeElement).toBe(field);
+      if (from !== to) expect(targetForm.hidden).toBe(true);
+    } else {
+      await vi.waitFor(() => expect(targetForm.hidden).toBe(false));
+      expect(confirm).toHaveBeenCalledTimes(decision === "clean" ? 0 : 1);
+      expect(field.value).toBe("");
+      if (from !== to) expect(form.hidden).toBe(true);
+      expect(document.activeElement).toBe(
+        targetForm.querySelector("input, select, textarea"),
+      );
+    }
+    const active = decision === "declined" ? form : targetForm;
+    active.querySelector<HTMLButtonElement>(
+      '.form-actions button[type="button"]',
+    )!.click();
+    expect(active.hidden).toBe(true);
+    expect(document.activeElement).toBe(
+      (decision === "declined" ? source : target).querySelector(
+        "[data-profile-fact-add]",
+      ),
+    );
+    expect(
+      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
+    ).toBe(true);
+  });
+
+  it.each(["clean", "declined", "accepted"])(
+    "APR-002 guards replacing a saved pet with another record when %s",
+    async (decision) => {
+      allMarkup();
+      mountUnsavedChangesGuard({
+        root: document.body,
+        confirmMessage: "Discard?",
+      });
+      const records = ["First", "Second"].map((name, index) => ({
+        id: `00000000-0000-4000-8000-00000000010${index}`,
+        section: "pets",
+        updatedAt: revision,
+        value: { name },
+      }));
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((resource: string) =>
+          response({
+            options: [],
+            records:
+              new URL(resource, "http://localhost").pathname.endsWith("/pets")
+                ? records
+                : [],
+            personUpdatedAt: revision,
+            status: "ready",
+          })
+        ),
+      );
+      const confirm = vi.fn(() => decision === "accepted");
+      vi.stubGlobal("confirm", confirm);
+      await mountProfileFacts(personId, workspaceId, false, revision);
+      const pets = document.querySelector<HTMLElement>(
+        '[data-profile-fact-section="pets"]',
+      )!;
+      const form = pets.querySelector("form")!;
+      const name = form.elements.namedItem("name") as HTMLInputElement;
+      const notes = form.elements.namedItem("notes") as HTMLTextAreaElement;
+      [...pets.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        button.textContent === "Edit First"
+      )!
+        .click();
+      await vi.waitFor(() => expect(name.value).toBe("First"));
+      notes.focus();
+      if (decision !== "clean") {
+        notes.value = "First pet draft";
+        notes.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      const editSecond = [...pets.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent === "Edit Second")!;
+      editSecond.focus();
+      editSecond.click();
+      if (decision === "declined") {
+        expect(name.value).toBe("First");
+        expect(notes.value).toBe("First pet draft");
+        expect(form.dataset.factId).toBe(records[0]!.id);
+        expect(document.activeElement).toBe(notes);
+      } else {
+        await vi.waitFor(() => expect(name.value).toBe("Second"));
+        expect(notes.value).toBe("");
+        expect(form.dataset.factId).toBe(records[1]!.id);
+        expect(document.activeElement).toBe(name);
+      }
+      expect(confirm).toHaveBeenCalledTimes(decision === "clean" ? 0 : 1);
+    },
+  );
+
+  it("APR-002 serializes option preparation and unlocks after its failure", async () => {
+    allMarkup();
+    mountUnsavedChangesGuard({
+      confirmMessage: "Discard?",
+      root: document.body,
+    });
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
+    let fail!: (error: Error) => void;
+    const pending = new Promise<Response>((_resolve, reject) => fail = reject);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((resource: string) => {
+        if (
+          new URL(resource, "http://localhost").searchParams.has(
+            "includeOptions",
+          )
+        ) return pending;
+        return response({
+          options: [],
+          records: [],
+          personUpdatedAt: revision,
+          status: "ready",
+        });
+      }),
+    );
+    await mountProfileFacts(personId, workspaceId, false, revision);
+    const pets = document.querySelector<HTMLElement>(
+      '[data-profile-fact-section="pets"]',
+    )!;
+    const food = document.querySelector<HTMLElement>(
+      '[data-profile-fact-section="food-preferences"]',
+    )!;
+    const petsForm = pets.querySelector("form")!;
+    const foodForm = food.querySelector("form")!;
+    pets.querySelector<HTMLButtonElement>("[data-profile-fact-add]")!.click();
+    expect(petsForm.inert).toBe(true);
+    food.querySelector<HTMLButtonElement>("[data-profile-fact-add]")!.click();
+    expect(foodForm.hidden).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+    fail(new Error("Options unavailable"));
+    await vi.waitFor(() => expect(petsForm.inert).toBe(false));
+    expect(pets.textContent).toContain(
+      "Profile options are temporarily unavailable",
+    );
+    expect(
+      pets.querySelector<HTMLButtonElement>("[data-profile-fact-add]")!
+        .disabled,
+    ).toBe(false);
+    food.querySelector<HTMLButtonElement>("[data-profile-fact-add]")!.click();
+    await vi.waitFor(() => expect(foodForm.hidden).toBe(false));
+    expect(document.activeElement).toBe(foodForm.querySelector("textarea"));
+  });
+
   it.each(["transport", "validation", "forbidden", "conflict", "server"])(
     "APR-001 protects a pending and %s-failed draft until a successful retry",
     async (failure) => {
@@ -2103,13 +2303,14 @@ describe("PEOPLE-006 profile-fact sections", () => {
     contactRoot.querySelector<HTMLButtonElement>("[data-profile-fact-add]")!
       .click();
     const contactForm = sectionForm("contact-methods");
-    await vi.waitFor(() =>
+    await vi.waitFor(() => {
+      expect(contactForm.inert).toBe(false);
       expect(
         contactForm.querySelector<HTMLButtonElement>('button[type="submit"]')
           ?.disabled,
       )
-        .toBe(false)
-    );
+        .toBe(false);
+    });
     (contactForm.elements.namedItem("typeId") as HTMLSelectElement).value =
       typeId;
     (contactForm.elements.namedItem("value") as HTMLInputElement).value = "x"
@@ -2130,13 +2331,14 @@ describe("PEOPLE-006 profile-fact sections", () => {
 
     contactRoot.querySelector<HTMLButtonElement>("[data-profile-fact-add]")!
       .click();
-    await vi.waitFor(() =>
+    await vi.waitFor(() => {
+      expect(contactForm.inert).toBe(false);
       expect(
         contactForm.querySelector<HTMLButtonElement>('button[type="submit"]')
           ?.disabled,
       )
-        .toBe(false)
-    );
+        .toBe(false);
+    });
     (contactForm.elements.namedItem("typeId") as HTMLSelectElement).value =
       typeId;
     (contactForm.elements.namedItem("value") as HTMLInputElement).value = "x"

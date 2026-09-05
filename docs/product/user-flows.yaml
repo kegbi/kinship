@@ -414,6 +414,7 @@ flows:
       - Validate the owning workspace vocabulary and target person.
       - Apply the local profile change through its owning use case.
       - Keep a pending or failed save protected as an unsaved draft until acknowledged success or explicit discard.
+      - Confirm before replacing a dirty local editor; declining retains its values and focus.
       - Respect disabled profile modules without treating hidden data as deleted.
       - Refresh only the affected profile section.
     alternateOutcomes: [
@@ -422,6 +423,7 @@ flows:
       cross-workspace-link,
       failed-save-retry,
       declined-draft-navigation,
+      declined-editor-switch,
     ]
     result: Profile facts remain available from the single person workspace and use current workspace terminology.
     auditEffect: person-profile-fact-updated

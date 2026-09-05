@@ -3,7 +3,7 @@ import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
-import { announceRailEditorOpened } from "./rail-editors.ts";
+import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 import { mountPersonReminders, mountTodayReminders } from "./reminders.ts";
 
 const applicationCss = readApplicationStylesheet();
@@ -146,6 +146,83 @@ afterEach(() => {
 });
 
 describe("PLANNING-002 reminder browser behavior", () => {
+  it.each(["clean", "declined", "accepted"])(
+    "APR-002 gates incoming and outgoing local-editor switches when %s",
+    async (decision) => {
+      personMarkup();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          response({ cadences: [], reminders: [], status: "ready" }),
+        ),
+      );
+      await mountPersonReminders({ archived: false, personId, workspaceId });
+      mountUnsavedChangesGuard({
+        confirmMessage: "Discard?",
+        root: document.body,
+      });
+      const confirm = vi.fn(() => decision === "accepted");
+      vi.stubGlobal("confirm", confirm);
+      const add = document.querySelector<HTMLButtonElement>(
+        "[data-cadence-add]",
+      )!;
+      const form = document.querySelector<HTMLFormElement>(
+        "[data-cadence-form]",
+      )!;
+      const field = form.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+        'input[name="intervalCount"]',
+      )!;
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        '<form id="foreign"><input name="draft"></form>',
+      );
+      const foreign = document.querySelector<HTMLInputElement>(
+        "#foreign input",
+      )!.closest<HTMLFormElement>("form")!;
+      registerRailEditors([foreign], () => {
+        foreign.hidden = true;
+        foreign.reset();
+      });
+      const foreignField = foreign.querySelector("input")!;
+      foreignField.focus();
+      if (decision !== "clean") {
+        foreignField.value = "Foreign draft";
+        foreignField.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      add.focus();
+      add.click();
+      if (decision === "declined") {
+        expect(form.hidden).toBe(true);
+        expect(foreign.hidden).toBe(false);
+        expect(foreignField.value).toBe("Foreign draft");
+        expect(document.activeElement).toBe(foreignField);
+        confirm.mockReturnValue(true);
+        add.click();
+      }
+      expect(form.hidden).toBe(false);
+      expect(foreign.hidden).toBe(true);
+      field.focus();
+      if (decision !== "clean") {
+        field.value = "4";
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      confirm.mockClear().mockReturnValue(decision === "accepted");
+      add.focus();
+      expect(requestRailEditorOpen(foreign)).toBe(decision !== "declined");
+      expect(confirm).toHaveBeenCalledTimes(decision === "clean" ? 0 : 1);
+      if (decision === "declined") {
+        expect(form.hidden).toBe(false);
+        expect(field.value).toBe("4");
+        expect(document.activeElement).toBe(field);
+        form.querySelector<HTMLButtonElement>("[data-cadence-cancel]")!.click();
+        expect(document.activeElement).toBe(add);
+        expect(confirm).toHaveBeenCalledOnce();
+      }
+      expect(form.hidden).toBe(true);
+      expect(field.value).toBe("1");
+    },
+  );
+
   it("uses the shared add-form pattern for reminders and cadence", async () => {
     personMarkup();
     vi.stubGlobal(
@@ -221,7 +298,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
     document.body.append(foreign);
     foreignControl.focus();
 
-    announceRailEditorOpened(foreign);
+    requestRailEditorOpen(foreign);
 
     expect(reminderForm.hidden).toBe(false);
     expect(cadenceForm.hidden).toBe(true);

@@ -21,10 +21,7 @@ import {
   setRailEmpty,
   setVitalStat,
 } from "./person-facts-rail.ts";
-import {
-  announceRailEditorOpened,
-  onForeignRailEditorOpened,
-} from "./rail-editors.ts";
+import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 import { insertProfileRailExpander } from "./profile-rail-expander.ts";
 import { showToast } from "./toasts.ts";
 
@@ -825,7 +822,7 @@ export async function mountProfileFacts(
     const form = elements(section)?.form;
     return form ? [form] : [];
   });
-  onForeignRailEditorOpened(ownForms, (form) => {
+  registerRailEditors(ownForms, (form) => {
     form.hidden = true;
     form.reset();
   });
@@ -1398,18 +1395,21 @@ export async function mountProfileFacts(
           edit.className = "button-secondary";
           setFactActionLabel(edit, "Edit", summary(record, snapshot.options));
           edit.addEventListener("click", async () => {
+            if (!requestRailEditorOpen(target.form, true)) return;
             const submit = target.form.querySelector<HTMLButtonElement>(
               'button[type="submit"]',
             );
             if (submit) submit.disabled = true;
-            const ready = await prepareEditor(record);
+            const ready = await saveWithLockedForm(
+              target.form,
+              () => prepareEditor(record),
+            );
             if (!ready) return;
             fill(target.form, record);
             target.form.hidden = false;
             if (submit && ready) submit.disabled = false;
             target.form.querySelector<HTMLElement>("input, select, textarea")
               ?.focus();
-            announceRailEditorOpened(target.form);
           });
           actions.append(edit);
           if (section !== "tags") {
@@ -1565,11 +1565,15 @@ export async function mountProfileFacts(
       target.list.insertAdjacentElement("afterend", pagination);
     }
     target.add.onclick = async () => {
+      if (!requestRailEditorOpen(target.form, true)) return;
       const submit = target.form.querySelector<HTMLButtonElement>(
         'button[type="submit"]',
       );
       if (submit) submit.disabled = true;
-      const ready = await prepareEditor();
+      const ready = await saveWithLockedForm(
+        target.form,
+        () => prepareEditor(),
+      );
       if (!ready) return;
       const currentSnapshot = snapshots.get(section) ?? snapshot;
       const singleton =
@@ -1581,7 +1585,6 @@ export async function mountProfileFacts(
       if (submit && ready) submit.disabled = false;
       target.form.querySelector<HTMLElement>("input, select, textarea")
         ?.focus();
-      announceRailEditorOpened(target.form);
     };
     const cancel = target.form.querySelector<HTMLButtonElement>(
       '.form-actions button[type="button"]',

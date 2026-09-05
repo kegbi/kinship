@@ -85,7 +85,16 @@ established in this pass.
 
 ### APR-002 — Confirm before switching away from a dirty local editor
 
-- [ ] **P1, ready after APR-001.**
+- [x] **P1, delivered.** Rail editors request the shared guard's discard
+      decision before changing either form. Decline retains values and restores
+      focus; clean switches and explicit Cancel proceed directly. Pending saves
+      or option loads block competing opens. Fact, date, cadence, and
+      relationship regressions pass; Chromium passes the APR-001/002
+      `PEOPLE-006` pair on the isolated worktree stack. The 600-test web
+      coverage checkpoint passes at 95.10% line, 84.10% branch, and 88.64%
+      function coverage. The relationship option-load review amendment passes 57
+      focused tests at 95.40% line, 86.43% branch, and 94.04% function coverage;
+      static and five product-contract checks pass.
 - Evidence: [rail-editors.ts](../../apps/web/src/lib/rail-editors.ts) broadcasts
   an opened form; handlers in `profile-facts.ts`, `important-dates.ts`, and
   other consumers hide/reset previously open forms. Typing a food-preference

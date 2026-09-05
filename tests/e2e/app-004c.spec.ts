@@ -221,6 +221,149 @@ async function expectAlignedControls(
 }
 
 test(
+  "[PEOPLE-006] APR-002 confirms local-editor switches before discarding drafts",
+  { annotation: { type: "flow", description: "PEOPLE-006" } },
+  async ({ browserName, page, request }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const email = `editor-switch-${browserName}-${Date.now()}@example.test`;
+    await registerVerified(request, email);
+    await signIn(page, email);
+    await page.goto("/app/people/new");
+    await page.getByLabel("Given name").fill("Editor");
+    await page.getByLabel("Family name").fill("Switch");
+    await page.getByRole("button", { name: "Save person", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
+    const profilePath = new URL(page.url()).pathname;
+    const food = page.locator("#profile-section-food-preferences");
+    const pets = page.locator("#profile-section-pets");
+    const foodForm = food.locator("form[data-profile-fact-form]");
+    const petsForm = pets.locator("form[data-profile-fact-form]");
+    const dateForm = page.locator("#important-date-form");
+    const cadenceForm = page.locator("form[data-cadence-form]");
+    const editors = [
+      {
+        form: foodForm,
+        opener: food.getByRole("button", {
+          name: "Add food preferences",
+          exact: true,
+        }),
+        field: foodForm.getByLabel("Food, allergy, and dietary preferences"),
+        first: foodForm.getByLabel("Food, allergy, and dietary preferences"),
+        draft: "Preserve my food draft",
+      },
+      {
+        form: petsForm,
+        opener: pets.getByRole("button", { name: "Add pets", exact: true }),
+        field: petsForm.getByLabel("Pet notes"),
+        first: petsForm.getByLabel("Pet name"),
+        draft: "Preserve my pet draft",
+      },
+      {
+        form: dateForm,
+        opener: page.getByRole("button", {
+          name: "Add important date",
+          exact: true,
+        }),
+        field: dateForm.getByLabel("Notes (optional)", { exact: true }),
+        first: dateForm.getByLabel("Date type"),
+        draft: "Preserve my date draft",
+      },
+      {
+        form: cadenceForm,
+        opener: page.getByRole("button", {
+          name: "Add stay-in-touch cadence",
+          exact: true,
+        }),
+        field: cadenceForm.getByLabel("Reconnect every"),
+        first: cadenceForm.getByLabel("Reconnect every"),
+        draft: "4",
+      },
+    ];
+    const activeEditors = page.locator(
+      "form[data-profile-fact-form]:visible, #important-date-form:visible, form[data-cadence-form]:visible, #relationship-form:visible",
+    );
+    let acceptDiscard = false;
+    let decisions = 0;
+    const prompts: string[] = [];
+    page.on("dialog", async (dialog) => {
+      prompts.push(dialog.message());
+      decisions++;
+      if (acceptDiscard) await dialog.accept();
+      else await dialog.dismiss();
+    });
+    for (
+      const [from, to] of [[0, 1], [1, 0], [0, 2], [2, 3], [3, 0], [3, 2], [
+        2,
+        0,
+      ]]
+    ) {
+      const source = editors[from!]!;
+      const target = editors[to!]!;
+      const before = decisions;
+      await expect(source.opener).toBeVisible();
+      await expect(target.opener).toBeVisible();
+      await openLocalEditor(source.opener, source.form);
+      await expect(source.first).toBeFocused();
+      await openLocalEditor(target.opener, target.form);
+      await expect(source.form).toBeHidden();
+      await expect(target.first).toBeFocused();
+      await expect(activeEditors).toHaveCount(1);
+      expect(decisions).toBe(before);
+      await target.form.getByRole("button", { name: "Cancel", exact: true })
+        .click();
+      await expect(target.opener).toBeFocused();
+      await openLocalEditor(source.opener, source.form);
+      await source.field.fill(source.draft);
+      await target.opener.focus();
+      await target.opener.press("Enter");
+      await expect.poll(() => decisions).toBe(before + 1);
+      await expect(source.form).toBeVisible();
+      await expect(source.field).toHaveValue(source.draft);
+      await expect(source.field).toBeFocused();
+      await expect(target.form).toBeHidden();
+      await expect(activeEditors).toHaveCount(1);
+      acceptDiscard = true;
+      await openLocalEditor(target.opener, target.form);
+      await expect.poll(() => decisions).toBe(before + 2);
+      await expect(source.form).toBeHidden();
+      await expect(target.first).toBeFocused();
+      await expect(activeEditors).toHaveCount(1);
+      await target.field.fill(target.draft);
+      await target.form.getByRole("button", { name: "Cancel", exact: true })
+        .click();
+      await expect(target.form).toBeHidden();
+      await expect(target.opener).toBeFocused();
+      expect(decisions).toBe(before + 2);
+      acceptDiscard = false;
+    }
+    expect(
+      prompts.every((message) =>
+        message ===
+          "You have unsaved changes in this editor. Discard them and open another editor?"
+      ),
+    ).toBe(true);
+    expect(
+      await page.evaluate(() =>
+        globalThis.dispatchEvent(
+          new Event("beforeunload", { cancelable: true }),
+        )
+      ),
+    ).toBe(true);
+    await page.reload();
+    await expect(page).toHaveURL(new RegExp(`${profilePath}$`));
+    for (const editor of editors) {
+      await expect(editor.opener).toBeVisible();
+      await openLocalEditor(editor.opener, editor.form);
+      await expect(editor.field).toHaveValue(editor === editors[3] ? "1" : "");
+      await editor.form.getByRole("button", { name: "Cancel", exact: true })
+        .click();
+    }
+  },
+);
+
+test(
   "[PEOPLE-006] APR-001 preserves a failed save through declined navigation and retry",
   {
     annotation: { type: "flow", description: "PEOPLE-006" },

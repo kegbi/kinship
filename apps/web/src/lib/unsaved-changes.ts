@@ -9,6 +9,24 @@ export interface UnsavedChangesGuardOptions {
 }
 
 const FORM_SAVED_EVENT = "kinship:form-saved";
+const FORM_DISCARD_REQUEST_EVENT = "kinship:form-discard-request";
+
+interface FormDiscardRequest {
+  readonly forms: readonly HTMLFormElement[];
+  readonly message: string;
+}
+
+/** Ask the mounted guard before a local action replaces these drafts. */
+export function requestFormDiscard(
+  forms: readonly HTMLFormElement[],
+  message: string,
+): boolean {
+  const request = new CustomEvent<FormDiscardRequest>(
+    FORM_DISCARD_REQUEST_EVENT,
+    { cancelable: true, detail: { forms, message } },
+  );
+  return document.dispatchEvent(request) && !forms.some((form) => form.inert);
+}
 
 /** Call only after the owning mutation acknowledges a successful save. */
 export function markFormSaved(form: HTMLFormElement): void {
@@ -53,16 +71,22 @@ export function mountUnsavedChangesGuard(
   options: UnsavedChangesGuardOptions,
 ): void {
   activeRootCleanup?.();
-  const baselines = new Map<HTMLFormElement, string>();
+  const baselines = new Map<HTMLFormElement, {
+    snapshot: string;
+    focus?: HTMLElement;
+  }>();
   const dirtyForms = new Set<HTMLFormElement>();
   const rebaseline = (form: HTMLFormElement): void => {
-    baselines.set(form, formSnapshot(form));
+    baselines.set(form, {
+      ...baselines.get(form),
+      snapshot: formSnapshot(form),
+    });
     dirtyForms.delete(form);
   };
   const updateDirty = (form: HTMLFormElement): void => {
     const baseline = baselines.get(form);
     if (baseline === undefined) return;
-    if (formSnapshot(form) === baseline) dirtyForms.delete(form);
+    if (formSnapshot(form) === baseline.snapshot) dirtyForms.delete(form);
     else dirtyForms.add(form);
   };
   const hasUnsavedChanges = (): boolean =>
@@ -70,6 +94,9 @@ export function mountUnsavedChangesGuard(
   const focusin = (event: Event): void => {
     const form = eventForm(options.root, event);
     if (form && !baselines.has(form)) rebaseline(form);
+    if (form && event.target instanceof HTMLElement) {
+      baselines.get(form)!.focus = event.target;
+    }
   };
   const changed = (event: Event): void => {
     const form = eventForm(options.root, event);
@@ -85,17 +112,37 @@ export function mountUnsavedChangesGuard(
     dirtyForms.delete(form);
     queueMicrotask(() => rebaseline(form));
   };
+  const discardRequested = (event: Event): void => {
+    const request = (event as CustomEvent<FormDiscardRequest>).detail;
+    const forms = request.forms
+      .filter((form) => options.root.contains(form));
+    const blocked = forms.find((form) => form.inert);
+    const dirty = forms.find((form) => dirtyForms.has(form));
+    if (!blocked && (!dirty || globalThis.confirm(request.message))) {
+      return;
+    }
+    event.preventDefault();
+    const form = blocked ?? dirty!;
+    const focus = baselines.get(form)?.focus;
+    if (focus && form.contains(focus)) focus.focus();
+    else {
+      form.querySelector<HTMLElement>("input, select, textarea, button")
+        ?.focus();
+    }
+  };
   options.root.addEventListener("focusin", focusin);
   options.root.addEventListener("input", changed);
   options.root.addEventListener("change", changed);
   options.root.addEventListener(FORM_SAVED_EVENT, saved);
   options.root.addEventListener("reset", reset);
+  document.addEventListener(FORM_DISCARD_REQUEST_EVENT, discardRequested);
   activeRootCleanup = () => {
     options.root.removeEventListener("focusin", focusin);
     options.root.removeEventListener("input", changed);
     options.root.removeEventListener("change", changed);
     options.root.removeEventListener(FORM_SAVED_EVENT, saved);
     options.root.removeEventListener("reset", reset);
+    document.removeEventListener(FORM_DISCARD_REQUEST_EVENT, discardRequested);
   };
 
   if (activeBeforeUnload) {
