@@ -191,7 +191,19 @@ established in this pass.
 
 ### APR-011 — Include API-token and DAV checks in aggregate test commands
 
-- [ ] **P1, ready; no dependency on APR-006 through APR-010.**
+- [x] **P1, delivered.** Root unit and coverage commands invoke the existing
+      API-token/DAV gates once, preserving their focused commands, permissions,
+      and coverage scopes. Two RED/GREEN configuration regressions prove the
+      links; all seven configuration tests and focused static checks pass. The
+      dedicated unit gates pass 37/19 tests, and coverage gates pass 38/43 tests
+      at 94.2/84.7/100% and 88.8/85.6/96.6% line/branch/function coverage. Root
+      test executes both added unit gates once, then reaches the unchanged
+      planning permission failure queued separately as `REL-030` in the active
+      ledger; one focused reproduction confirms it is unrelated. Root coverage
+      stops in its unchanged API gate after 538 tests and 22 steps on the Astro
+      readiness deadline, before the added coverage gates. The isolated probe
+      passes under coverage; `REL-031` tracks this intermittent checkpoint
+      failure. Dedicated API-token/DAV coverage remains green.
 - Evidence: traversing `deno task` references from both root `test` and root
   `test:coverage` leaves `test:unit:api-access`, `test:unit:integrations`, and
   their dedicated coverage paths unreachable. For example,
