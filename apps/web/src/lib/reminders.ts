@@ -2,6 +2,7 @@ import { markFormSaved, saveWithLockedForm } from "./unsaved-changes.ts";
 import {
   createReminder,
   createStayInTouchCadence,
+  getPerson,
   getTodayReminders,
   listPersonReminders,
   type Reminder,
@@ -98,6 +99,12 @@ export async function mountPersonReminders(options: {
   const cadenceCancel = document.querySelector<HTMLButtonElement>(
     "[data-cadence-cancel]",
   );
+  const cadenceHero = document.querySelector<HTMLElement>(
+    "#person-profile-due-state",
+  );
+  const nextReminderHero = document.querySelector<HTMLElement>(
+    '[data-person-vital-value="next-reminder"]',
+  );
   const reminderSection = reminderState?.closest<HTMLElement>(
     '[data-profile-section="reminders"]',
   );
@@ -119,29 +126,64 @@ export async function mountPersonReminders(options: {
     "[type=submit]",
   );
   let lifecycleArchived = options.archived;
-  if (lifecycleArchived) {
-    reminderSubmit?.setAttribute("disabled", "");
-    cadenceSubmit?.setAttribute("disabled", "");
-    reminderAdd?.setAttribute("hidden", "");
-    cadenceAdd?.setAttribute("hidden", "");
-  }
   let reminderRequestId: string | undefined;
   let cadenceRequestId: string | undefined;
-  let reminderSaving = false;
-  let cadenceSaving = false;
-  const load = async () => {
+  let busy = false;
+  const setBusy = (value: boolean) => {
+    busy = value;
+    for (
+      const control of [
+        reminderSubmit,
+        cadenceSubmit,
+        reminderAdd,
+        cadenceAdd,
+        ...reminderList.querySelectorAll<HTMLButtonElement>("button"),
+      ]
+    ) control?.toggleAttribute("disabled", busy || lifecycleArchived);
+    for (const section of [reminderSection, cadenceSection]) {
+      if (busy) section?.setAttribute("aria-busy", "true");
+      else section?.removeAttribute("aria-busy");
+    }
+  };
+  const beginMutation = () => {
+    if (lifecycleArchived || busy) return false;
+    setBusy(true);
+    return true;
+  };
+  const load = async (refreshSummary = false) => {
     reminderAdd?.setAttribute("hidden", "");
     cadenceAdd?.setAttribute("hidden", "");
     if (reminderSection) reminderSection.dataset.sectionState = "loading";
     if (cadenceSection) cadenceSection.dataset.sectionState = "loading";
     reminderState.textContent = "Loading reminders…";
     cadenceState.textContent = "Loading stay-in-touch cadence…";
+    if (cadenceHero) cadenceHero.textContent = "Loading cadence…";
+    if (refreshSummary && nextReminderHero) {
+      nextReminderHero.textContent = "Refreshing…";
+    }
     setRailEmpty("stay-in-touch", false);
-    const result = await listPersonReminders(
-      options.personId,
-      options.workspaceId,
-    ).catch(() => undefined);
+    const [result, summary] = await Promise.all([
+      listPersonReminders(options.personId, options.workspaceId).catch(() =>
+        undefined
+      ),
+      // The list is bounded and includes delivery history; only the profile
+      // summary knows the next pending reminder across all records.
+      refreshSummary
+        ? getPerson(options.personId, options.workspaceId, "summary").catch(
+          () => undefined,
+        )
+        : undefined,
+    ]);
+    if (refreshSummary && nextReminderHero) {
+      nextReminderHero.textContent = summary?.ok
+        ? summary.value.dueInformation.nextReminderAt
+          ? new Date(summary.value.dueInformation.nextReminderAt)
+            .toLocaleString()
+          : "Not recorded"
+        : "Unavailable";
+    }
     if (!result?.ok) {
+      if (cadenceHero) cadenceHero.textContent = "Unavailable";
       if (reminderSection) reminderSection.dataset.sectionState = "error";
       if (cadenceSection) cadenceSection.dataset.sectionState = "error";
       reminderState.textContent =
@@ -153,20 +195,27 @@ export async function mountPersonReminders(options: {
       return;
     }
     const disable = async (id: string) => {
-      if (lifecycleArchived) return;
-      const changed = await setReminderActive(id, false, options.workspaceId)
-        .catch(() => undefined);
-      reminderState.textContent = changed?.ok
-        ? "Reminder disabled."
-        : "Reminder could not be disabled.";
-      if (changed?.ok) await load();
+      if (!beginMutation()) return;
+      reminderState.textContent = "Disabling reminder…";
+      try {
+        const changed = await setReminderActive(id, false, options.workspaceId)
+          .catch(() => undefined);
+        reminderState.textContent = changed?.ok
+          ? "Reminder disabled."
+          : "Reminder could not be disabled.";
+        if (changed?.ok) await load(true);
+      } finally {
+        setBusy(false);
+      }
     };
     reminderList.replaceChildren(
       ...result.value.reminders.map((item) =>
         reminderItem(item, !lifecycleArchived, (id) => void disable(id))
       ),
     );
-    reminderState.textContent = result.value.reminders.length
+    reminderState.textContent = result.value.reminders.length >= 100
+      ? `Showing first ${result.value.reminders.length} reminders.`
+      : result.value.reminders.length
       ? `${result.value.reminders.length} reminder${
         result.value.reminders.length === 1 ? "" : "s"
       }.`
@@ -176,7 +225,19 @@ export async function mountPersonReminders(options: {
         ? "empty"
         : "ready";
     }
-    cadenceList.replaceChildren(...result.value.cadences.map((cadence) => {
+    const cadences = result.value.cadences.filter((cadence) =>
+      cadence.isActive
+    );
+    if (cadenceHero) {
+      cadenceHero.textContent = cadences.length
+        ? cadences.map((cadence) =>
+          `Every ${cadence.intervalCount} ${cadence.intervalUnit}${
+            cadence.intervalCount === 1 ? "" : "s"
+          }`
+        ).join(" · ")
+        : "Not set";
+    }
+    cadenceList.replaceChildren(...cadences.map((cadence) => {
       const item = document.createElement("li");
       item.textContent =
         `Every ${cadence.intervalCount} ${cadence.intervalUnit}${
@@ -184,18 +245,18 @@ export async function mountPersonReminders(options: {
         } · due ${new Date(cadence.nextDueAt).toLocaleString()}`;
       return item;
     }));
-    cadenceState.textContent = result.value.cadences.length
+    cadenceState.textContent = cadences.length
       ? "Stay-in-touch cadence is active."
       : "No stay-in-touch cadence yet.";
     if (cadenceSection) {
-      cadenceSection.dataset.sectionState = result.value.cadences.length === 0
+      cadenceSection.dataset.sectionState = cadences.length === 0
         ? "empty"
         : "ready";
     }
-    setRailCount("stay-in-touch", result.value.cadences.length);
+    setRailCount("stay-in-touch", cadences.length);
     setRailEmpty(
       "stay-in-touch",
-      result.value.cadences.length === 0,
+      cadences.length === 0,
     );
     reminderAdd?.toggleAttribute("hidden", lifecycleArchived);
     cadenceAdd?.toggleAttribute("hidden", lifecycleArchived);
@@ -221,9 +282,7 @@ export async function mountPersonReminders(options: {
   });
   reminderForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (lifecycleArchived || reminderSaving) return;
-    reminderSaving = true;
-    reminderSubmit?.setAttribute("disabled", "");
+    if (!beginMutation()) return;
     reminderState.textContent = "Saving reminder…";
     reminderRequestId ??= crypto.randomUUID();
     const title = formValue(reminderForm, "title");
@@ -260,19 +319,16 @@ export async function mountPersonReminders(options: {
         reminderRequestId = undefined;
         reminderForm.reset();
         reminderForm.hidden = true;
-        await load();
+        await load(true);
       }
     } finally {
       optimisticRow.remove();
-      reminderSaving = false;
-      if (!lifecycleArchived) reminderSubmit?.removeAttribute("disabled");
+      setBusy(false);
     }
   });
   cadenceForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (lifecycleArchived || cadenceSaving) return;
-    cadenceSaving = true;
-    cadenceSubmit?.setAttribute("disabled", "");
+    if (!beginMutation()) return;
     cadenceState.textContent = "Saving cadence…";
     const requestId = cadenceRequestId ??= crypto.randomUUID();
     const intervalCount = Number(formValue(cadenceForm, "intervalCount"));
@@ -304,14 +360,24 @@ export async function mountPersonReminders(options: {
         cadenceRequestId = undefined;
         markFormSaved(cadenceForm);
         cadenceForm.hidden = true;
-        await load();
+        await load(true);
       } else cadenceState.focus();
     } finally {
       optimisticRow.remove();
-      cadenceSaving = false;
-      if (!lifecycleArchived) cadenceSubmit?.removeAttribute("disabled");
+      setBusy(false);
     }
   });
+  const reload = async () => {
+    // Initial/lifecycle reads share the mutation owner. A pending mutation
+    // already refreshes using the current lifecycle state before releasing it.
+    if (busy) return;
+    setBusy(true);
+    try {
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
   document.addEventListener("person-lifecycle-changed", (event) => {
     const detail = (event as CustomEvent<{
       readonly archived?: unknown;
@@ -322,14 +388,7 @@ export async function mountPersonReminders(options: {
       typeof detail.archived !== "boolean"
     ) return;
     lifecycleArchived = detail.archived;
-    reminderSubmit?.toggleAttribute(
-      "disabled",
-      lifecycleArchived || reminderSaving,
-    );
-    cadenceSubmit?.toggleAttribute(
-      "disabled",
-      lifecycleArchived || cadenceSaving,
-    );
+    setBusy(busy);
     reminderAdd?.toggleAttribute("hidden", lifecycleArchived);
     cadenceAdd?.toggleAttribute("hidden", lifecycleArchived);
     if (lifecycleArchived) {
@@ -337,10 +396,10 @@ export async function mountPersonReminders(options: {
         button.remove()
       );
     } else {
-      void load();
+      void reload();
     }
   });
-  await load();
+  await reload();
 }
 
 function formatToday(value: string, timezone: string): string {

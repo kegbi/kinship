@@ -21,6 +21,8 @@ function response(body: unknown, status = 200): Response {
 
 function personMarkup(): void {
   document.body.innerHTML = `
+    <span id="person-profile-due-state">Loading cadence…</span>
+    <span data-person-vital-value="next-reminder">Not recorded</span>
     <section data-profile-section="reminders">
       <p data-reminder-state></p><ul data-reminder-list></ul>
       <button data-reminder-add type="button" hidden>Add reminder</button>
@@ -146,6 +148,383 @@ afterEach(() => {
 });
 
 describe("PLANNING-002 reminder browser behavior", () => {
+  it.each(["success", "failure"])(
+    "APR-006 serializes reminder actions through a delayed %s summary",
+    async (outcome) => {
+      personMarkup();
+      const delayedSummary = deferredResponse();
+      const remainingId = "00000000-0000-4000-8000-000000000902";
+      const disabledIds = new Set<string>();
+      let summaryReads = 0;
+      const writes = vi.fn();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((resource: string | URL | Request, init?: RequestInit) => {
+          const url = String(resource);
+          if (init?.method === "PUT") {
+            writes();
+            disabledIds.add(
+              url.includes(remainingId) ? remainingId : reminderId,
+            );
+            return response({ status: "saved" });
+          }
+          if (init?.method === "POST") {
+            writes();
+            return response({ status: "created" }, 201);
+          }
+          if (url.includes("include=summary")) {
+            summaryReads += 1;
+            return summaryReads === 1
+              ? delayedSummary.promise
+              : response({ dueInformation: { status: "ready" } });
+          }
+          return response({
+            cadences: [],
+            status: "ready",
+            reminders: [reminderId, remainingId].map((id) => ({
+              ...reminder,
+              id,
+              isActive: !disabledIds.has(id),
+            })),
+          });
+        }),
+      );
+      await mountPersonReminders({ archived: false, personId, workspaceId });
+      const disableButtons = [
+        ...document.querySelectorAll<HTMLButtonElement>(
+          "[data-reminder-list] button",
+        ),
+      ];
+      disableButtons[0]!.click();
+      await vi.waitFor(() => expect(summaryReads).toBe(1));
+      // Even programmatic submits/clicks cannot enter a second write while
+      // the first mutation's authoritative summary remains unresolved.
+      disableButtons[1]!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      for (const kind of ["reminder", "cadence"]) {
+        document.querySelector<HTMLFormElement>(`[data-${kind}-form]`)!
+          .dispatchEvent(
+            new SubmitEvent("submit", { cancelable: true, bubbles: true }),
+          );
+      }
+      expect(writes).toHaveBeenCalledTimes(1);
+      expect(disableButtons.every((button) => button.disabled)).toBe(true);
+      expect(
+        document.querySelector<HTMLButtonElement>(
+          "[data-reminder-form] [type=submit]",
+        )!.disabled,
+      ).toBe(true);
+      expect(
+        document.querySelector<HTMLButtonElement>(
+          "[data-cadence-form] [type=submit]",
+        )!.disabled,
+      ).toBe(true);
+      expect(
+        document.querySelector('[data-profile-section="reminders"]')
+          ?.getAttribute("aria-busy"),
+      ).toBe("true");
+      delayedSummary.resolve(
+        outcome === "failure" ? response({}, 503) : response({
+          dueInformation: {
+            status: "ready",
+            nextReminderAt: "2026-09-21T07:00:00.000000Z",
+          },
+        }),
+      );
+      await vi.waitFor(() =>
+        expect(
+          document.querySelector<HTMLButtonElement>(
+            "[data-reminder-form] [type=submit]",
+          )!.disabled,
+        ).toBe(false)
+      );
+      expect(
+        document.querySelector('[data-person-vital-value="next-reminder"]')
+          ?.textContent,
+      ).toBe(
+        outcome === "failure"
+          ? "Unavailable"
+          : new Date("2026-09-21T07:00:00.000000Z").toLocaleString(),
+      );
+      document.querySelector<HTMLButtonElement>("[data-reminder-list] button")!
+        .click();
+      await vi.waitFor(() =>
+        expect(
+          document.querySelector('[data-person-vital-value="next-reminder"]')
+            ?.textContent,
+        ).toBe("Not recorded")
+      );
+      expect(writes).toHaveBeenCalledTimes(2);
+      expect(
+        document.querySelector('[data-profile-section="reminders"]')
+          ?.hasAttribute("aria-busy"),
+      ).toBe(false);
+    },
+  );
+
+  it.each([
+    { kind: "reminder", archived: false },
+    { kind: "cadence", archived: false },
+    { kind: "reminder", archived: true },
+    { kind: "cadence", archived: true },
+  ])(
+    "APR-006 serializes a pending $kind save with archived=$archived and preserves adjacent drafts",
+    async ({ kind, archived }) => {
+      personMarkup();
+      const pendingSave = deferredResponse();
+      const writes = vi.fn();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((resource: string | URL | Request, init?: RequestInit) => {
+          if (init?.method === "POST" || init?.method === "PUT") {
+            writes();
+            return pendingSave.promise;
+          }
+          if (String(resource).includes("include=summary")) {
+            return response({ dueInformation: { status: "ready" } });
+          }
+          return response({
+            cadences: [],
+            reminders: [reminder],
+            status: "ready",
+          });
+        }),
+      );
+      await mountPersonReminders({ archived: false, personId, workspaceId });
+      const form = document.querySelector<HTMLFormElement>(
+        `[data-${kind}-form]`,
+      )!;
+      const other = kind === "reminder" ? "cadence" : "reminder";
+      const otherForm = document.querySelector<HTMLFormElement>(
+        `[data-${other}-form]`,
+      )!;
+      const draft = otherForm.querySelector<HTMLInputElement>("input")!;
+      otherForm.hidden = false;
+      draft.value = "Adjacent draft";
+      draft.dispatchEvent(new Event("input", { bubbles: true }));
+      form.dispatchEvent(
+        new SubmitEvent("submit", { cancelable: true, bubbles: true }),
+      );
+      document.querySelector<HTMLFormElement>(`[data-${other}-form]`)!
+        .dispatchEvent(
+          new SubmitEvent("submit", { cancelable: true, bubbles: true }),
+        );
+      document.querySelector<HTMLButtonElement>("[data-reminder-list] button")!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(writes).toHaveBeenCalledTimes(1);
+      expect(
+        document.querySelector<HTMLButtonElement>(
+          `[data-${other}-form] [type=submit]`,
+        )!.disabled,
+      ).toBe(true);
+      expect(
+        document.querySelector<HTMLButtonElement>("[data-reminder-add]")!
+          .disabled,
+      ).toBe(true);
+      expect(
+        document.querySelector<HTMLButtonElement>("[data-cadence-add]")!
+          .disabled,
+      ).toBe(true);
+      if (archived) {
+        document.dispatchEvent(
+          new CustomEvent("person-lifecycle-changed", {
+            detail: { personId, archived: true },
+          }),
+        );
+      }
+      pendingSave.resolve(response({}, 503));
+      await vi.waitFor(() =>
+        expect(
+          document.querySelector(
+            `[data-profile-section="${
+              kind === "cadence" ? "stay-in-touch" : "reminders"
+            }"]`,
+          )!.hasAttribute("aria-busy"),
+        ).toBe(false)
+      );
+      expect(form.querySelector<HTMLButtonElement>("[type=submit]")!.disabled)
+        .toBe(archived);
+      expect(
+        otherForm.querySelector<HTMLButtonElement>("[type=submit]")!.disabled,
+      ).toBe(archived);
+      expect(otherForm.hidden).toBe(false);
+      expect(draft.value).toBe("Adjacent draft");
+      if (archived) {
+        expect(document.querySelector("[data-reminder-list] button"))
+          .toBeNull();
+      } else {expect(
+          document.querySelector<HTMLButtonElement>(
+            "[data-reminder-list] button",
+          )!.disabled,
+        ).toBe(false);}
+    },
+  );
+
+  it("APR-006 identifies a full reminder preview without claiming a known total", async () => {
+    personMarkup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        cadences: [],
+        reminders: Array.from(
+          { length: 100 },
+          (_, index) => ({ ...reminder, id: `reminder-${index}` }),
+        ),
+        status: "ready",
+      })),
+    );
+    await mountPersonReminders({ archived: false, personId, workspaceId });
+    expect(document.querySelector("[data-reminder-state]")?.textContent).toBe(
+      "Showing first 100 reminders.",
+    );
+    expect(document.querySelector("#person-profile-due-state")?.textContent)
+      .toBe("Not set");
+  });
+  it.each([true, false])(
+    "APR-006 shows an active cadence or unset hero when active=%s",
+    async (isActive) => {
+      personMarkup();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(response({
+          cadences: [{
+            id: "cadence",
+            isActive,
+            intervalCount: 2,
+            intervalUnit: "week",
+            nextDueAt: "2026-09-20T07:00:00.000000Z",
+            personId,
+          }],
+          reminders: [],
+          status: "ready",
+        })),
+      );
+      await mountPersonReminders({ archived: false, personId, workspaceId });
+      expect(document.querySelector("#person-profile-due-state")?.textContent)
+        .toBe(isActive ? "Every 2 weeks" : "Not set");
+      expect(document.querySelector("[data-cadence-state]")?.textContent).toBe(
+        isActive
+          ? "Stay-in-touch cadence is active."
+          : "No stay-in-touch cadence yet.",
+      );
+    },
+  );
+
+  it("APR-006 refreshes cadence and authoritative next reminder after local writes", async () => {
+    personMarkup();
+    let created = false;
+    let disabled = false;
+    let cadenceSaved = false;
+    const summaryReads = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((resource: string | URL | Request, init?: RequestInit) => {
+        const url = String(resource);
+        if (url.includes("include=summary")) {
+          summaryReads();
+          return response({
+            dueInformation: {
+              ...(created && !disabled
+                ? { nextReminderAt: "2026-09-21T07:00:00.000000Z" }
+                : {}),
+              openTaskCount: 7,
+              detail: "7 open tasks",
+              status: "ready",
+            },
+          });
+        }
+        if (init?.method === "POST") {
+          if (url.includes("cadences")) cadenceSaved = true;
+          else created = true;
+          return response({ status: "created" }, 201);
+        }
+        if (init?.method === "PUT") {
+          disabled = true;
+          return response({ status: "updated" });
+        }
+        return response({
+          cadences: cadenceSaved
+            ? [{
+              id: "cadence",
+              isActive: true,
+              intervalCount: 1,
+              intervalUnit: "month",
+              nextDueAt: "2026-10-05T07:00:00.000000Z",
+              personId,
+            }]
+            : [],
+          // This preview contains an older occurrence. The hero must use the summary.
+          reminders: created ? [{ ...reminder, isActive: !disabled }] : [],
+          status: "ready",
+        });
+      }),
+    );
+    await mountPersonReminders({ archived: false, personId, workspaceId });
+    expect(document.querySelector("#person-profile-due-state")?.textContent)
+      .toBe("Not set");
+    expect(summaryReads).not.toHaveBeenCalled();
+    document.querySelector<HTMLFormElement>("[data-reminder-form]")!
+      .requestSubmit();
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector('[data-person-vital-value="next-reminder"]')
+          ?.textContent,
+      ).toBe(new Date("2026-09-21T07:00:00.000000Z").toLocaleString())
+    );
+    expect(document.querySelector("#person-profile-due-state")?.textContent)
+      .toBe("Not set");
+    document.querySelector<HTMLButtonElement>("[data-reminder-list] button")!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector('[data-person-vital-value="next-reminder"]')
+          ?.textContent,
+      ).toBe("Not recorded")
+    );
+    document.querySelector<HTMLFormElement>("[data-cadence-form]")!
+      .requestSubmit();
+    await vi.waitFor(() =>
+      expect(document.querySelector("#person-profile-due-state")?.textContent)
+        .toBe("Every 1 month")
+    );
+    expect(summaryReads).toHaveBeenCalledTimes(3);
+  });
+
+  it("APR-006 clears an obsolete next reminder when its post-save summary read fails", async () => {
+    personMarkup();
+    document.querySelector('[data-person-vital-value="next-reminder"]')!
+      .textContent = "Old reminder";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((resource: string | URL | Request, init?: RequestInit) => {
+        if (String(resource).includes("include=summary")) {
+          return response({}, 503);
+        }
+        if (init?.method === "POST") {
+          return response({ status: "created" }, 201);
+        }
+        return response({
+          cadences: [],
+          reminders: [reminder],
+          status: "ready",
+        });
+      }),
+    );
+    await mountPersonReminders({ archived: false, personId, workspaceId });
+    document.querySelector<HTMLFormElement>("[data-reminder-form]")!
+      .requestSubmit();
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector('[data-person-vital-value="next-reminder"]')
+          ?.textContent,
+      ).toBe("Unavailable")
+    );
+    expect(document.querySelector("[data-reminder-state]")?.textContent).toBe(
+      "1 reminder.",
+    );
+  });
+
   it.each(["clean", "declined", "accepted"])(
     "APR-002 gates incoming and outgoing local-editor switches when %s",
     async (decision) => {
@@ -312,6 +691,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
     personMarkup();
     const cadence = {
       id: "cadence",
+      isActive: true,
       intervalCount: 1,
       intervalUnit: "day",
       nextDueAt: "2026-08-19T10:00:00.000Z",
@@ -322,8 +702,10 @@ describe("PLANNING-002 reminder browser behavior", () => {
       .mockResolvedValueOnce(response(emptySnapshot))
       .mockResolvedValueOnce(response({ reminder, status: "created" }, 201))
       .mockResolvedValueOnce(response(emptySnapshot))
+      .mockResolvedValueOnce(response({ dueInformation: { status: "ready" } }))
       .mockResolvedValueOnce(response({ cadence, status: "created" }, 201))
-      .mockResolvedValueOnce(response(emptySnapshot));
+      .mockResolvedValueOnce(response(emptySnapshot))
+      .mockResolvedValueOnce(response({ dueInformation: { status: "ready" } }));
     vi.stubGlobal("fetch", fetchMock);
     await mountPersonReminders({ archived: false, personId, workspaceId });
 
@@ -335,7 +717,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
       new SubmitEvent("submit", { bubbles: true, cancelable: true }),
     );
     await vi.waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
       expect(reminderForm.hidden).toBe(true);
     });
 
@@ -347,7 +729,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
       new SubmitEvent("submit", { bubbles: true, cancelable: true }),
     );
     await vi.waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(5);
+      expect(fetchMock).toHaveBeenCalledTimes(7);
       expect(cadenceForm.hidden).toBe(true);
     });
   });
@@ -416,7 +798,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
     expect(successfulRow.textContent).toContain("Call Ada");
     expect(submit.disabled).toBe(true);
     successfulSave.resolve(response({ reminder, status: "created" }, 201));
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
     expect(successfulRow.isConnected).toBe(true);
 
     refresh.resolve(response({
@@ -441,6 +823,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
     const refresh = deferredResponse();
     const cadence = {
       id: "cadence",
+      isActive: true,
       intervalCount: 1,
       intervalUnit: "month",
       nextDueAt: "2026-09-18T10:00:00.000Z",
@@ -507,7 +890,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
     expect(successfulRow.textContent).toContain("Every 2 months");
     expect(submit.disabled).toBe(true);
     successfulSave.resolve(response({ cadence, status: "created" }, 201));
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
     expect(
       globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
     ).toBe(true);
@@ -545,6 +928,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
       vi.fn().mockResolvedValue(response({
         cadences: [{
           id: "cadence",
+          isActive: true,
           intervalCount: 1,
           intervalUnit: "month",
           nextDueAt: "2026-09-18T10:00:00.000Z",
@@ -653,7 +1037,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
     form.dispatchEvent(
       new SubmitEvent("submit", { bubbles: true, cancelable: true }),
     );
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
     const posts = fetchMock.mock.calls.filter((call) =>
       call[1]?.method === "POST"
     );

@@ -217,7 +217,19 @@ established in this pass.
 
 ### APR-006 — Make profile summary labels and counts truthful
 
-- [ ] **P2, ready.**
+- [x] **P2, delivered.** Stay in touch shows actual cadence or an unset value;
+      the reminder owner refreshes the authoritative Next reminder summary after
+      local writes and exposes refresh failure. Tags count assigned IDs, and
+      capped or paginated lists distinguish shown rows from known totals.
+      Mutation reloads discard obsolete pre-edit totals. The 162 affected tests
+      pass; profile/fact/reminder coverage is 96.02% line, 85.69% branch, and
+      91.22% function, while the rail helper reaches 100/96.66/100%. Chromium
+      `PEOPLE-006` verifies empty/populated tags and local cadence and reminder
+      summary updates. A review amendment serializes all reminder writes through
+      their authoritative refresh; six delayed-response regressions and all 35
+      reminder tests pass at 96.72/87.62/93.18% coverage. The amended Chromium
+      case and focused static checks pass. Existing refresh owners and API
+      contracts are preserved.
 - Evidence: the hero labels `person-profile-due-state` as “Stay in touch”, but
   `renderReady` in [people-profile.ts](../../apps/web/src/lib/people-profile.ts)
   fills it from aggregate `dueInformation.detail`. A person without cadence
