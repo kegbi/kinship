@@ -1437,7 +1437,7 @@ export async function mountProfileFacts(
           edit.className = "button-secondary";
           setFactActionLabel(edit, "Edit", summary(record, snapshot.options));
           edit.addEventListener("click", async () => {
-            if (!requestRailEditorOpen(target.form, true)) return;
+            if (!requestRailEditorOpen(target.form, true, edit)) return;
             const submit = target.form.querySelector<HTMLButtonElement>(
               'button[type="submit"]',
             );
@@ -1607,7 +1607,7 @@ export async function mountProfileFacts(
       target.list.insertAdjacentElement("afterend", pagination);
     }
     target.add.onclick = async () => {
-      if (!requestRailEditorOpen(target.form, true)) return;
+      if (!requestRailEditorOpen(target.form, true, target.add)) return;
       const submit = target.form.querySelector<HTMLButtonElement>(
         'button[type="submit"]',
       );

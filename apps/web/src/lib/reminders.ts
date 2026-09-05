@@ -210,7 +210,7 @@ export async function mountPersonReminders(options: {
     reminderAdd?.focus();
   });
   cadenceAdd?.addEventListener("click", () => {
-    if (!requestRailEditorOpen(cadenceForm)) return;
+    if (!requestRailEditorOpen(cadenceForm, false, cadenceAdd)) return;
     cadenceForm.hidden = false;
     cadenceForm.querySelector<HTMLElement>("input, select, textarea")?.focus();
   });
@@ -305,7 +305,7 @@ export async function mountPersonReminders(options: {
         markFormSaved(cadenceForm);
         cadenceForm.hidden = true;
         await load();
-      }
+      } else cadenceState.focus();
     } finally {
       optimisticRow.remove();
       cadenceSaving = false;

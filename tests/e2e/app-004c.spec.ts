@@ -221,6 +221,381 @@ async function expectAlignedControls(
 }
 
 test(
+  "[PEOPLE-006] APR-004 keeps mobile fact sheets modal and restores editor focus",
+  { annotation: { type: "flow", description: "PEOPLE-006" } },
+  async ({ browserName, page, request }, testInfo) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: 390, height: 844 });
+    const email = `mobile-editors-${browserName}-${Date.now()}@example.test`;
+    await registerVerified(request, email);
+    await signIn(page, email);
+    await page.goto("/app/people/new");
+    await page.getByLabel("Given name").fill("Mobile");
+    await page.getByLabel("Family name").fill("Editors");
+    await page.getByRole("button", { name: "Save person", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
+    await expect(
+      page.locator('.profile-facts-rail [data-section-state="loading"]'),
+    ).toHaveCount(0);
+    const food = page.locator("#profile-section-food-preferences");
+    const foodForm = food.locator("form");
+    const foodAdd = food.getByRole("button", {
+      name: "Add food preferences",
+      exact: true,
+    });
+    const foodField = foodForm.getByLabel(
+      "Food, allergy, and dietary preferences",
+    );
+    let acceptDiscard = false;
+    let decisions = 0;
+    page.on("dialog", async (dialog) => {
+      expect(dialog.message()).toBe(
+        "You have unsaved changes in this editor. Discard them and close the editor?",
+      );
+      decisions++;
+      if (acceptDiscard) await dialog.accept();
+      else await dialog.dismiss();
+    });
+
+    // Every existing rail consumer receives the same presentation boundary.
+    for (
+      const section of [
+        "food-preferences",
+        "pets",
+        "important-dates",
+        "stay-in-touch",
+        "relationships",
+        "contact-methods",
+        "addresses",
+        "first-meeting",
+        "work",
+      ]
+    ) {
+      const block = page.locator(`#profile-section-${section}`);
+      const opener = block.locator(".profile-rail-add");
+      const form = block.locator("form");
+      const title = await block.locator(".profile-section-heading h3")
+        .innerText();
+      await expect(opener).toBeVisible();
+      await expect(opener).toBeEnabled();
+      await openLocalEditor(opener, form);
+      const sheet = page.getByRole("dialog", { name: title, exact: true });
+      await expect(sheet).toBeVisible();
+      await expect(sheet).toHaveAttribute("aria-modal", "true");
+      expect(await sheet.evaluate((element) => element.matches(":modal")))
+        .toBe(true);
+      const first = form.locator(
+        "input:not([type=hidden]):visible:enabled, select:visible:enabled, textarea:visible:enabled, button:visible:enabled",
+      ).first();
+      const cancel = form.getByRole("button", { name: "Cancel", exact: true });
+      await first.focus();
+      await page.keyboard.press("Shift+Tab");
+      await expect(cancel).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(first).toBeFocused();
+      // Native modality must reject background focus, not only intercept Tab.
+      await opener.evaluate((element) => (element as HTMLElement).focus());
+      await expect(first).toBeFocused();
+      if (section === "food-preferences") {
+        await expectAccessible(page);
+        const scroll = await page.evaluate(() => scrollY);
+        await page.mouse.click(5, 5);
+        await page.mouse.wheel(0, 500);
+        await expect(sheet).toBeVisible();
+        expect(await page.evaluate(() => scrollY)).toBe(scroll);
+      }
+      await page.keyboard.press("Escape");
+      await expect(form).toBeHidden();
+      await expect(opener).toBeFocused();
+    }
+    expect(decisions).toBe(0);
+
+    await openLocalEditor(foodAdd, foodForm);
+    await foodField.fill("Keep this draft");
+    await page.keyboard.press("Escape");
+    await expect.poll(() => decisions).toBe(1);
+    await expect(foodField).toHaveValue("Keep this draft");
+    await expect(foodField).toBeFocused();
+    acceptDiscard = true;
+    await page.keyboard.press("Escape");
+    await expect.poll(() => decisions).toBe(2);
+    await expect(foodForm).toBeHidden();
+    await expect(foodAdd).toBeFocused();
+    await openLocalEditor(foodAdd, foodForm);
+    await expect(foodField).toHaveValue("");
+    await foodField.fill("Cancel explicitly discards");
+    await foodForm.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(foodAdd).toBeFocused();
+    expect(decisions).toBe(2);
+
+    // Resizing preserves the same form, draft, and focused control.
+    await openLocalEditor(foodAdd, foodForm);
+    await foodField.fill("Saved food preference");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(foodField).toBeFocused();
+    expect(
+      await foodForm.evaluate((element) => getComputedStyle(element).position),
+    ).toBe("static");
+    await page.setViewportSize({ width: 320, height: 568 });
+    await expect(
+      page.getByRole("dialog", { name: "Food preferences", exact: true }),
+    ).toBeVisible();
+    await expect(foodField).toBeFocused();
+    await expect(foodField).toHaveValue("Saved food preference");
+    let releaseSave!: () => void;
+    const saveBlocked = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    await page.route("**/facts/food-preferences", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      await saveBlocked;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/problem+json",
+        body: JSON.stringify({
+          type: "about:blank",
+          title: "Temporarily unavailable",
+          status: 503,
+          detail: "Mobile save is temporarily unavailable.",
+        }),
+      });
+    });
+    acceptDiscard = false;
+    await foodForm.getByRole("button", {
+      name: "Save profile fact",
+      exact: true,
+    }).click();
+    await expect(foodForm).toHaveAttribute("inert", "");
+    await page.keyboard.press("Escape");
+    await expect(
+      page.getByRole("dialog", { name: "Food preferences", exact: true }),
+    ).toBeVisible();
+    expect(decisions).toBe(2);
+    releaseSave();
+    await expect(foodForm.locator("[data-profile-fact-form-state]")).toHaveText(
+      "Mobile save is temporarily unavailable.",
+    );
+    await expect(foodForm.locator("[data-profile-fact-form-state]"))
+      .toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect.poll(() => decisions).toBe(3);
+    await expect(foodField).toHaveValue("Saved food preference");
+    await page.unroute("**/facts/food-preferences");
+    await foodForm.getByRole("button", {
+      name: "Save profile fact",
+      exact: true,
+    }).click();
+    await expect(foodForm).toBeHidden();
+    await expect(food.locator("[data-profile-fact-state]")).toBeFocused();
+    const editFood = food.getByRole("button", {
+      name: /^Edit Saved food preference/,
+    });
+    await openLocalEditor(editFood, foodForm);
+    await foodForm.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(editFood).toBeFocused();
+
+    // A long editor scrolls within the viewport; keyboard focus remains visible.
+    const dates = page.locator("#profile-section-important-dates");
+    const dateForm = dates.locator("form");
+    for (
+      const viewport of [{ width: 320, height: 568 }, {
+        width: 390,
+        height: 360,
+      }]
+    ) {
+      await page.setViewportSize(viewport);
+      await openLocalEditor(dates.locator(".profile-rail-add"), dateForm);
+      const sheet = page.getByRole("dialog", {
+        name: "Important dates",
+        exact: true,
+      });
+      const bounds = await sheet.boundingBox();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+      expect(bounds!.y).toBeGreaterThanOrEqual(0);
+      expect(Math.abs(bounds!.y + bounds!.height - viewport.height))
+        .toBeLessThanOrEqual(1);
+      expect(
+        await sheet.evaluate((element) =>
+          element.scrollHeight > element.clientHeight
+        ),
+      ).toBe(true);
+      await dateForm.getByRole("button", { name: "Cancel", exact: true })
+        .focus();
+      const cancelBounds = await dateForm.getByRole("button", {
+        name: "Cancel",
+        exact: true,
+      }).boundingBox();
+      expect(cancelBounds!.y).toBeGreaterThan(bounds!.y);
+      expect(cancelBounds!.y + cancelBounds!.height).toBeLessThanOrEqual(
+        viewport.height - 4,
+      );
+      expect(await sheet.evaluate((element) => element.scrollTop))
+        .toBeGreaterThan(0);
+      await expectAccessible(page);
+      if (viewport.height === 360) {
+        const screenshotPath = testInfo.outputPath(
+          "mobile-sheet-390-short.png",
+        );
+        await page.screenshot({ path: screenshotPath });
+        await testInfo.attach("mobile-sheet-390-short", {
+          path: screenshotPath,
+          contentType: "image/png",
+        });
+        await page.emulateMedia({ forcedColors: "active" });
+        await page.screenshot({
+          path: testInfo.outputPath("mobile-sheet-forced-colors.png"),
+        });
+      }
+      expect(
+        await dateForm.getByRole("button", { name: "Cancel", exact: true })
+          .evaluate((element) => {
+            const style = getComputedStyle(element);
+            return Number.parseFloat(style.outlineWidth) >= 2 &&
+              Number.parseFloat(style.outlineOffset) >= 2;
+          }),
+      ).toBe(true);
+      await page.keyboard.press("Escape");
+    }
+    expect(decisions).toBe(3);
+    await page.reload();
+    await expect(food).toContainText("Saved food preference");
+  },
+);
+
+test(
+  "[PEOPLE-006] APR-004 keeps relationship and cadence errors inside mobile editors",
+  { annotation: { type: "flow", description: "PEOPLE-006" } },
+  async ({ browserName, page, request }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: 390, height: 844 });
+    const email = `mobile-errors-${browserName}-${Date.now()}@example.test`;
+    await registerVerified(request, email);
+    await signIn(page, email);
+    for (const name of ["Charles", "Mobile errors"]) {
+      await page.goto("/app/people/new");
+      await page.getByLabel("Given name").fill(name);
+      await page.getByRole("button", { name: "Save person", exact: true })
+        .click();
+      await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
+    }
+    const relationships = page.locator("#profile-section-relationships");
+    const form = relationships.locator("#relationship-form");
+    const opener = relationships.getByRole("button", {
+      name: "Add relationship",
+      exact: true,
+    });
+    await expect(opener).toBeVisible();
+    await openLocalEditor(opener, form);
+    const sheet = page.getByRole("dialog", {
+      name: "Relationships",
+      exact: true,
+    });
+    const feedback = sheet.locator("#relationships-state");
+    const save = form.getByRole("button", {
+      name: "Save relationship",
+      exact: true,
+    });
+    await save.click();
+    await expect(feedback).toHaveText(
+      "Choose or create another person and select a relationship type.",
+    );
+    await expect(feedback).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(form.getByLabel("Search people", { exact: true }))
+      .toBeFocused();
+
+    await page.route("**/api/v1/people?*", (route) => route.abort("failed"));
+    await form.getByLabel("Search people", { exact: true }).fill("Charles");
+    await form.getByRole("button", { name: "Search people", exact: true })
+      .click();
+    await expect(feedback).toHaveText(
+      "People search is temporarily unavailable. Try again.",
+    );
+    await expect(feedback).toBeFocused();
+    await expect(form.getByLabel("Search people", { exact: true })).toHaveValue(
+      "Charles",
+    );
+    await page.unroute("**/api/v1/people?*");
+    await form.getByRole("button", { name: "Search people", exact: true })
+      .click();
+    await form.getByRole("combobox", { name: "Related person", exact: true })
+      .selectOption({
+        label: "Charles",
+      });
+    await form.getByRole("combobox", { name: "Relationship type", exact: true })
+      .selectOption({
+        index: 1,
+      });
+    await page.route(
+      "**/relationships",
+      (route) =>
+        route.request().method() === "POST"
+          ? route.abort("failed")
+          : route.fallback(),
+    );
+    await save.click();
+    await expect(feedback).toHaveText(
+      "Relationship creation is temporarily unavailable.",
+    );
+    await expect(feedback).toBeFocused();
+    await page.unroute("**/relationships");
+    await form.getByRole("combobox", { name: "Related person", exact: true })
+      .selectOption("");
+    await form.getByLabel("New person given name", { exact: true }).fill(
+      "Draft person",
+    );
+    await page.route(
+      "**/relationships/related-person",
+      (route) => route.abort("failed"),
+    );
+    await save.click();
+    await expect(feedback).toHaveText(
+      "Related person creation is temporarily unavailable.",
+    );
+    await expect(feedback).toBeFocused();
+    await expect(form.getByLabel("New person given name", { exact: true }))
+      .toHaveValue("Draft person");
+    await expectAccessible(page);
+    await form.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(opener).toBeFocused();
+    await expect(relationships.locator(":scope > #relationships-state"))
+      .toBeVisible();
+
+    const cadence = page.locator("#profile-section-stay-in-touch");
+    const cadenceForm = cadence.locator("form");
+    await openLocalEditor(cadence.locator(".profile-rail-add"), cadenceForm);
+    await cadenceForm.getByLabel("Reconnect every").fill("4");
+    await page.route(
+      "**/stay-in-touch-cadences",
+      (route) =>
+        route.request().method() === "POST"
+          ? route.abort("failed")
+          : route.fallback(),
+    );
+    await cadenceForm.getByRole("button", { name: "Save cadence", exact: true })
+      .click();
+    const cadenceSheet = page.getByRole("dialog", {
+      name: "Stay in touch",
+      exact: true,
+    });
+    const cadenceFeedback = cadenceSheet.locator("[data-cadence-state]");
+    await expect(cadenceFeedback).toHaveText("Cadence could not be saved.");
+    await expect(cadenceFeedback).toBeFocused();
+    await expect(cadenceForm.getByLabel("Reconnect every")).toHaveValue("4");
+    await page.keyboard.press("Tab");
+    await expect(cadenceForm.getByLabel("Reconnect every")).toBeFocused();
+    await expectAccessible(page);
+    await cadenceForm.getByRole("button", { name: "Cancel", exact: true })
+      .click();
+    await expect(cadence.locator(":scope > [data-cadence-state]"))
+      .toBeVisible();
+  },
+);
+
+test(
   "[PEOPLE-006] APR-003 retries failed fact reads without losing adjacent drafts",
   { annotation: { type: "flow", description: "PEOPLE-006" } },
   async ({ browserName, page, request }) => {
@@ -926,9 +1301,8 @@ test(
       }
       if (width < 600) {
         expect(
-          await editor.evaluate((element) =>
-            getComputedStyle(element).position
-          ),
+          await page.getByRole("dialog", { name: "Addresses", exact: true })
+            .evaluate((element) => getComputedStyle(element).position),
         ).toBe("fixed");
       }
       await editor.getByRole("button", { name: "Cancel" }).press("Enter");

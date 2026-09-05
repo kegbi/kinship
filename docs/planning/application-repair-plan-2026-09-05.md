@@ -138,7 +138,19 @@ established in this pass.
 
 ### APR-004 — Make mobile fact editors behave as actual dialogs
 
-- [ ] **P1, ready after APR-002.**
+- [x] **P1, delivered.** One shared native-dialog presentation keeps the nine
+      mobile rail editors labeled, keyboard-contained, and independently
+      scrollable, with background interaction excluded. Escape consults the
+      existing discard guard; dismissal restores the opener, and desktop editing
+      remains inline. The 186 affected tests pass at 95.80% line, 85.02% branch,
+      and 89.75% function coverage; the new presentation helper reaches 100%
+      line/function and 91.83% branch coverage. The affected Chromium
+      date/profile flows, ordinary axe, short-phone and forced-color visual
+      checks, static checks, and five product-contract checks pass. The review
+      amendment keeps relationship and cadence feedback inside the modal. Its
+      focused browser failures, 96 affected tests, and scoped
+      presentation/reminder coverage (96.10% line, 84.58% branch, 88% function)
+      pass.
 - Evidence: mobile `.profile-rail-block > form:not([hidden])` rules in
   [person.css](../../apps/web/src/styles/person.css) fix a normal form to the
   viewport and draw a scrim with `pointer-events: none`. At 390×844, three Tabs

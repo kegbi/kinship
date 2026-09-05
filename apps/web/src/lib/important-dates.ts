@@ -351,7 +351,7 @@ function render(
   dates: readonly ImportantDate[],
   archived: boolean,
   now: Date,
-  onEdit: (date: ImportantDate) => void,
+  onEdit: (date: ImportantDate, opener: HTMLButtonElement) => void,
   onDelete: (date: ImportantDate, button: HTMLButtonElement) => void,
 ): void {
   ui.list.replaceChildren();
@@ -380,7 +380,7 @@ function render(
       edit.type = "button";
       edit.className = "button-secondary";
       edit.textContent = `Edit ${title(date)}`;
-      edit.addEventListener("click", () => onEdit(date));
+      edit.addEventListener("click", () => onEdit(date, edit));
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "button-danger";
@@ -460,8 +460,8 @@ export async function mountImportantDates(
       dates,
       lifecycleArchived,
       new Date(),
-      (date) => {
-        if (!requestRailEditorOpen(ui.form, true)) return;
+      (date, opener) => {
+        if (!requestRailEditorOpen(ui.form, true, opener)) return;
         fill(ui, date);
         ui.form.hidden = false;
         ui.form.querySelector<HTMLElement>("input:not([type=hidden]), select")
@@ -508,7 +508,7 @@ export async function mountImportantDates(
   ui.kind.addEventListener("change", () => applyKind(ui));
   ui.precision.addEventListener("change", () => applyPrecision(ui));
   ui.add.addEventListener("click", () => {
-    if (!requestRailEditorOpen(ui.form, true)) return;
+    if (!requestRailEditorOpen(ui.form, true, ui.add)) return;
     fill(ui);
     ui.form.hidden = false;
     ui.kind.focus();
