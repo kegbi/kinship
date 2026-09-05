@@ -246,7 +246,18 @@ established in this pass.
 
 ### APR-007 — Reduce mobile shell chrome and fix stylesheet ownership
 
-- [ ] **P2, ready.**
+- [x] **P2, delivered.** The mobile header uses two rows (114px versus the
+      reproduced 221px), with labeled search/capture/menu actions and all four
+      primary links. Add person remains in the mobile member menu; Escape,
+      outside click, and focus departure dismiss it. Responsive shell rules live
+      in `shell.css`, and a narrow directory-grid breakpoint fixes overflow at
+      768px. All 41 shell tests and 30 affected presentation checks pass; shell
+      coverage is 98.97% line, 91.36% branch, and 86.66% function. Chromium
+      `APP-002C` checks all 12 route/width combinations, long workspace names,
+      short-screen menus, keyboard/focus behavior, search/capture, and desktop
+      order. A review amendment preserves the menu and restores focus after
+      failed workspace-switch/sign-out actions; focused and Chromium regressions
+      pass. Before/after screenshots were visually reviewed; static checks pass.
 - Evidence: at 390×844 the shared header occupied approximately **220px** before
   any page content: brand/search, primary navigation, quick actions, then a
   wrapped Member menu. Its responsive rules live in `person.css`, even though

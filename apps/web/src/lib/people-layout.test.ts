@@ -10,6 +10,10 @@ const createPage = readFileSync(
   "utf8",
 );
 const applicationStyles = readApplicationStylesheet();
+const personStyles = readFileSync(
+  resolve("apps/web/src/styles/person.css"),
+  "utf8",
+);
 const applicationLayout = readFileSync(
   resolve("apps/web/src/layouts/ApplicationLayout.astro"),
   "utf8",
@@ -412,7 +416,7 @@ describe("people form layout regressions", () => {
       /\.person-workspace-navigation\s*\{[^}]*--person-navigation-top:\s*6rem;[^}]*position:\s*sticky;[^}]*top:\s*var\(--person-navigation-top\);[^}]*background:\s*var\(--surface-page\);/s,
     );
     expect(applicationStyles).toMatch(
-      /@media \(max-width: 1050px\)[\s\S]*?\[data-page-id="people.profile"\] \.app-header\s*\{[^}]*position:\s*static;/s,
+      /@media \(max-width: 1050px\)[\s\S]*?\.app-header\s*\{[^}]*position:\s*static;/s,
     );
     expect(applicationStyles).toMatch(
       /@media \(max-width: 1050px\)[\s\S]*?\.person-workspace-navigation\s*\{[^}]*--person-navigation-top:\s*var\(--space-2\);/s,
@@ -438,16 +442,16 @@ describe("people form layout regressions", () => {
     expect(applicationStyles).toMatch(
       /\.person-zone \.profile-section-card\s*\{[^}]*scroll-margin-top:\s*10\.5rem;/s,
     );
-    const mobileSwitcher = applicationStyles.slice(
-      applicationStyles.indexOf(
+    const mobileSwitcher = personStyles.slice(
+      personStyles.indexOf(
         ".zone-switcher {",
-        applicationStyles.indexOf("@media (max-width: 760px)"),
+        personStyles.indexOf("@media (max-width: 760px)"),
       ),
-      applicationStyles.indexOf(
+      personStyles.indexOf(
         "}",
-        applicationStyles.indexOf(
+        personStyles.indexOf(
           ".zone-switcher {",
-          applicationStyles.indexOf("@media (max-width: 760px)"),
+          personStyles.indexOf("@media (max-width: 760px)"),
         ),
       ),
     );

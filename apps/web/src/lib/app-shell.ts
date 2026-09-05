@@ -300,10 +300,35 @@ export async function mountApplicationShell(
     "#member-menu-toggle",
   );
   const menu = document.querySelector<HTMLElement>("#member-popover");
+  const closeMenu = (): void => {
+    if (menu) menu.hidden = true;
+    menuToggle?.setAttribute("aria-expanded", "false");
+  };
+  const insideMenu = (target: EventTarget | null): boolean =>
+    target instanceof Node &&
+    (menu?.contains(target) === true || menuToggle?.contains(target) === true);
   menuToggle?.addEventListener("click", () => {
     if (!menu) return;
     menu.hidden = !menu.hidden;
     menuToggle.setAttribute("aria-expanded", String(!menu.hidden));
+  });
+  elements.root.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || menu?.hidden !== false) return;
+    event.preventDefault();
+    closeMenu();
+    menuToggle?.focus();
+  });
+  elements.root.addEventListener("pointerdown", (event) => {
+    if (!insideMenu(event.target)) closeMenu();
+  });
+  elements.root.addEventListener("focusout", (event) => {
+    // A pending action can disable its focused control without moving focus elsewhere.
+    if (
+      event.relatedTarget !== null && insideMenu(event.target) &&
+      !insideMenu(event.relatedTarget)
+    ) {
+      closeMenu();
+    }
   });
 
   elements.select.addEventListener("change", async () => {

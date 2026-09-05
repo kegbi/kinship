@@ -7,6 +7,8 @@ import {
 import axe from "axe-core";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -87,6 +89,7 @@ async function mailToken(
 async function createVerifiedUser(
   request: APIRequestContext,
   email: string,
+  workspaceName = "Analytical circle",
 ): Promise<void> {
   const registered = await request.post(`${origin}/api/v1/registrations`, {
     data: {
@@ -94,7 +97,7 @@ async function createVerifiedUser(
       firstName: "Ada",
       lastName: "Lovelace",
       password: "correct horse battery staple",
-      workspaceName: "Analytical circle",
+      workspaceName,
     },
   });
   expect(registered.status()).toBe(202);
@@ -199,6 +202,238 @@ async function keyboardReachSignOutWithSingleWorkspace(
 }
 
 test(
+  "[APP-002C] [APR-007] keeps mobile navigation and actions compact and keyboard reachable",
+  { annotation: { type: "leaf", description: "APP-002C" } },
+  async ({ browserName, page, request }) => {
+    test.setTimeout(120_000);
+    const email = `apr-007-${browserName}-${Date.now()}@example.test`;
+    const workspaceName =
+      "Family, friends and community across many places and generations";
+    await createVerifiedUser(request, email, workspaceName);
+    const secondWorkspaceId = randomUUID();
+    databaseSql(`
+      insert into crm.workspaces (id, name, status, created_by_user_id)
+      select '${secondWorkspaceId}'::uuid, ${
+      sqlLiteral(`${workspaceName} overseas`)
+    }, 'active', id
+        from crm.users where email = ${sqlLiteral(email)};
+      insert into crm.workspace_members (id, workspace_id, user_id, role, status, joined_at)
+      select '${randomUUID()}'::uuid, '${secondWorkspaceId}'::uuid, id, 'member', 'active', now()
+        from crm.users where email = ${sqlLiteral(email)};
+    `);
+    await signIn(page, email);
+    const artifactDirectory = join(
+      process.cwd(),
+      ".artifacts",
+      "apr-007-review",
+    );
+    await mkdir(artifactDirectory, { recursive: true });
+    const screenshotPhase = process.env.APR007_SCREENSHOT_PHASE ?? "after";
+    const routes = [
+      ["today", "/app"],
+      ["people", "/app/people"],
+      ["tasks", "/app/tasks"],
+      ["settings", "/app/settings"],
+    ] as const;
+    const headerHeights: number[] = [];
+    for (const width of [320, 390, 768]) {
+      await page.setViewportSize({ width, height: 844 });
+      for (const [name, route] of routes) {
+        await page.goto(route);
+        await expect(page.locator("#protected-shell")).toBeVisible();
+        await expect(page.locator("header [data-quick-capture]")).toBeEnabled();
+        await page.waitForLoadState("networkidle");
+        await page.screenshot({
+          path: join(
+            artifactDirectory,
+            `${screenshotPhase}-${browserName}-${name}-${width}.png`,
+          ),
+        });
+        const header = (await page.locator(".app-header").boundingBox())!;
+        headerHeights.push(header.height);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth))
+          .toBe(width);
+        expect((await page.locator("main h1").boundingBox())!.y)
+          .toBeGreaterThanOrEqual(header.height);
+        const navigation = page.getByRole("navigation", {
+          name: "Primary navigation",
+        });
+        for (
+          const [label, href] of [
+            ["Today", "/app"],
+            ["People", "/app/people"],
+            ["Tasks", "/app/tasks"],
+            ["Journal", "/app/journal"],
+          ]
+        ) {
+          const link = navigation.getByRole("link", {
+            name: label,
+            exact: true,
+          });
+          await expect(link).toHaveAttribute("href", href);
+          await expect(link).toBeInViewport();
+          const box = (await link.boundingBox())!;
+          expect(box.width).toBeGreaterThanOrEqual(44);
+          expect(box.height).toBeGreaterThanOrEqual(44);
+        }
+        const toggle = page.getByRole("button", { name: "Open member menu" });
+        await toggle.click();
+        await expect(
+          page.locator(".app-header").getByRole("link", {
+            name: "Add person",
+            exact: true,
+          }),
+        ).toHaveAttribute("href", "/app/people/new");
+        await expect(page.getByLabel("Active workspace")).toBeInViewport();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth))
+          .toBe(width);
+        await page.keyboard.press("Escape");
+        await expect(toggle).toBeFocused();
+        await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      }
+    }
+    expect(Math.max(...headerHeights)).toBeLessThanOrEqual(124);
+
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.goto("/app");
+    await expect(page.locator("header [data-quick-capture]")).toBeEnabled();
+    const search = page.getByRole("button", {
+      name: "Find a person",
+      exact: true,
+    });
+    const capture = page.getByRole("button", {
+      name: "Quick capture",
+      exact: true,
+    });
+    const toggle = page.getByRole("button", { name: "Open member menu" });
+    for (
+      const target of [
+        page.getByRole("link", { name: "Skip to main content" }),
+        page.getByRole("link", { name: "Kinship Today" }),
+        ...["Today", "People", "Tasks", "Journal"].map((name) =>
+          page.getByRole("navigation", { name: "Primary navigation" })
+            .getByRole("link", { name, exact: true })
+        ),
+        search,
+        capture,
+        toggle,
+      ]
+    ) {
+      await page.keyboard.press("Tab");
+      await expect(target).toBeFocused();
+      await expect(target).toBeInViewport();
+      expect(
+        await target.evaluate((element) =>
+          getComputedStyle(element).outlineStyle
+        ),
+      ).not.toBe("none");
+    }
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Tab");
+    await expect(page.getByLabel("Active workspace")).toBeFocused();
+    await expect(page.getByLabel("Active workspace")).toBeInViewport();
+    await page.screenshot({
+      path: join(
+        artifactDirectory,
+        `${screenshotPhase}-${browserName}-menu-320-short.png`,
+      ),
+    });
+    await expectAccessible(page);
+    for (
+      const target of [
+        page.locator(".app-header").getByRole("link", {
+          name: "Add person",
+          exact: true,
+        }),
+        page.getByRole("link", { name: "Profile", exact: true }),
+        page.getByRole("link", { name: "Settings", exact: true }),
+        page.getByRole("button", { name: "Sign out", exact: true }),
+      ]
+    ) {
+      await page.keyboard.press("Tab");
+      await expect(target).toBeFocused();
+      await expect(target).toBeInViewport();
+    }
+    await page.keyboard.press("Tab");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await toggle.click();
+    await page.locator(".app-header").click({ position: { x: 4, y: 4 } });
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    await search.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog", { name: "Find a person" }))
+      .toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(search).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(capture).toBeFocused();
+    await page.keyboard.press("Enter");
+    const captureDialog = page.getByRole("dialog", {
+      name: "Record an activity or note",
+    });
+    await expect(captureDialog).toBeVisible();
+    await expect(captureDialog.getByLabel("What are you recording?"))
+      .toBeEnabled();
+    await page.keyboard.press("Escape");
+    await expect(captureDialog).toBeHidden();
+    await expect(capture).toBeFocused();
+
+    await toggle.click();
+    await page.locator(".app-header").getByRole("link", {
+      name: "Add person",
+      exact: true,
+    }).click();
+    await expect(page).toHaveURL(/\/app\/people\/new$/);
+    await expect(page.locator("main h1")).toBeVisible();
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/app");
+    await expect(capture).toBeEnabled();
+    await keyboardReachMemberMenuToggle(page);
+    await expect(page.locator(".app-header")).toHaveCSS("position", "sticky");
+    await page.screenshot({
+      path: join(
+        artifactDirectory,
+        `${screenshotPhase}-${browserName}-today-1280.png`,
+      ),
+    });
+    await page.keyboard.press("Enter");
+    const switcher = page.getByLabel("Active workspace");
+    const activeWorkspaceId = await switcher.inputValue();
+    for (const action of ["workspace", "sign-out"] as const) {
+      let releaseRequest!: () => void;
+      const pending = new Promise<void>((resolve) => releaseRequest = resolve);
+      const endpoint = action === "workspace" ? "session" : "sign-out";
+      await page.route(`**/api/v1/${endpoint}`, async (route) => {
+        await pending;
+        await route.abort("failed");
+      });
+      const control = action === "workspace"
+        ? switcher
+        : page.getByRole("button", { name: "Sign out", exact: true });
+      await control.focus();
+      if (action === "workspace") {
+        await switcher.selectOption(secondWorkspaceId);
+      } else await page.keyboard.press("Enter");
+      await expect(control).toBeDisabled();
+      await expect(page.locator("#member-popover")).toBeVisible();
+      releaseRequest();
+      await expect(control).toBeEnabled();
+      await expect(control).toBeFocused();
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      await expect(page.locator("#app-toasts")).toContainText(
+        action === "workspace"
+          ? "current workspace was not changed"
+          : "could not be revoked",
+      );
+      await expect(switcher).toHaveValue(activeWorkspaceId);
+      await page.unroute(`**/api/v1/${endpoint}`);
+    }
+  },
+);
+
+test(
   "[APP-002C] protects the responsive Today and settings shells across workspace and session states",
   { annotation: { type: "leaf", description: "APP-002C" } },
   async ({ browser, browserName, context, page, request }) => {
@@ -278,6 +513,7 @@ test(
     expect(peopleNavigationBox!.width).toBeGreaterThanOrEqual(44);
     expect(peopleNavigationBox!.height).toBeGreaterThanOrEqual(44);
     const addAction = page.getByRole("link", { name: "Add person" });
+    await page.getByRole("button", { name: "Open member menu" }).click();
     await expect(addAction).toBeVisible();
     await expect(addAction).toHaveAttribute("href", "/app/people/new");
     const addActionBox = await addAction.boundingBox();

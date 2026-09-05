@@ -20,6 +20,8 @@
 
 .brand {
   display: inline-flex;
+  min-height: 44px;
+  min-width: 44px;
   gap: var(--space-2);
   align-items: center;
   font-family: Georgia, serif;
@@ -141,11 +143,19 @@
   right: 0;
   display: grid;
   width: 18rem;
+  max-width: calc(100vw - 1rem);
+  max-height: calc(100dvh - 6rem);
+  overflow-y: auto;
   padding: var(--space-2);
   border: 1px solid var(--line-1);
   border-radius: .9rem;
   background: var(--surface-1);
   box-shadow: var(--shadow-2);
+}
+
+.compact-action-label,
+.member-popover .compact-add-person {
+  display: none;
 }
 
 .menu-workspace {
@@ -368,4 +378,124 @@
   color: var(--ink-2);
   background: var(--accent-soft);
   line-height: 1.55;
+}
+
+@media (max-width: 1050px) {
+  .app-header {
+    position: static;
+  }
+
+  .header-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: var(--space-2);
+    padding-block: var(--space-2);
+  }
+
+  .brand {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .primary-nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: start;
+    /* Keep focus outlines inside the navigation's scrollport. */
+    padding: var(--space-1);
+    margin: calc(-1 * var(--space-1));
+    overflow-x: auto;
+  }
+
+  .global-search {
+    grid-column: 2;
+    grid-row: 1;
+    width: auto;
+    justify-self: end;
+  }
+
+  .global-search > .global-people-search-input {
+    display: none;
+  }
+
+  .global-search > button.global-people-search-open {
+    display: inline-flex;
+    min-height: 44px;
+    padding-inline: var(--space-3);
+    border-radius: var(--radius-pill);
+  }
+
+  .global-actions {
+    grid-column: 3;
+    grid-row: 1;
+    justify-content: end;
+  }
+
+  .global-actions > a,
+  .desktop-action-label {
+    display: none;
+  }
+
+  .compact-action-label {
+    display: inline;
+  }
+
+  .member-popover .compact-add-person {
+    display: flex;
+  }
+
+  .member-popover {
+    top: calc(100% + var(--space-2));
+    max-height: calc(100dvh - 4rem);
+  }
+}
+
+@media (max-width: 760px) {
+  .header-row {
+    width: calc(100% - 1rem);
+  }
+
+  .brand > span:last-child {
+    display: none;
+  }
+
+  .global-actions button,
+  .member-menu > button {
+    min-width: 44px;
+    padding-inline: var(--space-3);
+  }
+
+  .primary-nav {
+    gap: 0;
+  }
+
+  .primary-nav > * {
+    padding-inline: var(--space-3);
+  }
+
+  .future-nav small {
+    display: none;
+  }
+
+  .member-popover {
+    width: calc(100vw - 1rem);
+  }
+
+  .global-people-search-dialog {
+    width: calc(100% - 1rem);
+    max-height: calc(100dvh - 1rem);
+  }
+
+  .global-people-search-palette {
+    padding: var(--space-4);
+  }
+
+  .page-frame {
+    width: calc(100% - 1rem);
+    padding-top: var(--space-6);
+  }
+
+  .page-heading {
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+  }
 }

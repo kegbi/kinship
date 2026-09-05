@@ -20,7 +20,9 @@ prerequisite queues.
   recoverable when browser storage is unavailable. **APR-011** connects the
   existing API-token/DAV aggregate gates; `REL-030/031` track unrelated
   aggregate gate failures. **APR-006** makes profile summaries and counts
-  truthful. Continue with **APR-007**, for a compact mobile application header.
+  truthful. **APR-007** compacts the mobile header and corrects shared
+  stylesheet ownership. Continue with **APR-008**, applying saved person-name
+  and sort preferences.
 - **Phase 12 is accepted.** `REL-029` is delivered; `REL-020` and `REL-025`
   remain watches. Phase 11's `OPS-001E` deployment work stays parked until
   explicitly requested.

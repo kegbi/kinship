@@ -1722,6 +1722,12 @@
   background: var(--surface-1);
 }
 
+@media (max-width: 1050px) {
+  .people-directory-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .people-directory-controls label {
   display: grid;
   gap: var(--space-2);
@@ -1933,56 +1939,8 @@
 }
 
 @media (max-width: 1050px) {
-  [data-page-id="people.profile"] .app-header {
-    position: static;
-  }
-
   .person-workspace-navigation {
     --person-navigation-top: var(--space-2);
-  }
-
-  .header-row {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    padding-block: var(--space-2);
-  }
-
-  .brand {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .primary-nav {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    justify-content: start;
-    /* Leave room for the outline inside the horizontal scrollport. */
-    padding: var(--space-1);
-    margin: calc(-1 * var(--space-1));
-    overflow-x: auto;
-  }
-
-  .global-search {
-    grid-column: 2;
-    grid-row: 1;
-    width: auto;
-    justify-self: end;
-  }
-
-  .global-search > .global-people-search-input {
-    display: none;
-  }
-
-  .global-search > button.global-people-search-open {
-    display: inline-flex;
-    width: 44px;
-    padding: 0;
-    border-radius: 50%;
-  }
-
-  .global-actions {
-    grid-column: 3;
-    grid-row: 1;
-    justify-content: end;
   }
 }
 
@@ -1992,66 +1950,6 @@
     grid-template-columns: 1fr;
   }
 
-  .header-row {
-    grid-template-columns: auto auto minmax(0, 1fr);
-    gap: var(--space-2);
-    width: calc(100% - 1rem);
-  }
-
-  .brand > span:last-child {
-    display: none;
-  }
-
-  .global-actions {
-    grid-column: 1 / -1;
-    grid-row: 3;
-    flex-wrap: wrap;
-    justify-content: start;
-  }
-
-  .global-search {
-    grid-column: 2;
-    grid-row: 1;
-  }
-
-  .global-actions button,
-  .member-menu > button {
-    min-width: 44px;
-    padding-inline: var(--space-3);
-  }
-
-  .primary-nav {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    gap: 0;
-  }
-
-  .primary-nav > * {
-    padding-inline: var(--space-3);
-  }
-
-  .future-nav small {
-    display: none;
-  }
-
-  .member-popover {
-    position: fixed;
-    top: 4.5rem;
-    right: .5rem;
-    left: .5rem;
-    width: auto;
-  }
-
-  .global-people-search-dialog {
-    width: calc(100% - 1rem);
-    max-height: calc(100dvh - 1rem);
-  }
-
-  .global-people-search-palette {
-    padding: var(--space-4);
-  }
-
-  .page-frame,
   .settings-page {
     width: calc(100% - 1rem);
     padding-top: var(--space-6);
@@ -2077,7 +1975,6 @@
     grid-column: auto;
   }
 
-  .page-heading,
   .settings-heading,
   .settings-layout {
     grid-template-columns: 1fr;
