@@ -242,7 +242,7 @@ const spacingExceptions = [
     // The visually hidden legend uses the standard clipping offset.
   },
   {
-    path: "apps/web/src/styles/person.css",
+    path: "apps/web/src/styles/shell.css",
     selector: ".primary-nav",
     property: "margin",
     value: "calc(-1 * var(--space-1))",

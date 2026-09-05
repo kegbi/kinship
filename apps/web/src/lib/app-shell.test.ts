@@ -79,6 +79,117 @@ afterEach(() => {
 });
 
 describe("APP-002C protected application shell", () => {
+  it.each(["workspace", "sign-out"] as const)(
+    "APR-007 keeps the menu open when pending %s disables its focused control",
+    async (action) => {
+      shellMarkup();
+      const workspaces = [
+        { id: "00000000-0000-4000-8000-000000000001", name: "Family" },
+        { id: "00000000-0000-4000-8000-000000000002", name: "Community" },
+      ];
+      let finishRequest!: (result: Response) => void;
+      const pending = new Promise<Response>((resolve) =>
+        finishRequest = resolve
+      );
+      vi.stubGlobal(
+        "fetch",
+        vi.fn()
+          .mockResolvedValueOnce(
+            response(session(workspaces[0]!.id, workspaces)),
+          )
+          .mockReturnValueOnce(pending),
+      );
+      const navigate = vi.fn();
+      await mountApplicationShell(navigate);
+      const toggle = document.querySelector<HTMLButtonElement>(
+        "#member-menu-toggle",
+      )!;
+      const menu = document.querySelector<HTMLElement>("#member-popover")!;
+      const control = document.querySelector<
+        HTMLSelectElement | HTMLButtonElement
+      >(
+        action === "workspace" ? "#workspace-switcher" : "#member-sign-out",
+      )!;
+      toggle.click();
+      control.focus();
+      if (action === "workspace") {
+        control.value = workspaces[1]!.id;
+        control.dispatchEvent(new Event("change", { bubbles: true }));
+      } else {
+        control.click();
+      }
+      expect(control.disabled).toBe(true);
+      // Disabling a focused control blurs it without a new focus destination in Chromium.
+      control.blur();
+      control.dispatchEvent(
+        new FocusEvent("focusout", {
+          bubbles: true,
+          relatedTarget: null,
+        }),
+      );
+      const hiddenWhilePending = menu.hidden;
+      finishRequest(response({ title: "Temporarily unavailable" }, 503));
+      await vi.waitFor(() => expect(control.disabled).toBe(false));
+      expect(hiddenWhilePending).toBe(false);
+      expect(menu.hidden).toBe(false);
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      expect(document.activeElement).toBe(control);
+      expect(navigate).not.toHaveBeenCalled();
+      if (action === "workspace") expect(control.value).toBe(workspaces[0]!.id);
+    },
+  );
+
+  it("APR-007 dismisses the member menu with Escape and restores its toggle", async () => {
+    shellMarkup();
+    cacheSession(session());
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(session())));
+    await mountApplicationShell(vi.fn());
+    const toggle = document.querySelector<HTMLButtonElement>(
+      "#member-menu-toggle",
+    )!;
+    const menu = document.querySelector<HTMLElement>("#member-popover")!;
+    toggle.click();
+    menu.querySelector<HTMLAnchorElement>("a")!.focus();
+    document.activeElement!.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    expect(menu.hidden).toBe(true);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(toggle);
+  });
+
+  it("APR-007 dismisses on outside pointer or focus while keeping internal controls usable", async () => {
+    shellMarkup();
+    cacheSession(session());
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(session())));
+    await mountApplicationShell(vi.fn());
+    const toggle = document.querySelector<HTMLButtonElement>(
+      "#member-menu-toggle",
+    )!;
+    const menu = document.querySelector<HTMLElement>("#member-popover")!;
+    const profile = menu.querySelector<HTMLAnchorElement>("a")!;
+    toggle.click();
+    profile.focus();
+    profile.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    expect(menu.hidden).toBe(false);
+    document.querySelector("#today-heading")!.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true }),
+    );
+    expect(menu.hidden).toBe(true);
+    toggle.click();
+    profile.focus();
+    document.querySelector<HTMLAnchorElement>(".skip-link")!.focus();
+    expect(menu.hidden).toBe(true);
+    expect(document.activeElement?.className).toBe("skip-link");
+    toggle.click();
+    toggle.click();
+    expect(menu.hidden).toBe(true);
+  });
+
   it("APR-005 opens an authenticated shell and signs out with storage disabled", async () => {
     shellMarkup();
     document.body.dataset.pageId = "app.today";
