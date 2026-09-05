@@ -2,6 +2,33 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
+for (const scope of ["api-access", "integrations"]) {
+  Deno.test(`[APR-011] root test and coverage run ${scope} gates once`, async () => {
+    const manifest = JSON.parse(
+      await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
+    ) as { tasks: Record<string, string> };
+    const calls = (parent: string, child: string) =>
+      (manifest.tasks[parent] ?? "").split("&&").filter((command) =>
+        command.trim() === `deno task ${child}`
+      ).length;
+
+    assert(
+      calls("test", "test:unit") === 1,
+      "root test must reach the unit aggregate exactly once",
+    );
+    assert(
+      calls("test:unit", `test:unit:${scope}`) === 1 &&
+        calls("test", `test:unit:${scope}`) === 0,
+      `root test must run test:unit:${scope} once through the unit aggregate`,
+    );
+    assert(
+      calls("test:coverage", `test:coverage:${scope}`) === 1 &&
+        calls("test:coverage", `test:coverage:${scope}:direct`) === 0,
+      `root coverage must run the disposable PostgreSQL coverage gate for ${scope} once`,
+    );
+  });
+}
+
 Deno.test("Compose and root development pass PostgreSQL credentials as fields", async () => {
   const compose = await Deno.readTextFile(
     new URL("../compose.yaml", import.meta.url),

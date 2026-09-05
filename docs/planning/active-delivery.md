@@ -17,8 +17,10 @@ prerequisite queues.
   [application repair plan](application-repair-plan-2026-09-05.md). **APR-001
   through APR-005** preserve unsaved drafts, coordinate local editors, provide
   fact-load retries and accessible mobile dialogs, and keep authenticated use
-  recoverable when browser storage is unavailable. Continue with its first
-  unchecked item, **APR-011**, for API-token and DAV aggregate test coverage.
+  recoverable when browser storage is unavailable. **APR-011** connects the
+  existing API-token/DAV aggregate gates; `REL-030/031` track unrelated
+  aggregate gate failures. Continue with **APR-006**, for truthful profile
+  summaries.
 - **Phase 12 is accepted.** `REL-029` is delivered; `REL-020` and `REL-025`
   remain watches. Phase 11's `OPS-001E` deployment work stays parked until
   explicitly requested.
@@ -85,6 +87,26 @@ Playwright test carrying its stable flow ID.
         preserving an explicit caller override.
   - [x] Remove each `GOVERNANCE-001` browser project's legal fixture
         unconditionally by its exact document ID.
+
+- [ ] **REL-030 — Repair planning unit-gate environment permissions.** The
+      APR-011 root test checkpoint passed the newly connected API-token/DAV
+      gates, then failed while importing `apps/worker/composition_test.ts`:
+      `readable-stream` requires `READABLE_STREAM`, which `test:unit:planning`
+      does not allow. One focused reproduction fails identically; the task and
+      worker code are unchanged from the accepted pre-APR-011 base. Correct the
+      owning permission contract with a focused regression. This separate
+      reliability item blocks a green aggregate checkpoint, not the bounded
+      application repair candidates.
+
+- [ ] **REL-031 — Investigate intermittent Astro readiness under coverage.** The
+      APR-011 root coverage checkpoint finished 538 tests and 22 steps, then
+      failed the unchanged canonical Astro-child probe's 30-second
+      page-readiness deadline. Its direct coverage command, probe, and public
+      page are unchanged from the accepted base. One isolated reproduction under
+      coverage passes in 17 seconds, and the root unit run also passed this
+      probe. Track the deadline failure separately; do not weaken readiness or
+      repeatedly rerun the aggregate to hide it. The disposable PostgreSQL
+      project was cleaned.
 
 ## Just-In-Time Technical Capabilities
 
