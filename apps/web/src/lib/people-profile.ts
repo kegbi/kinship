@@ -971,7 +971,9 @@ function renderReady(
   profile.deceased.hidden = !person.isDeceased;
   profile.self.hidden = !person.isSelf;
   profile.archived.hidden = status !== "archived";
-  profile.due.textContent = dueInformation.detail;
+  profile.due.textContent = dueInformation.stayInTouchAt
+    ? "Loading cadence…"
+    : "Not set";
   const lastContact = document.querySelector<HTMLElement>(
     "[data-profile-last-contact]",
   );
@@ -1497,6 +1499,7 @@ export async function mountPeopleProfile(): Promise<void> {
       isArchived(),
       result.value.person.updatedAt,
       result.value.summary?.primaryContactMethods,
+      result.value.summary?.sectionCounts,
     ),
     mountRelationships(
       id,

@@ -11,6 +11,7 @@ import {
   listPeopleTagOptions,
   listProfileFacts,
   type PersonPrimaryContactMethod,
+  type PersonProfileSectionCount,
   type ProfileFactCreateInputBySection,
   type ProfileFactOption,
   type ProfileFactRecord,
@@ -785,9 +786,15 @@ function clearFactContent(
 function publishRailPresentation(
   section: RailProfileFactSection,
   snapshot: ProfileFactSection,
+  totalCount: number | undefined,
+  paged: boolean,
 ): void {
-  setRailCount(section, snapshot.records.length);
-  setRailEmpty(section, snapshot.records.length === 0);
+  setRailCount(
+    section,
+    totalCount ?? snapshot.records.length,
+    totalCount === undefined && paged ? "page" : "total",
+  );
+  setRailEmpty(section, !paged && snapshot.records.length === 0);
   if (section === "work") {
     const record = snapshot.records.find((record) => record.section === "work");
     setVitalStat(
@@ -812,8 +819,9 @@ function renderTags(
   const list = document.querySelector<HTMLUListElement>("#person-profile-tags");
   if (!list) return;
   list.hidden = false;
-  const selected = new Set(record.value.tagIds);
-  const names = options.filter((option) => selected.has(option.id));
+  const names = record.value.tagIds.map((id) =>
+    options.find((option) => option.id === id)?.name ?? "Unavailable tag"
+  );
   list.replaceChildren();
   if (!names.length) {
     const item = document.createElement("li");
@@ -821,9 +829,9 @@ function renderTags(
     item.textContent = "No tags saved";
     list.append(item);
   } else {
-    for (const option of names.slice(0, 8)) {
+    for (const name of names.slice(0, 8)) {
       const item = document.createElement("li");
-      item.textContent = option.name;
+      item.textContent = name;
       list.append(item);
     }
     if (names.length > 8) {
@@ -840,6 +848,7 @@ export async function mountProfileFacts(
   initiallyArchived: boolean,
   initialPersonUpdatedAt: string,
   initialPrimaryContactMethods?: readonly PersonPrimaryContactMethod[],
+  initialSectionCounts?: readonly PersonProfileSectionCount[],
 ): Promise<void> {
   let archived = initiallyArchived;
   let personUpdatedAt = initialPersonUpdatedAt;
@@ -883,7 +892,10 @@ export async function mountProfileFacts(
     renderContactMethods?.();
   };
 
-  const load = async (section: ProfileFactSectionId): Promise<void> => {
+  const load = async (
+    section: ProfileFactSectionId,
+    initialTotal?: number,
+  ): Promise<void> => {
     const target = elements(section);
     if (!target) return;
     const enabledButtons = [...target.root.querySelectorAll<HTMLButtonElement>(
@@ -976,9 +988,6 @@ export async function mountProfileFacts(
       (target.badge.textContent = snapshot.status === "archived"
         ? "Read-only"
         : "Ready");
-    target.state.textContent = snapshot.records.length
-      ? `${snapshot.records.length} saved.`
-      : `No ${section.replaceAll("-", " ")} saved.`;
     target.add.hidden = archived || snapshot.status === "archived";
     const addLabel = section === "tags"
       ? "Edit tags"
@@ -1338,7 +1347,27 @@ export async function mountProfileFacts(
         renderTags(tagRecord, snapshot.options);
       }
     }
+    let pageIndex = 0;
     const renderRecords = () => {
+      const paged = pageIndex > 0 || Boolean(snapshot.nextCursor);
+      const totalCount = paged ? initialTotal : snapshot.records.length;
+      const tagRecord = snapshot.records.find((record) =>
+        record.section === "tags"
+      );
+      const count = section === "tags"
+        ? tagRecord?.value.tagIds.length ?? 0
+        : snapshot.records.length;
+      target.state.textContent = section === "tags"
+        ? count
+          ? `${count} tag${count === 1 ? "" : "s"} saved.`
+          : "No tags saved."
+        : paged
+        ? totalCount === undefined
+          ? `Showing ${count} on this page.`
+          : `Showing ${count} of ${totalCount} saved.`
+        : count
+        ? `${count} saved.`
+        : `No ${section.replaceAll("-", " ")} saved.`;
       target.list?.replaceChildren();
       target.root.querySelector("[data-profile-fact-expander]")?.remove();
       const summarizedById = section === "contact-methods" &&
@@ -1529,7 +1558,7 @@ export async function mountProfileFacts(
         });
       }
       if (section !== "tags") {
-        publishRailPresentation(section, snapshot);
+        publishRailPresentation(section, snapshot, totalCount, paged);
       }
     };
     if (section === "contact-methods") renderContactMethods = renderRecords;
@@ -1550,7 +1579,6 @@ export async function mountProfileFacts(
       moreFacts.dataset.profileFactMore = "";
       moreFacts.textContent = `Next ${section.replaceAll("-", " ")}`;
       const pageCursors: Array<string | undefined> = [undefined];
-      let pageIndex = 0;
       const updatePagination = () => {
         previousFacts.hidden = pageIndex === 0;
         moreFacts.hidden = !snapshot.nextCursor;
@@ -1730,7 +1758,10 @@ export async function mountProfileFacts(
       if (section === "contact-methods") {
         await Promise.all([load(section), refreshPrimaryContactMethods()]);
       } else await load(section);
-      target.state.textContent = "Profile fact saved.";
+      target.state.textContent =
+        section === "tags" && target.root.dataset.sectionState === "ready"
+          ? `${target.state.textContent} Profile fact saved.`
+          : "Profile fact saved.";
       target.state.focus();
     };
   };
@@ -1763,5 +1794,8 @@ export async function mountProfileFacts(
       }
     }
   });
-  await Promise.all(sections.map(load));
+  await Promise.all(sections.map((section) => {
+    const count = initialSectionCounts?.find((entry) => entry.id === section);
+    return load(section, count?.status === "ready" ? count.count : undefined);
+  }));
 }

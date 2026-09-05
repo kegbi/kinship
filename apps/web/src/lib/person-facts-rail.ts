@@ -22,12 +22,15 @@ function railSection(
 export function setRailCount(
   sectionId: PersonFactRailSectionId,
   count: number | undefined,
+  scope: "total" | "page" = "total",
 ): void {
   const target = railSection(sectionId)?.querySelector<HTMLElement>(
     "[data-profile-rail-count]",
   );
   if (!target) return;
-  target.textContent = count === undefined ? "" : `${count}`;
+  target.textContent = count === undefined
+    ? ""
+    : `${count}${scope === "page" ? " on this page" : ""}`;
   target.hidden = count === undefined;
 }
 

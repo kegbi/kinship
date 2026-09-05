@@ -1917,7 +1917,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
         document.querySelector(
           '[data-profile-fact-section="tags"] [data-profile-fact-state]',
         )?.textContent,
-      ).toBe("Profile fact saved.")
+      ).toBe("No tags saved. Profile fact saved.")
     );
 
     releaseContact(response({
@@ -2024,7 +2024,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
     expect(writes).toBe(0);
   });
 
-  it("refreshes the visible tag preview from the production-shaped section response", async () => {
+  it("APR-006 refreshes the tag preview and assigned count after local edits", async () => {
     document.body.innerHTML = `
       <ul id="person-profile-tags"><li>No tags saved</li></ul>
       <div data-profile-fact-section="tags"><p data-profile-fact-state></p><button data-profile-fact-add></button><form data-profile-fact-form></form></div>`;
@@ -2070,6 +2070,8 @@ describe("PEOPLE-006 profile-fact sections", () => {
     );
 
     await mountProfileFacts(personId, workspaceId, false, revision);
+    expect(document.querySelector("[data-profile-fact-state]")?.textContent)
+      .toBe("No tags saved.");
     document.querySelector<HTMLButtonElement>("[data-profile-fact-add]")!
       .click();
     const assigned = document.querySelector<HTMLSelectElement>(
@@ -2082,6 +2084,114 @@ describe("PEOPLE-006 profile-fact sections", () => {
       expect(document.querySelector("#person-profile-tags")?.textContent)
         .toContain("Friend")
     );
+    expect(document.querySelector("[data-profile-fact-state]")?.textContent)
+      .toBe("1 tag saved. Profile fact saved.");
+  });
+
+  it.each([0, 1, 12])(
+    "APR-006 counts %i assigned tags instead of the singleton record",
+    async (count) => {
+      document.body.innerHTML = `<ul id="person-profile-tags"></ul>
+      <div data-profile-fact-section="tags"><p data-profile-fact-state></p><button data-profile-fact-add></button><form data-profile-fact-form></form></div>`;
+      const options = Array.from(
+        { length: count },
+        (_, index) => ({ id: `tag-${index}`, name: `Tag ${index}` }),
+      );
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(response({
+          options,
+          personUpdatedAt: revision,
+          records: [{
+            id: personId,
+            section: "tags",
+            updatedAt: revision,
+            value: { tagIds: options.map((option) => option.id) },
+          }],
+          status: "ready",
+        })),
+      );
+      await mountProfileFacts(personId, workspaceId, false, revision);
+      expect(document.querySelector("[data-profile-fact-state]")?.textContent)
+        .toBe(
+          count
+            ? `${count} tag${count === 1 ? "" : "s"} saved.`
+            : "No tags saved.",
+        );
+      expect(document.querySelector("#person-profile-tags")?.textContent)
+        .toContain(count === 0 ? "No tags saved" : "Tag 0");
+      if (count > 8) {
+        expect(document.querySelector("#person-profile-tags")?.textContent)
+          .toContain("+4 more");
+      }
+    },
+  );
+
+  it("APR-006 preserves a known total while paging a fact preview", async () => {
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((resource: string | URL | Request) =>
+        response({
+          options: [],
+          personUpdatedAt: revision,
+          status: "ready",
+          ...(!String(resource).includes("cursor=")
+            ? { nextCursor: "next-page" }
+            : {}),
+          records: [{
+            id: "contact",
+            section: "contact-methods",
+            updatedAt: revision,
+            value: { typeId, value: "friend@example.test", labelIds: [] },
+          }],
+        })
+      ),
+    );
+    await mountProfileFacts(personId, workspaceId, false, revision, undefined, [
+      { id: "contact-methods", status: "ready", count: 2 },
+    ]);
+    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
+      .toBe("2");
+    expect(document.querySelector("[data-profile-fact-state]")?.textContent)
+      .toBe("Showing 1 of 2 saved.");
+    document.querySelector<HTMLButtonElement>("[data-profile-fact-more]")!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector<HTMLButtonElement>("[data-profile-fact-more]")
+          ?.hidden,
+      ).toBe(true)
+    );
+    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
+      .toBe("2");
+    expect(document.querySelector("[data-profile-fact-state]")?.textContent)
+      .toBe("Showing 1 of 2 saved.");
+  });
+
+  it("APR-006 keeps missing tag names distinct from empty assignments", async () => {
+    document.body.innerHTML = `<ul id="person-profile-tags"></ul>
+      <div data-profile-fact-section="tags"><p data-profile-fact-state></p><button data-profile-fact-add></button><form data-profile-fact-form></form></div>`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        options: [],
+        personUpdatedAt: revision,
+        status: "ready",
+        records: [{
+          id: personId,
+          section: "tags",
+          updatedAt: revision,
+          value: { tagIds: ["unresolved"] },
+        }],
+      })),
+    );
+    await mountProfileFacts(personId, workspaceId, false, revision);
+    expect(document.querySelector("#person-profile-tags")?.textContent).toBe(
+      "Unavailable tag",
+    );
+    expect(document.querySelector("[data-profile-fact-state]")?.textContent)
+      .toBe("1 tag saved.");
   });
 
   it("purges ready tag DOM while hidden and reloads retained tags when restored", async () => {
@@ -2505,7 +2615,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
     );
   });
 
-  it("keeps a bounded fact-page DOM with explicit next and previous navigation", async () => {
+  it("APR-006 labels bounded fact pages as previews through next and previous navigation", async () => {
     markup();
     const continuationTypeId = "00000000-0000-4000-8000-000000000299";
     const records = Array.from({ length: 51 }, (_, index) => ({
@@ -2560,6 +2670,10 @@ describe("PEOPLE-006 profile-fact sections", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(document.querySelectorAll("[data-profile-fact-list] li"))
       .toHaveLength(50);
+    expect(document.querySelector("[data-profile-fact-state]")?.textContent)
+      .toBe("Showing 50 on this page.");
+    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
+      .toBe("50 on this page");
     expect(document.querySelector("[data-profile-fact-pagination]")?.tagName)
       .toBe("NAV");
     const more = document.querySelector<HTMLButtonElement>(
@@ -2573,6 +2687,10 @@ describe("PEOPLE-006 profile-fact sections", () => {
         .toHaveLength(1)
     );
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(document.querySelector("[data-profile-fact-state]")?.textContent)
+      .toBe("Showing 1 on this page.");
+    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
+      .toBe("1 on this page");
     const previous = document.querySelector<HTMLButtonElement>(
       "[data-profile-fact-previous]",
     )!;
@@ -3053,7 +3171,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
       );
       await vi.waitFor(() =>
         expect(root.querySelector("[data-profile-fact-state]")?.textContent)
-          .toBe("Profile fact saved.")
+          .toContain("Profile fact saved.")
       );
     }
     expect(document.querySelector("#person-profile-tags")?.textContent)

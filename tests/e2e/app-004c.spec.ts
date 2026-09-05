@@ -221,6 +221,179 @@ async function expectAlignedControls(
 }
 
 test(
+  "[PEOPLE-006] APR-006 keeps profile summaries truthful after local edits",
+  { annotation: { type: "flow", description: "PEOPLE-006" } },
+  async ({ browserName, page, request }) => {
+    test.setTimeout(120_000);
+    const email = `profile-summary-${browserName}-${Date.now()}@example.test`;
+    await registerVerified(request, email);
+    await signIn(page, email);
+    const workspaceId = databaseValue(
+      `select w.id::text from crm.workspaces w join crm.users u on u.id = w.created_by_user_id where u.email = ${
+        sqlLiteral(email)
+      }`,
+    );
+    const tagIds = Array.from({ length: 12 }, () => randomUUID());
+    databaseSql(
+      `insert into crm.tags (id, workspace_id, name, slug) values ${
+        tagIds.map((id, index) =>
+          `('${id}'::uuid, '${workspaceId}'::uuid, 'Summary tag ${index}', 'summary-${id}')`
+        ).join(",")
+      }`,
+    );
+    await page.goto("/app/people/new");
+    await page.getByLabel("Given name").fill("Truthful");
+    await page.getByLabel("Family name").fill("Summary");
+    await page.getByRole("button", { name: "Save person", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
+    const profilePath = new URL(page.url()).pathname;
+    const heroCadence = page.locator("#person-profile-due-state");
+    const nextReminder = page.locator(
+      '[data-person-vital-value="next-reminder"]',
+    );
+    const tags = page.locator('[data-profile-fact-section="tags"]');
+    await expect(heroCadence).toHaveText("Not set");
+    await expect(nextReminder).toHaveText("Not recorded");
+    await expect(tags.locator("[data-profile-fact-state]")).toHaveText(
+      "No tags saved.",
+    );
+    await expect(page.locator("#person-profile-tags")).toHaveText(
+      "No tags saved",
+    );
+    await page.getByRole("button", { name: "Show all sections" }).click();
+
+    const tasks = page.locator("#profile-section-tasks");
+    await tasks.getByRole("button", { name: "Add task", exact: true }).click();
+    await tasks.getByLabel("Title", { exact: true }).fill("Send a letter");
+    await tasks.getByRole("button", { name: "Save task", exact: true }).click();
+    await expect(tasks.locator("[data-task-open-list]")).toContainText(
+      "Send a letter",
+    );
+    // The task-only profile response must leave cadence unset.
+    await page.goto(`${profilePath}?section=tasks`);
+    await expect(heroCadence).toHaveText("Not set");
+    await expect(nextReminder).toHaveText("Not recorded");
+    await tasks.locator("[data-task-open-list]").getByRole("button", {
+      name: "Complete",
+      exact: true,
+    }).click();
+    await expect(tasks.locator("[data-task-completed-list]")).toContainText(
+      "Send a letter",
+    );
+
+    const reminders = page.locator("#profile-section-reminders");
+    await reminders.getByRole("button", { name: "Add reminder", exact: true })
+      .click();
+    const reminderForm = reminders.locator("[data-reminder-form]");
+    await reminderForm.getByLabel("Title", { exact: true }).fill(
+      "Reconnect soon",
+    );
+    const targetDate = new Date(Date.now() + 7 * 86_400_000).toISOString()
+      .slice(0, 10);
+    await reminderForm.getByLabel("First date").fill(targetDate);
+    await reminderForm.getByLabel("Send time").fill("09:00");
+    await reminderForm.getByLabel("Repeat").selectOption("none");
+    await reminderForm.getByRole("button", {
+      name: "Save reminder",
+      exact: true,
+    }).click();
+    await expect(reminders.locator("[data-reminder-state]")).toHaveText(
+      "1 reminder.",
+    );
+    await expect(nextReminder).not.toHaveText(
+      /Not recorded|Refreshing|Unavailable/,
+    );
+    await expect(nextReminder).not.toHaveText(/\d{4}-\d{2}-\d{2}T/);
+    await expect(heroCadence).toHaveText("Not set");
+
+    const cadence = page.locator("#profile-section-stay-in-touch");
+    await cadence.getByRole("button", {
+      name: "Add stay-in-touch cadence",
+      exact: true,
+    }).click();
+    await cadence.getByLabel("Reconnect every").fill("2");
+    await cadence.getByLabel("Calendar unit").selectOption("week");
+    await cadence.getByRole("button", { name: "Save cadence", exact: true })
+      .click();
+    await expect(heroCadence).toHaveText("Every 2 weeks");
+    await tags.getByRole("button", { name: "Edit tags", exact: true }).click();
+    const selectedTags = tags.locator('select[name="tagIds"]');
+    await expect(selectedTags.locator("option")).toHaveCount(12);
+    await selectedTags.selectOption(tagIds);
+    await tags.getByRole("button", { name: "Save profile fact", exact: true })
+      .click();
+    await expect(tags.locator("[data-profile-fact-state]")).toHaveText(
+      "12 tags saved. Profile fact saved.",
+    );
+    await expect(page.locator("#person-profile-tags")).toContainText("+4 more");
+    await expect(page.locator("#person-profile-tags")).not.toContainText(
+      "No tags saved",
+    );
+    await tags.getByRole("button", { name: "Edit tags", exact: true }).click();
+    await selectedTags.selectOption([]);
+    await tags.getByRole("button", { name: "Save profile fact", exact: true })
+      .click();
+    await expect(tags.locator("[data-profile-fact-state]")).toHaveText(
+      "No tags saved. Profile fact saved.",
+    );
+    await expect(page.locator("#person-profile-tags")).toHaveText(
+      "No tags saved",
+    );
+    await reminders.getByRole("button", {
+      name: "Add reminder",
+      exact: true,
+    }).click();
+    await reminderForm.getByLabel("Title", { exact: true }).fill(
+      "Second reminder",
+    );
+    await reminderForm.getByLabel("First date").fill(targetDate);
+    await reminderForm.getByLabel("Send time").fill("10:00");
+    await reminderForm.getByLabel("Repeat").selectOption("none");
+    await reminderForm.getByRole("button", {
+      name: "Save reminder",
+      exact: true,
+    }).click();
+    await expect(reminders.locator("[data-reminder-state]")).toHaveText(
+      "2 reminders.",
+    );
+    const firstDisable = reminders.locator("li", { hasText: "Reconnect soon" })
+      .getByRole("button", { name: "Disable reminder", exact: true });
+    const secondDisable = reminders.locator("li", {
+      hasText: "Second reminder",
+    }).getByRole("button", { name: "Disable reminder", exact: true });
+    let releaseSummary!: () => void;
+    const summaryReleased = new Promise<void>((resolve) =>
+      releaseSummary = resolve
+    );
+    let summaryWaiting = false;
+    await page.route("**/api/v1/people/*?include=summary", async (route) => {
+      const upstream = await route.fetch();
+      summaryWaiting = true;
+      await summaryReleased;
+      await route.fulfill({ response: upstream });
+    }, { times: 1 });
+    try {
+      await firstDisable.click();
+      await expect.poll(() => summaryWaiting).toBe(true);
+      await expect(secondDisable).toBeDisabled();
+      await expect(reminderForm.locator('button[type="submit"]'))
+        .toBeDisabled();
+      await expect(cadence.locator('[data-cadence-form] button[type="submit"]'))
+        .toBeDisabled();
+      await expect(reminders).toHaveAttribute("aria-busy", "true");
+      await expect(nextReminder).toHaveText("Refreshing…");
+    } finally {
+      releaseSummary();
+    }
+    await expect(secondDisable).toBeEnabled();
+    await secondDisable.click();
+    await expect(nextReminder).toHaveText("Not recorded");
+    await expect(heroCadence).toHaveText("Every 2 weeks");
+  },
+);
+
+test(
   "[PEOPLE-006] APR-004 keeps mobile fact sheets modal and restores editor focus",
   { annotation: { type: "flow", description: "PEOPLE-006" } },
   async ({ browserName, page, request }, testInfo) => {

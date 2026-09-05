@@ -441,6 +441,36 @@ function stubReadyProfile(
   return fetchMock;
 }
 
+it.each([0, 3])(
+  "APR-006 keeps %i open tasks out of the cadence hero",
+  async (openTaskCount) => {
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockResolvedValueOnce(response({
+          ...zeroProfile(),
+          dueInformation: {
+            detail:
+              `${openTaskCount} open tasks · next reminder 2026-09-20T07:00:00.000000Z`,
+            nextReminderAt: "2026-09-20T07:00:00.000000Z",
+            openTaskCount,
+            status: "ready",
+          },
+        })),
+    );
+    await mountPeopleProfile();
+    expect(document.querySelector("#person-profile-due-state")?.textContent)
+      .toBe("Not set");
+    expect(
+      document.querySelector('[data-person-vital-value="next-reminder"]')
+        ?.textContent,
+    )
+      .toBe(new Date("2026-09-20T07:00:00.000000Z").toLocaleString());
+  },
+);
+
 afterEach(() => {
   clearToasts();
   vi.restoreAllMocks();
@@ -1889,7 +1919,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       document.querySelector<HTMLElement>("#person-profile-deceased")?.hidden,
     ).toBe(false);
     expect(document.querySelector("#person-profile-due-state")?.textContent)
-      .toContain("planning");
+      .toBe("Not set");
     expect(document.querySelector('[data-profile-field="gender"]')?.textContent)
       .toBe("Woman");
     expect(document.querySelector("[data-profile-last-contact]")?.textContent)

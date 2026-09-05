@@ -19,8 +19,8 @@ prerequisite queues.
   fact-load retries and accessible mobile dialogs, and keep authenticated use
   recoverable when browser storage is unavailable. **APR-011** connects the
   existing API-token/DAV aggregate gates; `REL-030/031` track unrelated
-  aggregate gate failures. Continue with **APR-006**, for truthful profile
-  summaries.
+  aggregate gate failures. **APR-006** makes profile summaries and counts
+  truthful. Continue with **APR-007**, for a compact mobile application header.
 - **Phase 12 is accepted.** `REL-029` is delivered; `REL-020` and `REL-025`
   remain watches. Phase 11's `OPS-001E` deployment work stays parked until
   explicitly requested.
