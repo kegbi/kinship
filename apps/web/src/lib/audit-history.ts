@@ -1,4 +1,9 @@
 import {
+  formatInstant,
+  loadTimePreferences,
+  type TimePreferences,
+} from "./time-presentation.ts";
+import {
   type AuditDateDetail,
   type AuditDetail,
   type AuditEvent,
@@ -59,7 +64,10 @@ function formatDetail(key: string, value: AuditDetail): string {
   return "Protected detail";
 }
 
-function renderEvent(event: AuditEvent): HTMLLIElement {
+function renderEvent(
+  event: AuditEvent,
+  timePreferences: TimePreferences | undefined,
+): HTMLLIElement {
   const item = document.createElement("li");
   item.className = "audit-event";
   const heading = document.createElement("strong");
@@ -79,10 +87,7 @@ function renderEvent(event: AuditEvent): HTMLLIElement {
     : "No non-sensitive details stored.";
   const timestamp = document.createElement("time");
   timestamp.dateTime = event.occurredAt;
-  timestamp.textContent = new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(event.occurredAt));
+  timestamp.textContent = formatInstant(event.occurredAt, timePreferences);
   item.append(heading, context, details, timestamp);
   if (event.redacted) {
     const redacted = document.createElement("span");
@@ -171,6 +176,7 @@ export async function mountAuditHistory(personId?: string): Promise<void> {
       ...(cursor ? { cursor } : {}),
     };
     const workspaceId = session.session.workspace.id;
+    const timePreferences = await loadTimePreferences(workspaceId);
     const result =
       await (personId
         ? listPersonAudit(personId, input, workspaceId)
@@ -224,7 +230,9 @@ export async function mountAuditHistory(personId?: string): Promise<void> {
         personCrumb.textContent = result.value.person.name;
       }
     }
-    const rendered = result.value.items.map(renderEvent);
+    const rendered = result.value.items.map((event) =>
+      renderEvent(event, timePreferences)
+    );
     if (cursor) list.append(...rendered);
     else list.replaceChildren(...rendered);
     nextCursor = result.value.nextCursor;
@@ -266,6 +274,7 @@ export async function mountAuditHistory(personId?: string): Promise<void> {
 export async function mountPersonAuditSummary(
   personId: string,
   workspaceId: string,
+  timePreferences?: TimePreferences,
 ): Promise<void> {
   const section = document.querySelector<HTMLElement>(
     "[data-person-audit-summary]",
@@ -321,7 +330,9 @@ export async function mountPersonAuditSummary(
     badge.textContent = "Authorized";
     link.href = auditHref;
     link.hidden = false;
-    list.replaceChildren(...result.value.items.map(renderEvent));
+    list.replaceChildren(
+      ...result.value.items.map((event) => renderEvent(event, timePreferences)),
+    );
     state.textContent = result.value.items.length === 0
       ? "No audit events recorded for this person."
       : `${result.value.items.length} recent authorized audit event${

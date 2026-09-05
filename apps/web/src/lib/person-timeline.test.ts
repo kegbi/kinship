@@ -50,6 +50,81 @@ afterEach(() => {
 });
 
 describe("merged person timeline", () => {
+  it.each(["America/Los_Angeles", "Europe/Belgrade"])(
+    "APR-009 keeps calendar components stable in %s and preserves actual event instants",
+    async (effectiveTimezone) => {
+      const root = markup();
+      const occurredAt = "2026-09-04T22:10:00Z";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(response({
+          status: "ready",
+          items: [
+            item({
+              kind: "life-event",
+              occurredAt,
+              calendarDate: { year: 2026, month: 9, day: 5 },
+            }),
+            item({
+              kind: "life-event",
+              occurredAt,
+              datePrecision: "month_day",
+              calendarDate: { month: 2, day: 29 },
+            }),
+            item({
+              kind: "life-event",
+              occurredAt,
+              datePrecision: "unknown",
+              calendarDate: {},
+            }),
+            item({ kind: "life-event", occurredAt }),
+          ],
+        })),
+      );
+      await mountPersonTimeline({
+        personId,
+        workspaceId,
+        timePreferences: { locale: "en-US", effectiveTimezone },
+      });
+      const dates = [...root.querySelectorAll("[data-timeline-date]")];
+      expect(dates.map((date) => date.textContent)).toEqual([
+        "September 5, 2026",
+        "February 29",
+        "Date unknown",
+        effectiveTimezone === "Europe/Belgrade"
+          ? "Sep 5, 2026, 12:10 AM"
+          : "Sep 4, 2026, 3:10 PM",
+      ]);
+      expect(dates.map((date) => date.getAttribute("datetime"))).toEqual([
+        "2026-09-05",
+        "02-29",
+        null,
+        occurredAt,
+      ]);
+    },
+  );
+  it("APR-009 formats an instant with explicit member locale and timezone", async () => {
+    const root = markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({
+        items: [item({ occurredAt: "2026-09-04T22:10:00Z" })],
+        status: "ready",
+      })),
+    );
+    await mountPersonTimeline(
+      {
+        personId,
+        workspaceId,
+        timePreferences: {
+          locale: "de-DE",
+          effectiveTimezone: "Europe/Belgrade",
+        },
+      } as Parameters<typeof mountPersonTimeline>[0],
+    );
+    expect(root.querySelector("[data-timeline-date]")?.textContent)
+      .toBe("05.09.2026, 00:10");
+  });
   it("renders the first page in API order with the summary fields in contract order", async () => {
     const root = markup();
     const first = item({
@@ -71,7 +146,11 @@ describe("merged person timeline", () => {
     }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await mountPersonTimeline({ personId, workspaceId });
+    await mountPersonTimeline({
+      personId,
+      workspaceId,
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+    });
 
     const rows = [...root.querySelectorAll<HTMLElement>(
       "[data-timeline-id]",
@@ -84,7 +163,7 @@ describe("merged person timeline", () => {
       [...rows[0]!.querySelector("summary")!.children].map((element) =>
         element.textContent
       ),
-    ).toEqual(["January 2, 2026 at 3:04 PM", "Call", "First excerpt"]);
+    ).toEqual(["Jan 2, 2026, 3:04 PM", "Call", "First excerpt"]);
     expect(rows[0]!.querySelector("details > strong")?.textContent).toBe(
       "First title",
     );
@@ -120,7 +199,11 @@ describe("merged person timeline", () => {
       })),
     );
 
-    await mountPersonTimeline({ personId, workspaceId });
+    await mountPersonTimeline({
+      personId,
+      workspaceId,
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+    });
 
     expect(
       [...root.querySelectorAll("details > ul > li")].map((line) =>
@@ -146,7 +229,11 @@ describe("merged person timeline", () => {
       })),
     );
 
-    await mountPersonTimeline({ personId, workspaceId });
+    await mountPersonTimeline({
+      personId,
+      workspaceId,
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+    });
 
     expect(
       [...root.querySelectorAll("details > ul")].map((list) =>
@@ -185,7 +272,11 @@ describe("merged person timeline", () => {
       })),
     );
 
-    await mountPersonTimeline({ personId, workspaceId });
+    await mountPersonTimeline({
+      personId,
+      workspaceId,
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+    });
 
     expect(
       [...root.querySelectorAll("details > ul")].map((list) =>
@@ -213,7 +304,11 @@ describe("merged person timeline", () => {
       })),
     );
 
-    await mountPersonTimeline({ personId, workspaceId });
+    await mountPersonTimeline({
+      personId,
+      workspaceId,
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+    });
 
     expect(root.querySelectorAll("details > ul")).toHaveLength(0);
   });
@@ -237,13 +332,17 @@ describe("merged person timeline", () => {
       })),
     );
 
-    await mountPersonTimeline({ personId, workspaceId });
+    await mountPersonTimeline({
+      personId,
+      workspaceId,
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+    });
 
     const dates = [...root.querySelectorAll<HTMLElement>(
       "[data-timeline-date]",
     )];
     expect(dates.map((date) => date.textContent)).toEqual([
-      "January 2, 2026 at 3:04 PM",
+      "Jan 2, 2026, 3:04 PM",
       "January 2026",
       "2026",
       "January 2",
@@ -277,7 +376,11 @@ describe("merged person timeline", () => {
       .mockResolvedValueOnce(response({ items: [], status: "ready" }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await mountPersonTimeline({ personId, workspaceId });
+    await mountPersonTimeline({
+      personId,
+      workspaceId,
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+    });
     const notes = root.querySelector<HTMLButtonElement>(
       '[data-timeline-filter="note"]',
     )!;
@@ -318,7 +421,11 @@ describe("merged person timeline", () => {
       }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await mountPersonTimeline({ personId, workspaceId });
+    await mountPersonTimeline({
+      personId,
+      workspaceId,
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+    });
     document.dispatchEvent(
       new CustomEvent("person-timeline-changed", {
         detail: { personIds: [crypto.randomUUID(), personId] },
@@ -341,7 +448,11 @@ describe("merged person timeline", () => {
     }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await mountPersonTimeline({ personId, workspaceId });
+    await mountPersonTimeline({
+      personId,
+      workspaceId,
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+    });
     fetchMock.mockClear();
     document.dispatchEvent(
       new CustomEvent("person-timeline-changed", {
@@ -361,7 +472,11 @@ describe("merged person timeline", () => {
     }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await mountPersonTimeline({ personId, workspaceId });
+    await mountPersonTimeline({
+      personId,
+      workspaceId,
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+    });
     fetchMock.mockClear();
     document.dispatchEvent(new CustomEvent("person-timeline-changed"));
     await Promise.resolve();
@@ -390,7 +505,11 @@ describe("merged person timeline", () => {
         .mockResolvedValueOnce(response({ items: [third], status: "ready" })),
     );
 
-    await mountPersonTimeline({ personId, workspaceId });
+    await mountPersonTimeline({
+      personId,
+      workspaceId,
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+    });
     const more = root.querySelector<HTMLButtonElement>("[data-timeline-more]")!;
     more.focus();
     more.click();
@@ -420,7 +539,11 @@ describe("merged person timeline", () => {
       .mockResolvedValueOnce(response({ items: [], status: "ready" }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await mountPersonTimeline({ personId, workspaceId });
+    await mountPersonTimeline({
+      personId,
+      workspaceId,
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+    });
     const retry = root.querySelector<HTMLButtonElement>(
       "[data-timeline-retry]",
     )!;
@@ -441,7 +564,11 @@ describe("merged person timeline", () => {
         type: "about:blank",
       }, 404)),
     );
-    await mountPersonTimeline({ personId, workspaceId });
+    await mountPersonTimeline({
+      personId,
+      workspaceId,
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+    });
     expect(root.querySelector("[data-timeline-state]")?.textContent).toBe(
       "This person is no longer available.",
     );
@@ -457,7 +584,11 @@ describe("merged person timeline", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await mountPersonTimeline({ personId, workspaceId });
+    await mountPersonTimeline({
+      personId,
+      workspaceId,
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+    });
     expect(root.querySelector("[data-timeline-state]")?.textContent).toBe(
       "No timeline events recorded.",
     );

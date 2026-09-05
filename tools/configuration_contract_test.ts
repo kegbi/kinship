@@ -2,6 +2,21 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
+Deno.test("APR-009 existing API checks include the timezone and calendar boundary regression once", async () => {
+  const manifest = JSON.parse(
+    await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
+  ) as { tasks: Record<string, string> };
+  for (const task of ["check:api", "test:coverage:api:direct"]) {
+    const entries = manifest.tasks[task]?.split(/\s+/) ?? [];
+    assert(
+      entries.filter((entry) =>
+        entry === "tests/integration/time_preferences_postgres_test.ts"
+      ).length === 1,
+      `${task} must include the APR-009 PostgreSQL regression exactly once`,
+    );
+  }
+});
+
 for (const scope of ["api-access", "integrations"]) {
   Deno.test(`[APR-011] root test and coverage run ${scope} gates once`, async () => {
     const manifest = JSON.parse(

@@ -24,6 +24,11 @@ export interface PersonTimelineMessage {
 }
 
 export interface PersonTimelineItem {
+  readonly calendarDate?: {
+    readonly year?: number;
+    readonly month?: number;
+    readonly day?: number;
+  };
   readonly activityType?: string;
   readonly channelType?: string;
   readonly contactMethod?: string;

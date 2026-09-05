@@ -384,6 +384,7 @@ Deno.test("[UXD-002C2A] person timeline bounds filters and round-trips its opaqu
       title: "Timestamped event",
     },
     {
+      calendarDate: { year: 1843, month: 12 },
       datePrecision: "year_month",
       id: "00000000-0000-4000-8000-000000000302",
       kind: "life-event",
@@ -437,6 +438,11 @@ Deno.test("[UXD-002C2A] person timeline bounds filters and round-trips its opaqu
       first.items.map((item) => item.occurredAt).join(",") ===
         `${timestamps.happened},${timestamps.partial},${timestamps.created}`,
     "timestamped, component-built, and recorded-date life events retain their precisions",
+  );
+  assert(
+    first.status === "ready" && first.items[1]?.calendarDate?.year === 1843 &&
+      first.items[1]?.calendarDate?.day === undefined,
+    "APR-009 application boundary preserves optional calendar components",
   );
   if (first.status !== "ready" || !first.nextCursor) return;
 

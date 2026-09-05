@@ -300,7 +300,29 @@ established in this pass.
 
 ### APR-009 — Use consistent locale and time-zone presentation
 
-- [ ] **P2, ready.**
+- [x] **P2, delivered.** Existing instant displays use explicit saved locale and
+      resolved member/workspace/UTC timezone preferences through one pure
+      formatter; date-only and partial values preserve their calendar
+      components. Two necessary read-response additions were made explicit
+      before extending scope: preferences expose resolved timezone separately
+      from the editable override, and component-backed timeline events expose
+      optional calendar components. Strict writes, role/tenant gates, and
+      canonical v7 remain intact. All 286 affected web tests pass at
+      94.29/82.60/88.16% coverage; the formatter reaches 100% in all metrics.
+      All 99 affected backend, API, and database tests pass at 97.9/91.2/96.7%.
+      Chromium `AUTH-004` verifies inherited timezone, two locales/zones across
+      profile, timeline, reminders, audit, full calendar dates, and yearless
+      February 29. Contract generation, types, and affected lint/format checks
+      pass; disposable databases cleaned. Localized amendments keep Journal
+      requests in the selected workspace, handle unsupported locales without
+      losing current data, and connect the database fixture to existing API
+      checks/coverage. All 95 affected formatter/consumer tests and 10 Journal
+      tests pass; Journal coverage is 96.73/86.45/100%. Controller database and
+      configuration reruns pass. Review also caught non-Gregorian locale
+      defaults changing partial components; explicit Gregorian calendar
+      formatting keeps recorded values while localizing names/digits. All 72
+      affected date tests and the formatter's full coverage pass after that
+      amendment.
 - Evidence: `person-timeline.ts` formats event instants in hard-coded English
   and UTC, while profile/reminder/audit controllers use browser-local formats.
   The synthetic note appeared at 22:10 in the timeline and 00:10 in audit on the

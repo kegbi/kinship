@@ -1,7 +1,17 @@
+import { loadTimePreferences } from "./time-presentation.ts";
+import { formatInstant } from "./time-presentation.ts";
 // @vitest-environment happy-dom
+
+vi.mock("./time-presentation.ts", async (original) => ({
+  ...await original<typeof import("./time-presentation.ts")>(),
+  loadTimePreferences: vi.fn().mockResolvedValue({
+    locale: "en",
+    effectiveTimezone: "UTC",
+  }),
+}));
 import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 import { mountPersonReminders, mountTodayReminders } from "./reminders.ts";
@@ -189,7 +199,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
           });
         }),
       );
-      await mountPersonReminders({ archived: false, personId, workspaceId });
+      await mountPersonReminders({
+        timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+        archived: false,
+        personId,
+        workspaceId,
+      });
       const disableButtons = [
         ...document.querySelectorAll<HTMLButtonElement>(
           "[data-reminder-list] button",
@@ -245,7 +260,10 @@ describe("PLANNING-002 reminder browser behavior", () => {
       ).toBe(
         outcome === "failure"
           ? "Unavailable"
-          : new Date("2026-09-21T07:00:00.000000Z").toLocaleString(),
+          : formatInstant("2026-09-21T07:00:00.000000Z", {
+            locale: "en",
+            effectiveTimezone: "UTC",
+          }),
       );
       document.querySelector<HTMLButtonElement>("[data-reminder-list] button")!
         .click();
@@ -291,7 +309,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
           });
         }),
       );
-      await mountPersonReminders({ archived: false, personId, workspaceId });
+      await mountPersonReminders({
+        timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+        archived: false,
+        personId,
+        workspaceId,
+      });
       const form = document.querySelector<HTMLFormElement>(
         `[data-${kind}-form]`,
       )!;
@@ -374,7 +397,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
         status: "ready",
       })),
     );
-    await mountPersonReminders({ archived: false, personId, workspaceId });
+    await mountPersonReminders({
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+      archived: false,
+      personId,
+      workspaceId,
+    });
     expect(document.querySelector("[data-reminder-state]")?.textContent).toBe(
       "Showing first 100 reminders.",
     );
@@ -400,7 +428,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
           status: "ready",
         })),
       );
-      await mountPersonReminders({ archived: false, personId, workspaceId });
+      await mountPersonReminders({
+        timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+        archived: false,
+        personId,
+        workspaceId,
+      });
       expect(document.querySelector("#person-profile-due-state")?.textContent)
         .toBe(isActive ? "Every 2 weeks" : "Not set");
       expect(document.querySelector("[data-cadence-state]")?.textContent).toBe(
@@ -460,7 +493,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
         });
       }),
     );
-    await mountPersonReminders({ archived: false, personId, workspaceId });
+    await mountPersonReminders({
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+      archived: false,
+      personId,
+      workspaceId,
+    });
     expect(document.querySelector("#person-profile-due-state")?.textContent)
       .toBe("Not set");
     expect(summaryReads).not.toHaveBeenCalled();
@@ -470,7 +508,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
       expect(
         document.querySelector('[data-person-vital-value="next-reminder"]')
           ?.textContent,
-      ).toBe(new Date("2026-09-21T07:00:00.000000Z").toLocaleString())
+      ).toBe(
+        formatInstant("2026-09-21T07:00:00.000000Z", {
+          locale: "en",
+          effectiveTimezone: "UTC",
+        }),
+      )
     );
     expect(document.querySelector("#person-profile-due-state")?.textContent)
       .toBe("Not set");
@@ -511,7 +554,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
         });
       }),
     );
-    await mountPersonReminders({ archived: false, personId, workspaceId });
+    await mountPersonReminders({
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+      archived: false,
+      personId,
+      workspaceId,
+    });
     document.querySelector<HTMLFormElement>("[data-reminder-form]")!
       .requestSubmit();
     await vi.waitFor(() =>
@@ -535,7 +583,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
           response({ cadences: [], reminders: [], status: "ready" }),
         ),
       );
-      await mountPersonReminders({ archived: false, personId, workspaceId });
+      await mountPersonReminders({
+        timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+        archived: false,
+        personId,
+        workspaceId,
+      });
       mountUnsavedChangesGuard({
         confirmMessage: "Discard?",
         root: document.body,
@@ -613,7 +666,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
       })),
     );
 
-    await mountPersonReminders({ archived: false, personId, workspaceId });
+    await mountPersonReminders({
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+      archived: false,
+      personId,
+      workspaceId,
+    });
 
     for (const kind of ["reminder", "cadence"] as const) {
       const add = document.querySelector<HTMLButtonElement>(
@@ -652,7 +710,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
         status: "ready",
       })),
     );
-    await mountPersonReminders({ archived: false, personId, workspaceId });
+    await mountPersonReminders({
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+      archived: false,
+      personId,
+      workspaceId,
+    });
     const reminderForm = document.querySelector<HTMLFormElement>(
       "[data-reminder-form]",
     )!;
@@ -707,7 +770,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
       .mockResolvedValueOnce(response(emptySnapshot))
       .mockResolvedValueOnce(response({ dueInformation: { status: "ready" } }));
     vi.stubGlobal("fetch", fetchMock);
-    await mountPersonReminders({ archived: false, personId, workspaceId });
+    await mountPersonReminders({
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+      archived: false,
+      personId,
+      workspaceId,
+    });
 
     const reminderForm = document.querySelector<HTMLFormElement>(
       "[data-reminder-form]",
@@ -749,7 +817,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
       .mockReturnValueOnce(successfulSave.promise)
       .mockReturnValueOnce(refresh.promise);
     vi.stubGlobal("fetch", fetchMock);
-    await mountPersonReminders({ archived: false, personId, workspaceId });
+    await mountPersonReminders({
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+      archived: false,
+      personId,
+      workspaceId,
+    });
     document.querySelector<HTMLButtonElement>("[data-reminder-add]")!.click();
     const form = document.querySelector<HTMLFormElement>(
       "[data-reminder-form]",
@@ -839,7 +912,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
       .mockReturnValueOnce(successfulSave.promise)
       .mockReturnValueOnce(refresh.promise);
     vi.stubGlobal("fetch", fetchMock);
-    await mountPersonReminders({ archived: false, personId, workspaceId });
+    await mountPersonReminders({
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+      archived: false,
+      personId,
+      workspaceId,
+    });
     document.querySelector<HTMLButtonElement>("[data-cadence-add]")!.click();
     const form = document.querySelector<HTMLFormElement>(
       "[data-cadence-form]",
@@ -911,7 +989,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
     personMarkup();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({}, 503)));
 
-    await mountPersonReminders({ archived: false, personId, workspaceId });
+    await mountPersonReminders({
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+      archived: false,
+      personId,
+      workspaceId,
+    });
 
     expect(
       document.querySelector<HTMLButtonElement>("[data-reminder-add]")?.hidden,
@@ -945,7 +1028,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
         status: "ready",
       })),
     );
-    await mountPersonReminders({ archived: true, personId, workspaceId });
+    await mountPersonReminders({
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+      archived: true,
+      personId,
+      workspaceId,
+    });
     expect(document.querySelector("[data-reminder-list]")?.textContent)
       .toContain("Call Ada");
     expect(document.querySelector("[data-reminder-list]")?.textContent)
@@ -989,7 +1077,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
       })),
     );
 
-    await mountPersonReminders({ archived: true, personId, workspaceId });
+    await mountPersonReminders({
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+      archived: true,
+      personId,
+      workspaceId,
+    });
 
     expect(
       document.querySelector<HTMLElement>(
@@ -1010,7 +1103,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
         response({ cadences: [], reminders: [reminder], status: "ready" }),
       );
     vi.stubGlobal("fetch", fetchMock);
-    await mountPersonReminders({ archived: false, personId, workspaceId });
+    await mountPersonReminders({
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+      archived: false,
+      personId,
+      workspaceId,
+    });
     expect(document.querySelector("[data-profile-rail-count]")?.textContent)
       .toBe("0");
     expect(
@@ -1057,7 +1155,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
         status: "ready",
       })),
     );
-    await mountPersonReminders({ archived: false, personId, workspaceId });
+    await mountPersonReminders({
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+      archived: false,
+      personId,
+      workspaceId,
+    });
     expect(
       document.querySelector<HTMLButtonElement>(
         "[data-reminder-list] button",
@@ -1315,6 +1418,10 @@ describe("PLANNING-002 reminder browser behavior", () => {
   });
 
   it("shows manual-attention delivery and independent cadence state on Today", async () => {
+    vi.mocked(loadTimePreferences).mockResolvedValue({
+      locale: "en",
+      effectiveTimezone: "America/New_York",
+    });
     todayMarkup();
     const extra = ["pending", "claimed", "retry", "failed"].map((
       status,
@@ -1583,5 +1690,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
     expect(document.body.textContent).not.toContain("Obsolete mount");
     expect(document.querySelector("#today-cadences-state")?.textContent)
       .toBe("No one is due for contact.");
+  });
+});
+
+beforeEach(() => {
+  vi.mocked(loadTimePreferences).mockResolvedValue({
+    locale: "en",
+    effectiveTimezone: "UTC",
   });
 });

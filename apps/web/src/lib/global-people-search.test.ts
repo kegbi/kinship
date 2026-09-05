@@ -30,6 +30,7 @@ beforeEach(() => {
     value: {
       status: "ready",
       preferences: {
+        effectiveTimezone: "UTC",
         contactNameOrder: "given_family_nickname",
         contactSortOrder: "given_name_asc",
         fluidLayout: false,
@@ -161,6 +162,7 @@ describe("UXD-004 global people search", () => {
         value: {
           status: "ready",
           preferences: {
+            effectiveTimezone: "UTC",
             contactNameOrder: "family_given_nickname",
             contactSortOrder: "family_name_asc",
             fluidLayout: false,
@@ -273,6 +275,7 @@ describe("UXD-004 global people search", () => {
       value: {
         status: "ready",
         preferences: {
+          effectiveTimezone: "UTC",
           contactNameOrder: "family_given_nickname",
           contactSortOrder: "family_name_asc",
           fluidLayout: false,

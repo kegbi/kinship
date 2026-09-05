@@ -28,6 +28,10 @@ export interface MemberPreferences {
   readonly timezone?: string;
 }
 
+export interface ResolvedMemberPreferences extends MemberPreferences {
+  readonly effectiveTimezone: string;
+}
+
 export interface WorkspaceConfiguration {
   readonly defaultCurrencyCode?: string;
   readonly defaultLocale: string;
@@ -57,12 +61,12 @@ export interface WorkspaceSettingsRepository {
     command: SettingsActor & {
       readonly transaction: SettingsTransaction;
     },
-  ): Promise<MemberPreferences | undefined>;
+  ): Promise<ResolvedMemberPreferences | undefined>;
   updatePreferences(
     command: SettingsActor & MemberPreferences & {
       readonly transaction: SettingsTransaction;
     },
-  ): Promise<MemberPreferences | "invalid-currency" | undefined>;
+  ): Promise<ResolvedMemberPreferences | "invalid-currency" | undefined>;
   getWorkspace(
     command: SettingsActor & {
       readonly transaction: SettingsTransaction;

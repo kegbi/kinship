@@ -156,6 +156,125 @@ async function expectAccessible(page: Page): Promise<void> {
 }
 
 test(
+  "[AUTH-004] APR-009 saved locale and effective timezone agree across profile, timeline, reminders, and audit",
+  {
+    annotation: [{ type: "flow", description: "AUTH-004" }],
+  },
+  async ({ page, request, browserName }) => {
+    test.setTimeout(180_000);
+    page.setDefaultTimeout(15_000);
+    const email = `time-presentation-${browserName}-${Date.now()}@example.test`;
+    await registerVerified(request, email, "Time presentation circle");
+    await signIn(page, email);
+    const session = await (await page.request.get(`${origin}/api/v1/session`))
+      .json();
+    const workspaceId = session.workspace.id;
+    const memberId = session.member.id;
+    const created = await page.request.post(`${origin}/api/v1/people`, {
+      headers: { "X-Workspace-Id": workspaceId, Origin: origin },
+      data: { givenName: "Time", familyName: "Person", isPartial: false },
+    });
+    expect(created.status()).toBe(201);
+    const personId = (await created.json()).person.id;
+    const instant = "2026-09-04T22:10:00Z";
+    const noteId = crypto.randomUUID();
+    const reminderId = crypto.randomUUID();
+    const calendarId = crypto.randomUUID();
+    const partialId = crypto.randomUUID();
+    databaseSql(
+      `update crm.workspace_settings set default_timezone = 'Europe/Belgrade' where workspace_id = ${
+        sqlLiteral(workspaceId)
+      }::uuid;
+    insert into crm.calls (workspace_id, person_id, called_at, content) values (${
+        sqlLiteral(workspaceId)
+      }::uuid, ${sqlLiteral(personId)}::uuid, '${instant}', 'APR-009 contact');
+    insert into crm.notes (id, workspace_id, person_id, body, created_by_member_id, created_at) values (${
+        sqlLiteral(noteId)
+      }::uuid, ${sqlLiteral(workspaceId)}::uuid, ${
+        sqlLiteral(personId)
+      }::uuid, 'APR-009 midnight note', ${
+        sqlLiteral(memberId)
+      }::uuid, '${instant}');
+    insert into crm.life_events (id, workspace_id, person_id, name, year, month, day, precision) values
+      (${sqlLiteral(calendarId)}::uuid, ${sqlLiteral(workspaceId)}::uuid, ${
+        sqlLiteral(personId)
+      }::uuid, 'APR-009 calendar date', 2026, 9, 5, 'full'),
+      (${sqlLiteral(partialId)}::uuid, ${sqlLiteral(workspaceId)}::uuid, ${
+        sqlLiteral(personId)
+      }::uuid, 'APR-009 year unknown', null, 2, 29, 'month_day');
+    insert into crm.reminders (id, workspace_id, person_id, title, anchor_on, created_by_member_id) values (${
+        sqlLiteral(reminderId)
+      }::uuid, ${sqlLiteral(workspaceId)}::uuid, ${
+        sqlLiteral(personId)
+      }::uuid, 'APR-009 reminder', '2026-09-05', ${sqlLiteral(memberId)}::uuid);
+    insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on, deliver_at, status) values (${
+        sqlLiteral(reminderId)
+      }::uuid, ${
+        sqlLiteral(memberId)
+      }::uuid, '2026-09-05', '${instant}', 'failed');
+    insert into crm.audit_events (workspace_id, actor_member_id, actor_name_snapshot, person_id, subject_type, subject_id, action, occurred_at) values
+      (${sqlLiteral(workspaceId)}::uuid, ${
+        sqlLiteral(memberId)
+      }::uuid, 'Test Member', ${sqlLiteral(personId)}::uuid, 'note', ${
+        sqlLiteral(noteId)
+      }::uuid, 'note.created', '${instant}');`,
+    );
+    const setPreferences = async (locale: string, timezone: string) => {
+      await page.goto("/app/settings/preferences");
+      await page.locator('[name="locale"]').fill(locale);
+      await page.locator('[name="timezone"]').fill(timezone);
+      await page.getByRole("button", { name: "Save changes" }).click();
+      await expect(
+        page.getByRole("status").filter({ hasText: "Preferences saved" }),
+      ).toBeVisible();
+    };
+    const checkProfile = async (
+      expected: string,
+      calendar: string,
+      partial: string,
+    ) => {
+      await page.goto(`/app/people/${personId}?view=timeline`);
+      await expect(page.locator("[data-profile-last-contact]")).toHaveText(
+        expected,
+      );
+      await expect(page.locator("[data-reminder-list]")).toContainText(
+        `failed · ${expected}`,
+      );
+      await expect(
+        page.locator(`[data-timeline-id="${noteId}"] [data-timeline-date]`),
+      ).toHaveText(expected);
+      await expect(
+        page.locator(`[data-timeline-id="${calendarId}"] [data-timeline-date]`),
+      ).toHaveText(calendar);
+      await expect(page.locator(`[data-timeline-id="${calendarId}"] time`))
+        .toHaveAttribute("datetime", "2026-09-05");
+      await expect(
+        page.locator(`[data-timeline-id="${partialId}"] [data-timeline-date]`),
+      ).toHaveText(partial);
+      await page.goto(`/app/people/${personId}/audit`);
+      await expect(
+        page.locator("[data-audit-list] .audit-event").filter({
+          hasText: "Note created",
+        }).locator("time"),
+      ).toHaveText(expected);
+    };
+    await setPreferences("de-DE", "");
+    const inherited =
+      await (await page.request.get(`${origin}/api/v1/settings/preferences`))
+        .json();
+    expect(inherited.preferences.effectiveTimezone).toBe("Europe/Belgrade");
+    expect(inherited.preferences.timezone).toBeUndefined();
+    await checkProfile("05.09.2026, 00:10", "5. September 2026", "29. Februar");
+    await setPreferences("en-US", "America/Los_Angeles");
+    await checkProfile(
+      "Sep 4, 2026, 3:10 PM",
+      "September 5, 2026",
+      "February 29",
+    );
+  },
+);
+
+test(
   "[AUTH-004] APR-008 saved name and sort preferences follow the active membership",
   {
     annotation: [

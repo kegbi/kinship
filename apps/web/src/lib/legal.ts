@@ -1,3 +1,4 @@
+import { formatInstant } from "./time-presentation.ts";
 import {
   acceptLegalDocument,
   getLegalRequirements,
@@ -39,7 +40,10 @@ export async function mountPublicLegal(
   version.textContent = `Version ${result.value.document.version}${
     result.value.document.publishedAt
       ? ` · Published ${
-        new Date(result.value.document.publishedAt).toLocaleDateString()
+        formatInstant(result.value.document.publishedAt, {
+          locale: "en",
+          effectiveTimezone: "UTC",
+        })
       }`
       : ""
   }`;

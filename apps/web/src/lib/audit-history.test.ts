@@ -1,5 +1,13 @@
 // @vitest-environment happy-dom
 
+vi.mock("./time-presentation.ts", async (original) => ({
+  ...await original<typeof import("./time-presentation.ts")>(),
+  loadTimePreferences: vi.fn().mockResolvedValue({
+    locale: "en",
+    effectiveTimezone: "UTC",
+  }),
+}));
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountAuditHistory, mountPersonAuditSummary } from "./audit-history.ts";
 
@@ -473,7 +481,10 @@ describe("GOVERNANCE-002 audit history UI", () => {
         status: "ready",
       })),
     );
-    await mountPersonAuditSummary(personId, workspaceId);
+    await mountPersonAuditSummary(personId, workspaceId, {
+      locale: "en",
+      effectiveTimezone: "UTC",
+    });
     expect(document.querySelector("[data-person-audit-state]")?.textContent)
       .toContain("No audit events");
     expect(
@@ -512,7 +523,10 @@ describe("GOVERNANCE-002 audit history UI", () => {
         );
       }),
     );
-    await mountPersonAuditSummary(personId, workspaceId);
+    await mountPersonAuditSummary(personId, workspaceId, {
+      locale: "en",
+      effectiveTimezone: "UTC",
+    });
     expect(
       document.querySelector<HTMLElement>("[data-person-audit-summary]")
         ?.dataset.sectionState,
@@ -559,7 +573,10 @@ describe("GOVERNANCE-002 audit history UI", () => {
       }),
     );
 
-    await mountPersonAuditSummary(personId, workspaceId);
+    await mountPersonAuditSummary(personId, workspaceId, {
+      locale: "en",
+      effectiveTimezone: "UTC",
+    });
 
     expect(
       document.querySelector<HTMLElement>("[data-person-audit-summary]")

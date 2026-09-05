@@ -9,6 +9,51 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
+Deno.test("APR-009 preferences have distinct strict writable and resolved read shapes", () => {
+  const document = buildOpenApiDocument();
+  const schemas = (document.components as {
+    schemas: Record<
+      "PreferencesInput" | "ResolvedMemberPreferences" | "PreferenceSettings",
+      {
+        required: string[];
+        properties: Record<string, { readOnly?: boolean; $ref?: string }>;
+        additionalProperties?: boolean;
+      }
+    >;
+  }).schemas;
+  assert(
+    !("effectiveTimezone" in schemas.PreferencesInput.properties),
+    "write schema must not accept resolved data",
+  );
+  assert(
+    schemas.PreferencesInput.additionalProperties === false,
+    "writes remain strict",
+  );
+  assert(
+    schemas.ResolvedMemberPreferences.required.includes("effectiveTimezone"),
+    "resolved timezone is required on reads",
+  );
+  assert(
+    schemas.ResolvedMemberPreferences.properties.effectiveTimezone?.readOnly ===
+      true,
+    "resolved timezone is read-only",
+  );
+  assert(
+    !schemas.ResolvedMemberPreferences.required.includes("timezone"),
+    "raw timezone remains optional",
+  );
+  assert(
+    schemas.PreferenceSettings.properties.preferences?.$ref ===
+      "#/components/schemas/ResolvedMemberPreferences",
+    "responses use the resolved shape",
+  );
+  const client = renderSettingsClient();
+  assert(
+    client.includes("updateMemberPreferences(input: MemberPreferences"),
+    "generated write input remains editable fields only",
+  );
+});
+
 Deno.test("AUTH-001/AUTH-002/AUTH-003 OpenAPI is deterministic and secret-safe", () => {
   const first = JSON.stringify(buildOpenApiDocument(), null, 2) + "\n";
   const second = JSON.stringify(buildOpenApiDocument(), null, 2) + "\n";

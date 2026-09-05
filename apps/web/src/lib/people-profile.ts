@@ -1,3 +1,4 @@
+import { formatInstant, type TimePreferences } from "./time-presentation.ts";
 import {
   archivePerson,
   deletePerson,
@@ -935,6 +936,7 @@ function renderReady(
   workspaceId: string,
   navigation: SectionNavigationContext,
   nameOrder: PersonNameOrder,
+  timePreferences: TimePreferences | undefined,
 ): void {
   const name = displayPersonName(person, nameOrder);
   profile.heading.textContent = name;
@@ -979,7 +981,7 @@ function renderReady(
   );
   if (lastContact) {
     lastContact.textContent = person.lastContactAt
-      ? new Date(person.lastContactAt).toLocaleString()
+      ? formatInstant(person.lastContactAt, timePreferences)
       : "None recorded";
   }
   const nextReminder = document.querySelector<HTMLElement>(
@@ -987,7 +989,7 @@ function renderReady(
   );
   if (nextReminder) {
     nextReminder.textContent = dueInformation.nextReminderAt
-      ? new Date(dueInformation.nextReminderAt).toLocaleString()
+      ? formatInstant(dueInformation.nextReminderAt, timePreferences)
       : "Not recorded";
   }
   setVitalStat("birthday", undefined);
@@ -1363,6 +1365,9 @@ export async function mountPeopleProfile(): Promise<void> {
   }
   const preferences = await getMemberPreferences(session.session.workspace.id)
     .catch(() => undefined);
+  const timePreferences = preferences?.ok
+    ? preferences.value.preferences
+    : undefined;
   const nameOrder = preferences?.ok
     ? preferences.value.preferences.contactNameOrder
     : "given_family_nickname";
@@ -1404,6 +1409,7 @@ export async function mountPeopleProfile(): Promise<void> {
     "timeline",
     () =>
       mountPersonTimeline({
+        timePreferences,
         personId: id,
         workspaceId: session.session.workspace.id,
       }),
@@ -1443,12 +1449,14 @@ export async function mountPeopleProfile(): Promise<void> {
             "conversations",
           ),
         },
+        timePreferences,
       ),
   );
   register(
     "planning",
     () =>
       mountTaskSurface({
+        timePreferences,
         archived: isArchived(),
         hidden: sectionNavigation.hiddenSectionIds.has("tasks"),
         personId: id,
@@ -1475,7 +1483,12 @@ export async function mountPeopleProfile(): Promise<void> {
   );
   register(
     "admin",
-    () => mountPersonAuditSummary(id, session.session.workspace.id),
+    () =>
+      mountPersonAuditSummary(
+        id,
+        session.session.workspace.id,
+        timePreferences,
+      ),
   );
   const selectedView = currentView();
   if (selectedView !== "all") void activate(selectedView);
@@ -1488,6 +1501,7 @@ export async function mountPeopleProfile(): Promise<void> {
     session.session.workspace.id,
     sectionNavigation,
     nameOrder,
+    timePreferences,
   );
   mountUnsavedChangesGuard({
     confirmMessage:
@@ -1518,6 +1532,7 @@ export async function mountPeopleProfile(): Promise<void> {
       result.value.person.updatedAt,
     ),
     mountPersonReminders({
+      timePreferences,
       archived: isArchived(),
       personId: id,
       workspaceId: session.session.workspace.id,

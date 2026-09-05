@@ -206,6 +206,10 @@ export interface MemberPreferences {
   readonly timezone?: string;
 }
 
+export interface ResolvedMemberPreferences extends MemberPreferences {
+  readonly effectiveTimezone: string;
+}
+
 export type PersonWorkspaceView = "all" | "timeline" | "planning" | "things" | "admin";
 
 export interface MemberUiState {
@@ -486,7 +490,7 @@ export function deleteWorkspace(input: { readonly confirmation: string; readonly
   return request("/api/v1/settings/workspace-lifecycle", { method: "DELETE", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
 }
 
-export function getMemberPreferences(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: MemberPreferences }>> {
+export function getMemberPreferences(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: ResolvedMemberPreferences }>> {
   return request("/api/v1/settings/preferences", { headers: workspaceHeader(workspaceId) });
 }
 
@@ -498,7 +502,7 @@ export function saveMemberUiState(input: { readonly personWorkspaceView?: Person
   return request("/api/v1/member/ui-state", { method: "PATCH", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
 }
 
-export function updateMemberPreferences(input: MemberPreferences, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: MemberPreferences }>> {
+export function updateMemberPreferences(input: MemberPreferences, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: ResolvedMemberPreferences }>> {
   return request("/api/v1/settings/preferences", { method: "PUT", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
 }
 
@@ -1109,6 +1113,7 @@ export interface PersonTimelineMessage {
 }
 
 export interface PersonTimelineItem {
+  readonly calendarDate?: { readonly year?: number; readonly month?: number; readonly day?: number };
   readonly activityType?: string;
   readonly channelType?: string;
   readonly contactMethod?: string;

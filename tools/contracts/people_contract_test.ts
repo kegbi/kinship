@@ -15,6 +15,39 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
+Deno.test("APR-009 timeline calendar components are optional and never invent missing parts", () => {
+  const document = buildOpenApiDocument();
+  const schemas = (document.components as {
+    schemas: {
+      PersonTimelineItem: {
+        required: string[];
+        properties: {
+          calendarDate: {
+            required?: string[];
+            additionalProperties: boolean;
+            properties: Record<string, unknown>;
+          };
+        };
+      };
+    };
+  }).schemas;
+  const item = schemas.PersonTimelineItem;
+  assert(
+    !item.required.includes("calendarDate"),
+    "actual instants omit calendar components",
+  );
+  assert(
+    !item.properties.calendarDate.required?.length &&
+      item.properties.calendarDate.additionalProperties === false,
+    "component payload preserves optional parts and stays strict",
+  );
+  assert(
+    Object.keys(item.properties.calendarDate.properties).sort().join(",") ===
+      "day,month,year",
+    "calendar payload carries only recorded date components",
+  );
+});
+
 Deno.test("PEOPLE-006 generated mutation inputs remain stricter than response values", () => {
   // @ts-expect-error food mutation requires a concrete preference value.
   const emptyFood: ProfileFactCreateInputBySection["food-preferences"] = {

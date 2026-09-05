@@ -1,3 +1,4 @@
+import { formatInstant, loadTimePreferences } from "./time-presentation.ts";
 import {
   deletePersonalIdentity,
   getMemberPreferences,
@@ -410,6 +411,7 @@ export async function mountSecuritySettings(): Promise<void> {
   if (!workspaceId) {
     return setUnavailable("Your session could not be confirmed.");
   }
+  const timePreferences = await loadTimePreferences(workspaceId);
   const render = async (): Promise<void> => {
     const loaded = await listMemberSessions(workspaceId).catch(() => undefined);
     if (!loaded?.ok) {
@@ -425,7 +427,7 @@ export async function mountSecuritySettings(): Promise<void> {
         : session.userAgent ?? "Browser session";
       const detail = document.createElement("small");
       detail.textContent = `Last active ${
-        new Date(session.lastSeenAt).toLocaleString()
+        formatInstant(session.lastSeenAt, timePreferences)
       }${session.ipAddress ? ` · ${session.ipAddress}` : ""}`;
       copy.append(title, detail);
       const button = document.createElement("button");

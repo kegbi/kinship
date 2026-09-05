@@ -1,4 +1,9 @@
 import {
+  formatInstant,
+  loadTimePreferences,
+  type TimePreferences,
+} from "./time-presentation.ts";
+import {
   type ApiTokenRecord,
   type ApiTokenScope,
   createApiToken,
@@ -13,6 +18,7 @@ function element<T extends Element>(selector: string): T | undefined {
 
 function renderRecord(
   record: ApiTokenRecord,
+  timePreferences: TimePreferences | undefined,
   revoke: (id: string, button: HTMLButtonElement) => void,
 ): HTMLLIElement {
   const item = document.createElement("li");
@@ -21,16 +27,16 @@ function renderRecord(
   name.textContent = record.name;
   const metadata = document.createElement("span");
   const expiry = record.expiresAt
-    ? new Date(record.expiresAt).toLocaleString()
+    ? formatInstant(record.expiresAt, timePreferences)
     : "No expiry";
   metadata.textContent = record.expiresAt
     ? `${record.scopes.join(", ")} · Expires ${expiry}`
     : `${record.scopes.join(", ")} · No expiry`;
   const activity = document.createElement("small");
   activity.textContent = record.revokedAt
-    ? `Revoked ${new Date(record.revokedAt).toLocaleString()}`
+    ? `Revoked ${formatInstant(record.revokedAt, timePreferences)}`
     : record.lastUsedAt
-    ? `Last used ${new Date(record.lastUsedAt).toLocaleString()}`
+    ? `Last used ${formatInstant(record.lastUsedAt, timePreferences)}`
     : "Never used";
   content.append(name, metadata, activity);
   const button = document.createElement("button");
@@ -69,6 +75,7 @@ export async function mountApiAccess(): Promise<void> {
     return;
   }
   const workspaceId = session.session.workspace.id;
+  const timePreferences = await loadTimePreferences(workspaceId);
   let mutationInFlight = false;
 
   const mutate = (
@@ -105,7 +112,9 @@ export async function mountApiAccess(): Promise<void> {
       });
     };
     list.replaceChildren(
-      ...result.value.records.map((record) => renderRecord(record, revoke)),
+      ...result.value.records.map((record) =>
+        renderRecord(record, timePreferences, revoke)
+      ),
     );
     empty.hidden = result.value.records.length !== 0;
     state.textContent = "API tokens are current.";

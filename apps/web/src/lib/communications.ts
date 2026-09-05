@@ -1,3 +1,4 @@
+import { formatInstant, type TimePreferences } from "./time-presentation.ts";
 import { markFormSaved, saveWithLockedForm } from "./unsaved-changes.ts";
 import {
   type CommunicationList,
@@ -97,6 +98,7 @@ export async function mountCommunications(
   workspaceId: string,
   archived: boolean,
   hidden: { readonly calls: boolean; readonly conversations: boolean },
+  timePreferences?: TimePreferences,
 ): Promise<void> {
   communicationAbort?.abort();
   const abort = new AbortController();
@@ -188,7 +190,7 @@ export async function mountCommunications(
     );
     if (lastContact && profile?.ok) {
       lastContact.textContent = profile.value.person.lastContactAt
-        ? new Date(profile.value.person.lastContactAt).toLocaleString()
+        ? formatInstant(profile.value.person.lastContactAt, timePreferences)
         : "None recorded";
     }
     return refreshed?.ok === true && profile?.ok === true;

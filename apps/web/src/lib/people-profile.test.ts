@@ -1,3 +1,4 @@
+import { formatInstant } from "./time-presentation.ts";
 // @vitest-environment happy-dom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,6 +21,7 @@ beforeEach(() => {
     value: {
       status: "ready",
       preferences: {
+        effectiveTimezone: "UTC",
         contactNameOrder: "given_family_nickname",
         contactSortOrder: "given_name_asc",
         fluidLayout: false,
@@ -475,6 +477,7 @@ it("APR-008 applies membership name order to profile heading, breadcrumb, mini i
     value: {
       status: "ready",
       preferences: {
+        effectiveTimezone: "UTC",
         contactNameOrder: "family_given_nickname",
         contactSortOrder: "family_name_asc",
         fluidLayout: false,
@@ -544,7 +547,12 @@ it.each([0, 3])(
       document.querySelector('[data-person-vital-value="next-reminder"]')
         ?.textContent,
     )
-      .toBe(new Date("2026-09-20T07:00:00.000000Z").toLocaleString());
+      .toBe(
+        formatInstant("2026-09-20T07:00:00.000000Z", {
+          locale: "en",
+          effectiveTimezone: "UTC",
+        }),
+      );
   },
 );
 
