@@ -221,6 +221,279 @@ async function expectAlignedControls(
 }
 
 test(
+  "[PEOPLE-006] APR-003 retries failed fact reads without losing adjacent drafts",
+  { annotation: { type: "flow", description: "PEOPLE-006" } },
+  async ({ browserName, page, request }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const email = `fact-retry-${browserName}-${Date.now()}@example.test`;
+    await registerVerified(request, email);
+    await signIn(page, email);
+    await page.goto("/app/people/new");
+    await page.getByLabel("Given name").fill("Local");
+    await page.getByLabel("Family name").fill("Recovery");
+    await page.getByRole("button", { name: "Save person", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
+    const food = page.locator("#profile-section-food-preferences");
+    const pets = page.locator("#profile-section-pets");
+    const foodForm = food.locator("form[data-profile-fact-form]");
+    const petForm = pets.locator("form[data-profile-fact-form]");
+    await openLocalEditor(
+      food.getByRole("button", { name: "Add food preferences", exact: true }),
+      foodForm,
+    );
+    await foodForm.getByLabel("Food, allergy, and dietary preferences").fill(
+      "Saved tea preference",
+    );
+    await foodForm.getByRole("button", {
+      name: "Save profile fact",
+      exact: true,
+    })
+      .click();
+    await expect(food.getByText("Profile fact saved.", { exact: true }))
+      .toBeVisible();
+    await openLocalEditor(
+      pets.getByRole("button", { name: "Add pets", exact: true }),
+      petForm,
+    );
+    await petForm.getByLabel("Pet name").fill("Mochi");
+    await petForm.getByLabel("Pet notes").fill("Enjoys the garden");
+    await petForm.getByRole("button", {
+      name: "Save profile fact",
+      exact: true,
+    })
+      .click();
+    await expect(pets.getByText("Profile fact saved.", { exact: true }))
+      .toBeVisible();
+    let mode:
+      | "failed"
+      | "repeated"
+      | "ready"
+      | "empty"
+      | "archived"
+      | "hidden"
+      | "forbidden" = "failed";
+    let releaseRetry!: () => void;
+    const retryReleased = new Promise<void>((resolve) =>
+      releaseRetry = resolve
+    );
+    let delayedRead: Promise<void> | undefined;
+    await page.route("**/facts/pets", async (route) => {
+      if (delayedRead) await delayedRead;
+      if (mode === "failed") {
+        await route.abort("failed");
+      } else if (mode === "repeated" || mode === "forbidden") {
+        const status = mode === "forbidden" ? 403 : 503;
+        if (mode === "repeated") await retryReleased;
+        await route.fulfill({
+          status,
+          json: {
+            code: "unavailable",
+            detail: "Private failure details",
+            status,
+            title: "Unavailable",
+            type: "about:blank",
+          },
+        });
+      } else if (mode === "ready") await route.continue();
+      else {
+        const upstream = await route.fetch();
+        expect(upstream.ok()).toBe(true);
+        const snapshot = await upstream.json();
+        await route.fulfill({
+          response: upstream,
+          json: {
+            ...snapshot,
+            records: mode === "archived" ? snapshot.records : [],
+            status: mode === "empty" ? "ready" : mode,
+          },
+        });
+      }
+    });
+    const reads: string[] = [];
+    page.on("request", (outgoing) => {
+      if (outgoing.url().includes("/facts/")) {
+        reads.push(new URL(outgoing.url()).pathname);
+      }
+    });
+    let prompts = 0;
+    page.on("dialog", async (dialog) => {
+      prompts++;
+      await dialog.dismiss();
+    });
+    for (
+      const outcome of [
+        "ready",
+        "empty",
+        "archived",
+        "hidden",
+        "forbidden",
+      ] as const
+    ) {
+      mode = "failed";
+      await page.reload();
+      await expect(pets).toHaveAttribute("data-section-state", "error");
+      await expect(page.locator(
+        '[data-profile-fact-section][data-section-state="loading"]',
+      )).toHaveCount(0);
+      const retry = pets.getByRole("button", { name: "Retry", exact: true });
+      await expect(retry).toBeVisible();
+      await openLocalEditor(
+        food.getByRole("button", {
+          name: "Edit food preferences",
+          exact: true,
+        }),
+        foodForm,
+      );
+      const draft = foodForm.getByLabel(
+        "Food, allergy, and dietary preferences",
+      );
+      await draft.fill("Keep this neighboring draft");
+      reads.length = 0;
+      if (outcome === "ready") {
+        mode = "repeated";
+        await retry.click();
+        await expect(retry).toBeDisabled();
+        await expect(pets).toHaveAttribute("data-section-state", "loading");
+        releaseRetry();
+        await expect(pets).toHaveAttribute("data-section-state", "error");
+        await expect(retry).toBeEnabled();
+        await expect(retry).toBeFocused();
+        await expect(retry).toHaveCount(1);
+      }
+      mode = outcome;
+      await retry.click();
+      await expect(pets).toHaveAttribute(
+        "data-section-state",
+        outcome === "archived"
+          ? "read-only"
+          : outcome === "empty"
+          ? "ready"
+          : outcome,
+      );
+      await expect(retry).toHaveCount(0);
+      await expect(foodForm).toBeVisible();
+      await expect(draft).toHaveValue("Keep this neighboring draft");
+      await expect(food.locator("[data-profile-fact-list]"))
+        .toContainText("Saved tea preference");
+      expect(reads.length).toBe(outcome === "ready" ? 2 : 1);
+      expect(reads.every((path) => path.endsWith("/facts/pets"))).toBe(true);
+      expect(prompts).toBe(0);
+      expect(
+        await page.evaluate(() =>
+          globalThis.dispatchEvent(
+            new Event("beforeunload", { cancelable: true }),
+          )
+        ),
+      ).toBe(false);
+      await expect(pets).not.toContainText("Private failure details");
+      if (outcome === "ready" || outcome === "archived") {
+        await expect(pets).toContainText("Mochi");
+        await expect(pets).toContainText("Enjoys the garden");
+      } else if (outcome === "empty") {
+        await expect(pets.getByText("No pets saved.", { exact: true }))
+          .toBeVisible();
+        await expect(
+          pets.getByRole("button", { name: "Add pets", exact: true }),
+        )
+          .toBeVisible();
+      } else if (outcome === "hidden") await expect(pets).toBeHidden();
+      if (["archived", "hidden", "forbidden"].includes(outcome)) {
+        await expect(pets.locator("[data-profile-fact-add]")).toBeHidden();
+        await expect(pets.locator("[data-profile-fact-list] button"))
+          .toHaveCount(0);
+      }
+      await foodForm.getByRole("button", { name: "Cancel", exact: true })
+        .click();
+      if (outcome === "ready") {
+        await openLocalEditor(
+          pets.getByRole("button", { name: "Edit Mochi", exact: true }),
+          petForm,
+        );
+        await expect(petForm.getByLabel("Pet name")).toHaveValue("Mochi");
+        await expect(petForm.getByLabel("Pet notes")).toHaveValue(
+          "Enjoys the garden",
+        );
+        await petForm.getByRole("button", { name: "Cancel", exact: true })
+          .click();
+      }
+    }
+    for (const outcome of ["success", "failure"] as const) {
+      mode = "ready";
+      await page.reload();
+      await expect(pets).toHaveAttribute("data-section-state", "ready");
+      const editPet = pets.getByRole("button", {
+        name: "Edit Mochi",
+        exact: true,
+      });
+      const addPet = pets.getByRole("button", {
+        name: "Add pets",
+        exact: true,
+      });
+      await openLocalEditor(editPet, petForm);
+      await petForm.getByLabel("Pet notes").fill(
+        `Saved before ${outcome} Retry`,
+      );
+      mode = "failed";
+      await petForm.getByRole("button", {
+        name: "Save profile fact",
+        exact: true,
+      }).click();
+      await expect(petForm).toBeHidden();
+      await expect(pets).toHaveAttribute("data-section-state", "error");
+      let releaseRead!: () => void;
+      delayedRead = new Promise<void>((resolve) => releaseRead = resolve);
+      mode = outcome === "success" ? "ready" : "repeated";
+      const retry = pets.getByRole("button", { name: "Retry", exact: true });
+      await retry.click();
+      await expect(pets).toHaveAttribute("data-section-state", "loading");
+      await expect(retry).toBeDisabled();
+      await expect(addPet).toBeDisabled();
+      await expect(editPet).toBeDisabled();
+      await expect(petForm).toBeHidden();
+      await openLocalEditor(
+        food.getByRole("button", {
+          name: "Edit food preferences",
+          exact: true,
+        }),
+        foodForm,
+      );
+      const draft = foodForm.getByLabel(
+        "Food, allergy, and dietary preferences",
+      );
+      await draft.fill("New draft while Pets retries");
+      releaseRead();
+      delayedRead = undefined;
+      await expect(pets).toHaveAttribute(
+        "data-section-state",
+        outcome === "success" ? "ready" : "error",
+      );
+      await expect(foodForm).toBeVisible();
+      await expect(draft).toHaveValue("New draft while Pets retries");
+      await expect(petForm).toBeHidden();
+      await expect(addPet).toBeEnabled();
+      await expect(editPet).toBeEnabled();
+      if (outcome === "failure") await expect(retry).toBeEnabled();
+      expect(prompts).toBe(0);
+      await foodForm.getByRole("button", { name: "Cancel", exact: true })
+        .click();
+      await openLocalEditor(editPet, petForm);
+      await petForm.getByLabel("Pet notes").fill("A safe new local draft");
+      expect(
+        await page.evaluate(() =>
+          globalThis.dispatchEvent(
+            new Event("beforeunload", { cancelable: true }),
+          )
+        ),
+      ).toBe(false);
+      await petForm.getByRole("button", { name: "Cancel", exact: true })
+        .click();
+    }
+  },
+);
+
+test(
   "[PEOPLE-006] APR-002 confirms local-editor switches before discarding drafts",
   { annotation: { type: "flow", description: "PEOPLE-006" } },
   async ({ browserName, page, request }) => {

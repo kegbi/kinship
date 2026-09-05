@@ -112,6 +112,446 @@ afterEach(() => {
 });
 
 describe("PEOPLE-006 profile-fact sections", () => {
+  it("APR-003 retries a failed Pets read locally without replacing a neighboring draft", async () => {
+    allMarkup();
+    mountUnsavedChangesGuard({
+      root: document.body,
+      confirmMessage: "Discard?",
+    });
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    let petReads = 0;
+    let finishRetry!: (result: Response) => void;
+    const retryPending = new Promise<Response>((resolve) =>
+      finishRetry = resolve
+    );
+    const fetch = vi.fn((resource: string) => {
+      const section = new URL(resource, "http://localhost").pathname.split("/")
+        .at(-1);
+      if (section === "pets") {
+        petReads++;
+        if (petReads === 1) return Promise.reject(new Error("Network failure"));
+        if (petReads === 2) return retryPending;
+      }
+      return response({
+        options: [],
+        records: section === "pets"
+          ? [{
+            id: typeId,
+            section: "pets",
+            updatedAt: revision,
+            value: { name: "Mochi", notes: "Enjoys the garden" },
+          }]
+          : section === "food-preferences"
+          ? [{
+            id: personId,
+            section,
+            updatedAt: revision,
+            value: { foodPreferences: "Saved tea preference" },
+          }]
+          : [],
+        personUpdatedAt: revision,
+        status: "ready",
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+    await mountProfileFacts(personId, workspaceId, false, revision);
+    const pets = document.querySelector<HTMLElement>(
+      '[data-profile-fact-section="pets"]',
+    )!;
+    const food = document.querySelector<HTMLElement>(
+      '[data-profile-fact-section="food-preferences"]',
+    )!;
+    expect(pets.dataset.sectionState).toBe("error");
+    expect(pets.textContent).toContain("temporarily unavailable");
+    const retry = pets.querySelector<HTMLButtonElement>(
+      "[data-profile-fact-retry]",
+    );
+    expect(retry, "The failed block must offer a working Retry button").not
+      .toBeNull();
+    expect(retry!.textContent).toBe("Retry");
+    food.querySelector<HTMLButtonElement>("[data-profile-fact-add]")!.click();
+    const foodForm = food.querySelector("form")!;
+    await vi.waitFor(() => expect(foodForm.hidden).toBe(false));
+    const draft = foodForm.querySelector("textarea")!;
+    draft.value = "Keep this food draft";
+    draft.dispatchEvent(new Event("input", { bubbles: true }));
+    const savedFood =
+      food.querySelector("[data-profile-fact-list]")!.firstChild;
+    const otherReads = () =>
+      fetch.mock.calls.filter(([url]) => !String(url).includes("/facts/pets"))
+        .length;
+    const initialOtherReads = otherReads();
+    retry!.click();
+    retry!.click();
+    expect(petReads).toBe(2);
+    expect(retry!.disabled).toBe(true);
+    expect(pets.dataset.sectionState).toBe("loading");
+    finishRetry(response({
+      code: "unavailable",
+      detail: "Private failure details",
+      status: 503,
+      title: "Unavailable",
+      type: "about:blank",
+    }, 503));
+    await vi.waitFor(() => expect(pets.dataset.sectionState).toBe("error"));
+    expect(retry!.disabled).toBe(false);
+    expect(pets.querySelectorAll("[data-profile-fact-retry]")).toHaveLength(1);
+    expect(pets.textContent).not.toContain("Private failure details");
+    retry!.click();
+    await vi.waitFor(() => expect(pets.dataset.sectionState).toBe("ready"));
+    expect(pets.textContent).toContain("Mochi");
+    expect(pets.textContent).toContain("Enjoys the garden");
+    expect(pets.querySelector("[data-profile-fact-retry]")).toBeNull();
+    expect(foodForm.hidden).toBe(false);
+    expect(draft.value).toBe("Keep this food draft");
+    expect(food.querySelector("[data-profile-fact-list]")!.firstChild).toBe(
+      savedFood,
+    );
+    expect(otherReads()).toBe(initialOtherReads);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(globalThis.dispatchEvent(
+      new Event("beforeunload", {
+        cancelable: true,
+      }),
+    )).toBe(false);
+    foodForm.querySelector<HTMLButtonElement>(
+      '.form-actions button[type="button"]',
+    )!.click();
+    [...pets.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent === "Edit Mochi"
+    )!.click();
+    const petForm = pets.querySelector("form")!;
+    await vi.waitFor(() => expect(petForm.hidden).toBe(false));
+    expect((petForm.elements.namedItem("name") as HTMLInputElement).value).toBe(
+      "Mochi",
+    );
+  });
+
+  it.each([
+    "contact-methods",
+    "addresses",
+    "first-meeting",
+    "work",
+    "food-preferences",
+    "pets",
+    "tags",
+  ])("APR-003 recovers an empty %s block", async (section) => {
+    allMarkup();
+    document.querySelectorAll<HTMLElement>("[data-profile-fact-section]")
+      .forEach((root) => {
+        if (root.dataset.profileFactSection !== section) root.remove();
+      });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValueOnce(new Error("Offline"))
+        .mockResolvedValue(response({
+          options: [],
+          personUpdatedAt: revision,
+          records: [],
+          status: "ready",
+        })),
+    );
+    await mountProfileFacts(personId, workspaceId, false, revision);
+    const root = document.querySelector<HTMLElement>(
+      "[data-profile-fact-section]",
+    )!;
+    root.querySelector<HTMLButtonElement>("[data-profile-fact-retry]")!.click();
+    await vi.waitFor(() => expect(root.dataset.sectionState).toBe("ready"));
+    expect(root.hidden).toBe(false);
+    expect(root.textContent).toContain(
+      `No ${section.replaceAll("-", " ")} saved.`,
+    );
+    expect(root.querySelector("[data-profile-fact-retry]")).toBeNull();
+    expect(
+      root.querySelector<HTMLButtonElement>("[data-profile-fact-add]")!
+        .hidden,
+    ).toBe(false);
+  });
+
+  it.each(["archived", "hidden", 401, 403] as const)(
+    "APR-003 stops retrying when recovery resolves to %s",
+    async (outcome) => {
+      markup();
+      const denied = typeof outcome === "number";
+      const fetch = vi.fn().mockRejectedValueOnce(new Error("Offline"))
+        .mockResolvedValue(response(
+          denied
+            ? {
+              code: "forbidden",
+              detail: "Private failure details",
+              status: outcome,
+              title: "Forbidden",
+              type: "about:blank",
+            }
+            : {
+              options: [],
+              personUpdatedAt: revision,
+              records: [],
+              status: outcome,
+            },
+          denied ? outcome : 200,
+        ));
+      vi.stubGlobal("fetch", fetch);
+      await mountProfileFacts(personId, workspaceId, false, revision);
+      const root = document.querySelector<HTMLElement>(
+        "[data-profile-fact-section]",
+      )!;
+      root.querySelector<HTMLButtonElement>("[data-profile-fact-retry]")!
+        .click();
+      await vi.waitFor(() =>
+        expect(root.dataset.sectionState).toBe(
+          denied
+            ? "forbidden"
+            : outcome === "archived"
+            ? "read-only"
+            : "hidden",
+        )
+      );
+      expect(root.querySelector("[data-profile-fact-retry]")).toBeNull();
+      expect(
+        root.querySelector<HTMLButtonElement>("[data-profile-fact-add]")!
+          .hidden,
+      ).toBe(true);
+      expect(root.querySelector("form")!.hidden).toBe(true);
+      expect(root.querySelectorAll("[data-profile-fact-list] button"))
+        .toHaveLength(0);
+      expect(root.hidden).toBe(outcome === "hidden");
+      expect(root.textContent).not.toContain("Private failure details");
+      expect(fetch).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("APR-003 guards a local draft before retry and clears stale controls on denial", async () => {
+    document.body.innerHTML = `
+      <section data-profile-fact-section="food-preferences"><p data-profile-fact-state tabindex="-1"></p><ul data-profile-fact-list></ul><button data-profile-fact-add hidden>Add</button><form data-profile-fact-form hidden></form></section>`;
+    mountUnsavedChangesGuard({
+      root: document.body,
+      confirmMessage: "Discard?",
+    });
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    const record = {
+      id: personId,
+      section: "food-preferences",
+      updatedAt: revision,
+      value: { foodPreferences: "Saved preference" },
+    };
+    let reads = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url, init?: RequestInit) => {
+        if (init?.method === "PUT") {
+          return response({
+            record,
+            personUpdatedAt: revision,
+            status: "saved",
+          });
+        }
+        reads++;
+        if (reads === 2) return Promise.reject(new Error("Offline"));
+        if (reads > 2) {
+          return response({
+            code: "forbidden",
+            detail: "Private failure details",
+            status: 403,
+            title: "Forbidden",
+            type: "about:blank",
+          }, 403);
+        }
+        return response({
+          options: [],
+          personUpdatedAt: revision,
+          records: [record],
+          status: "ready",
+        });
+      }),
+    );
+    await mountProfileFacts(personId, workspaceId, false, revision);
+    const root = document.querySelector<HTMLElement>("section")!;
+    const add = root.querySelector<HTMLButtonElement>(
+      "[data-profile-fact-add]",
+    )!;
+    const form = root.querySelector("form")!;
+    add.click();
+    await vi.waitFor(() => expect(form.hidden).toBe(false));
+    form.requestSubmit();
+    await vi.waitFor(() => expect(root.dataset.sectionState).toBe("error"));
+    add.click();
+    await vi.waitFor(() => expect(form.hidden).toBe(false));
+    const draft = form.querySelector("textarea")!;
+    draft.value = "Unsaved local changes";
+    draft.dispatchEvent(new Event("input", { bubbles: true }));
+    const retry = root.querySelector<HTMLButtonElement>(
+      "[data-profile-fact-retry]",
+    )!;
+    retry.click();
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(reads).toBe(2);
+    expect(form.hidden).toBe(false);
+    expect(draft.value).toBe("Unsaved local changes");
+    expect(document.activeElement).toBe(draft);
+    confirm.mockReturnValue(true);
+    retry.click();
+    await vi.waitFor(() => expect(root.dataset.sectionState).toBe("forbidden"));
+    expect(root.textContent).not.toContain("Saved preference");
+    expect(root.querySelector("[data-profile-fact-retry]")).toBeNull();
+    expect(add.hidden).toBe(true);
+    expect(add.onclick).toBeNull();
+    expect(form.hidden).toBe(true);
+    expect(form.onsubmit).toBeNull();
+    expect(form.childElementCount).toBe(0);
+    expect(root.querySelector("[data-profile-fact-list]")!.childElementCount)
+      .toBe(0);
+  });
+
+  it.each([
+    ["add", "success"],
+    ["edit", "success"],
+    ["add", "failure"],
+    ["edit", "failure"],
+  ])(
+    "APR-003 locks %s during post-save Retry and unlocks after %s",
+    async (action, outcome) => {
+      allMarkup();
+      mountUnsavedChangesGuard({
+        root: document.body,
+        confirmMessage: "Discard?",
+      });
+      const confirm = vi.fn(() => false);
+      vi.stubGlobal("confirm", confirm);
+      let reads = 0;
+      let settle!: (result: Response) => void;
+      const pending = new Promise<Response>((resolve) => settle = resolve);
+      const record = {
+        id: personId,
+        section: "food-preferences",
+        updatedAt: revision,
+        value: { foodPreferences: "Saved preference" },
+      };
+      const updated = {
+        ...record,
+        value: { foodPreferences: "Updated preference" },
+      };
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((resource: string, init?: RequestInit) => {
+          const food = resource.includes("/facts/food-preferences");
+          if (init?.method === "PUT") {
+            return response({
+              record: updated,
+              personUpdatedAt: revision,
+              status: "saved",
+            });
+          }
+          if (food) {
+            reads++;
+            if (reads === 2) {
+              return Promise.reject(new Error("Refresh failed"));
+            }
+            if (reads === 3) return pending;
+          }
+          return response({
+            options: [],
+            personUpdatedAt: revision,
+            records: food ? [record] : [],
+            status: "ready",
+          });
+        }),
+      );
+      await mountProfileFacts(personId, workspaceId, false, revision);
+      const food = document.querySelector<HTMLElement>(
+        '[data-profile-fact-section="food-preferences"]',
+      )!;
+      const form = food.querySelector("form")!;
+      const add = food.querySelector<HTMLButtonElement>(
+        "[data-profile-fact-add]",
+      )!;
+      add.click();
+      await vi.waitFor(() => expect(form.hidden).toBe(false));
+      form.querySelector("textarea")!.value = "Updated preference";
+      form.requestSubmit();
+      await vi.waitFor(() => expect(food.dataset.sectionState).toBe("error"));
+      const edit = food.querySelector<HTMLButtonElement>(
+        "[data-profile-fact-list] .button-secondary",
+      )!;
+      const opener = action === "add" ? add : edit;
+      const retry = food.querySelector<HTMLButtonElement>(
+        "[data-profile-fact-retry]",
+      )!;
+      retry.click();
+      expect(food.dataset.sectionState).toBe("loading");
+      opener.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(
+        form.hidden,
+        "A pending Retry must not reopen the editor it will replace",
+      ).toBe(true);
+      expect(opener.disabled).toBe(true);
+      expect(retry.disabled).toBe(true);
+      const pets = document.querySelector<HTMLElement>(
+        '[data-profile-fact-section="pets"]',
+      )!;
+      pets.querySelector<HTMLButtonElement>("[data-profile-fact-add]")!.click();
+      const neighbor = pets.querySelector("form")!;
+      await vi.waitFor(() => expect(neighbor.hidden).toBe(false));
+      const draft = neighbor.querySelector("textarea")!;
+      draft.focus();
+      draft.value = "Draft made while the other section retries";
+      draft.dispatchEvent(new Event("input", { bubbles: true }));
+      settle(
+        outcome === "success"
+          ? response({
+            options: [],
+            personUpdatedAt: revision,
+            records: [updated],
+            status: "ready",
+          })
+          : response({
+            code: "unavailable",
+            detail: "Unavailable",
+            status: 503,
+            title: "Unavailable",
+            type: "about:blank",
+          }, 503),
+      );
+      await vi.waitFor(() =>
+        expect(food.dataset.sectionState).toBe(
+          outcome === "success" ? "ready" : "error",
+        )
+      );
+      expect(form.hidden).toBe(true);
+      expect(neighbor.hidden).toBe(false);
+      expect(draft.value).toBe("Draft made while the other section retries");
+      expect(confirm).not.toHaveBeenCalled();
+      expect(add.disabled).toBe(false);
+      if (outcome === "failure") expect(retry.disabled).toBe(false);
+      neighbor.querySelector<HTMLButtonElement>(
+        '.form-actions button[type="button"]',
+      )!.click();
+      const restoredOpener = action === "add"
+        ? add
+        : food.querySelector<HTMLButtonElement>(
+          "[data-profile-fact-list] .button-secondary",
+        )!;
+      expect(restoredOpener.disabled).toBe(false);
+      restoredOpener.click();
+      await vi.waitFor(() => expect(form.hidden).toBe(false));
+      const field = form.querySelector("textarea")!;
+      expect(field.value).toBe(
+        outcome === "success" ? "Updated preference" : "Saved preference",
+      );
+      field.value = "A safe new local draft";
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      expect(
+        globalThis.dispatchEvent(
+          new Event("beforeunload", { cancelable: true }),
+        ),
+      ).toBe(false);
+      expect(field.isConnected).toBe(true);
+    },
+  );
+
   it.each([
     ["food-preferences", "pets", "clean"],
     ["food-preferences", "pets", "declined"],

@@ -114,7 +114,16 @@ established in this pass.
 
 ### APR-003 — Provide a working retry after a profile fact fails to load
 
-- [ ] **P1, ready.**
+- [x] **P1, delivered.** Failed blocks offer a local Retry, serialize repeated
+      clicks, and recover populated, empty, read-only, or hidden state without
+      disturbing neighboring values or drafts. Access denial removes stale
+      values and controls without offering an ineffective retry. Chromium passes
+      the APR-001/002/003 `PEOPLE-006` regressions on the isolated worktree
+      stack. The 621-test web coverage checkpoint passes at 95.12% line, 84.15%
+      branch, and 88.74% function coverage. A review amendment serializes
+      retries with that block's editing controls; its extended Chromium
+      regression and 70 focused tests pass, with 95.74% line, 85.21% branch, and
+      88.52% function coverage. Static and five product-contract checks pass.
 - Evidence: `load` in
   [profile-facts.ts](../../apps/web/src/lib/profile-facts.ts) sets an error
   message and returns before wiring an action. Aborting the initial Pets GET
