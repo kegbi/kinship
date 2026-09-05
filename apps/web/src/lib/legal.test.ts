@@ -37,6 +37,30 @@ afterEach(() => {
 });
 
 describe("GOVERNANCE-001 legal review", () => {
+  it("APR-005 completes required legal review when workspace storage is disabled", async () => {
+    document.body.innerHTML = complianceMarkup();
+    vi.stubGlobal("sessionStorage", {
+      getItem() {
+        throw new DOMException("Disabled", "SecurityError");
+      },
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({ documents: [legal], status: "ready" }))
+      .mockResolvedValueOnce(response({ status: "accepted" }, 201))
+      .mockResolvedValueOnce(response({ documents: [], status: "ready" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const navigate = vi.fn();
+
+    await mountCompliance(navigate);
+    document.querySelector<HTMLInputElement>("[data-compliance-confirm]")!
+      .click();
+    document.querySelector<HTMLButtonElement>("[data-compliance-accept]")!
+      .click();
+
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith("/app"));
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/v1/legal-acceptances");
+  });
+
   it("renders the exact public version as text", async () => {
     document.body.innerHTML =
       "<p data-legal-state></p><h1 data-legal-title></h1><p data-legal-version></p><article data-legal-content></article>";

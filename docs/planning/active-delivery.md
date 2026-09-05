@@ -15,10 +15,10 @@ prerequisite queues.
   an evidence-backed application repair plan and execution in a clean task.
 - Remaining repair statuses and execution order belong to the
   [application repair plan](application-repair-plan-2026-09-05.md). **APR-001
-  through APR-004** preserve unsaved drafts, guard local-editor switching,
-  provide local fact-load retries, and make mobile editors modal. Continue with
-  its first unchecked item, **APR-005**, for authenticated use when browser
-  storage is unavailable.
+  through APR-005** preserve unsaved drafts, coordinate local editors, provide
+  fact-load retries and accessible mobile dialogs, and keep authenticated use
+  recoverable when browser storage is unavailable. Continue with its first
+  unchecked item, **APR-011**, for API-token and DAV aggregate test coverage.
 - **Phase 12 is accepted.** `REL-029` is delivered; `REL-020` and `REL-025`
   remain watches. Phase 11's `OPS-001E` deployment work stays parked until
   explicitly requested.

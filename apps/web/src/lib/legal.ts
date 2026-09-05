@@ -5,17 +5,10 @@ import {
   type LegalDocument,
   signOut,
 } from "../../../../packages/contracts/generated/auth-client.ts";
-import {
-  ACTIVE_WORKSPACE_KEY,
-  clearSessionCache,
-} from "./workspace-context.ts";
+import { clearSessionCache, readActiveWorkspace } from "./workspace-context.ts";
 
 type Navigate = (path: string) => void;
 const browserNavigate: Navigate = (path) => globalThis.location.assign(path);
-
-function selectedWorkspace(): string | undefined {
-  return sessionStorage.getItem(ACTIVE_WORKSPACE_KEY) ?? undefined;
-}
 
 function safeNext(): string {
   const requested = new URLSearchParams(globalThis.location.search).get("next");
@@ -123,7 +116,7 @@ export async function mountCompliance(
   const refresh = async (): Promise<void> => {
     elements.review.hidden = true;
     elements.state.textContent = "Checking required legal documents…";
-    const result = await getLegalRequirements(selectedWorkspace()).catch(() =>
+    const result = await getLegalRequirements(readActiveWorkspace()).catch(() =>
       undefined
     );
     if (!result?.ok) {
@@ -151,7 +144,7 @@ export async function mountCompliance(
     elements.state.textContent = "Recording acceptance…";
     const result = await acceptLegalDocument(
       documentId,
-      selectedWorkspace(),
+      readActiveWorkspace(),
     ).catch(() => undefined);
     accepting = false;
     if (!result?.ok) {
