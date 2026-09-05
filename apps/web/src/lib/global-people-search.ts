@@ -1,12 +1,14 @@
 import {
+  getMemberPreferences,
+  getPerson,
   getTodayRecentPeople,
   listPeople,
   type PeopleDirectoryPerson,
   type SessionContext,
-  type TodayRecentPerson,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { groups } from "./settings-destinations.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
+import { displayPersonName, type PersonNameOrder } from "./person-name.ts";
 
 type Navigate = (path: string) => void;
 
@@ -28,6 +30,7 @@ interface SearchElements {
 
 interface SearchPerson {
   readonly archived: boolean;
+  readonly formalNames?: readonly string[];
   readonly id: string;
   readonly name: string;
   readonly nickname?: string;
@@ -150,13 +153,6 @@ function searchElements(): SearchElements | undefined {
   };
 }
 
-function displayName(person: PeopleDirectoryPerson): string {
-  return [person.givenName, person.middleName, person.familyName].filter(
-    Boolean,
-  )
-    .join(" ") || person.nickname || "Unnamed person";
-}
-
 function initials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return "?";
@@ -165,20 +161,19 @@ function initials(name: string): string {
   }`.toLocaleUpperCase();
 }
 
-function directorySearchPerson(person: PeopleDirectoryPerson): SearchPerson {
+function directorySearchPerson(
+  person: PeopleDirectoryPerson,
+  nameOrder: PersonNameOrder,
+): SearchPerson {
   return {
     archived: person.lifecycle === "archived",
+    formalNames: [
+      displayPersonName({ ...person, nickname: "" }, "given_family_nickname"),
+      displayPersonName({ ...person, nickname: "" }, "family_given_nickname"),
+    ],
     id: person.id,
-    name: displayName(person),
+    name: displayPersonName(person, nameOrder),
     ...(person.nickname ? { nickname: person.nickname } : {}),
-  };
-}
-
-function recentSearchPerson(person: TodayRecentPerson): SearchPerson {
-  return {
-    archived: person.archived,
-    id: person.id,
-    name: person.name,
   };
 }
 
@@ -198,11 +193,6 @@ function personOption(person: SearchPerson): HTMLLIElement {
   const name = document.createElement("strong");
   name.textContent = person.name;
   identity.append(name);
-  if (person.nickname && person.nickname !== person.name) {
-    const nickname = document.createElement("span");
-    nickname.textContent = person.nickname;
-    identity.append(nickname);
-  }
   option.append(avatar, identity);
   if (person.archived) {
     const archived = document.createElement("span");
@@ -271,6 +261,11 @@ export async function mountGlobalPeopleSearch(
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") return () => {};
   const commands = commandIndex(session.session.member.role);
+  const preferences = await getMemberPreferences(session.session.workspace.id)
+    .catch(() => undefined);
+  const nameOrder = preferences?.ok
+    ? preferences.value.preferences.contactNameOrder
+    : "given_family_nickname";
 
   let activeIndex = -1;
   let debounce: ReturnType<typeof setTimeout> | undefined;
@@ -314,6 +309,9 @@ export async function mountGlobalPeopleSearch(
     const hasExactMatch = normalizedQuery
       ? people.some((person) =>
         person.name.toLocaleLowerCase() === normalizedQuery ||
+        person.formalNames?.some((name) =>
+          name.toLocaleLowerCase() === normalizedQuery
+        ) ||
         person.nickname?.toLocaleLowerCase() === normalizedQuery
       )
       : true;
@@ -354,7 +352,28 @@ export async function mountGlobalPeopleSearch(
       ui.status.textContent = "People search is temporarily unavailable";
       return;
     }
-    renderPeople(result.value.people.map(recentSearchPerson));
+    const identities = await Promise.all(
+      result.value.people.map(async (person) => {
+        const identity = await getPerson(
+          person.id,
+          session.session.workspace.id,
+          "summary",
+        ).catch(() => undefined);
+        return identity?.ok
+          ? {
+            archived: identity.value.status === "archived",
+            id: person.id,
+            name: displayPersonName(identity.value.person, nameOrder),
+          }
+          : undefined;
+      }),
+    );
+    if (!isLatest(controller)) return;
+    renderPeople(identities.filter((person) => person !== undefined));
+    if (identities.some((person) => !person)) {
+      if (ui.problem) ui.problem.hidden = false;
+      ui.status.textContent = "Some recent people are unavailable";
+    }
   };
   const loadSearch = async (
     query: string,
@@ -371,7 +390,12 @@ export async function mountGlobalPeopleSearch(
       ui.status.textContent = "People search is temporarily unavailable";
       return;
     }
-    renderPeople(result.value.people.map(directorySearchPerson), query);
+    renderPeople(
+      result.value.people.map((person) =>
+        directorySearchPerson(person, nameOrder)
+      ),
+      query,
+    );
   };
   const queue = (value: string): void => {
     if (debounce) clearTimeout(debounce);

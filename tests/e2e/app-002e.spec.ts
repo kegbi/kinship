@@ -156,6 +156,166 @@ async function expectAccessible(page: Page): Promise<void> {
 }
 
 test(
+  "[AUTH-004] APR-008 saved name and sort preferences follow the active membership",
+  {
+    annotation: [
+      { type: "flow", description: "AUTH-004" },
+    ],
+  },
+  async ({ page, request, browserName }) => {
+    test.setTimeout(240_000);
+    page.setDefaultTimeout(15_000);
+    const suffix = `${browserName}-${Date.now()}`;
+    const email = `names-${suffix}@example.test`;
+    const otherEmail = `names-other-${suffix}@example.test`;
+    await registerVerified(request, email, `Names ${suffix}`);
+    await registerVerified(request, otherEmail, `Other names ${suffix}`);
+    const workspaceId = databaseValue(
+      `select w.id::text from crm.workspaces w join crm.users u on u.id = w.created_by_user_id where u.email = ${
+        sqlLiteral(email)
+      }`,
+    );
+    const otherWorkspaceId = databaseValue(
+      `select w.id::text from crm.workspaces w join crm.users u on u.id = w.created_by_user_id where u.email = ${
+        sqlLiteral(otherEmail)
+      }`,
+    );
+    const userId = databaseValue(
+      `select id::text from crm.users where email = ${sqlLiteral(email)}`,
+    );
+    databaseSql(
+      `with inserted as (insert into crm.workspace_members (id, workspace_id, user_id, role, status, joined_at, created_at, updated_at) values (gen_random_uuid(), ${
+        sqlLiteral(otherWorkspaceId)
+      }::uuid, ${
+        sqlLiteral(userId)
+      }::uuid, 'member', 'active', now(), now(), now()) returning id) insert into crm.member_preferences (member_id) select id from inserted`,
+    );
+    await signIn(page, email);
+    const createPerson = async (
+      targetWorkspaceId: string,
+      identity: {
+        givenName: string;
+        familyName?: string;
+        nickname?: string;
+        isPartial?: boolean;
+      },
+    ) => {
+      const created = await page.request.post(`${origin}/api/v1/people`, {
+        headers: { "X-Workspace-Id": targetWorkspaceId, Origin: origin },
+        data: { ...identity, isPartial: identity.isPartial ?? false },
+      });
+      expect(created.status()).toBe(201);
+      return (await created.json() as { person: { id: string } }).person.id;
+    };
+    const adaId = await createPerson(workspaceId, {
+      givenName: "Ada",
+      familyName: "Zulu",
+    });
+    await createPerson(workspaceId, { givenName: "Zoe", familyName: "Alpha" });
+    const partialId = await createPerson(workspaceId, {
+      givenName: "",
+      nickname: "Sunny",
+      isPartial: true,
+    });
+    await createPerson(otherWorkspaceId, {
+      givenName: "Ada",
+      familyName: "Zulu",
+    });
+    await createPerson(otherWorkspaceId, {
+      givenName: "Zoe",
+      familyName: "Alpha",
+    });
+
+    await page.goto("/app/settings/preferences");
+    await page.getByLabel("Name display").selectOption("family_given_nickname");
+    await page.locator('[name="contactSortOrder"]').selectOption(
+      "family_name_asc",
+    );
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Preferences saved" }),
+    ).toBeVisible();
+    await page.goto("/app/people");
+    await expect(page.locator("#people-directory-sort")).toHaveValue(
+      "family-name",
+    );
+    const labels = page.locator("#people-directory-list h2");
+    await expect(labels).toHaveCount(3);
+    const familyLabels = await labels.allTextContents();
+    expect(familyLabels.indexOf("Alpha Zoe")).toBeLessThan(
+      familyLabels.indexOf("Zulu Ada"),
+    );
+    expect(familyLabels).toContain("Sunny");
+    await page.goto("/app/people?sort=given-name");
+    await expect(page.locator("#people-directory-sort")).toHaveValue(
+      "given-name",
+    );
+    await expect(labels).toHaveCount(3);
+    const explicitLabels = await labels.allTextContents();
+    expect(explicitLabels.indexOf("Zulu Ada")).toBeLessThan(
+      explicitLabels.indexOf("Alpha Zoe"),
+    );
+    await page.reload();
+    await expect(page.locator("#people-directory-sort")).toHaveValue(
+      "given-name",
+    );
+
+    const recordedView = page.waitForResponse((response) =>
+      response.url().endsWith(`/api/v1/people/${adaId}/view`) &&
+      response.request().method() === "POST" && response.status() === 200
+    );
+    await page.goto(`/app/people/${adaId}`);
+    await expect(page.locator("#person-profile-name")).toHaveText("Zulu Ada");
+    await recordedView;
+    await page.getByRole("combobox", { name: "Find a person" }).press(
+      "ArrowDown",
+    );
+    await expect(
+      page.locator("#global-people-search-results strong").filter({
+        hasText: "Zulu Ada",
+      }),
+    ).toBeVisible();
+    await page.locator("#global-people-search-input").fill("Ada");
+    await expect(
+      page.locator("#global-people-search-results strong").filter({
+        hasText: "Zulu Ada",
+      }),
+    ).toBeVisible();
+    await page.locator("[data-global-people-search-close]").click();
+    await page.getByRole("button", { name: "Quick capture", exact: true })
+      .click();
+    await expect(
+      page.locator('[name="participantIds"] option').filter({
+        hasText: "Zulu Ada",
+      }),
+    ).toHaveCount(1);
+    await expect(
+      page.locator('[name="participantIds"] option').filter({
+        hasText: "Sunny",
+      }),
+    ).toHaveCount(1);
+    await page.locator("[data-interaction-cancel]").click();
+    await page.goto(`/app/people/${partialId}`);
+    await expect(page.locator("#person-profile-name")).toHaveText("Sunny");
+    await expect(page.locator("#person-profile-partial")).toBeVisible();
+
+    await page.goto("/app/people");
+    await openMemberPopover(page);
+    await page.getByLabel("Active workspace").selectOption(otherWorkspaceId);
+    await expect(page.locator("#people-directory-sort")).toHaveValue(
+      "given-name",
+    );
+    await expect(labels).toHaveText(["Ada Zulu", "Zoe Alpha"]);
+    await openMemberPopover(page);
+    await page.getByLabel("Active workspace").selectOption(workspaceId);
+    await expect(page.locator("#people-directory-sort")).toHaveValue(
+      "family-name",
+    );
+    await expect(labels).toContainText(["Alpha Zoe", "Zulu Ada"]);
+  },
+);
+
+test(
   "[AUTH-004] [WORKSPACE-001] member settings and role-safe workspace administration are tenant-safe",
   {
     annotation: [

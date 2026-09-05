@@ -1,7 +1,33 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getMemberPreferences } from "../../../../packages/contracts/generated/auth-client.ts";
 import { mountPeopleDirectory } from "./people-directory.ts";
+
+vi.mock(
+  "../../../../packages/contracts/generated/auth-client.ts",
+  async (original) => ({
+    ...await original<Record<string, unknown>>(),
+    getMemberPreferences: vi.fn(),
+  }),
+);
+
+beforeEach(() => {
+  vi.mocked(getMemberPreferences).mockReset().mockResolvedValue({
+    ok: true,
+    value: {
+      status: "ready",
+      preferences: {
+        contactNameOrder: "given_family_nickname",
+        contactSortOrder: "given_name_asc",
+        fluidLayout: false,
+        locale: "en",
+        measurementSystem: "metric",
+        temperatureScale: "celsius",
+      },
+    },
+  });
+});
 
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -62,6 +88,62 @@ afterEach(() => {
 });
 
 describe("PEOPLE-002 people directory island", () => {
+  it("APR-008 applies saved display and sort order but preserves an explicit given-name URL", async () => {
+    vi.mocked(getMemberPreferences).mockResolvedValue({
+      ok: true,
+      value: {
+        status: "ready",
+        preferences: {
+          contactNameOrder: "family_given_nickname",
+          contactSortOrder: "family_name_asc",
+          fluidLayout: false,
+          locale: "en",
+          measurementSystem: "metric",
+          temperatureScale: "celsius",
+        },
+      },
+    });
+    for (const query of ["", "?sort=given-name", "?sort=invalid"]) {
+      const explicitSort = query === "?sort=given-name";
+      markup();
+      history.replaceState({}, "", `/app/people${query}`);
+      const fetchMock = vi.fn((url: string) =>
+        Promise.resolve(response(
+          url === "/api/v1/session"
+            ? session
+            : url.includes("tag-options")
+            ? { options: [], status: "ready" }
+            : {
+              lifecycle: "active",
+              status: "ready",
+              people: [{
+                givenName: "Ada",
+                middleName: "Byron",
+                familyName: "Lovelace",
+                nickname: "Enchantress",
+                id: personId,
+                isPartial: false,
+                isStarred: false,
+                lifecycle: "active",
+                tagCount: 0,
+                tags: [],
+              }],
+            },
+        ))
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      await mountPeopleDirectory();
+      expect(document.querySelector("#people-directory-list h2")?.textContent)
+        .toBe("Lovelace Ada Byron “Enchantress”");
+      expect(
+        fetchMock.mock.calls.some(([url]) =>
+          url.includes(`sort=${explicitSort ? "given-name" : "family-name"}`)
+        ),
+      ).toBe(true);
+      expect(location.search).toBe(explicitSort ? "?sort=given-name" : "");
+      expect(getMemberPreferences).toHaveBeenCalledWith(workspaceId);
+    }
+  });
   it("keeps loading visible, then renders active people with tags and canonical links", async () => {
     markup();
     let release = (_value: Response) => {};

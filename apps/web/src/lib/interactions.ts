@@ -1,6 +1,7 @@
 import {
   type ActivityOrNoteInteraction,
   getActivityReport,
+  getMemberPreferences,
   getTodayFavoriteNotes,
   getTodayRecentActivity,
   type InteractionInput,
@@ -12,6 +13,8 @@ import {
   resolveWorkspaceSession,
   WORKSPACE_CHANGE_REQUEST_EVENT,
 } from "./workspace-context.ts";
+
+import { displayPersonName } from "./person-name.ts";
 
 const INTERACTION_CREATED_EVENT = "kinship:interaction-created";
 const TODAY_RECONNECT_RECORDED_EVENT = "kinship:today-reconnect-recorded";
@@ -55,15 +58,6 @@ function option(value: string, label: string): HTMLOptionElement {
   element.value = value;
   element.textContent = label;
   return element;
-}
-
-function displayName(person: {
-  readonly familyName?: string;
-  readonly givenName: string;
-  readonly nickname?: string;
-}): string {
-  return [person.givenName, person.familyName].filter(Boolean).join(" ") ||
-    person.nickname || "Unnamed person";
 }
 
 function canonicalUuid(value: string): string | undefined {
@@ -259,6 +253,13 @@ export async function mountInteractionCapture(): Promise<void> {
     return;
   }
   const workspaceId = session.session.workspace.id;
+  const preferences = await getMemberPreferences(workspaceId).catch(() =>
+    undefined
+  );
+  if (signal.aborted) return;
+  const nameOrder = preferences?.ok
+    ? preferences.value.preferences.contactNameOrder
+    : "given_family_nickname";
   const preferred = profilePersonId();
   happenedAt.value = localDateTime();
   setKind();
@@ -363,12 +364,12 @@ export async function mountInteractionCapture(): Promise<void> {
     renderOptionPage(participants, [
       ...result.value.people.map((person) => ({
         id: person.id,
-        name: displayName(person),
+        name: displayPersonName(person, nameOrder),
       })),
       ...(result.value.selected
         ? [{
           id: result.value.selected.id,
-          name: displayName(result.value.selected),
+          name: displayPersonName(result.value.selected, nameOrder),
         }]
         : []),
     ]);
@@ -480,12 +481,12 @@ export async function mountInteractionCapture(): Promise<void> {
       initialPeople = [
         ...people.value.people.map((person) => ({
           id: person.id,
-          name: displayName(person),
+          name: displayPersonName(person, nameOrder),
         })),
         ...(people.value.selected
           ? [{
             id: people.value.selected.id,
-            name: displayName(people.value.selected),
+            name: displayPersonName(people.value.selected, nameOrder),
           }]
           : []),
       ];
@@ -617,7 +618,7 @@ export async function mountInteractionCapture(): Promise<void> {
         id: entry.value,
         name: entry.textContent ?? entry.value,
       })),
-      { id: selected.id, name: displayName(selected) },
+      { id: selected.id, name: displayPersonName(selected, nameOrder) },
     ]);
     if (!selectOnly(requestedPersonId)) {
       degradeReconnect();

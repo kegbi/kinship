@@ -1,8 +1,35 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mountPeopleProfile } from "./people-profile.ts";
 import { clearToasts } from "./toasts.ts";
+
+import { getMemberPreferences } from "../../../../packages/contracts/generated/auth-client.ts";
+
+vi.mock(
+  "../../../../packages/contracts/generated/auth-client.ts",
+  async (original) => ({
+    ...await original<Record<string, unknown>>(),
+    getMemberPreferences: vi.fn(),
+  }),
+);
+
+beforeEach(() => {
+  vi.mocked(getMemberPreferences).mockReset().mockResolvedValue({
+    ok: true,
+    value: {
+      status: "ready",
+      preferences: {
+        contactNameOrder: "given_family_nickname",
+        contactSortOrder: "given_name_asc",
+        fluidLayout: false,
+        locale: "en",
+        measurementSystem: "metric",
+        temperatureScale: "celsius",
+      },
+    },
+  });
+});
 
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -440,6 +467,56 @@ function stubReadyProfile(
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
 }
+
+it("APR-008 applies membership name order to profile heading, breadcrumb, mini identity and title", async () => {
+  markup();
+  vi.mocked(getMemberPreferences).mockResolvedValue({
+    ok: true,
+    value: {
+      status: "ready",
+      preferences: {
+        contactNameOrder: "family_given_nickname",
+        contactSortOrder: "family_name_asc",
+        fluidLayout: false,
+        locale: "en",
+        measurementSystem: "metric",
+        temperatureScale: "celsius",
+      },
+    },
+  });
+  const fetchMock = stubReadyProfile();
+  await mountPeopleProfile();
+  expect(document.querySelector("#person-profile-name")?.textContent).toBe(
+    "Lovelace Ada",
+  );
+  expect(document.querySelector("[data-person-breadcrumb-name]")?.textContent)
+    .toBe("Lovelace Ada");
+  expect(document.querySelector("[data-zone-mini-name]")?.textContent).toBe(
+    "Lovelace Ada",
+  );
+  expect(document.title).toBe("Lovelace Ada — Kinship");
+  expect(getMemberPreferences).toHaveBeenCalledWith(workspaceId);
+  document.querySelector<HTMLButtonElement>("#person-edit-open")!.click();
+  const form = document.querySelector<HTMLFormElement>("#person-edit-form")!;
+  (form.elements.namedItem("familyName") as HTMLInputElement).value = "Byron";
+  fetchMock.mockResolvedValueOnce(response({
+    status: "updated",
+    person: {
+      id: personId,
+      givenName: "Ada",
+      familyName: "Byron",
+      isPartial: false,
+      updatedAt: "2026-08-15T09:00:00.000Z",
+    },
+  }));
+  form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await vi.waitFor(() =>
+    expect(document.querySelector("#person-profile-name")?.textContent).toBe(
+      "Byron Ada",
+    )
+  );
+  expect(document.title).toBe("Byron Ada — Kinship");
+});
 
 it.each([0, 3])(
   "APR-006 keeps %i open tasks out of the cadence hero",
@@ -966,9 +1043,12 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     await mountPeopleProfile();
 
     expect(document.querySelector("[data-person-breadcrumb-name]")?.textContent)
-      .toBe("Ada Lovelace");
+      .toBe("Ada Lovelace “Enchantress of Numbers”");
     expect(document.querySelector("#person-profile-nickname")?.textContent)
       .toBe("“Enchantress of Numbers”");
+    expect(
+      document.querySelector<HTMLElement>("#person-profile-nickname")?.hidden,
+    ).toBe(true);
     const badges = document.querySelector<HTMLElement>(
       ".person-profile-badges",
     );

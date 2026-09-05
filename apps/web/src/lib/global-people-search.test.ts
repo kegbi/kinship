@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mountGlobalPeopleSearch } from "./global-people-search.ts";
 
 const workspaceId = "00000000-0000-4000-8000-000000000003";
@@ -13,6 +13,33 @@ const session = {
   workspace: { id: workspaceId, name: "Circle" },
   workspaces: [{ id: workspaceId, name: "Circle" }],
 };
+
+import { getMemberPreferences } from "../../../../packages/contracts/generated/auth-client.ts";
+
+vi.mock(
+  "../../../../packages/contracts/generated/auth-client.ts",
+  async (original) => ({
+    ...await original<Record<string, unknown>>(),
+    getMemberPreferences: vi.fn(),
+  }),
+);
+
+beforeEach(() => {
+  vi.mocked(getMemberPreferences).mockReset().mockResolvedValue({
+    ok: true,
+    value: {
+      status: "ready",
+      preferences: {
+        contactNameOrder: "given_family_nickname",
+        contactSortOrder: "given_name_asc",
+        fluidLayout: false,
+        locale: "en",
+        measurementSystem: "metric",
+        temperatureScale: "celsius",
+      },
+    },
+  });
+});
 
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -87,6 +114,22 @@ function fetchFor(
         status: "ready",
       }));
     }
+    if (
+      url === `/api/v1/people/${adaId}?include=summary` ||
+      url === `/api/v1/people/${graceId}?include=summary`
+    ) {
+      const isAda = url.includes(adaId);
+      return Promise.resolve(
+        response({
+          status: isAda ? "ready" : "archived",
+          person: directoryPerson(
+            isAda ? adaId : graceId,
+            isAda ? "Ada" : "Grace",
+            isAda ? "Lovelace" : "Hopper",
+          ),
+        }),
+      );
+    }
     throw new Error(`Unexpected request: ${url}`);
   });
 }
@@ -108,6 +151,163 @@ afterEach(() => {
 });
 
 describe("UXD-004 global people search", () => {
+  it.each(["Ada Lovelace", "Lovelace Ada", "Countess"])(
+    "APR-008 recognizes an existing identity %s after changing display order",
+    async (query) => {
+      vi.useFakeTimers();
+      markup();
+      vi.mocked(getMemberPreferences).mockResolvedValue({
+        ok: true,
+        value: {
+          status: "ready",
+          preferences: {
+            contactNameOrder: "family_given_nickname",
+            contactSortOrder: "family_name_asc",
+            fluidLayout: false,
+            locale: "en",
+            measurementSystem: "metric",
+            temperatureScale: "celsius",
+          },
+        },
+      });
+      vi.stubGlobal(
+        "fetch",
+        fetchFor([directoryPerson(adaId, "Ada", "Lovelace", "Countess")]),
+      );
+      cleanup = await mountGlobalPeopleSearch();
+      setQuery(
+        document.querySelector<HTMLInputElement>(
+          "#global-people-search-input",
+        )!,
+        query,
+      );
+      await vi.advanceTimersByTimeAsync(200);
+      expect(document.querySelector('[role="option"] strong')?.textContent)
+        .toBe("Lovelace Ada “Countess”");
+      expect(document.querySelector("#global-people-search-option-add"))
+        .toBeNull();
+    },
+  );
+  it.each([403, 404, "transport"] as const)(
+    "APR-008 omits an unavailable recent identity (%s) without exposing its stale name",
+    async (failure) => {
+      markup();
+      const base = fetchFor([], [
+        { id: adaId, name: "Old Ada", archived: false },
+        { id: graceId, name: "Do not expose this stale name", archived: false },
+      ]);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((url: RequestInfo | URL) => {
+          if (String(url).includes(`/people/${graceId}?`)) {
+            return failure === "transport"
+              ? Promise.reject(new Error("offline"))
+              : Promise.resolve(response({ status: failure }, failure));
+          }
+          return base(url);
+        }),
+      );
+      cleanup = await mountGlobalPeopleSearch();
+      document.querySelector<HTMLButtonElement>(
+        "[data-global-people-search-open]",
+      )!.click();
+      await vi.waitFor(() =>
+        expect(
+          document.querySelector("#global-people-search-status")?.textContent,
+        ).toBe("Some recent people are unavailable")
+      );
+      expect(document.querySelectorAll('[role="option"]')).toHaveLength(1);
+      expect(document.querySelector('[role="option"] strong')?.textContent)
+        .toBe("Ada Lovelace");
+      expect(
+        document.querySelector("#global-people-search-results")?.textContent,
+      ).not.toContain("stale name");
+    },
+  );
+
+  it("APR-008 ignores a late recent identity after a newer search", async () => {
+    vi.useFakeTimers();
+    markup();
+    let release!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => release = resolve);
+    const base = fetchFor([directoryPerson(graceId, "Grace", "Hopper")], [{
+      id: adaId,
+      name: "Old Ada",
+      archived: false,
+    }]);
+    const fetchMock = vi.fn((url: RequestInfo | URL) =>
+      String(url).includes(`/people/${adaId}?`) ? pending : base(url)
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    cleanup = await mountGlobalPeopleSearch();
+    document.querySelector<HTMLButtonElement>(
+      "[data-global-people-search-open]",
+    )!.click();
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/api/v1/people/${adaId}?include=summary`,
+        expect.anything(),
+      )
+    );
+    setQuery(
+      document.querySelector<HTMLInputElement>("#global-people-search-input")!,
+      "Grace",
+    );
+    await vi.advanceTimersByTimeAsync(200);
+    release(
+      response({
+        status: "ready",
+        person: directoryPerson(adaId, "Ada", "Lovelace"),
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(document.querySelector('[role="option"] strong')?.textContent).toBe(
+      "Grace Hopper",
+    );
+  });
+  it("APR-008 formats search results and recent identities with explicit saved preferences", async () => {
+    vi.useFakeTimers();
+    markup();
+    vi.mocked(getMemberPreferences).mockResolvedValue({
+      ok: true,
+      value: {
+        status: "ready",
+        preferences: {
+          contactNameOrder: "family_given_nickname",
+          contactSortOrder: "family_name_asc",
+          fluidLayout: false,
+          locale: "en",
+          measurementSystem: "metric",
+          temperatureScale: "celsius",
+        },
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      fetchFor([directoryPerson(adaId, "Ada", "Lovelace")], [{
+        id: adaId,
+        name: "Do not parse this label",
+        archived: false,
+      }]),
+    );
+    cleanup = await mountGlobalPeopleSearch();
+    document.querySelector<HTMLButtonElement>(
+      "[data-global-people-search-open]",
+    )!.click();
+    await vi.waitFor(() =>
+      expect(document.querySelector('[role="option"] strong')?.textContent)
+        .toBe("Lovelace Ada")
+    );
+    setQuery(
+      document.querySelector<HTMLInputElement>("#global-people-search-input")!,
+      "Ada",
+    );
+    await vi.advanceTimersByTimeAsync(200);
+    expect(document.querySelector('[role="option"] strong')?.textContent).toBe(
+      "Lovelace Ada",
+    );
+    expect(getMemberPreferences).toHaveBeenCalledWith(workspaceId);
+  });
   it("renders command rows locally for > without a people request", async () => {
     markup();
     const fetchMock = fetchFor();
