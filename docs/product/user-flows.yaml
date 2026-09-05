@@ -415,6 +415,7 @@ flows:
       - Apply the local profile change through its owning use case.
       - Keep a pending or failed save protected as an unsaved draft until acknowledged success or explicit discard.
       - Confirm before replacing a dirty local editor; declining retains its values and focus.
+      - Keep mobile fact sheets modal with contained keyboard focus, local scrolling, guarded Escape, explicit Cancel, and focus restored to the opener; preserve drafts across viewport changes.
       - Retry a failed fact read within its block while preserving neighboring values and drafts; stop retrying on access denial.
       - Respect disabled profile modules without treating hidden data as deleted.
       - Refresh only the affected profile section.
@@ -426,6 +427,7 @@ flows:
       failed-read-retry,
       declined-draft-navigation,
       declined-editor-switch,
+      declined-sheet-dismissal,
     ]
     result: Profile facts remain available from the single person workspace and use current workspace terminology.
     auditEffect: person-profile-fact-updated

@@ -707,7 +707,7 @@ export async function mountRelationships(
     if (await loadTypes(undefined)) ui.type.focus();
   };
   ui.add.onclick = () => {
-    if (!requestRailEditorOpen(ui.form)) return;
+    if (!requestRailEditorOpen(ui.form, false, ui.add)) return;
     ui.form.hidden = false;
     ui.form.querySelector<HTMLElement>("input, select")?.focus();
   };

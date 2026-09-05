@@ -28,7 +28,7 @@ function personMarkup(): void {
     </section>
     <section data-profile-section="stay-in-touch">
       <span data-profile-rail-count hidden></span>
-      <p data-cadence-state></p><ul data-cadence-list></ul>
+      <p data-cadence-state tabindex="-1"></p><ul data-cadence-list></ul>
       <button data-cadence-add type="button" hidden>Add stay-in-touch cadence</button>
       <form data-cadence-form hidden><input name="intervalCount" value="1"><select name="intervalUnit"><option value="month">month</option></select><button type="submit">Save</button><button data-cadence-cancel type="button">Cancel</button></form>
     </section>`;
@@ -490,6 +490,9 @@ describe("PLANNING-002 reminder browser behavior", () => {
     expect(form.hidden).toBe(false);
     expect(document.querySelector("[data-cadence-state]")?.textContent).toBe(
       "Cadence could not be saved.",
+    );
+    expect(document.activeElement).toBe(
+      document.querySelector("[data-cadence-state]"),
     );
     expect(
       globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),

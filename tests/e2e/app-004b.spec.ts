@@ -280,11 +280,14 @@ test(
     await add.click();
     await expect(mobileEditor).toHaveCount(1);
     await expect(mobileEditor).toBeVisible();
-    const mobileEditorBounds = await mobileEditor.evaluate((form) => {
-      const bounds = form.getBoundingClientRect();
+    const mobileEditorBounds = await page.getByRole("dialog", {
+      name: "Important dates",
+      exact: true,
+    }).evaluate((dialog) => {
+      const bounds = dialog.getBoundingClientRect();
       return {
         bottomDelta: bounds.bottom - globalThis.innerHeight,
-        position: getComputedStyle(form).position,
+        position: getComputedStyle(dialog).position,
       };
     });
     expect(mobileEditorBounds.position).toBe("fixed");
