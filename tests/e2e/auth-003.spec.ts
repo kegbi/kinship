@@ -324,6 +324,95 @@ async function keyboardSignOutWithSingleWorkspace(page: Page): Promise<void> {
   await keyboardFinishSignOut(page);
 }
 
+// Catalog: docs/product/user-flows.yaml#AUTH-003 (existing auth-003 testRefs).
+test(
+  "[AUTH-003] APR-005 keeps authenticated pages usable with storage disabled",
+  {
+    annotation: { type: "flow", description: "AUTH-003" },
+  },
+  async ({ page, request, context, browserName }) => {
+    const email = `apr-005-storage-${browserName}-${Date.now()}@example.test`;
+    await createVerifiedUser(request, email, "Storage circle");
+    const otherWorkspaceId = randomUUID();
+    databaseSql(`
+    insert into crm.workspaces (id, name, status, created_by_user_id)
+    select '${otherWorkspaceId}'::uuid, 'Other storage circle', 'active', id
+      from crm.users where email = ${sqlLiteral(email)};
+    insert into crm.workspace_members (workspace_id, user_id, role, status, joined_at)
+    select '${otherWorkspaceId}'::uuid, id, 'member', 'active', now()
+      from crm.users where email = ${sqlLiteral(email)};
+  `);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.addInitScript(() => {
+      Object.defineProperty(window, "sessionStorage", {
+        configurable: true,
+        get() {
+          throw new DOMException("Storage disabled", "SecurityError");
+        },
+      });
+    });
+
+    await keyboardSignIn(page, email);
+    await expect(page).toHaveURL(/\/app$/);
+    await expect(page.locator("#protected-shell")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Welcome back.",
+    );
+    await page.getByRole("link", { name: "People", exact: true }).click();
+    await expect(page).toHaveURL(/\/app\/people$/);
+    await expect(page.locator("#protected-shell")).toBeVisible();
+
+    const profileSession = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/api/v1/session" &&
+      response.status() === 200
+    );
+    await page.goto("/app/settings/profile");
+    await profileSession;
+    const firstName = page.getByLabel("First name", { exact: true });
+    await expect(firstName).toBeEnabled();
+    await firstName.fill("Retained storage draft");
+    await page.getByRole("button", { name: "Member menu" }).click();
+    const switcher = page.getByLabel("Active workspace");
+    await expect(switcher.locator("option")).toHaveCount(2);
+    const currentWorkspaceId = await switcher.inputValue();
+    expect(currentWorkspaceId).not.toBe(otherWorkspaceId);
+    page.once("dialog", (dialog) => dialog.accept());
+    await switcher.selectOption(otherWorkspaceId);
+    await expect(page.locator("#app-toasts")).toContainText(
+      "Browser storage is unavailable",
+    );
+    await expect(switcher).toHaveValue(currentWorkspaceId);
+    await expect(switcher).toBeEnabled();
+    await expect(firstName).toHaveValue("Retained storage draft");
+    await expect(page.locator("#profile-form")).toHaveAttribute(
+      "data-dirty",
+      "true",
+    );
+    await expect(page).toHaveURL(/\/app\/settings\/profile$/);
+    await page.getByRole("button", { name: "Member menu" }).click();
+    await page.getByRole("button", { name: "Save changes", exact: true })
+      .click();
+    await expect(page.locator("#profile-form")).toHaveAttribute(
+      "data-dirty",
+      "false",
+    );
+    await page.getByRole("button", { name: "Member menu" }).click();
+    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await expect(page).toHaveURL(/\/auth\/sign-in$/);
+    expect(
+      (await context.cookies()).find((cookie) =>
+        cookie.name === "kinship_session"
+      ),
+    ).toBeUndefined();
+    await page.goto("/app");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Sign in to Kinship",
+    );
+    expect(errors).toEqual([]);
+  },
+);
+
 test(
   "[AUTH-003] signs in, rotates, signs out, and rejects protected or cross-workspace access",
   {

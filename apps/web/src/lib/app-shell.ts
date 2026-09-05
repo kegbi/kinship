@@ -328,20 +328,28 @@ export async function mountApplicationShell(
       undefined
     );
     if (selected?.ok) {
-      change.proceed();
-      activeWorkspaceId = selected.value.workspace.id;
-      setActiveWorkspace(activeWorkspaceId);
-      elements.select.disabled = false;
-      navigate(`${globalThis.location.pathname}${globalThis.location.search}`);
-      return;
+      if (setActiveWorkspace(selected.value.workspace.id)) {
+        change.proceed();
+        activeWorkspaceId = selected.value.workspace.id;
+        elements.select.disabled = false;
+        navigate(
+          `${globalThis.location.pathname}${globalThis.location.search}`,
+        );
+        return;
+      }
+      showToast({
+        message:
+          "Browser storage is unavailable. Your current workspace and unsaved changes were kept. Enable browser storage or free space, then try switching again.",
+        tone: "error",
+      });
     } else {
       showToast({
         message:
           "That workspace is no longer available. Your current workspace was not changed.",
         tone: "error",
       });
-      elements.select.value = activeWorkspaceId;
     }
+    elements.select.value = activeWorkspaceId;
     elements.select.disabled = false;
     if (hadFocus) elements.select.focus();
   });

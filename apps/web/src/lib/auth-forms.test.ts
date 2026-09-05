@@ -41,6 +41,36 @@ afterEach(() => {
 });
 
 describe("AUTH-003 forms", () => {
+  it.each(["password", "MFA"])(
+    "APR-005 completes %s sign-in when cached identity removal throws",
+    async (step) => {
+      vi.stubGlobal("sessionStorage", {
+        removeItem() {
+          throw new DOMException("Disabled", "SecurityError");
+        },
+      });
+      const target = form(
+        `<form><input name="email" value="owner@example.test"><input name="password" value="secret"><input name="factor" value="123456"><button type="submit">Continue</button></form>`,
+      );
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(response({
+          status: "authenticated",
+          next: "/app",
+        })),
+      );
+      const navigate = vi.fn();
+      if (step === "password") mountSignIn(target, navigate);
+      else mountMfa(target, navigate);
+
+      await submit(target);
+
+      expect(navigate).toHaveBeenCalledWith("/app");
+      expect(document.querySelector("#auth-status")?.getAttribute("data-state"))
+        .not.toBe("error");
+    },
+  );
+
   it("captures and scrubs an invitation handoff before sign-in", async () => {
     history.replaceState(
       {},

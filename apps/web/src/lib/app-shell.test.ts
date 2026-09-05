@@ -79,6 +79,125 @@ afterEach(() => {
 });
 
 describe("APP-002C protected application shell", () => {
+  it("APR-005 opens an authenticated shell and signs out with storage disabled", async () => {
+    shellMarkup();
+    document.body.dataset.pageId = "app.today";
+    vi.stubGlobal("sessionStorage", {
+      getItem() {
+        throw new DOMException("Disabled", "SecurityError");
+      },
+      setItem() {
+        throw new DOMException("Full", "QuotaExceededError");
+      },
+      removeItem() {
+        throw new DOMException("Disabled", "SecurityError");
+      },
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(session()))
+      .mockResolvedValueOnce(
+        response({ status: "signed-out", next: "/auth/sign-in" }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const navigate = vi.fn();
+
+    await mountApplicationShell(navigate);
+
+    expect(document.querySelector<HTMLElement>("#protected-shell")?.hidden)
+      .toBe(false);
+    document.querySelector<HTMLButtonElement>("#member-sign-out")!.click();
+    await vi.waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith("/auth/sign-in")
+    );
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/v1/session",
+      "/api/v1/sign-out",
+    ]);
+  });
+
+  it.each(["getItem", "setItem"] as const)(
+    "APR-005 preserves a confirmed dirty draft when selection %s fails, then retries",
+    async (method) => {
+      shellMarkup();
+      profileMarkup();
+      document.body.dataset.pageId = "settings.profile";
+      history.replaceState({}, "", "/app/settings/profile");
+      const workspaces = [
+        { id: "current", name: "Current circle" },
+        { id: "other", name: "Other circle" },
+      ];
+      sessionStorage.setItem("kinship.active-workspace", "current");
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(response(session("current", workspaces)))
+        .mockResolvedValueOnce(response(session("current", workspaces)))
+        .mockResolvedValueOnce(response({
+          status: "ready",
+          profile: {
+            email: "owner@example.test",
+            firstName: "Original",
+            lastName: "Owner",
+          },
+        }))
+        .mockImplementation(() =>
+          Promise.resolve(response(session("other", workspaces)))
+        );
+      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("confirm", vi.fn(() => true));
+      const navigate = vi.fn();
+      await mountApplicationShell(navigate);
+      await mountProfileSettings();
+      const firstName = document.querySelector<HTMLInputElement>(
+        '[name="firstName"]',
+      )!;
+      firstName.value = "Keep this draft";
+      firstName.dispatchEvent(new Event("input", { bubbles: true }));
+      const storage = sessionStorage;
+      vi.stubGlobal("sessionStorage", {
+        getItem: storage.getItem.bind(storage),
+        setItem: storage.setItem.bind(storage),
+        removeItem: storage.removeItem.bind(storage),
+        [method]() {
+          throw new DOMException("Unavailable", "SecurityError");
+        },
+      });
+      const select = document.querySelector<HTMLSelectElement>(
+        "#workspace-switcher",
+      )!;
+      select.focus();
+      select.value = "other";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+
+      await vi.waitFor(() =>
+        expect(document.querySelector("#app-toasts")?.textContent).toContain(
+          "Browser storage",
+        )
+      );
+      expect(navigate).not.toHaveBeenCalled();
+      expect(select.disabled).toBe(false);
+      expect(select.value).toBe("current");
+      expect(document.activeElement).toBe(select);
+      expect(storage.getItem("kinship.active-workspace")).toBe("current");
+      expect(firstName.value).toBe("Keep this draft");
+      expect(
+        document.querySelector("#profile-form")?.getAttribute("data-dirty"),
+      ).toBe("true");
+      const unload = new Event("beforeunload", { cancelable: true });
+      globalThis.dispatchEvent(unload);
+      expect(unload.defaultPrevented).toBe(true);
+
+      vi.stubGlobal("sessionStorage", storage);
+      select.value = "other";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      await vi.waitFor(() =>
+        expect(navigate).toHaveBeenCalledWith("/app/settings/profile")
+      );
+      expect(storage.getItem("kinship.active-workspace")).toBe("other");
+      expect(
+        document.querySelector("#profile-form")?.getAttribute("data-dirty"),
+      ).toBe("false");
+    },
+  );
+
   it("keeps workspace switching and sign out inside the member popover", () => {
     shellMarkup();
 
@@ -122,6 +241,9 @@ describe("APP-002C protected application shell", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn()
+        .mockResolvedValueOnce(
+          response({ code: "session_invalid", status: 401 }, 401),
+        )
         .mockResolvedValueOnce(
           response({ code: "session_invalid", status: 401 }, 401),
         )

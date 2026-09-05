@@ -97,6 +97,11 @@ function readSessionCache(): SessionCacheEntry | undefined {
       clearSessionCache();
       return undefined;
     }
+    // Use the accelerator only if cleanup and writes work. An undeletable
+    // entry may belong to a previous identity whose sign-out could not clear
+    // storage. Restore the same age so an offline revalidation keeps its TTL.
+    sessionStorage.removeItem(SESSION_CACHE_KEY);
+    sessionStorage.setItem(SESSION_CACHE_KEY, raw);
     return entry;
   } catch {
     clearSessionCache();
@@ -142,21 +147,41 @@ export function clearSessionCache(): void {
   }
 }
 
-export function setActiveWorkspace(workspaceId: string): void {
-  sessionStorage.setItem(ACTIVE_WORKSPACE_KEY, workspaceId);
-  clearSessionCache();
+export function readActiveWorkspace(): string | undefined {
+  try {
+    return sessionStorage.getItem(ACTIVE_WORKSPACE_KEY) ?? undefined;
+  } catch {
+    // The API can resolve the default workspace without a browser preference.
+    return undefined;
+  }
+}
+
+export function setActiveWorkspace(workspaceId: string): boolean {
+  try {
+    // A writable preference is useless if the next page cannot read it.
+    sessionStorage.getItem(ACTIVE_WORKSPACE_KEY);
+    sessionStorage.setItem(ACTIVE_WORKSPACE_KEY, workspaceId);
+    clearSessionCache();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function clearActiveWorkspace(): void {
-  sessionStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+  try {
+    sessionStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+  } catch {
+    // Failed preference cleanup must not interrupt server-confirmed sign-out.
+  }
   clearSessionCache();
 }
 
-async function resolveWorkspaceSessionSelection(): Promise<
+async function resolveWorkspaceSessionSelection(
+  savedWorkspace = readActiveWorkspace(),
+): Promise<
   WorkspaceSessionResolution
 > {
-  const savedWorkspace = sessionStorage.getItem(ACTIVE_WORKSPACE_KEY) ??
-    undefined;
   let result = await getSession(savedWorkspace).catch(() => undefined);
   if (!result) return { status: "unavailable" };
   if (result.ok) return { status: "ready", session: result.value };
@@ -195,7 +220,9 @@ async function resolveWorkspaceSessionSelection(): Promise<
 async function revalidateSession(
   cachedSession: SessionContext,
 ): Promise<WorkspaceSessionResolution | undefined> {
-  const resolution = await resolveWorkspaceSessionSelection();
+  const resolution = await resolveWorkspaceSessionSelection(
+    cachedSession.workspace.id,
+  );
   if (resolution.status === "unavailable") return undefined;
   if (resolution.status === "access-lost") {
     clearSessionCache();

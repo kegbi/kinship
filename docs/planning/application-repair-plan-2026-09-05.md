@@ -163,7 +163,16 @@ established in this pass.
 
 ### APR-005 — Allow authenticated use when browser storage is unavailable
 
-- [ ] **P1, ready.**
+- [x] **P1, delivered.** Unavailable storage falls back to API session
+      resolution, including legal acceptance and revalidation; failed cleanup
+      cannot interrupt sign-out. Unusable caches are bypassed without extending
+      their TTL. A workspace selection that cannot be retained leaves the
+      current workspace and drafts intact with a recoverable message. All 112
+      affected tests pass at 98.66% line, 87.72% branch, and 88.23% function
+      coverage. The authenticated Chromium `AUTH-003` regression passes with
+      session storage disabled and no page errors, including navigation, failed
+      switching, save, sign-out, and rejected protected entry. Affected static
+      checks pass; no session registry, schema, or API was added.
 - Evidence: [workspace-context.ts](../../apps/web/src/lib/workspace-context.ts)
   catches failures in its optional session cache, but directly reads/writes
   `sessionStorage` in workspace selection and clear/set helpers. In an
