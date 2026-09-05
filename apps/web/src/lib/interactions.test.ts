@@ -24,6 +24,7 @@ beforeEach(() => {
     value: {
       status: "ready",
       preferences: {
+        effectiveTimezone: "UTC",
         contactNameOrder: "given_family_nickname",
         contactSortOrder: "given_name_asc",
         fluidLayout: false,
@@ -127,6 +128,7 @@ it("APR-008 applies saved name order to initial and searched capture participant
     value: {
       status: "ready",
       preferences: {
+        effectiveTimezone: "UTC",
         contactNameOrder: "family_given_nickname",
         contactSortOrder: "family_name_asc",
         fluidLayout: false,

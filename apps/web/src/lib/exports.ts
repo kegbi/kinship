@@ -1,4 +1,9 @@
 import {
+  formatInstant,
+  loadTimePreferences,
+  type TimePreferences,
+} from "./time-presentation.ts";
+import {
   createExportDownload,
   createWorkspaceExport,
   type ExportSummary,
@@ -12,6 +17,7 @@ function element<T extends Element>(selector: string): T | undefined {
 
 function renderHistory(
   exports: readonly ExportSummary[],
+  timePreferences: TimePreferences | undefined,
   workspaceId: string,
   announce: (message: string) => void,
 ): void {
@@ -26,7 +32,7 @@ function renderHistory(
     const details = document.createElement("span");
     details.textContent = `${run.status[0]?.toUpperCase()}${
       run.status.slice(1)
-    } · ${new Date(run.createdAt).toLocaleString()}`;
+    } · ${formatInstant(run.createdAt, timePreferences)}`;
     item.append(heading, details);
     if (run.status === "completed") {
       const action = document.createElement("button");
@@ -53,7 +59,7 @@ function renderHistory(
         action.replaceWith(link);
         announce(
           `Download ready until ${
-            new Date(result.value.expiresAt).toLocaleTimeString()
+            formatInstant(result.value.expiresAt, timePreferences)
           }.`,
         );
         link.focus();
@@ -82,6 +88,7 @@ export async function mountExports(): Promise<void> {
     return;
   }
   const workspaceId = session.session.workspace.id;
+  const timePreferences = await loadTimePreferences(workspaceId);
   const announce = (message: string) => {
     state.textContent = message;
   };
@@ -94,7 +101,7 @@ export async function mountExports(): Promise<void> {
       return;
     }
     if (retry) retry.hidden = true;
-    renderHistory(loaded.value.exports, workspaceId, announce);
+    renderHistory(loaded.value.exports, timePreferences, workspaceId, announce);
     announce(
       loaded.value.exports.length === 0
         ? "No exports yet."

@@ -1,4 +1,9 @@
 import {
+  formatInstant,
+  formatPartialDate,
+  type TimePreferences,
+} from "./time-presentation.ts";
+import {
   listPersonTimeline,
   type PersonTimelineItem,
   type PersonTimelineKind,
@@ -30,42 +35,6 @@ const kindLabels: Record<PersonTimelineKind, string> = {
   note: "Note",
 };
 
-const fullDate = new Intl.DateTimeFormat("en", {
-  day: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-  month: "long",
-  timeZone: "UTC",
-  year: "numeric",
-});
-
-const monthAndYear = new Intl.DateTimeFormat("en", {
-  month: "long",
-  timeZone: "UTC",
-  year: "numeric",
-});
-
-const year = new Intl.DateTimeFormat("en", {
-  timeZone: "UTC",
-  year: "numeric",
-});
-
-const monthAndDay = new Intl.DateTimeFormat("en", {
-  day: "numeric",
-  month: "long",
-  timeZone: "UTC",
-});
-
-const month = new Intl.DateTimeFormat("en", {
-  month: "long",
-  timeZone: "UTC",
-});
-
-const day = new Intl.DateTimeFormat("en", {
-  day: "numeric",
-  timeZone: "UTC",
-});
-
 function elements(): TimelineElements | undefined {
   const root = document.querySelector<HTMLElement>("#person-timeline");
   const state = root?.querySelector<HTMLElement>("[data-timeline-state]");
@@ -82,38 +51,64 @@ function elements(): TimelineElements | undefined {
     : undefined;
 }
 
-function displayDate(item: PersonTimelineItem): string {
-  if (item.datePrecision === "unknown") {
-    // occurredAt is the record's creation time, used only as a sort key, and
-    // showing it would display a date the member never entered.
-    return "Date unknown";
+function displayDate(
+  item: PersonTimelineItem,
+  preferences: TimePreferences | undefined,
+): string {
+  if (item.calendarDate) {
+    return formatPartialDate(
+      item.calendarDate,
+      item.datePrecision,
+      preferences?.locale ?? "en",
+    );
   }
-  const occurredAt = new Date(item.occurredAt);
-  if (item.datePrecision === "full") return fullDate.format(occurredAt);
-  if (item.datePrecision === "year_month") {
-    return monthAndYear.format(occurredAt);
+  if (item.datePrecision === "full") {
+    return formatInstant(item.occurredAt, preferences);
   }
-  if (item.datePrecision === "year") return year.format(occurredAt);
-  if (item.datePrecision === "month_day") {
-    return monthAndDay.format(occurredAt);
-  }
-  if (item.datePrecision === "month") return month.format(occurredAt);
-  return day.format(occurredAt);
+  const instant = new Date(item.occurredAt);
+  return formatPartialDate(
+    {
+      year: instant.getUTCFullYear(),
+      month: instant.getUTCMonth() + 1,
+      day: instant.getUTCDate(),
+    },
+    item.datePrecision,
+    preferences?.locale ?? "en",
+  );
 }
 
 function dateTimeValue(item: PersonTimelineItem): string | undefined {
-  if (item.datePrecision === "full") return item.occurredAt;
+  if (item.datePrecision === "full" && !item.calendarDate) {
+    return item.occurredAt;
+  }
   if (
     item.datePrecision === "month" || item.datePrecision === "day" ||
     item.datePrecision === "unknown"
   ) return undefined;
-  const occurredAt = new Date(item.occurredAt);
-  const year = String(occurredAt.getUTCFullYear()).padStart(4, "0");
+  const instant = new Date(item.occurredAt);
+  const components = item.calendarDate ??
+    {
+      year: instant.getUTCFullYear(),
+      month: instant.getUTCMonth() + 1,
+      day: instant.getUTCDate(),
+    };
+  const year = components.year === undefined
+    ? undefined
+    : String(components.year).padStart(4, "0");
+  const month = components.month === undefined
+    ? undefined
+    : String(components.month).padStart(2, "0");
+  const day = components.day === undefined
+    ? undefined
+    : String(components.day).padStart(2, "0");
   if (item.datePrecision === "year") return year;
-  const month = String(occurredAt.getUTCMonth() + 1).padStart(2, "0");
-  if (item.datePrecision === "year_month") return `${year}-${month}`;
-  const day = String(occurredAt.getUTCDate()).padStart(2, "0");
-  return `${month}-${day}`;
+  if (item.datePrecision === "year_month") {
+    return year && month ? `${year}-${month}` : undefined;
+  }
+  if (item.datePrecision === "month_day") {
+    return month && day ? `${month}-${day}` : undefined;
+  }
+  return year && month && day ? `${year}-${month}-${day}` : undefined;
 }
 
 function detailLines(item: PersonTimelineItem): string[] {
@@ -150,7 +145,10 @@ function detailLines(item: PersonTimelineItem): string[] {
   return lines;
 }
 
-function renderItem(item: PersonTimelineItem): HTMLLIElement {
+function renderItem(
+  item: PersonTimelineItem,
+  preferences: TimePreferences | undefined,
+): HTMLLIElement {
   const row = document.createElement("li");
   row.dataset.timelineId = item.id;
   const details = document.createElement("details");
@@ -159,7 +157,7 @@ function renderItem(item: PersonTimelineItem): HTMLLIElement {
   const date = document.createElement(dateTime ? "time" : "span");
   date.dataset.timelineDate = "";
   date.className = "person-timeline-date";
-  date.textContent = displayDate(item);
+  date.textContent = displayDate(item, preferences);
   if (date instanceof HTMLTimeElement && dateTime) date.dateTime = dateTime;
   const type = document.createElement("span");
   type.className = "person-timeline-type";
@@ -210,6 +208,7 @@ function timelineFilter(button: HTMLButtonElement): TimelineFilter | undefined {
 }
 
 export async function mountPersonTimeline(options: {
+  readonly timePreferences?: TimePreferences | undefined;
   readonly personId: string;
   readonly workspaceId: string;
 }): Promise<void> {
@@ -249,7 +248,9 @@ export async function mountPersonTimeline(options: {
     if (sequence !== requestSequence) return;
 
     if (result?.ok) {
-      const appendedRows = result.value.items.map(renderItem);
+      const appendedRows = result.value.items.map((item) =>
+        renderItem(item, options.timePreferences)
+      );
       view.list.append(...appendedRows);
       nextCursor = result.value.nextCursor;
       const count = view.list.children.length;

@@ -62,6 +62,9 @@ interface PersonTimelineContextRow {
 }
 
 interface PersonTimelineRow {
+  readonly calendar_date:
+    | NonNullable<PersonTimelineItem["calendarDate"]>
+    | null;
   readonly activity_type: string | null;
   readonly channel_type: string | null;
   readonly contact_method: string | null;
@@ -87,6 +90,7 @@ function timelineItem(row: PersonTimelineRow): PersonTimelineItem {
     ...(row.contact_was_caller !== null
       ? { contactWasCaller: row.contact_was_caller }
       : {}),
+    ...(row.calendar_date !== null ? { calendarDate: row.calendar_date } : {}),
     datePrecision: row.date_precision,
     ...(row.emotions !== null ? { emotions: row.emotions } : {}),
     ...(row.excerpt !== null ? { excerpt: row.excerpt } : {}),
@@ -690,6 +694,7 @@ export class PostgresPersonProfileRepository
             else event.created_at
           end as occurred_at,
           case when event.happened_at is null and event.year is null
+            and event.month is null and event.day is null
             then 'unknown'::text else event.precision end as date_precision
         ) resolved_event
         where event.workspace_id = ${command.workspaceId}::uuid
@@ -710,6 +715,10 @@ export class PostgresPersonProfileRepository
       )
       select page.id::text, page.kind, page.title, page.excerpt,
         page.date_precision, activity_detail.activity_type,
+        case when calendar_event.id is not null and calendar_event.happened_at is null
+          then jsonb_strip_nulls(jsonb_build_object(
+            'year', calendar_event.year, 'month', calendar_event.month, 'day', calendar_event.day))
+          else null end as calendar_date,
         activity_participants.value as participants,
         coalesce(activity_emotions.value, call_emotions.value) as emotions,
         call_detail.contact_was_caller,
@@ -718,6 +727,9 @@ export class PostgresPersonProfileRepository
         to_char(page.occurred_at at time zone 'UTC',
           'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as occurred_at
       from page
+      left join crm.life_events calendar_event on page.kind = 'life-event'
+        and calendar_event.id = page.id and calendar_event.person_id = ${command.personId}::uuid
+        and calendar_event.workspace_id = ${command.workspaceId}::uuid
       left join lateral (
         select coalesce(nullif(activity_type.name, ''),
           activity_type.translation_key) as activity_type

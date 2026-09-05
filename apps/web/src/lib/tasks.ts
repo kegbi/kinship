@@ -1,3 +1,9 @@
+import {
+  formatCalendarDate,
+  formatInstant,
+  loadTimePreferences,
+  type TimePreferences,
+} from "./time-presentation.ts";
 import { markFormSaved, saveWithLockedForm } from "./unsaved-changes.ts";
 import {
   changeTask,
@@ -47,14 +53,11 @@ let todayPrincipalId: string | undefined;
 let todayEpoch = 0;
 let currentTodaySurface: TodaySurface | undefined;
 
-function dueText(value: string | undefined): string {
-  if (!value) return "No due time";
-  return `Due ${
-    new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(value))
-  }`;
+function dueText(
+  value: string | undefined,
+  timePreferences: TimePreferences | undefined,
+): string {
+  return value ? `Due ${formatInstant(value, timePreferences)}` : "No due time";
 }
 
 function localDateTime(value: string | undefined): string {
@@ -66,6 +69,7 @@ function localDateTime(value: string | undefined): string {
 
 function renderTask(
   task: Task,
+  timePreferences: TimePreferences | undefined,
   mutable: boolean,
   onComplete: (
     task: Task,
@@ -82,7 +86,7 @@ function renderTask(
   heading.textContent = task.title;
   const meta = document.createElement("p");
   meta.className = "task-meta";
-  meta.textContent = `${dueText(task.dueAt)}${
+  meta.textContent = `${dueText(task.dueAt, timePreferences)}${
     task.person
       ? ` · ${task.person.name}${
         task.person.archived && !task.person.unavailable ? " (archived)" : ""
@@ -125,6 +129,7 @@ function formValue(form: HTMLFormElement, name: string): string {
 }
 
 export async function mountTaskSurface(options: {
+  readonly timePreferences?: TimePreferences | undefined;
   readonly archived?: boolean;
   readonly hidden?: boolean;
   readonly personId?: string;
@@ -194,6 +199,9 @@ export async function mountTaskSurface(options: {
     }
     workspaceId = session.session.workspace.id;
   }
+  const timePreferences = options.timePreferences ??
+    await loadTimePreferences(workspaceId);
+  if (abort.signal.aborted) return;
   const personSelect = form.querySelector<HTMLSelectElement>("[name=personId]");
   const filterPerson = document.querySelector<HTMLSelectElement>(
     "[data-task-person-filter]",
@@ -373,6 +381,7 @@ export async function mountTaskSurface(options: {
       ...open.map((task) =>
         renderTask(
           task,
+          timePreferences,
           !archived && task.person?.archived !== true,
           complete,
           edit,
@@ -383,6 +392,7 @@ export async function mountTaskSurface(options: {
       ...completeTasks.map((task) =>
         renderTask(
           task,
+          timePreferences,
           !archived && task.person?.archived !== true,
           complete,
           edit,
@@ -393,6 +403,7 @@ export async function mountTaskSurface(options: {
       ...cancelledTasks.map((task) =>
         renderTask(
           task,
+          timePreferences,
           !archived && task.person?.archived !== true,
           complete,
           edit,
@@ -611,12 +622,6 @@ export async function mountTodayAttention(): Promise<void> {
   const regionOwners = new Map<Region, Operation>();
   const statusFor = (trigger: Trigger) =>
     trigger === "upcoming" ? upcomingState : state;
-  const format = (value: string, timezone: string) =>
-    new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone: timezone,
-    }).format(new Date(value));
   const todayDate = document.querySelector<HTMLTimeElement>(
     "[data-today-date]",
   );
@@ -854,6 +859,8 @@ export async function mountTodayAttention(): Promise<void> {
       settle(operation, focus);
       return false;
     }
+    const timePreferences = await loadTimePreferences(activeWorkspaceId!);
+    if (!owns(operation)) return false;
     const snapshot = result.value;
     const complete = async (
       item: Extract<TodayAttentionItem, { kind: "task" }>,
@@ -911,13 +918,13 @@ export async function mountTodayAttention(): Promise<void> {
       element.className = `attention-item attention-${item.kind}`;
       const meta = document.createElement("p");
       meta.textContent = `${item.kind === "cadence" ? "Reconnect by" : "Due"} ${
-        format(item.dueAt, snapshot.timezone)
+        formatInstant(item.dueAt, timePreferences)
       }${item.person ? ` · ${item.person.name}` : ""}${
         item.kind === "cadence"
           ? ` · ${
             item.lastContactedAt
               ? `Last contact ${
-                format(item.lastContactedAt, snapshot.timezone)
+                formatInstant(item.lastContactedAt, timePreferences)
               }`
               : "No contact recorded"
           }${item.person.archived ? " · archived" : ""}`
@@ -951,7 +958,7 @@ export async function mountTodayAttention(): Promise<void> {
       element.className = `attention-item attention-${item.kind}`;
       const heading = title(item);
       const meta = document.createElement("p");
-      meta.textContent = `${format(item.dueAt, snapshot.timezone)}${
+      meta.textContent = `${formatInstant(item.dueAt, timePreferences)}${
         item.person ? ` · ${item.person.name}` : ""
       }`;
       element.append(heading, meta);
@@ -1002,10 +1009,11 @@ export async function mountTodayAttention(): Promise<void> {
       new Intl.DateTimeFormat(undefined, {
         timeZone: snapshot.timezone,
       }).format(new Date(`${snapshot.date}T12:00:00Z`));
-      const todayText = new Intl.DateTimeFormat(undefined, {
-        dateStyle: "full",
-        timeZone: "UTC",
-      }).format(new Date(`${snapshot.date}T12:00:00Z`));
+      const todayText = formatCalendarDate(
+        snapshot.date,
+        timePreferences?.locale ?? "en",
+        { dateStyle: "full" },
+      );
       if (!owns(operation)) return false;
       if (stagedAttention && attentionRows) {
         attentionTerminal = stagedAttention;

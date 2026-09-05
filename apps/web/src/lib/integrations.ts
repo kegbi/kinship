@@ -1,3 +1,8 @@
+import {
+  formatInstant,
+  loadTimePreferences,
+  type TimePreferences,
+} from "./time-presentation.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 import {
   createDavSubscription,
@@ -7,12 +12,17 @@ import {
   synchronizeDavSubscription,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 
-function status(subscription: Subscription): string {
+function status(
+  subscription: Subscription,
+  timePreferences: TimePreferences | undefined,
+): string {
   if (!subscription.isActive) return "Disabled";
   if (subscription.lastOutcome === "never") return "Not synchronized yet";
   if (subscription.lastOutcome === "success") {
     return subscription.lastSyncedAt
-      ? `Synchronized ${new Date(subscription.lastSyncedAt).toLocaleString()}`
+      ? `Synchronized ${
+        formatInstant(subscription.lastSyncedAt, timePreferences)
+      }`
       : "Synchronized";
   }
   const label = subscription.lastOutcome === "auth-failure"
@@ -34,6 +44,7 @@ function status(subscription: Subscription): string {
 
 function render(
   subscription: Subscription,
+  timePreferences: TimePreferences | undefined,
   mutate: (button: HTMLButtonElement, action: "disable" | "sync") => void,
 ) {
   const item = document.createElement("li");
@@ -43,7 +54,7 @@ function render(
   const location = document.createElement("span");
   location.textContent = subscription.remoteUrl;
   const outcome = document.createElement("small");
-  outcome.textContent = status(subscription);
+  outcome.textContent = status(subscription, timePreferences);
   content.append(name, location, outcome);
   const actions = document.createElement("div");
   const sync = document.createElement("button");
@@ -89,6 +100,7 @@ export async function mountIntegrations(): Promise<void> {
     return;
   }
   const workspaceId = session.session.workspace.id;
+  const timePreferences = await loadTimePreferences(workspaceId);
   let inFlight = false;
   const load = async () => {
     const result = await getDavSubscriptions(workspaceId).catch(() =>
@@ -131,6 +143,7 @@ export async function mountIntegrations(): Promise<void> {
       ...result.value.subscriptions.map((subscription) =>
         render(
           subscription,
+          timePreferences,
           (button, action) => mutate(subscription, button, action),
         )
       ),

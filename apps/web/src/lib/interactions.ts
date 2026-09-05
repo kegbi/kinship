@@ -1,4 +1,9 @@
 import {
+  formatInstant,
+  loadTimePreferences,
+  type TimePreferences,
+} from "./time-presentation.ts";
+import {
   type ActivityOrNoteInteraction,
   getActivityReport,
   getMemberPreferences,
@@ -845,7 +850,10 @@ export async function mountInteractionCapture(): Promise<void> {
   }, { signal });
 }
 
-function renderInteraction(entry: ActivityOrNoteInteraction): HTMLLIElement {
+function renderInteraction(
+  entry: ActivityOrNoteInteraction,
+  timePreferences: TimePreferences | undefined,
+): HTMLLIElement {
   const item = document.createElement("li");
   item.className = "interaction-item";
   const heading = document.createElement("strong");
@@ -869,10 +877,7 @@ function renderInteraction(entry: ActivityOrNoteInteraction): HTMLLIElement {
   const value = entry.kind === "activity" ? entry.happenedAt : entry.createdAt;
   timestamp.dateTime = value;
   timestamp.textContent = value
-    ? new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(value))
+    ? formatInstant(value, timePreferences)
     : "Recently";
   item.append(heading, detail, timestamp);
   return item;
@@ -921,6 +926,9 @@ export async function mountTodayInteractions(): Promise<void> {
       favoriteRetry.hidden = false;
       return;
     }
+    const timePreferences = await loadTimePreferences(
+      session.session.workspace.id,
+    );
     const result = await getTodayFavoriteNotes(session.session.workspace.id)
       .catch(() => undefined);
     if (abort.signal.aborted || current !== favoriteGeneration) return;
@@ -931,7 +939,9 @@ export async function mountTodayInteractions(): Promise<void> {
       return;
     }
     favorites.replaceChildren(
-      ...result.value.items.map(renderInteraction),
+      ...result.value.items.map((entry) =>
+        renderInteraction(entry, timePreferences)
+      ),
     );
     favoriteState.textContent = `${result.value.items.length} favorite note${
       result.value.items.length === 1 ? "" : "s"
@@ -950,6 +960,9 @@ export async function mountTodayInteractions(): Promise<void> {
       recentRetry.hidden = false;
       return;
     }
+    const timePreferences = await loadTimePreferences(
+      session.session.workspace.id,
+    );
     const result = await getTodayRecentActivity(session.session.workspace.id)
       .catch(() => undefined);
     if (abort.signal.aborted || current !== recentGeneration) return;
@@ -959,7 +972,11 @@ export async function mountTodayInteractions(): Promise<void> {
       recentRetry.hidden = false;
       return;
     }
-    recent.replaceChildren(...result.value.items.map(renderInteraction));
+    recent.replaceChildren(
+      ...result.value.items.map((entry) =>
+        renderInteraction(entry, timePreferences)
+      ),
+    );
     recentState.textContent = result.value.items.length === 0
       ? "No activities or notes recorded yet."
       : `${result.value.items.length} recent interaction${
@@ -1019,6 +1036,9 @@ export async function mountActivityReport(
       state.textContent = "Activity report unavailable.";
       return;
     }
+    const timePreferences = await loadTimePreferences(
+      session.session.workspace.id,
+    );
     const reportInput = {
       ...(cursor ? { cursor } : {}),
       limit: 20,
@@ -1046,7 +1066,9 @@ export async function mountActivityReport(
       personCrumb.href = `/app/people/${encodeURIComponent(personId)}`;
       personCrumb.textContent = result.value.person.name;
     }
-    const rendered = result.value.items.map(renderInteraction);
+    const rendered = result.value.items.map((entry) =>
+      renderInteraction(entry, timePreferences)
+    );
     if (cursor) list.append(...rendered);
     else list.replaceChildren(...rendered);
     nextCursor = result.value.nextCursor;

@@ -1,13 +1,14 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type {
-  MemberPreferences,
+  ResolvedMemberPreferences,
   WorkspaceConfiguration,
   WorkspaceMemberRecord,
   WorkspaceSettingsRepository,
 } from "../../application/settings_management.ts";
 
 interface PreferenceRow {
+  readonly effectiveTimezone: string;
   readonly contactNameOrder: string;
   readonly contactSortOrder: string;
   readonly currencyCode: string | null;
@@ -27,8 +28,9 @@ interface WorkspaceRow {
   readonly slug: string | null;
 }
 
-function preferences(row: PreferenceRow): MemberPreferences {
+function preferences(row: PreferenceRow): ResolvedMemberPreferences {
   return {
+    effectiveTimezone: row.effectiveTimezone,
     contactNameOrder: row.contactNameOrder,
     contactSortOrder: row.contactSortOrder,
     ...(row.currencyCode ? { currencyCode: row.currencyCode } : {}),
@@ -56,9 +58,10 @@ function workspace(row: WorkspaceRow): WorkspaceConfiguration {
 export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
   async getPreferences(
     command: Parameters<WorkspaceSettingsRepository["getPreferences"]>[0],
-  ): Promise<MemberPreferences | undefined> {
+  ): Promise<ResolvedMemberPreferences | undefined> {
     const result = await sql<PreferenceRow>`
       select mp.timezone, mp.locale,
+        coalesce(mp.timezone, ws.default_timezone, 'UTC') as "effectiveTimezone",
         mp.temperature_scale as "temperatureScale",
         mp.measurement_system as "measurementSystem",
         mp.currency_code::text as "currencyCode",
@@ -68,6 +71,7 @@ export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
       from crm.workspace_members wm
       join crm.member_preferences mp on mp.member_id = wm.id
       join crm.workspaces w on w.id = wm.workspace_id
+      left join crm.workspace_settings ws on ws.workspace_id = w.id
       where wm.id = ${command.memberId}::uuid
         and wm.user_id = ${command.userId}::uuid
         and wm.workspace_id = ${command.workspaceId}::uuid
@@ -79,7 +83,7 @@ export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
 
   async updatePreferences(
     command: Parameters<WorkspaceSettingsRepository["updatePreferences"]>[0],
-  ): Promise<MemberPreferences | "invalid-currency" | undefined> {
+  ): Promise<ResolvedMemberPreferences | "invalid-currency" | undefined> {
     const database = databaseFromSession(command.transaction);
     if (command.currencyCode) {
       const supported = await sql<{ readonly supported: boolean }>`
@@ -106,6 +110,8 @@ export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
         and wm.status = 'active' and wm.left_at is null
         and w.status = 'active' and w.deleted_at is null
       returning mp.timezone, mp.locale,
+        coalesce(mp.timezone, (select default_timezone from crm.workspace_settings
+          where workspace_id = wm.workspace_id), 'UTC') as "effectiveTimezone",
         mp.temperature_scale as "temperatureScale",
         mp.measurement_system as "measurementSystem",
         mp.currency_code::text as "currencyCode",

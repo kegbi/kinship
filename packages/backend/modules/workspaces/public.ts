@@ -32,6 +32,7 @@ export { createSettingsManagement } from "./application/settings_management.ts";
 export type {
   ManagedMember,
   MemberPreferences,
+  ResolvedMemberPreferences,
   SettingsActor,
   SettingsAudit,
   SettingsManagement,

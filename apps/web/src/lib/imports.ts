@@ -1,4 +1,9 @@
 import {
+  formatInstant,
+  loadTimePreferences,
+  type TimePreferences,
+} from "./time-presentation.ts";
+import {
   commitImport,
   createImportDryRun,
   getImportReport,
@@ -37,7 +42,10 @@ function renderReport(report: ImportReport, status?: string): void {
   const statusElement = element<HTMLElement>("[data-import-status]");
   if (statusElement && status) statusElement.textContent = status;
 }
-function renderHistory(imports: readonly ImportSummary[]): void {
+function renderHistory(
+  imports: readonly ImportSummary[],
+  timePreferences: TimePreferences | undefined,
+): void {
   const history = element<HTMLOListElement>("[data-import-history]");
   if (!history) return;
   history.replaceChildren(...imports.map((run) => {
@@ -54,7 +62,7 @@ function renderHistory(imports: readonly ImportSummary[]): void {
         : run.status === "completed"
         ? "Completed"
         : "Failed"
-    } · ${new Date(run.createdAt).toLocaleString()}`;
+    } · ${formatInstant(run.createdAt, timePreferences)}`;
     item.append(link, details);
     return item;
   }));
@@ -78,6 +86,7 @@ export async function mountImports(): Promise<void> {
     return;
   }
   const workspaceId = session.session.workspace.id;
+  const timePreferences = await loadTimePreferences(workspaceId);
   if (root.hasAttribute("data-import-index")) {
     const load = async () => {
       state.textContent = "Loading import history…";
@@ -89,7 +98,7 @@ export async function mountImports(): Promise<void> {
         return;
       }
       if (retry) retry.hidden = true;
-      renderHistory(loaded.value.imports);
+      renderHistory(loaded.value.imports, timePreferences);
       state.textContent = loaded.value.imports.length === 0
         ? "No imports yet."
         : `${loaded.value.imports.length} import${

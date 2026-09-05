@@ -6216,6 +6216,17 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           type: "object",
           required: ["datePrecision", "id", "kind", "occurredAt"],
           properties: {
+            calendarDate: {
+              type: "object",
+              description:
+                "Recorded calendar components for component-backed life events; occurredAt remains their ordering key, not an event instant.",
+              properties: {
+                year: { type: "integer", minimum: 1, maximum: 9999 },
+                month: { type: "integer", minimum: 1, maximum: 12 },
+                day: { type: "integer", minimum: 1, maximum: 31 },
+              },
+              additionalProperties: false,
+            },
             datePrecision: {
               type: "string",
               enum: [
@@ -7130,12 +7141,50 @@ export function buildOpenApiDocument(): Record<string, unknown> & {
           },
           additionalProperties: false,
         },
+        ResolvedMemberPreferences: {
+          type: "object",
+          required: [
+            "effectiveTimezone",
+            "contactNameOrder",
+            "contactSortOrder",
+            "fluidLayout",
+            "locale",
+            "measurementSystem",
+            "temperatureScale",
+          ],
+          properties: {
+            effectiveTimezone: { type: "string", readOnly: true },
+            contactNameOrder: {
+              type: "string",
+              enum: ["given_family_nickname", "family_given_nickname"],
+            },
+            contactSortOrder: {
+              type: "string",
+              enum: ["given_name_asc", "family_name_asc"],
+            },
+            currencyCode: { type: "string", pattern: "^[A-Z]{3}$" },
+            fluidLayout: { type: "boolean" },
+            locale: { type: "string" },
+            measurementSystem: {
+              type: "string",
+              enum: ["metric", "imperial"],
+            },
+            temperatureScale: {
+              type: "string",
+              enum: ["celsius", "fahrenheit"],
+            },
+            timezone: { type: "string" },
+          },
+          additionalProperties: false,
+        },
         PreferenceSettings: {
           type: "object",
           required: ["status", "preferences"],
           properties: {
             status: { const: "ready" },
-            preferences: { $ref: "#/components/schemas/PreferencesInput" },
+            preferences: {
+              $ref: "#/components/schemas/ResolvedMemberPreferences",
+            },
           },
           additionalProperties: false,
         },
@@ -8196,6 +8245,10 @@ export interface MemberPreferences {
   readonly timezone?: string;
 }
 
+export interface ResolvedMemberPreferences extends MemberPreferences {
+  readonly effectiveTimezone: string;
+}
+
 export type PersonWorkspaceView = "all" | "timeline" | "planning" | "things" | "admin";
 
 export interface MemberUiState {
@@ -8476,7 +8529,7 @@ export function deleteWorkspace(input: { readonly confirmation: string; readonly
   return request("/api/v1/settings/workspace-lifecycle", { method: "DELETE", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
 }
 
-export function getMemberPreferences(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: MemberPreferences }>> {
+export function getMemberPreferences(workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: ResolvedMemberPreferences }>> {
   return request("/api/v1/settings/preferences", { headers: workspaceHeader(workspaceId) });
 }
 
@@ -8488,7 +8541,7 @@ export function saveMemberUiState(input: { readonly personWorkspaceView?: Person
   return request("/api/v1/member/ui-state", { method: "PATCH", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
 }
 
-export function updateMemberPreferences(input: MemberPreferences, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: MemberPreferences }>> {
+export function updateMemberPreferences(input: MemberPreferences, workspaceId?: string): Promise<ApiResult<{ readonly status: "ready"; readonly preferences: ResolvedMemberPreferences }>> {
   return request("/api/v1/settings/preferences", { method: "PUT", headers: workspaceHeader(workspaceId), body: JSON.stringify(input) });
 }
 
@@ -9103,6 +9156,7 @@ export interface PersonTimelineMessage {
 }
 
 export interface PersonTimelineItem {
+  readonly calendarDate?: { readonly year?: number; readonly month?: number; readonly day?: number };
   readonly activityType?: string;
   readonly channelType?: string;
   readonly contactMethod?: string;

@@ -1,3 +1,8 @@
+import {
+  formatInstant,
+  loadTimePreferences,
+  type TimePreferences,
+} from "./time-presentation.ts";
 import { markFormSaved, saveWithLockedForm } from "./unsaved-changes.ts";
 import {
   createReminder,
@@ -37,6 +42,7 @@ function reminderItem(
   reminder: Reminder,
   mutable: boolean,
   disable: (id: string) => void,
+  timePreferences: TimePreferences | undefined,
 ): HTMLLIElement {
   const item = document.createElement("li");
   item.className = "reminder-item";
@@ -48,7 +54,7 @@ function reminderItem(
       reminder.nextOccurrence.visibleAt
         ? "Notification visible"
         : reminder.nextOccurrence.status.replaceAll("_", " ")
-    } · ${new Date(reminder.nextOccurrence.deliverAt).toLocaleString()}`
+    } · ${formatInstant(reminder.nextOccurrence.deliverAt, timePreferences)}`
     : reminder.isActive
     ? "No future occurrence"
     : "Disabled";
@@ -65,6 +71,7 @@ function reminderItem(
 }
 
 export async function mountPersonReminders(options: {
+  readonly timePreferences?: TimePreferences | undefined;
   readonly archived: boolean;
   readonly personId: string;
   readonly workspaceId: string;
@@ -177,8 +184,10 @@ export async function mountPersonReminders(options: {
     if (refreshSummary && nextReminderHero) {
       nextReminderHero.textContent = summary?.ok
         ? summary.value.dueInformation.nextReminderAt
-          ? new Date(summary.value.dueInformation.nextReminderAt)
-            .toLocaleString()
+          ? formatInstant(
+            summary.value.dueInformation.nextReminderAt,
+            options.timePreferences,
+          )
           : "Not recorded"
         : "Unavailable";
     }
@@ -210,7 +219,12 @@ export async function mountPersonReminders(options: {
     };
     reminderList.replaceChildren(
       ...result.value.reminders.map((item) =>
-        reminderItem(item, !lifecycleArchived, (id) => void disable(id))
+        reminderItem(
+          item,
+          !lifecycleArchived,
+          (id) => void disable(id),
+          options.timePreferences,
+        )
       ),
     );
     reminderState.textContent = result.value.reminders.length >= 100
@@ -242,7 +256,7 @@ export async function mountPersonReminders(options: {
       item.textContent =
         `Every ${cadence.intervalCount} ${cadence.intervalUnit}${
           cadence.intervalCount === 1 ? "" : "s"
-        } · due ${new Date(cadence.nextDueAt).toLocaleString()}`;
+        } · due ${formatInstant(cadence.nextDueAt, options.timePreferences)}`;
       return item;
     }));
     cadenceState.textContent = cadences.length
@@ -402,17 +416,9 @@ export async function mountPersonReminders(options: {
   await reload();
 }
 
-function formatToday(value: string, timezone: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: timezone,
-  }).format(new Date(value));
-}
-
 function todayReminder(
   item: TodayReminderItem,
-  timezone: string,
+  timePreferences: TimePreferences | undefined,
 ): HTMLLIElement {
   const row = document.createElement("li");
   row.className = `reminder-item reminder-${item.status}`;
@@ -428,21 +434,23 @@ function todayReminder(
     : item.status === "failed"
     ? "Delivery failed"
     : item.visibleAt
-    ? `Notification visible · ${formatToday(item.visibleAt, timezone)}`
+    ? `Notification visible · ${formatInstant(item.visibleAt, timePreferences)}`
     : item.status === "pending"
-    ? `Scheduled for ${formatToday(item.deliverAt, timezone)}`
+    ? `Scheduled for ${formatInstant(item.deliverAt, timePreferences)}`
     : item.status === "retry"
-    ? `Retry scheduled for ${formatToday(item.nextAttemptAt, timezone)}`
+    ? `Retry scheduled for ${
+      formatInstant(item.nextAttemptAt, timePreferences)
+    }`
     : item.status === "claimed"
     ? "Delivery in progress"
-    : `Delivered · ${formatToday(item.deliverAt, timezone)}`;
+    : `Delivered · ${formatInstant(item.deliverAt, timePreferences)}`;
   row.append(link, state);
   return row;
 }
 
 function todayCadence(
   item: TodayCadenceItem,
-  timezone: string,
+  timePreferences: TimePreferences | undefined,
 ): HTMLLIElement {
   const row = document.createElement("li");
   if (!item.person) {
@@ -456,9 +464,11 @@ function todayCadence(
   }?section=stay-in-touch`;
   link.textContent = item.person.name;
   const state = document.createElement("p");
-  state.textContent = `Reconnect by ${formatToday(item.dueAt, timezone)} · ${
+  state.textContent = `Reconnect by ${
+    formatInstant(item.dueAt, timePreferences)
+  } · ${
     item.lastContactedAt
-      ? `Last contact ${formatToday(item.lastContactedAt, timezone)}`
+      ? `Last contact ${formatInstant(item.lastContactedAt, timePreferences)}`
       : "No contact recorded"
   }${item.person.archived ? " · archived" : ""}`;
   row.append(link, state);
@@ -550,6 +560,9 @@ export async function mountTodayReminders(): Promise<void> {
       }
       return;
     }
+    const timePreferences = await loadTimePreferences(
+      session.session.workspace.id,
+    );
     const result = await getTodayReminders(session.session.workspace.id).catch(
       () => undefined,
     );
@@ -566,7 +579,7 @@ export async function mountTodayReminders(): Promise<void> {
     if (ownsReminder && reminderCurrent === reminderGeneration) {
       try {
         const rows = result.value.reminders.map((item) =>
-          todayReminder(item, result.value.timezone)
+          todayReminder(item, timePreferences)
         );
         reminderRetry.hidden = true;
         reminderList.replaceChildren(...rows);
@@ -583,7 +596,7 @@ export async function mountTodayReminders(): Promise<void> {
     if (ownsCadence && cadenceCurrent === cadenceGeneration) {
       try {
         const rows = result.value.cadences.map((item) =>
-          todayCadence(item, result.value.timezone)
+          todayCadence(item, timePreferences)
         );
         cadenceRetry.hidden = true;
         cadenceList.replaceChildren(...rows);

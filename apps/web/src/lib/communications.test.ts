@@ -1,3 +1,4 @@
+import { formatInstant } from "./time-presentation.ts";
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -97,7 +98,7 @@ describe("INTERACTION-002 person communications", () => {
     await mountCommunications(personId, workspaceId, false, {
       calls: false,
       conversations: false,
-    });
+    }, { locale: "en", effectiveTimezone: "UTC" });
 
     expect(contactCalls).toBe(0);
     const conversation = document.querySelector<HTMLElement>(
@@ -224,7 +225,7 @@ describe("INTERACTION-002 person communications", () => {
     await mountCommunications(personId, workspaceId, false, {
       calls: false,
       conversations: false,
-    });
+    }, { locale: "en", effectiveTimezone: "UTC" });
     document.querySelector<HTMLButtonElement>(
       '[data-communication-kind="call"] [data-communication-add]',
     )!.click();
@@ -305,7 +306,7 @@ describe("INTERACTION-002 person communications", () => {
     await mountCommunications(personId, workspaceId, false, {
       calls: false,
       conversations: false,
-    });
+    }, { locale: "en", effectiveTimezone: "UTC" });
     const section = document.querySelector<HTMLElement>(
       '[data-communication-kind="conversation"]',
     )!;
@@ -370,7 +371,7 @@ describe("INTERACTION-002 person communications", () => {
     await mountCommunications(personId, workspaceId, false, {
       calls: false,
       conversations: false,
-    });
+    }, { locale: "en", effectiveTimezone: "UTC" });
     const section = document.querySelector<HTMLElement>(
       '[data-communication-kind="call"]',
     )!;
@@ -401,7 +402,10 @@ describe("INTERACTION-002 person communications", () => {
   it("refreshes authoritative last contact for backdated occurrences and later messages", async () => {
     document.body.innerHTML =
       `<dd data-profile-last-contact>${
-        new Date("2026-08-20T12:00:00.000Z").toLocaleString()
+        formatInstant("2026-08-20T12:00:00.000Z", {
+          locale: "en",
+          effectiveTimezone: "UTC",
+        })
       }</dd>` + markup("conversation");
     let saves = 0;
     vi.stubGlobal(
@@ -443,7 +447,7 @@ describe("INTERACTION-002 person communications", () => {
     await mountCommunications(personId, workspaceId, false, {
       calls: false,
       conversations: false,
-    });
+    }, { locale: "en", effectiveTimezone: "UTC" });
     const section = document.querySelector<HTMLElement>(
       '[data-communication-kind="conversation"]',
     )!;
@@ -458,7 +462,12 @@ describe("INTERACTION-002 person communications", () => {
     await vi.waitFor(() => expect(saves).toBe(1));
     await vi.waitFor(() =>
       expect(document.querySelector("[data-profile-last-contact]")?.textContent)
-        .toBe(new Date("2026-08-20T12:00:00.000Z").toLocaleString())
+        .toBe(
+          formatInstant("2026-08-20T12:00:00.000Z", {
+            locale: "en",
+            effectiveTimezone: "UTC",
+          }),
+        )
     );
     await vi.waitFor(() =>
       expect(
@@ -476,7 +485,12 @@ describe("INTERACTION-002 person communications", () => {
     await vi.waitFor(() => expect(saves).toBe(2));
     await vi.waitFor(() =>
       expect(document.querySelector("[data-profile-last-contact]")?.textContent)
-        .toBe(new Date("2026-08-22T12:00:00.000Z").toLocaleString())
+        .toBe(
+          formatInstant("2026-08-22T12:00:00.000Z", {
+            locale: "en",
+            effectiveTimezone: "UTC",
+          }),
+        )
     );
   });
 
@@ -509,7 +523,7 @@ describe("INTERACTION-002 person communications", () => {
     await mountCommunications(personId, workspaceId, false, {
       calls: false,
       conversations: false,
-    });
+    }, { locale: "en", effectiveTimezone: "UTC" });
     for (
       const [kind, stateText] of [
         ["call", "1 recent call. Listed in the timeline above."],
@@ -573,7 +587,7 @@ describe("INTERACTION-002 person communications", () => {
       mountCommunications(personId, workspaceId, false, {
         calls: false,
         conversations: false,
-      }),
+      }, { locale: "en", effectiveTimezone: "UTC" }),
     ).resolves.toBeUndefined();
     for (
       const state of document.querySelectorAll<HTMLElement>(
@@ -648,7 +662,7 @@ describe("INTERACTION-002 person communications", () => {
     await mountCommunications(personId, workspaceId, false, {
       calls: false,
       conversations: false,
-    });
+    }, { locale: "en", effectiveTimezone: "UTC" });
     const section = document.querySelector<HTMLElement>(
       '[data-communication-kind="call"]',
     )!;
@@ -728,7 +742,7 @@ describe("INTERACTION-002 person communications", () => {
       await mountCommunications(personId, workspaceId, false, {
         calls: false,
         conversations: false,
-      });
+      }, { locale: "en", effectiveTimezone: "UTC" });
       const section = document.querySelector<HTMLElement>(
         '[data-communication-kind="call"]',
       )!;
@@ -782,7 +796,7 @@ describe("INTERACTION-002 person communications", () => {
     await mountCommunications(personId, workspaceId, false, {
       calls: false,
       conversations: false,
-    });
+    }, { locale: "en", effectiveTimezone: "UTC" });
     const call = document.querySelector<HTMLElement>(
       '[data-communication-kind="call"]',
     )!;
@@ -849,11 +863,11 @@ describe("INTERACTION-002 person communications", () => {
     await mountCommunications(personId, workspaceId, false, {
       calls: false,
       conversations: false,
-    });
+    }, { locale: "en", effectiveTimezone: "UTC" });
     await mountCommunications(personId, workspaceId, false, {
       calls: false,
       conversations: false,
-    });
+    }, { locale: "en", effectiveTimezone: "UTC" });
     const call = document.querySelector<HTMLElement>(
       '[data-communication-kind="call"]',
     )!;
@@ -937,7 +951,7 @@ describe("INTERACTION-002 person communications", () => {
     await mountCommunications(personId, workspaceId, false, {
       calls: false,
       conversations: false,
-    });
+    }, { locale: "en", effectiveTimezone: "UTC" });
     let cleanupReads = 0;
     document.dispatchEvent(
       new CustomEvent("person-lifecycle-changed", {

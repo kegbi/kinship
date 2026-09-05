@@ -1,6 +1,15 @@
+import { loadTimePreferences } from "./time-presentation.ts";
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+vi.mock("./time-presentation.ts", async (original) => ({
+  ...await original<typeof import("./time-presentation.ts")>(),
+  loadTimePreferences: vi.fn().mockResolvedValue({
+    locale: "en",
+    effectiveTimezone: "UTC",
+  }),
+}));
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
 import { mountTaskSurface, mountTodayTasks } from "./tasks.ts";
@@ -609,6 +618,10 @@ describe("PLANNING-001 task browser behavior", () => {
   });
 
   it("renders and completes one coherent server-clock Today snapshot", async () => {
+    vi.mocked(loadTimePreferences).mockResolvedValue({
+      locale: "en",
+      effectiveTimezone: "America/New_York",
+    });
     todayMarkup();
     document.body.style.width = "320px";
     const dueAt = "2026-03-08T06:30:00.000Z";
@@ -924,7 +937,7 @@ describe("PLANNING-001 task browser behavior", () => {
     expect(document.body.textContent).not.toContain("Loading");
   });
 
-  it("keeps the last coherent snapshot when Intl formatting fails after validation", async () => {
+  it("APR-009 renders current Today data with unavailable labels for an unsupported saved locale", async () => {
     todayMarkup();
     const preserved = attention([{
       dueAt: task.dueAt,
@@ -937,7 +950,7 @@ describe("PLANNING-001 task browser behavior", () => {
       dueAt: task.dueAt,
       id: crypto.randomUUID(),
       kind: "task",
-      title: "Must not partially render",
+      title: "Current task",
     }]);
     vi.stubGlobal(
       "fetch",
@@ -945,33 +958,23 @@ describe("PLANNING-001 task browser behavior", () => {
     );
     await mountTodayTasks();
     const date = document.querySelector<HTMLTimeElement>("[data-today-date]")!;
-    const lastDate = date.textContent;
-    const NativeDateTimeFormat = Intl.DateTimeFormat;
-    let calls = 0;
-    vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
-      (function (
-        locales?: Intl.LocalesArgument,
-        options?: Intl.DateTimeFormatOptions,
-      ) {
-        calls += 1;
-        if (calls === 2) throw new RangeError("formatter unavailable");
-        return new NativeDateTimeFormat(locales, options);
-      }) as typeof Intl.DateTimeFormat,
-    );
-
+    vi.mocked(loadTimePreferences).mockResolvedValue({
+      locale: "en-USA",
+      effectiveTimezone: "UTC",
+    });
     document.querySelector<HTMLButtonElement>("#today-attention-retry")!
       .click();
     await vi.waitFor(() =>
-      expect(
-        document.querySelector<HTMLButtonElement>("#today-attention-retry")!
-          .hidden,
-      ).toBe(false)
+      expect(document.body.textContent).toContain("Current task")
     );
-    expect(document.body.textContent).toContain("Preserved task");
-    expect(document.body.textContent).not.toContain(
-      "Must not partially render",
-    );
-    expect(date.textContent).toBe(lastDate);
+    expect(
+      document.querySelector<HTMLButtonElement>("#today-attention-retry")!
+        .hidden,
+    ).toBe(true);
+    expect(document.body.textContent).not.toContain("Preserved task");
+    expect(document.body.textContent).toContain("Current task");
+    expect(document.body.textContent).toContain("Time unavailable");
+    expect(date.textContent).toBe("Date unavailable");
     expect(date.dateTime).toBe(preserved.date);
   });
 
@@ -1898,5 +1901,12 @@ describe("PLANNING-001 task browser behavior", () => {
         ?.hidden,
     )
       .toBe(true);
+  });
+});
+
+beforeEach(() => {
+  vi.mocked(loadTimePreferences).mockResolvedValue({
+    locale: "en",
+    effectiveTimezone: "UTC",
   });
 });

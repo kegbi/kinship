@@ -1,4 +1,12 @@
 // @vitest-environment happy-dom
+
+vi.mock("./time-presentation.ts", async (original) => ({
+  ...await original<typeof import("./time-presentation.ts")>(),
+  loadTimePreferences: vi.fn().mockResolvedValue({
+    locale: "en",
+    effectiveTimezone: "UTC",
+  }),
+}));
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountImports } from "./imports.ts";
 

@@ -22,8 +22,9 @@ prerequisite queues.
   aggregate gate failures. **APR-006** makes profile summaries and counts
   truthful. **APR-007** compacts the mobile header and corrects shared
   stylesheet ownership. **APR-008** applies saved person-name and sort
-  preferences. Continue with **APR-009**, for consistent locale and time-zone
-  presentation.
+  preferences. **APR-009** applies consistent locale/time-zone presentation and
+  explicit calendar-date semantics. Continue with **APR-010**, honoring the
+  saved fluid-layout preference.
 - **Phase 12 is accepted.** `REL-029` is delivered; `REL-020` and `REL-025`
   remain watches. Phase 11's `OPS-001E` deployment work stays parked until
   explicitly requested.

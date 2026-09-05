@@ -1,4 +1,9 @@
 import {
+  formatInstant,
+  loadTimePreferences,
+  type TimePreferences,
+} from "./time-presentation.ts";
+import {
   createWorkspaceInvitation,
   getWorkspaceMembers,
   listManagedMembers,
@@ -140,7 +145,11 @@ function listRow(
   return row;
 }
 
-function renderLists(ui: MemberElements, value: WorkspaceMembers): void {
+function renderLists(
+  ui: MemberElements,
+  value: WorkspaceMembers,
+  timePreferences: TimePreferences | undefined,
+): void {
   ui.memberList.replaceChildren(
     ...value.members.map((member) =>
       listRow(member.name || member.email, member.email, member.role)
@@ -154,11 +163,7 @@ function renderLists(ui: MemberElements, value: WorkspaceMembers): void {
     ...value.invitations.map((invitation) =>
       listRow(
         invitation.email,
-        `Expires ${
-          new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
-            new Date(invitation.expiresAt),
-          )
-        }`,
+        `Expires ${formatInstant(invitation.expiresAt, timePreferences)}`,
         invitation.role,
       )
     ),
@@ -180,6 +185,7 @@ export async function mountMembersPage(): Promise<void> {
     return;
   }
   const workspaceId = session.session.workspace.id;
+  const timePreferences = await loadTimePreferences(workspaceId);
   const load = async (): Promise<void> => {
     const result = await getWorkspaceMembers(workspaceId).catch(() =>
       undefined
@@ -197,7 +203,7 @@ export async function mountMembersPage(): Promise<void> {
       ui.invitationCount.textContent = "Unavailable";
       return;
     }
-    renderLists(ui, result.value);
+    renderLists(ui, result.value, timePreferences);
     await renderManagement(ui, workspaceId);
   };
   await load();

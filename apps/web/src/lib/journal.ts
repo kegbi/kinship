@@ -1,3 +1,10 @@
+import { resolveWorkspaceSession } from "./workspace-context.ts";
+import {
+  formatCalendarDate,
+  formatInstant,
+  loadTimePreferences,
+  type TimePreferences,
+} from "./time-presentation.ts";
 import {
   createJournalPost,
   deleteJournalItem,
@@ -44,13 +51,6 @@ function elements(): JournalElements | undefined {
   };
 }
 
-function formatInstant(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
-
 function localDateTimeValue(value: Date): string {
   const pad = (part: number) => String(part).padStart(2, "0");
   return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${
@@ -82,6 +82,7 @@ function heading(item: JournalTimelineItem): string {
 }
 
 function renderActivityOptions(
+  timePreferences: TimePreferences | undefined,
   form: HTMLFormElement,
   activities: readonly JournalLinkableActivity[],
 ): void {
@@ -99,7 +100,7 @@ function renderActivityOptions(
       const option = document.createElement("option");
       option.value = activity.id;
       option.textContent = `${activity.summary} · ${
-        formatInstant(activity.happenedAt)
+        formatInstant(activity.happenedAt, timePreferences)
       }`;
       return option;
     }),
@@ -107,6 +108,8 @@ function renderActivityOptions(
 }
 
 function renderItem(
+  workspaceId: string,
+  timePreferences: TimePreferences | undefined,
   item: JournalTimelineItem,
   refresh: () => Promise<void>,
 ): HTMLLIElement {
@@ -119,8 +122,15 @@ function renderItem(
   link.textContent = heading(item);
   title.append(link);
   const time = document.createElement("time");
-  time.dateTime = item.occurredAt;
-  time.textContent = formatInstant(item.occurredAt);
+  time.dateTime = item.type === "day-rating"
+    ? item.dayRating.ratedOn
+    : item.occurredAt;
+  time.textContent = item.type === "day-rating"
+    ? formatCalendarDate(
+      item.dayRating.ratedOn,
+      timePreferences?.locale ?? "en",
+    )
+    : formatInstant(item.occurredAt, timePreferences);
   const body = document.createElement("p");
   body.textContent = item.type === "post"
     ? item.post.body
@@ -158,7 +168,7 @@ function renderItem(
   remove.textContent = "Remove";
   remove.addEventListener("click", async () => {
     remove.disabled = true;
-    const result = await deleteJournalItem(item.id);
+    const result = await deleteJournalItem(item.id, workspaceId);
     if (result.ok) await refresh();
     else {
       remove.disabled = false;
@@ -199,6 +209,7 @@ function resetForm(form: HTMLFormElement): void {
 export async function mountJournal(): Promise<void> {
   const surface = elements();
   if (!surface) return;
+  let workspaceId: string | undefined;
   let items: readonly JournalTimelineItem[] = [];
   const refresh = async () => {
     surface.state.textContent = "Loading journal…";
@@ -207,7 +218,20 @@ export async function mountJournal(): Promise<void> {
     const itemId = detail
       ? globalThis.location.pathname.split("/").filter(Boolean).at(-1)
       : undefined;
-    const result = itemId ? await getJournalItem(itemId) : await listJournal();
+    const session = await resolveWorkspaceSession();
+    if (session.status !== "ready") {
+      workspaceId = undefined;
+      surface.state.textContent =
+        "Your journal session could not be confirmed.";
+      surface.retry.hidden = false;
+      surface.list.replaceChildren();
+      return;
+    }
+    workspaceId = session.session.workspace.id;
+    const timePreferences = await loadTimePreferences(workspaceId);
+    const result = itemId
+      ? await getJournalItem(itemId, workspaceId)
+      : await listJournal(workspaceId);
     if (!result.ok) {
       surface.state.textContent = result.problem.detail;
       surface.retry.hidden = false;
@@ -216,10 +240,16 @@ export async function mountJournal(): Promise<void> {
     }
     items = "item" in result.value ? [result.value.item] : result.value.items;
     if (surface.form && "activities" in result.value) {
-      renderActivityOptions(surface.form, result.value.activities);
+      renderActivityOptions(
+        timePreferences,
+        surface.form,
+        result.value.activities,
+      );
     }
     surface.list.replaceChildren(
-      ...items.map((item) => renderItem(item, refresh)),
+      ...items.map((item) =>
+        renderItem(workspaceId!, timePreferences, item, refresh)
+      ),
     );
     surface.state.textContent = items.length === 0
       ? "No journal items yet."
@@ -239,7 +269,7 @@ export async function mountJournal(): Promise<void> {
     ?.addEventListener("change", () => setFormType(surface.form!));
   surface.form?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (!surface.form || !surface.formState) return;
+    if (!surface.form || !surface.formState || !workspaceId) return;
     const data = new FormData(surface.form);
     const type = (surface.form.elements.namedItem(
       "type",
@@ -260,8 +290,12 @@ export async function mountJournal(): Promise<void> {
           : {}),
       };
       result = surface.form.dataset.editPostId
-        ? await updateJournalPost(surface.form.dataset.editPostId, input)
-        : await createJournalPost(input);
+        ? await updateJournalPost(
+          surface.form.dataset.editPostId,
+          input,
+          workspaceId,
+        )
+        : await createJournalPost(input, workspaceId);
     } else if (type === "day-rating") {
       result = await saveJournalDayRating({
         ...(String(data.get("comment")).trim()
@@ -269,14 +303,14 @@ export async function mountJournal(): Promise<void> {
           : {}),
         ratedOn: String(data.get("ratedOn")),
         rating: Number(data.get("rating")),
-      });
+      }, workspaceId);
     } else {
       const activityId = String(data.get("activityId"));
       if (!activityId) {
         surface.formState.textContent = "Choose an activity to link.";
         return;
       }
-      result = await linkJournalActivity(activityId);
+      result = await linkJournalActivity(activityId, workspaceId);
     }
     if (!result.ok) {
       surface.formState.textContent = result.problem.detail;

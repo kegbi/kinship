@@ -1,4 +1,13 @@
+import { resolveWorkspaceSession } from "./workspace-context.ts";
 // @vitest-environment happy-dom
+
+vi.mock("./time-presentation.ts", async (original) => ({
+  ...await original<typeof import("./time-presentation.ts")>(),
+  loadTimePreferences: vi.fn().mockResolvedValue({
+    locale: "en",
+    effectiveTimezone: "UTC",
+  }),
+}));
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountJournal } from "./journal.ts";
@@ -14,6 +23,32 @@ const item = {
   },
   type: "post",
 };
+
+it("APR-009 journal data uses the same selected membership as its display preferences", async () => {
+  markup();
+  const fetch = vi.fn().mockImplementation(() =>
+    Promise.resolve(response({ status: "ready", items: [item] }))
+  );
+  vi.stubGlobal("fetch", fetch);
+  await mountJournal();
+  expect(fetch).toHaveBeenCalledWith("/api/v1/journal", {
+    headers: expect.objectContaining({ "X-Workspace-Id": "journal-workspace" }),
+  });
+  document.querySelector<HTMLButtonElement>(
+    "[data-journal-item-id] button:last-child",
+  )!.click();
+  await vi.waitFor(() =>
+    expect(fetch).toHaveBeenCalledWith(
+      `/api/v1/journal/items/${item.id}`,
+      expect.objectContaining({
+        method: "DELETE",
+        headers: expect.objectContaining({
+          "X-Workspace-Id": "journal-workspace",
+        }),
+      }),
+    )
+  );
+});
 function response(body: unknown, status = 200): Response {
   const normalized = body && typeof body === "object" && "items" in body &&
       !("activities" in body)
@@ -112,6 +147,11 @@ describe("JOURNAL-001 browser behavior", () => {
       "DELETE",
       undefined,
     ]);
+    for (const [, options] of fetchMock.mock.calls) {
+      expect(options.headers).toMatchObject({
+        "X-Workspace-Id": "journal-workspace",
+      });
+    }
   });
 
   it("switches to a day rating and sends the canonical calendar date", async () => {
@@ -139,6 +179,9 @@ describe("JOURNAL-001 browser behavior", () => {
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
       body: JSON.stringify({ ratedOn: "2026-08-23", rating: 5 }),
       method: "PUT",
+      headers: expect.objectContaining({
+        "X-Workspace-Id": "journal-workspace",
+      }),
     });
   });
 
@@ -237,6 +280,9 @@ describe("JOURNAL-001 browser behavior", () => {
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
       body: JSON.stringify({ activityId: item.id }),
       method: "POST",
+      headers: expect.objectContaining({
+        "X-Workspace-Id": "journal-workspace",
+      }),
     });
   });
 
@@ -330,8 +376,43 @@ describe("JOURNAL-001 browser behavior", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       `/api/v1/journal/items/${item.id}`,
     );
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      "X-Workspace-Id": "journal-workspace",
+    });
     expect(document.querySelector("[data-journal-list]")?.textContent)
       .toContain("Entry");
     globalThis.history.pushState({}, "", "/");
   });
+});
+
+vi.mock(
+  "./workspace-context.ts",
+  () => ({
+    resolveWorkspaceSession: vi.fn().mockResolvedValue({
+      status: "ready",
+      session: { workspace: { id: "journal-workspace" } },
+    }),
+  }),
+);
+
+it("APR-009 journal waits for selected membership before reading or saving and supports retry", async () => {
+  markup();
+  vi.mocked(resolveWorkspaceSession).mockResolvedValueOnce({
+    status: "unavailable",
+  });
+  const fetch = vi.fn().mockImplementation(() =>
+    Promise.resolve(response({ status: "ready", items: [] }))
+  );
+  vi.stubGlobal("fetch", fetch);
+  await mountJournal();
+  expect(fetch).not.toHaveBeenCalled();
+  expect(document.querySelector("[data-journal-state]")?.textContent).toContain(
+    "session could not be confirmed",
+  );
+  document.querySelector("form")!.dispatchEvent(
+    new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+  );
+  expect(fetch).not.toHaveBeenCalled();
+  document.querySelector<HTMLButtonElement>("[data-journal-retry]")!.click();
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
 });
