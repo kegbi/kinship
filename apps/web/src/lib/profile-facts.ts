@@ -1,4 +1,8 @@
-import { markFormSaved, saveWithLockedForm } from "./unsaved-changes.ts";
+import {
+  markFormSaved,
+  requestFormDiscard,
+  saveWithLockedForm,
+} from "./unsaved-changes.ts";
 import {
   createProfileFact,
   deleteProfileFact,
@@ -754,6 +758,30 @@ function clearRailPresentation(section: RailProfileFactSection): void {
   if (section === "first-meeting") setFirstMeetingPlace(undefined);
 }
 
+function clearFactContent(
+  section: ProfileFactSectionId,
+  target: FactElements,
+): void {
+  target.list?.replaceChildren();
+  target.root.querySelector("[data-profile-fact-pagination]")?.remove();
+  target.form.reset();
+  target.form.hidden = true;
+  target.form.replaceChildren();
+  target.form.onsubmit = null;
+  target.form.removeAttribute("data-fact-id");
+  target.form.removeAttribute("data-expected-updated-at");
+  target.add.onclick = null;
+  target.add.hidden = true;
+  if (section !== "tags") clearRailPresentation(section);
+  else {
+    const preview = document.querySelector<HTMLElement>("#person-profile-tags");
+    if (preview) {
+      preview.replaceChildren();
+      preview.hidden = true;
+    }
+  }
+}
+
 function publishRailPresentation(
   section: RailProfileFactSection,
   snapshot: ProfileFactSection,
@@ -858,12 +886,21 @@ export async function mountProfileFacts(
   const load = async (section: ProfileFactSectionId): Promise<void> => {
     const target = elements(section);
     if (!target) return;
+    const enabledButtons = [...target.root.querySelectorAll<HTMLButtonElement>(
+      "button:not(:disabled)",
+    )];
+    for (const button of enabledButtons) button.disabled = true;
+    const retry = target.root.querySelector<HTMLButtonElement>(
+      "[data-profile-fact-retry]",
+    );
+    if (retry) retry.disabled = true;
     if (section === "contact-methods") renderContactMethods = undefined;
     target.root.dataset.sectionState = "loading";
     target.state.textContent = `Loading ${section.replaceAll("-", " ")}…`;
     target.badge && (target.badge.textContent = "Loading");
     const result = await listProfileFacts(personId, section, {}, workspaceId)
       .catch(() => undefined);
+    for (const button of enabledButtons) button.disabled = false;
     if (!result || !result.ok) {
       const forbidden = result && !result.ok &&
         [401, 403].includes(result.problem.status);
@@ -875,10 +912,32 @@ export async function mountProfileFacts(
         (target.badge.textContent = forbidden ? "Forbidden" : "Error");
       if (section !== "tags") {
         setRailEmpty(section, false);
-        if (forbidden) clearRailPresentation(section);
+      }
+      if (forbidden) {
+        snapshots.delete(section);
+        clearFactContent(section, target);
+        retry?.remove();
+      } else {
+        const button = retry ?? actionButton("Retry", "profileFactRetry");
+        button.disabled = false;
+        button.onclick = async () => {
+          if (
+            button.disabled || !requestFormDiscard(
+              [target.form],
+              "Discard unsaved changes in this section and retry loading it?",
+            )
+          ) return;
+          target.form.reset();
+          target.form.hidden = true;
+          await load(section);
+          if (button.isConnected) button.focus();
+          else if (!target.root.hidden) target.state.focus();
+        };
+        if (!retry) target.state.insertAdjacentElement("afterend", button);
       }
       return;
     }
+    retry?.remove();
     let snapshot: ProfileFactSection = {
       ...result.value,
       options: mergeOptions(
@@ -892,26 +951,9 @@ export async function mountProfileFacts(
       snapshots.delete(section);
       target.root.dataset.sectionState = "hidden";
       target.root.hidden = true;
-      target.list?.replaceChildren();
-      target.root.querySelector("[data-profile-fact-pagination]")?.remove();
-      target.form.replaceChildren();
-      target.form.onsubmit = null;
-      target.form.removeAttribute("data-fact-id");
-      target.form.removeAttribute("data-expected-updated-at");
+      clearFactContent(section, target);
       target.state.textContent = "";
       target.badge && (target.badge.textContent = "Hidden");
-      target.add.onclick = null;
-      target.add.hidden = true;
-      if (section !== "tags") clearRailPresentation(section);
-      if (section === "tags") {
-        const preview = document.querySelector<HTMLElement>(
-          "#person-profile-tags",
-        );
-        if (preview) {
-          preview.replaceChildren();
-          preview.hidden = true;
-        }
-      }
       const profileSection = target.root.dataset.profileSection;
       if (profileSection) {
         document.querySelector<HTMLElement>(
