@@ -1,4 +1,5 @@
 import {
+  getMemberPreferences,
   listPeople,
   listPeopleTagOptions,
   type PeopleDirectoryInput,
@@ -10,6 +11,7 @@ import {
   type ProblemDetails,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
+import { displayPersonName, type PersonNameOrder } from "./person-name.ts";
 
 interface DirectoryElements {
   readonly announcement: HTMLElement;
@@ -110,11 +112,14 @@ function isSort(value: string | null): value is PeopleDirectorySort {
     value === "recently-added";
 }
 
-function hydrateControls(directory: DirectoryElements): void {
+function hydrateControls(
+  directory: DirectoryElements,
+  defaultSort: PeopleDirectorySort,
+): void {
   const query = new URLSearchParams(globalThis.location.search);
   directory.search.value = query.get("search") ?? "";
   const sort = query.get("sort");
-  directory.sort.value = isSort(sort) ? sort : "given-name";
+  directory.sort.value = isSort(sort) ? sort : defaultSort;
   directory.tag.dataset.initialValue = query.get("tag") ?? "";
 }
 
@@ -135,7 +140,10 @@ function input(
   };
 }
 
-function updateLocation(directory: DirectoryElements): void {
+function updateLocation(
+  directory: DirectoryElements,
+  defaultSort: PeopleDirectorySort,
+): void {
   const query = new URLSearchParams();
   if (directory.search.value.trim()) {
     query.set("search", directory.search.value.trim());
@@ -143,7 +151,10 @@ function updateLocation(directory: DirectoryElements): void {
   const selectedTag = directory.tag.value ||
     directory.tag.dataset.initialValue;
   if (selectedTag) query.set("tag", selectedTag);
-  if (directory.sort.value !== "given-name") {
+  if (
+    directory.sort.value !== defaultSort ||
+    isSort(new URLSearchParams(globalThis.location.search).get("sort"))
+  ) {
     query.set("sort", directory.sort.value);
   }
   const suffix = query.size > 0 ? `?${query.toString()}` : "";
@@ -154,20 +165,16 @@ function updateLocation(directory: DirectoryElements): void {
   );
 }
 
-function displayName(person: PeopleDirectoryPerson): string {
-  const formal = [person.givenName, person.familyName].filter(Boolean).join(
-    " ",
-  );
-  return formal || person.nickname || "Unnamed person";
-}
-
-function personItem(person: PeopleDirectoryPerson): HTMLLIElement {
+function personItem(
+  person: PeopleDirectoryPerson,
+  nameOrder: PersonNameOrder,
+): HTMLLIElement {
   const item = document.createElement("li");
   const link = document.createElement("a");
   link.href = `/app/people/${person.id}`;
   link.className = "person-directory-link";
   const heading = document.createElement("h2");
-  heading.textContent = displayName(person);
+  heading.textContent = displayPersonName(person, nameOrder);
   const details = document.createElement("p");
   details.className = "directory-person-details";
   details.textContent = [
@@ -181,7 +188,9 @@ function personItem(person: PeopleDirectoryPerson): HTMLLIElement {
     tags.className = "directory-person-tags";
     tags.setAttribute(
       "aria-label",
-      `Tags for ${displayName(person)}: ${person.tagCount} total`,
+      `Tags for ${
+        displayPersonName(person, nameOrder)
+      }: ${person.tagCount} total`,
     );
     for (const tag of person.tags) {
       const tagItem = document.createElement("li");
@@ -296,7 +305,6 @@ export async function mountPeopleDirectory(): Promise<void> {
   const directory = elements();
   if (!directory) return;
   const selectedLifecycle = lifecycle();
-  hydrateControls(directory);
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") {
     renderError(
@@ -314,6 +322,16 @@ export async function mountPeopleDirectory(): Promise<void> {
     return;
   }
 
+  const preferences = await getMemberPreferences(session.session.workspace.id)
+    .catch(() => undefined);
+  const nameOrder = preferences?.ok
+    ? preferences.value.preferences.contactNameOrder
+    : "given_family_nickname";
+  const defaultSort = preferences?.ok &&
+      preferences.value.preferences.contactSortOrder === "family_name_asc"
+    ? "family-name"
+    : "given-name";
+  hydrateControls(directory, defaultSort);
   let nextCursor: string | undefined;
   let requestSequence = 0;
   let tagCursor: string | undefined;
@@ -391,10 +409,10 @@ export async function mountPeopleDirectory(): Promise<void> {
     directory.error.hidden = true;
     if (!append) {
       directory.list.replaceChildren();
-      updateLocation(directory);
+      updateLocation(directory, defaultSort);
     }
     directory.list.append(
-      ...result.value.people.map(personItem),
+      ...result.value.people.map((person) => personItem(person, nameOrder)),
     );
     nextCursor = result.value.nextCursor;
     const count = directory.list.children.length;

@@ -1,12 +1,39 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mountActivityReport,
   mountInteractionCapture,
   mountPersonInteractions,
   mountTodayInteractions,
 } from "./interactions.ts";
+
+import { getMemberPreferences } from "../../../../packages/contracts/generated/auth-client.ts";
+
+vi.mock(
+  "../../../../packages/contracts/generated/auth-client.ts",
+  async (original) => ({
+    ...await original<Record<string, unknown>>(),
+    getMemberPreferences: vi.fn(),
+  }),
+);
+
+beforeEach(() => {
+  vi.mocked(getMemberPreferences).mockReset().mockResolvedValue({
+    ok: true,
+    value: {
+      status: "ready",
+      preferences: {
+        contactNameOrder: "given_family_nickname",
+        contactSortOrder: "given_name_asc",
+        fluidLayout: false,
+        locale: "en",
+        measurementSystem: "metric",
+        temperatureScale: "celsius",
+      },
+    },
+  });
+});
 
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -92,6 +119,61 @@ function readyInteractionOptions() {
     status: "ready",
   });
 }
+
+it("APR-008 applies saved name order to initial and searched capture participants", async () => {
+  captureMarkup();
+  vi.mocked(getMemberPreferences).mockResolvedValue({
+    ok: true,
+    value: {
+      status: "ready",
+      preferences: {
+        contactNameOrder: "family_given_nickname",
+        contactSortOrder: "family_name_asc",
+        fluidLayout: false,
+        locale: "en",
+        measurementSystem: "metric",
+        temperatureScale: "celsius",
+      },
+    },
+  });
+  const fetchMock = vi.fn().mockResolvedValueOnce(response(session()))
+    .mockResolvedValueOnce(
+      response({
+        status: "ready",
+        people: [{
+          ...selectedDirectoryPerson(),
+          givenName: "Grace",
+          familyName: "Hopper",
+        }],
+      }),
+    )
+    .mockResolvedValueOnce(readyInteractionOptions());
+  vi.stubGlobal("fetch", fetchMock);
+  await mountInteractionCapture();
+  await openReadyCapture("[data-quick-capture]");
+  expect(document.querySelector('[name="participantIds"] option')?.textContent)
+    .toBe("Hopper Grace");
+  fetchMock.mockResolvedValueOnce(
+    response({
+      status: "ready",
+      people: [{
+        ...selectedDirectoryPerson(personId),
+        givenName: "Ada",
+        familyName: "Lovelace",
+      }],
+    }),
+  );
+  const search = document.querySelector<HTMLInputElement>(
+    '[name="participantSearch"]',
+  )!;
+  search.value = "Ada";
+  search.dispatchEvent(new Event("change"));
+  await vi.waitFor(() =>
+    expect(document.querySelector('[name="participantIds"]')?.textContent)
+      .toContain("Lovelace Ada")
+  );
+  expect(getMemberPreferences).toHaveBeenCalledWith(workspaceId);
+});
 
 function selectedDirectoryPerson(
   id = otherId,

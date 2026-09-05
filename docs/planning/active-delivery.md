@@ -21,8 +21,9 @@ prerequisite queues.
   existing API-token/DAV aggregate gates; `REL-030/031` track unrelated
   aggregate gate failures. **APR-006** makes profile summaries and counts
   truthful. **APR-007** compacts the mobile header and corrects shared
-  stylesheet ownership. Continue with **APR-008**, applying saved person-name
-  and sort preferences.
+  stylesheet ownership. **APR-008** applies saved person-name and sort
+  preferences. Continue with **APR-009**, for consistent locale and time-zone
+  presentation.
 - **Phase 12 is accepted.** `REL-029` is delivered; `REL-020` and `REL-025`
   remain watches. Phase 11's `OPS-001E` deployment work stays parked until
   explicitly requested.

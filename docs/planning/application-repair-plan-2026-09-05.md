@@ -277,7 +277,18 @@ established in this pass.
 
 ### APR-008 — Apply saved person-name and default-sort preferences
 
-- [ ] **P2, ready.**
+- [x] **P2, delivered.** Explicit membership preferences now drive directory,
+      profile, search, and capture labels through one pure name formatter.
+      Directory defaults use the saved sort; valid URL overrides win. Partial
+      names remain honest, recent search entries use bounded existing summary
+      reads, and exact identity matching remains independent of display order.
+      The 128-test affected checkpoint passes at 95.35% line, 85.08% branch, and
+      88.84% function coverage; the formatter reaches 100% in all metrics. The
+      subsequent matching amendment passes all 19 search tests at
+      96.42/84.90/92.15%. Chromium `AUTH-004` verifies saved preferences,
+      navigation/reload, all four surfaces, partial identities, and membership
+      switching in both directions. Static and five product checks pass; API
+      contracts are unchanged.
 - Evidence: `settings.ts` reads/saves `contactNameOrder` and `contactSortOrder`,
   but other web controllers do not consume them. `hydrateControls` in
   [people-directory.ts](../../apps/web/src/lib/people-directory.ts) defaults to

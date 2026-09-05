@@ -2,6 +2,7 @@ import {
   archivePerson,
   deletePerson,
   editPerson,
+  getMemberPreferences,
   getPerson,
   getPersonDeletionImpact,
   type PersonDueInformation,
@@ -44,6 +45,8 @@ import {
   mountUnsavedChangesGuard,
   saveWithLockedForm,
 } from "./unsaved-changes.ts";
+
+import { displayPersonName, type PersonNameOrder } from "./person-name.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
@@ -446,13 +449,6 @@ function personId(): string | undefined {
     .exec(globalThis.location.pathname)?.[1];
 }
 
-function displayName(person: PersonIdentity): string {
-  const formal = [person.givenName, person.familyName].filter(Boolean).join(
-    " ",
-  );
-  return formal || person.nickname || "Unnamed person";
-}
-
 function lifecycleElements(): LifecycleElements | undefined {
   const archive = document.querySelector<HTMLButtonElement>("#person-archive");
   const deleteCancel = document.querySelector<HTMLButtonElement>(
@@ -518,13 +514,16 @@ function initials(person: PersonIdentity): string {
     .toLocaleUpperCase();
 }
 
-function renderZoneMiniIdentity(person: PersonIdentity): void {
+function renderZoneMiniIdentity(
+  person: PersonIdentity,
+  nameOrder: PersonNameOrder,
+): void {
   const avatar = document.querySelector<HTMLElement>(
     "[data-zone-mini-avatar]",
   );
   const name = document.querySelector<HTMLElement>("[data-zone-mini-name]");
   if (avatar) avatar.textContent = initials(person);
-  if (name) name.textContent = displayName(person);
+  if (name) name.textContent = displayPersonName(person, nameOrder);
 }
 
 function renderState(profile: ProfileElements, state: ProfileState): void {
@@ -935,18 +934,19 @@ function renderReady(
   status: "archived" | "ready",
   workspaceId: string,
   navigation: SectionNavigationContext,
+  nameOrder: PersonNameOrder,
 ): void {
-  const name = displayName(person);
+  const name = displayPersonName(person, nameOrder);
   profile.heading.textContent = name;
   profile.breadcrumbName.textContent = name;
   profile.nickname.textContent = person.nickname ? `“${person.nickname}”` : "";
-  profile.nickname.hidden = !person.nickname;
+  profile.nickname.hidden = true;
   profile.avatar.textContent = initials(person);
   const savedState = document.querySelector<HTMLElement>(
     "#person-profile-saved-state",
   );
   if (savedState) savedState.textContent = "Identity saved";
-  renderZoneMiniIdentity(person);
+  renderZoneMiniIdentity(person, nameOrder);
   for (
     const field of [
       "givenName",
@@ -1050,14 +1050,15 @@ function fillEditForm(
 function updateIdentity(
   profile: ProfileElements,
   person: PersonIdentity,
+  nameOrder: PersonNameOrder,
 ): void {
-  const name = displayName(person);
+  const name = displayPersonName(person, nameOrder);
   profile.heading.textContent = name;
   profile.breadcrumbName.textContent = name;
   profile.nickname.textContent = person.nickname ? `“${person.nickname}”` : "";
-  profile.nickname.hidden = !person.nickname;
+  profile.nickname.hidden = true;
   profile.avatar.textContent = initials(person);
-  renderZoneMiniIdentity(person);
+  renderZoneMiniIdentity(person, nameOrder);
   for (
     const field of [
       "givenName",
@@ -1081,6 +1082,7 @@ function mountLifecycleActions(
   initialState: "archived" | "ready",
   personId: string,
   workspaceId: string,
+  nameOrder: PersonNameOrder,
 ): () => boolean {
   const lifecycle = lifecycleElements();
   if (!lifecycle) return () => initialState === "archived";
@@ -1159,7 +1161,7 @@ function mountLifecycleActions(
       }),
     );
     lifecycle.editForm.hidden = true;
-    updateIdentity(profile, person);
+    updateIdentity(profile, person, nameOrder);
     announce("Person identity updated.");
     profile.heading.focus();
   });
@@ -1359,6 +1361,11 @@ export async function mountPeopleProfile(): Promise<void> {
     globalThis.history.replaceState({}, "", url);
     if (zoneFilter) applyZoneView(zoneFilter, storedView);
   }
+  const preferences = await getMemberPreferences(session.session.workspace.id)
+    .catch(() => undefined);
+  const nameOrder = preferences?.ok
+    ? preferences.value.preferences.contactNameOrder
+    : "given_family_nickname";
   const result = await getPerson(
     id,
     session.session.workspace.id,
@@ -1387,6 +1394,7 @@ export async function mountPeopleProfile(): Promise<void> {
     result.value.status,
     id,
     session.session.workspace.id,
+    nameOrder,
   );
   const zoneRegistry = createZoneRegistry();
   const { activate, register } = zoneRegistry;
@@ -1479,6 +1487,7 @@ export async function mountPeopleProfile(): Promise<void> {
     result.value.status,
     session.session.workspace.id,
     sectionNavigation,
+    nameOrder,
   );
   mountUnsavedChangesGuard({
     confirmMessage:
