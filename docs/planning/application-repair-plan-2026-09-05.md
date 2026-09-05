@@ -342,7 +342,17 @@ established in this pass.
 
 ### APR-010 — Honor the saved fluid-layout preference
 
-- [ ] **P2, ready.**
+- [x] **P2, delivered.** Saved layout preferences now control application widths
+      and apply immediately after successful saves. The existing shell lifecycle
+      owns reads/application, rejects stale results, and restores constrained
+      width on unavailable preferences or access loss. Membership changes
+      refresh the choice; forms/prose retain reading limits and phones keep
+      stacked cards. All 94 affected tests pass at 96.80% line, 88.13% branch,
+      and 90.80% function coverage. Chromium `AUTH-004` verifies both modes,
+      save, navigation, membership switching, mobile geometry, and useful
+      profile-card widths. Desktop/mobile screenshots were reviewed; affected
+      static checks pass. Independent review approved the final candidate;
+      integration results and aggregate limitations are recorded below.
 - Evidence: Preferences offers “Use fluid layout”; only `settings.ts` reads or
   writes `fluidLayout`. Application widths remain fixed in CSS regardless of the
   saved value. This is an offered control with no visible effect.
@@ -351,6 +361,37 @@ established in this pass.
   PRF-001 minimum useful card widths. Workspace changes refresh the setting.
 - Verify: constrained and fluid modes at wide desktop and mobile widths,
   persistence through navigation, and membership switching. No schema change.
+
+## Repair integration verification
+
+All 11 repair candidates received independent exact-candidate review. The final
+integration amendment also corrects pointer-open menu focus, gives the compact
+Add person link the same explicit Tab stop as neighboring links, and keeps
+timeline filters disabled until their existing handlers are bound.
+
+- The full web checkpoint passed **715 tests** at **95.20% line, 84.72% branch,
+  and 89.02% function coverage**. Subsequent localized amendments passed 54
+  shell/layout tests and 88 timeline/layout/profile tests; scoped coverage is
+  99.10/93.46/88.23% for the shell and 99.31/87.58/94.44% for the timeline. The
+  controller's final focused rerun passed all 86 tests. Affected static checks
+  and the five product-contract checks pass.
+- The initial production-like HTTPS matrix passed 73 of 84 browser cases. The
+  affected 30-case matrix then passed 28 cases; its remaining two WebKit cases
+  passed targeted production-stack runs after the final menu and dialog
+  amendments. These are combined results, not a claim that one final 84-case run
+  passed. Chromium, Firefox, and WebKit all have passing evidence for every
+  selected scenario.
+- Browser fixtures now match saved nickname presentation and the strict
+  editable-preference request. They observe native scrolling before asserting
+  geometry or clicking moving controls, retain draft/error/scroll-lock checks,
+  and prove actual directory readiness with storage disabled. The menu test
+  verifies real Tab departure to an explicit outside link; it does not assert
+  WebKit's default implicit-anchor Tab policy.
+- The root unit and coverage checkpoints remain blocked by the previously
+  isolated `REL-030/031` failures. Their bounded reproductions and ownership are
+  recorded in the active ledger; they do not become green by accepting the
+  repair candidates. Canonical v7 is unchanged. Disposable verification stacks
+  were cleaned; deployment work remains parked.
 
 ## Decisions and existing deferrals
 

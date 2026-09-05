@@ -82,7 +82,7 @@
 }
 
 .settings-page {
-  width: min(1180px, calc(100% - 2rem));
+  width: min(var(--application-width, 1180px), calc(100% - 2rem));
 }
 
 .settings-heading {
@@ -118,14 +118,15 @@
 
 .settings-layout {
   display: grid;
-  grid-template-columns: minmax(15rem, 17.5rem) minmax(0, 55rem);
+  grid-template-columns: minmax(15rem, 17.5rem) minmax(0,
+    var(--settings-content-track, 55rem));
   gap: var(--space-6);
   align-items: start;
 }
 
 .settings-content {
   width: 100%;
-  max-width: 55rem;
+  max-width: var(--application-width, 55rem);
   min-width: 0;
 }
 
@@ -254,11 +255,11 @@
 }
 
 .storage-settings-page {
-  max-width: 58rem;
+  max-width: var(--application-width, 58rem);
 }
 
 .api-access-page {
-  max-width: 58rem;
+  max-width: var(--application-width, 58rem);
 }
 
 .api-access-state {
@@ -373,7 +374,7 @@
 }
 
 .import-page {
-  max-width: 58rem;
+  max-width: var(--application-width, 58rem);
 }
 .import-form {
   display: grid;
@@ -551,7 +552,7 @@
 }
 
 .members-page {
-  max-width: 72rem;
+  max-width: var(--application-width, 72rem);
 }
 
 .member-section {
@@ -641,7 +642,7 @@
 }
 
 .detail-settings {
-  max-width: 64rem;
+  max-width: var(--application-width, 64rem);
 }
 
 .personalization-layout {

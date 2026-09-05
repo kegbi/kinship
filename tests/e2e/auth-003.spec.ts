@@ -362,6 +362,18 @@ test(
     await page.getByRole("link", { name: "People", exact: true }).click();
     await expect(page).toHaveURL(/\/app\/people$/);
     await expect(page.locator("#protected-shell")).toBeVisible();
+    await expect(page.locator("#people-directory-empty")).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        level: 2,
+        name: "No people yet",
+        exact: true,
+      }),
+    )
+      .toBeVisible();
+    await expect(page.locator("#people-tag-options-status")).toHaveText(
+      "0 tag options shown.",
+    );
 
     const profileSession = page.waitForResponse((response) =>
       new URL(response.url()).pathname === "/api/v1/session" &&

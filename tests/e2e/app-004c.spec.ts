@@ -164,6 +164,34 @@ async function openLocalEditor(
   await expect(editor).toBeVisible();
 }
 
+// Focus can start smooth document scrolling before an editor opens or closes.
+// Sample real frames so pointer and scroll-lock checks start from a settled page.
+async function settledDocumentScrollY(page: Page): Promise<number> {
+  return await page.evaluate(() =>
+    new Promise<number>((resolve, reject) => {
+      let previous = scrollY;
+      let stableFrames = 0;
+      let frame = 0;
+      const timeout = setTimeout(() => {
+        cancelAnimationFrame(frame);
+        reject(
+          new Error("Document scrolling did not settle within 3 seconds."),
+        );
+      }, 3000);
+      const sample = () => {
+        const current = scrollY;
+        stableFrames = current === previous ? stableFrames + 1 : 0;
+        previous = current;
+        if (stableFrames >= 4) {
+          clearTimeout(timeout);
+          resolve(current);
+        } else frame = requestAnimationFrame(sample);
+      };
+      frame = requestAnimationFrame(sample);
+    })
+  );
+}
+
 async function controlPresentation(control: Locator) {
   await expect(control).toBeVisible();
   return await control.evaluate((element) => {
@@ -472,11 +500,11 @@ test(
       await expect(first).toBeFocused();
       if (section === "food-preferences") {
         await expectAccessible(page);
-        const scroll = await page.evaluate(() => scrollY);
+        const scroll = await settledDocumentScrollY(page);
         await page.mouse.click(5, 5);
         await page.mouse.wheel(0, 500);
         await expect(sheet).toBeVisible();
-        expect(await page.evaluate(() => scrollY)).toBe(scroll);
+        expect(await settledDocumentScrollY(page)).toBe(scroll);
       }
       await page.keyboard.press("Escape");
       await expect(form).toBeHidden();
@@ -595,12 +623,19 @@ test(
           element.scrollHeight > element.clientHeight
         ),
       ).toBe(true);
-      await dateForm.getByRole("button", { name: "Cancel", exact: true })
-        .focus();
-      const cancelBounds = await dateForm.getByRole("button", {
+      const cancel = dateForm.getByRole("button", {
         name: "Cancel",
         exact: true,
-      }).boundingBox();
+      });
+      await cancel.focus();
+      await expect(cancel).toBeFocused();
+      await expect.poll(async () => {
+        const current = await cancel.boundingBox();
+        const dialog = await sheet.boundingBox();
+        return !!current && !!dialog && current.y > dialog.y &&
+          current.y + current.height <= viewport.height - 4;
+      }, { timeout: 3000 }).toBe(true);
+      const cancelBounds = await cancel.boundingBox();
       expect(cancelBounds!.y).toBeGreaterThan(bounds!.y);
       expect(cancelBounds!.y + cancelBounds!.height).toBeLessThanOrEqual(
         viewport.height - 4,
@@ -827,8 +862,13 @@ test(
       releaseRetry = resolve
     );
     let delayedRead: Promise<void> | undefined;
+    let delayedReadCount = 0;
     await page.route("**/facts/pets", async (route) => {
-      if (delayedRead) await delayedRead;
+      if (delayedRead) {
+        expect(route.request().method()).toBe("GET");
+        delayedReadCount++;
+        await delayedRead;
+      }
       if (mode === "failed") {
         await route.abort("failed");
       } else if (mode === "repeated" || mode === "forbidden") {
@@ -991,10 +1031,16 @@ test(
       await expect(petForm).toBeHidden();
       await expect(pets).toHaveAttribute("data-section-state", "error");
       let releaseRead!: () => void;
+      delayedReadCount = 0;
       delayedRead = new Promise<void>((resolve) => releaseRead = resolve);
       mode = outcome === "success" ? "ready" : "repeated";
       const retry = pets.getByRole("button", { name: "Retry", exact: true });
+      await expect(retry).toBeVisible();
+      await settledDocumentScrollY(page);
+      await retry.scrollIntoViewIfNeeded();
+      await settledDocumentScrollY(page);
       await retry.click();
+      await expect.poll(() => delayedReadCount).toBe(1);
       await expect(pets).toHaveAttribute("data-section-state", "loading");
       await expect(retry).toBeDisabled();
       await expect(addPet).toBeDisabled();
@@ -1017,6 +1063,7 @@ test(
         "data-section-state",
         outcome === "success" ? "ready" : "error",
       );
+      expect(delayedReadCount).toBe(1);
       await expect(foodForm).toBeVisible();
       await expect(draft).toHaveValue("New draft while Pets retries");
       await expect(petForm).toBeHidden();

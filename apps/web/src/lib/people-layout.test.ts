@@ -28,6 +28,18 @@ const profileController = readFileSync(
 );
 
 describe("people form layout regressions", () => {
+  it("keeps timeline filters disabled until their controller binds them", () => {
+    const filters = [...profilePage.matchAll(
+      /<button\b[^>]*data-timeline-filter="[^"]+"[^>]*>/g,
+    )];
+    expect(filters).toHaveLength(6);
+    for (const [markup] of filters) {
+      const template = document.createElement("template");
+      template.innerHTML = markup;
+      expect(template.content.querySelector("button")?.disabled).toBe(true);
+    }
+  });
+
   it("UXD-004 keeps exactly one global finder visible and distinctly named", () => {
     const compactButton = String
       .raw`\.global-search > button\.global-people-search-open`;

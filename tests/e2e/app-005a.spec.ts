@@ -180,8 +180,12 @@ test(
     await page.reload();
     const adaActivities = page.locator("#profile-section-activities");
     const timeline = page.locator("#person-timeline");
-    await timeline.getByRole("button", { name: "Activities", exact: true })
-      .click();
+    const activityFilter = timeline.getByRole("button", {
+      name: "Activities",
+      exact: true,
+    });
+    await activityFilter.scrollIntoViewIfNeeded();
+    await activityFilter.click();
     const compilerTimelineRow = timeline.locator("[data-timeline-id]", {
       hasText: "Designed a compiler together",
     });
