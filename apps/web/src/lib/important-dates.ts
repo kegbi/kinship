@@ -15,10 +15,7 @@ import {
   setVitalStat,
 } from "./person-facts-rail.ts";
 import { insertProfileRailExpander } from "./profile-rail-expander.ts";
-import {
-  announceRailEditorOpened,
-  onForeignRailEditorOpened,
-} from "./rail-editors.ts";
+import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 
 interface ImportantDateElements {
   readonly add: HTMLButtonElement;
@@ -434,7 +431,7 @@ export async function mountImportantDates(
 ): Promise<void> {
   const ui = elements();
   if (!ui) return;
-  onForeignRailEditorOpened([ui.form], (form) => {
+  registerRailEditors([ui.form], (form) => {
     form.hidden = true;
     form.reset();
   });
@@ -464,11 +461,11 @@ export async function mountImportantDates(
       lifecycleArchived,
       new Date(),
       (date) => {
+        if (!requestRailEditorOpen(ui.form, true)) return;
         fill(ui, date);
         ui.form.hidden = false;
         ui.form.querySelector<HTMLElement>("input:not([type=hidden]), select")
           ?.focus();
-        announceRailEditorOpened(ui.form);
       },
       async (date, button) => {
         if (button.dataset.confirm !== "true") {
@@ -511,10 +508,10 @@ export async function mountImportantDates(
   ui.kind.addEventListener("change", () => applyKind(ui));
   ui.precision.addEventListener("change", () => applyPrecision(ui));
   ui.add.addEventListener("click", () => {
+    if (!requestRailEditorOpen(ui.form, true)) return;
     fill(ui);
     ui.form.hidden = false;
     ui.kind.focus();
-    announceRailEditorOpened(ui.form);
   });
   ui.cancel.addEventListener("click", () => {
     ui.form.hidden = true;

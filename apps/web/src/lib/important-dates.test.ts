@@ -6,7 +6,7 @@ import {
   mountImportantDates,
   selectImportantDateSummaryIds,
 } from "./important-dates.ts";
-import { announceRailEditorOpened } from "./rail-editors.ts";
+import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 import type { ImportantDate } from "../../../../packages/contracts/generated/auth-client.ts";
 
@@ -93,6 +93,88 @@ afterEach(() => {
 });
 
 describe("PEOPLE-005 important-date presentation", () => {
+  it.each(["clean", "declined", "accepted"])(
+    "APR-002 gates incoming and outgoing local-editor switches when %s",
+    async (decision) => {
+      markup();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(response({ dates: [], status: "ready" })),
+      );
+      await mountImportantDates(personId, workspaceId, false);
+      mountUnsavedChangesGuard({
+        confirmMessage: "Discard?",
+        root: document.body,
+      });
+      const confirm = vi.fn(() => decision === "accepted");
+      vi.stubGlobal("confirm", confirm);
+      const add = document.querySelector<HTMLButtonElement>(
+        "#important-date-add",
+      )!;
+      const form = document.querySelector<HTMLFormElement>(
+        "#important-date-form",
+      )!;
+      const field = form.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+        "#important-date-notes",
+      )!;
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        '<form id="foreign"><input name="draft"></form>',
+      );
+      const foreign = document.querySelector<HTMLInputElement>(
+        "#foreign input",
+      )!.closest<HTMLFormElement>("form")!;
+      registerRailEditors([foreign], () => {
+        foreign.hidden = true;
+        foreign.reset();
+      });
+      const foreignField = foreign.querySelector("input")!;
+      foreignField.focus();
+      if (decision !== "clean") {
+        foreignField.value = "Foreign draft";
+        foreignField.dispatchEvent(new Event("input", { bubbles: true }));
+        expect(
+          globalThis.dispatchEvent(
+            new Event("beforeunload", { cancelable: true }),
+          ),
+        ).toBe(false);
+      }
+      add.focus();
+      add.click();
+      if (decision === "declined") {
+        expect(confirm).toHaveBeenCalledOnce();
+        expect(form.hidden).toBe(true);
+        expect(foreign.hidden).toBe(false);
+        expect(foreignField.value).toBe("Foreign draft");
+        expect(document.activeElement).toBe(foreignField);
+        confirm.mockReturnValue(true);
+        add.click();
+      }
+      expect(form.hidden).toBe(false);
+      expect(foreign.hidden).toBe(true);
+      field.focus();
+      if (decision !== "clean") {
+        field.value = "Date draft";
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      confirm.mockClear().mockReturnValue(decision === "accepted");
+      add.focus();
+      expect(requestRailEditorOpen(foreign)).toBe(decision !== "declined");
+      expect(confirm).toHaveBeenCalledTimes(decision === "clean" ? 0 : 1);
+      if (decision === "declined") {
+        expect(form.hidden).toBe(false);
+        expect(field.value).toBe("Date draft");
+        expect(document.activeElement).toBe(field);
+        form.querySelector<HTMLButtonElement>("#important-date-cancel")!
+          .click();
+        expect(document.activeElement).toBe(add);
+        expect(confirm).toHaveBeenCalledOnce();
+      }
+      expect(form.hidden).toBe(true);
+      expect(field.value).toBe("");
+    },
+  );
+
   it("formats every precision without inventing components", () => {
     expect(formatImportantDate(date())).toBe("February 29 (year unknown)");
     expect(formatImportantDate(date({
@@ -390,7 +472,7 @@ describe("PEOPLE-005 important-date presentation", () => {
     document.body.append(foreign);
     foreignControl.focus();
 
-    announceRailEditorOpened(foreign);
+    requestRailEditorOpen(foreign);
 
     expect(form.hidden).toBe(true);
     expect(year.value).toBe("");

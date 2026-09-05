@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { announceRailEditorOpened } from "./rail-editors.ts";
+import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
+import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 import { mountRelationships } from "./relationships.ts";
 
 const workspaceId = "00000000-0000-4000-8000-000000000003";
@@ -70,6 +71,156 @@ afterEach(() => {
 });
 
 describe("relationship profile section", () => {
+  it.each(["clean", "declined", "accepted"])(
+    "APR-002 gates incoming and outgoing local-editor switches when %s",
+    async (decision) => {
+      markup();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValueOnce(
+          response({ options: [], status: "ready" }),
+        ).mockResolvedValueOnce(
+          response({ relationships: [], status: "ready" }),
+        ),
+      );
+      await mountRelationships(personId, workspaceId, false);
+      mountUnsavedChangesGuard({
+        confirmMessage: "Discard?",
+        root: document.body,
+      });
+      const confirm = vi.fn(() => decision === "accepted");
+      vi.stubGlobal("confirm", confirm);
+      const add = document.querySelector<HTMLButtonElement>(
+        "#relationship-add",
+      )!;
+      const form = document.querySelector<HTMLFormElement>(
+        "#relationship-form",
+      )!;
+      const field = form.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+        'input[name="newGivenName"]',
+      )!;
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        '<form id="foreign"><input name="draft"></form>',
+      );
+      const foreign = document.querySelector<HTMLInputElement>(
+        "#foreign input",
+      )!.closest<HTMLFormElement>("form")!;
+      registerRailEditors([foreign], () => {
+        foreign.hidden = true;
+        foreign.reset();
+      });
+      const foreignField = foreign.querySelector("input")!;
+      foreignField.focus();
+      if (decision !== "clean") {
+        foreignField.value = "Foreign draft";
+        foreignField.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      add.focus();
+      add.click();
+      if (decision === "declined") {
+        expect(form.hidden).toBe(true);
+        expect(foreign.hidden).toBe(false);
+        expect(foreignField.value).toBe("Foreign draft");
+        expect(document.activeElement).toBe(foreignField);
+        confirm.mockReturnValue(true);
+        add.click();
+      }
+      expect(form.hidden).toBe(false);
+      expect(foreign.hidden).toBe(true);
+      field.focus();
+      if (decision !== "clean") {
+        field.value = "Related draft";
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      confirm.mockClear().mockReturnValue(decision === "accepted");
+      add.focus();
+      expect(requestRailEditorOpen(foreign)).toBe(decision !== "declined");
+      expect(confirm).toHaveBeenCalledTimes(decision === "clean" ? 0 : 1);
+      if (decision === "declined") {
+        expect(form.hidden).toBe(false);
+        expect(field.value).toBe("Related draft");
+        expect(document.activeElement).toBe(field);
+        form.querySelector<HTMLButtonElement>("#relationship-cancel")!.click();
+        expect(document.activeElement).toBe(add);
+        expect(confirm).toHaveBeenCalledOnce();
+      }
+      expect(form.hidden).toBe(true);
+      expect(field.value).toBe("");
+    },
+  );
+
+  it.each(["existing", "new"])(
+    "APR-002 retains a pending %s relationship draft when another editor is requested",
+    async (kind) => {
+      markup();
+      const pending = deferredResponse();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn()
+          .mockResolvedValueOnce(
+            response({
+              options: [{
+                id: typeId,
+                forwardLabel: "parent",
+                reverseLabel: "child",
+              }],
+              status: "ready",
+            }),
+          )
+          .mockResolvedValueOnce(
+            response({ relationships: [], status: "ready" }),
+          )
+          .mockReturnValueOnce(pending.promise),
+      );
+      await mountRelationships(personId, workspaceId, false);
+      mountUnsavedChangesGuard({
+        root: document.body,
+        confirmMessage: "Discard?",
+      });
+      document.querySelector<HTMLButtonElement>("#relationship-add")!.click();
+      const form = document.querySelector<HTMLFormElement>(
+        "#relationship-form",
+      )!;
+      const field = form.elements.namedItem("newGivenName") as HTMLInputElement;
+      field.focus();
+      field.value = kind === "new" ? "Grace" : "";
+      if (kind === "existing") {
+        const target = document.querySelector<HTMLSelectElement>(
+          "#relationship-target",
+        )!;
+        const option = document.createElement("option");
+        option.value = targetId;
+        option.textContent = "Grace";
+        target.append(option);
+        target.value = targetId;
+      }
+      document.querySelector<HTMLSelectElement>("#relationship-type")!.value =
+        typeId;
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      form.requestSubmit();
+      expect(form.inert).toBe(true);
+      expect(requestRailEditorOpen(document.createElement("form"))).toBe(false);
+      expect(form.hidden).toBe(false);
+      pending.resolve(
+        response({
+          detail: "Try again",
+          status: 503,
+          title: "Unavailable",
+          type: "about:blank",
+        }, 503),
+      );
+      await vi.waitFor(() => expect(form.inert).toBe(false));
+      expect(form.hidden).toBe(false);
+      expect(field.value).toBe(kind === "new" ? "Grace" : "");
+      expect(
+        globalThis.dispatchEvent(
+          new Event("beforeunload", { cancelable: true }),
+        ),
+      ).toBe(false);
+    },
+  );
+
   it("resets on a foreign rail editor without restoring focus", async () => {
     markup();
     vi.stubGlobal(
@@ -97,7 +248,7 @@ describe("relationship profile section", () => {
     document.body.append(foreign);
     foreignControl.focus();
 
-    announceRailEditorOpened(foreign);
+    requestRailEditorOpen(foreign);
 
     expect(form.hidden).toBe(true);
     expect(draft.value).toBe("");
@@ -640,6 +791,233 @@ describe("relationship profile section", () => {
       ),
     ).toBe(false);
   });
+
+  it.each([
+    ["search", "ready"],
+    ["search", "error"],
+    ["next", "ready"],
+    ["next", "error"],
+  ])(
+    "APR-002 reserves the relationship editor during type %s and unlocks on %s",
+    async (action, outcome) => {
+      markup();
+      const pending = deferredResponse();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn()
+          .mockResolvedValueOnce(
+            response({
+              nextCursor: "next-types",
+              options: [],
+              status: "ready",
+            }),
+          )
+          .mockResolvedValueOnce(
+            response({ relationships: [], status: "ready" }),
+          )
+          .mockReturnValueOnce(pending.promise),
+      );
+      await mountRelationships(personId, workspaceId, false);
+      mountUnsavedChangesGuard({
+        root: document.body,
+        confirmMessage: "Discard?",
+      });
+      const confirm = vi.fn(() => false);
+      vi.stubGlobal("confirm", confirm);
+      document.querySelector<HTMLButtonElement>("#relationship-add")!.click();
+      const form = document.querySelector<HTMLFormElement>(
+        "#relationship-form",
+      )!;
+      const draft = form.querySelector<HTMLInputElement>(
+        '[name="newGivenName"]',
+      )!;
+      draft.focus();
+      draft.value = "Keep this relationship draft";
+      draft.dispatchEvent(new Event("input", { bubbles: true }));
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        '<button id="foreign-add">Open fact</button><form id="foreign" hidden><input name="value"></form>',
+      );
+      const foreign = document.querySelector<HTMLFormElement>("#foreign")!;
+      const openForeign = document.querySelector<HTMLButtonElement>(
+        "#foreign-add",
+      )!;
+      registerRailEditors([foreign], () => {
+        foreign.hidden = true;
+        foreign.reset();
+      });
+      openForeign.onclick = () => {
+        if (!requestRailEditorOpen(foreign)) return;
+        foreign.hidden = false;
+        foreign.querySelector("input")!.focus();
+      };
+      const trigger = document.querySelector<HTMLButtonElement>(
+        action === "search"
+          ? "#relationship-type-search-button"
+          : "#relationship-types-next",
+      )!;
+      trigger.focus();
+      trigger.click();
+      expect(form.hidden).toBe(true);
+      openForeign.focus();
+      openForeign.click();
+      expect(foreign.hidden).toBe(true);
+      expect(form.inert).toBe(true);
+      expect(confirm).not.toHaveBeenCalled();
+      pending.resolve(
+        outcome === "ready"
+          ? response({
+            options: [{
+              id: typeId,
+              forwardLabel: "parent",
+              reverseLabel: "child",
+            }],
+            status: "ready",
+          })
+          : response({
+            detail: "Type lookup failed",
+            status: 503,
+            title: "Unavailable",
+            type: "about:blank",
+          }, 503),
+      );
+      await vi.waitFor(() => expect(form.inert).toBe(false));
+      expect(draft.value).toBe("Keep this relationship draft");
+      expect(foreign.hidden).toBe(true);
+      expect(form.hidden).toBe(outcome === "error");
+      expect(
+        globalThis.dispatchEvent(
+          new Event("beforeunload", { cancelable: true }),
+        ),
+      ).toBe(false);
+      if (outcome === "ready") {
+        expect(document.activeElement).toBe(
+          form.querySelector("#relationship-type"),
+        );
+        openForeign.click();
+        expect(confirm).toHaveBeenCalledOnce();
+        expect(foreign.hidden).toBe(true);
+        expect(form.hidden).toBe(false);
+        confirm.mockReturnValue(true);
+      } else {
+        expect(document.querySelector("#relationships-state")?.textContent)
+          .toBe("Type lookup failed");
+      }
+      openForeign.click();
+      expect(foreign.hidden).toBe(false);
+      expect(form.hidden).toBe(true);
+      expect(document.activeElement).toBe(foreign.querySelector("input"));
+    },
+  );
+
+  it("APR-002 keeps the latest type lookup reserved when an older response finishes", async () => {
+    markup();
+    const older = deferredResponse();
+    const newer = deferredResponse();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(
+          response({ nextCursor: "next-types", options: [], status: "ready" }),
+        )
+        .mockResolvedValueOnce(response({ relationships: [], status: "ready" }))
+        .mockReturnValueOnce(older.promise)
+        .mockReturnValueOnce(newer.promise),
+    );
+    await mountRelationships(personId, workspaceId, false);
+    document.querySelector<HTMLButtonElement>("#relationship-add")!.click();
+    const form = document.querySelector<HTMLFormElement>("#relationship-form")!;
+    const next = document.querySelector<HTMLButtonElement>(
+      "#relationship-types-next",
+    )!;
+    const loadNext = next.onclick as () => Promise<void>;
+    const olderLoad = loadNext();
+    const newerLoad = loadNext();
+    older.resolve(response({ options: [], status: "ready" }));
+    await olderLoad;
+    expect(form.hidden).toBe(true);
+    expect(form.inert).toBe(true);
+    expect(requestRailEditorOpen(document.createElement("form"))).toBe(false);
+    newer.resolve(response({ options: [], status: "ready" }));
+    await newerLoad;
+    expect(form.inert).toBe(false);
+    expect(form.hidden).toBe(false);
+  });
+
+  it("APR-002 leaves other editors available during an initial type load", async () => {
+    markup();
+    const pending = deferredResponse();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockReturnValueOnce(pending.promise)
+        .mockResolvedValueOnce(
+          response({ relationships: [], status: "ready" }),
+        ),
+    );
+    const mounting = mountRelationships(personId, workspaceId, false);
+    const form = document.querySelector<HTMLFormElement>("#relationship-form")!;
+    const foreign = document.createElement("form");
+    expect(form.inert).toBe(false);
+    expect(requestRailEditorOpen(foreign)).toBe(true);
+    pending.resolve(response({ options: [], status: "ready" }));
+    await mounting;
+    expect(form.inert).toBe(false);
+    expect(form.hidden).toBe(true);
+  });
+
+  it.each(["archive", "remount"])(
+    "APR-002 releases an obsolete type-load lock on %s",
+    async (action) => {
+      markup();
+      const pending = deferredResponse();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn()
+          .mockResolvedValueOnce(
+            response({
+              nextCursor: "next-types",
+              options: [],
+              status: "ready",
+            }),
+          )
+          .mockResolvedValueOnce(
+            response({ relationships: [], status: "ready" }),
+          )
+          .mockReturnValueOnce(pending.promise),
+      );
+      await mountRelationships(personId, workspaceId, false, false, updatedAt);
+      document.querySelector<HTMLButtonElement>("#relationship-add")!.click();
+      const form = document.querySelector<HTMLFormElement>(
+        "#relationship-form",
+      )!;
+      const next = document.querySelector<HTMLButtonElement>(
+        "#relationship-types-next",
+      )!;
+      const loading = (next.onclick as () => Promise<void>)();
+      expect(form.inert).toBe(true);
+      if (action === "archive") {
+        document.dispatchEvent(
+          new CustomEvent("person-lifecycle-changed", {
+            detail: {
+              archived: true,
+              personId,
+              personUpdatedAt: "2026-08-16T12:01:00.000000Z",
+              state: "archived",
+            },
+          }),
+        );
+      } else {
+        await mountRelationships(personId, workspaceId, false, true);
+      }
+      expect(form.inert).toBe(false);
+      expect(form.hidden).toBe(true);
+      expect(requestRailEditorOpen(document.createElement("form"))).toBe(true);
+      pending.resolve(response({ options: [], status: "ready" }));
+      await loading;
+      expect(form.inert).toBe(false);
+      expect(form.hidden).toBe(true);
+    },
+  );
 
   it("restores an open relationship draft after a successful type page load", async () => {
     markup();
@@ -1684,9 +2062,13 @@ describe("relationship profile section", () => {
         ) as HTMLElement).dataset.sectionState,
       ).toBe("error")
     );
+    expect(document.querySelector<HTMLFormElement>("#relationship-form")!.inert)
+      .toBe(false);
     older.resolve(response({ options: [], status: "ready" }));
     await older.promise;
     await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(document.querySelector<HTMLFormElement>("#relationship-form")!.inert)
+      .toBe(false);
     expect(
       (document.querySelector(
         "#profile-section-relationships",
@@ -1732,9 +2114,13 @@ describe("relationship profile section", () => {
         ) as HTMLElement).hidden,
       ).toBe(true)
     );
+    expect(document.querySelector<HTMLFormElement>("#relationship-form")!.inert)
+      .toBe(false);
     older.resolve(response({ options: [], status: "ready" }));
     await older.promise;
     await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(document.querySelector<HTMLFormElement>("#relationship-form")!.inert)
+      .toBe(false);
     expect(
       (document.querySelector(
         "#profile-section-relationships",

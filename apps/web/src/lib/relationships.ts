@@ -10,11 +10,9 @@ import {
   type RelationshipType,
   updateRelationship,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import { saveWithLockedForm } from "./unsaved-changes.ts";
 import { setRailCount, setRailEmpty } from "./person-facts-rail.ts";
-import {
-  announceRailEditorOpened,
-  onForeignRailEditorOpened,
-} from "./rail-editors.ts";
+import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 
 interface Elements {
   readonly add: HTMLButtonElement;
@@ -150,6 +148,7 @@ export async function mountRelationships(
   if (!ui) return;
   removeActiveLifecycleListener?.();
   removeActiveLifecycleListener = undefined;
+  ui.form.inert = false;
   const mountGeneration = String(
     Number(ui.section.dataset.relationshipMountGeneration ?? "0") + 1,
   );
@@ -450,7 +449,7 @@ export async function mountRelationships(
     ui.form.reset();
     if (restoreFocus) ui.add.focus();
   };
-  const removeRailEditorListener = onForeignRailEditorOpened(
+  const removeRailEditorListener = registerRailEditors(
     [ui.form],
     () => closeEditor(false),
   );
@@ -482,6 +481,7 @@ export async function mountRelationships(
   const invalidateRequests = () => {
     listRequestGeneration++;
     typeRequestGeneration++;
+    ui.form.inert = false;
     cancelPeopleSearch();
     restoreOpenFormAfterTypeLoad = false;
   };
@@ -632,6 +632,7 @@ export async function mountRelationships(
   const loadTypes = async (cursor?: string) => {
     const requestGeneration = ++typeRequestGeneration;
     restoreOpenFormAfterTypeLoad ||= !ui.form.hidden;
+    ui.form.inert = restoreOpenFormAfterTypeLoad;
     const selected = [
       ...new Set([
         ui.type.value,
@@ -649,6 +650,7 @@ export async function mountRelationships(
     if (
       !isCurrentMount() || requestGeneration !== typeRequestGeneration
     ) return false;
+    ui.form.inert = false;
     if (!result || !result.ok) {
       restoreOpenFormAfterTypeLoad = false;
       typeState = "error";
@@ -705,9 +707,9 @@ export async function mountRelationships(
     if (await loadTypes(undefined)) ui.type.focus();
   };
   ui.add.onclick = () => {
+    if (!requestRailEditorOpen(ui.form)) return;
     ui.form.hidden = false;
     ui.form.querySelector<HTMLElement>("input, select")?.focus();
-    announceRailEditorOpened(ui.form);
   };
   const cancel = ui.form.querySelector<HTMLButtonElement>(
     "#relationship-cancel",
@@ -811,15 +813,19 @@ export async function mountRelationships(
     draft: RelatedDraft,
     duplicateOverride = false,
   ) => {
-    const created = await createRelatedPersonRelationship(personId, {
-      person: {
-        ...(duplicateOverride ? { duplicateOverride: true } : {}),
-        givenName: draft.givenName,
-        ...(draft.familyName ? { familyName: draft.familyName } : {}),
-        isPartial: !draft.givenName,
-      },
-      relationshipTypeId: draft.relationshipTypeId,
-    }, workspaceId).catch(() => undefined);
+    const created = await saveWithLockedForm(
+      ui.form,
+      () =>
+        createRelatedPersonRelationship(personId, {
+          person: {
+            ...(duplicateOverride ? { duplicateOverride: true } : {}),
+            givenName: draft.givenName,
+            ...(draft.familyName ? { familyName: draft.familyName } : {}),
+            isPartial: !draft.givenName,
+          },
+          relationshipTypeId: draft.relationshipTypeId,
+        }, workspaceId).catch(() => undefined),
+    );
     if (
       created && !created.ok &&
       created.problem.code === "related_person_possible_duplicate"
@@ -900,10 +906,14 @@ export async function mountRelationships(
       ui.state.focus();
       return;
     }
-    const result = await createRelationship(personId, {
-      relationshipTypeId,
-      targetPersonId,
-    }, workspaceId).catch(() => undefined);
+    const result = await saveWithLockedForm(
+      ui.form,
+      () =>
+        createRelationship(personId, {
+          relationshipTypeId,
+          targetPersonId,
+        }, workspaceId).catch(() => undefined),
+    );
     if (!result || !result.ok) {
       ui.state.textContent = result && !result.ok
         ? result.problem.detail

@@ -1,24 +1,51 @@
-export const RAIL_EDITOR_OPENED_EVENT = "kinship:rail-editor-opened";
+import { requestFormDiscard } from "./unsaved-changes.ts";
 
-export function announceRailEditorOpened(form: HTMLFormElement): void {
-  document.dispatchEvent(
-    new CustomEvent<HTMLFormElement>(RAIL_EDITOR_OPENED_EVENT, {
-      detail: form,
-    }),
-  );
+const RAIL_EDITOR_REQUEST_EVENT = "kinship:rail-editor-request";
+
+interface RailEditorRequest {
+  readonly collect: (form: HTMLFormElement, close: () => void) => void;
 }
 
-export function onForeignRailEditorOpened(
+/** Decide before the caller changes either editor, including async preparation. */
+export function requestRailEditorOpen(
+  target: HTMLFormElement,
+  replaceCurrent = false,
+): boolean {
+  const closing = new Map<HTMLFormElement, () => void>();
+  document.dispatchEvent(
+    new CustomEvent<RailEditorRequest>(RAIL_EDITOR_REQUEST_EVENT, {
+      detail: {
+        collect: (form, close) => {
+          if (form !== target || replaceCurrent || form.inert) {
+            closing.set(form, close);
+          }
+        },
+      },
+    }),
+  );
+  if (
+    !requestFormDiscard(
+      [...closing.keys()],
+      "You have unsaved changes in this editor. Discard them and open another editor?",
+    )
+  ) return false;
+  for (const close of closing.values()) close();
+  return !target.inert;
+}
+
+export function registerRailEditors(
   ownForms: readonly HTMLFormElement[],
   close: (form: HTMLFormElement) => void,
 ): () => void {
   const listener = (event: Event): void => {
-    const opened = (event as CustomEvent<unknown>).detail;
-    if (!(opened instanceof HTMLFormElement)) return;
+    const request = (event as CustomEvent<RailEditorRequest>).detail;
     for (const form of ownForms) {
-      if (form !== opened && form.isConnected && !form.hidden) close(form);
+      if (form.isConnected && (!form.hidden || form.inert)) {
+        request.collect(form, () => close(form));
+      }
     }
   };
-  document.addEventListener(RAIL_EDITOR_OPENED_EVENT, listener);
-  return () => document.removeEventListener(RAIL_EDITOR_OPENED_EVENT, listener);
+  document.addEventListener(RAIL_EDITOR_REQUEST_EVENT, listener);
+  return () =>
+    document.removeEventListener(RAIL_EDITOR_REQUEST_EVENT, listener);
 }

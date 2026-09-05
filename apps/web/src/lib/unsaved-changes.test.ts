@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   markFormSaved,
   mountUnsavedChangesGuard,
+  requestFormDiscard,
   saveWithLockedForm,
 } from "./unsaved-changes.ts";
 import { requestWorkspaceChange } from "./workspace-context.ts";
@@ -50,6 +51,36 @@ afterEach(() => {
 });
 
 describe("person workspace unsaved-changes guard", () => {
+  it("limits a local discard decision to its forms and keeps navigation protected until reset", () => {
+    const { first, firstName, root, second } = markup();
+    mountUnsavedChangesGuard({ confirmMessage: "Switch workspaces?", root });
+    firstName.focus();
+    edit(firstName, "Unsaved first form");
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    expect(requestFormDiscard([second], "Discard this editor?")).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(requestFormDiscard([first], "Discard this editor?")).toBe(false);
+    expect(confirm).toHaveBeenCalledWith("Discard this editor?");
+    confirm.mockReturnValue(true);
+    expect(requestFormDiscard([first], "Discard this editor?")).toBe(true);
+    expect(firstName.value).toBe("Unsaved first form");
+    expect(beforeUnload().defaultPrevented).toBe(true);
+    first.reset();
+    expect(beforeUnload().defaultPrevented).toBe(false);
+  });
+
+  it("restores a remaining control if the previously focused draft field was removed", () => {
+    const { first, firstName, root } = markup();
+    mountUnsavedChangesGuard({ confirmMessage: "Switch workspaces?", root });
+    firstName.focus();
+    edit(firstName, "Draft");
+    firstName.remove();
+    vi.stubGlobal("confirm", vi.fn(() => false));
+    expect(requestFormDiscard([first], "Discard this editor?")).toBe(false);
+    expect(document.activeElement).toBe(first.querySelector("input"));
+  });
+
   it.each([false, true])(
     "restores prior inert=%s after a failed pending save without clearing the draft",
     async (wasInert) => {
