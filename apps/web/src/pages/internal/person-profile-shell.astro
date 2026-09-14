@@ -1,5 +1,6 @@
 ---
 import ApplicationLayout from "../../layouts/ApplicationLayout.astro";
+import SectionIcon, { type SectionIconName } from "../../components/SectionIcon.astro";
 
 export const prerender = true;
 
@@ -33,6 +34,29 @@ const streamZones = [
   ["things", "Things", ["gifts", "debts", "documents", "photos"]],
   ["admin", "Admin", ["audit-summary"]],
 ] as const;
+const sectionIcons = {
+  "important-dates": "important-dates",
+  "contact-methods": "contact-methods",
+  addresses: "addresses",
+  relationships: "relationships",
+  "first-meeting": "first-meeting",
+  work: "work",
+  "food-preferences": "food-preferences",
+  pets: "pets",
+  "life-events": "life-events",
+  notes: "notes",
+  conversations: "conversations",
+  calls: "calls",
+  activities: "activities",
+  tasks: "tasks",
+  reminders: "reminders",
+  "stay-in-touch": "stay-in-touch",
+  gifts: "gifts",
+  debts: "debts",
+  documents: "documents",
+  photos: "photos",
+  "audit-summary": "audit",
+} as const satisfies Partial<Record<string, SectionIconName>>;
 const railSections = [
   ["contact-methods", "Contact methods"],
   ["relationships", "Relationships"],
@@ -241,6 +265,7 @@ const railSections = [
                   aria-labelledby="profile-section-important-dates-heading"
                 >
                   <header class="profile-section-heading">
+                    <SectionIcon name="important-dates" class="profile-rail-icon" />
                     <h3 id="profile-section-important-dates-heading">Important dates</h3>
                     <span class="profile-rail-count" data-profile-rail-count hidden></span>
                     <button id="important-date-add" class="button-primary profile-rail-add" type="button" aria-label="Add important date" hidden><span aria-hidden="true">+</span></button>
@@ -323,6 +348,7 @@ const railSections = [
                   aria-labelledby="profile-section-relationships-heading"
                 >
                   <header class="profile-section-heading">
+                    <SectionIcon name="relationships" class="profile-rail-icon" />
                     <h3 id="profile-section-relationships-heading">Relationships</h3>
                     <span class="profile-rail-count" data-profile-rail-count hidden></span>
                     <button id="relationship-add" class="button-primary profile-rail-add" type="button" aria-label="Add relationship" hidden><span aria-hidden="true">+</span></button>
@@ -380,6 +406,7 @@ const railSections = [
                   aria-labelledby="profile-section-stay-in-touch-heading"
                 >
                   <header class="profile-section-heading">
+                    <SectionIcon name="stay-in-touch" class="profile-rail-icon" />
                     <h3 id="profile-section-stay-in-touch-heading">Stay in touch</h3>
                     <span class="profile-rail-count" data-profile-rail-count hidden></span>
                     <button data-cadence-add class="button-primary profile-rail-add" type="button" aria-label="Add stay-in-touch cadence" hidden><span aria-hidden="true">+</span></button>
@@ -411,6 +438,7 @@ const railSections = [
                   aria-labelledby={`profile-section-${id}-heading`}
                 >
                   <header class="profile-section-heading">
+                    <SectionIcon name={sectionIcons[id]} class="profile-rail-icon" />
                     <h3 id={`profile-section-${id}-heading`}>{title}</h3>
                     <span class="profile-rail-count" data-profile-rail-count hidden></span>
                     <button
@@ -448,7 +476,8 @@ const railSections = [
                 ? (
                   <section id="person-timeline" class="profile-section-card person-timeline" aria-labelledby="person-timeline-heading">
                     <header class="profile-section-heading">
-                      <div><h3 id="person-timeline-heading">Everything, in order</h3></div>
+                      <SectionIcon name="timeline" class="profile-section-glyph" />
+                      <div class="profile-section-title"><h3 id="person-timeline-heading">Everything, in order</h3></div>
                     </header>
                     <div class="person-timeline-filters" role="group" aria-label="Filter timeline by type">
                       <button class="button-primary" data-timeline-filter="all" type="button" aria-pressed="true" disabled>All types</button>
@@ -477,13 +506,16 @@ const railSections = [
                 aria-labelledby={`profile-section-${id}-heading`}
               >
                 <header class="profile-section-heading">
-                  <div><h3 id={`profile-section-${id}-heading`}>{title}</h3></div>
-                  <span data-communication-badge class="state-badge">Loading</span>
+                  <SectionIcon name={sectionIcons[id]} class="profile-section-glyph" />
+                  <div class="profile-section-title">
+                    <h3 id={`profile-section-${id}-heading`}>{title}</h3>
+                    <span data-communication-badge class="state-badge">Loading</span>
+                  </div>
+                  <button data-communication-add class="button-primary profile-section-cta" type="button" hidden>{id === "calls" ? "Log call" : "Log conversation"}</button>
                 </header>
                 <p data-communication-state class="section-state"><span class="sr-only">Loading {title.toLowerCase()}…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
                 <button data-communication-load-retry class="button-secondary" type="button" hidden>Retry loading communications</button>
                 <ul data-communication-list class="interaction-list" aria-label={`Recent ${title.toLowerCase()}`} hidden></ul>
-                <button data-communication-add class="button-primary" type="button" hidden>{id === "calls" ? "Log call" : "Log conversation"}</button>
                 <form data-communication-form class="profile-fact-form" hidden novalidate>
                   <label>When it happened <input name="happenedAt" type="datetime-local" required /></label>
                   {id === "calls"
@@ -519,10 +551,17 @@ const railSections = [
                 aria-labelledby={`profile-section-${id}-heading`}
               >
                 <header class="profile-section-heading">
-                  <div>
+                  <SectionIcon name={sectionIcons[id]} class="profile-section-glyph" />
+                  <div class="profile-section-title">
                     <h3 id={`profile-section-${id}-heading`}>{title}</h3>
                   </div>
-                  <span class="state-badge calm">Available</span>
+                  <button
+                    class="button-primary profile-section-cta"
+                    data-person-interaction-capture
+                    data-quick-capture
+                    data-interaction-intended-kind={id === "activities" ? "activity" : "note"}
+                    type="button"
+                  >{id === "activities" ? "Log activity" : "Add note"}</button>
                 </header>
                 <p
                   id={id === "activities" ? "person-activities-state" : "person-notes-state"}
@@ -541,18 +580,11 @@ const railSections = [
                   aria-controls={id === "activities" ? "person-activities-list" : "person-notes-list"}
                   hidden
                 >Retry {title.toLowerCase()}</button>
-                <div class="form-actions">
-                  <button
-                    class="button-primary"
-                    data-person-interaction-capture
-                    data-quick-capture
-                    data-interaction-intended-kind={id === "activities" ? "activity" : "note"}
-                    type="button"
-                  >{id === "activities" ? "Log activity" : "Add note"}</button>
-                  {id === "activities" && (
+                {id === "activities" && (
+                  <div class="profile-section-footer">
                     <a class="button-secondary" data-activity-report-link href="/app/people">Open activity report</a>
-                  )}
-                </div>
+                  </div>
+                )}
               </section>
             )
             : id === "life-events"
@@ -567,10 +599,11 @@ const railSections = [
                 aria-labelledby="profile-section-life-events-heading"
               >
                 <header class="profile-section-heading">
-                  <div>
+                  <SectionIcon name="life-events" class="profile-section-glyph" />
+                  <div class="profile-section-title">
                     <h3 id="profile-section-life-events-heading">Life events</h3>
+                    <span data-life-event-badge class="state-badge">Loading</span>
                   </div>
-                  <span data-life-event-badge class="state-badge">Loading</span>
                 </header>
                 <p data-life-event-state class="section-state"><span class="sr-only">Loading life events…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
                 <button data-life-event-retry class="button-secondary" type="button" hidden>Retry life events</button>
@@ -588,12 +621,12 @@ const railSections = [
                 aria-labelledby="profile-section-tasks-heading"
               >
                 <header class="profile-section-heading">
-                  <div><h3 id="profile-section-tasks-heading">Tasks</h3></div>
-                  <span class="state-badge calm">Open and completed</span>
+                  <SectionIcon name="tasks" class="profile-section-glyph" />
+                  <div class="profile-section-title"><h3 id="profile-section-tasks-heading">Tasks</h3></div>
+                  <button data-task-add class="button-primary profile-section-cta" type="button" hidden>Add task</button>
                 </header>
                 <p data-task-state class="section-state"><span class="sr-only">Loading tasks…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
                 <button data-task-retry class="button-secondary" type="button" hidden>Retry tasks</button>
-                <button data-task-add class="button-primary" type="button" hidden>Add task</button>
                 <form data-task-form class="profile-fact-form task-form" hidden novalidate>
                   <label>Title <input name="title" maxlength="500" required /></label>
                   <label>Description (optional) <textarea name="description" maxlength="10000" rows="3"></textarea></label>
@@ -621,12 +654,12 @@ const railSections = [
                 aria-labelledby="profile-section-reminders-heading"
               >
                 <header class="profile-section-heading">
-                  <div><h3 id="profile-section-reminders-heading">Reminders</h3></div>
-                  <span class="state-badge calm">Calendar recurrence</span>
+                  <SectionIcon name="reminders" class="profile-section-glyph" />
+                  <div class="profile-section-title"><h3 id="profile-section-reminders-heading">Reminders</h3></div>
+                  <button data-reminder-add class="button-primary profile-section-cta" type="button" hidden>Add reminder</button>
                 </header>
                 <p data-reminder-state class="section-state"><span class="sr-only">Loading reminders…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
-                <ul data-reminder-list class="task-list" aria-label="Person reminders"></ul>
-                <button data-reminder-add class="button-primary" type="button" hidden>Add reminder</button>
+                <ul data-reminder-list class="task-list reminder-list" aria-label="Person reminders"></ul>
                 <form data-reminder-form class="profile-fact-form" hidden novalidate>
                   <label>Title <input name="title" maxlength="500" required /></label>
                   <label>First date <input name="anchorOn" type="date" required /></label>
@@ -657,15 +690,16 @@ const railSections = [
                 aria-labelledby={`profile-section-${id}-heading`}
               >
                 <header class="profile-section-heading">
-                  <div>
+                  <SectionIcon name={sectionIcons[id]} class="profile-section-glyph" />
+                  <div class="profile-section-title">
                     <h3 id={`profile-section-${id}-heading`}>{title}</h3>
+                    <span data-gift-badge class="state-badge">Loading</span>
                   </div>
-                  <span data-gift-badge class="state-badge">Loading</span>
+                  <button data-gift-add class="button-primary profile-section-cta" type="button" hidden>Add {id === "gifts" ? "gift" : "debt"}</button>
                 </header>
                 <p data-gift-state class="section-state"><span class="sr-only">Loading {title.toLowerCase()}…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
                 <button data-gift-retry class="button-secondary" type="button" hidden>Retry loading</button>
                 <ul data-gift-list class="person-file-list" aria-label={`Saved ${title.toLowerCase()}`}></ul>
-                <button data-gift-add class="button-primary" type="button" hidden>Add {id === "gifts" ? "gift" : "debt"}</button>
                 <form data-gift-form class="profile-fact-form" hidden novalidate>
                   {id === "gifts"
                     ? (
@@ -731,15 +765,16 @@ const railSections = [
                 aria-labelledby={`profile-section-${id}-heading`}
               >
                 <header class="profile-section-heading">
-                  <div>
+                  <SectionIcon name={sectionIcons[id]} class="profile-section-glyph" />
+                  <div class="profile-section-title">
                     <h3 id={`profile-section-${id}-heading`}>{title}</h3>
+                    <span data-file-badge class="state-badge">Loading</span>
                   </div>
-                  <span data-file-badge class="state-badge">Loading</span>
+                  <button data-file-add class="button-primary profile-section-cta" type="button" hidden>Attach {id === "photos" ? "photo" : "document"}</button>
                 </header>
                 <p data-file-state class="section-state"><span class="sr-only">Loading {title.toLowerCase()}…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
                 <button data-file-refresh class="button-secondary" type="button" hidden>Retry loading</button>
                 <ul data-file-list class="person-file-list" aria-label={`Saved ${title.toLowerCase()}`}></ul>
-                <button data-file-add class="button-primary" type="button" hidden>Attach {id === "photos" ? "photo" : "document"}</button>
                 <form data-file-form class="profile-fact-form" hidden novalidate>
                   <label>Title <input name="title" maxlength="500" required /></label>
                   <label>
@@ -771,10 +806,11 @@ const railSections = [
                 aria-labelledby="profile-section-audit-summary-heading"
               >
                 <header class="profile-section-heading">
-                  <div>
+                  <SectionIcon name="audit" class="profile-section-glyph" />
+                  <div class="profile-section-title">
                     <h3 id="profile-section-audit-summary-heading">Audit summary</h3>
+                    <span data-person-audit-badge class="state-badge">Loading</span>
                   </div>
-                  <span data-person-audit-badge class="state-badge">Loading</span>
                 </header>
                 <p data-person-audit-state class="section-state"><span class="sr-only">Loading authorized audit summary…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
                 <ol data-person-audit-list class="audit-event-list" aria-label="Recent authorized person audit events"></ol>
@@ -794,10 +830,10 @@ const railSections = [
                 aria-labelledby={`profile-section-${id}-heading`}
               >
                 <header class="profile-section-heading">
-                  <div>
+                  <div class="profile-section-title">
                     <h3 id={`profile-section-${id}-heading`}>{title}</h3>
+                    <span class="state-badge">Unavailable</span>
                   </div>
-                  <span class="state-badge">Unavailable</span>
                 </header>
                 <p>This section is not available yet. No empty result is being inferred and no saved data has changed.</p>
               </section>

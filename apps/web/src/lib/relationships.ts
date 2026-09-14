@@ -11,7 +11,12 @@ import {
   updateRelationship,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { saveWithLockedForm } from "./unsaved-changes.ts";
-import { setRailCount, setRailEmpty } from "./person-facts-rail.ts";
+import {
+  setQuietLabel,
+  setRailCount,
+  setRailEmpty,
+  setRailState,
+} from "./person-facts-rail.ts";
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 
 interface Elements {
@@ -301,7 +306,20 @@ export async function mountRelationships(
         }
         const name = relationship.display.name ?? "Related person";
         const text = document.createElement("p");
-        text.textContent = `${relationship.display.label}: ${name}`;
+        text.className = "relationship-summary-row";
+        const typeLabel = document.createElement("span");
+        // The group heading already names the type; keep it for readers.
+        typeLabel.className = "sr-only";
+        typeLabel.textContent = `${relationship.display.label}: `;
+        const nameElement = document.createElement(
+          relationship.display.name ? "a" : "span",
+        );
+        nameElement.className = "profile-fact-value";
+        if (nameElement instanceof HTMLAnchorElement) {
+          nameElement.href = `/app/people/${relationship.display.personId}`;
+        }
+        nameElement.textContent = name;
+        text.append(typeLabel, nameElement);
         item.append(text);
         if (
           listState === "ready" && currentStatus === "ready" &&
@@ -315,10 +333,12 @@ export async function mountRelationships(
             id: relationship.relationshipTypeId,
             reverseLabel: relationship.reverseLabel,
           });
+          const controls = document.createElement("div");
+          controls.className = "relationship-row-editor";
           const save = document.createElement("button");
           save.type = "button";
           save.className = "button-primary";
-          save.textContent = `Save relationship with ${name}`;
+          setQuietLabel(save, "Save", `relationship with ${name}`);
           const selectable = () =>
             Boolean(editor.value) && !editor.selectedOptions[0]?.disabled;
           save.disabled = !selectable();
@@ -354,7 +374,7 @@ export async function mountRelationships(
           const remove = document.createElement("button");
           remove.type = "button";
           remove.className = "button-danger";
-          remove.textContent = `Unlink ${name}`;
+          setQuietLabel(remove, "Unlink", name);
           remove.onclick = async () => {
             const result = await deleteRelationship(personId, relationship.id, {
               expectedUpdatedAt: relationship.updatedAt,
@@ -378,7 +398,8 @@ export async function mountRelationships(
               ui.state.focus();
             }
           };
-          item.append(editor, save, remove);
+          controls.append(editor, save, remove);
+          item.append(controls);
         }
         groupList.append(item);
       }
@@ -578,9 +599,13 @@ export async function mountRelationships(
     disablePeopleSelection(false);
     ui.section.dataset.sectionState = "ready";
     ui.badge && (ui.badge.textContent = "Ready");
-    ui.state.textContent = current.length
-      ? `${current.length} relationship${current.length === 1 ? "" : "s"}.`
-      : "";
+    setRailState(
+      ui.state,
+      current.length
+        ? `${current.length} relationship${current.length === 1 ? "" : "s"}.`
+        : "",
+      "summary",
+    );
     setRailCount("relationships", current.length);
     setRailEmpty("relationships", current.length === 0);
   };

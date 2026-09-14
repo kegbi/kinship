@@ -10,8 +10,10 @@ import {
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import {
   setFirstMeetingDate,
+  setQuietLabel,
   setRailCount,
   setRailEmpty,
+  setRailState,
   setVitalStat,
 } from "./person-facts-rail.ts";
 import { insertProfileRailExpander } from "./profile-rail-expander.ts";
@@ -379,12 +381,12 @@ function render(
       const edit = document.createElement("button");
       edit.type = "button";
       edit.className = "button-secondary";
-      edit.textContent = `Edit ${title(date)}`;
+      setQuietLabel(edit, "Edit", title(date));
       edit.addEventListener("click", () => onEdit(date, edit));
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "button-danger";
-      remove.textContent = `Delete ${title(date)}`;
+      setQuietLabel(remove, "Delete", title(date));
       remove.addEventListener("click", () => onDelete(date, remove));
       actions.append(edit, remove);
       item.append(actions);
@@ -400,15 +402,19 @@ function render(
     collapsedLabel: `Show all (${collapsedItems.length})`,
     datasetKey: "importantDatesExpander",
   });
-  ui.state.textContent = archived
-    ? dates.length === 0
-      ? "No important dates recorded. This archived person is read-only."
-      : "Important dates loaded. This archived person is read-only."
-    : dates.length === 0
-    ? "No important dates recorded."
-    : `${dates.length} important ${
-      dates.length === 1 ? "date" : "dates"
-    } loaded.`;
+  setRailState(
+    ui.state,
+    archived
+      ? dates.length === 0
+        ? "No important dates recorded. This archived person is read-only."
+        : "Important dates loaded. This archived person is read-only."
+      : dates.length === 0
+      ? "No important dates recorded."
+      : `${dates.length} important ${
+        dates.length === 1 ? "date" : "dates"
+      } loaded.`,
+    archived ? "feedback" : "summary",
+  );
   ui.section.dataset.sectionState = "ready";
   ui.add.hidden = archived;
   setRailCount("important-dates", dates.length);

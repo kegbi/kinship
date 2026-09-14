@@ -151,6 +151,7 @@ function renderItem(
 ): HTMLLIElement {
   const row = document.createElement("li");
   row.dataset.timelineId = item.id;
+  row.dataset.timelineKind = item.kind;
   const details = document.createElement("details");
   const summary = document.createElement("summary");
   const dateTime = dateTimeValue(item);

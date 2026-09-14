@@ -22,8 +22,10 @@ import {
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import {
   setFirstMeetingPlace,
+  setQuietLabel,
   setRailCount,
   setRailEmpty,
+  setRailState,
   setVitalStat,
 } from "./person-facts-rail.ts";
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
@@ -618,17 +620,6 @@ function summary(
   return "Tag assignments";
 }
 
-function setFactActionLabel(
-  button: HTMLButtonElement,
-  action: string,
-  context: string,
-): void {
-  const suffix = document.createElement("span");
-  suffix.className = "sr-only";
-  suffix.textContent = ` ${context}`;
-  button.replaceChildren(action, suffix);
-}
-
 function renderFactDetails(
   record: ProfileFactRecord,
   options: readonly ProfileFactOption[],
@@ -908,7 +899,7 @@ export async function mountProfileFacts(
     if (retry) retry.disabled = true;
     if (section === "contact-methods") renderContactMethods = undefined;
     target.root.dataset.sectionState = "loading";
-    target.state.textContent = `Loading ${section.replaceAll("-", " ")}…`;
+    setRailState(target.state, `Loading ${section.replaceAll("-", " ")}…`);
     target.badge && (target.badge.textContent = "Loading");
     const result = await listProfileFacts(personId, section, {}, workspaceId)
       .catch(() => undefined);
@@ -917,9 +908,12 @@ export async function mountProfileFacts(
       const forbidden = result && !result.ok &&
         [401, 403].includes(result.problem.status);
       target.root.dataset.sectionState = forbidden ? "forbidden" : "error";
-      target.state.textContent = forbidden
-        ? "Your active workspace no longer permits this action."
-        : "This profile section is temporarily unavailable. Try again.";
+      setRailState(
+        target.state,
+        forbidden
+          ? "Your active workspace no longer permits this action."
+          : "This profile section is temporarily unavailable. Try again.",
+      );
       target.badge &&
         (target.badge.textContent = forbidden ? "Forbidden" : "Error");
       if (section !== "tags") {
@@ -964,7 +958,7 @@ export async function mountProfileFacts(
       target.root.dataset.sectionState = "hidden";
       target.root.hidden = true;
       clearFactContent(section, target);
-      target.state.textContent = "";
+      setRailState(target.state, "");
       target.badge && (target.badge.textContent = "Hidden");
       const profileSection = target.root.dataset.profileSection;
       if (profileSection) {
@@ -1292,8 +1286,10 @@ export async function mountProfileFacts(
         prepareEditor = async (record) => {
           if (record?.referencesResolved === false) {
             submit.disabled = true;
-            target.state.textContent =
-              "Current profile references could not be verified. No changes were saved.";
+            setRailState(
+              target.state,
+              "Current profile references could not be verified. No changes were saved.",
+            );
             target.state.focus();
             return false;
           }
@@ -1357,17 +1353,21 @@ export async function mountProfileFacts(
       const count = section === "tags"
         ? tagRecord?.value.tagIds.length ?? 0
         : snapshot.records.length;
-      target.state.textContent = section === "tags"
-        ? count
-          ? `${count} tag${count === 1 ? "" : "s"} saved.`
-          : "No tags saved."
-        : paged
-        ? totalCount === undefined
-          ? `Showing ${count} on this page.`
-          : `Showing ${count} of ${totalCount} saved.`
-        : count
-        ? `${count} saved.`
-        : `No ${section.replaceAll("-", " ")} saved.`;
+      setRailState(
+        target.state,
+        section === "tags"
+          ? count
+            ? `${count} tag${count === 1 ? "" : "s"} saved.`
+            : "No tags saved."
+          : paged
+          ? totalCount === undefined
+            ? `Showing ${count} on this page.`
+            : `Showing ${count} of ${totalCount} saved.`
+          : count
+          ? `${count} saved.`
+          : `No ${section.replaceAll("-", " ")} saved.`,
+        "summary",
+      );
       target.list?.replaceChildren();
       target.root.querySelector("[data-profile-fact-expander]")?.remove();
       const summarizedById = section === "contact-methods" &&
@@ -1464,7 +1464,7 @@ export async function mountProfileFacts(
           const edit = document.createElement("button");
           edit.type = "button";
           edit.className = "button-secondary";
-          setFactActionLabel(edit, "Edit", summary(record, snapshot.options));
+          setQuietLabel(edit, "Edit", summary(record, snapshot.options));
           edit.addEventListener("click", async () => {
             if (!requestRailEditorOpen(target.form, true, edit)) return;
             const submit = target.form.querySelector<HTMLButtonElement>(
@@ -1487,7 +1487,7 @@ export async function mountProfileFacts(
             const remove = document.createElement("button");
             remove.type = "button";
             remove.className = "button-danger";
-            setFactActionLabel(
+            setQuietLabel(
               remove,
               section === "food-preferences" ? "Clear" : "Delete",
               section === "food-preferences"
@@ -1498,7 +1498,7 @@ export async function mountProfileFacts(
             remove.addEventListener("click", async () => {
               if (!confirming) {
                 confirming = true;
-                setFactActionLabel(
+                setQuietLabel(
                   remove,
                   section === "food-preferences"
                     ? "Confirm clear"
@@ -1524,9 +1524,12 @@ export async function mountProfileFacts(
                 workspaceId,
               ).catch(() => undefined);
               if (!deleted || !deleted.ok) {
-                target.state.textContent = deleted && !deleted.ok
-                  ? deleted.problem.detail
-                  : "Delete is temporarily unavailable.";
+                setRailState(
+                  target.state,
+                  deleted && !deleted.ok
+                    ? deleted.problem.detail
+                    : "Delete is temporarily unavailable.",
+                );
                 return;
               }
               applyPersonRevision(deleted.value.personUpdatedAt, true);
@@ -1536,7 +1539,7 @@ export async function mountProfileFacts(
                   refreshPrimaryContactMethods(),
                 ]);
               } else await load(section);
-              target.state.textContent = "Profile fact deleted.";
+              setRailState(target.state, "Profile fact deleted.");
               target.state.focus();
             });
             actions.append(remove);
@@ -1595,8 +1598,10 @@ export async function mountProfileFacts(
         previousFacts.disabled = false;
         moreFacts.disabled = false;
         if (!next || !next.ok) {
-          target.state.textContent =
-            "That profile fact page is temporarily unavailable.";
+          setRailState(
+            target.state,
+            "That profile fact page is temporarily unavailable.",
+          );
           return;
         }
         const nextDescriptors = next.value.records.flatMap((record) =>
@@ -1664,7 +1669,7 @@ export async function mountProfileFacts(
         target.form.hidden = true;
         target.form.reset();
         target.add.focus();
-        target.state.textContent = "Edit cancelled. No changes were saved.";
+        setRailState(target.state, "Edit cancelled. No changes were saved.");
       };
     }
     target.form.onsubmit = async (event) => {
@@ -1758,10 +1763,12 @@ export async function mountProfileFacts(
       if (section === "contact-methods") {
         await Promise.all([load(section), refreshPrimaryContactMethods()]);
       } else await load(section);
-      target.state.textContent =
+      setRailState(
+        target.state,
         section === "tags" && target.root.dataset.sectionState === "ready"
           ? `${target.state.textContent} Profile fact saved.`
-          : "Profile fact saved.";
+          : "Profile fact saved.",
+      );
       target.state.focus();
     };
   };
