@@ -939,13 +939,16 @@
 }
 
 .profile-rail-block {
+  --rail-tint: color-mix(in srgb, var(--positive-soft) 42%, var(--surface-1));
+  position: relative;
   display: grid;
   scroll-margin-top: 10.5rem;
-  gap: var(--space-3);
+  gap: var(--space-2);
   min-width: 0;
   padding: var(--pad-block);
-  border-color: var(--line-1);
-  box-shadow: var(--shadow-1);
+  border-color: color-mix(in srgb, var(--positive) 16%, var(--line-hairline));
+  background: var(--rail-tint);
+  box-shadow: none;
 }
 
 .profile-rail-block h3 {
@@ -953,30 +956,35 @@
   margin: 0;
   font-size: .95rem;
   font-weight: 700;
-  line-height: 1.35;
-  letter-spacing: .01em;
+  line-height: 1.3;
+  letter-spacing: -.01em;
   overflow-wrap: anywhere;
 }
 
 .profile-rail-block .profile-section-heading {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: var(--space-2);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-2);
+  min-height: 1.85rem;
   align-items: center;
-  padding-bottom: var(--space-3);
-  border-bottom: 1px solid var(--line-hairline);
+  padding-right: var(--space-6);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid color-mix(in srgb, var(--positive) 18%, transparent);
 }
 
 .profile-rail-count {
   display: grid;
-  min-width: 1.5rem;
-  height: 1.5rem;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding-inline: var(--space-1);
+  box-sizing: border-box;
   border-radius: var(--radius-pill);
   place-items: center;
   color: var(--ink-2);
   background: var(--surface-sunken);
-  font-size: .78rem;
+  font-size: .72rem;
   font-weight: 700;
+  line-height: 1;
 }
 
 .profile-rail-add {
@@ -985,6 +993,43 @@
   aspect-ratio: 1;
   justify-self: end;
   font-size: 1.25rem;
+}
+
+/* The 44px hit target stays; the visible ring sits in the block corner. */
+.person-workspace .profile-rail-block .profile-rail-add {
+  position: absolute;
+  inset: calc(var(--pad-block) - .5rem) calc(var(--pad-block) - .5rem) auto
+    auto;
+  border-color: transparent;
+  color: var(--ink-1);
+  background: transparent;
+}
+
+.profile-rail-add > span {
+  display: grid;
+  flex: 0 0 1.85rem;
+  min-width: 1.85rem;
+  height: 1.85rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  place-items: center;
+  background: var(--surface-1);
+  font-weight: 500;
+  line-height: 1;
+  transition: background-color .15s ease, color .15s ease, border-color .15s
+    ease;
+}
+
+.person-workspace .profile-rail-block .profile-rail-add:hover,
+.person-workspace .profile-rail-block .profile-rail-add:focus-visible {
+  filter: none;
+}
+
+.person-workspace .profile-rail-block .profile-rail-add:hover > span,
+.person-workspace .profile-rail-block .profile-rail-add:focus-visible > span {
+  border-color: var(--accent);
+  color: var(--ink-inverse);
+  background: var(--accent);
 }
 
 .profile-rail-block :is(form, fieldset, .form-grid, label, input, select, textarea) {
@@ -1011,7 +1056,30 @@
 }
 
 .profile-rail-block :is(a, button):is(.button-primary, .button-secondary, .button-danger).profile-rail-expander {
-  width: 100%;
+  width: auto;
+  min-height: 36px;
+  margin-top: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-color: transparent;
+  justify-self: start;
+  color: var(--accent);
+  background: transparent;
+  font-size: .8rem;
+}
+
+.profile-rail-block :is(a, button):is(.button-primary, .button-secondary, .button-danger).profile-rail-expander:hover {
+  background: var(--accent-soft);
+  filter: none;
+}
+
+.profile-rail-block :is(a, button):is(.button-primary, .button-secondary, .button-danger).profile-rail-summary-control:not(.profile-rail-expander):not(.profile-contact-copy) {
+  min-height: 32px;
+  padding: var(--space-1) var(--space-2);
+  border-color: transparent;
+  justify-self: start;
+  color: var(--accent);
+  background: transparent;
+  font-size: .78rem;
 }
 
 .profile-rail-block .profile-fact-list p.profile-rail-clamped-summary:not([data-expanded="true"]) {
@@ -1029,20 +1097,38 @@
 }
 
 .profile-contact-summary {
-  display: grid;
-  gap: var(--space-1);
+  display: flex;
+  gap: var(--space-1) var(--space-2);
+  align-items: baseline;
+  flex-wrap: wrap;
 }
 
 .profile-fact-label,
 .profile-address-summary > span:first-child {
-  color: var(--ink-2);
-  font-size: .78rem;
-  font-weight: 600;
+  color: var(--ink-3);
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
 }
 
 .profile-fact-value {
+  min-width: 0;
   color: var(--ink-1);
+  font-size: .92rem;
   font-weight: 600;
+  overflow-wrap: break-word;
+}
+
+.profile-fact-value a {
+  color: inherit;
+  text-decoration-color: color-mix(in srgb, var(--ink-1) 35%, transparent);
+  text-underline-offset: .18em;
+}
+
+.profile-fact-value a:hover {
+  color: var(--accent);
+  text-decoration-color: currentColor;
 }
 
 .profile-fact-actions {
@@ -1052,22 +1138,30 @@
 }
 
 .profile-fact-details {
-  display: grid;
-  gap: var(--space-2);
+  display: flex;
+  gap: var(--space-1) var(--space-3);
   margin: 0;
-  font-size: .82rem;
+  flex-wrap: wrap;
+  color: var(--ink-2);
+  font-size: .76rem;
   line-height: 1.5;
 }
 
 .profile-fact-details > div {
-  display: grid;
+  display: inline-flex;
   gap: var(--space-1);
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .profile-fact-details dt {
-  color: var(--ink-2);
-  font-size: .75rem;
+  color: var(--ink-3);
+  font-size: inherit;
   font-weight: 600;
+}
+
+.profile-fact-details dt::after {
+  content: ":";
 }
 
 .profile-fact-details dd {
@@ -1079,13 +1173,18 @@
 
 .profile-rail-block .profile-fact-list > li {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-1);
   min-width: 0;
-  padding: var(--space-3) 0;
+  padding: var(--space-2) 0;
   border: 0;
   border-bottom: 1px solid var(--line-hairline);
   border-radius: 0;
   background: transparent;
+}
+
+.profile-rail-block .profile-fact-list p {
+  font-size: .92rem;
+  line-height: 1.5;
 }
 
 .profile-rail-block .profile-fact-list > li:last-child {
@@ -1104,6 +1203,41 @@
 .profile-rail-block .profile-fact-actions > button {
   padding-inline: var(--space-3);
   font-size: .78rem;
+}
+
+/* Row actions read like Monica's action links: quiet until hovered. */
+.person-workspace .profile-rail-block :is(.profile-fact-actions, .important-date-actions, .relationship-row-editor) > button,
+.person-workspace .profile-rail-block .profile-contact-copy {
+  min-height: 34px;
+  padding: var(--space-1) var(--space-2);
+  border-color: color-mix(in srgb, var(--ink-1) 14%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--ink-2);
+  background: var(--surface-1);
+  font-size: .78rem;
+  font-weight: 600;
+}
+
+.person-workspace .profile-rail-block :is(.profile-fact-actions, .important-date-actions, .relationship-row-editor) > button:hover,
+.person-workspace .profile-rail-block .profile-contact-copy:hover {
+  color: var(--ink-1);
+  background: color-mix(in srgb, var(--ink-1) 8%, transparent);
+  filter: none;
+}
+
+.person-workspace .profile-rail-block :is(.profile-fact-actions, .important-date-actions, .relationship-row-editor) > button.button-danger {
+  border-color: color-mix(in srgb, var(--danger) 22%, transparent);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger-soft) 60%, transparent);
+}
+
+.person-workspace .profile-rail-block :is(.profile-fact-actions, .important-date-actions, .relationship-row-editor) > button.button-danger:hover {
+  color: var(--danger-strong);
+  background: var(--danger-soft);
+}
+
+.person-workspace .profile-rail-block :is(.profile-fact-actions, .important-date-actions) {
+  gap: var(--space-1);
 }
 
 .relationship-summary-group {
@@ -1163,10 +1297,6 @@
   overflow-wrap: anywhere;
 }
 
-.profile-rail-block[data-rail-empty="true"] .profile-rail-add {
-  grid-column: 3;
-}
-
 .profile-rail-block[data-rail-empty="true"] > .section-state:empty {
   display: none;
 }
@@ -1194,6 +1324,634 @@
 }
 
 .profile-rail-block[data-rail-empty="true"] :is(.important-dates-list, [data-profile-fact-list], [data-cadence-list], [data-profile-fact-pagination], #relationships-list + nav) {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Section chrome. Every block carries a glyph beside its heading, the rail
+   keeps a dense tinted treatment, and the streams keep roomy white cards with
+   the add action in the heading — the density contrast Monica used to make
+   one person page read as organised.
+   ------------------------------------------------------------------------- */
+
+.section-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+}
+
+.section-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.profile-rail-icon {
+  width: 1.5rem;
+  aspect-ratio: 1;
+  padding: var(--space-1);
+  box-sizing: border-box;
+  border-radius: .5rem;
+  color: var(--positive);
+  background: var(--positive-soft);
+}
+
+.profile-rail-block h3 {
+  color: var(--ink-1);
+}
+
+/* Once a rail block lists rows, its "n saved." summary is redundant with the
+   count pill; it stays in the accessibility tree for feedback continuity. */
+.profile-rail-block:not([data-rail-empty="true"]) > .section-state[data-rail-summary="true"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.profile-rail-block > .section-state {
+  color: var(--ink-2);
+  font-size: .82rem;
+}
+
+.profile-rail-block > .section-state:focus-visible {
+  outline-offset: 2px;
+}
+
+/* Important dates share the row treatment of every other rail entry. */
+.profile-rail-block .important-dates-list {
+  gap: 0;
+  margin: 0;
+}
+
+.profile-rail-block .important-dates-list li {
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+  border: 0;
+  border-bottom: 1px solid var(--line-hairline);
+  border-radius: 0;
+  background: transparent;
+}
+
+.profile-rail-block .important-dates-list li:last-child {
+  border-bottom: 0;
+}
+
+.profile-rail-block .important-dates-list li > div:first-child {
+  gap: var(--space-1);
+}
+
+.profile-rail-block .important-dates-list strong {
+  color: var(--ink-3);
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.profile-rail-block .important-dates-list li > div > span {
+  color: var(--ink-1);
+  font-size: .92rem;
+  font-weight: 600;
+}
+
+.profile-rail-block .important-dates-list small {
+  color: var(--ink-3);
+  font-size: .72rem;
+  line-height: 1.4;
+}
+
+/* Relationships: grouped by type, names link through, editor stays compact. */
+.relationship-summary-group-label {
+  margin: var(--space-2) 0 0;
+  color: var(--ink-3);
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.profile-rail-block .profile-fact-list > li.relationship-summary-group {
+  gap: 0;
+  padding-top: 0;
+}
+
+.profile-fact-list .relationship-summary-group-list > li {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+  border: 0;
+  border-bottom: 1px solid var(--line-hairline);
+  border-radius: 0;
+  background: transparent;
+}
+
+.profile-fact-list .relationship-summary-group-list > li:last-child {
+  border-bottom: 0;
+}
+
+.relationship-summary-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.relationship-row-editor {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.relationship-row-editor > select {
+  flex: 1 1 100%;
+}
+
+.profile-rail-block .relationship-row-editor select {
+  min-width: 0;
+  min-height: 36px;
+  padding: var(--space-1) var(--space-5) var(--space-1) var(--space-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  color: var(--ink-2);
+  background-color: var(--surface-1);
+  font-family: inherit;
+  font-size: .78rem;
+}
+
+.person-workspace .profile-rail-block .relationship-row-editor > button {
+  padding-inline: var(--space-2);
+}
+
+.profile-rail-block .task-list > li {
+  color: var(--ink-1);
+  font-size: .92rem;
+  font-weight: 600;
+}
+
+/* Stream cards: glyph + title + add action in one heading row. */
+.person-zone .profile-section-card > .profile-section-heading {
+  display: flex;
+  gap: var(--space-2) var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line-hairline);
+}
+
+.person-zone .profile-section-card > .profile-section-heading > .profile-section-title {
+  display: flex;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+  align-items: center;
+  flex: 1 1 8rem;
+  flex-wrap: wrap;
+}
+
+.person-zone .profile-section-card > .profile-section-heading > .profile-section-cta {
+  margin-left: auto;
+}
+
+.person-zone .profile-section-card > .profile-section-heading h3 {
+  letter-spacing: -.005em;
+}
+
+/* Status chips stay calm unless the card itself is in trouble. */
+.person-zone .profile-section-card > .profile-section-heading .state-badge {
+  padding: var(--space-1) var(--space-2);
+  color: var(--ink-2);
+  background: var(--surface-sunken);
+  font-size: .66rem;
+  white-space: nowrap;
+}
+
+.person-zone .profile-section-card:is([data-section-state="error"], [data-section-state="forbidden"], [data-section-state="unavailable"]) > .profile-section-heading .state-badge {
+  color: var(--accent-hover);
+  background: var(--accent-soft);
+}
+
+.person-zone .profile-section-card:not(.person-timeline) {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+}
+
+.person-zone .profile-section-card:not(.person-timeline) > .profile-section-heading {
+  margin-bottom: 0;
+}
+
+.person-zone .profile-section-card > .profile-fact-form {
+  margin-top: 0;
+}
+
+.profile-section-glyph {
+  width: 2.25rem;
+  aspect-ratio: 1;
+  padding: var(--space-2);
+  box-sizing: border-box;
+  border-radius: .65rem;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.person-zone[data-zone="planning"] .profile-section-glyph {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.person-zone[data-zone="things"] .profile-section-glyph {
+  color: var(--positive);
+  background: var(--positive-soft);
+}
+
+.person-zone[data-zone="admin"] .profile-section-glyph {
+  color: var(--ink-2);
+  background: var(--surface-sunken);
+}
+
+.person-workspace .profile-section-cta {
+  min-height: 40px;
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-3);
+  border-color: var(--line-strong);
+  border-radius: var(--radius-pill);
+  color: var(--ink-1);
+  background: var(--surface-1);
+  font-size: .82rem;
+  white-space: nowrap;
+}
+
+/* A drawn plus, not text: generated text would join the accessible name. */
+.person-workspace .profile-section-cta::before {
+  content: "";
+  flex: none;
+  width: .7em;
+  height: .7em;
+  margin-right: var(--space-2);
+  background:
+    linear-gradient(currentColor, currentColor) center / 2px 100% no-repeat,
+    linear-gradient(currentColor, currentColor) center / 100% 2px no-repeat;
+}
+
+.person-workspace .profile-section-cta:hover,
+.person-workspace .profile-section-cta:focus-visible {
+  border-color: var(--ink-1);
+  color: var(--ink-inverse);
+  background: var(--ink-1);
+  filter: none;
+}
+
+.person-zone .profile-section-card > .section-state {
+  color: var(--ink-3);
+  font-size: .85rem;
+}
+
+/* Monica's blank box: a calm centred prompt instead of a bare sentence. */
+.person-zone .profile-section-card[data-section-state="empty"] > .section-state {
+  padding: var(--space-4);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-md);
+  color: var(--ink-2);
+  background: var(--surface-2);
+  text-align: center;
+}
+
+.person-zone .profile-section-card > .profile-section-footer {
+  display: flex;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line-hairline);
+}
+
+.person-workspace .profile-section-footer > a:is(.button-primary, .button-secondary, .button-danger) {
+  min-height: 40px;
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-3);
+  border-color: transparent;
+  border-radius: var(--radius-pill);
+  color: var(--accent);
+  background: transparent;
+  font-size: .85rem;
+  text-decoration: underline;
+  text-underline-offset: .2em;
+}
+
+.person-workspace .profile-section-footer > a:is(.button-primary, .button-secondary, .button-danger):hover {
+  background: var(--accent-soft);
+  filter: none;
+}
+
+.person-zone > h2 {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  color: var(--ink-2);
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.person-zone > h2::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-1);
+}
+
+/* Timeline rows: the type chip carries the zone colour so kinds scan quickly. */
+.person-timeline-list > li {
+  background: var(--surface-1);
+}
+
+.person-timeline-list > li[data-timeline-kind="note"] .person-timeline-type {
+  color: var(--positive);
+  background: var(--positive-soft);
+}
+
+.person-timeline-list > li[data-timeline-kind="call"] .person-timeline-type,
+.person-timeline-list > li[data-timeline-kind="conversation"] .person-timeline-type {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.person-timeline-list > li[data-timeline-kind="activity"] .person-timeline-type,
+.person-timeline-list > li[data-timeline-kind="life-event"] .person-timeline-type {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.person-timeline-list summary:hover {
+  background: var(--surface-2);
+}
+
+.person-timeline-list > li > details[open] > summary {
+  border-bottom: 1px solid var(--line-hairline);
+}
+
+/* Task groups: kicker headings with the row count implied by content. */
+.tasks-section-card .task-columns {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.tasks-section-card .task-columns > div {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.tasks-section-card .task-columns h4 {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.tasks-section-card .task-list:empty::after {
+  content: "None";
+  color: var(--ink-3);
+  font-size: .82rem;
+}
+
+.tasks-section-card .task-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3);
+  align-items: start;
+  border-color: var(--line-hairline);
+  background: var(--surface-2);
+}
+
+.tasks-section-card .task-item h3 {
+  grid-column: 1;
+  margin: 0;
+  font-size: .95rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.tasks-section-card .task-item p {
+  grid-column: 1;
+  margin: 0;
+  font-size: .85rem;
+  line-height: 1.45;
+}
+
+.tasks-section-card .task-item > .form-actions {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  gap: var(--space-1);
+  align-self: center;
+  flex-direction: column;
+}
+
+.person-workspace .tasks-section-card .task-item > .form-actions > button {
+  min-height: 34px;
+  padding: var(--space-1) var(--space-2);
+  border-color: transparent;
+  color: var(--ink-2);
+  background: transparent;
+  font-size: .78rem;
+}
+
+.person-workspace .tasks-section-card .task-item > .form-actions > button:hover {
+  color: var(--ink-1);
+  background: color-mix(in srgb, var(--ink-1) 8%, transparent);
+  filter: none;
+}
+
+.person-workspace .tasks-section-card .task-item > .form-actions > button:first-child {
+  border-color: var(--line-strong);
+  color: var(--ink-1);
+  background: var(--surface-1);
+}
+
+/* Reminders: a compact ledger row like Monica's reminder table. */
+.reminder-list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3) 0;
+  align-items: center;
+  border-bottom: 1px solid var(--line-hairline);
+}
+
+.reminder-list > li:first-child {
+  padding-top: 0;
+}
+
+.reminder-list > li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.reminder-list h3 {
+  grid-column: 1;
+  margin: 0;
+  font-size: .95rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.reminder-list p {
+  grid-column: 1;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: .82rem;
+}
+
+.person-workspace .reminder-list > li > button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-height: 34px;
+  padding: var(--space-1) var(--space-2);
+  border-color: transparent;
+  color: var(--ink-2);
+  background: transparent;
+  font-size: .78rem;
+}
+
+.person-workspace .reminder-list > li > button:hover {
+  color: var(--ink-1);
+  background: color-mix(in srgb, var(--ink-1) 8%, transparent);
+  filter: none;
+}
+
+/* Gifts, debts, documents and photos: title and detail stack on the left,
+   controls sit on the right, nothing gets squeezed into a sliver. */
+.person-file-list > li:first-child {
+  padding-top: 0;
+}
+
+.person-file-list > li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.person-file-list > li > strong {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-size: .95rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.person-file-list > li > div:first-child {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.person-file-list > li > p,
+.person-file-list > li > div:first-child > p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: .82rem;
+  line-height: 1.45;
+}
+
+.person-file-list > li > p {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.person-file-list > li > div:first-child > strong {
+  display: block;
+  font-size: .95rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.person-file-list > li > div:first-child > .state-badge {
+  margin-top: var(--space-1);
+}
+
+.person-file-list > li > .form-actions {
+  gap: var(--space-1);
+  margin-left: auto;
+  align-items: center;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+}
+
+.person-file-list > li > .form-actions select {
+  min-height: 34px;
+  padding: var(--space-1) var(--space-5) var(--space-1) var(--space-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  color: var(--ink-2);
+  background-color: var(--surface-1);
+  font-family: inherit;
+  font-size: .78rem;
+}
+
+.person-workspace .person-file-list > li > .form-actions > :is(button, a):is(.button-primary, .button-secondary, .button-danger) {
+  min-height: 34px;
+  padding: var(--space-1) var(--space-2);
+  border-color: transparent;
+  color: var(--ink-2);
+  background: transparent;
+  font-size: .78rem;
+  white-space: nowrap;
+}
+
+.person-workspace .person-file-list > li > .form-actions > :is(button, a):is(.button-primary, .button-secondary, .button-danger):hover {
+  color: var(--ink-1);
+  background: color-mix(in srgb, var(--ink-1) 8%, transparent);
+  filter: none;
+}
+
+.person-workspace .person-file-list > li > .form-actions > .button-danger {
+  color: var(--danger);
+}
+
+.person-workspace .person-file-list > li > .form-actions > .button-danger:hover {
+  color: var(--danger-strong);
+  background: var(--danger-soft);
+}
+
+/* Audit rows: quieter metadata under a firm heading. */
+.audit-summary-card .audit-event-list {
+  margin: 0;
+}
+
+.audit-summary-card .audit-event {
+  padding: var(--space-3);
+  border-color: var(--line-hairline);
+  background: var(--surface-2);
+}
+
+.audit-summary-card .audit-event strong {
+  font-size: .92rem;
+}
+
+.audit-summary-card .audit-event p {
+  color: var(--ink-2);
+  font-size: .82rem;
+  overflow-wrap: anywhere;
+}
+
+.audit-summary-card .audit-event time {
+  font-size: .78rem;
+}
+
+/* Life events keep the stream card row treatment. */
+.life-event-list li {
+  border-color: var(--line-hairline);
+}
+
+/* Summary cards whose records live in the timeline stay short and calm. */
+.interaction-section-card,
+.communication-section-card {
+  align-content: start;
+}
+
+.person-zone .profile-section-card > :is(ul, ol)[hidden] {
   display: none;
 }
 
@@ -1581,27 +2339,23 @@
 
 .person-file-list {
   display: grid;
-  gap: var(--space-3);
+  gap: 0;
   list-style: none;
-  margin: 0 0 var(--space-4);
+  margin: 0;
   padding: 0;
 }
 
 .person-file-list > li {
-  align-items: center;
-  border-top: 1px solid color-mix(
-    in srgb,
-    var(--ink-1) 18%,
-    transparent
-  );
   display: flex;
-  gap: var(--space-4);
-  justify-content: space-between;
-  padding-top: var(--space-3);
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3) 0;
+  align-items: center;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line-hairline);
 }
 
 .person-file-list p {
-  margin: var(--space-1) 0;
+  margin: 0;
 }
 
 .profile-fact-form {
