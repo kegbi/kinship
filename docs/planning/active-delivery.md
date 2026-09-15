@@ -14,6 +14,13 @@ prerequisite queues.
 - Active work order:
   [architecture gap remediation plan](architecture-gap-remediation-plan-2026-09-15.md),
   executed one GAP ticket per candidate from GAP-001 onward.
+- Phase 0 of that plan (GAP-001 through GAP-005) is integrated at `08680601`.
+  The Phase 0 checkpoint on `main` passed `check`, `check:architecture`,
+  `contracts:check`, `test:coverage`, and `build`; root `test` hit the Astro
+  child exit tracked by `REL-034` once, and the E2E matrix failed 8 of 171
+  flows, tracked by `REL-032` and `REL-033`; none is caused by Phase 0. The
+  GAP-004 GitHub Actions workflow has not run on a branch yet because nothing
+  has been pushed.
 - User-directed follow-up: responsive person blocks, focus-border repair, then
   an evidence-backed application repair plan and execution in a clean task.
 - Remaining repair statuses and execution order belong to the
@@ -98,7 +105,7 @@ Playwright test carrying its stable flow ID.
   - [x] Remove each `GOVERNANCE-001` browser project's legal fixture
         unconditionally by its exact document ID.
 
-- [ ] **REL-030 — Repair planning unit-gate environment permissions.** The
+- [x] **REL-030 — Repair planning unit-gate environment permissions.** The
       APR-011 root test checkpoint passed the newly connected API-token/DAV
       gates, then failed while importing `apps/worker/composition_test.ts`:
       `readable-stream` requires `READABLE_STREAM`, which `test:unit:planning`
@@ -106,9 +113,12 @@ Playwright test carrying its stable flow ID.
       worker code are unchanged from the accepted pre-APR-011 base. Correct the
       owning permission contract with a focused regression. This separate
       reliability item blocks a green aggregate checkpoint, not the bounded
-      application repair candidates.
+      application repair candidates. Delivered by GAP-001 (`22b98309`):
+      `test:unit:planning` grants the worker runtime environment and a contract
+      test proves root `test` reaches every unit gate with sufficient
+      permissions.
 
-- [ ] **REL-031 — Investigate intermittent Astro readiness under coverage.** The
+- [x] **REL-031 — Investigate intermittent Astro readiness under coverage.** The
       APR-011 root coverage checkpoint finished 538 tests and 22 steps, then
       failed the unchanged canonical Astro-child probe's 30-second
       page-readiness deadline. Its direct coverage command, probe, and public
@@ -116,7 +126,43 @@ Playwright test carrying its stable flow ID.
       coverage passes in 17 seconds, and the root unit run also passed this
       probe. Track the deadline failure separately; do not weaken readiness or
       repeatedly rerun the aggregate to hide it. The disposable PostgreSQL
-      project was cleaned.
+      project was cleaned. Delivered by GAP-002 (`0baefd91`): readiness is
+      measured from the child's own listener signal, one probe request may use
+      the remaining page budget, and `deno task test:repro:astro-readiness` runs
+      the probe under coverage three times.
+
+- [ ] **REL-032 — Person workspace due-state E2E assertions no longer match the
+      rendered summary.** The Phase 0 checkpoint on `08680601` ran the full
+      three-browser E2E matrix: `tests/e2e/app-003c.spec.ts:229` expects
+      `#person-profile-due-state` to contain "0 open tasks" but receives "Not
+      set", and `tests/e2e/app-008c.spec.ts:173` expects "1 open task" but
+      receives "Every 1 month", identically on Chromium, Firefox, and WebKit. No
+      path under `apps/`, `packages/`, `tests/e2e/`, Compose, or the Dockerfiles
+      changed between `f9f847ff` and `08680601`, so the mismatch predates
+      GAP-001 through GAP-005; the block now renders the contact cadence, which
+      points at the person-section chrome and summary work in `14d8ed2a` and
+      APR-006. Decide whether the specs or the block are stale and fix the
+      owning side with a focused test.
+
+- [ ] **REL-033 — Two Chromium E2E flows fail deterministically.** In the same
+      checkpoint and again in an isolated Chromium rerun,
+      `tests/e2e/app-009a.spec.ts:99` ([IMPORT-001]) never sees "Monica JSON
+      version 1 detected." after the dry run, and
+      `tests/e2e/auth-002.spec.ts:521` ([AUTH-002]) fails at
+      `inviteeContext.close()` because the invitee context is already closed.
+      Both flows pass on Firefox and WebKit. Same causality proof as REL-032: no
+      product or spec code changed in Phase 0. Reproduce with
+      `deno task test:e2e tests/e2e/app-009a.spec.ts tests/e2e/auth-002.spec.ts --project=chromium`.
+
+- [ ] **REL-034 — Astro child exits before readiness with a libuv assertion on
+      Windows.** Root `deno task test` on `08680601` failed "E2E canonical Astro
+      child remains live outside CI" once: `deno task dev:web` exited with code
+      0 after 17 seconds and the post-test output carried
+      `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 76`.
+      The same probe passed in the following root `test:coverage` run and in an
+      isolated `deno task test:unit --module=api` rerun. This is a different
+      failure from REL-031, which GAP-002 closed: the child dies instead of
+      starting slowly. Track it; do not loosen readiness.
 
 ## Just-In-Time Technical Capabilities
 
