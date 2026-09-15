@@ -110,21 +110,15 @@ async function assertProjectAbsent(
   }
 }
 
-async function main(): Promise<void> {
-  const task = Deno.args[0];
-  if (
-    task !== "test:integration:direct" && task !== "test:coverage:api:direct" &&
-    task !== "test:coverage:planning:direct" &&
-    task !== "test:integration:exports:direct" &&
-    task !== "test:integration:lifecycle:direct" &&
-    task !== "test:coverage:lifecycle:direct" &&
-    task !== "test:integration:api-access:direct" &&
-    task !== "test:integration:integrations:direct" &&
-    task !== "test:coverage:integrations:direct" &&
-    task !== "test:coverage:api-access:direct"
-  ) {
-    throw new Error("Expected an allowlisted direct PostgreSQL gate task.");
-  }
+/**
+ * Runs `suite` against a disposable, migrated PostgreSQL project and proves the
+ * project leaves no container, volume, or network behind. The suite receives the
+ * child environment — including the run-scoped `DATABASE_URL` — to forward to
+ * whatever process it spawns.
+ */
+export async function withDisposablePostgres(
+  suite: (environment: Readonly<Record<string, string>>) => Promise<void>,
+): Promise<void> {
   const project = `kinship-pg-${Deno.pid}-${Date.now()}`;
   const password = `test-${crypto.randomUUID()}`;
   const environment: Record<string, string> = {
@@ -157,14 +151,14 @@ async function main(): Promise<void> {
       if (!port) {
         throw new Error("Could not resolve disposable PostgreSQL port.");
       }
-      const taskEnvironment = {
+      const suiteEnvironment = {
         ...environment,
         DATABASE_URL: `postgres://kinship:${
           encodeURIComponent(password)
         }@127.0.0.1:${port}/kinship`,
       };
-      await execute("deno", ["task", "migration:apply"], taskEnvironment);
-      await execute("deno", ["task", task], taskEnvironment);
+      await execute("deno", ["task", "migration:apply"], suiteEnvironment);
+      await suite(suiteEnvironment);
     },
     down: () =>
       execute("docker", [
@@ -178,5 +172,3 @@ async function main(): Promise<void> {
     assertAbsent: () => assertProjectAbsent(project, environment),
   });
 }
-
-if (import.meta.main) await main();

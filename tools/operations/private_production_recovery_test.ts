@@ -296,8 +296,7 @@ Deno.test("OPS-001C restores and measures the authoritative database/object stat
     assertEquals(recoveryProfile.recovery, {
       archiveRoot: ".artifacts/private-production-recovery",
       backupSchedule: "daily",
-      backupCommand:
-        "deno task ops:recovery:private-production backup <archive-id>",
+      backupCommand: "deno task ops recovery backup <archive-id>",
       manifestVersion: 1,
       migrationVerificationTask: "deno task test:schema:matrix",
       prerequisites: [
@@ -309,8 +308,7 @@ Deno.test("OPS-001C restores and measures the authoritative database/object stat
       promotionRule:
         "Promote only an exit-zero restored result with zero missing and extra objects and met RPO/RTO; otherwise discard the isolated target and retry from the last valid archive.",
       retentionDays: 30,
-      restoreCommand:
-        "deno task ops:recovery:private-production restore <archive-id>",
+      restoreCommand: "deno task ops recovery restore <archive-id>",
       rpoHours: 24,
       rtoMinutes: 240,
       schemaVersion: 7,

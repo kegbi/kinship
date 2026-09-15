@@ -18,6 +18,11 @@ import {
   terminateExactProcesses,
   waitForProcessAbsence,
 } from "./e2e.ts";
+import { moduleById } from "./tasks/manifest.ts";
+import {
+  coverageCollectionArguments,
+  coverageReportArguments,
+} from "./tasks/run.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -399,30 +404,43 @@ Deno.test("failed exact termination is accepted only after PID absence proof", a
   );
 });
 
-Deno.test("root coverage task passes portable production include arguments", async () => {
-  const config = JSON.parse(
-    await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
-  ) as { readonly tasks?: Readonly<Record<string, string>> };
-  const task = config.tasks?.["test:coverage:api:direct"] ?? "";
-  const includes = [
-    "apps/api",
-    "packages/backend",
-    "packages/contracts",
-    "tools/contracts",
-    "tools/migrations",
-  ].map((path) => `--include=${path}`);
+Deno.test("root coverage passes portable production include arguments", async () => {
+  const api = moduleById("api");
+  assert(api?.coverage, "the task manifest declares an api coverage set");
+  const includes = api.coverage.include;
+  for (
+    const path of [
+      "apps/api",
+      "packages/backend",
+      "packages/contracts",
+      "tools/contracts",
+      "tools/migrations",
+    ]
+  ) {
+    assert(
+      includes.includes(path),
+      `each production prefix is its own coverage include: ${path}`,
+    );
+  }
   assert(
-    includes.every((argument) => task.includes(argument)),
-    "each production prefix is a separate shell-safe coverage argument",
+    includes.every((path) =>
+      !path.includes("|") && !path.includes('"') && !path.includes("'")
+    ),
+    "coverage filtering cannot depend on platform-specific shell quoting",
   );
+  const collection = await coverageCollectionArguments(api.coverage);
   assert(
-    task.includes("--coverage-raw-data-only"),
+    collection.includes("--coverage-raw-data-only"),
     "collection defers threshold enforcement to the scoped report",
   );
   assert(
-    !task.includes("|") && !task.includes('--include="') &&
-      !task.includes("--include='"),
-    "coverage filtering cannot depend on platform-specific shell quoting",
+    collection.includes("--clean"),
+    "collection starts from an empty raw coverage directory",
+  );
+  const report = coverageReportArguments(api.coverage);
+  assert(
+    includes.every((path) => report.includes(`--include=${path}`)),
+    "each production prefix reaches the report as its own argument",
   );
 });
 

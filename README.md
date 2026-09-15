@@ -5,9 +5,10 @@ public home, features page, and oriented not-found state.
 
 ## Run locally
 
-Install the pinned dependencies once with `deno task deps`, ensure Docker is
-running, then start PostgreSQL, the canonical baseline migration, Mailpit, the
-real API, and Astro from the repository root:
+Install the pinned dependencies once with `deno task deps:deno` and
+`deno task deps:node`, ensure Docker is running, then start PostgreSQL, the
+canonical baseline migration, Mailpit, the real API, and Astro from the
+repository root:
 
 ```sh
 deno task dev
@@ -50,8 +51,11 @@ PostgreSQL schema tasks remain available and independent.
 
 `deno task test:integration`, root `test`, and root `test:coverage` provision a
 clean disposable PostgreSQL project themselves; they do not consume an ambient
-`DATABASE_URL`. The internal `test:integration:direct` task accepts an injected
-`DATABASE_URL` for a controlled existing harness. Plain SMTP is deliberately
-restricted to the local Mailpit/loopback capture adapter in explicit development
-or test environments; production startup rejects that adapter until a
-certificate-validated TLS transport is configured.
+`DATABASE_URL`. `deno task test:unit`, `test:integration`, `test:contract`, and
+`test:coverage` each accept `--module=<id>` to run one module's suite from
+`tools/tasks/manifest.ts`, which is the single source of truth for test
+composition, coverage includes, and permission sets; root `test` always runs
+every aggregated module. Plain SMTP is deliberately restricted to the local
+Mailpit/loopback capture adapter in explicit development or test environments;
+production startup rejects that adapter until a certificate-validated TLS
+transport is configured.

@@ -57,7 +57,7 @@ export interface PrivateProductionProfile {
     };
   };
   readonly operations: {
-    readonly preflightCommand: "deno task ops:preflight:private-production";
+    readonly preflightCommand: "deno task ops preflight";
     readonly runbookPath: "docs/operations/private-production.md";
     readonly archiveProtection: {
       readonly encryptedAtRestRequired: true;
@@ -119,7 +119,7 @@ function assertProbeProfile(
     profile.recovery.rtoMinutes < 1 ||
     profile.recovery.schemaVersion !== 7 ||
     profile.operations?.preflightCommand !==
-      "deno task ops:preflight:private-production" ||
+      "deno task ops preflight" ||
     profile.operations.runbookPath !==
       "docs/operations/private-production.md" ||
     profile.operations.archiveProtection?.encryptedAtRestRequired !== true ||
@@ -228,7 +228,7 @@ async function main(): Promise<number> {
   if (!origin || Deno.args.length !== 1) {
     await Deno.stderr.write(
       new TextEncoder().encode(
-        "Usage: deno task ops:probe:private-production https://crm.example\n",
+        "Usage: deno task ops probe https://crm.example\n",
       ),
     );
     return 64;

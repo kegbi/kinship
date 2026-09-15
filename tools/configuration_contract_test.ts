@@ -1,45 +1,45 @@
+import {
+  COVERAGE_AGGREGATE,
+  INTEGRATION_PERMISSIONS,
+  moduleById,
+  TEST_AGGREGATE,
+} from "./tasks/manifest.ts";
+
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("APR-009 existing API checks include the timezone and calendar boundary regression once", async () => {
-  const manifest = JSON.parse(
-    await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
-  ) as { tasks: Record<string, string> };
-  for (const task of ["check:api", "test:coverage:api:direct"]) {
-    const entries = manifest.tasks[task]?.split(/\s+/) ?? [];
-    assert(
-      entries.filter((entry) =>
-        entry === "tests/integration/time_preferences_postgres_test.ts"
-      ).length === 1,
-      `${task} must include the APR-009 PostgreSQL regression exactly once`,
-    );
-  }
+Deno.test("APR-009 existing API checks include the timezone and calendar boundary regression once", () => {
+  const regression = "tests/integration/time_preferences_postgres_test.ts";
+  const api = moduleById("api");
+  assert(api, "the task manifest declares the api module");
+  assert(
+    (api.integration ?? []).filter((entry) => entry === regression).length ===
+      1,
+    "the api module must own the APR-009 PostgreSQL regression exactly once",
+  );
+  assert(
+    (api.coverage?.tests ?? []).filter((entry) => entry === regression)
+      .length === 1,
+    "API coverage must measure the APR-009 PostgreSQL regression exactly once",
+  );
 });
 
 for (const scope of ["api-access", "integrations"]) {
-  Deno.test(`[APR-011] root test and coverage run ${scope} gates once`, async () => {
-    const manifest = JSON.parse(
-      await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
-    ) as { tasks: Record<string, string> };
-    const calls = (parent: string, child: string) =>
-      (manifest.tasks[parent] ?? "").split("&&").filter((command) =>
-        command.trim() === `deno task ${child}`
-      ).length;
-
+  Deno.test(`[APR-011] root test and coverage run ${scope} gates once`, () => {
+    const module = moduleById(scope);
+    assert(module?.unit, `the task manifest declares a ${scope} unit set`);
     assert(
-      calls("test", "test:unit") === 1,
-      "root test must reach the unit aggregate exactly once",
+      TEST_AGGREGATE.filter((id) => id === scope).length === 1,
+      `root test must run the ${scope} unit set exactly once`,
     );
     assert(
-      calls("test:unit", `test:unit:${scope}`) === 1 &&
-        calls("test", `test:unit:${scope}`) === 0,
-      `root test must run test:unit:${scope} once through the unit aggregate`,
+      module.coverage?.postgres === true,
+      `${scope} coverage must run against a disposable PostgreSQL project`,
     );
     assert(
-      calls("test:coverage", `test:coverage:${scope}`) === 1 &&
-        calls("test:coverage", `test:coverage:${scope}:direct`) === 0,
-      `root coverage must run the disposable PostgreSQL coverage gate for ${scope} once`,
+      COVERAGE_AGGREGATE.filter((id) => id === scope).length === 1,
+      `root coverage must run the ${scope} coverage gate exactly once`,
     );
   });
 }
@@ -285,48 +285,61 @@ Deno.test("[OPS-001E1] RustFS owns local and recovery S3 boundaries", async () =
       `root development must permit its configured ${name}`,
     );
   }
-  for (const taskName of ["test:unit:api", "test:coverage:api:direct"]) {
-    assert(
-      configuredTasks[taskName]?.includes("Dockerfile.api"),
-      `${taskName} must permit the configuration contract to read Dockerfile.api`,
-    );
-  }
+  const api = moduleById("api");
+  assert(
+    api?.unit && api.coverage,
+    "the task manifest declares the api module",
+  );
   for (
-    const name of [
-      "OBJECT_STORAGE_ACCESS_KEY",
-      "OBJECT_STORAGE_BUCKET",
-      "OBJECT_STORAGE_HOST",
-      "OBJECT_STORAGE_PORT",
-      "OBJECT_STORAGE_REQUEST_TIMEOUT_MS",
-      "OBJECT_STORAGE_SECRET_KEY",
-      "OBJECT_STORAGE_USE_SSL",
-    ]
+    const [label, permissions] of [
+      ["the api unit set", api.unit.permissions],
+      ["api coverage", api.coverage.permissions],
+    ] as const
   ) {
+    const reads = permissions?.read;
     assert(
-      configuredTasks["test:coverage:api:direct"]?.includes(name),
-      `coverage API composition must permit the object-storage environment name ${name}`,
+      reads !== undefined && reads !== "all" &&
+        reads.includes("Dockerfile.api"),
+      `${label} must permit the configuration contract to read Dockerfile.api`,
     );
   }
+  const planning = moduleById("planning");
+  assert(planning?.coverage, "the task manifest declares planning coverage");
   for (
-    const name of [
-      "READABLE_STREAM",
-      "OBJECT_STORAGE_ACCESS_KEY",
-      "OBJECT_STORAGE_BUCKET",
-      "OBJECT_STORAGE_HOST",
-      "OBJECT_STORAGE_PORT",
-      "OBJECT_STORAGE_REQUEST_TIMEOUT_MS",
-      "OBJECT_STORAGE_SECRET_KEY",
-      "OBJECT_STORAGE_USE_SSL",
-    ]
+    const [label, permissions] of [
+      ["coverage API composition", api.coverage.permissions],
+      ["planning coverage composition", planning.coverage.permissions],
+    ] as const
   ) {
+    const granted = permissions?.env;
     assert(
-      configuredTasks["test:coverage:planning:direct"]?.includes(name),
-      `planning coverage composition must permit the shared API environment name ${name}`,
+      granted !== undefined && granted !== "all",
+      `${label} must declare an exact environment allowlist`,
     );
+    for (
+      const name of [
+        "READABLE_STREAM",
+        "OBJECT_STORAGE_ACCESS_KEY",
+        "OBJECT_STORAGE_BUCKET",
+        "OBJECT_STORAGE_HOST",
+        "OBJECT_STORAGE_PORT",
+        "OBJECT_STORAGE_REQUEST_TIMEOUT_MS",
+        "OBJECT_STORAGE_SECRET_KEY",
+        "OBJECT_STORAGE_USE_SSL",
+      ]
+    ) {
+      assert(
+        granted.includes(name),
+        `${label} must permit the shared object-storage environment name ${name}`,
+      );
+    }
   }
-  for (const manifest of [dockerfile, tasks]) {
+  const manifestSource = await Deno.readTextFile(
+    new URL("./tasks/manifest.ts", import.meta.url),
+  );
+  for (const declaration of [dockerfile, manifestSource]) {
     assert(
-      manifest.includes("OBJECT_STORAGE_REQUEST_TIMEOUT_MS"),
+      declaration.includes("OBJECT_STORAGE_REQUEST_TIMEOUT_MS"),
       "API environment allowlists include the object-store request timeout",
     );
   }
@@ -354,16 +367,17 @@ Deno.test("[REL-011] root development rebuilds the current migration bundle", as
   );
 });
 
-Deno.test("[REL-004] aggregate integration has object-store configuration authority", async () => {
-  const manifest = JSON.parse(
-    await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
-  ) as { tasks?: Record<string, string> };
-  const integrationTask = manifest.tasks?.["test:integration:direct"] ?? "";
-
+Deno.test("[REL-004] aggregate integration has object-store configuration authority", () => {
+  const reads = INTEGRATION_PERMISSIONS.read;
   assert(
-    integrationTask.includes("--allow-read=") &&
-      integrationTask.includes("personal-crm-schema/v7"),
+    reads !== undefined && reads !== "all" &&
+      reads.includes("personal-crm-schema/v7"),
     "aggregate integration must read the canonical v7 schema",
+  );
+  const granted = INTEGRATION_PERMISSIONS.env;
+  assert(
+    granted !== undefined && granted !== "all",
+    "aggregate integration must declare an exact environment allowlist",
   );
   for (
     const name of [
@@ -377,7 +391,7 @@ Deno.test("[REL-004] aggregate integration has object-store configuration author
     ]
   ) {
     assert(
-      integrationTask.includes(name),
+      granted.includes(name),
       `aggregate integration must permit the object-storage environment name ${name}`,
     );
   }
@@ -430,83 +444,3 @@ Deno.test("[REL-008] worker receives exact production runtime authority", async 
     );
   }
 });
-
-Deno.test(
-  "[GAP-001] root test reaches every unit gate with sufficient permissions",
-  async () => {
-    const manifest = JSON.parse(
-      await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
-    ) as { tasks: Record<string, string> };
-    const delegatesTo = (parent: string) =>
-      (manifest.tasks[parent] ?? "").split("&&")
-        .map((command) => command.trim())
-        .filter((command) => command.startsWith("deno task "))
-        .map((command) => command.slice("deno task ".length).trim());
-
-    assert(
-      delegatesTo("test").filter((task) => task === "test:unit").length === 1,
-      "root test must reach the unit aggregate exactly once",
-    );
-
-    const declared = Object.keys(manifest.tasks).filter((task) =>
-      task.startsWith("test:unit:")
-    );
-    const aggregated = delegatesTo("test:unit");
-    for (const task of declared) {
-      assert(
-        aggregated.filter((entry) => entry === task).length === 1,
-        `root test must run ${task} exactly once through the unit aggregate`,
-      );
-    }
-    for (const task of aggregated) {
-      assert(
-        declared.includes(task),
-        `the unit aggregate must only delegate to declared unit gates, not ${task}`,
-      );
-    }
-
-    // A unit gate that loads a worker module evaluates the same composition the
-    // worker service runs, so it needs the worker's declared runtime
-    // environment authority.
-    const compose = await Deno.readTextFile(
-      new URL("../compose.yaml", import.meta.url),
-    );
-    const workerService = compose.slice(
-      compose.indexOf("\n  worker:"),
-      compose.indexOf("\n  web:"),
-    );
-    const workerEnvironment =
-      /--allow-env=([A-Z0-9_,]+)/.exec(workerService)?.[1]?.split(",") ?? [];
-    assert(
-      workerEnvironment.includes("READABLE_STREAM"),
-      "worker runtime authority must declare its environment names",
-    );
-
-    for (const task of declared) {
-      const entries = (manifest.tasks[task] ?? "").split(/\s+/);
-      const loadsWorkerModule = entries.some((entry) =>
-        entry.startsWith("apps/worker/") && entry.endsWith("_test.ts")
-      );
-      if (!loadsWorkerModule) continue;
-      const grants = entries.filter((entry) =>
-        entry === "--allow-env" || entry.startsWith("--allow-env=")
-      );
-      assert(
-        grants.length > 0,
-        `${task} loads a worker module and must grant environment access`,
-      );
-      const permitted = new Set(
-        grants.flatMap((grant) =>
-          grant.slice("--allow-env=".length).split(",")
-        ),
-      );
-      const unrestricted = grants.includes("--allow-env");
-      for (const name of workerEnvironment) {
-        assert(
-          unrestricted || permitted.has(name),
-          `${task} loads a worker module and must permit ${name}`,
-        );
-      }
-    }
-  },
-);

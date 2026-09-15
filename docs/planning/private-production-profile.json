@@ -26,7 +26,7 @@
   "recovery": {
     "archiveRoot": ".artifacts/private-production-recovery",
     "backupSchedule": "daily",
-    "backupCommand": "deno task ops:recovery:private-production backup <archive-id>",
+    "backupCommand": "deno task ops recovery backup <archive-id>",
     "manifestVersion": 1,
     "migrationVerificationTask": "deno task test:schema:matrix",
     "prerequisites": [
@@ -37,13 +37,13 @@
     ],
     "promotionRule": "Promote only an exit-zero restored result with zero missing and extra objects and met RPO/RTO; otherwise discard the isolated target and retry from the last valid archive.",
     "retentionDays": 30,
-    "restoreCommand": "deno task ops:recovery:private-production restore <archive-id>",
+    "restoreCommand": "deno task ops recovery restore <archive-id>",
     "rpoHours": 24,
     "rtoMinutes": 240,
     "schemaVersion": 7
   },
   "operations": {
-    "preflightCommand": "deno task ops:preflight:private-production",
+    "preflightCommand": "deno task ops preflight",
     "runbookPath": "docs/operations/private-production.md",
     "archiveProtection": {
       "encryptedAtRestRequired": true,
