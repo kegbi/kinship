@@ -333,7 +333,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     lines); 4 fake-clock probe tests in test:unit:api 315/0;
     test:repro:astro-readiness 3/3 runs; gates fmt:check, lint, check.
 
-- [ ] **GAP-003 — Task manifest and runner; collapse deno.json.** M. Depends:
+- [x] **GAP-003 — Task manifest and runner; collapse deno.json.** M. Depends:
       001, 002.
   - Problem: 79 tasks, hand-listed test files duplicated across tasks, the
     Postgres allowlist copied 11 times, orphaned `test:coverage:lifecycle`,
@@ -350,6 +350,9 @@ project once. Full three-browser E2E and image builds run at the end of Phases
   - Non-goals: changing any test; changing coverage thresholds.
   - Verify: `deno task test`, `deno task test:coverage`, and the new manifest
     test green; task count ≤ 25.
+  - Delivered 2026-09-15: root test green (18 unit modules incl. 718 vitest,
+    integration 111/0), root test:coverage green (13 sets at 81.0-93.4% lines),
+    manifest test 12/0, deno.json 25 tasks; gates fmt:check, lint, check.
 
 - [ ] **GAP-004 — CI pipeline and Lefthook hooks.** M. Depends: 003.
   - Problem: no CI, no hooks; every gate runs by hand.

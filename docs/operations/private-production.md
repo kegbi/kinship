@@ -17,7 +17,7 @@ secret values must never be pasted into commands, tickets, or logs.
    `docs/planning/private-production-profile.json`. Run:
 
    ```text
-   deno task ops:preflight:private-production
+   deno task ops preflight
    ```
 
    Continue only when the single JSON result has `"state":"ready"` and an empty
@@ -30,7 +30,7 @@ secret values must never be pasted into commands, tickets, or logs.
    storage, then set `PRIVATE_PRODUCTION_WRITES_QUIESCED=true` for this command:
 
    ```text
-   deno task ops:recovery:private-production backup <utc-release-archive-id>
+   deno task ops recovery backup <utc-release-archive-id>
    ```
 
    Continue only on exit zero. Keep the archive on the encrypted recovery
@@ -65,7 +65,7 @@ days, and follow the recovery section. Never run a production data reset.
 Run the external HTTPS probe from outside the deployment network:
 
 ```text
-deno task ops:probe:private-production https://<public-origin>
+deno task ops probe https://<public-origin>
 ```
 
 One healthy response is ready. Three consecutive failures one minute apart are
@@ -90,7 +90,7 @@ telemetry or add CRM identifiers to labels.
    bucket name. Set `PRIVATE_PRODUCTION_ISOLATED_TARGET=true` only for:
 
    ```text
-   deno task ops:recovery:private-production restore <last-valid-archive-id>
+   deno task ops recovery restore <last-valid-archive-id>
    ```
 
 6. Promote a restored target only when the command exits zero, canonical v7

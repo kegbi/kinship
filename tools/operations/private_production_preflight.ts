@@ -107,7 +107,7 @@ function assertProfile(profile: PrivateProductionProfile): void {
   if (
     profile.environment !== "private-production" ||
     profile.operations.preflightCommand !==
-      "deno task ops:preflight:private-production" ||
+      "deno task ops preflight" ||
     profile.operations.runbookPath !==
       "docs/operations/private-production.md" ||
     profile.operations.archiveProtection.encryptedAtRestRequired !== true ||

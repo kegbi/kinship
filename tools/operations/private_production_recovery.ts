@@ -740,7 +740,7 @@ export async function runPrivateProductionRecoveryCli(
     !archiveId || args.length !== 2
   ) {
     dependencies.write(
-      "Usage: deno task ops:recovery:private-production <backup|restore> <archive-id>",
+      "Usage: deno task ops recovery <backup|restore> <archive-id>",
     );
     return 64;
   }

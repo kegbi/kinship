@@ -51,12 +51,13 @@ At the 2026-08-13 baseline, `deno.json` exposes these real task families:
 | `deno task lint`               | Lint the existing repository tools.                          |
 | `deno task check`              | Type-check the current PostgreSQL schema tool.               |
 | `deno task deps:deno`          | Populate the Deno cache from the frozen root lock.           |
-| `deno task deps:deno:offline`  | Re-resolve Deno dependencies from cache only.                |
 | `deno task deps:node`          | Install the pnpm graph from the frozen root lock.            |
-| `deno task deps:node:offline`  | Reinstall the pnpm graph from its populated cache only.      |
+| `deno task deps:audit`         | Audit the installed dependency graph for advisories.         |
 | `deno task test:schema`        | Run the primary live PostgreSQL schema harness.              |
-| `deno task test:schema:compat` | Run the compatibility PostgreSQL schema harness.             |
 | `deno task test:schema:matrix` | Run both current schema harness variants.                    |
+
+The offline dependency proof appends the cache-only flag to each of those same
+frozen commands: `--cached-only` for Deno and `--offline` for pnpm.
 
 No application unit, integration, contract, coverage, browser, hook, main
 Compose, or CI aggregate command exists yet. Do not cite a future command as
@@ -533,9 +534,11 @@ state within 10,000 ms. Work above that delivered bound must remain durable,
 visibly statused, and resumable or retryable rather than extending an ordinary
 request timeout. The machine-readable authority and blocking regression tasks
 are [`mvp-capacity-profile.json`](mvp-capacity-profile.json) and
-`deno task test:performance:mvp`, plus the narrow production-built Chromium
-boundary `deno task test:performance:mvp:browser`. These budgets are MVP
-regression thresholds, not production SLOs or a claim about a named deployment.
+`deno task test:unit --module=performance`, plus the narrow production-built
+Chromium boundary
+`deno task test:e2e tests/e2e/perf-001.spec.ts --project=chromium`. These
+budgets are MVP regression thresholds, not production SLOs or a claim about a
+named deployment.
 
 Measure at least:
 
