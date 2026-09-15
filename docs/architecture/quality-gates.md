@@ -85,64 +85,88 @@ operational protocol is
 
 ## Canonical Commands
 
-The current executable baseline exposes formatting, lint, type-check, frozen
-dependency-bootstrap, and schema-matrix tasks through `deno.json`. Their scope
-remains narrow until the application scaffold exists. The schema tasks cover the
-canonical database harness. Retired workflow-prose and runtime-policy validators
-are not application gates.
+`deno.json` exposes 25 stable verbs and nothing else.
+[`tools/tasks/manifest.ts`](../../tools/tasks/manifest.ts) declares what each
+one runs — module test sets, coverage includes, permission sets, check and build
+targets — and [`tools/tasks/run.ts`](../../tools/tasks/run.ts) composes the
+concrete command. Adding a suite means editing the manifest, never a task
+string, and `tools/tasks/manifest_test.ts` holds the vocabulary at 25 verbs
+while proving every test file is reachable from root `test`.
 
-The root type-check task is intentionally exact and production-only:
+| Command                                                     | What it runs                                                     |
+| ----------------------------------------------------------- | ---------------------------------------------------------------- |
+| `deno task fmt`, `deno task fix`                            | `deno fmt` over the owned paths                                  |
+| `deno task fmt:check`                                       | the non-mutating formatter check                                 |
+| `deno task lint`                                            | `deno lint` plus ESLint over `apps/web/src`                      |
+| `deno task check`                                           | `deno check` over every manifest target, then `astro check`      |
+| `deno task build`                                           | the contracts check, the entry-point type check, the Astro build |
+| `deno task test`                                            | every unit module, then integration, then the contracts check    |
+| `deno task test:unit [--module=<id>]`                       | the unit sets                                                    |
+| `deno task test:integration [--module=<id>]`                | the PostgreSQL suites on a disposable Compose project            |
+| `deno task test:contract [--module=<id>]`                   | the contract view over the unit sets plus `contracts:check`      |
+| `deno task test:coverage [--module=<id>]`                   | the measured sets against the 80% threshold                      |
+| `deno task test:e2e [Playwright arguments]`                 | Playwright against the production-like Compose stack             |
+| `deno task test:schema`, `deno task test:schema:matrix`     | the canonical schema harness on the pinned PostgreSQL images     |
+| `deno task contracts:generate`, `deno task contracts:check` | the generated OpenAPI document and TypeScript client             |
+| `deno task deps:deno`, `deno task deps:node`                | frozen dependency installation                                   |
+| `deno task deps:audit`                                      | `deno audit`                                                     |
+| `deno task dev`, `deno task dev:api`, `deno task dev:web`   | the local run targets                                            |
+| `deno task migration:apply`                                 | the versioned migration bundle                                   |
+| `deno task ops <script>`                                    | the operator scripts declared in the manifest                    |
+| `deno task test:repro:astro-readiness`                      | the on-demand Astro readiness reproduction                       |
 
-```text
-DENO_NO_PACKAGE_JSON=1 deno check tools/schema/validate_postgres.ts
-```
+Tests run through the test verbs, never by appending targets, redirections,
+shell separators, or fallback commands to `deno task check`.
 
-Tests run through test tasks, never by appending targets, redirections, shell
-separators, or fallback commands to this check.
+`check:architecture` does not exist yet. GAP-005 adds it and wires it into
+`deno task check` and the CI static job; until then the architecture spot checks
+live under `tools/architecture/` and run inside the unit sets.
+
+### Dependency bootstrap
 
 ```text
 deno task deps:deno
 deno task deps:node
 ```
 
-The dependency tasks use frozen locks. An offline proof must reuse only the
-explicit cache populated by the corresponding online run and must leave both
-lockfiles byte-identical.
+Both are frozen: `deno install --frozen --node-modules-dir=none` and
+`pnpm install --frozen-lockfile`. Extra flags pass through, so an offline proof
+is `deno task deps:deno --cached-only` and `deno task deps:node --offline`. It
+must reuse only the explicit cache populated by the corresponding online run and
+must leave both lockfiles byte-identical.
 
-The root dependency contract intentionally accepts only the canonical task
-spellings in `deno.json`: Deno uses `deno install --frozen`, and pnpm uses
-`pnpm install --frozen-lockfile`. Equivalent aliases such as `--frozen=true` or
-`pnpm i` are rejected until the repository adopts them explicitly. Deno must use
-`./deno.lock`; pnpm must keep one enabled, non-branch lockfile at the workspace
-root.
+The root dependency contract intentionally accepts only those canonical task
+spellings. Equivalent aliases such as `--frozen=true` or `pnpm i` are rejected
+until the repository adopts them explicitly. Deno must use `./deno.lock`; pnpm
+must keep one enabled, non-branch lockfile at the workspace root. npm lifecycle
+scripts stay denied by default: `pnpm-workspace.yaml` decides each one
+explicitly, and `deno.json` keeps an empty `allowScripts`.
 
-As real harnesses are added, the implementation must expose stable top-level
-`deno task` commands even when they delegate to pnpm, Astro, Vitest, Playwright,
-Docker Compose, or a helper binary:
+### Accepted dependency advisories
 
-```text
-deno task fmt
-deno task fmt:check
-deno task fix
-deno task lint
-deno task check
-deno task check:architecture
-deno task test:unit
-deno task test:integration
-deno task test:schema
-deno task test:contract
-deno task test:e2e
-deno task test:coverage
-deno task test:prepush
-deno task test
-deno task ci
-```
+`deno task deps:audit` currently reports five moderate advisories and no high or
+critical ones. They are recorded here rather than silenced:
 
-Add each task with its first truthful executable harness before corresponding
-production behavior, not as a placeholder. When local hooks and CI are added,
-they must call these same commands. There must not be a second, subtly different
-hook-only validation pipeline. Lefthook invokes repository tasks; repository
-tests do not delegate their validation semantics to Lefthook.
+- three in `hono` < 4.13.5 — a `toSSG()` path escape (no route generates static
+  output through Hono), unbounded dot-notation nesting in `parseBody()` (no
+  handler calls `parseBody`), and a query-parser fragment differential, which is
+  a hardening fix that arrives with the next Hono version;
+- `stream-json` <= 3.4.0 and `decode-uri-component` <= 0.4.2, both transitive
+  through `minio`, which uses them to parse responses from the workspace's own
+  object store rather than untrusted input.
+
+CI prints the complete report and then fails on high and critical severity only
+(`deno task deps:audit --level=high`). Raising a dependency version is a
+separate change; when one lands, this exception shrinks with it. A developer
+still runs the ungated `deno task deps:audit` locally.
+
+### Hook and CI wiring
+
+When local hooks and CI run these gates, they call these same commands. There
+must not be a second, subtly different hook-only validation pipeline. Lefthook
+invokes repository commands; repository tests do not delegate their validation
+semantics to Lefthook. Add each task with its first truthful executable harness
+before the corresponding production behavior, not as a placeholder.
 
 ### Candidate-bound review gates
 
@@ -288,22 +312,32 @@ default.
 
 Deno has no Git-hook manager. Use Lefthook only to invoke repository tasks:
 
-- pre-commit: non-mutating formatter check, lint, type check, architecture
-  checks, and the fast unit suite;
-- pre-push: full unit/integration/schema/contract suite and a Chromium smoke E2E
-  project when practical;
+- pre-commit: the non-mutating formatter check and lint, filtered to the staged
+  files (`deno fmt --check`, `deno lint`, and ESLint for Astro templates);
+- pre-push: `deno task test:unit` and `deno task test:contract`;
 - CI: the authoritative full suite, including all E2E browsers and
   security/dependency gates.
 
 Pre-commit must not format, fix, stage, or restage files. `deno task fix` is an
 explicit developer action. Target less than 15 seconds for pre-commit and less
 than three minutes for pre-push; measured checks that exceed those budgets move
-to CI rather than being silently skipped. Add staged-file filtering only after
-the complete repository checks have become measurably slow.
+to CI rather than being silently skipped, which is why the type check, the
+integration, schema, and E2E suites, and the architecture checks are CI-only.
+The pre-commit staged-file filter mirrors the formatter's and the linter's own
+include and exclude lists in `deno.json`, so a hook never reports a file the
+repository gate ignores. Pre-commit measures about five seconds over every
+tracked file; pre-push measures about four minutes, just over its budget,
+because one Docker-backed gateway suite costs half of it. Pre-push stays the
+last local checkpoint before CI and remains bypassable with `--no-verify`.
 
-Do not add or pin Lefthook before canonical scaffold tasks exist. At that point,
-commit its configuration and expose an idempotent `deno task hooks:install`.
-Hooks are convenience feedback and remain bypassable; CI is authoritative.
+Lefthook is pinned as an exact dev dependency and configured in
+[`lefthook.yml`](../../lefthook.yml). Its npm `postinstall`, which would run
+`lefthook install`, is denied in `pnpm-workspace.yaml`, and the configuration
+sets `no_auto_install`: one `.git` directory is shared by every worktree of this
+repository, so installing the hooks stays the explicit developer action
+`pnpm exec lefthook install`. The verb vocabulary is capped at 25, so there is
+no `hooks:install` task. Hooks are convenience feedback and remain bypassable;
+CI is authoritative.
 
 Hooks improve feedback time but are bypassable. Protected-branch rules and
 required CI checks enforce the contract. A repository-local `.githooks`
@@ -311,17 +345,35 @@ directory with Git's `core.hooksPath` is an acceptable zero-dependency fallback,
 but it needs a reliable install/update command and offers fewer staged-file and
 parallel-execution conveniences.
 
-## Suggested CI Stages
+## CI Stages
 
-1. Lockfile, generated-file, catalog/schema-bundle, formatting, lint,
-   architecture, workflow/page coverage, and type checks.
-2. Backend and frontend unit/component suites with coverage gates.
-3. Fresh PostgreSQL schema and adapter integration suites.
-4. Build pinned production images and generate an immutable Compose test stack.
-5. API contract and Playwright E2E suites against that stack.
-6. Dependency audit, container/image scan, permission-policy checks, and
-   artifact publication.
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on every pull
+request, on pushes to `main`, nightly at 03:00 UTC, and on manual dispatch. Each
+job installs the pinned runtimes, bootstraps dependencies from the lockfiles,
+and then runs the same `deno task` verbs a developer runs locally.
 
-Parallelize independent jobs, but do not split coverage in a way that lets
-uncovered code evade the aggregate threshold. Upload coverage, test, OpenAPI,
-migration verification, and Playwright trace artifacts on failure.
+| Job                | When                    | Gates                                                                                                                           |
+| ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `static`           | every run               | `fmt:check`, `lint`, `check`, `contracts:check`, `test:contract`, and `deps:audit` (reported in full, failing at high severity) |
+| `unit`             | every run               | `test:unit`, then `test:coverage` against the 80% thresholds                                                                    |
+| `integration`      | every run               | `test:integration`, which provisions its own disposable PostgreSQL 18.4 project and applies the versioned migrations            |
+| `schema`           | every run               | `test:schema` against the pinned PostgreSQL image                                                                               |
+| `e2e-chromium`     | pull requests           | `test:e2e --project=chromium` against the Compose stack, uploading Playwright traces on failure                                 |
+| `e2e-all-browsers` | `main`, nightly, manual | the whole Chromium, Firefox, and WebKit matrix                                                                                  |
+| `images`           | `main`, nightly, manual | production builds of `Dockerfile.api`, `Dockerfile.web`, and `Dockerfile.gateway`                                               |
+
+`static`, `unit`, `integration`, and `schema` run in parallel; the three
+expensive jobs wait for `static`. Coverage is never split in a way that lets
+uncovered code evade the aggregate threshold.
+
+[`tools/pipeline_contract_test.ts`](../../tools/pipeline_contract_test.ts) is
+the executable consumer of this workflow and of `lefthook.yml`. It proves the
+required jobs and hook stages exist, that the job graph stays acyclic, that
+installation stays frozen, that the pinned Deno version matches
+`.tool-versions`, and that every command either names a declared `deno.json`
+task or a declared dependency binary.
+
+Named by the tickets that add them, still missing: the architecture checker job
+(`check:architecture`), the workflow and page catalog coverage gate, container
+image scanning, and artifact publication. Upload coverage, test, OpenAPI, and
+migration verification artifacts on failure as those gates arrive.

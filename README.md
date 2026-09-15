@@ -40,6 +40,12 @@ retain older versions while rotating and never commit or log the keyset.
 defaults to `250` and accepts only integer milliseconds in the inclusive range
 `100` through `2000`. There is no supported root `PORT` or `API_ORIGIN` setting.
 
+Optional local Git hooks live in `lefthook.yml`: install them once per clone
+with `pnpm exec lefthook install` to get the staged-file formatter and lint
+checks on commit and `test:unit` plus `test:contract` on push. They are never
+installed automatically, because one `.git` directory is shared by every
+worktree of this repository.
+
 Root `build`, `check`, `test`, `test:coverage`, and `test:e2e` tasks provide the
 corresponding application gates. `deno task test:e2e` provisions a unique,
 disposable production-built Compose stack and runs all configured browsers

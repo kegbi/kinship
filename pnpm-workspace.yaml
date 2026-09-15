@@ -14,6 +14,9 @@ allowBuilds:
   esbuild@0.28.2: true
   fsevents@2.3.2: false
   fsevents@2.3.3: false
+  # Lefthook's postinstall runs `lefthook install`, which writes .git/hooks.
+  # Installing the hooks stays an explicit developer action.
+  lefthook@2.1.12: false
 supportedArchitectures:
   os:
     - current

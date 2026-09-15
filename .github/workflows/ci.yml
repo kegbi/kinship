@@ -1,0 +1,219 @@
+name: CI
+
+# The authoritative run of the repository gates. Every job calls the same
+# `deno task` verbs a developer runs locally (tools/tasks/manifest.ts owns what
+# each verb executes); CI adds no second, subtly different pipeline.
+
+# Quoted so YAML 1.1 tooling reads the trigger key as `on`, not as `true`.
+"on":
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  static:
+    name: Static gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@v5
+      - name: Install the pinned Deno runtime
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.9.5
+          cache: true
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+      - name: Install the pinned Node runtime
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .tool-versions
+          cache: pnpm
+      - name: Install dependencies from the lockfiles
+        run: |
+          deno task deps:deno
+          deno task deps:node
+      - name: Formatting
+        run: deno task fmt:check
+      - name: Lint
+        run: deno task lint
+      - name: Type check
+        run: deno task check
+      - name: Generated contracts
+        run: deno task contracts:check
+      - name: Contract suites
+        run: deno task test:contract
+      - name: Dependency advisories
+        # Reported in full, including the accepted moderate advisories recorded
+        # in docs/architecture/quality-gates.md. The gate below is what fails.
+        continue-on-error: true
+        run: deno task deps:audit
+      - name: Dependency audit gate
+        run: deno task deps:audit --level=high
+
+  unit:
+    name: Unit suites and coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@v5
+      - name: Install the pinned Deno runtime
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.9.5
+          cache: true
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+      - name: Install the pinned Node runtime
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .tool-versions
+          cache: pnpm
+      - name: Install dependencies from the lockfiles
+        run: |
+          deno task deps:deno
+          deno task deps:node
+      - name: Unit suites
+        run: deno task test:unit
+      - name: Coverage thresholds
+        run: deno task test:coverage
+
+  integration:
+    name: PostgreSQL integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@v5
+      - name: Install the pinned Deno runtime
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.9.5
+          cache: true
+      - name: Install Deno dependencies from the lockfile
+        run: deno task deps:deno
+      # The suite provisions its own disposable PostgreSQL 18.4 project through
+      # Docker Compose (tools/postgres_gate.ts), applies the versioned
+      # migrations, and proves the project leaves nothing behind. A runner
+      # services block would be a second, untested database contract.
+      - name: Integration suites
+        run: deno task test:integration
+
+  schema:
+    name: Canonical schema
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@v5
+      - name: Install the pinned Deno runtime
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.9.5
+          cache: true
+      - name: Install Deno dependencies from the lockfile
+        run: deno task deps:deno
+      - name: Schema harness
+        run: deno task test:schema
+
+  e2e-chromium:
+    name: E2E (Chromium)
+    if: github.event_name == 'pull_request'
+    needs: [static]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@v5
+      - name: Install the pinned Deno runtime
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.9.5
+          cache: true
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+      - name: Install the pinned Node runtime
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .tool-versions
+          cache: pnpm
+      - name: Install dependencies from the lockfiles
+        run: |
+          deno task deps:deno
+          deno task deps:node
+      - name: Install the Chromium browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Playwright flows
+        run: deno task test:e2e --project=chromium
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-chromium
+          path: .artifacts/playwright
+          retention-days: 7
+
+  e2e-all-browsers:
+    name: E2E (Chromium, Firefox, WebKit)
+    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: [static]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@v5
+      - name: Install the pinned Deno runtime
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.9.5
+          cache: true
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+      - name: Install the pinned Node runtime
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .tool-versions
+          cache: pnpm
+      - name: Install dependencies from the lockfiles
+        run: |
+          deno task deps:deno
+          deno task deps:node
+      - name: Install every browser
+        run: pnpm exec playwright install --with-deps
+      - name: Playwright flows
+        run: deno task test:e2e
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-all-browsers
+          path: .artifacts/playwright
+          retention-days: 7
+
+  images:
+    name: Production images
+    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: [static]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@v5
+      - name: Build the API and worker image
+        run: docker build --file Dockerfile.api --tag kinship-api:${{ github.sha }} .
+      - name: Build the web renderer image
+        run: docker build --file Dockerfile.web --tag kinship-web:${{ github.sha }} .
+      - name: Build the gateway image
+        run: docker build --file Dockerfile.gateway --tag kinship-gateway:${{ github.sha }} .
