@@ -371,7 +371,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     test:contract) ok in 160s; gates fmt:check, lint, check; the CI branch run
     is not executed here because it requires a push.
 
-- [ ] **GAP-005 — Generic architecture checker (`check:architecture`).** M-L.
+- [x] **GAP-005 — Generic architecture checker (`check:architecture`).** M-L.
       Depends: 003.
   - Problem: only 11 ticket-named text-grep spot checks; nothing validates
     `module-boundaries.yaml`, import layering, or SQL table ownership; the 54
@@ -394,6 +394,12 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     and CI.
   - Verify: checker green with the baseline; removing one baseline entry makes
     it red; CI job added.
+  - Delivered 2026-09-15: checker suite 23/0 plus manifest and pipeline
+    contracts (tasks module 41/0); check:architecture green with 98 baselined
+    violations (2 layer, 30 table-access, 66 table-foreign-read) and red when
+    one entry is removed; CI static step added; 5 of 11 spot-check folders
+    folded, 6 kept for non-boundary invariants; gates fmt:check, lint, check;
+    root test and coverage run at the Phase 0 checkpoint.
 
 ### Phase 1 — Shared kernel and backend consolidation
 

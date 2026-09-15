@@ -85,42 +85,56 @@ operational protocol is
 
 ## Canonical Commands
 
-`deno.json` exposes 25 stable verbs and nothing else.
+`deno.json` exposes 26 stable verbs and nothing else.
 [`tools/tasks/manifest.ts`](../../tools/tasks/manifest.ts) declares what each
 one runs — module test sets, coverage includes, permission sets, check and build
 targets — and [`tools/tasks/run.ts`](../../tools/tasks/run.ts) composes the
 concrete command. Adding a suite means editing the manifest, never a task
-string, and `tools/tasks/manifest_test.ts` holds the vocabulary at 25 verbs
+string, and `tools/tasks/manifest_test.ts` holds the vocabulary at 26 verbs
 while proving every test file is reachable from root `test`.
 
-| Command                                                     | What it runs                                                     |
-| ----------------------------------------------------------- | ---------------------------------------------------------------- |
-| `deno task fmt`, `deno task fix`                            | `deno fmt` over the owned paths                                  |
-| `deno task fmt:check`                                       | the non-mutating formatter check                                 |
-| `deno task lint`                                            | `deno lint` plus ESLint over `apps/web/src`                      |
-| `deno task check`                                           | `deno check` over every manifest target, then `astro check`      |
-| `deno task build`                                           | the contracts check, the entry-point type check, the Astro build |
-| `deno task test`                                            | every unit module, then integration, then the contracts check    |
-| `deno task test:unit [--module=<id>]`                       | the unit sets                                                    |
-| `deno task test:integration [--module=<id>]`                | the PostgreSQL suites on a disposable Compose project            |
-| `deno task test:contract [--module=<id>]`                   | the contract view over the unit sets plus `contracts:check`      |
-| `deno task test:coverage [--module=<id>]`                   | the measured sets against the 80% threshold                      |
-| `deno task test:e2e [Playwright arguments]`                 | Playwright against the production-like Compose stack             |
-| `deno task test:schema`, `deno task test:schema:matrix`     | the canonical schema harness on the pinned PostgreSQL images     |
-| `deno task contracts:generate`, `deno task contracts:check` | the generated OpenAPI document and TypeScript client             |
-| `deno task deps:deno`, `deno task deps:node`                | frozen dependency installation                                   |
-| `deno task deps:audit`                                      | `deno audit`                                                     |
-| `deno task dev`, `deno task dev:api`, `deno task dev:web`   | the local run targets                                            |
-| `deno task migration:apply`                                 | the versioned migration bundle                                   |
-| `deno task ops <script>`                                    | the operator scripts declared in the manifest                    |
-| `deno task test:repro:astro-readiness`                      | the on-demand Astro readiness reproduction                       |
+| Command                                                     | What it runs                                                                       |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `deno task fmt`, `deno task fix`                            | `deno fmt` over the owned paths                                                    |
+| `deno task fmt:check`                                       | the non-mutating formatter check                                                   |
+| `deno task lint`                                            | `deno lint` plus ESLint over `apps/web/src`                                        |
+| `deno task check`                                           | the architecture gate, `deno check` over every manifest target, then `astro check` |
+| `deno task check:architecture`                              | the module-boundary checker against its baseline                                   |
+| `deno task build`                                           | the contracts check, the entry-point type check, the Astro build                   |
+| `deno task test`                                            | every unit module, then integration, then the contracts check                      |
+| `deno task test:unit [--module=<id>]`                       | the unit sets                                                                      |
+| `deno task test:integration [--module=<id>]`                | the PostgreSQL suites on a disposable Compose project                              |
+| `deno task test:contract [--module=<id>]`                   | the contract view over the unit sets plus `contracts:check`                        |
+| `deno task test:coverage [--module=<id>]`                   | the measured sets against the 80% threshold                                        |
+| `deno task test:e2e [Playwright arguments]`                 | Playwright against the production-like Compose stack                               |
+| `deno task test:schema`, `deno task test:schema:matrix`     | the canonical schema harness on the pinned PostgreSQL images                       |
+| `deno task contracts:generate`, `deno task contracts:check` | the generated OpenAPI document and TypeScript client                               |
+| `deno task deps:deno`, `deno task deps:node`                | frozen dependency installation                                                     |
+| `deno task deps:audit`                                      | `deno audit`                                                                       |
+| `deno task dev`, `deno task dev:api`, `deno task dev:web`   | the local run targets                                                              |
+| `deno task migration:apply`                                 | the versioned migration bundle                                                     |
+| `deno task ops <script>`                                    | the operator scripts declared in the manifest                                      |
+| `deno task test:repro:astro-readiness`                      | the on-demand Astro readiness reproduction                                         |
 
 Tests run through the test verbs, never by appending targets, redirections,
 shell separators, or fallback commands to `deno task check`.
 
-`check:architecture` does not exist yet. GAP-005 adds it and wires it into
-`deno task check` and the CI static job; until then the architecture spot checks
-live under `tools/architecture/` and run inside the unit sets.
+`check:architecture` runs
+[`tools/architecture/check_boundaries.ts`](../../tools/architecture/check_boundaries.ts),
+the generic boundary checker GAP-005 added. It validates
+`module-boundaries.yaml` against its JSON Schema, proves every canonical table
+has exactly one owning module, enforces the manifest's `layerRules` over the
+import graph, measures every `crm.<table>` token in a module's `adapters/`
+against that module's `ownsTables` and the tables of its declared dependencies,
+and reports dependency cycles. The violations the repository already had are
+recorded in
+[`tools/architecture/boundary-baseline.json`](../../tools/architecture/boundary-baseline.json);
+the gate fails both on a violation missing from that file and on an entry in it
+that no longer occurs, so the baseline can only shrink. `deno task check` runs
+it first, before the slower type checks, and the CI static job runs it as its
+own step. The few remaining `tools/architecture/<TICKET>/` suites assert
+documentation clauses and behavioral invariants the checker's rules cannot
+express, so they stay in the unit sets.
 
 ### Dependency bootstrap
 
@@ -352,15 +366,15 @@ request, on pushes to `main`, nightly at 03:00 UTC, and on manual dispatch. Each
 job installs the pinned runtimes, bootstraps dependencies from the lockfiles,
 and then runs the same `deno task` verbs a developer runs locally.
 
-| Job                | When                    | Gates                                                                                                                           |
-| ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `static`           | every run               | `fmt:check`, `lint`, `check`, `contracts:check`, `test:contract`, and `deps:audit` (reported in full, failing at high severity) |
-| `unit`             | every run               | `test:unit`, then `test:coverage` against the 80% thresholds                                                                    |
-| `integration`      | every run               | `test:integration`, which provisions its own disposable PostgreSQL 18.4 project and applies the versioned migrations            |
-| `schema`           | every run               | `test:schema` against the pinned PostgreSQL image                                                                               |
-| `e2e-chromium`     | pull requests           | `test:e2e --project=chromium` against the Compose stack, uploading Playwright traces on failure                                 |
-| `e2e-all-browsers` | `main`, nightly, manual | the whole Chromium, Firefox, and WebKit matrix                                                                                  |
-| `images`           | `main`, nightly, manual | production builds of `Dockerfile.api`, `Dockerfile.web`, and `Dockerfile.gateway`                                               |
+| Job                | When                    | Gates                                                                                                                                                 |
+| ------------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `static`           | every run               | `fmt:check`, `lint`, `check:architecture`, `check`, `contracts:check`, `test:contract`, and `deps:audit` (reported in full, failing at high severity) |
+| `unit`             | every run               | `test:unit`, then `test:coverage` against the 80% thresholds                                                                                          |
+| `integration`      | every run               | `test:integration`, which provisions its own disposable PostgreSQL 18.4 project and applies the versioned migrations                                  |
+| `schema`           | every run               | `test:schema` against the pinned PostgreSQL image                                                                                                     |
+| `e2e-chromium`     | pull requests           | `test:e2e --project=chromium` against the Compose stack, uploading Playwright traces on failure                                                       |
+| `e2e-all-browsers` | `main`, nightly, manual | the whole Chromium, Firefox, and WebKit matrix                                                                                                        |
+| `images`           | `main`, nightly, manual | production builds of `Dockerfile.api`, `Dockerfile.web`, and `Dockerfile.gateway`                                                                     |
 
 `static`, `unit`, `integration`, and `schema` run in parallel; the three
 expensive jobs wait for `static`. Coverage is never split in a way that lets
@@ -373,7 +387,7 @@ installation stays frozen, that the pinned Deno version matches
 `.tool-versions`, and that every command either names a declared `deno.json`
 task or a declared dependency binary.
 
-Named by the tickets that add them, still missing: the architecture checker job
-(`check:architecture`), the workflow and page catalog coverage gate, container
-image scanning, and artifact publication. Upload coverage, test, OpenAPI, and
-migration verification artifacts on failure as those gates arrive.
+Named by the tickets that add them, still missing: the workflow and page catalog
+coverage gate, container image scanning, and artifact publication. Upload
+coverage, test, OpenAPI, and migration verification artifacts on failure as
+those gates arrive.

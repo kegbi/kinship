@@ -204,6 +204,25 @@ export const OWNERSHIP_BOUNDARY_READS = [
   "packages/backend/modules/governance/application",
 ] as const;
 
+// --- The architecture gate ----------------------------------------------
+
+/**
+ * The architecture checker walks the whole import graph, so it reads every
+ * source root plus the two documents it enforces: the module manifest with its
+ * JSON Schema, and the canonical DDL whose tables must be owned.
+ */
+export const ARCHITECTURE_CHECKER = "tools/architecture/check_boundaries.ts";
+
+export const ARCHITECTURE_PERMISSIONS: Permissions = {
+  read: [
+    "apps",
+    "docs/architecture",
+    "packages",
+    "personal-crm-schema/v7",
+    "tools",
+  ],
+};
+
 // --- Type-check and build entry points ----------------------------------
 
 /** Production entry points every check and build gate compiles. */
@@ -221,6 +240,7 @@ export const TOOL_ENTRYPOINTS = [
   "tools/schema/validate_postgres.ts",
   "tools/contracts/generate.ts",
   "tools/tasks/run.ts",
+  ARCHITECTURE_CHECKER,
   "tools/operations/private_production_preflight.ts",
   "tools/operations/private_production_probe.ts",
   "tools/operations/private_production_recovery.ts",
@@ -362,10 +382,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail_test.ts",
         "packages/contracts/files_test.ts",
         "packages/contracts/health_test.ts",
-        "tools/architecture/APP-004C/profile_fact_configuration_boundary_test.ts",
         "tools/architecture/APP-004E/personalization_boundary_test.ts",
-        "tools/architecture/APP-005A/interaction_write_ownership_test.ts",
-        "tools/architecture/APP-005C/audit_history_boundary_test.ts",
         "tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts",
         "tools/architecture/FND-002/coordination_contract_test.ts",
         "tools/configuration_contract_test.ts",
@@ -495,10 +512,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/contracts/health_test.ts",
         "packages/contracts/personal_lifecycle_test.ts",
         "packages/contracts/workspace_lifecycle_test.ts",
-        "tools/architecture/APP-004C/profile_fact_configuration_boundary_test.ts",
         "tools/architecture/APP-004E/personalization_boundary_test.ts",
-        "tools/architecture/APP-005A/interaction_write_ownership_test.ts",
-        "tools/architecture/APP-005C/audit_history_boundary_test.ts",
         "tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts",
         "tools/architecture/FND-002/coordination_contract_test.ts",
         "tools/configuration_contract_test.ts",
@@ -705,13 +719,7 @@ export const MODULES: readonly TaskModule[] = [
         "apps/api/gifts_test.ts",
         "packages/backend/modules/gifts/gift_management_test.ts",
         "packages/contracts/gifts_test.ts",
-        "tools/architecture/APP-007B/gift_attachment_boundary_test.ts",
       ],
-      permissions: {
-        read: [
-          "packages/backend/modules/gifts/adapters/postgres/gift_repository.ts",
-        ],
-      },
     },
     integration: ["tests/integration/gifts_postgres_test.ts"],
     coverage: {
@@ -813,35 +821,15 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "apps/api/exports_test.ts",
         "packages/backend/modules/import-export/export_management_test.ts",
-        "tools/architecture/APP-009B/export_ownership_boundary_test.ts",
       ],
-      permissions: {
-        read: [
-          ...OWNERSHIP_BOUNDARY_READS,
-          "packages/backend/modules/import-export/application/export_management.ts",
-          "packages/backend/modules/import-export/adapters/postgres/export_repository.ts",
-          "packages/backend/modules/people/adapters/postgres/export_people_boundary.ts",
-          "packages/backend/modules/files/adapters/postgres/export_file_boundary.ts",
-        ],
-      },
     },
     contract: ["apps/api/exports_test.ts"],
     integration: ["tests/integration/export_postgres_test.ts"],
     coverage: {
       directory: "exports",
-      permissions: {
-        read: [
-          ...OWNERSHIP_BOUNDARY_READS,
-          "packages/backend/modules/import-export/application/export_management.ts",
-          "packages/backend/modules/import-export/adapters/postgres/export_repository.ts",
-          "packages/backend/modules/people/adapters/postgres/export_people_boundary.ts",
-          "packages/backend/modules/files/adapters/postgres/export_file_boundary.ts",
-        ],
-      },
       tests: [
         "apps/api/exports_test.ts",
         "packages/backend/modules/import-export/export_management_test.ts",
-        "tools/architecture/APP-009B/export_ownership_boundary_test.ts",
       ],
       include: [
         "apps/api/exports.ts",
@@ -938,6 +926,7 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "tools/tasks/manifest_test.ts",
         "tools/pipeline_contract_test.ts",
+        "tools/architecture/check_boundaries_test.ts",
       ],
       permissions: {
         read: [
@@ -951,7 +940,9 @@ export const MODULES: readonly TaskModule[] = [
           "package.json",
           "vitest.config.ts",
           "compose.yaml",
+          "docs/architecture",
           "docs/planning/private-production-profile.json",
+          "personal-crm-schema/v7",
           "apps",
           "packages",
           "tools",

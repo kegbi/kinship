@@ -8,11 +8,14 @@
  * Usage:
  *   deno run ... tools/tasks/run.ts <verb> [--module=<id>] [extra arguments]
  *
- * Verbs: all, unit, integration, contract, coverage, check, build, ops.
+ * Verbs: all, unit, integration, contract, coverage, architecture, check,
+ * build, ops.
  */
 
 import { withDisposablePostgres } from "../postgres_gate.ts";
 import {
+  ARCHITECTURE_CHECKER,
+  ARCHITECTURE_PERMISSIONS,
   COVERAGE_AGGREGATE,
   type CoverageSet,
   expandGlobPattern,
@@ -258,7 +261,17 @@ export function buildTargets(): readonly string[] {
   return [...PRODUCTION_ENTRYPOINTS];
 }
 
+/** The module-boundary gate: cheap text analysis, so it runs first. */
+function runArchitecture(): Promise<void> {
+  return deno([
+    "run",
+    ...permissionFlags(ARCHITECTURE_PERMISSIONS),
+    ARCHITECTURE_CHECKER,
+  ]);
+}
+
 async function runCheck(): Promise<void> {
+  await runArchitecture();
   await deno(["check", ...await checkTargets()]);
   await pnpm(["exec", "astro", "check", "--root", "apps/web"]);
 }
@@ -308,6 +321,8 @@ async function main(): Promise<void> {
       return await runContract(requested);
     case "coverage":
       return await runCoverage(requested);
+    case "architecture":
+      return await runArchitecture();
     case "check":
       return await runCheck();
     case "build":
@@ -319,7 +334,7 @@ async function main(): Promise<void> {
         1,
         `Unknown verb ${
           verb ?? "(none)"
-        }. Use all, unit, integration, contract, coverage, check, build, or ops.`,
+        }. Use all, unit, integration, contract, coverage, architecture, check, build, or ops.`,
       );
   }
 }

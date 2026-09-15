@@ -24,6 +24,7 @@ const REQUIRED_JOBS = [
       "fmt:check",
       "lint",
       "check",
+      "check:architecture",
       "contracts:check",
       "test:contract",
       "deps:audit",
