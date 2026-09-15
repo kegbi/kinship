@@ -305,7 +305,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
 
 ### Phase 0 — Green gates and enforcement (prerequisite for every refactor)
 
-- [ ] **GAP-001 — Repair REL-030 planning unit-gate permission.** S. Depends:
+- [x] **GAP-001 — Repair REL-030 planning unit-gate permission.** S. Depends:
       none.
   - Problem: `test:unit:planning` (`deno.json`) omits the `READABLE_STREAM` env
     permission that importing `apps/worker/composition_test.ts` needs, so root
@@ -315,6 +315,9 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     `tools/configuration_contract_test.ts` proving root `test` reaches every
     unit task with sufficient permissions.
   - Verify: `deno task test:unit:planning` and root `deno task test` green.
+  - Delivered 2026-09-15: test:unit:planning 46/0, root test green (contract,
+    unit, integration 111/0, gateway-logs 2/0, web 718/0); coverage n/a (task
+    config and contract test only); gates fmt:check, lint, check.
 
 - [ ] **GAP-002 — Repair REL-031 Astro readiness under coverage.** S-M. Depends:
       none.
