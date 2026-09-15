@@ -354,7 +354,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     integration 111/0), root test:coverage green (13 sets at 81.0-93.4% lines),
     manifest test 12/0, deno.json 25 tasks; gates fmt:check, lint, check.
 
-- [ ] **GAP-004 — CI pipeline and Lefthook hooks.** M. Depends: 003.
+- [x] **GAP-004 — CI pipeline and Lefthook hooks.** M. Depends: 003.
   - Problem: no CI, no hooks; every gate runs by hand.
   - Scope: `.github/workflows/ci.yml` with jobs: static (`fmt:check`, `lint`,
     `check`, `contracts:check`, `test:contract`, `deps:audit`), unit + coverage,
@@ -366,6 +366,10 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     Commands" and "Suggested CI Stages" sections of
     `docs/architecture/quality-gates.md` to match what exists.
   - Verify: workflow passes on a branch; hooks run locally.
+  - Delivered 2026-09-15: pipeline contract 6 tests (tasks module 18/0);
+    lefthook validate ok, pre-commit over all files ok, pre-push (test:unit +
+    test:contract) ok in 160s; gates fmt:check, lint, check; the CI branch run
+    is not executed here because it requires a push.
 
 - [ ] **GAP-005 — Generic architecture checker (`check:architecture`).** M-L.
       Depends: 003.

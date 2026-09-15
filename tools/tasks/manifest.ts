@@ -935,10 +935,20 @@ export const MODULES: readonly TaskModule[] = [
   {
     id: "tasks",
     unit: {
-      tests: ["tools/tasks/manifest_test.ts"],
+      tests: [
+        "tools/tasks/manifest_test.ts",
+        "tools/pipeline_contract_test.ts",
+      ],
       permissions: {
         read: [
+          ".github",
+          ".tool-versions",
+          "Dockerfile.api",
+          "Dockerfile.gateway",
+          "Dockerfile.web",
           "deno.json",
+          "lefthook.yml",
+          "package.json",
           "vitest.config.ts",
           "compose.yaml",
           "docs/planning/private-production-profile.json",

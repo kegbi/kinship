@@ -1,0 +1,68 @@
+# Local Git hooks.
+#
+# Hooks are convenience feedback and stay bypassable (`git commit --no-verify`);
+# `.github/workflows/ci.yml` is the authoritative gate. Every job here invokes a
+# repository command, never a hook-only validation of its own.
+#
+# Install the hooks once per clone with `pnpm exec lefthook install`. Automatic
+# installation is off because `.git` is shared with every worktree of this
+# repository, so writing `.git/hooks` stays an explicit developer action.
+
+no_auto_install: true
+# Anchored `**` semantics: `*` stays inside one path segment.
+glob_matcher: doublestar
+
+# Formatting and lint only: the type check and the test suites exceed the
+# fifteen-second pre-commit budget, so they run on push or in CI.
+pre-commit:
+  parallel: true
+  jobs:
+    - name: fmt
+      # The formatter's own include and exclude lists live in `deno.json`; these
+      # patterns keep the staged-file filter in step with them.
+      glob:
+        - "{apps,docs,packages,tests,tools}/**/*.{ts,js,mjs,json,jsonc,md,css,yml,yaml}"
+        - "{.agents/skills/run-tdd-ticket-loop,.codex/agents}/**/*.md"
+        - ".github/workflows/*.yml"
+        - "AGENTS.md"
+        - "README.md"
+        - "compose.schema-test.yaml"
+        - "deno.json"
+        - "eslint.config.js"
+        - "lefthook.yml"
+        - "playwright.config.ts"
+        - "vitest.config.ts"
+      exclude:
+        - "apps/web/.astro/**"
+        - "apps/web/dist/**"
+        - "docs/planning/tickets/**"
+        - "packages/contracts/generated/**"
+      # Never `deno fmt`: pre-commit reports, it does not rewrite or restage.
+      run: deno fmt --check {staged_files}
+    - name: lint
+      glob:
+        - "{apps,packages,tests,tools}/**/*.{ts,js,mjs}"
+        - "playwright.config.ts"
+        - "vitest.config.ts"
+      exclude:
+        - "apps/web/dist/**"
+      env:
+        DENO_NO_PACKAGE_JSON: "1"
+      run: deno lint {staged_files}
+    - name: lint-web
+      # The second half of `deno task lint`: Astro templates and the browser
+      # accessibility rules Deno's linter cannot parse. Invoked through the
+      # workspace binary because the pnpm launcher is not a POSIX script on
+      # Windows, where Lefthook runs its jobs through `sh`.
+      glob:
+        - "apps/web/src/**/*.astro"
+      run: node_modules/.bin/eslint {staged_files}
+
+# The fast repository suites, unchanged from their `deno task` spelling.
+pre-push:
+  parallel: false
+  jobs:
+    - name: unit
+      run: deno task test:unit
+    - name: contract
+      run: deno task test:contract
