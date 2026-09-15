@@ -319,7 +319,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     unit, integration 111/0, gateway-logs 2/0, web 718/0); coverage n/a (task
     config and contract test only); gates fmt:check, lint, check.
 
-- [ ] **GAP-002 — Repair REL-031 Astro readiness under coverage.** S-M. Depends:
+- [x] **GAP-002 — Repair REL-031 Astro readiness under coverage.** S-M. Depends:
       none.
   - Problem: root `test:coverage` intermittently fails the 30-second Astro
     readiness probe after 538 tests.
@@ -328,6 +328,10 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     a fixed timeout); do not loosen readiness semantics. Add a focused
     reproduction that runs the probe under coverage three times.
   - Verify: root `deno task test:coverage` green twice in a row.
+  - Delivered 2026-09-15: root test:coverage green twice in a row (api aggregate
+    549/0 at 85.2% lines, scoped gates 81.0-91.2% lines, web 718/0 at 93.4%
+    lines); 4 fake-clock probe tests in test:unit:api 315/0;
+    test:repro:astro-readiness 3/3 runs; gates fmt:check, lint, check.
 
 - [ ] **GAP-003 — Task manifest and runner; collapse deno.json.** M. Depends:
       001, 002.

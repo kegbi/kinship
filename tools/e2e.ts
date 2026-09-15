@@ -561,8 +561,12 @@ export async function finishAstroReadinessAttempt(operations: {
   const listener = await operations.listenerIsReachable();
   const failure = new Error(
     listener
-      ? "deno task dev:web bound a listener but did not serve the expected page within 30 seconds."
-      : "deno task dev:web did not become ready within 30 seconds.",
+      ? `deno task dev:web bound a listener but did not serve the expected page within ${
+        ASTRO_PAGE_READINESS_MS / 1_000
+      } seconds.`
+      : `deno task dev:web did not bind its listener within ${
+        ASTRO_STARTUP_MS / 1_000
+      } seconds.`,
   );
   try {
     await operations.stop();
@@ -573,6 +577,96 @@ export async function finishAstroReadinessAttempt(operations: {
     );
   }
   throw failure;
+}
+
+/**
+ * The page-readiness budget measures only how long an already listening Astro
+ * child may take to serve the real page. Process start-up owns a separate
+ * budget so a slow cold start inside the coverage aggregate cannot consume the
+ * page deadline of a healthy child.
+ */
+export const ASTRO_PAGE_READINESS_MS = 30_000;
+export const ASTRO_STARTUP_MS = 120_000;
+
+const ASTRO_READY_TITLE = "<title>Kinship — Remember what matters</title>";
+
+export interface AstroReadinessOperations {
+  readonly exited: Promise<{
+    readonly status: Deno.CommandStatus;
+    readonly type: "exit";
+  }>;
+  readonly listenerIsReachable: () => Promise<boolean>;
+  readonly now: () => number;
+  readonly pageIsReady: (budgetMs: number) => Promise<boolean>;
+  readonly sleep: (milliseconds: number) => Promise<void>;
+}
+
+export type AstroReadinessResult =
+  | { readonly type: "ready" }
+  | {
+    readonly listenerBound: boolean;
+    readonly status: Deno.CommandStatus;
+    readonly type: "exit";
+  }
+  | { readonly type: "timeout" };
+
+export async function awaitAstroReadiness(
+  operations: AstroReadinessOperations,
+): Promise<AstroReadinessResult> {
+  const startupDeadline = operations.now() + ASTRO_STARTUP_MS;
+  let pageDeadline: number | undefined;
+  while (true) {
+    if (pageDeadline === undefined) {
+      // A bound strict port is the child's own ready signal: only then can it
+      // serve, so only then does the page-readiness budget start.
+      if (await operations.listenerIsReachable()) {
+        pageDeadline = operations.now() + ASTRO_PAGE_READINESS_MS;
+      } else if (operations.now() >= startupDeadline) {
+        return { type: "timeout" };
+      }
+    }
+    if (pageDeadline !== undefined) {
+      const remaining = pageDeadline - operations.now();
+      if (remaining <= 0) return { type: "timeout" };
+      // One probe request may use the whole remaining budget: aborting the
+      // request that proves readiness is what made the probe non-deterministic
+      // while the machine was loaded.
+      if (await operations.pageIsReady(remaining)) {
+        const stillRunning = await Promise.race([
+          operations.exited.then(() => false),
+          operations.sleep(100).then(() => true),
+        ]);
+        if (stillRunning) return { type: "ready" };
+      }
+    }
+    const result = await Promise.race([
+      operations.exited,
+      operations.sleep(200).then(() => ({ type: "pending" } as const)),
+    ]);
+    if (result.type === "exit") {
+      return {
+        listenerBound: await operations.listenerIsReachable(),
+        status: result.status,
+        type: "exit",
+      };
+    }
+  }
+}
+
+async function astroPageIsReady(
+  origin: string,
+  budgetMs: number,
+): Promise<boolean> {
+  try {
+    const response = await fetch(origin, {
+      signal: AbortSignal.timeout(Math.max(budgetMs, 1_000)),
+    });
+    const body = await response.text();
+    return response.ok && body.includes(ASTRO_READY_TITLE);
+  } catch {
+    // The selected port has not bound yet.
+    return false;
+  }
 }
 
 export async function startAstro(apiOrigin: string): Promise<OwnedWeb> {
@@ -595,47 +689,27 @@ export async function startAstro(apiOrigin: string): Promise<OwnedWeb> {
     const exited = child.status.then((
       status,
     ) => ({ status, type: "exit" } as const));
-    const deadline = Date.now() + 30_000;
-    while (Date.now() < deadline) {
-      try {
-        const response = await fetch(origin, {
-          signal: AbortSignal.timeout(1_000),
-        });
-        if (
-          response.ok &&
-          (await response.text()).includes(
-            "<title>Kinship — Remember what matters</title>",
-          )
-        ) {
-          const stillRunning = await Promise.race([
-            exited.then(() => false),
-            new Promise<true>((resolve) =>
-              setTimeout(() => resolve(true), 100)
-            ),
-          ]);
-          if (stillRunning) {
-            return {
-              child,
-              origin,
-              processTree: await exactProcessTree(child.pid),
-            };
-          }
-        }
-      } catch {
-        // The selected port has not bound yet.
-      }
-      const result = await Promise.race([
-        exited,
-        new Promise<{ readonly type: "pending" }>((resolve) =>
-          setTimeout(() => resolve({ type: "pending" }), 200)
-        ),
-      ]);
-      if (result.type === "exit") {
-        if (await listenerIsReachable(origin)) break;
-        throw new Error(
-          `deno task dev:web exited with code ${result.status.code} before readiness.`,
-        );
-      }
+    const result = await awaitAstroReadiness({
+      exited,
+      listenerIsReachable: () => listenerIsReachable(origin),
+      now: () => Date.now(),
+      pageIsReady: (budgetMs) => astroPageIsReady(origin, budgetMs),
+      sleep: (milliseconds) =>
+        new Promise((resolve) => setTimeout(resolve, milliseconds)),
+    });
+    if (result.type === "ready") {
+      return {
+        child,
+        origin,
+        processTree: await exactProcessTree(child.pid),
+      };
+    }
+    if (result.type === "exit") {
+      // A different process won the strict port; choose another random port.
+      if (result.listenerBound) continue;
+      throw new Error(
+        `deno task dev:web exited with code ${result.status.code} before readiness.`,
+      );
     }
     const web = {
       child,
@@ -647,10 +721,7 @@ export async function startAstro(apiOrigin: string): Promise<OwnedWeb> {
       listenerIsReachable: () => listenerIsReachable(origin),
       stop: () => stopWeb(web),
     });
-    if (outcome === "retry") {
-      // A different process won the strict port; choose another random port.
-      continue;
-    }
+    if (outcome === "retry") continue;
   }
   throw new Error("Astro could not bind a verified strict-port listener.");
 }

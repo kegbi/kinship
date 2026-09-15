@@ -1,4 +1,7 @@
 import {
+  ASTRO_PAGE_READINESS_MS,
+  ASTRO_STARTUP_MS,
+  awaitAstroReadiness,
   E2E_ASTRO_TASK_ARGS,
   E2E_COMPOSE_ARGS,
   e2eEnvironment,
@@ -108,6 +111,110 @@ Deno.test("E2E Astro startup alone bypasses the persistent dev lock", async () =
   assert(
     !developerTask.includes("--ignore-lock"),
     "normal developer startup retains Astro's lock protection",
+  );
+});
+
+interface AstroReadinessFake {
+  readonly budgets: readonly number[];
+  readonly elapsed: () => number;
+  readonly operations: Parameters<typeof awaitAstroReadiness>[0];
+}
+
+function astroReadinessFake(child: {
+  readonly listenerBoundAt: number;
+  readonly pageServedAt: number;
+}): AstroReadinessFake {
+  let clock = 0;
+  const budgets: number[] = [];
+  return {
+    budgets,
+    elapsed: () => clock,
+    operations: {
+      exited: new Promise<never>(() => undefined),
+      listenerIsReachable: () =>
+        Promise.resolve(clock >= child.listenerBoundAt),
+      now: () => clock,
+      pageIsReady: (budgetMs) => {
+        budgets.push(budgetMs);
+        return Promise.resolve(clock >= child.pageServedAt);
+      },
+      sleep: (milliseconds) => {
+        clock += milliseconds;
+        return Promise.resolve();
+      },
+    },
+  };
+}
+
+Deno.test("[GAP-002] Astro page readiness starts at the child's own listener signal", async () => {
+  // REL-031: inside the root coverage aggregate the Astro child spent most of
+  // the fixed window cold-starting, so the page deadline expired while the
+  // healthy child was about to serve the real page.
+  const fake = astroReadinessFake({
+    listenerBoundAt: 25_000,
+    pageServedAt: 31_000,
+  });
+  const result = await awaitAstroReadiness(fake.operations);
+  assert(
+    result.type === "ready",
+    `a child that binds at 25s and serves the real page 6s later is ready, not ${result.type}`,
+  );
+  assert(
+    fake.elapsed() < 25_000 + ASTRO_PAGE_READINESS_MS,
+    "page readiness is decided inside one page budget after the listener signal",
+  );
+});
+
+Deno.test("[GAP-002] one readiness probe may use the remaining page budget", async () => {
+  const fake = astroReadinessFake({
+    listenerBoundAt: 0,
+    pageServedAt: 12_000,
+  });
+  await awaitAstroReadiness(fake.operations);
+  assert(
+    fake.budgets[0] === ASTRO_PAGE_READINESS_MS,
+    `the first probe request owns the whole page budget, not ${
+      fake.budgets[0]
+    } ms`,
+  );
+  assert(
+    fake.budgets.every((budget) => budget > 0),
+    "no probe request is issued after the page budget is spent",
+  );
+});
+
+Deno.test("[GAP-002] a bound Astro child that never serves the page still fails", async () => {
+  const fake = astroReadinessFake({
+    listenerBoundAt: 4_000,
+    pageServedAt: Number.POSITIVE_INFINITY,
+  });
+  const result = await awaitAstroReadiness(fake.operations);
+  assert(
+    result.type === "timeout",
+    "a listener alone never satisfies readiness",
+  );
+  assert(
+    fake.elapsed() >= 4_000 + ASTRO_PAGE_READINESS_MS &&
+      fake.elapsed() < 4_000 + 2 * ASTRO_PAGE_READINESS_MS,
+    "the page budget is still bounded, measured from the listener signal",
+  );
+});
+
+Deno.test("[GAP-002] an Astro child that never binds gives up on its own budget", async () => {
+  const fake = astroReadinessFake({
+    listenerBoundAt: Number.POSITIVE_INFINITY,
+    pageServedAt: Number.POSITIVE_INFINITY,
+  });
+  const result = await awaitAstroReadiness(fake.operations);
+  assert(result.type === "timeout", "start-up cannot wait forever");
+  assert(
+    fake.budgets.length === 0,
+    "no page is probed before the child's listener signal",
+  );
+  assert(
+    fake.elapsed() >= ASTRO_STARTUP_MS &&
+      fake.elapsed() < ASTRO_STARTUP_MS + ASTRO_PAGE_READINESS_MS,
+    "start-up is bounded by its own budget",
   );
 });
 
