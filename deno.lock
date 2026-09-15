@@ -1,6 +1,7 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@std/yaml@1.2.0": "1.2.0",
     "npm:@hono/standard-validator@0.4.0": "0.4.0_@standard-schema+spec@1.1.0_hono@4.13.1",
     "npm:@standard-schema/spec@1.1.0": "1.1.0",
     "npm:fast-xml-parser@5.11.0": "5.11.0",
@@ -11,6 +12,11 @@
     "npm:minio@8.0.7": "8.0.7",
     "npm:postgres@3.4.9": "3.4.9",
     "npm:zod@4.4.3": "4.4.3"
+  },
+  "jsr": {
+    "@std/yaml@1.2.0": {
+      "integrity": "20beb41e4983ba3437dbefac62b14061ab058e8a187596f19d28ff9035f6e6cf"
+    }
   },
   "npm": {
     "@hono/standard-validator@0.4.0_@standard-schema+spec@1.1.0_hono@4.13.1": {
@@ -211,6 +217,7 @@
   },
   "workspace": {
     "dependencies": [
+      "jsr:@std/yaml@1.2.0",
       "npm:@hono/standard-validator@0.4.0",
       "npm:@standard-schema/spec@1.1.0",
       "npm:hono@4.13.1",

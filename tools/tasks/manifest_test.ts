@@ -17,7 +17,8 @@ function assert(condition: unknown, message: string): asserts condition {
 const ROOT = new URL("../../", import.meta.url);
 
 /** The maximum stable verb vocabulary `deno.json` may expose. */
-const TASK_BUDGET = 25;
+// GAP-005 raised the budget from 25 to 26 for `check:architecture`.
+const TASK_BUDGET = 26;
 
 async function repositoryTests(): Promise<string[]> {
   return await listRepositoryTestFiles(ROOT);
@@ -264,6 +265,7 @@ Deno.test("[GAP-003] deno.json keeps a small verb vocabulary over the manifest",
       ["test:contract", "contract"],
       ["test:coverage", "coverage"],
       ["check", "check"],
+      ["check:architecture", "architecture"],
       ["build", "build"],
     ] as const
   ) {
