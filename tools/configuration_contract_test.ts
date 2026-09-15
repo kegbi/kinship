@@ -430,3 +430,83 @@ Deno.test("[REL-008] worker receives exact production runtime authority", async 
     );
   }
 });
+
+Deno.test(
+  "[GAP-001] root test reaches every unit gate with sufficient permissions",
+  async () => {
+    const manifest = JSON.parse(
+      await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
+    ) as { tasks: Record<string, string> };
+    const delegatesTo = (parent: string) =>
+      (manifest.tasks[parent] ?? "").split("&&")
+        .map((command) => command.trim())
+        .filter((command) => command.startsWith("deno task "))
+        .map((command) => command.slice("deno task ".length).trim());
+
+    assert(
+      delegatesTo("test").filter((task) => task === "test:unit").length === 1,
+      "root test must reach the unit aggregate exactly once",
+    );
+
+    const declared = Object.keys(manifest.tasks).filter((task) =>
+      task.startsWith("test:unit:")
+    );
+    const aggregated = delegatesTo("test:unit");
+    for (const task of declared) {
+      assert(
+        aggregated.filter((entry) => entry === task).length === 1,
+        `root test must run ${task} exactly once through the unit aggregate`,
+      );
+    }
+    for (const task of aggregated) {
+      assert(
+        declared.includes(task),
+        `the unit aggregate must only delegate to declared unit gates, not ${task}`,
+      );
+    }
+
+    // A unit gate that loads a worker module evaluates the same composition the
+    // worker service runs, so it needs the worker's declared runtime
+    // environment authority.
+    const compose = await Deno.readTextFile(
+      new URL("../compose.yaml", import.meta.url),
+    );
+    const workerService = compose.slice(
+      compose.indexOf("\n  worker:"),
+      compose.indexOf("\n  web:"),
+    );
+    const workerEnvironment =
+      /--allow-env=([A-Z0-9_,]+)/.exec(workerService)?.[1]?.split(",") ?? [];
+    assert(
+      workerEnvironment.includes("READABLE_STREAM"),
+      "worker runtime authority must declare its environment names",
+    );
+
+    for (const task of declared) {
+      const entries = (manifest.tasks[task] ?? "").split(/\s+/);
+      const loadsWorkerModule = entries.some((entry) =>
+        entry.startsWith("apps/worker/") && entry.endsWith("_test.ts")
+      );
+      if (!loadsWorkerModule) continue;
+      const grants = entries.filter((entry) =>
+        entry === "--allow-env" || entry.startsWith("--allow-env=")
+      );
+      assert(
+        grants.length > 0,
+        `${task} loads a worker module and must grant environment access`,
+      );
+      const permitted = new Set(
+        grants.flatMap((grant) =>
+          grant.slice("--allow-env=".length).split(",")
+        ),
+      );
+      const unrestricted = grants.includes("--allow-env");
+      for (const name of workerEnvironment) {
+        assert(
+          unrestricted || permitted.has(name),
+          `${task} loads a worker module and must permit ${name}`,
+        );
+      }
+    }
+  },
+);

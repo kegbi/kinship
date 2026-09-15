@@ -11,6 +11,9 @@ prerequisite queues.
 ## Cursor
 
 - Current phase: **Phase 13 — Person Blocks And Usability Repair**
+- Active work order:
+  [architecture gap remediation plan](architecture-gap-remediation-plan-2026-09-15.md),
+  executed one GAP ticket per candidate from GAP-001 onward.
 - User-directed follow-up: responsive person blocks, focus-border repair, then
   an evidence-backed application repair plan and execution in a clean task.
 - Remaining repair statuses and execution order belong to the
