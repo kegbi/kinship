@@ -1,3 +1,8 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type {
+  Failure,
+  ValidationFailure,
+} from "../../../shared-kernel/result.ts";
 import type {
   InteractionPersonBoundary,
   PeopleActor,
@@ -70,7 +75,7 @@ export interface InteractionWorkspaceBoundary {
     command: PeopleActor & {
       readonly transaction: PeopleTransaction;
     },
-  ): Promise<{ readonly status: "forbidden" | "ready" }>;
+  ): Promise<Failure<"forbidden"> | { readonly status: "ready" }>;
   describe(
     command: {
       readonly activityTypeId?: string;
@@ -96,7 +101,7 @@ export interface InteractionWorkspaceBoundary {
       readonly emotions: readonly InteractionOption[];
       readonly status: "ready";
     }
-    | { readonly status: "forbidden" | "hidden" | "not-found" }
+    | Failure<"forbidden" | "not-found", "hidden">
   >;
   options(
     command: PeopleActor & {
@@ -116,7 +121,7 @@ export interface InteractionWorkspaceBoundary {
       readonly emotionsNextCursor?: string;
       readonly status: "ready";
     }
-    | { readonly status: "forbidden" | "stale-cursor" }
+    | Failure<"forbidden", "stale-cursor">
   >;
 }
 
@@ -205,18 +210,11 @@ export type RecordInteractionInput =
 
 export type RecordInteractionResult =
   | { readonly record: InteractionRecord; readonly status: "created" }
-  | {
-    readonly status:
-      | "archived-write-rejected"
-      | "forbidden"
-      | "hidden"
-      | "idempotency-conflict"
-      | "not-found";
-  }
-  | {
-    readonly errors: Readonly<Record<string, string>>;
-    readonly status: "validation-error";
-  };
+  | Failure<
+    "archived-write-rejected" | "forbidden" | "not-found",
+    "hidden" | "idempotency-conflict"
+  >
+  | ValidationFailure;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -365,7 +363,7 @@ function validate(input: RecordInteractionInput):
 
 export function createInteractionManagement(dependencies: {
   readonly audit: InteractionAudit;
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly people: InteractionPersonBoundary;
   readonly publisher?: InteractionRecordedPublisher;
   readonly repository: InteractionRepository;

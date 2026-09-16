@@ -1,3 +1,4 @@
+import type { Failure } from "../../shared-kernel/result.ts";
 import {
   createSettingsManagement,
   type SettingsManagementDependencies,
@@ -213,7 +214,7 @@ Deno.test("workspace settings adapter does not read identity-owned storage", asy
 function fixture(
   revokeResult:
     | { readonly current: boolean; readonly status: "revoked" }
-    | { readonly status: "forbidden" | "stale" } = {
+    | Failure<"forbidden", "stale"> = {
       current: false,
       status: "revoked",
     },

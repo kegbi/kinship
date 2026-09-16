@@ -1,4 +1,5 @@
 import { type Kysely, sql } from "kysely";
+import type { Failure } from "../../../../shared-kernel/result.ts";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import type {
   ExportFileBoundary,
@@ -27,7 +28,7 @@ async function verified(
   file: Pick<FileRow, "byte_size" | "checksum_sha256" | "storage_key">,
 ): Promise<
   | { readonly bytes: Uint8Array; readonly status: "valid" }
-  | { readonly status: "corrupt" | "missing" | "unavailable" }
+  | Failure<"unavailable", "corrupt" | "missing">
 > {
   let bytes: Uint8Array | undefined;
   try {

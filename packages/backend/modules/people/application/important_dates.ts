@@ -48,7 +48,7 @@ export interface ImportantDateContextLock {
 
 export type ImportantDateLock =
   | { readonly date: ImportantDateRecord; readonly status: "ready" }
-  | { readonly status: "not-found" };
+  | Failure<"not-found">;
 
 interface ImportantDateMutationCommand extends PeopleActor {
   readonly occurredAt: Date;
@@ -180,8 +180,7 @@ export type ImportantDateDeleteResult = ImportantDateMutationFailure | {
 };
 
 export type ImportantDateListResult =
-  | { readonly status: "forbidden" }
-  | { readonly status: "not-found" }
+  | Failure<"forbidden" | "not-found">
   | {
     readonly dates: readonly ImportantDateRecord[];
     readonly status: "archived" | "ready";

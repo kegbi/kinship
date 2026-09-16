@@ -1,3 +1,4 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
 import type {
   PeopleDirectoryActor,
   PeopleDirectoryTag,
@@ -26,7 +27,7 @@ export interface PeopleTagOptionsCriteria {
 }
 
 export type PeopleTagOptionsRepositoryResult =
-  | { readonly status: "forbidden" }
+  | Failure<"forbidden">
   | {
     readonly options: readonly PeopleTagOptionRecord[];
     readonly selected?: PeopleDirectoryTag;
@@ -43,7 +44,7 @@ export interface PeopleTagOptionsRepository {
 }
 
 export type ListPeopleTagOptionsResult =
-  | { readonly status: "forbidden" }
+  | Failure<"forbidden">
   | { readonly status: "invalid-input" }
   | {
     readonly nextCursor?: string;

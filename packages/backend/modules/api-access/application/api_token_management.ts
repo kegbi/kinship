@@ -1,3 +1,6 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { Failure } from "../../../shared-kernel/result.ts";
+
 export const API_TOKEN_SCOPES = ["people:read"] as const;
 export type ApiTokenScope = typeof API_TOKEN_SCOPES[number];
 
@@ -35,7 +38,7 @@ export interface ApiTokenRepository {
     },
   ): Promise<
     | { readonly record: ApiTokenRecord; readonly status: "created" }
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
   >;
   findForAuthentication(command: {
     readonly id: string;
@@ -47,7 +50,7 @@ export interface ApiTokenRepository {
       readonly record: ApiTokenRecord;
       readonly status: "found";
     }
-    | { readonly status: "not-found" }
+    | Failure<"not-found">
   >;
   list(
     command: ApiTokenActor,
@@ -65,7 +68,7 @@ export interface ApiTokenRepository {
     },
   ): Promise<
     | { readonly record: ApiTokenRecord; readonly status: "revoked" }
-    | { readonly status: "forbidden" | "not-found" }
+    | Failure<"forbidden" | "not-found">
   >;
 }
 
@@ -81,7 +84,7 @@ export interface ApiTokenAudit {
 
 export interface ApiTokenDependencies {
   readonly audit: ApiTokenAudit;
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly ids: { next(): string };
   readonly repository: ApiTokenRepository;
   readonly secrets: {
@@ -112,15 +115,15 @@ export interface ApiTokenManagement {
       readonly secret: string;
       readonly status: "created";
     }
-    | { readonly status: "forbidden" | "invalid" }
+    | Failure<"forbidden", "invalid">
   >;
   list(actor: ApiTokenActor): Promise<
     | { readonly records: readonly ApiTokenRecord[]; readonly status: "ready" }
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
   >;
   revoke(actor: ApiTokenActor, id: string): Promise<
     | { readonly record: ApiTokenRecord; readonly status: "revoked" }
-    | { readonly status: "forbidden" | "not-found" }
+    | Failure<"forbidden" | "not-found">
   >;
 }
 

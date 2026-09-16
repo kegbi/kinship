@@ -1,3 +1,4 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
 import type {
   IdentityPersonalLifecycleFacade,
   IdentityTransaction,
@@ -64,7 +65,7 @@ export interface PersonalLifecycleDependencies {
     AuthenticationAudit,
     "assertFailurePostcondition" | "recordFailure"
   >;
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly identity: IdentityPersonalLifecycleFacade;
   readonly memberships: PersonalLifecycleMemberships;
   readonly transaction: {

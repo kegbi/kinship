@@ -1,4 +1,6 @@
 import { type Kysely, sql } from "kysely";
+import type { Clock } from "../../../../shared-kernel/clock.ts";
+import type { IdGenerator } from "../../../../shared-kernel/ids.ts";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type { IdentityTransaction } from "../../application/contracts.ts";
@@ -25,21 +27,13 @@ interface VerificationCandidate {
   readonly user_id: string;
 }
 
-export interface VerificationClock {
-  now(): Date;
-}
-
-export interface VerificationIds {
-  create(): string;
-}
-
 export class PostgresEmailVerification
   implements EmailVerificationFacade, VerifiedIdentityEntryFacade {
   constructor(
     private readonly database: Kysely<ApplicationDatabase>,
     private readonly tokens: SecureTokenService,
-    private readonly clock: VerificationClock,
-    private readonly ids: VerificationIds,
+    private readonly clock: Clock,
+    private readonly ids: IdGenerator,
   ) {}
 
   async verify(rawToken: string): Promise<VerificationResult> {

@@ -1,3 +1,5 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { IdGenerator } from "../../../shared-kernel/ids.ts";
 import type {
   IdentityRegistrationFacade,
   IdentityTransaction,
@@ -6,14 +8,6 @@ import { IdentityConflictError } from "../../identity/public.ts";
 
 export interface RegistrationTransaction extends IdentityTransaction {
   readonly opaque: unknown;
-}
-
-export interface RegistrationClock {
-  now(): Date;
-}
-
-export interface RegistrationIds {
-  create(): string;
 }
 
 export interface VerificationTokens {
@@ -140,9 +134,9 @@ export interface VerificationMail {
 
 export interface RegistrationDependencies {
   readonly audit: RegistrationAudit;
-  readonly clock: RegistrationClock;
+  readonly clock: Clock;
   readonly identity: IdentityRegistrationFacade;
-  readonly ids: RegistrationIds;
+  readonly ids: IdGenerator;
   readonly mail: VerificationMail;
   readonly tokens: VerificationTokens;
   readonly transaction: RegistrationTransactionRunner;

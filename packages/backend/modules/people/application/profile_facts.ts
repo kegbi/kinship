@@ -141,7 +141,7 @@ export interface ProfileFactOrganizationBoundary {
 }
 
 export type ProfileFactContextLock =
-  | { readonly status: "forbidden" | "not-found" }
+  | Failure<"forbidden" | "not-found">
   | {
     readonly personUpdatedAt: string;
     readonly status: "archived" | "ready";
@@ -289,7 +289,7 @@ async function inspectConfiguration(
 }
 
 export type ProfileFactListResult =
-  | { readonly status: "forbidden" | "not-found" | "stale-cursor" }
+  | Failure<"forbidden" | "not-found", "stale-cursor">
   | {
     readonly nextCursor?: string;
     readonly nextOptionsCursor?: string;

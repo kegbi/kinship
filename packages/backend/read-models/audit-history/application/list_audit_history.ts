@@ -1,3 +1,5 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
+
 export interface AuditHistoryActor {
   readonly memberId: string;
   readonly role: "admin" | "member" | "owner";
@@ -58,7 +60,7 @@ export interface AuditHistoryRepository {
       readonly person?: { readonly id: string; readonly name: string };
       readonly status: "archived" | "ready";
     }
-    | { readonly status: "forbidden" | "not-found" | "stale-cursor" }
+    | Failure<"forbidden" | "not-found", "stale-cursor">
   >;
 }
 

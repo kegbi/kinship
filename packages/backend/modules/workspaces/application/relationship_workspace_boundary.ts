@@ -1,3 +1,5 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
+
 export interface RelationshipWorkspaceTransaction {
   readonly opaque: unknown;
 }
@@ -32,7 +34,7 @@ export type WorkspaceRelationshipTypePage =
     readonly records: readonly WorkspaceRelationshipTypeRecord[];
     readonly status: "ready";
   }
-  | { readonly status: "forbidden" }
+  | Failure<"forbidden">
   | { readonly status: "hidden" }
   | { readonly status: "stale-cursor" };
 
@@ -41,11 +43,11 @@ export type WorkspaceRelationshipTypeHydration =
     readonly records: readonly WorkspaceRelationshipType[];
     readonly status: "ready";
   }
-  | { readonly status: "forbidden" }
+  | Failure<"forbidden">
   | { readonly status: "hidden" };
 
 export type RelationshipWorkspaceInspection =
-  | { readonly status: "forbidden" | "hidden" | "not-found" }
+  | Failure<"forbidden" | "not-found", "hidden">
   | {
     readonly status: "ready";
     readonly type?: WorkspaceRelationshipType;
@@ -53,7 +55,7 @@ export type RelationshipWorkspaceInspection =
 
 export type RelationshipWorkspaceDefaults =
   | { readonly status: "ready" }
-  | { readonly status: "forbidden" }
+  | Failure<"forbidden">
   | { readonly status: "hidden" };
 
 export interface RelationshipWorkspaceBoundary {

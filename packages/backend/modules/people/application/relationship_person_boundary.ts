@@ -1,7 +1,8 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
 import type { PeopleActor, PeopleTransaction } from "./create_person.ts";
 
 export type RelationshipPersonInspection =
-  | { readonly status: "archived" | "not-found" }
+  | Failure<"not-found", "archived">
   | { readonly status: "ready" };
 
 export interface RelationshipPersonSummary {

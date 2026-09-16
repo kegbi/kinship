@@ -1,3 +1,4 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
 import type { PeopleActor } from "../../../modules/people/public.ts";
 
 export interface JournalLinkableActivity {
@@ -46,7 +47,7 @@ export interface JournalTimelineRepository {
       readonly items: readonly JournalTimelineItem[];
       readonly status: "ready";
     }
-    | { readonly status: "forbidden" | "not-found" }
+    | Failure<"forbidden" | "not-found">
   >;
 }
 

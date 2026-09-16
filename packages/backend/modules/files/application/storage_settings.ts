@@ -1,3 +1,5 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
+import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
 import type { PeopleTransaction } from "../../people/public.ts";
 import type { PersonFileActor, PersonFileStatus } from "./person_files.ts";
 
@@ -35,7 +37,7 @@ export interface StorageSettingsRepository {
       readonly status: "ready";
       readonly usage: StorageUsage;
     }
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
   >;
 }
 
@@ -63,7 +65,9 @@ export type StorageSettingsResult =
     readonly status: "ready";
     readonly usage: StorageUsage;
   }
-  | { readonly status: "forbidden" | "unavailable" | "validation-error" };
+  // A rejected query names no field, so this is the module's own bare
+  // `validation-error` rather than the kernel's payload-carrying one.
+  | Failure<"forbidden" | "unavailable", "validation-error">;
 
 export function createStorageSettings(
   dependencies: StorageSettingsDependencies,
@@ -76,26 +80,24 @@ export function createStorageSettings(
       if (actor.role === "member") return { status: "forbidden" };
       const query = inputQuery?.trim();
       if (query && query.length > 100) return { status: "validation-error" };
-      try {
-        const result = await dependencies.transaction.run((transaction) =>
+      const result = await runOrUnavailable(
+        dependencies.transaction,
+        (transaction) =>
           dependencies.repository.read({
             ...actor,
             ...(query ? { query } : {}),
             transaction,
-          })
-        );
-        if (result.status !== "ready") return result;
-        const health = await dependencies.providerHealth().catch(() =>
-          "unavailable" as const
-        );
-        return {
-          ...result,
-          maximumUploadBytes: dependencies.maximumUploadBytes,
-          provider: { ...dependencies.provider, health },
-        };
-      } catch {
-        return { status: "unavailable" };
-      }
+          }),
+      );
+      if (result.status !== "ready") return result;
+      const health = await dependencies.providerHealth().catch(() =>
+        "unavailable" as const
+      );
+      return {
+        ...result,
+        maximumUploadBytes: dependencies.maximumUploadBytes,
+        provider: { ...dependencies.provider, health },
+      };
     },
   };
 }

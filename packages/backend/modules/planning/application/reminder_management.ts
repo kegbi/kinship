@@ -187,13 +187,13 @@ export interface ReminderWorkspaceBoundary {
     command: PeopleActor & {
       readonly transaction: PeopleTransaction;
     },
-  ): Promise<{ readonly status: "forbidden" | "ready" }>;
+  ): Promise<Failure<"forbidden"> | { readonly status: "ready" }>;
   effectiveTimezone(
     command: PeopleActor & {
       readonly transaction: PeopleTransaction;
     },
   ): Promise<
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
     | { readonly status: "ready"; readonly timezone: string }
   >;
 }

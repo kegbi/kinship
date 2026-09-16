@@ -868,6 +868,7 @@ export function createConfiguredApiApp(
     authenticationAudit,
     clock,
     identity: new PostgresIdentityPersonalLifecycle(hasher),
+    ids,
     impact: {
       files: new PostgresFileWorkspaceLifecycleImpact(),
       gifts: new PostgresGiftWorkspaceLifecycleImpact(),

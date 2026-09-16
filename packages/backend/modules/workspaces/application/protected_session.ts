@@ -1,3 +1,4 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
 import type {
   IdentityAuthenticationFacade,
   IdentityTransaction,
@@ -117,7 +118,7 @@ export interface AuthenticationResponseEqualizer {
 export interface ProtectedSessionDependencies {
   readonly attemptBudget: AuthenticationAttemptBudget;
   readonly audit: AuthenticationAudit;
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly identity: IdentityAuthenticationFacade;
   readonly identityEntry?: Pick<
     VerifiedIdentityEntryFacade,

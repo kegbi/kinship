@@ -1,3 +1,5 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { Failure } from "../../../shared-kernel/result.ts";
 import type { SettingsActor, SettingsAudit } from "./settings_management.ts";
 
 export const PERSONALIZATION_SECTIONS = [
@@ -59,7 +61,7 @@ export type PersonalizationResult =
     readonly readOnly: boolean;
     readonly status: "ready";
   }
-  | { readonly status: "forbidden" | "unavailable" };
+  | Failure<"forbidden" | "unavailable">;
 
 export type PersonalizationMutation =
   | {
@@ -93,17 +95,10 @@ export type PersonalizationMutationResult =
   | { readonly entry: PersonalizationEntry; readonly status: "saved" }
   | { readonly id: string; readonly status: "deleted" }
   | { readonly referenceCount: number; readonly status: "replacement-required" }
-  | {
-    readonly status:
-      | "conflict"
-      | "forbidden"
-      | "invalid"
-      | "not-found"
-      | "replacement-conflict"
-      | "required-default"
-      | "stale"
-      | "unavailable";
-  };
+  | Failure<
+    "conflict" | "forbidden" | "not-found" | "unavailable",
+    "invalid" | "replacement-conflict" | "required-default" | "stale"
+  >;
 
 export interface PersonalizationRepository {
   inspect(
@@ -114,7 +109,7 @@ export interface PersonalizationRepository {
     },
   ): Promise<
     | { readonly entry: PersonalizationEntry; readonly status: "ready" }
-    | { readonly status: "forbidden" | "not-found" | "unavailable" }
+    | Failure<"forbidden" | "not-found" | "unavailable">
   >;
   list(
     command: SettingsActor & {
@@ -146,15 +141,10 @@ export interface WorkspacePersonalizationRepository
   ): Promise<boolean>;
   prepareDelete(command: WorkspacePersonalizationDeleteCommand): Promise<
     | { readonly entry: PersonalizationEntry; readonly status: "ready" }
-    | {
-      readonly status:
-        | "forbidden"
-        | "invalid"
-        | "not-found"
-        | "required-default"
-        | "stale"
-        | "unavailable";
-    }
+    | Failure<
+      "forbidden" | "not-found" | "unavailable",
+      "invalid" | "required-default" | "stale"
+    >
   >;
   deletePrepared(
     command: WorkspacePersonalizationDeleteCommand,
@@ -163,7 +153,7 @@ export interface WorkspacePersonalizationRepository
 
 export interface PersonalizationDependencies {
   readonly audit: SettingsAudit;
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly repository: PersonalizationRepository;
   readonly transaction: {
     run<T>(

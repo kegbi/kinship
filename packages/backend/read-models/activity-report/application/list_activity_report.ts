@@ -1,3 +1,5 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
+
 export interface ActivityReportActor {
   readonly memberId: string;
   readonly role: "admin" | "member" | "owner";
@@ -57,7 +59,7 @@ export interface ActivityReportRepository {
       readonly person: ActivityReportParticipant;
       readonly status: "archived" | "ready";
     }
-    | { readonly status: "forbidden" | "not-found" | "stale-cursor" }
+    | Failure<"forbidden" | "not-found", "stale-cursor">
   >;
 }
 

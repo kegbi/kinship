@@ -1,3 +1,4 @@
+import type { Failure } from "../../shared-kernel/result.ts";
 import {
   type CommunicationAudit,
   type CommunicationRepository,
@@ -170,7 +171,7 @@ function harness(overrides: {
   };
   let authorizationCall = 0;
   const workspace: InteractionWorkspaceBoundary & {
-    authorize(): Promise<{ readonly status: "forbidden" | "ready" }>;
+    authorize(): Promise<Failure<"forbidden"> | { readonly status: "ready" }>;
   } = {
     authorize() {
       calls.push("authorize");

@@ -1,3 +1,12 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { Failure } from "../../../shared-kernel/result.ts";
+import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
+import {
+  boundedText,
+  currencyCode as canonicalCurrency,
+  instant,
+  moneyAmount,
+} from "../../../shared-kernel/validation.ts";
 import type { PeopleActor, PeopleTransaction } from "../../people/public.ts";
 import type { GiftAttachmentBoundary } from "../../files/public.ts";
 import type { WorkspaceCurrencyBoundary } from "../../workspaces/public.ts";
@@ -57,7 +66,7 @@ export interface GiftRepository {
     },
   ): Promise<
     | { readonly gift: StoredGift; readonly status: "created" }
-    | { readonly status: "archived-write-rejected" | "not-found" }
+    | Failure<"archived-write-rejected" | "not-found">
   >;
   createDebt(
     command: PeopleActor & {
@@ -74,7 +83,7 @@ export interface GiftRepository {
     },
   ): Promise<
     | { readonly debt: StoredDebt; readonly status: "created" }
-    | { readonly status: "archived-write-rejected" | "not-found" }
+    | Failure<"archived-write-rejected" | "not-found">
   >;
   findGift(
     command: PeopleActor & {
@@ -84,7 +93,7 @@ export interface GiftRepository {
     },
   ): Promise<
     | { readonly gift: StoredGift; readonly status: "found" }
-    | { readonly status: "archived-write-rejected" | "not-found" }
+    | Failure<"archived-write-rejected" | "not-found">
   >;
   findDebt(
     command: PeopleActor & {
@@ -94,7 +103,7 @@ export interface GiftRepository {
     },
   ): Promise<
     | { readonly debt: StoredDebt; readonly status: "found" }
-    | { readonly status: "archived-write-rejected" | "not-found" }
+    | Failure<"archived-write-rejected" | "not-found">
   >;
   list(
     command: PeopleActor & {
@@ -107,7 +116,7 @@ export interface GiftRepository {
       readonly gifts: readonly StoredGift[];
       readonly status: "ready";
     }
-    | { readonly status: "forbidden" | "not-found" }
+    | Failure<"forbidden" | "not-found">
   >;
   saveGift(
     command: PeopleActor & {
@@ -119,7 +128,7 @@ export interface GiftRepository {
     },
   ): Promise<
     | { readonly gift: StoredGift; readonly status: "saved" }
-    | { readonly status: "archived-write-rejected" | "not-found" }
+    | Failure<"archived-write-rejected" | "not-found">
   >;
   saveDebt(
     command: PeopleActor & {
@@ -132,7 +141,7 @@ export interface GiftRepository {
     },
   ): Promise<
     | { readonly debt: StoredDebt; readonly status: "saved" }
-    | { readonly status: "archived-write-rejected" | "not-found" }
+    | Failure<"archived-write-rejected" | "not-found">
   >;
 }
 
@@ -150,7 +159,7 @@ export interface GiftAudit {
 export interface GiftManagementDependencies {
   readonly attachments: GiftAttachmentBoundary;
   readonly audit: GiftAudit;
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly currencies: WorkspaceCurrencyBoundary;
   readonly ids: { next(): string };
   readonly repository: GiftRepository;
@@ -179,16 +188,21 @@ export interface CreateDebtInput {
   readonly status: DebtStatus;
 }
 
-type FailureStatus =
-  | "archived-write-rejected"
-  | "forbidden"
-  | "invalid-transition"
-  | "not-found"
-  | "unavailable"
-  | "validation-error";
+/**
+ * Every failure a gift or debt mutation reports. A rejected amount, currency,
+ * or event time names no field, so this module's `validation-error` is the
+ * bare one rather than the kernel's payload-carrying `ValidationFailure`.
+ */
+type GiftMutationFailure = Failure<
+  "archived-write-rejected" | "forbidden" | "not-found" | "unavailable",
+  "invalid-transition" | "validation-error"
+>;
+
+/** The failure an attachment boundary reports, carried out of a transaction. */
+type AttachmentFailureStatus = Failure<"forbidden" | "not-found">["status"];
 
 class AttachmentFailure extends Error {
-  constructor(readonly status: "forbidden" | "not-found") {
+  constructor(readonly status: AttachmentFailureStatus) {
     super(status);
   }
 }
@@ -206,30 +220,11 @@ const debtTransitions: Readonly<Record<DebtStatus, ReadonlySet<DebtStatus>>> = {
   settled: new Set(),
 };
 
-function text(value: string | undefined, maximum: number) {
-  if (value === undefined) return undefined;
-  const normalized = value.trim();
-  return normalized.length > 0 && normalized.length <= maximum
-    ? normalized
-    : undefined;
-}
-
+/** An amount the money columns hold and a debt total can still sum. */
 function money(value: string | undefined): string | undefined {
-  if (value === undefined || !/^\d{1,15}(?:\.\d{1,4})?$/.test(value)) {
-    return undefined;
-  }
-  return Number(value) <= 9_999_999_999_999_999 ? value : undefined;
-}
-
-function currency(value: string | undefined): string | undefined {
-  const normalized = value?.trim().toUpperCase();
-  return normalized && /^[A-Z]{3}$/.test(normalized) ? normalized : undefined;
-}
-
-function instant(value: string | undefined): string | undefined {
-  if (value === undefined) return undefined;
-  return Number.isFinite(Date.parse(value))
-    ? new Date(value).toISOString()
+  const amount = moneyAmount(value);
+  return amount !== undefined && Number(amount) <= 9_999_999_999_999_999
+    ? amount
     : undefined;
 }
 
@@ -252,11 +247,11 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
       input: CreateGiftInput,
     ): Promise<
       | { readonly gift: GiftRecord; readonly status: "created" }
-      | { readonly status: FailureStatus }
+      | GiftMutationFailure
     > => {
-      const name = text(input.name, 500);
+      const name = boundedText(input.name, 500);
       const amount = money(input.amount);
-      const currencyCode = currency(input.currencyCode);
+      const currencyCode = canonicalCurrency(input.currencyCode);
       const eventAt = instant(input.eventAt);
       if (
         !name || (input.amount !== undefined && !amount) ||
@@ -285,8 +280,8 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
           const created = await dependencies.repository.createGift({
             ...actor,
             ...(amount ? { amount } : {}),
-            ...(text(input.comment, 10_000)
-              ? { comment: text(input.comment, 10_000)! }
+            ...(boundedText(input.comment, 10_000)
+              ? { comment: boundedText(input.comment, 10_000)! }
               : {}),
             ...(currencyCode ? { currencyCode } : {}),
             ...(eventAt ? { eventAt } : {}),
@@ -299,7 +294,9 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
               : {}),
             status: input.status,
             transaction,
-            ...(text(input.url, 2_000) ? { url: text(input.url, 2_000)! } : {}),
+            ...(boundedText(input.url, 2_000)
+              ? { url: boundedText(input.url, 2_000)! }
+              : {}),
           });
           if (created.status !== "created") return created;
           let representedGift = created.gift;
@@ -356,16 +353,17 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
       input: CreateDebtInput,
     ): Promise<
       | { readonly debt: DebtRecord; readonly status: "created" }
-      | { readonly status: FailureStatus }
+      | GiftMutationFailure
     > => {
       const amount = money(input.amount);
-      const currencyCode = currency(input.currencyCode);
+      const currencyCode = canonicalCurrency(input.currencyCode);
       if (!amount || !currencyCode) {
         return { status: "validation-error" };
       }
       const occurredAt = dependencies.clock.now();
-      try {
-        return await dependencies.transaction.run(async (transaction) => {
+      return await runOrUnavailable(
+        dependencies.transaction,
+        async (transaction) => {
           if (
             !await dependencies.currencies.isSupported({
               code: currencyCode,
@@ -380,8 +378,8 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
             id: dependencies.ids.next(),
             occurredAt,
             personId,
-            ...(text(input.reason, 10_000)
-              ? { reason: text(input.reason, 10_000)! }
+            ...(boundedText(input.reason, 10_000)
+              ? { reason: boundedText(input.reason, 10_000)! }
               : {}),
             ...(input.status === "settled" ? { settledAt: occurredAt } : {}),
             status: input.status,
@@ -397,10 +395,8 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
             transaction,
           });
           return created;
-        });
-      } catch {
-        return { status: "unavailable" };
-      }
+        },
+      );
     },
 
     changeGiftStatus: async (
@@ -472,8 +468,9 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
       status: DebtStatus,
     ) => {
       const occurredAt = dependencies.clock.now();
-      try {
-        return await dependencies.transaction.run(async (transaction) => {
+      return await runOrUnavailable(
+        dependencies.transaction,
+        async (transaction) => {
           const found = await dependencies.repository.findDebt({
             ...actor,
             id,
@@ -506,15 +503,14 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
             transaction,
           });
           return saved;
-        });
-      } catch {
-        return { status: "unavailable" as const };
-      }
+        },
+      );
     },
 
     list: async (actor: PeopleActor, personId: string) => {
-      try {
-        return await dependencies.transaction.run(async (transaction) => {
+      return await runOrUnavailable(
+        dependencies.transaction,
+        async (transaction) => {
           const records = await dependencies.repository.list({
             ...actor,
             personId,
@@ -536,10 +532,8 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
             status: "ready" as const,
             supportedCurrencyCodes,
           };
-        });
-      } catch {
-        return { status: "unavailable" as const };
-      }
+        },
+      );
     },
   };
 }

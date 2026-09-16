@@ -1,3 +1,7 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { Failure } from "../../../shared-kernel/result.ts";
+import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
+import { boundedText, isInstant } from "../../../shared-kernel/validation.ts";
 import type { PeopleActor, PeopleTransaction } from "../../people/public.ts";
 import type { JournalActivityReference } from "../../interactions/public.ts";
 
@@ -30,9 +34,8 @@ export interface JournalRepository {
       readonly transaction: PeopleTransaction;
     },
   ): Promise<
-    { readonly post: StoredJournalPost; readonly status: "created" } | {
-      readonly status: "forbidden";
-    }
+    | { readonly post: StoredJournalPost; readonly status: "created" }
+    | Failure<"forbidden">
   >;
   deleteItem(
     command: PeopleActor & {
@@ -44,7 +47,7 @@ export interface JournalRepository {
       readonly itemType: "activity" | "day-rating" | "post";
       readonly status: "deleted";
     }
-    | { readonly status: "forbidden" | "not-found" }
+    | Failure<"forbidden" | "not-found">
   >;
   linkActivity(
     command: PeopleActor & {
@@ -59,7 +62,7 @@ export interface JournalRepository {
       readonly id: string;
       readonly occurredAt: string;
       readonly status: "created";
-    } | { readonly status: "forbidden" | "not-found" }
+    } | Failure<"forbidden" | "not-found">
   >;
   saveDayRating(
     command: PeopleActor & {
@@ -75,7 +78,7 @@ export interface JournalRepository {
       readonly rating: StoredDayRating;
       readonly status: "created" | "updated";
     }
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
   >;
   updatePost(
     command: PeopleActor & {
@@ -87,9 +90,8 @@ export interface JournalRepository {
       readonly transaction: PeopleTransaction;
     },
   ): Promise<
-    { readonly post: StoredJournalPost; readonly status: "updated" } | {
-      readonly status: "forbidden" | "not-found";
-    }
+    | { readonly post: StoredJournalPost; readonly status: "updated" }
+    | Failure<"forbidden" | "not-found">
   >;
 }
 
@@ -107,7 +109,7 @@ export interface JournalAudit {
 export interface JournalManagementDependencies {
   readonly activities: JournalActivityReference;
   readonly audit: JournalAudit;
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly ids: { next(): string };
   readonly repository: JournalRepository;
   readonly transaction: {
@@ -115,17 +117,9 @@ export interface JournalManagementDependencies {
   };
 }
 
-function text(value: string | undefined, maximum: number): string | undefined {
-  if (value === undefined) return undefined;
-  const normalized = value.trim();
-  return normalized.length > 0 && normalized.length <= maximum
-    ? normalized
-    : undefined;
-}
-
+/** The point in time itself, because the repository writes a `Date`. */
 function instant(value: string): Date | undefined {
-  const parsed = new Date(value);
-  return Number.isFinite(parsed.valueOf()) ? parsed : undefined;
+  return isInstant(value) ? new Date(value) : undefined;
 }
 
 function date(value: string): string | undefined {
@@ -140,17 +134,14 @@ function date(value: string): string | undefined {
 export function createJournalManagement(
   dependencies: JournalManagementDependencies,
 ) {
-  const execute = async <T>(
+  const execute = <T>(
     work: (transaction: PeopleTransaction, now: Date) => Promise<T>,
-  ): Promise<T | { readonly status: "unavailable" }> => {
-    try {
-      const now = dependencies.clock.now();
-      return await dependencies.transaction.run((transaction) =>
-        work(transaction, now)
-      );
-    } catch {
-      return { status: "unavailable" };
-    }
+  ): Promise<T | Failure<"unavailable">> => {
+    const now = dependencies.clock.now();
+    return runOrUnavailable(
+      dependencies.transaction,
+      (transaction) => work(transaction, now),
+    );
   };
 
   return {
@@ -162,9 +153,9 @@ export function createJournalManagement(
         readonly title?: string;
       },
     ) => {
-      const body = text(input.body, 50_000);
+      const body = boundedText(input.body, 50_000);
       const occurredAt = instant(input.occurredAt);
-      const title = text(input.title, 500);
+      const title = boundedText(input.title, 500);
       if (!body || !occurredAt || (input.title !== undefined && !title)) {
         return { status: "validation-error" as const };
       }
@@ -251,7 +242,7 @@ export function createJournalManagement(
       },
     ) => {
       const ratedOn = date(input.ratedOn);
-      const comment = text(input.comment, 10_000);
+      const comment = boundedText(input.comment, 10_000);
       if (
         !ratedOn || !Number.isInteger(input.rating) || input.rating < 1 ||
         input.rating > 5 || (input.comment !== undefined && !comment)
@@ -288,9 +279,9 @@ export function createJournalManagement(
         readonly title?: string;
       },
     ) => {
-      const body = text(input.body, 50_000);
+      const body = boundedText(input.body, 50_000);
       const occurredAt = instant(input.occurredAt);
-      const title = text(input.title, 500);
+      const title = boundedText(input.title, 500);
       if (!body || !occurredAt || (input.title !== undefined && !title)) {
         return { status: "validation-error" as const };
       }

@@ -1,3 +1,4 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
 import type { DatePrecision } from "../../../shared-kernel/partial_date.ts";
 import {
   createPersonTimeline,
@@ -150,8 +151,7 @@ export type PersonProfileRepositoryResult =
     readonly status: "archived";
     readonly summary?: PersonProfileSummaryProjection;
   }
-  | { readonly status: "not-found" }
-  | { readonly status: "forbidden" };
+  | Failure<"forbidden" | "not-found">;
 
 export interface PersonProfileRepository extends PersonTimelineRepository {
   get(
@@ -165,7 +165,7 @@ export interface PersonProfileRepository extends PersonTimelineRepository {
   ): Promise<
     | { readonly events: readonly PersonLifeEvent[]; readonly status: "ready" }
     | { readonly events: readonly PersonLifeEvent[]; readonly status: "hidden" }
-    | { readonly status: "not-found" | "forbidden" }
+    | Failure<"not-found" | "forbidden">
   >;
 }
 
@@ -176,8 +176,7 @@ export type GetPersonProfileResult =
     readonly status: "ready" | "archived";
     readonly summary?: PersonProfileSummary;
   }
-  | { readonly status: "not-found" }
-  | { readonly status: "forbidden" };
+  | Failure<"forbidden" | "not-found">;
 
 function dueInformation(projection: PersonDueProjection): PersonDueInformation {
   const details = [

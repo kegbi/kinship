@@ -1,3 +1,4 @@
+import type { Failure } from "../../shared-kernel/result.ts";
 import {
   createExportManagement,
   type ExportActor,
@@ -130,7 +131,7 @@ class MemoryFiles implements ExportFileBoundary {
       readonly mimeType: string;
       readonly status: "ready";
     }
-    | { readonly status: "forbidden" | "missing" | "not-found" | "unavailable" }
+    | Failure<"forbidden" | "not-found" | "unavailable", "missing">
   > {
     return Promise.resolve(
       this.bytes

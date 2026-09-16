@@ -1,4 +1,6 @@
 import { type Kysely, sql } from "kysely";
+import type { Clock } from "../../../../shared-kernel/clock.ts";
+import type { IdGenerator } from "../../../../shared-kernel/ids.ts";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type {
@@ -77,8 +79,8 @@ export class PostgresIdentityAuthentication
     private readonly hasher: PasswordHasher,
     private readonly tokens: SecureTokenService,
     private readonly secretBox: AesGcmMfaSecretBox,
-    private readonly clock: { now(): Date },
-    private readonly ids: { create(): string },
+    private readonly clock: Clock,
+    private readonly ids: IdGenerator,
   ) {
     this.#dummyHash = hasher.hash("constant-shape-invalid-password-work");
   }

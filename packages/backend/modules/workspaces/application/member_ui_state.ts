@@ -1,3 +1,5 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
+
 export type PersonWorkspaceView =
   | "all"
   | "timeline"
@@ -29,7 +31,7 @@ export interface MemberUiStateRepository {
       readonly transaction: MemberUiStateTransaction;
     },
   ): Promise<
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
     | { readonly status: "ready"; readonly uiState: unknown }
   >;
   lock(
@@ -37,7 +39,7 @@ export interface MemberUiStateRepository {
       readonly transaction: MemberUiStateTransaction;
     },
   ): Promise<
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
     | { readonly status: "ready"; readonly uiState: unknown }
   >;
   save(
