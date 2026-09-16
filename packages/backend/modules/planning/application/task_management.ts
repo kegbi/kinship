@@ -20,6 +20,7 @@ import type {
   PeopleTransaction,
   RelationshipPersonBoundary,
 } from "../../people/public.ts";
+import type { ActorRevalidation } from "../../workspaces/public.ts";
 
 /** The namespace that makes a task creation idempotent across retries. */
 const TASK_ID_NAMESPACE = "kinship.planning.task-id.v1";
@@ -51,12 +52,6 @@ export interface TaskPerson {
 
 export interface StoredTask extends Omit<TaskRecord, "person"> {
   readonly personId?: string;
-}
-
-export interface TaskWorkspaceBoundary {
-  authorize(
-    command: PeopleActor & { readonly transaction: PeopleTransaction },
-  ): Promise<Failure<"forbidden"> | { readonly status: "ready" }>;
 }
 
 export interface TaskRepository {
@@ -154,6 +149,7 @@ export interface TaskAudit {
 }
 
 export interface TaskManagementDependencies {
+  readonly actors: ActorRevalidation;
   readonly audit: TaskAudit;
   readonly clock: Clock;
   readonly cursorKeyset: TaskCursorKeyset;
@@ -162,7 +158,6 @@ export interface TaskManagementDependencies {
   readonly transaction: {
     run<T>(work: (transaction: PeopleTransaction) => Promise<T>): Promise<T>;
   };
-  readonly workspace: TaskWorkspaceBoundary;
 }
 
 export interface CreateTaskInput {
@@ -416,11 +411,12 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
       const work = async (
         transaction: PeopleTransaction,
       ): Promise<GetTaskResult> => {
-        const authorized = await dependencies.workspace.authorize({
+        const standing = await dependencies.actors.revalidate({
           ...actor,
+          lock: true,
           transaction,
         });
-        if (authorized.status !== "ready") return { status: "forbidden" };
+        if (standing === "revoked") return { status: "forbidden" };
         const current = await dependencies.repository.find({
           ...actor,
           id,
@@ -452,11 +448,12 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
       const work = async (
         transaction: PeopleTransaction,
       ): Promise<CreateTaskResult> => {
-        const authorized = await dependencies.workspace.authorize({
+        const standing = await dependencies.actors.revalidate({
           ...actor,
+          lock: true,
           transaction,
         });
-        if (authorized.status !== "ready") return { status: "forbidden" };
+        if (standing === "revoked") return { status: "forbidden" };
         const id = await deterministicId(TASK_ID_NAMESPACE, [
           actor.workspaceId,
           checked.requestId!,
@@ -523,11 +520,12 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
       } = {},
     ): Promise<ListTasksResult> =>
       dependencies.transaction.run(async (transaction) => {
-        const authorized = await dependencies.workspace.authorize({
+        const standing = await dependencies.actors.revalidate({
           ...actor,
+          lock: true,
           transaction,
         });
-        if (authorized.status !== "ready") return { status: "forbidden" };
+        if (standing === "revoked") return { status: "forbidden" };
         const dueBefore = input.dueBefore && parsedDate(input.dueBefore)
           ? parsedDate(input.dueBefore)!.toISOString()
           : undefined;
@@ -615,11 +613,12 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
       const work = async (
         transaction: PeopleTransaction,
       ): Promise<ChangeTaskResult> => {
-        const authorized = await dependencies.workspace.authorize({
+        const standing = await dependencies.actors.revalidate({
           ...actor,
+          lock: true,
           transaction,
         });
-        if (authorized.status !== "ready") return { status: "forbidden" };
+        if (standing === "revoked") return { status: "forbidden" };
         const current = await dependencies.repository.find({
           ...actor,
           // The validation above rejected a non-canonical identifier.
@@ -709,11 +708,12 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
       const work = async (
         transaction: PeopleTransaction,
       ): Promise<ChangeTaskResult> => {
-        const authorized = await dependencies.workspace.authorize({
+        const standing = await dependencies.actors.revalidate({
           ...actor,
+          lock: true,
           transaction,
         });
-        if (authorized.status !== "ready") return { status: "forbidden" };
+        if (standing === "revoked") return { status: "forbidden" };
         const current = await dependencies.repository.find({
           ...actor,
           id,

@@ -1,5 +1,5 @@
 {
-  "note": "Architecture violations this repository already had when GAP-005 added tools/architecture/check_boundaries.ts. The checker fails on any violation missing from this list and on any entry here that no longer occurs, so the list can only shrink. Do not add an entry to make a new change pass; the later GAP tickets own these: the copy-pasted account/member/workspace joins (table-foreign-read, table-access on crm.users), the files-to-gifts read, and the two non-composition-root adapter imports.",
+  "note": "Architecture violations this repository already had when GAP-005 added tools/architecture/check_boundaries.ts. The checker fails on any violation missing from this list and on any entry here that no longer occurs, so the list can only shrink. Do not add an entry to make a new change pass; the later GAP tickets own these: the remaining copy-pasted account/member/workspace joins that GAP-008 has not yet replaced with the workspaces ActorRevalidation port, the files-to-gifts read, and the two non-composition-root adapter imports.",
   "violations": [
     {
       "rule": "layer",
@@ -70,36 +70,6 @@
       "rule": "table-access",
       "subject": "packages/backend/modules/journal/adapters/postgres/journal_repository.ts",
       "detail": "journal reads crm.users, owned by identity, which it does not declare"
-    },
-    {
-      "rule": "table-access",
-      "subject": "packages/backend/modules/people/adapters/postgres/export_people_boundary.ts",
-      "detail": "people reads crm.users, owned by identity, which it does not declare"
-    },
-    {
-      "rule": "table-access",
-      "subject": "packages/backend/modules/people/adapters/postgres/import_people_boundary.ts",
-      "detail": "people reads crm.users, owned by identity, which it does not declare"
-    },
-    {
-      "rule": "table-access",
-      "subject": "packages/backend/modules/people/adapters/postgres/important_date_repository.ts",
-      "detail": "people reads crm.users, owned by identity, which it does not declare"
-    },
-    {
-      "rule": "table-access",
-      "subject": "packages/backend/modules/people/adapters/postgres/people_repository.ts",
-      "detail": "people reads crm.users, owned by identity, which it does not declare"
-    },
-    {
-      "rule": "table-access",
-      "subject": "packages/backend/modules/people/adapters/postgres/person_lifecycle_repository.ts",
-      "detail": "people reads crm.users, owned by identity, which it does not declare"
-    },
-    {
-      "rule": "table-access",
-      "subject": "packages/backend/modules/people/adapters/postgres/profile_fact_repository.ts",
-      "detail": "people reads crm.users, owned by identity, which it does not declare"
     },
     {
       "rule": "table-access",
@@ -348,56 +318,6 @@
     },
     {
       "rule": "table-foreign-read",
-      "subject": "packages/backend/modules/people/adapters/postgres/export_people_boundary.ts",
-      "detail": "people reads crm.workspace_members, owned by workspaces"
-    },
-    {
-      "rule": "table-foreign-read",
-      "subject": "packages/backend/modules/people/adapters/postgres/export_people_boundary.ts",
-      "detail": "people reads crm.workspaces, owned by workspaces"
-    },
-    {
-      "rule": "table-foreign-read",
-      "subject": "packages/backend/modules/people/adapters/postgres/import_people_boundary.ts",
-      "detail": "people reads crm.workspace_members, owned by workspaces"
-    },
-    {
-      "rule": "table-foreign-read",
-      "subject": "packages/backend/modules/people/adapters/postgres/import_people_boundary.ts",
-      "detail": "people reads crm.workspaces, owned by workspaces"
-    },
-    {
-      "rule": "table-foreign-read",
-      "subject": "packages/backend/modules/people/adapters/postgres/important_date_repository.ts",
-      "detail": "people reads crm.workspace_members, owned by workspaces"
-    },
-    {
-      "rule": "table-foreign-read",
-      "subject": "packages/backend/modules/people/adapters/postgres/important_date_repository.ts",
-      "detail": "people reads crm.workspaces, owned by workspaces"
-    },
-    {
-      "rule": "table-foreign-read",
-      "subject": "packages/backend/modules/people/adapters/postgres/people_repository.ts",
-      "detail": "people reads crm.workspace_members, owned by workspaces"
-    },
-    {
-      "rule": "table-foreign-read",
-      "subject": "packages/backend/modules/people/adapters/postgres/people_repository.ts",
-      "detail": "people reads crm.workspaces, owned by workspaces"
-    },
-    {
-      "rule": "table-foreign-read",
-      "subject": "packages/backend/modules/people/adapters/postgres/person_lifecycle_repository.ts",
-      "detail": "people reads crm.workspace_members, owned by workspaces"
-    },
-    {
-      "rule": "table-foreign-read",
-      "subject": "packages/backend/modules/people/adapters/postgres/person_lifecycle_repository.ts",
-      "detail": "people reads crm.workspaces, owned by workspaces"
-    },
-    {
-      "rule": "table-foreign-read",
       "subject": "packages/backend/modules/people/adapters/postgres/profile_fact_repository.ts",
       "detail": "people reads crm.contact_labels, owned by workspaces"
     },
@@ -405,16 +325,6 @@
       "rule": "table-foreign-read",
       "subject": "packages/backend/modules/people/adapters/postgres/profile_fact_repository.ts",
       "detail": "people reads crm.contact_method_types, owned by workspaces"
-    },
-    {
-      "rule": "table-foreign-read",
-      "subject": "packages/backend/modules/people/adapters/postgres/profile_fact_repository.ts",
-      "detail": "people reads crm.workspace_members, owned by workspaces"
-    },
-    {
-      "rule": "table-foreign-read",
-      "subject": "packages/backend/modules/people/adapters/postgres/profile_fact_repository.ts",
-      "detail": "people reads crm.workspaces, owned by workspaces"
     },
     {
       "rule": "table-foreign-read",

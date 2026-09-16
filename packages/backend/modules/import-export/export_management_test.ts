@@ -189,6 +189,7 @@ function context() {
   const audit: Array<{ readonly action: string; readonly subjectId: string }> =
     [];
   const exports = createExportManagement({
+    actors: { revalidate: () => Promise.resolve("active") },
     audit: {
       record: (command) => {
         audit.push({ action: command.action, subjectId: command.exportId });
@@ -267,6 +268,7 @@ Deno.test("[EXPORT-001] exports a member-authorized vCard with escaped contact d
     "person-scoped vCard download is audited",
   );
   const hostile = createExportManagement({
+    actors: { revalidate: () => Promise.resolve("active") },
     audit: {
       record: () => Promise.resolve(),
       recordPersonDownload: () => Promise.resolve(),
@@ -408,6 +410,7 @@ Deno.test("[EXPORT-001] conceals lost authority, missing people, and missing job
     getPerson: () => Promise.resolve(undefined),
   };
   const unavailable = createExportManagement({
+    actors: { revalidate: () => Promise.resolve("active") },
     audit: {
       record: () => Promise.resolve(),
       recordPersonDownload: () => Promise.resolve(),
@@ -426,6 +429,7 @@ Deno.test("[EXPORT-001] conceals lost authority, missing people, and missing job
   );
   repository.failed = false;
   const oversized = createExportManagement({
+    actors: { revalidate: () => Promise.resolve("active") },
     audit: {
       record: () => Promise.resolve(),
       recordPersonDownload: () => Promise.resolve(),

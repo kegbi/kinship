@@ -68,24 +68,21 @@ function person(row: ExportPersonRow): ExportPerson {
   };
 }
 
-const activeActor = (command: {
-  readonly actor: {
-    readonly memberId: string;
-    readonly role: string;
-    readonly userId: string;
-    readonly workspaceId: string;
-  };
-}) =>
+/**
+ * The caller revalidates the actor before it reaches this boundary (see the
+ * `ActorRevalidation` port), so the queries below scope by workspace alone.
+ */
+const contactMethods = (workspaceId: string) =>
   sql`
-  account.id = ${command.actor.userId}::uuid
-  and account.status = 'active' and account.deleted_at is null
-  and member.id = ${command.actor.memberId}::uuid
-  and member.user_id = account.id
-  and member.workspace_id = ${command.actor.workspaceId}::uuid
-  and member.role = ${command.actor.role}
-  and member.status = 'active' and member.left_at is null
-  and workspace.id = ${command.actor.workspaceId}::uuid
-  and workspace.status = 'active' and workspace.deleted_at is null
+  left join lateral (
+    select jsonb_agg(jsonb_build_object(
+      'kind', type.kind, 'label', type.name, 'value', method.value
+    ) order by method.sort_order, method.id) as items
+    from crm.person_contact_methods method
+    join crm.contact_method_types type on type.id = method.type_id
+      and type.workspace_id = ${workspaceId}::uuid
+    where method.person_id = person.id
+  ) methods on true
 `;
 
 const selected = sql`
@@ -105,21 +102,11 @@ export class PostgresPeopleExportBoundary implements PeopleExportBoundary {
   ): Promise<ExportPerson | undefined> {
     const result = await sql<ExportPersonRow>`
       select ${selected}
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      join crm.people person on person.workspace_id = workspace.id
-        and person.id = ${command.personId}::uuid and person.deleted_at is null
-      left join lateral (
-        select jsonb_agg(jsonb_build_object(
-          'kind', type.kind, 'label', type.name, 'value', method.value
-        ) order by method.sort_order, method.id) as items
-        from crm.person_contact_methods method
-        join crm.contact_method_types type on type.id = method.type_id
-          and type.workspace_id = workspace.id
-        where method.person_id = person.id
-      ) methods on true
-      where ${activeActor(command)}
+      from crm.people person
+      ${contactMethods(command.actor.workspaceId)}
+      where person.workspace_id = ${command.actor.workspaceId}::uuid
+        and person.id = ${command.personId}::uuid
+        and person.deleted_at is null
     `.execute(databaseFromSession(command.transaction));
     return result.rows[0] ? person(result.rows[0]) : undefined;
   }
@@ -127,23 +114,13 @@ export class PostgresPeopleExportBoundary implements PeopleExportBoundary {
   async listWorkspace(
     command: Parameters<PeopleExportBoundary["listWorkspace"]>[0],
   ): Promise<readonly ExportPerson[]> {
+    if (command.actor.role === "member") return [];
     const result = await sql<ExportPersonRow>`
       select ${selected}
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      join crm.people person on person.workspace_id = workspace.id
+      from crm.people person
+      ${contactMethods(command.actor.workspaceId)}
+      where person.workspace_id = ${command.actor.workspaceId}::uuid
         and person.deleted_at is null
-      left join lateral (
-        select jsonb_agg(jsonb_build_object(
-          'kind', type.kind, 'label', type.name, 'value', method.value
-        ) order by method.sort_order, method.id) as items
-        from crm.person_contact_methods method
-        join crm.contact_method_types type on type.id = method.type_id
-          and type.workspace_id = workspace.id
-        where method.person_id = person.id
-      ) methods on true
-      where ${activeActor(command)} and member.role in ('owner', 'admin')
       order by person.id
       limit 501
     `.execute(databaseFromSession(command.transaction));

@@ -28,6 +28,7 @@ function fake(lifecycle: "active" | "archived" | "deleted" = "active") {
   };
   let audits = 0;
   const dependencies: PersonLifecycleDependencies = {
+    actors: { revalidate: () => Promise.resolve("active") },
     audit: {
       assertPostcondition: () => Promise.resolve(),
       record: () => {
@@ -74,6 +75,7 @@ function fake(lifecycle: "active" | "archived" | "deleted" = "active") {
 Deno.test("PEOPLE-004 rejects editing an archived person before mutation", async () => {
   let changed = false;
   const dependencies = {
+    actors: { revalidate: () => Promise.resolve("active" as const) },
     audit: {
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve("00000000-0000-4000-8000-000000000200"),

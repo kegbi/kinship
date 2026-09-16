@@ -10,6 +10,7 @@
     "schemaSource",
     "sharedKernel",
     "compositionRoots",
+    "approvedCrossModuleReads",
     "generatedContracts",
     "layerRules",
     "modules",
@@ -30,6 +31,11 @@
       }
     },
     "compositionRoots": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+    "approvedCrossModuleReads": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/approvedCrossModuleRead" }
+    },
     "generatedContracts": {
       "type": "object",
       "additionalProperties": false,
@@ -89,6 +95,17 @@
       "type": "array",
       "uniqueItems": true,
       "items": { "type": "string", "minLength": 1 }
+    },
+    "approvedCrossModuleRead": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter", "module", "tables", "reason"],
+      "properties": {
+        "adapter": { "$ref": "#/$defs/path" },
+        "module": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "tables": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
     },
     "module": {
       "type": "object",

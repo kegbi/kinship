@@ -145,36 +145,26 @@ function cadence(row: CadenceRow): StayInTouchCadenceRecord {
   };
 }
 
+/**
+ * The reminder use case revalidates the actor under lock before it asks for a
+ * delivery time zone (see the `ActorRevalidation` port), so this boundary only
+ * resolves the member's preference over the workspace default.
+ */
 export class PostgresReminderWorkspaceBoundary
   implements ReminderWorkspaceBoundary {
-  async authorize(
-    command: Parameters<ReminderWorkspaceBoundary["authorize"]>[0],
-  ): Promise<Awaited<ReturnType<ReminderWorkspaceBoundary["authorize"]>>> {
-    const result = await this.effectiveTimezone(command);
-    return { status: result.status };
-  }
-
   async effectiveTimezone(
     command: Parameters<ReminderWorkspaceBoundary["effectiveTimezone"]>[0],
   ): Promise<
     Awaited<ReturnType<ReminderWorkspaceBoundary["effectiveTimezone"]>>
   > {
     const result = await sql<{ readonly timezone: string | null }>`
-      select coalesce(preference.timezone, setting.default_timezone, 'UTC') as timezone
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      left join crm.member_preferences preference on preference.member_id = member.id
-      left join crm.workspace_settings setting on setting.workspace_id = workspace.id
-      where account.id = ${command.userId}::uuid
-        and account.status = 'active' and account.deleted_at is null
-        and member.id = ${command.memberId}::uuid
-        and member.workspace_id = ${command.workspaceId}::uuid
-        and member.role = ${command.role}
-        and member.role in ('owner', 'admin', 'member')
-        and member.status = 'active' and member.left_at is null
-        and workspace.status = 'active' and workspace.deleted_at is null
-      for update of account, member, workspace
+      select coalesce(
+        (select preference.timezone from crm.member_preferences preference
+          where preference.member_id = ${command.memberId}::uuid),
+        (select setting.default_timezone from crm.workspace_settings setting
+          where setting.workspace_id = ${command.workspaceId}::uuid),
+        'UTC'
+      ) as timezone
     `.execute(databaseFromSession(command.transaction));
     const timezone = result.rows[0]?.timezone;
     if (!timezone) return { status: "forbidden" };

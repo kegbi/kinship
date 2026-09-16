@@ -449,7 +449,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     `{ next(): string }` id shapes, adapter-layer randomUUID, per-module cursor
     codecs.
 
-- [ ] **GAP-008 — Actor revalidation port, wave 1 (people, relationships,
+- [x] **GAP-008 — Actor revalidation port, wave 1 (people, relationships,
       planning).** L. Depends: 005, 006.
   - Problem: the account/member/workspace activity join is copied into 24
     adapters, crosses `identity` ownership without declaration, and is skipped
@@ -466,6 +466,13 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     write.
   - Verify: baseline entries for those modules removed; integration tests green;
     no behavior change in existing E2E.
+  - Delivered 2026-09-16: baseline 98 -> 80 (all 18 people actor-join entries
+    removed; relationships had none; planning keeps 4 worker recipient-scan
+    entries that are not the actor join); negative revocation integration tests
+    green (api 58/0, planning 35/0, exports 2/0, imports 3/0); unit api 329/0,
+    planning 46/0, tasks 46/0; lock downgraded to for no key update to avoid an
+    FK deadlock, still blocking every revocation update; gates fmt:check, lint,
+    check. E2E behaviour proof deferred to the Phase 1 checkpoint.
 
 - [ ] **GAP-009 — Actor revalidation wave 2 and the files → gifts edge.** L.
       Depends: 008.

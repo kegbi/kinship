@@ -14,6 +14,7 @@ import type {
   TransactionalPeopleCreation,
 } from "../../people/public.ts";
 import type {
+  ActorRevalidation,
   RelationshipWorkspaceBoundary,
   WorkspaceRelationshipType,
   WorkspaceRelationshipTypeCursor,
@@ -138,6 +139,7 @@ export interface RelationshipRepository {
 }
 
 export interface RelationshipDependencies {
+  readonly actors: ActorRevalidation;
   readonly audit: RelationshipAudit;
   readonly clock: Clock;
   readonly ids: IdGenerator;
@@ -336,6 +338,18 @@ function success<T extends "created" | "existing" | "updated">(
 export function createRelationshipManagement(
   dependencies: RelationshipDependencies,
 ) {
+  /**
+   * The actor's standing, asked first inside the caller's transaction. Write
+   * paths lock the actor's rows; read paths keep their lock-free concurrency.
+   */
+  const active = async (
+    actor: PeopleActor,
+    transaction: PeopleTransaction,
+    lock: boolean,
+  ): Promise<boolean> =>
+    await dependencies.actors.revalidate({ ...actor, lock, transaction }) ===
+      "active";
+
   const inspectMutation = async (
     actor: PeopleActor,
     transaction: PeopleTransaction,
@@ -419,6 +433,9 @@ export function createRelationshipManagement(
         status: "validation-error",
       };
     }
+    if (!await active(actor, transaction, true)) {
+      return { status: "forbidden" };
+    }
     const context = await inspectMutation(actor, transaction, [
       sourcePersonId,
       input.targetPersonId,
@@ -460,6 +477,9 @@ export function createRelationshipManagement(
       } = {},
     ) =>
       dependencies.transaction.run(async (transaction) => {
+        if (!await active(actor, transaction, false)) {
+          return { status: "forbidden" as const };
+        }
         const search = input.search?.trim() ?? "";
         const after = input.cursor
           ? decodeTypeCursor(input.cursor, actor, search)
@@ -521,6 +541,9 @@ export function createRelationshipManagement(
       input: { readonly cursor?: string; readonly limit?: number } = {},
     ) =>
       dependencies.transaction.run(async (transaction) => {
+        if (!await active(actor, transaction, false)) {
+          return { status: "forbidden" as const };
+        }
         const workspace = await dependencies.workspace
           .ensureDefaultRelationshipTypes({ ...actor, transaction });
         if (workspace.status === "forbidden") {
@@ -634,6 +657,9 @@ export function createRelationshipManagement(
     ): Promise<RelatedPersonRelationshipResult> => {
       try {
         return await dependencies.transaction.run(async (transaction) => {
+          if (!await active(actor, transaction, true)) {
+            return { status: "forbidden" as const };
+          }
           const defaults = await dependencies.workspace
             .ensureDefaultRelationshipTypes({ ...actor, transaction });
           if (defaults.status !== "ready") return { status: "forbidden" };
@@ -684,6 +710,9 @@ export function createRelationshipManagement(
         };
       }
       return await dependencies.transaction.run(async (transaction) => {
+        if (!await active(actor, transaction, true)) {
+          return { status: "forbidden" as const };
+        }
         const observed = await dependencies.repository.get({
           ...actor,
           personId,
@@ -742,6 +771,9 @@ export function createRelationshipManagement(
         };
       }
       return await dependencies.transaction.run(async (transaction) => {
+        if (!await active(actor, transaction, true)) {
+          return { status: "forbidden" as const };
+        }
         const observed = await dependencies.repository.get({
           ...actor,
           personId,

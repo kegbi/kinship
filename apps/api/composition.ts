@@ -28,6 +28,7 @@ import {
   createWorkspaceLifecycle,
   type MemberUiStateManagement,
   PostgresActiveWorkspaceResolver,
+  PostgresActorRevalidation,
   PostgresMemberUiStateRepository,
   PostgresPersonalLifecycleMemberships,
   PostgresProfileFactConfiguration,
@@ -843,6 +844,9 @@ export function createConfiguredApiApp(
     transaction,
   });
   const peopleTransaction = new PostgresPeopleTransaction(connection.db);
+  // The one approved actor-context read, shared by every use case that writes
+  // or reads on an actor's behalf.
+  const actors = new PostgresActorRevalidation();
   const objectStorage = objectStorageOverride ?? (() => {
     const configuration = resolveObjectStorageConfiguration(Deno.env);
     return new S3CompatibleObjectStorage(
@@ -929,6 +933,7 @@ export function createConfiguredApiApp(
     transaction: new PostgresImportTransaction(connection.db),
   });
   const exports = createExportManagement({
+    actors,
     audit: new PostgresExportAudit(),
     clock,
     files: new PostgresExportFileBoundary(connection.db, {
@@ -944,6 +949,7 @@ export function createConfiguredApiApp(
   });
   const peopleRepository = new PostgresPeopleRepository();
   const peopleManagement = createPeopleManagement({
+    actors,
     audit: new PostgresPersonCreatedAudit(),
     clock,
     ids,
@@ -959,12 +965,14 @@ export function createConfiguredApiApp(
     transaction,
   });
   const peopleLifecycle = createPersonLifecycle({
+    actors,
     audit: new PostgresPersonLifecycleAudit(),
     clock,
     repository: new PostgresPersonLifecycleRepository(),
     transaction: peopleTransaction,
   });
   const importantDates = createImportantDateManagement({
+    actors,
     audit: new PostgresImportantDateAudit(),
     clock,
     ids,
@@ -973,6 +981,7 @@ export function createConfiguredApiApp(
     transaction: peopleTransaction,
   });
   const profileFacts = createProfileFactManagement({
+    actors,
     audit: new PostgresProfileFactAudit(),
     clock,
     ids,
@@ -982,6 +991,7 @@ export function createConfiguredApiApp(
     workspace: new PostgresProfileFactConfiguration(),
   });
   const relationships = createRelationshipManagement({
+    actors,
     audit: new PostgresRelationshipAudit(),
     clock,
     ids,
@@ -994,6 +1004,7 @@ export function createConfiguredApiApp(
   const interactionWorkspace = new PostgresInteractionWorkspaceBoundary();
   const interactionPeople = new PostgresRelationshipPersonBoundary();
   const reminders = createReminderManagement({
+    actors,
     audit: new PostgresReminderAudit(),
     clock,
     people: interactionPeople,
@@ -1023,13 +1034,13 @@ export function createConfiguredApiApp(
     }),
   };
   const tasks = createTaskManagement({
+    actors,
     audit: new PostgresTaskAudit(),
     clock,
     cursorKeyset: subjectKeyset,
     people: interactionPeople,
     repository: new PostgresTaskRepository(),
     transaction: peopleTransaction,
-    workspace: interactionWorkspace,
   });
   const davRemoteId = async (value: string) => {
     const digest = new Uint8Array(

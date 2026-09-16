@@ -6,6 +6,7 @@ import type {
 } from "../../../shared-kernel/result.ts";
 import { isInstant, optionalText } from "../../../shared-kernel/validation.ts";
 import type { PeopleActor, PeopleTransaction } from "./create_person.ts";
+import type { ActorRevalidation } from "../../workspaces/public.ts";
 
 export type PersonLifecycleState = "active" | "archived" | "deleted";
 export type PersonLifecycleAction = "archive" | "delete" | "edit" | "restore";
@@ -97,6 +98,7 @@ export interface PersonLifecycleAudit {
 }
 
 export interface PersonLifecycleDependencies {
+  readonly actors: ActorRevalidation;
   readonly audit: PersonLifecycleAudit;
   readonly clock: Clock;
   readonly repository: PersonLifecycleRepository;
@@ -218,17 +220,36 @@ export function createPersonLifecycle(
     return person;
   };
 
+  /**
+   * Revalidates the actor under lock before the person row is locked, so a
+   * revocation committed mid-request cannot reach a write.
+   */
+  const lockPerson = async (
+    actor: PeopleActor,
+    action: PersonLifecycleAction,
+    personId: string,
+    transaction: PeopleTransaction,
+  ): Promise<PersonLifecycleLock> => {
+    const standing = await dependencies.actors.revalidate({
+      ...actor,
+      lock: true,
+      transaction,
+    });
+    if (standing === "revoked") return { status: "forbidden" };
+    return await dependencies.repository.lock({
+      action,
+      ...actor,
+      personId,
+      transaction,
+    });
+  };
+
   const inspectInTransaction = (
     actor: PeopleActor,
     personId: string,
     transaction: PeopleTransaction,
   ): Promise<PersonLifecycleLock> =>
-    dependencies.repository.lock({
-      action: "edit",
-      ...actor,
-      personId,
-      transaction,
-    });
+    lockPerson(actor, "edit", personId, transaction);
   const editInTransaction = async (
     actor: PeopleActor,
     personId: string,
@@ -240,12 +261,7 @@ export function createPersonLifecycle(
     if (Object.keys(errors).length > 0) {
       return { errors, status: "validation-error" };
     }
-    const locked = await dependencies.repository.lock({
-      action: "edit",
-      ...actor,
-      personId,
-      transaction,
-    });
+    const locked = await lockPerson(actor, "edit", personId, transaction);
     if (locked.status !== "ready") return failure(locked);
     if (locked.person.lifecycle === "deleted") return { status: "not-found" };
     if (locked.person.lifecycle === "archived") {
@@ -272,12 +288,7 @@ export function createPersonLifecycle(
     action: "archive" | "restore",
     transaction: PeopleTransaction,
   ): Promise<TransitionPersonResult> => {
-    const locked = await dependencies.repository.lock({
-      action,
-      ...actor,
-      personId,
-      transaction,
-    });
+    const locked = await lockPerson(actor, action, personId, transaction);
     if (locked.status !== "ready") return failure(locked);
     if (locked.person.lifecycle === "deleted") return { status: "not-found" };
     if (
@@ -358,12 +369,12 @@ export function createPersonLifecycle(
       personId: string,
     ): Promise<PreviewPersonDeletionResult> =>
       dependencies.transaction.run(async (transaction) => {
-        const locked = await dependencies.repository.lock({
-          action: "delete",
-          ...actor,
+        const locked = await lockPerson(
+          actor,
+          "delete",
           personId,
           transaction,
-        });
+        );
         if (locked.status !== "ready") return failure(locked);
         if (locked.person.lifecycle === "deleted") {
           return { status: "not-found" };
@@ -383,12 +394,12 @@ export function createPersonLifecycle(
       input: DeletePersonInput,
     ): Promise<DeletePersonResult> =>
       dependencies.transaction.run(async (transaction) => {
-        const locked = await dependencies.repository.lock({
-          action: "delete",
-          ...actor,
+        const locked = await lockPerson(
+          actor,
+          "delete",
           personId,
           transaction,
-        });
+        );
         if (locked.status !== "ready") return failure(locked);
         if (locked.person.lifecycle === "deleted") {
           return { personId, status: "deleted" };

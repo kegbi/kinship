@@ -7,11 +7,13 @@ import {
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import {
+  createImportantDateManagement,
   createPeopleManagement,
   createPersonLifecycle,
   createProfileFactManagement,
   type PeopleActor,
   type PeopleRepository,
+  PostgresImportantDateRepository,
   PostgresPeopleRepository,
   PostgresPeopleTransaction,
   PostgresPersonLifecycleRepository,
@@ -20,13 +22,16 @@ import {
   PostgresRelationshipPersonBoundary,
 } from "../../packages/backend/modules/people/public.ts";
 import {
+  PostgresImportantDateAudit,
   PostgresPersonCreatedAudit,
   PostgresPersonLifecycleAudit,
   PostgresProfileFactAudit,
   PostgresRelationshipAudit,
 } from "../../packages/backend/modules/governance/public.ts";
 import {
+  type ActorRevalidation,
   DEFAULT_RELATIONSHIP_TYPE_VOCABULARY,
+  PostgresActorRevalidation,
   PostgresProfileFactConfiguration,
   PostgresRelationshipWorkspaceBoundary,
 } from "../../packages/backend/modules/workspaces/public.ts";
@@ -35,6 +40,7 @@ import {
   PostgresRelationshipRepository,
   type RelationshipDependencies,
 } from "../../packages/backend/modules/relationships/public.ts";
+import { PostgresPersonDateReminderPublisher } from "../../packages/backend/modules/planning/public.ts";
 import {
   type ApplicationDatabase,
   connectDatabase,
@@ -60,7 +66,9 @@ if (!databaseUrl) {
 const sql = postgres(databaseUrl, { max: 3, onnotice: () => undefined });
 const raceSql = postgres(databaseUrl, { max: 2, onnotice: () => undefined });
 const peopleConnection = connectDatabase(databaseUrl);
+const actors = new PostgresActorRevalidation();
 const people = createPeopleManagement({
+  actors,
   audit: new PostgresPersonCreatedAudit(),
   clock: { now: () => new Date() },
   ids: { create: () => crypto.randomUUID() },
@@ -68,6 +76,7 @@ const people = createPeopleManagement({
   transaction: new PostgresPeopleTransaction(peopleConnection.db),
 });
 const profileFacts = createProfileFactManagement({
+  actors,
   audit: new PostgresProfileFactAudit(),
   clock: { now: () => new Date() },
   ids: { create: () => crypto.randomUUID() },
@@ -447,15 +456,6 @@ function racingPeople(
   const delegate = new PostgresPeopleRepository();
   const repository: PeopleRepository = {
     lockRequest: () => Promise.resolve(),
-    async revalidateAndLockCreateContext(command) {
-      authorizationAttempted.resolve();
-      const authorized = await delegate.revalidateAndLockCreateContext(command);
-      if (authorized && authorizationLocked) {
-        authorizationLocked.ready.resolve();
-        await authorizationLocked.release.promise;
-      }
-      return authorized;
-    },
     assertCreatedPostcondition: (command) =>
       delegate.assertCreatedPostcondition(command),
     create: (command) => delegate.create(command),
@@ -463,7 +463,19 @@ function racingPeople(
       delegate.findPossibleDuplicates(command),
     getIdentity: (command) => delegate.getIdentity(command),
   };
+  const racingActors: ActorRevalidation = {
+    async revalidate(command) {
+      authorizationAttempted.resolve();
+      const standing = await actors.revalidate(command);
+      if (standing === "active" && authorizationLocked) {
+        authorizationLocked.ready.resolve();
+        await authorizationLocked.release.promise;
+      }
+      return standing;
+    },
+  };
   return createPeopleManagement({
+    actors: racingActors,
     audit: new PostgresPersonCreatedAudit(),
     clock: { now: () => new Date() },
     ids: { create: () => crypto.randomUUID() },
@@ -2877,6 +2889,7 @@ Deno.test({
     };
     const fixedClock = new Date("2099-01-01T00:00:00.000Z");
     const lifecycle = createPersonLifecycle({
+      actors,
       audit: new PostgresPersonLifecycleAudit(),
       clock: { now: () => fixedClock },
       repository: new PostgresPersonLifecycleRepository(),
@@ -5370,6 +5383,7 @@ Deno.test({
     ): RelationshipDependencies => {
       const transaction = new PostgresPeopleTransaction(peopleConnection.db);
       const peopleManagement = createPeopleManagement({
+        actors,
         audit: new PostgresPersonCreatedAudit(),
         clock: { now: () => new Date() },
         ids: { create: () => crypto.randomUUID() },
@@ -5378,6 +5392,7 @@ Deno.test({
       });
       const workspace = new PostgresRelationshipWorkspaceBoundary();
       return {
+        actors,
         audit: new PostgresRelationshipAudit(),
         clock: { now: () => new Date() },
         ids: { create: () => crypto.randomUUID() },
@@ -5690,6 +5705,160 @@ Deno.test({
       await Promise.allSettled([lockerWork]);
       await Promise.all([locker.end(), observer.end()]);
     }
+  },
+});
+
+Deno.test({
+  name:
+    "GAP-008 a revoked member cannot write people, profile facts, dates, or relationships",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const actor = await createStaleActorFixture(
+      `revalidation-${crypto.randomUUID()}`,
+    );
+    const [companion] = await sql<{ readonly id: string }[]>`
+      insert into crm.people (workspace_id, created_by_member_id, given_name)
+      values (${actor.workspaceId}, ${actor.memberId}, 'Companion')
+      returning id::text
+    `;
+    assert(companion, "the revocation fixture has a second person");
+    const importantDates = createImportantDateManagement({
+      actors,
+      audit: new PostgresImportantDateAudit(),
+      clock: { now: () => new Date() },
+      ids: { create: () => crypto.randomUUID() },
+      publisher: new PostgresPersonDateReminderPublisher(),
+      repository: new PostgresImportantDateRepository(),
+      transaction: new PostgresPeopleTransaction(peopleConnection.db),
+    });
+    const lifecycle = createPersonLifecycle({
+      actors,
+      audit: new PostgresPersonLifecycleAudit(),
+      clock: { now: () => new Date() },
+      repository: new PostgresPersonLifecycleRepository(),
+      transaction: new PostgresPeopleTransaction(peopleConnection.db),
+    });
+    const relationships = createRelationshipManagement({
+      actors,
+      audit: new PostgresRelationshipAudit(),
+      clock: { now: () => new Date() },
+      ids: { create: () => crypto.randomUUID() },
+      people: new PostgresRelationshipPersonBoundary(),
+      peopleCreation: people,
+      repository: new PostgresRelationshipRepository(),
+      transaction: new PostgresPeopleTransaction(peopleConnection.db),
+      workspace: new PostgresRelationshipWorkspaceBoundary(),
+    });
+
+    // While the membership is active every surface answers normally, so the
+    // refusals below can only come from the revocation.
+    const beforeTypes = await relationships.listTypes(actor);
+    assert(
+      beforeTypes.status === "ready" && beforeTypes.options[0],
+      "an active member sees the workspace relationship vocabulary",
+    );
+    const relationshipTypeId = beforeTypes.options[0].id;
+    const beforeRead = await people.get(actor, actor.personId);
+    assert(beforeRead.status === "ready", "an active member reads the person");
+
+    await sql`
+      update crm.workspace_members set left_at = now(), status = 'left'
+      where id = ${actor.memberId}
+    `;
+
+    const created = await people.create(actor, {
+      givenName: "Refused",
+      isPartial: false,
+    });
+    const read = await people.get(actor, actor.personId);
+    const edited = await lifecycle.edit(actor, actor.personId, {
+      expectedUpdatedAt: new Date().toISOString(),
+      givenName: "Refused",
+      isPartial: false,
+    });
+    const archived = await lifecycle.archive(actor, actor.personId, {
+      expectedUpdatedAt: new Date().toISOString(),
+    });
+    const dated = await importantDates.create(actor, actor.personId, {
+      day: 4,
+      isAgeBased: false,
+      isYearApproximate: false,
+      kind: "birthday",
+      month: 7,
+      precision: "full",
+      year: 1990,
+    });
+    const fact = await profileFacts.create(
+      actor,
+      actor.personId,
+      "food-preferences",
+      {
+        expectedPersonUpdatedAt: new Date().toISOString(),
+        foodPreferences: "Refused",
+      },
+    );
+    const factList = await profileFacts.list(
+      actor,
+      actor.personId,
+      "food-preferences",
+      {},
+    );
+    const linked = await relationships.create(actor, actor.personId, {
+      relationshipTypeId,
+      targetPersonId: companion.id,
+    });
+    const listed = await relationships.list(actor, actor.personId);
+
+    for (
+      const [label, result] of [
+        ["people.create", created],
+        ["people.get", read],
+        ["lifecycle.edit", edited],
+        ["lifecycle.archive", archived],
+        ["importantDates.create", dated],
+        ["profileFacts.create", fact],
+        ["profileFacts.list", factList],
+        ["relationships.create", linked],
+        ["relationships.list", listed],
+      ] as const
+    ) {
+      assert(
+        result.status === "forbidden",
+        `${label} answered ${result.status} for a revoked member`,
+      );
+    }
+
+    const [proof] = await sql<{
+      readonly audits: number;
+      readonly dates: number;
+      readonly edges: number;
+      readonly people: number;
+    }[]>`
+      select
+        (select count(*)::int from crm.audit_events
+          where workspace_id = ${actor.workspaceId}) audits,
+        (select count(*)::int from crm.person_dates date
+          join crm.people person on person.id = date.person_id
+          where person.workspace_id = ${actor.workspaceId}) dates,
+        (select count(*)::int from crm.relationships
+          where workspace_id = ${actor.workspaceId}) edges,
+        (select count(*)::int from crm.people
+          where workspace_id = ${actor.workspaceId}) people
+    `;
+    assert(proof, "revocation proof is present");
+    assert(
+      proof.people === 2 && proof.dates === 0 && proof.edges === 0 &&
+        proof.audits === 0,
+      `a revoked member changed rows: ${JSON.stringify(proof)}`,
+    );
+    const [unchanged] = await sql<{ readonly given_name: string }[]>`
+      select given_name from crm.people where id = ${actor.personId}
+    `;
+    assert(
+      unchanged?.given_name === actor.personName,
+      "a revoked member renamed the person",
+    );
   },
 });
 

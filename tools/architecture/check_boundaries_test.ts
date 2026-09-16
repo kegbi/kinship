@@ -44,6 +44,12 @@ sharedKernel:
 compositionRoots:
   - apps/api/composition.ts
 
+approvedCrossModuleReads:
+  - adapter: packages/backend/modules/gifts/adapters/postgres/actor_context.ts
+    module: gifts
+    tables: [people]
+    reason: The one approved actor-context read.
+
 generatedContracts:
   path: packages/contracts/generated
   source: packages/contracts/openapi
@@ -212,6 +218,60 @@ Deno.test("[GAP-005] adapters reading only owned tables are clean", async () => 
     text: "sql`select id from crm.files join crm.gift_file_links using (id)`",
   }]);
   assert(violations.length === 0, `unexpected: ${render(violations)}`);
+});
+
+Deno.test("[GAP-008] only the declared actor-context read is exempt", async () => {
+  const declared = await fixture([{
+    path: "packages/backend/modules/gifts/adapters/postgres/actor_context.ts",
+    text: "sql`select 1 from crm.people where id = ${id} for update`",
+  }]);
+  assert(
+    declared.length === 0,
+    `the declared actor-context read must pass, got ${render(declared)}`,
+  );
+
+  const undeclared = await fixture([{
+    path: "packages/backend/modules/gifts/adapters/postgres/elsewhere.ts",
+    text: "sql`select 1 from crm.people where id = ${id} for update`",
+  }]);
+  assert(
+    undeclared.length === 1 &&
+      undeclared[0]?.rule === "table-foreign-read" &&
+      undeclared[0].detail === "gifts reads crm.people, owned by people",
+    `an undeclared adapter reading the same table is still reported, got ${
+      render(undeclared)
+    }`,
+  );
+
+  const otherTable = await fixture([{
+    path: "packages/backend/modules/gifts/adapters/postgres/actor_context.ts",
+    text: "sql`select 1 from crm.files`",
+  }]);
+  assert(
+    otherTable.length === 1 &&
+      otherTable[0]?.detail === "gifts reads crm.files, owned by files",
+    `a table the declaration does not name is still reported, got ${
+      render(otherTable)
+    }`,
+  );
+});
+
+Deno.test("[GAP-008] an approved read never excuses an undeclared owner", async () => {
+  const violations = await fixture([{
+    path: "packages/backend/modules/files/adapters/postgres/actor_context.ts",
+    text: "sql`select 1 from crm.gifts`",
+  }], {
+    manifestText: MANIFEST.replace(
+      "  - adapter: packages/backend/modules/gifts/adapters/postgres/actor_context.ts\n    module: gifts\n    tables: [people]\n",
+      "  - adapter: packages/backend/modules/files/adapters/postgres/actor_context.ts\n    module: files\n    tables: [gifts]\n",
+    ),
+  });
+  assert(
+    violations.length === 1 && violations[0]?.rule === "table-access",
+    `reading a table no declared dependency owns stays a breach, got ${
+      render(violations)
+    }`,
+  );
 });
 
 Deno.test("[GAP-005] a read model is measured against its source modules", async () => {
@@ -762,6 +822,47 @@ Deno.test("[APP-009B] import-export reads people and artifacts through their own
     violations,
     ["crm.people,", "crm.person_contact_methods", "crm.files"],
     "import-export must not cross a source module's table boundary",
+  );
+});
+
+Deno.test("[GAP-008] one adapter carries the whole actor-context read", async () => {
+  const revalidation = await repository([
+    "packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts",
+  ]);
+  assert(
+    revalidation.length === 0,
+    `the declared actor-revalidation adapter must be clean, got ${
+      render(revalidation)
+    }`,
+  );
+
+  const undeclared = await repository([
+    "packages/backend/modules/workspaces/adapters/postgres/member_ui_state.ts",
+  ]);
+  assert(
+    undeclared.some((violation) =>
+      violation.rule === "table-foreign-read" &&
+      violation.detail === "workspaces reads crm.users, owned by identity"
+    ),
+    `another workspaces adapter reading crm.users is still reported, got ${
+      render(undeclared)
+    }`,
+  );
+
+  const waveOne = await repository([
+    "packages/backend/modules/people/adapters/postgres/export_people_boundary.ts",
+    "packages/backend/modules/people/adapters/postgres/import_people_boundary.ts",
+    "packages/backend/modules/people/adapters/postgres/important_date_repository.ts",
+    "packages/backend/modules/people/adapters/postgres/people_repository.ts",
+    "packages/backend/modules/people/adapters/postgres/person_lifecycle_repository.ts",
+    "packages/backend/modules/people/adapters/postgres/profile_fact_repository.ts",
+    "packages/backend/modules/relationships/adapters/postgres/relationship_repository.ts",
+    "packages/backend/modules/planning/adapters/postgres/task_repository.ts",
+  ]);
+  refuse(
+    waveOne,
+    ["crm.users", "crm.workspace_members", "crm.workspaces,"],
+    "wave-one adapters must not re-create the actor-context join",
   );
 });
 

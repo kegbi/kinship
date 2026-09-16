@@ -38,6 +38,7 @@ function dependencies(options: {
             : Promise.resolve();
         },
       },
+      actors: { revalidate: () => Promise.resolve("active") },
       clock: { now: () => new Date("2026-08-15T12:00:00.000Z") },
       ids: { create: () => dateId },
       publisher: {

@@ -9,6 +9,7 @@ import type {
   ValidationFailure,
 } from "../../../shared-kernel/result.ts";
 import { optionalText } from "../../../shared-kernel/validation.ts";
+import type { ActorRevalidation } from "../../workspaces/public.ts";
 
 /** The namespace that makes a person creation idempotent across retries. */
 const PERSON_ID_NAMESPACE = "kinship.people.external-id.v1";
@@ -57,9 +58,6 @@ export interface PeopleRepository {
     readonly id: string;
     readonly transaction: PeopleTransaction;
   }): Promise<void>;
-  revalidateAndLockCreateContext(
-    command: PeopleActor & { readonly transaction: PeopleTransaction },
-  ): Promise<boolean>;
   findPossibleDuplicates(
     command: PeopleActor & CreatePersonInput & {
       readonly transaction: PeopleTransaction;
@@ -99,6 +97,7 @@ export interface PersonCreatedAudit {
 }
 
 export interface PeopleManagementDependencies {
+  readonly actors: ActorRevalidation;
   readonly audit: PersonCreatedAudit;
   readonly clock: Clock;
   readonly ids: IdGenerator;
@@ -180,9 +179,12 @@ export function createPeopleManagement(
     if (Object.keys(errors).length > 0) {
       return { errors, status: "validation-error" };
     }
-    const authorized = await dependencies.repository
-      .revalidateAndLockCreateContext({ ...actor, transaction });
-    if (!authorized) return { status: "forbidden" };
+    const standing = await dependencies.actors.revalidate({
+      ...actor,
+      lock: true,
+      transaction,
+    });
+    if (standing === "revoked") return { status: "forbidden" };
     const duplicates = await dependencies.repository.findPossibleDuplicates({
       ...actor,
       ...input,
@@ -231,12 +233,12 @@ export function createPeopleManagement(
       actor.workspaceId,
       requestId,
     ]);
-    if (
-      !await dependencies.repository.revalidateAndLockCreateContext({
-        ...actor,
-        transaction,
-      })
-    ) return { status: "forbidden" };
+    const standing = await dependencies.actors.revalidate({
+      ...actor,
+      lock: true,
+      transaction,
+    });
+    if (standing === "revoked") return { status: "forbidden" };
     await dependencies.repository.lockRequest({ id, transaction });
     const existing = await dependencies.repository.getIdentity({
       ...actor,
@@ -296,13 +298,19 @@ export function createPeopleManagement(
       actor: PeopleActor,
       personId: string,
     ): Promise<GetPersonResult> =>
-      dependencies.transaction.run((transaction) =>
-        dependencies.repository.getIdentity({
+      dependencies.transaction.run(async (transaction) => {
+        const standing = await dependencies.actors.revalidate({
+          ...actor,
+          lock: false,
+          transaction,
+        });
+        if (standing === "revoked") return { status: "forbidden" };
+        return await dependencies.repository.getIdentity({
           ...actor,
           personId,
           transaction,
-        })
-      ),
+        });
+      }),
   };
 }
 

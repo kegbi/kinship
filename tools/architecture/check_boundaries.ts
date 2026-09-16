@@ -33,6 +33,10 @@
  *    rather than by the module itself is the weaker `table-foreign-read`, which
  *    is what the copy-pasted tenancy joins are. Read models are cross-module by
  *    contract, so they are measured against their `sourceModules` only.
+ *    `approvedCrossModuleReads` names the few adapter files allowed to make a
+ *    specific foreign read — today only the one actor-revalidation adapter
+ *    that replaced those joins. The exemption is exact: it matches one module,
+ *    one file, and one table, and it never excuses a `table-access` breach.
  * 5. `cycle` — neither the declared dependencies nor the real module imports
  *    form a cycle.
  *
@@ -271,6 +275,18 @@ export function validateAgainstSchema(
 
 // --- The manifest --------------------------------------------------------
 
+/**
+ * One adapter file the manifest allows to read a named table owned by another
+ * module. It narrows `table-foreign-read` only: the owning module must still
+ * be a declared dependency, so an approved read can never hide a
+ * `table-access` breach.
+ */
+export interface ApprovedCrossModuleRead {
+  readonly adapter: string;
+  readonly module: string;
+  readonly tables: readonly string[];
+}
+
 export interface ManifestModule {
   readonly id: string;
   readonly path: string;
@@ -288,6 +304,7 @@ export interface ManifestReadModel {
 }
 
 export interface Manifest {
+  readonly approvedCrossModuleReads: readonly ApprovedCrossModuleRead[];
   readonly compositionRoots: readonly string[];
   /** `sharedKernel.path`: the one unit every other unit may import. */
   readonly sharedKernelPath: string;
@@ -311,7 +328,17 @@ function readManifest(document: JsonObject): Manifest {
     ? document["readModels"]
     : [];
   const sharedKernel = document["sharedKernel"];
+  const approvedReads = Array.isArray(document["approvedCrossModuleReads"])
+    ? document["approvedCrossModuleReads"]
+    : [];
   return {
+    approvedCrossModuleReads: approvedReads.filter(isJsonObject).map((
+      entry,
+    ) => ({
+      adapter: text(entry["adapter"]),
+      module: text(entry["module"]),
+      tables: strings(entry["tables"]),
+    })),
     compositionRoots: strings(document["compositionRoots"]),
     sharedKernelPath: isJsonObject(sharedKernel)
       ? text(sharedKernel["path"])
@@ -702,6 +729,14 @@ function tableAccessViolations(
     });
   }
 
+  // The manifest's declared actor-context reads, keyed by module, file, and
+  // table. They excuse a `table-foreign-read` and nothing else.
+  const approved = new Set(
+    manifest.approvedCrossModuleReads.flatMap((entry) =>
+      entry.tables.map((table) => `${entry.module}|${entry.adapter}|${table}`)
+    ),
+  );
+
   for (const file of input.files) {
     const scope = scopes.find((candidate) =>
       file.path.startsWith(candidate.prefix)
@@ -719,6 +754,7 @@ function tableAccessViolations(
         });
         continue;
       }
+      if (approved.has(`${scope.id}|${file.path}|${table}`)) continue;
       violations.push({
         rule: "table-foreign-read",
         subject: file.path,

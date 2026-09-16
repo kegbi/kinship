@@ -22,10 +22,11 @@ const transaction = { opaque: { test: true } };
 
 function createTestProfileFactManagement(
   dependencies:
-    & Omit<ProfileFactDependencies, "organizations">
-    & Partial<Pick<ProfileFactDependencies, "organizations">>,
+    & Omit<ProfileFactDependencies, "actors" | "organizations">
+    & Partial<Pick<ProfileFactDependencies, "actors" | "organizations">>,
 ) {
   return createProfileFactManagement({
+    actors: { revalidate: () => Promise.resolve("active") },
     organizations: {
       inspect: () => Promise.resolve({ options: [], status: "ready" }),
     },

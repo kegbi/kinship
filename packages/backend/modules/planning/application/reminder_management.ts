@@ -10,6 +10,7 @@ import type {
   PeopleTransaction,
   RelationshipPersonBoundary,
 } from "../../people/public.ts";
+import type { ActorRevalidation } from "../../workspaces/public.ts";
 
 /** The namespaces that make a reminder or cadence idempotent across retries. */
 const ID_NAMESPACE = {
@@ -183,11 +184,6 @@ export interface ReminderRepository {
 }
 
 export interface ReminderWorkspaceBoundary {
-  authorize(
-    command: PeopleActor & {
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<Failure<"forbidden"> | { readonly status: "ready" }>;
   effectiveTimezone(
     command: PeopleActor & {
       readonly transaction: PeopleTransaction;
@@ -215,6 +211,7 @@ export interface ReminderAudit {
 }
 
 export interface ReminderManagementDependencies {
+  readonly actors: ActorRevalidation;
   readonly audit: ReminderAudit;
   readonly clock: Clock;
   readonly people: RelationshipPersonBoundary;
@@ -365,6 +362,20 @@ async function cadenceFingerprint(input: CreateCadenceInput): Promise<string> {
 export function createReminderManagement(
   dependencies: ReminderManagementDependencies,
 ) {
+  /**
+   * The actor's standing, asked first inside the caller's transaction and
+   * under lock, because every path below writes or reads on its behalf.
+   */
+  const actorIsActive = async (
+    actor: PeopleActor,
+    transaction: PeopleTransaction,
+  ): Promise<boolean> =>
+    await dependencies.actors.revalidate({
+      ...actor,
+      lock: true,
+      transaction,
+    }) === "active";
+
   const writablePerson = async (
     actor: PeopleActor,
     personId: string,
@@ -418,6 +429,9 @@ export function createReminderManagement(
         return { errors, status: "validation-error" };
       }
       return await dependencies.transaction.run(async (transaction) => {
+        if (!await actorIsActive(actor, transaction)) {
+          return { status: "forbidden" };
+        }
         const zone = await dependencies.workspace.effectiveTimezone({
           ...actor,
           transaction,
@@ -525,6 +539,9 @@ export function createReminderManagement(
         return { errors, status: "validation-error" };
       }
       return await dependencies.transaction.run(async (transaction) => {
+        if (!await actorIsActive(actor, transaction)) {
+          return { status: "forbidden" };
+        }
         const zone = await dependencies.workspace.effectiveTimezone({
           ...actor,
           transaction,
@@ -583,11 +600,7 @@ export function createReminderManagement(
     },
     setActive: async (actor: PeopleActor, id: string, active: boolean) =>
       await dependencies.transaction.run(async (transaction) => {
-        const authorized = await dependencies.workspace.authorize({
-          ...actor,
-          transaction,
-        });
-        if (authorized.status !== "ready") {
+        if (!await actorIsActive(actor, transaction)) {
           return { status: "forbidden" as const };
         }
         const occurredAt = dependencies.clock.now();
@@ -660,11 +673,7 @@ export function createReminderManagement(
       }),
     listPerson: async (actor: PeopleActor, personId: string) =>
       await dependencies.transaction.run(async (transaction) => {
-        const authorized = await dependencies.workspace.authorize({
-          ...actor,
-          transaction,
-        });
-        if (authorized.status !== "ready") {
+        if (!await actorIsActive(actor, transaction)) {
           return { status: "forbidden" as const };
         }
         const result = await dependencies.repository.listPerson({
@@ -695,6 +704,7 @@ export function createReminderManagement(
       actor: PeopleActor,
       transaction: PeopleTransaction,
     ): Promise<void> => {
+      if (!await actorIsActive(actor, transaction)) return;
       const zone = await dependencies.workspace.effectiveTimezone({
         ...actor,
         transaction,

@@ -41,32 +41,6 @@ export class PostgresPeopleRepository implements PeopleRepository {
     await sql`select pg_advisory_xact_lock(hashtextextended(${command.id},0))`
       .execute(databaseFromSession(command.transaction));
   }
-  async revalidateAndLockCreateContext(
-    command: Parameters<
-      PeopleRepository["revalidateAndLockCreateContext"]
-    >[0],
-  ): Promise<boolean> {
-    const result = await sql<{ readonly authorized: boolean }>`
-      select true as authorized
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      where account.id = ${command.userId}::uuid
-        and account.status = 'active'
-        and account.deleted_at is null
-        and member.id = ${command.memberId}::uuid
-        and member.workspace_id = ${command.workspaceId}::uuid
-        and member.role = ${command.role}
-        and member.status = 'active'
-        and member.left_at is null
-        and workspace.id = ${command.workspaceId}::uuid
-        and workspace.status = 'active'
-        and workspace.deleted_at is null
-      for update of account, member, workspace
-    `.execute(databaseFromSession(command.transaction));
-    return result.rows[0]?.authorized === true;
-  }
-
   async findPossibleDuplicates(
     command: Parameters<PeopleRepository["findPossibleDuplicates"]>[0],
   ): Promise<readonly PossibleDuplicate[]> {
@@ -96,39 +70,22 @@ export class PostgresPeopleRepository implements PeopleRepository {
     const result = await sql<{
       readonly archived_at: Date | null;
       readonly family_name: string | null;
-      readonly given_name: string | null;
-      readonly id: string | null;
-      readonly is_partial: boolean | null;
+      readonly given_name: string;
+      readonly id: string;
+      readonly is_partial: boolean;
       readonly middle_name: string | null;
       readonly nickname: string | null;
     }>`
       select person.id::text, person.given_name, person.middle_name,
         person.family_name, person.nickname, person.is_partial,
         person.archived_at
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      left join crm.people person
-        on person.id = ${command.personId}::uuid
-        and person.workspace_id = workspace.id
+      from crm.people person
+      where person.id = ${command.personId}::uuid
+        and person.workspace_id = ${command.workspaceId}::uuid
         and person.deleted_at is null
-      where account.id = ${command.userId}::uuid
-        and account.status = 'active'
-        and account.deleted_at is null
-        and member.id = ${command.memberId}::uuid
-        and member.workspace_id = ${command.workspaceId}::uuid
-        and member.role = ${command.role}
-        and member.status = 'active'
-        and member.left_at is null
-        and workspace.id = ${command.workspaceId}::uuid
-        and workspace.status = 'active'
-        and workspace.deleted_at is null
     `.execute(databaseFromSession(command.transaction));
     const row = result.rows[0];
-    if (!row) return { status: "forbidden" };
-    if (!row.id || row.given_name === null || row.is_partial === null) {
-      return { status: "not-found" };
-    }
+    if (!row) return { status: "not-found" };
     return {
       person: {
         ...(row.family_name ? { familyName: row.family_name } : {}),
