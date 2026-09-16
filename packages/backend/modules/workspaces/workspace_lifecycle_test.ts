@@ -83,6 +83,12 @@ function setup(options: {
   let failComplete = options.failCompleteOnce ?? false;
   let failObject = options.failObject ?? true;
   const dependencies: WorkspaceLifecycleDependencies = {
+    activityAudit: {
+      recordReset: () => {
+        effects.push("activity-audit:reset");
+        return Promise.resolve();
+      },
+    },
     attemptBudget: {
       finalize: ({ statusCode }) => {
         effects.push(`finalize:${statusCode}`);

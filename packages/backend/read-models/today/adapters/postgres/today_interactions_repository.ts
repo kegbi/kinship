@@ -1,10 +1,7 @@
 import { sql } from "kysely";
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
-import type {
-  ActivityReportActor,
-  ActivityReportItem,
-} from "../../../activity-report/public.ts";
+import type { ActivityReportItem } from "../../../activity-report/public.ts";
 import type { TodayInteractionsRepository } from "../../application/get_today_interactions.ts";
 
 interface TodayRow {
@@ -50,29 +47,11 @@ export class PostgresTodayInteractionsRepository
   implements TodayInteractionsRepository {
   constructor(private readonly database: Kysely<ApplicationDatabase>) {}
 
-  private async authorized(command: ActivityReportActor): Promise<boolean> {
-    const authorized = await sql<{ readonly valid: boolean }>`
-      select true as valid from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      where account.id = ${command.userId}::uuid
-        and account.status = 'active' and account.deleted_at is null
-        and member.id = ${command.memberId}::uuid
-        and member.workspace_id = ${command.workspaceId}::uuid
-        and member.role = ${command.role}
-        and member.status = 'active' and member.left_at is null
-        and workspace.id = ${command.workspaceId}::uuid
-        and workspace.status = 'active' and workspace.deleted_at is null
-    `.execute(this.database);
-    return authorized.rows[0]?.valid === true;
-  }
-
   async getRecentActivity(
     command: Parameters<TodayInteractionsRepository["getRecentActivity"]>[0],
   ): Promise<
     Awaited<ReturnType<TodayInteractionsRepository["getRecentActivity"]>>
   > {
-    if (!await this.authorized(command)) return { status: "forbidden" };
     const rows = await sql<TodayRow>`
       with projection as (
         select activity.id, 'activity'::text as kind, activity.summary,
@@ -137,7 +116,6 @@ export class PostgresTodayInteractionsRepository
   ): Promise<
     Awaited<ReturnType<TodayInteractionsRepository["getFavoriteNotes"]>>
   > {
-    if (!await this.authorized(command)) return { status: "forbidden" };
     const favoriteRows = await sql<TodayRow>`
       select note.id::text, 'note'::text as kind, null::text as summary,
         null::text as activity_type, note.body, note.is_favorited,

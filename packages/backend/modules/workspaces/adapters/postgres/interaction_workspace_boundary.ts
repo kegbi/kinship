@@ -82,27 +82,14 @@ export class PostgresInteractionWorkspaceBoundary
     const context = await sql<{ readonly hidden: boolean }>`
       select exists (
         select 1 from crm.workspace_profile_modules module
-        where module.workspace_id = workspace.id
+        where module.workspace_id = ${command.workspaceId}::uuid
           and module.key = ${
       command.kind === "call" ? "calls" : "conversations"
     }
           and module.is_active = false
       ) as hidden
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      where account.id = ${command.userId}::uuid
-        and account.status = 'active' and account.deleted_at is null
-        and member.id = ${command.memberId}::uuid
-        and member.workspace_id = ${command.workspaceId}::uuid
-        and member.role = ${command.role}
-        and member.role in ('owner', 'admin', 'member')
-        and member.status = 'active' and member.left_at is null
-        and workspace.status = 'active' and workspace.deleted_at is null
-      ${command.lock ? sql`for update of account, member, workspace` : sql``}
     `.execute(database);
-    if (!context.rows[0]) return { status: "forbidden" };
-    if (context.rows[0].hidden) return { status: "hidden" };
+    if (context.rows[0]?.hidden) return { status: "hidden" };
     const channelType = command.channelTypeId
       ? (await sql<OptionRow>`
         select id::text, coalesce(nullif(name, ''), 'Communication') as name
@@ -142,24 +129,15 @@ export class PostgresInteractionWorkspaceBoundary
       readonly conversations_hidden: boolean;
     }>`
       select exists (select 1 from crm.workspace_profile_modules module
-        where module.workspace_id = workspace.id and module.key = 'calls'
+        where module.workspace_id = ${command.workspaceId}::uuid
+          and module.key = 'calls'
           and module.is_active = false) as calls_hidden,
         exists (select 1 from crm.workspace_profile_modules module
-        where module.workspace_id = workspace.id and module.key = 'conversations'
+        where module.workspace_id = ${command.workspaceId}::uuid
+          and module.key = 'conversations'
           and module.is_active = false) as conversations_hidden
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      where account.id = ${command.userId}::uuid
-        and account.status = 'active' and account.deleted_at is null
-        and member.id = ${command.memberId}::uuid
-        and member.workspace_id = ${command.workspaceId}::uuid
-        and member.role = ${command.role}
-        and member.status = 'active' and member.left_at is null
-        and workspace.status = 'active' and workspace.deleted_at is null
     `.execute(database);
-    const visibility = context.rows[0];
-    if (!visibility) return { status: "forbidden" };
+    const visibility = context.rows[0]!;
     const [channels, emotions] = await Promise.all([
       sql<
         OptionRow
@@ -181,29 +159,6 @@ export class PostgresInteractionWorkspaceBoundary
       status: "ready",
     };
   }
-  async authorize(
-    command: Parameters<InteractionWorkspaceBoundary["authorize"]>[0],
-  ): Promise<Awaited<ReturnType<InteractionWorkspaceBoundary["authorize"]>>> {
-    const database = databaseFromSession(command.transaction);
-    const authorized = await sql<{ readonly authorized: boolean }>`
-      select true as authorized
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      where account.id = ${command.userId}::uuid
-        and account.status = 'active' and account.deleted_at is null
-        and member.id = ${command.memberId}::uuid
-        and member.workspace_id = ${command.workspaceId}::uuid
-        and member.role = ${command.role}
-        and member.role in ('owner', 'admin', 'member')
-        and member.status = 'active' and member.left_at is null
-        and workspace.id = ${command.workspaceId}::uuid
-        and workspace.status = 'active' and workspace.deleted_at is null
-      for update of account, member, workspace
-    `.execute(database);
-    return { status: authorized.rows[0]?.authorized ? "ready" : "forbidden" };
-  }
-
   async describe(
     command: Parameters<InteractionWorkspaceBoundary["describe"]>[0],
   ): Promise<Awaited<ReturnType<InteractionWorkspaceBoundary["describe"]>>> {
@@ -302,29 +257,14 @@ export class PostgresInteractionWorkspaceBoundary
     const context = await sql<{ readonly hidden: boolean }>`
       select exists (
         select 1 from crm.workspace_profile_modules module
-        where module.workspace_id = workspace.id
+        where module.workspace_id = ${command.workspaceId}::uuid
           and module.key = ${
       command.kind === "activity" ? "activities" : "notes"
     }
           and module.is_active = false
       ) as hidden
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      where account.id = ${command.userId}::uuid
-        and account.status = 'active' and account.deleted_at is null
-        and member.id = ${command.memberId}::uuid
-        and member.workspace_id = ${command.workspaceId}::uuid
-        and member.role = ${command.role}
-        and member.role in ('owner', 'admin', 'member')
-        and member.status = 'active' and member.left_at is null
-        and workspace.id = ${command.workspaceId}::uuid
-        and workspace.status = 'active' and workspace.deleted_at is null
-      ${command.lock ? sql`for update of account, member, workspace` : sql``}
     `.execute(database);
-    const resolved = context.rows[0];
-    if (!resolved) return { status: "forbidden" };
-    if (resolved.hidden) return { status: "hidden" };
+    if (context.rows[0]?.hidden) return { status: "hidden" };
 
     let activityType: WorkspaceInteractionOption | undefined;
     if (command.activityTypeId) {
@@ -368,28 +308,18 @@ export class PostgresInteractionWorkspaceBoundary
     }>`
       select exists (
         select 1 from crm.workspace_profile_modules module
-        where module.workspace_id = workspace.id and module.key = 'activities'
+        where module.workspace_id = ${command.workspaceId}::uuid
+          and module.key = 'activities'
           and module.is_active = false
       ) as activities_hidden,
       exists (
         select 1 from crm.workspace_profile_modules module
-        where module.workspace_id = workspace.id and module.key = 'notes'
+        where module.workspace_id = ${command.workspaceId}::uuid
+          and module.key = 'notes'
           and module.is_active = false
       ) as notes_hidden
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      where account.id = ${command.userId}::uuid
-        and account.status = 'active' and account.deleted_at is null
-        and member.id = ${command.memberId}::uuid
-        and member.workspace_id = ${command.workspaceId}::uuid
-        and member.role = ${command.role}
-        and member.role in ('owner', 'admin', 'member')
-        and member.status = 'active' and member.left_at is null
-        and workspace.status = 'active' and workspace.deleted_at is null
     `.execute(database);
-    const visibility = context.rows[0];
-    if (!visibility) return { status: "forbidden" };
+    const visibility = context.rows[0]!;
     const activityTypeSearch = command.activityTypeSearch?.trim() ?? "";
     const emotionSearch = command.emotionSearch?.trim() ?? "";
     const activityAfter = command.activityTypeCursor

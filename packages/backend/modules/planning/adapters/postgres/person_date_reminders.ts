@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import type { ImportantDatePublisher } from "../../../people/public.ts";
+import type { ReminderRecipients } from "../../application/reminder_management.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 
 interface ReminderRow {
@@ -17,6 +18,8 @@ function title(command: Parameters<ImportantDatePublisher["regenerate"]>[0]) {
 
 export class PostgresPersonDateReminderPublisher
   implements ImportantDatePublisher {
+  constructor(private readonly recipients: ReminderRecipients) {}
+
   async regenerate(
     command: Parameters<ImportantDatePublisher["regenerate"]>[0],
   ): Promise<void> {
@@ -140,29 +143,37 @@ export class PostgresPersonDateReminderPublisher
     if (!activeReminderId) {
       throw new Error("Important-date reminder definition was not persisted.");
     }
+    // `workspaces` owns membership, so it names the members this fan-out may
+    // still deliver to; this module only schedules for them.
+    const recipients = await this.recipients.listEligible({
+      transaction: command.transaction,
+      workspaceId: command.workspaceId,
+    });
+    if (recipients.length === 0) return;
+    const recipientIds = recipients.map((recipient) => recipient.memberId);
     await sql`
       with member_schedule as (
-        select member.id as member_id, lead.days_before,
+        select recipient.member_id, lead.days_before,
           settings.default_reminder_time,
           coalesce(preferences.timezone, settings.default_timezone, 'UTC')
             as timezone_name
-        from crm.workspace_members member
+        from unnest(${recipientIds}::uuid[]) as recipient(member_id)
         join crm.workspace_settings settings
-          on settings.workspace_id = member.workspace_id
+          on settings.workspace_id = ${command.workspaceId}::uuid
         left join crm.member_preferences preferences
-          on preferences.member_id = member.id
+          on preferences.member_id = recipient.member_id
         cross join lateral (
           select rule.days_before
           from crm.reminder_rules rule
-          where rule.workspace_id = member.workspace_id and rule.is_active
+          where rule.workspace_id = ${command.workspaceId}::uuid
+            and rule.is_active
           union all
           select 0 where not exists (
             select 1 from crm.reminder_rules rule
-            where rule.workspace_id = member.workspace_id and rule.is_active
+            where rule.workspace_id = ${command.workspaceId}::uuid
+              and rule.is_active
           )
         ) lead
-        where member.workspace_id = ${command.workspaceId}::uuid
-          and member.status = 'active' and member.left_at is null
       ), candidate_years as (
         select schedule.*, series::int as candidate_year
         from member_schedule schedule

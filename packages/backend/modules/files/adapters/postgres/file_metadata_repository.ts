@@ -46,21 +46,19 @@ const selectedColumns = sql`
     'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at
 `;
 
-const activeActor = (command: {
-  readonly memberId: string;
-  readonly role: string;
-  readonly userId: string;
+/**
+ * The subject of every file operation: a person this workspace still owns.
+ * The actor's own standing is `ActorRevalidation`'s question, asked by
+ * `createPersonFileManagement` before any of these run, so this repository
+ * scopes by workspace and aggregate ownership alone.
+ */
+const ownedPerson = (command: {
+  readonly personId: string;
   readonly workspaceId: string;
 }) =>
   sql`
-  account.id = ${command.userId}::uuid
-  and account.status = 'active' and account.deleted_at is null
-  and member.id = ${command.memberId}::uuid
-  and member.workspace_id = ${command.workspaceId}::uuid
-  and member.user_id = account.id and member.role = ${command.role}
-  and member.status = 'active' and member.left_at is null
-  and workspace.id = ${command.workspaceId}::uuid
-  and workspace.status = 'active' and workspace.deleted_at is null
+  person.id = ${command.personId}::uuid
+  and person.workspace_id = ${command.workspaceId}::uuid
 `;
 
 export class PostgresFileMetadataRepository implements FileMetadataRepository {
@@ -69,13 +67,9 @@ export class PostgresFileMetadataRepository implements FileMetadataRepository {
   ): Promise<Awaited<ReturnType<FileMetadataRepository["authorizeUpload"]>>> {
     const result = await sql<{ readonly person_id: string }>`
       select person.id::text as person_id
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      join crm.people person on person.workspace_id = workspace.id
-        and person.id = ${command.personId}::uuid
+      from crm.people person
+      where ${ownedPerson(command)}
         and person.archived_at is null and person.deleted_at is null
-      where ${activeActor(command)}
     `.execute(databaseFromSession(command.transaction));
     return result.rows[0] ? { status: "authorized" } : { status: "not-found" };
   }
@@ -86,13 +80,9 @@ export class PostgresFileMetadataRepository implements FileMetadataRepository {
     const result = await sql<FileRow>`
       with authorized as (
         select person.id
-        from crm.users account
-        join crm.workspace_members member on member.user_id = account.id
-        join crm.workspaces workspace on workspace.id = member.workspace_id
-        join crm.people person on person.workspace_id = workspace.id
-          and person.id = ${command.personId}::uuid
+        from crm.people person
+        where ${ownedPerson(command)}
           and person.archived_at is null and person.deleted_at is null
-        where ${activeActor(command)}
       ), stored as (
         insert into crm.files (
           id, workspace_id, uploaded_by_member_id, original_filename,
@@ -131,13 +121,9 @@ export class PostgresFileMetadataRepository implements FileMetadataRepository {
     const result = await sql<FileRow>`
       with authorized as (
         select person.id
-        from crm.users account
-        join crm.workspace_members member on member.user_id = account.id
-        join crm.workspaces workspace on workspace.id = member.workspace_id
-        join crm.people person on person.workspace_id = workspace.id
-          and person.id = ${command.personId}::uuid
+        from crm.people person
+        where ${ownedPerson(command)}
           and person.archived_at is null and person.deleted_at is null
-        where ${activeActor(command)}
       ), updated as (
         update crm.files stored set status = ${command.status},
           updated_at = ${command.occurredAt}
@@ -163,15 +149,11 @@ export class PostgresFileMetadataRepository implements FileMetadataRepository {
   ): Promise<Awaited<ReturnType<FileMetadataRepository["find"]>>> {
     const result = await sql<FileRow>`
       select ${selectedColumns}
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      join crm.people person on person.workspace_id = workspace.id
-        and person.id = ${command.personId}::uuid and person.deleted_at is null
+      from crm.people person
       join crm.person_file_links link on link.person_id = person.id
       join crm.files stored on stored.id = link.file_id
-        and stored.workspace_id = workspace.id
-      where ${activeActor(command)}
+        and stored.workspace_id = person.workspace_id
+      where ${ownedPerson(command)} and person.deleted_at is null
         and stored.id = ${command.fileId}::uuid
     `.execute(databaseFromSession(command.transaction));
     const row = result.rows[0];
@@ -184,12 +166,8 @@ export class PostgresFileMetadataRepository implements FileMetadataRepository {
     const database = databaseFromSession(command.transaction);
     const authorized = await sql<{ readonly person_id: string }>`
       select person.id::text as person_id
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      join crm.people person on person.workspace_id = workspace.id
-        and person.id = ${command.personId}::uuid and person.deleted_at is null
-      where ${activeActor(command)}
+      from crm.people person
+      where ${ownedPerson(command)} and person.deleted_at is null
     `.execute(database);
     if (!authorized.rows[0]) return { status: "not-found" };
     const result = await sql<FileRow>`
@@ -239,16 +217,13 @@ export class PostgresFileMetadataRepository implements FileMetadataRepository {
     const database = databaseFromSession(command.transaction);
     const result = await sql<FileRow>`
       select ${selectedColumns}
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      join crm.people person on person.workspace_id = workspace.id
-        and person.id = ${command.personId}::uuid
-        and person.archived_at is null and person.deleted_at is null
+      from crm.people person
       join crm.person_file_links link on link.person_id = person.id
       join crm.files stored on stored.id = link.file_id
-        and stored.workspace_id = workspace.id and stored.deleted_at is null
-      where ${activeActor(command)}
+        and stored.workspace_id = person.workspace_id
+        and stored.deleted_at is null
+      where ${ownedPerson(command)}
+        and person.archived_at is null and person.deleted_at is null
         and stored.id = ${command.fileId}::uuid
       for update of stored
     `.execute(database);
@@ -269,16 +244,13 @@ export class PostgresFileMetadataRepository implements FileMetadataRepository {
     const database = databaseFromSession(command.transaction);
     const result = await sql<FileRow>`
       select ${selectedColumns}
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      join crm.people person on person.workspace_id = workspace.id
-        and person.id = ${command.personId}::uuid
-        and person.archived_at is null and person.deleted_at is null
+      from crm.people person
       join crm.person_file_links link on link.person_id = person.id
       join crm.files stored on stored.id = link.file_id
-        and stored.workspace_id = workspace.id and stored.deleted_at is null
-      where ${activeActor(command)}
+        and stored.workspace_id = person.workspace_id
+        and stored.deleted_at is null
+      where ${ownedPerson(command)}
+        and person.archived_at is null and person.deleted_at is null
         and stored.id = ${command.fileId}::uuid and stored.status = 'processing'
       for update of stored
     `.execute(database);

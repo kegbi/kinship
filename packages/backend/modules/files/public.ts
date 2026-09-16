@@ -8,6 +8,7 @@ export type {
   FileMetadataRepository,
   FileScanner,
   GiftAttachmentBoundary,
+  GiftAttachmentTarget,
   ListPersonFilesResult,
   ObjectStorage,
   PersonFileActor,

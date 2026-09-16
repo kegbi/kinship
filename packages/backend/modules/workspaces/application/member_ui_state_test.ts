@@ -17,6 +17,7 @@ const transaction = { opaque: {} };
 
 function management(repository: MemberUiStateRepository) {
   return createMemberUiStateManagement({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
     repository,
     transaction: {
       run<T>(work: (value: typeof transaction) => Promise<T>) {

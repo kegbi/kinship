@@ -45,6 +45,7 @@ const configured = createConfiguredApiApp(
 const deliveryConnection = connectDatabase(databaseUrl);
 const deliveryRepository = new PostgresReminderDeliveryRepository(
   deliveryConnection.db,
+  new PostgresActorRevalidation(),
 );
 const deliveryTransaction = new PostgresPeopleTransaction(
   deliveryConnection.db,
@@ -2673,7 +2674,9 @@ Deno.test("PLANNING-002 PostgreSQL keeps one stable calendar identity across tim
     `;
     return row?.count ?? 0;
   };
-  const managementRepository = new PostgresReminderRepository();
+  const managementRepository = new PostgresReminderRepository(
+    new PostgresActorRevalidation(),
+  );
   const worker = createReminderDeliveryWorker({
     audit: new PostgresReminderAudit(),
     clock: { now: () => new Date() },
@@ -4166,7 +4169,7 @@ Deno.test({
       audit: new PostgresReminderAudit(),
       clock: { now: () => new Date() },
       people: new PostgresRelationshipPersonBoundary(),
-      repository: new PostgresReminderRepository(),
+      repository: new PostgresReminderRepository(actors),
       transaction,
       workspace: new PostgresReminderWorkspaceBoundary(),
     });

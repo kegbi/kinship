@@ -34,23 +34,6 @@ interface DebtRow {
   readonly updated_at: string;
 }
 
-const actor = (command: {
-  readonly memberId: string;
-  readonly role: string;
-  readonly userId: string;
-  readonly workspaceId: string;
-}) =>
-  sql`
-    account.id = ${command.userId}::uuid
-    and account.status = 'active' and account.deleted_at is null
-    and member.id = ${command.memberId}::uuid
-    and member.workspace_id = ${command.workspaceId}::uuid
-    and member.user_id = account.id and member.role = ${command.role}
-    and member.status = 'active' and member.left_at is null
-    and workspace.id = ${command.workspaceId}::uuid
-    and workspace.status = 'active' and workspace.deleted_at is null
-  `;
-
 const giftColumns = sql`
   gift.id::text, gift.person_id::text, gift.recipient_person_id::text,
   gift.name, gift.url, gift.comment, gift.status,
@@ -103,23 +86,23 @@ function debt(row: DebtRow): StoredDebt {
   };
 }
 
+/**
+ * The subject of every gift or debt: a person this workspace still owns. The
+ * actor's own standing is `ActorRevalidation`'s question, asked by
+ * `createGiftManagement` before any of these run.
+ */
 async function personStatus(command: {
-  readonly memberId: string;
   readonly personId: string;
-  readonly role: string;
   readonly transaction: Parameters<GiftRepository["list"]>[0]["transaction"];
-  readonly userId: string;
   readonly workspaceId: string;
   readonly lock?: boolean;
 }): Promise<"active" | "archived" | "not-found"> {
   const result = await sql<{ readonly archived: boolean }>`
     select person.archived_at is not null as archived
-    from crm.users account
-    join crm.workspace_members member on member.user_id = account.id
-    join crm.workspaces workspace on workspace.id = member.workspace_id
-    join crm.people person on person.workspace_id = workspace.id
-      and person.id = ${command.personId}::uuid and person.deleted_at is null
-    where ${actor(command)}
+    from crm.people person
+    where person.id = ${command.personId}::uuid
+      and person.workspace_id = ${command.workspaceId}::uuid
+      and person.deleted_at is null
     ${command.lock ? sql`for update of person` : sql``}
   `.execute(databaseFromSession(command.transaction));
   return result.rows[0]

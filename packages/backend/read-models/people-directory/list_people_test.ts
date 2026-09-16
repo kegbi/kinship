@@ -36,6 +36,8 @@ Deno.test("PEOPLE-002 directory never emits more than the fixed person tag previ
     name: `Tag ${index + 1}`,
   }));
   const directory = createPeopleDirectory({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       list: () =>
         Promise.resolve({
@@ -65,7 +67,11 @@ Deno.test("PEOPLE-002 directory normalizes criteria and emits a bounded opaque c
       });
     },
   };
-  const directory = createPeopleDirectory({ repository });
+  const directory = createPeopleDirectory({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
+    repository,
+  });
 
   const first = await directory.list(actor, {
     excludePersonId: record(9).id,
@@ -118,12 +124,18 @@ Deno.test("PEOPLE-002 directory rejects malformed, mismatched, and stale cursors
       return Promise.resolve({ status: "stale-cursor" });
     },
   };
-  const directory = createPeopleDirectory({ repository });
+  const directory = createPeopleDirectory({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
+    repository,
+  });
   const malformed = await directory.list(actor, { cursor: "not-a-cursor" });
   assert(malformed.status === "stale-cursor", "malformed cursor is stale");
   assert(calls === 0, "malformed cursor does not query persistence");
 
   const source = createPeopleDirectory({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       list: () =>
         Promise.resolve({
@@ -155,6 +167,8 @@ Deno.test("PEOPLE-002 directory rejects malformed, mismatched, and stale cursors
 
 Deno.test("PEOPLE-002 directory preserves forbidden without disclosure", async () => {
   const directory = createPeopleDirectory({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: { list: () => Promise.resolve({ status: "forbidden" }) },
   });
   const result = await directory.list(actor, {});
@@ -175,6 +189,8 @@ Deno.test("PEOPLE-006 directory hydrates one selected active tenant person outsi
     tags: [],
   };
   const directory = createPeopleDirectory({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       findSelected: ({ personId }) =>
         Promise.resolve(personId === selectedId ? selected : undefined),
@@ -203,6 +219,8 @@ Deno.test("PEOPLE-006 selected hydration is bound to the requested lifecycle", a
   const selectedId = "00000000-0000-4000-8000-000000000098";
   const lifecycles: string[] = [];
   const directory = createPeopleDirectory({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       findSelected: ({ lifecycle, personId }) => {
         lifecycles.push(lifecycle);

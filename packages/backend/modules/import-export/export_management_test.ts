@@ -29,9 +29,6 @@ class MemoryRepository implements ExportRepository {
   stored?: StoredExport;
   failed = false;
   completeFails = false;
-  authorize(command: ExportActor): Promise<boolean> {
-    return Promise.resolve(command.role !== "member");
-  }
   complete(command: Parameters<ExportRepository["complete"]>[0]) {
     if (this.completeFails) return Promise.reject(new Error("commit lost"));
     this.summary = {
@@ -186,10 +183,16 @@ const people: PeopleExportBoundary = {
 function context() {
   const files = new MemoryFiles();
   const repository = new MemoryRepository();
+  // The actor's standing is the `workspaces` port's answer now, so the test
+  // withdraws authority here rather than through the export repository.
+  const standing = { active: true };
   const audit: Array<{ readonly action: string; readonly subjectId: string }> =
     [];
   const exports = createExportManagement({
-    actors: { revalidate: () => Promise.resolve("active") },
+    actors: {
+      revalidate: () =>
+        Promise.resolve(standing.active ? "active" as const : "revoked"),
+    },
     audit: {
       record: (command) => {
         audit.push({ action: command.action, subjectId: command.exportId });
@@ -211,7 +214,7 @@ function context() {
         work({ opaque: {} }),
     },
   });
-  return { audit, exports, files, repository };
+  return { audit, exports, files, repository, standing };
 }
 
 Deno.test("[EXPORT-001] creates a checksum-manifested portable person subset", async () => {
@@ -382,8 +385,8 @@ Deno.test("[EXPORT-001] resumes one running export and finalizes its verified ar
 });
 
 Deno.test("[EXPORT-001] conceals lost authority, missing people, and missing jobs", async () => {
-  const { exports, repository } = context();
-  repository.authorize = () => Promise.resolve(false);
+  const { exports, repository, standing } = context();
+  standing.active = false;
   assert(
     (await exports.createWorkspace(actor)).status === "forbidden",
     "lost create authority rejected",
@@ -396,7 +399,7 @@ Deno.test("[EXPORT-001] conceals lost authority, missing people, and missing job
     (await exports.download(actor, exportId, "secret")).status === "not-found",
     "lost download authority conceals the artifact",
   );
-  repository.authorize = () => Promise.resolve(true);
+  standing.active = true;
   assert(
     (await exports.createDownload(actor, exportId)).status === "not-found",
     "missing job concealed",

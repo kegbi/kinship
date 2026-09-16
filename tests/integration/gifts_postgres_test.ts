@@ -1,3 +1,16 @@
+import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import {
+  createGiftManagement,
+  PostgresGiftAttachmentTarget,
+  PostgresGiftRepository,
+} from "../../packages/backend/modules/gifts/public.ts";
+import { PostgresGiftAttachmentBoundary } from "../../packages/backend/modules/files/public.ts";
+import { PostgresGiftAudit } from "../../packages/backend/modules/governance/public.ts";
+import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/public.ts";
+import {
+  PostgresActorRevalidation,
+  PostgresWorkspaceCurrencyBoundary,
+} from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
@@ -357,6 +370,118 @@ Deno.test("[GIFTS-001] PostgreSQL gifts, attachments, debts, audit, and tenant g
   );
 });
 
+// --- GAP-009 -------------------------------------------------------------
+
+/**
+ * A workspace whose only member can be revoked mid-test. The actor is built
+ * directly so the use case is exercised without the session layer refusing
+ * first.
+ */
+async function revocableActor(name: string): Promise<{
+  readonly memberId: string;
+  readonly personId: string;
+  readonly role: "owner";
+  readonly userId: string;
+  readonly workspaceId: string;
+}> {
+  const userId = crypto.randomUUID();
+  const workspaceId = crypto.randomUUID();
+  const memberId = crypto.randomUUID();
+  const personId = crypto.randomUUID();
+  await sql.begin(async (transaction) => {
+    await transaction`
+      insert into crm.users (id, email, first_name, status)
+      values (${userId}, ${`${name}@example.test`}, 'Revocable', 'active')
+    `;
+    await transaction`
+      insert into crm.workspaces (id, name, status, created_by_user_id)
+      values (${workspaceId}, ${name}, 'active', ${userId})
+    `;
+    await transaction`
+      insert into crm.workspace_members (
+        id, workspace_id, user_id, role, status, joined_at
+      ) values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active', now())
+    `;
+    await transaction`
+      insert into crm.people (id, workspace_id, created_by_member_id, given_name)
+      values (${personId}, ${workspaceId}, ${memberId}, 'Revocation subject')
+    `;
+  });
+  return { memberId, personId, role: "owner", userId, workspaceId };
+}
+
+async function revokeMembership(memberId: string): Promise<void> {
+  await sql`
+    update crm.workspace_members set status = 'left', left_at = now()
+    where id = ${memberId}
+  `;
+}
+
+Deno.test({
+  name: "[GIFTS-001] GAP-009 a revoked member cannot write gifts or debts",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const actor = await revocableActor(
+        `gift-revocation-${crypto.randomUUID()}`,
+      );
+      const gifts = createGiftManagement({
+        actors: new PostgresActorRevalidation(),
+        attachments: new PostgresGiftAttachmentBoundary(
+          new PostgresGiftAttachmentTarget(),
+        ),
+        audit: new PostgresGiftAudit(),
+        clock: { now: () => new Date() },
+        currencies: new PostgresWorkspaceCurrencyBoundary(),
+        ids: { next: () => crypto.randomUUID() },
+        repository: new PostgresGiftRepository(),
+        transaction: new PostgresPeopleTransaction(connection.db),
+      });
+
+      const allowed = await gifts.createGift(actor, actor.personId, {
+        name: "Allowed gift",
+        status: "idea",
+      });
+      assert(allowed.status === "created", "an active member creates a gift");
+
+      await revokeMembership(actor.memberId);
+
+      const refusedGift = await gifts.createGift(actor, actor.personId, {
+        name: "Refused gift",
+        status: "idea",
+      });
+      const refusedDebt = await gifts.createDebt(actor, actor.personId, {
+        amount: "10.00",
+        currencyCode: "EUR",
+        direction: "i_owe",
+        status: "open",
+      });
+      const refusedChange = await gifts.changeGiftStatus(
+        actor,
+        actor.personId,
+        allowed.status === "created" ? allowed.gift.id : crypto.randomUUID(),
+        "archived",
+      );
+      const refusedList = await gifts.list(actor, actor.personId);
+      assert(
+        refusedGift.status === "forbidden" &&
+          refusedDebt.status === "forbidden" &&
+          refusedChange.status === "forbidden" &&
+          refusedList.status === "forbidden",
+        "a revoked member still reached gifts or debts",
+      );
+      const [remaining] = await sql<[{ readonly count: number }]>`
+        select count(*)::int as count from crm.gifts
+        where workspace_id = ${actor.workspaceId}
+      `;
+      assert(remaining?.count === 1, "a revoked member wrote a gift row");
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
 Deno.test({
   name: "GIFTS-001 PostgreSQL resources close",
   sanitizeOps: false,

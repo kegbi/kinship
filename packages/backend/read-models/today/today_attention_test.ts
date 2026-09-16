@@ -19,6 +19,8 @@ const actor = {
 Deno.test("TODAY-001 groups and bounds attention in the member timezone", async () => {
   let query: Parameters<TodayAttentionRepository["getSnapshot"]>[0] | undefined;
   const projection = createTodayAttention({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     clock: { now: () => new Date("2026-03-29T00:30:00.000Z") },
     repository: {
       getSnapshot(command) {
@@ -95,6 +97,8 @@ Deno.test("TODAY-001 groups and bounds attention in the member timezone", async 
 Deno.test("TODAY-001 stops before querying data for an unauthorized actor", async () => {
   let queried = false;
   const result = await createTodayAttention({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     clock: { now: () => new Date() },
     repository: {
       getSnapshot: () => {
@@ -138,6 +142,8 @@ Deno.test("TODAY-001 uses kind for stable bounded ties and deterministic dedupli
     ...pair(upcomingTieId, "2026-08-28T08:00:00.000Z"),
   ];
   const projection = createTodayAttention({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     clock: { now: () => new Date("2026-08-18T12:00:00.000Z") },
     repository: {
       getSnapshot: () =>

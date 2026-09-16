@@ -59,6 +59,7 @@ function settings(repository = new MemoryStorageSettings()) {
   return {
     repository,
     settings: createStorageSettings({
+      actors: { revalidate: () => Promise.resolve("active" as const) },
       maximumUploadBytes: 10_485_760,
       provider: { bucket: "attachments", name: "s3" },
       providerHealth: () => {

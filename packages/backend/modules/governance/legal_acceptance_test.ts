@@ -45,9 +45,11 @@ Deno.test("GOVERNANCE-001 accepts one exact required version and makes replay im
     },
   };
   const legal = createLegalAcceptance({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
     clock: { now: () => new Date("2026-08-23T10:00:00.000Z") },
     ids: { next: () => "00000000-0000-4000-8000-000000000901" },
     repository,
+    transaction: { run: (work) => work({ opaque: undefined }) },
   });
 
   const first = await legal.accept(actor, {
@@ -68,8 +70,10 @@ Deno.test("GOVERNANCE-001 accepts one exact required version and makes replay im
 Deno.test("GOVERNANCE-001 contains requirement, public review, and acceptance outages", async () => {
   let mode: "accept" | "none" | "public" | "requirements" = "requirements";
   const legal = createLegalAcceptance({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
     clock: { now: () => new Date("2026-08-23T10:00:00.000Z") },
     ids: { next: () => "00000000-0000-4000-8000-000000000901" },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       accept(command) {
         if (mode === "accept") throw new Error("private failure");

@@ -1,3 +1,4 @@
+import { PostgresActiveWorkspaceResolver } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import { sql as kyselySql } from "kysely";
 import {
@@ -729,6 +730,7 @@ Deno.test({
         tokens,
         clock,
         ids,
+        new PostgresActiveWorkspaceResolver(),
       );
       let rejected = false;
       try {
@@ -1258,6 +1260,7 @@ Deno.test({
         tokenService,
         { now: () => new Date() },
         { create: () => crypto.randomUUID() },
+        new PostgresActiveWorkspaceResolver(),
       );
       const replayedEntry = await new PostgresRegistrationTransaction(
         replayConnection.db,

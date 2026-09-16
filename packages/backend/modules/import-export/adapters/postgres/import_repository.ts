@@ -73,29 +73,6 @@ function summary(row: ImportRow): ImportSummary {
 }
 
 export class PostgresImportRepository implements ImportRepository {
-  async authorize(
-    actor: ImportActor,
-    transaction: ImportTransaction,
-  ): Promise<boolean> {
-    const result = await sql<{ readonly authorized: boolean }>`
-      select true as authorized
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      where account.id = ${actor.userId}::uuid
-        and account.status = 'active' and account.deleted_at is null
-        and member.id = ${actor.memberId}::uuid
-        and member.workspace_id = ${actor.workspaceId}::uuid
-        and member.role = ${actor.role}
-        and member.role in ('owner', 'admin')
-        and member.status = 'active' and member.left_at is null
-        and workspace.id = ${actor.workspaceId}::uuid
-        and workspace.status = 'active' and workspace.deleted_at is null
-      for update of account, member, workspace
-    `.execute(databaseFromSession(transaction));
-    return result.rows[0]?.authorized === true;
-  }
-
   async stage(command: StageImportCommand): Promise<{
     readonly importId: string;
     readonly report: ImportReport;
@@ -371,14 +348,6 @@ export class PostgresImportRepository implements ImportRepository {
       select id::text, status, stats, created_at, completed_at
       from crm.data_imports
       where id = ${importId}::uuid and workspace_id = ${actor.workspaceId}::uuid
-        and exists (
-          select 1 from crm.workspace_members member
-          where member.id = ${actor.memberId}::uuid
-            and member.user_id = ${actor.userId}::uuid
-            and member.workspace_id = ${actor.workspaceId}::uuid
-            and member.role in ('owner', 'admin')
-            and member.status = 'active' and member.left_at is null
-        )
     `.execute(this.database);
     return result.rows[0] ? summary(result.rows[0]) : undefined;
   }
@@ -387,12 +356,7 @@ export class PostgresImportRepository implements ImportRepository {
     const result = await sql<ImportRow>`
       select run.id::text, run.status, run.stats, run.created_at, run.completed_at
       from crm.data_imports run
-      join crm.workspace_members member on member.workspace_id = run.workspace_id
       where run.workspace_id = ${actor.workspaceId}::uuid
-        and member.id = ${actor.memberId}::uuid
-        and member.user_id = ${actor.userId}::uuid
-        and member.role in ('owner', 'admin')
-        and member.status = 'active' and member.left_at is null
       order by run.created_at desc, run.id desc
       limit 50
     `.execute(this.database);

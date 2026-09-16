@@ -1,5 +1,9 @@
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
+import type {
+  ActorContext,
+  ActorRevalidation,
+} from "../../workspaces/public.ts";
 
 export const API_TOKEN_SCOPES = ["people:read"] as const;
 export type ApiTokenScope = typeof API_TOKEN_SCOPES[number];
@@ -45,16 +49,17 @@ export interface ApiTokenRepository {
     readonly transaction: ApiTokenTransaction;
   }): Promise<
     | {
-      readonly actor: ApiTokenActor;
       readonly hash: string;
       readonly record: ApiTokenRecord;
       readonly status: "found";
+      readonly userId: string;
+      readonly workspaceId: string;
     }
     | Failure<"not-found">
   >;
   list(
-    command: ApiTokenActor,
-  ): Promise<readonly ApiTokenRecord[] | "forbidden">;
+    command: ApiTokenActor & { readonly transaction: ApiTokenTransaction },
+  ): Promise<readonly ApiTokenRecord[]>;
   markUsed(command: {
     readonly id: string;
     readonly occurredAt: Date;
@@ -83,6 +88,8 @@ export interface ApiTokenAudit {
 }
 
 export interface ApiTokenDependencies {
+  readonly actorContext: ActorContext;
+  readonly actors: ActorRevalidation;
   readonly audit: ApiTokenAudit;
   readonly clock: Clock;
   readonly ids: { next(): string };
@@ -137,6 +144,18 @@ function privileged(actor: ApiTokenActor): boolean {
 export function createApiTokenManagement(
   dependencies: ApiTokenDependencies,
 ): ApiTokenManagement {
+  /**
+   * The actor's standing, asked first inside the caller's transaction. Write
+   * paths lock the actor's rows; the listing keeps its lock-free concurrency.
+   */
+  const active = async (
+    actor: ApiTokenActor,
+    transaction: ApiTokenTransaction,
+    lock: boolean,
+  ): Promise<boolean> =>
+    await dependencies.actors.revalidate({ ...actor, lock, transaction }) ===
+      "active";
+
   return {
     authenticate: async (rawToken, requiredScope, requestedWorkspaceId) => {
       const matched = tokenPattern.exec(rawToken);
@@ -149,13 +168,21 @@ export function createApiTokenManagement(
           transaction,
         });
         if (found.status !== "found") return { status: "invalid" };
+        // The token names a user and a workspace; `workspaces` says which
+        // membership, if any, still grants an actor context.
+        const actor = await dependencies.actorContext.describe({
+          transaction,
+          userId: found.userId,
+          workspaceId: found.workspaceId,
+        });
+        if (!actor) return { status: "invalid" };
         const now = dependencies.clock.now();
         const valid = !found.record.revokedAt &&
           (!found.record.expiresAt ||
             Date.parse(found.record.expiresAt) > now.getTime()) &&
           found.record.scopes.includes(requiredScope) &&
           (!requestedWorkspaceId ||
-            found.actor.workspaceId === requestedWorkspaceId) &&
+            actor.workspaceId === requestedWorkspaceId) &&
           await dependencies.secrets.matches(rawSecret, found.hash);
         if (!valid) return { status: "invalid" };
         if (
@@ -165,7 +192,7 @@ export function createApiTokenManagement(
             transaction,
           })
         ) return { status: "invalid" };
-        return { actor: found.actor, status: "authenticated" };
+        return { actor, status: "authenticated" };
       });
     },
     create: async (actor, input) => {
@@ -184,6 +211,9 @@ export function createApiTokenManagement(
       const id = dependencies.ids.next();
       const secret = await dependencies.secrets.create();
       return await dependencies.transaction.run(async (transaction) => {
+        if (!await active(actor, transaction, true)) {
+          return { status: "forbidden" as const };
+        }
         const created = await dependencies.repository.create({
           ...actor,
           ...(expiresAt ? { expiresAt } : {}),
@@ -211,15 +241,24 @@ export function createApiTokenManagement(
     },
     list: async (actor) => {
       if (!privileged(actor)) return { status: "forbidden" };
-      const records = await dependencies.repository.list(actor);
-      return records === "forbidden"
-        ? { status: "forbidden" }
-        : { records, status: "ready" };
+      return await dependencies.transaction.run(async (transaction) => {
+        if (!await active(actor, transaction, false)) {
+          return { status: "forbidden" as const };
+        }
+        const records = await dependencies.repository.list({
+          ...actor,
+          transaction,
+        });
+        return { records, status: "ready" as const };
+      });
     },
     revoke: async (actor, id) => {
       if (!privileged(actor)) return { status: "forbidden" };
       const now = dependencies.clock.now();
       return await dependencies.transaction.run(async (transaction) => {
+        if (!await active(actor, transaction, true)) {
+          return { status: "forbidden" as const };
+        }
         const result = await dependencies.repository.revoke({
           ...actor,
           id,

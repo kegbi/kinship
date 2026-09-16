@@ -80,6 +80,20 @@ export interface WorkspaceLifecycleSecurityAudit {
   ): Promise<void>;
 }
 
+/**
+ * The dashboard-visible record of a reset. `governance` owns `audit_events`
+ * and `workspaces` may not read it, so the write is a port the composition
+ * root fills with governance's adapter.
+ */
+export interface WorkspaceResetActivityAudit {
+  recordReset(
+    command: WorkspaceLifecycleActor & {
+      readonly occurredAt: Date;
+      readonly transaction: WorkspaceLifecycleTransaction;
+    },
+  ): Promise<void>;
+}
+
 export interface WorkspaceLifecycleSnapshot {
   readonly activeSessionCount: number;
   readonly counts: WorkspaceLifecycleCounts;
@@ -127,6 +141,7 @@ export interface WorkspaceLifecycleRepository {
 
 export interface WorkspaceLifecycleDependencies {
   readonly attemptBudget: AuthenticationAttemptBudget;
+  readonly activityAudit: WorkspaceResetActivityAudit;
   readonly audit: WorkspaceLifecycleSecurityAudit;
   readonly authenticationAudit: AuthenticationAudit;
   readonly clock: Clock;
@@ -408,6 +423,7 @@ export function createWorkspaceLifecycle(
         };
         if (action === "reset") {
           await dependencies.repository.resetWorkspace(command);
+          await dependencies.activityAudit.recordReset(command);
         } else await dependencies.repository.deleteWorkspace(command);
         return {
           objectKeys: current.objectKeys,

@@ -24,6 +24,8 @@ function fixture() {
   const audits: string[] = [];
   const rawSecret = "first-secret-with-enough-entropy";
   const dependencies: ApiTokenDependencies = {
+    actorContext: { describe: () => Promise.resolve(owner) },
+    actors: { revalidate: () => Promise.resolve("active" as const) },
     audit: {
       record: (command) => {
         audits.push(command.action);
@@ -51,10 +53,11 @@ function fixture() {
         return Promise.resolve(
           record
             ? {
-              actor: owner,
               hash: "hash:first-secret-with-enough-entropy",
               record,
               status: "found" as const,
+              userId: owner.userId,
+              workspaceId: owner.workspaceId,
             }
             : { status: "not-found" as const },
         );

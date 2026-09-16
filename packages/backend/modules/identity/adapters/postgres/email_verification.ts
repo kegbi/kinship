@@ -9,6 +9,7 @@ import type {
 } from "../../application/authentication.ts";
 import type {
   ApplicationEntryContext,
+  ApplicationEntryWorkspaces,
   EmailVerificationFacade,
   VerificationResult,
   VerifiedIdentityEntry,
@@ -34,6 +35,7 @@ export class PostgresEmailVerification
     private readonly tokens: SecureTokenService,
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
+    private readonly workspaces: ApplicationEntryWorkspaces,
   ) {}
 
   async verify(rawToken: string): Promise<VerificationResult> {
@@ -105,34 +107,37 @@ export class PostgresEmailVerification
     const sessionHash = await this.tokens.hash(rawToken);
     const now = this.clock.now();
     return await this.database.transaction().execute(async (transaction) => {
-      const result = await sql<ApplicationEntryContext>`
+      const result = await sql<{
+        readonly firstName: string;
+        readonly userId: string;
+      }>`
         select
           u.id::text as "userId",
-          u.first_name as "firstName",
-          wm.id::text as "memberId",
-          w.id::text as "workspaceId",
-          w.name as "workspaceName"
+          u.first_name as "firstName"
         from crm.user_sessions s
         join crm.users u on u.id = s.user_id
-        join crm.workspace_members wm on wm.user_id = u.id
-        join crm.workspaces w on w.id = wm.workspace_id
         where s.session_hash = ${sessionHash}
           and s.purpose = 'verified-entry' and s.revoked_at is null
           and s.expires_at > ${now}
           and u.email_verified_at is not null
           and u.status = 'active'
-          and wm.status = 'active'
-          and w.status = 'active'
         for update of s
       `.execute(transaction);
-      const context = result.rows[0];
-      if (!context) return undefined;
+      const identity = result.rows[0];
+      if (!identity) return undefined;
+      // `workspaces` answers which workspace the user enters; a user without
+      // one keeps the handoff unspent, exactly as the joined query did.
+      const workspace = await this.workspaces.resolveActiveContext({
+        transaction: { opaque: transaction },
+        userId: identity.userId,
+      });
+      if (!workspace) return undefined;
       await sql`
         update crm.user_sessions set revoked_at = ${now}, last_seen_at = ${now}
         where session_hash = ${sessionHash} and purpose = 'verified-entry'
           and revoked_at is null
       `.execute(transaction);
-      return context;
+      return { ...identity, ...workspace };
     });
   }
 

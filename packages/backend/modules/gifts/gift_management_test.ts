@@ -29,6 +29,7 @@ function fixture(options: { readonly attachmentDisappears?: boolean } = {}) {
   let attachmentListingAvailable = true;
   let nextId = 7;
   const dependencies: GiftManagementDependencies = {
+    actors: { revalidate: () => Promise.resolve("active" as const) },
     attachments: {
       attachToGift: (command) => {
         if (command.fileId !== fileId || options.attachmentDisappears) {
@@ -449,6 +450,7 @@ Deno.test("GIFTS-001 contains transaction failures as unavailable", async () => 
   const { management } = fixture();
   const unavailable = createGiftManagement({
     ...({} as GiftManagementDependencies),
+    actors: { revalidate: () => Promise.resolve("active" as const) },
     attachments: {} as never,
     audit: {} as never,
     clock: { now: () => new Date() },

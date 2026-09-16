@@ -34,6 +34,7 @@ const uiStateTransactionRunner = {
 };
 const manageUiState = (repository: MemberUiStateRepository) =>
   createMemberUiStateManagement({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
     repository,
     transaction: uiStateTransactionRunner,
   });

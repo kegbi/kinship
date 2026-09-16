@@ -1,3 +1,4 @@
+import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
@@ -64,6 +65,7 @@ const configured = createConfiguredApiApp(
 );
 const directConnection = connectDatabase(databaseUrl);
 const directInteractions = createInteractionManagement({
+  actors: new PostgresActorRevalidation(),
   audit: new PostgresInteractionAudit(),
   clock: { now: () => new Date("2026-08-17T12:30:00.000Z") },
   people: new PostgresRelationshipPersonBoundary(),
@@ -72,6 +74,7 @@ const directInteractions = createInteractionManagement({
   workspace: new PostgresInteractionWorkspaceBoundary(),
 });
 const directCommunications = createCommunicationManagement({
+  actors: new PostgresActorRevalidation(),
   audit: new PostgresCommunicationAudit(),
   clock: { now: () => new Date("2026-08-17T12:30:00.000Z") },
   people: new PostgresRelationshipPersonBoundary(),

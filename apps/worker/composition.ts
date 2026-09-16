@@ -9,6 +9,7 @@ import { PostgresPeopleTransaction } from "../../packages/backend/modules/people
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import {
   createWorkspaceCleanupReconciler,
+  PostgresActorRevalidation,
   PostgresWorkspaceLifecycleRepository,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import {
@@ -61,7 +62,10 @@ export function createConfiguredReminderWorker(databaseUrl: string): {
     provider: new InAppReminderDelivery(
       new PostgresInAppReminderEffectStore(connection.db, clock),
     ),
-    repository: new PostgresReminderDeliveryRepository(connection.db),
+    repository: new PostgresReminderDeliveryRepository(
+      connection.db,
+      new PostgresActorRevalidation(),
+    ),
     transaction: new PostgresPeopleTransaction(connection.db),
   });
   const cleanup = createWorkspaceCleanupReconciler({

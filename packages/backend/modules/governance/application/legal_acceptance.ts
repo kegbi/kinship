@@ -1,5 +1,10 @@
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
+import type { ActorRevalidation } from "../../workspaces/public.ts";
+
+export interface LegalTransaction {
+  readonly opaque: unknown;
+}
 
 export interface LegalActor {
   readonly memberId: string;
@@ -17,7 +22,9 @@ export interface LegalDocument {
 }
 
 export interface LegalAcceptanceRepository {
-  requirements(actor: LegalActor): Promise<
+  requirements(
+    command: LegalActor & { readonly transaction: LegalTransaction },
+  ): Promise<
     | { readonly documents: readonly LegalDocument[]; readonly status: "ready" }
     | Failure<"forbidden">
   >;
@@ -31,6 +38,7 @@ export interface LegalAcceptanceRepository {
       readonly documentId: string;
       readonly ipAddress?: string;
       readonly now: Date;
+      readonly transaction: LegalTransaction;
     },
   ): Promise<
     | {
@@ -43,9 +51,13 @@ export interface LegalAcceptanceRepository {
 }
 
 export interface LegalAcceptanceDependencies {
+  readonly actors: ActorRevalidation;
   readonly clock: Clock;
   readonly ids: { next(): string };
   readonly repository: LegalAcceptanceRepository;
+  readonly transaction: {
+    run<T>(work: (transaction: LegalTransaction) => Promise<T>): Promise<T>;
+  };
 }
 
 export function createLegalAcceptance(
@@ -54,7 +66,18 @@ export function createLegalAcceptance(
   return {
     requirements: async (actor: LegalActor) => {
       try {
-        return await dependencies.repository.requirements(actor);
+        return await dependencies.transaction.run(async (transaction) => {
+          const standing = await dependencies.actors.revalidate({
+            ...actor,
+            lock: false,
+            transaction,
+          });
+          if (standing === "revoked") return { status: "forbidden" as const };
+          return await dependencies.repository.requirements({
+            ...actor,
+            transaction,
+          });
+        });
       } catch {
         return { status: "unavailable" as const };
       }
@@ -71,12 +94,21 @@ export function createLegalAcceptance(
       input: { readonly documentId: string; readonly ipAddress?: string },
     ) => {
       try {
-        return await dependencies.repository.accept({
-          ...actor,
-          acceptanceId: dependencies.ids.next(),
-          documentId: input.documentId,
-          ...(input.ipAddress ? { ipAddress: input.ipAddress } : {}),
-          now: dependencies.clock.now(),
+        return await dependencies.transaction.run(async (transaction) => {
+          const standing = await dependencies.actors.revalidate({
+            ...actor,
+            lock: true,
+            transaction,
+          });
+          if (standing === "revoked") return { status: "forbidden" as const };
+          return await dependencies.repository.accept({
+            ...actor,
+            acceptanceId: dependencies.ids.next(),
+            documentId: input.documentId,
+            ...(input.ipAddress ? { ipAddress: input.ipAddress } : {}),
+            now: dependencies.clock.now(),
+            transaction,
+          });
         });
       } catch {
         return { status: "unavailable" as const };

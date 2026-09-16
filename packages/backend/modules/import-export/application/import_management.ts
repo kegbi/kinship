@@ -118,10 +118,6 @@ export type ImportCommitResult =
   | Failure<"forbidden" | "not-found", "confirmation-required">;
 
 export interface ImportRepository {
-  authorize(
-    actor: ImportActor,
-    transaction: ImportTransaction,
-  ): Promise<boolean>;
   complete(
     actor: ImportActor,
     importId: string,
@@ -153,6 +149,7 @@ export interface ImportManagementDependencies {
   readonly files: FileImportBoundary;
   readonly ids: { next(): string };
   readonly people: PeopleImportBoundary;
+  readonly actors: ActorRevalidation;
   readonly repository: ImportRepository;
   readonly transaction: {
     run<T>(work: (transaction: ImportTransaction) => Promise<T>): Promise<T>;
@@ -367,6 +364,30 @@ function parseSource(source: unknown): ParsedSource | string {
 export function createImportManagement(
   dependencies: ImportManagementDependencies,
 ): ImportManagement {
+  /**
+   * The actor's standing, asked first inside the caller's transaction. Both
+   * paths below write workspace data, so both lock the actor's rows.
+   */
+  const active = async (
+    actor: ImportActor,
+    transaction: ImportTransaction,
+  ): Promise<boolean> =>
+    await dependencies.actors.revalidate({
+      ...actor,
+      lock: true,
+      transaction,
+    }) === "active";
+
+  const readable = async (
+    actor: ImportActor,
+    transaction: ImportTransaction,
+  ): Promise<boolean> =>
+    await dependencies.actors.revalidate({
+      ...actor,
+      lock: false,
+      transaction,
+    }) === "active";
+
   return {
     commit(actor, importId, confirmed) {
       if (!confirmed) {
@@ -376,7 +397,7 @@ export function createImportManagement(
         return Promise.resolve({ status: "forbidden" });
       }
       return dependencies.transaction.run(async (transaction) => {
-        if (!(await dependencies.repository.authorize(actor, transaction))) {
+        if (!(await active(actor, transaction))) {
           return { status: "forbidden" };
         }
         const prepared = await dependencies.repository.prepareCommit(
@@ -641,7 +662,7 @@ export function createImportManagement(
         diagnostics,
       };
       return dependencies.transaction.run(async (transaction) => {
-        if (!(await dependencies.repository.authorize(actor, transaction))) {
+        if (!(await active(actor, transaction))) {
           return { status: "forbidden" as const };
         }
         const staged = await dependencies.repository.stage({
@@ -683,11 +704,19 @@ export function createImportManagement(
     },
     get(actor, importId) {
       if (actor.role === "member") return Promise.resolve(undefined);
-      return dependencies.repository.get(actor, importId);
+      return dependencies.transaction.run(async (transaction) =>
+        await readable(actor, transaction)
+          ? await dependencies.repository.get(actor, importId)
+          : undefined
+      );
     },
     list(actor) {
       if (actor.role === "member") return Promise.resolve([]);
-      return dependencies.repository.list(actor);
+      return dependencies.transaction.run(async (transaction) =>
+        await readable(actor, transaction)
+          ? await dependencies.repository.list(actor)
+          : []
+      );
     },
   };
 }
@@ -695,3 +724,4 @@ import type { FileImportBoundary } from "../../files/public.ts";
 import { PERSON_FILE_MAX_BYTES } from "../../files/public.ts";
 import type { ImportAudit } from "../../governance/public.ts";
 import type { PeopleImportBoundary } from "../../people/public.ts";
+import type { ActorRevalidation } from "../../workspaces/public.ts";

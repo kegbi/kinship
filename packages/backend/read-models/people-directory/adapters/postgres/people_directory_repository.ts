@@ -3,7 +3,6 @@ import type { Kysely, RawBuilder } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import {
   PEOPLE_DIRECTORY_TAG_PREVIEW_LIMIT,
-  type PeopleDirectoryActor,
   type PeopleDirectoryCriteria,
   type PeopleDirectoryCursor,
   type PeopleDirectoryPersonRecord,
@@ -120,33 +119,11 @@ export class PostgresPeopleDirectoryRepository
   implements PeopleDirectoryRepository, PeopleTagOptionsRepository {
   constructor(private readonly database: Kysely<ApplicationDatabase>) {}
 
-  private async authorized(command: PeopleDirectoryActor): Promise<boolean> {
-    const authorization = await sql<{ readonly authorized: boolean }>`
-      select true as authorized
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      where account.id = ${command.userId}::uuid
-        and account.status = 'active'
-        and account.deleted_at is null
-        and member.id = ${command.memberId}::uuid
-        and member.workspace_id = ${command.workspaceId}::uuid
-        and member.role = ${command.role}
-        and member.status = 'active'
-        and member.left_at is null
-        and workspace.id = ${command.workspaceId}::uuid
-        and workspace.status = 'active'
-        and workspace.deleted_at is null
-    `.execute(this.database);
-    return authorization.rows[0]?.authorized === true;
-  }
-
   async findSelected(
     command: Parameters<
       NonNullable<PeopleDirectoryRepository["findSelected"]>
     >[0],
   ): Promise<PeopleDirectoryPersonRecord | undefined> {
-    if (!await this.authorized(command)) return undefined;
     const selected = await sql<{
       readonly family_name: string | null;
       readonly given_name: string;
@@ -193,10 +170,6 @@ export class PostgresPeopleDirectoryRepository
   async list(
     command: Parameters<PeopleDirectoryRepository["list"]>[0],
   ): Promise<Awaited<ReturnType<PeopleDirectoryRepository["list"]>>> {
-    if (!await this.authorized(command)) {
-      return { status: "forbidden" };
-    }
-
     const criteria = filters(command);
     const sort = ordering(command.sort);
     if (command.after) {
@@ -297,9 +270,6 @@ export class PostgresPeopleDirectoryRepository
   ): Promise<
     Awaited<ReturnType<PeopleTagOptionsRepository["listTagOptions"]>>
   > {
-    if (!await this.authorized(command)) {
-      return { status: "forbidden" };
-    }
     const search = command.search
       ? sql`and strpos(lower(tag.name), ${command.search}) > 0`
       : sql``;

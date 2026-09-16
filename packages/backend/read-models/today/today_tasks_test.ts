@@ -9,6 +9,8 @@ Deno.test("PLANNING-001 Today requests a bounded thirty-day read-only task proje
     | { readonly dueBefore: Date; readonly limit: number }
     | undefined;
   const today = createTodayTasks({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     clock: { now: () => new Date("2026-08-18T10:00:00.000Z") },
     repository: {
       getDueTasks: (command) => {

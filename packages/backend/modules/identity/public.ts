@@ -42,6 +42,7 @@ export type {
 } from "./application/password_recovery.ts";
 export type {
   ApplicationEntryContext,
+  ApplicationEntryWorkspaces,
   EmailVerificationFacade,
   VerificationFailure,
   VerificationResult,

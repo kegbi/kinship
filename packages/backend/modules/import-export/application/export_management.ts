@@ -62,10 +62,6 @@ export interface StoredExport extends ExportSummary {
 }
 
 export interface ExportRepository {
-  authorize(
-    actor: ExportActor,
-    transaction: ExportTransaction,
-  ): Promise<boolean>;
   complete(command: {
     readonly actor: ExportActor;
     readonly completedAt: Date;
@@ -258,13 +254,28 @@ async function recoveredArtifact(bytes: Uint8Array): Promise<
 export function createExportManagement(
   dependencies: ExportManagementDependencies,
 ) {
+  /**
+   * The actor's standing, asked first inside the caller's transaction. Every
+   * import and export path writes or hands out workspace data, so all of them
+   * lock the actor's rows.
+   */
+  const active = async (
+    actor: ExportActor,
+    transaction: ExportTransaction,
+  ): Promise<boolean> =>
+    await dependencies.actors.revalidate({
+      ...actor,
+      lock: true,
+      transaction,
+    }) === "active";
+
   return {
     async createWorkspace(actor: ExportActor) {
       if (actor.role === "member") return { status: "forbidden" as const };
       const startedAt = dependencies.clock.now();
       const claimed = await dependencies.transaction.run(
         async (transaction) => {
-          if (!(await dependencies.repository.authorize(actor, transaction))) {
+          if (!(await active(actor, transaction))) {
             return undefined;
           }
           const claim = await dependencies.repository.startOrResume({
@@ -449,7 +460,7 @@ export function createExportManagement(
     async list(actor: ExportActor) {
       if (actor.role === "member") return { status: "forbidden" as const };
       return await dependencies.transaction.run(async (transaction) =>
-        (await dependencies.repository.authorize(actor, transaction))
+        (await active(actor, transaction))
           ? {
             exports: await dependencies.repository.list(actor, transaction),
             status: "ready" as const,
@@ -465,7 +476,7 @@ export function createExportManagement(
       );
       const digest = await sha256(token);
       const issued = await dependencies.transaction.run(async (transaction) =>
-        await dependencies.repository.authorize(actor, transaction) &&
+        await active(actor, transaction) &&
         await dependencies.repository.issueDownload({
           actor,
           digest,
@@ -490,7 +501,7 @@ export function createExportManagement(
       const digest = await sha256(token);
       const attempt = await dependencies.transaction.run(
         async (transaction) => {
-          if (!(await dependencies.repository.authorize(actor, transaction))) {
+          if (!(await active(actor, transaction))) {
             return { authorized: false as const };
           }
           return {

@@ -48,3 +48,44 @@ export interface ActorRevalidationCommand extends RevalidatedActor {
 export interface ActorRevalidation {
   revalidate(command: ActorRevalidationCommand): Promise<ActorStanding>;
 }
+
+/** A member a workspace may still deliver a reminder to. */
+export interface EligibleRecipient {
+  readonly memberId: string;
+  readonly userId: string;
+  readonly workspaceId: string;
+}
+
+/**
+ * The same question asked for many actors at once. Reminder delivery scans
+ * whole workspaces rather than one claimed actor, so a per-actor
+ * `revalidate` cannot express it; this answers which members are still
+ * eligible, on the same terms and inside the caller's transaction.
+ */
+export interface ActorRecipients {
+  /** Every active member of an active workspace with an active user. */
+  listEligible(command: {
+    readonly transaction: ActorRevalidationTransaction;
+    readonly workspaceId: string;
+  }): Promise<readonly EligibleRecipient[]>;
+  /** The subset of `memberIds` that is still eligible. */
+  filterEligible(command: {
+    readonly memberIds: readonly string[];
+    readonly transaction: ActorRevalidationTransaction;
+  }): Promise<readonly EligibleRecipient[]>;
+}
+
+/**
+ * The same question asked from the other end. A stored credential — an API
+ * token, a session — names a user and a workspace but no membership, so there
+ * is no claimed actor to revalidate yet. This resolves the one an active
+ * membership grants, or nothing when the user, membership, or workspace is no
+ * longer active.
+ */
+export interface ActorContext {
+  describe(command: {
+    readonly transaction: ActorRevalidationTransaction;
+    readonly userId: string;
+    readonly workspaceId: string;
+  }): Promise<RevalidatedActor | undefined>;
+}

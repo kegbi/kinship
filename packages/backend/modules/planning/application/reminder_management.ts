@@ -72,6 +72,28 @@ export interface StayInTouchCadenceRecord {
   readonly updatedAt: string;
 }
 
+/**
+ * The set-based half of the actor question, answered by `workspaces`. The
+ * delivery scans below reach many actors at once, so a per-actor
+ * `ActorRevalidation` cannot express them; this port is declared here so the
+ * repository adapters, which may not import another module, can be given the
+ * one approved implementation at the composition root.
+ */
+export interface ReminderRecipients {
+  listEligible(command: {
+    readonly transaction: { readonly opaque: unknown };
+    readonly workspaceId: string;
+  }): Promise<
+    readonly { readonly memberId: string; readonly workspaceId: string }[]
+  >;
+  filterEligible(command: {
+    readonly memberIds: readonly string[];
+    readonly transaction: { readonly opaque: unknown };
+  }): Promise<
+    readonly { readonly memberId: string; readonly workspaceId: string }[]
+  >;
+}
+
 export interface ReminderRepository {
   lockRequest(command: {
     readonly id: string;

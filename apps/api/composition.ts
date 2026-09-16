@@ -78,6 +78,7 @@ import {
   PostgresReminderAudit,
   PostgresSettingsAudit,
   PostgresTaskAudit,
+  PostgresWorkspaceResetActivityAudit,
 } from "../../packages/backend/modules/governance/public.ts";
 import { createWorkspaceInvitationCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import {
@@ -266,6 +267,7 @@ import {
 import {
   createGiftManagement,
   type GiftManagement,
+  PostgresGiftAttachmentTarget,
   PostgresGiftRepository,
   PostgresGiftWorkspaceLifecycleImpact,
 } from "../../packages/backend/modules/gifts/public.ts";
@@ -705,11 +707,15 @@ export function createConfiguredApiApp(
   const registration = createFirstWorkspaceRegistration(
     registrationDependencies,
   );
+  // The one approved actor-context read, shared by every use case that writes
+  // or reads on an actor's behalf.
+  const actors = new PostgresActorRevalidation();
   const verification = new PostgresEmailVerification(
     connection.db,
     tokens,
     clock,
     ids,
+    new PostgresActiveWorkspaceResolver(),
   );
   const attemptBudget = new PostgresAuthenticationAttemptBudget(
     connection.db,
@@ -730,10 +736,12 @@ export function createConfiguredApiApp(
     workspace: new PostgresActiveWorkspaceResolver(),
   });
   const apiTokens = createApiTokenManagement({
+    actorContext: actors,
+    actors,
     audit: new PostgresApiTokenAudit(),
     clock,
     ids: { next: () => ids.create() },
-    repository: new PostgresApiTokenRepository(connection.db),
+    repository: new PostgresApiTokenRepository(),
     secrets: new WebCryptoApiTokenSecrets(),
     transaction: new PostgresApiTokenTransaction(connection.db),
   });
@@ -844,9 +852,6 @@ export function createConfiguredApiApp(
     transaction,
   });
   const peopleTransaction = new PostgresPeopleTransaction(connection.db);
-  // The one approved actor-context read, shared by every use case that writes
-  // or reads on an actor's behalf.
-  const actors = new PostgresActorRevalidation();
   const objectStorage = objectStorageOverride ?? (() => {
     const configuration = resolveObjectStorageConfiguration(Deno.env);
     return new S3CompatibleObjectStorage(
@@ -867,6 +872,7 @@ export function createConfiguredApiApp(
     );
   })();
   const workspaceLifecycle = createWorkspaceLifecycle({
+    activityAudit: new PostgresWorkspaceResetActivityAudit(),
     attemptBudget,
     audit: new PostgresWorkspaceLifecycleSecurityAudit(),
     authenticationAudit,
@@ -891,6 +897,7 @@ export function createConfiguredApiApp(
     transaction,
   });
   const files = createPersonFileManagement({
+    actors,
     audit: new PostgresFileAudit(),
     clock,
     ids: new WebCryptoFileIdentifiers(),
@@ -901,6 +908,7 @@ export function createConfiguredApiApp(
     transaction: peopleTransaction,
   });
   const storageSettings = createStorageSettings({
+    actors,
     maximumUploadBytes: PERSON_FILE_MAX_BYTES,
     provider: { bucket: objectStorage.bucket, name: objectStorage.provider },
     providerHealth: () => objectStorage.health(),
@@ -908,7 +916,10 @@ export function createConfiguredApiApp(
     transaction: peopleTransaction,
   });
   const gifts = createGiftManagement({
-    attachments: new PostgresGiftAttachmentBoundary(),
+    actors,
+    attachments: new PostgresGiftAttachmentBoundary(
+      new PostgresGiftAttachmentTarget(),
+    ),
     audit: new PostgresGiftAudit(),
     clock,
     currencies: new PostgresWorkspaceCurrencyBoundary(),
@@ -918,6 +929,7 @@ export function createConfiguredApiApp(
   });
   const journal = createJournalManagement({
     activities: new PostgresJournalActivityBoundary(),
+    actors,
     audit: new PostgresJournalAudit(),
     clock,
     ids: { next: () => ids.create() },
@@ -925,6 +937,7 @@ export function createConfiguredApiApp(
     transaction: peopleTransaction,
   });
   const imports = createImportManagement({
+    actors,
     audit: new PostgresImportAudit(),
     files: new PostgresFileImportBoundary(),
     ids: { next: () => ids.create() },
@@ -957,10 +970,12 @@ export function createConfiguredApiApp(
     transaction: peopleTransaction,
   });
   const recentPeople = createRecentPeopleManagement({
+    actors,
     repository: new PostgresRecentPeopleRepository(),
     transaction,
   });
   const memberUiState = createMemberUiStateManagement({
+    actors,
     repository: new PostgresMemberUiStateRepository(),
     transaction,
   });
@@ -976,7 +991,7 @@ export function createConfiguredApiApp(
     audit: new PostgresImportantDateAudit(),
     clock,
     ids,
-    publisher: new PostgresPersonDateReminderPublisher(),
+    publisher: new PostgresPersonDateReminderPublisher(actors),
     repository: new PostgresImportantDateRepository(),
     transaction: peopleTransaction,
   });
@@ -1008,13 +1023,14 @@ export function createConfiguredApiApp(
     audit: new PostgresReminderAudit(),
     clock,
     people: interactionPeople,
-    repository: new PostgresReminderRepository(),
+    repository: new PostgresReminderRepository(actors),
     transaction: peopleTransaction,
     workspace: new PostgresReminderWorkspaceBoundary(),
   });
   settingsPlanningPublisher.current = reminders;
   const interactions = {
     ...createInteractionManagement({
+      actors,
       audit: new PostgresInteractionAudit(),
       clock,
       people: interactionPeople,
@@ -1024,6 +1040,7 @@ export function createConfiguredApiApp(
       workspace: interactionWorkspace,
     }),
     ...createCommunicationManagement({
+      actors,
       audit: new PostgresCommunicationAudit(),
       clock,
       people: interactionPeople,
@@ -1113,6 +1130,7 @@ export function createConfiguredApiApp(
       repository: new PostgresDavRepository(
         connection.db,
         new PostgresDavAudit(),
+        actors,
       ),
       secrets: new AesGcmDavSecretBox(davKeyset),
       tasks: {
@@ -1137,45 +1155,69 @@ export function createConfiguredApiApp(
   const directoryRepository = new PostgresPeopleDirectoryRepository(
     connection.db,
   );
-  const directory = createPeopleDirectory({ repository: directoryRepository });
-  const tagOptions = createPeopleTagOptions({
+  const directory = createPeopleDirectory({
+    actors,
     repository: directoryRepository,
+    transaction: peopleTransaction,
+  });
+  const tagOptions = createPeopleTagOptions({
+    actors,
+    repository: directoryRepository,
+    transaction: peopleTransaction,
   });
   const profile = createPersonProfile({
+    actors,
     repository: new PostgresPersonProfileRepository(connection.db),
+    transaction: peopleTransaction,
   });
   const activityReport = createActivityReport({
+    actors,
     repository: new PostgresActivityReportRepository(connection.db),
+    transaction: peopleTransaction,
   });
   const journalTimeline = createJournalTimeline({
+    actors,
     repository: new PostgresJournalTimelineRepository(connection.db),
+    transaction: peopleTransaction,
   });
   const auditHistory = createAuditHistory({
     cursorKeyset: subjectKeyset,
     repository: new PostgresAuditHistoryRepository(connection.db),
   });
   const legal = createLegalAcceptance({
+    actors,
     clock,
     ids: { next: () => ids.create() },
     repository: new PostgresLegalAcceptanceRepository(connection.db),
+    transaction: peopleTransaction,
   });
   const today = createTodayInteractions({
+    actors,
     repository: new PostgresTodayInteractionsRepository(connection.db),
+    transaction: peopleTransaction,
   });
   const todayAttention = createTodayAttention({
+    actors,
     clock,
     repository: new PostgresTodayAttentionRepository(connection.db),
+    transaction: peopleTransaction,
   });
   const todayTasks = createTodayTasks({
+    actors,
     clock,
     repository: new PostgresTodayTasksRepository(connection.db),
+    transaction: peopleTransaction,
   });
   const todayReminders = createTodayReminders({
+    actors,
     clock,
     repository: new PostgresTodayRemindersRepository(connection.db),
+    transaction: peopleTransaction,
   });
   const todayRecentPeople = createTodayRecentPeople({
+    actors,
     repository: new PostgresTodayRecentPeopleRepository(connection.db),
+    transaction: peopleTransaction,
   });
   const app = createApiApp({
     apiTokens,

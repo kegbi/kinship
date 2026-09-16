@@ -1,3 +1,17 @@
+import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import {
+  createExportManagement,
+  PostgresExportRepository,
+  PostgresExportTransaction,
+} from "../../packages/backend/modules/import-export/public.ts";
+import {
+  PostgresExportFileBoundary,
+  WebCryptoFileIdentifiers,
+  WebCryptoObjectKeys,
+} from "../../packages/backend/modules/files/public.ts";
+import { PostgresPeopleExportBoundary } from "../../packages/backend/modules/people/public.ts";
+import { PostgresExportAudit } from "../../packages/backend/modules/governance/public.ts";
+import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
@@ -369,6 +383,107 @@ Deno.test("[EXPORT-001] PostgreSQL export is portable, private, and tenant-safe"
   );
 });
 
+// --- GAP-009 -------------------------------------------------------------
+
+/**
+ * A workspace whose only member can be revoked mid-test. The actor is built
+ * directly so the use case is exercised without the session layer refusing
+ * first.
+ */
+async function revocableActor(name: string): Promise<{
+  readonly memberId: string;
+  readonly personId: string;
+  readonly role: "owner";
+  readonly userId: string;
+  readonly workspaceId: string;
+}> {
+  const userId = crypto.randomUUID();
+  const workspaceId = crypto.randomUUID();
+  const memberId = crypto.randomUUID();
+  const personId = crypto.randomUUID();
+  await sql.begin(async (transaction) => {
+    await transaction`
+      insert into crm.users (id, email, first_name, status)
+      values (${userId}, ${`${name}@example.test`}, 'Revocable', 'active')
+    `;
+    await transaction`
+      insert into crm.workspaces (id, name, status, created_by_user_id)
+      values (${workspaceId}, ${name}, 'active', ${userId})
+    `;
+    await transaction`
+      insert into crm.workspace_members (
+        id, workspace_id, user_id, role, status, joined_at
+      ) values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active', now())
+    `;
+    await transaction`
+      insert into crm.people (id, workspace_id, created_by_member_id, given_name)
+      values (${personId}, ${workspaceId}, ${memberId}, 'Revocation subject')
+    `;
+  });
+  return { memberId, personId, role: "owner", userId, workspaceId };
+}
+
+async function revokeMembership(memberId: string): Promise<void> {
+  await sql`
+    update crm.workspace_members set status = 'left', left_at = now()
+    where id = ${memberId}
+  `;
+}
+
+Deno.test({
+  name: "[EXPORT-001] GAP-009 a revoked member cannot start or list exports",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const actor = await revocableActor(
+        `export-revocation-${crypto.randomUUID()}`,
+      );
+      const storage = new CapturedStorage();
+      const exports = createExportManagement({
+        actors: new PostgresActorRevalidation(),
+        audit: new PostgresExportAudit(),
+        clock: { now: () => new Date() },
+        files: new PostgresExportFileBoundary(connection.db, {
+          ids: new WebCryptoFileIdentifiers(),
+          keys: new WebCryptoObjectKeys(),
+          storage,
+        }),
+        ids: { next: () => crypto.randomUUID() },
+        people: new PostgresPeopleExportBoundary(),
+        repository: new PostgresExportRepository(),
+        tokens: { next: () => crypto.randomUUID() },
+        transaction: new PostgresExportTransaction(connection.db),
+      });
+
+      const allowed = await exports.list(actor);
+      assert(allowed.status === "ready", "an active member lists exports");
+
+      await revokeMembership(actor.memberId);
+
+      const refusedCreate = await exports.createWorkspace(actor);
+      const refusedList = await exports.list(actor);
+      const refusedDownload = await exports.createDownload(
+        actor,
+        crypto.randomUUID(),
+      );
+      assert(
+        refusedCreate.status === "forbidden" &&
+          refusedList.status === "forbidden" &&
+          refusedDownload.status === "not-found",
+        "a revoked member still reached workspace exports",
+      );
+      const [remaining] = await sql<[{ readonly count: number }]>`
+        select count(*)::int as count from crm.data_exports
+        where workspace_id = ${actor.workspaceId}
+      `;
+      assert(remaining?.count === 0, "a revoked member started an export");
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
 Deno.test({
   name: "EXPORT-001 PostgreSQL resources close",
   sanitizeOps: false,

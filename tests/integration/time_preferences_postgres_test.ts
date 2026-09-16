@@ -131,12 +131,14 @@ Deno.test("APR-009 settings resolve member, workspace, and UTC timezone without 
       "actual timestamp remains an instant",
     );
     assert(
+      // The actor's standing is the read model's question now, so the
+      // repository conceals another workspace's person as absent.
       (await timeline.listTimeline({
         ...actor,
         workspaceId: foreign,
         personId,
         limit: 20,
-      })).status === "forbidden",
+      })).status === "not-found",
       "calendar details stay tenant isolated",
     );
     await sql`update crm.workspace_members set status = 'suspended' where id = ${actor.memberId}`;

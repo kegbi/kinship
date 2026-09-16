@@ -45,23 +45,10 @@ async function verified(
   return { bytes, status: "valid" };
 }
 
-const activeAdmin = (command: {
-  readonly memberId: string;
-  readonly role: string;
-  readonly userId: string;
-  readonly workspaceId: string;
-}) =>
-  sql`
-  account.id = ${command.userId}::uuid
-  and account.status = 'active' and account.deleted_at is null
-  and member.id = ${command.memberId}::uuid and member.user_id = account.id
-  and member.workspace_id = ${command.workspaceId}::uuid
-  and member.role = ${command.role} and member.role in ('owner', 'admin')
-  and member.status = 'active' and member.left_at is null
-  and workspace.id = ${command.workspaceId}::uuid
-  and workspace.status = 'active' and workspace.deleted_at is null
-`;
-
+/**
+ * `createExportManagement` refuses a member role and revalidates the actor
+ * before any of this runs, so these queries scope by workspace alone.
+ */
 export class PostgresExportFileBoundary implements ExportFileBoundary {
   constructor(
     private readonly database: Kysely<ApplicationDatabase>,
@@ -73,12 +60,9 @@ export class PostgresExportFileBoundary implements ExportFileBoundary {
   ): Promise<Awaited<ReturnType<ExportFileBoundary["discard"]>>> {
     const result = await sql<{ readonly storage_key: string }>`
       select stored.storage_key
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      join crm.files stored on stored.workspace_id = workspace.id
+      from crm.files stored
+      where stored.workspace_id = ${command.workspaceId}::uuid
         and stored.id = ${command.fileId}::uuid and stored.deleted_at is null
-      where ${activeAdmin(command)}
     `.execute(this.database);
     const file = result.rows[0];
     if (!file) return { status: "forbidden" };
@@ -100,14 +84,11 @@ export class PostgresExportFileBoundary implements ExportFileBoundary {
       select stored.id::text, stored.original_filename as filename,
         stored.mime_type, stored.status, stored.storage_key,
         stored.byte_size::text, stored.checksum_sha256
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      join crm.files stored on stored.workspace_id = workspace.id
+      from crm.files stored
+      where stored.workspace_id = ${command.workspaceId}::uuid
         and stored.metadata ->> 'exportId' = ${command.exportId}
         and stored.status in ('available', 'processing')
         and stored.deleted_at is null
-      where ${activeAdmin(command)}
       order by stored.created_at desc, stored.id desc
       limit 1
     `.execute(this.database);
@@ -147,15 +128,14 @@ export class PostgresExportFileBoundary implements ExportFileBoundary {
         storage_provider, storage_bucket, storage_key, byte_size, mime_type,
         checksum_sha256, status, visibility, metadata
       )
-      select ${fileId}::uuid, workspace.id, member.id, ${command.filename},
+      values (
+        ${fileId}::uuid, ${command.workspaceId}::uuid,
+        ${command.memberId}::uuid, ${command.filename},
         ${this.dependencies.storage.provider}, ${this.dependencies.storage.bucket},
         ${storageKey}, ${command.bytes.byteLength}, ${command.mimeType},
         ${command.checksumSha256}, 'processing', 'private',
         ${JSON.stringify({ exportId: command.exportId })}::text::jsonb
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      where ${activeAdmin(command)}
+      )
       returning id::text
     `.execute(this.database);
     if (!inserted.rows[0]) return { status: "forbidden" };
@@ -201,12 +181,9 @@ export class PostgresExportFileBoundary implements ExportFileBoundary {
       select stored.id::text, stored.original_filename as filename,
         stored.mime_type, stored.status, stored.storage_key,
         stored.byte_size::text, stored.checksum_sha256
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      join crm.files stored on stored.workspace_id = workspace.id
+      from crm.files stored
+      where stored.workspace_id = ${command.workspaceId}::uuid
         and stored.id = ${command.fileId}::uuid and stored.deleted_at is null
-      where ${activeAdmin(command)}
     `.execute(this.database);
     const file = result.rows[0];
     if (!file) return { status: "not-found" };

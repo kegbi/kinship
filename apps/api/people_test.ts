@@ -664,6 +664,8 @@ Deno.test("PEOPLE-002 HTTP lists only the resolved active workspace", async () =
   const app = createPeopleRoutes(services(
     { create: () => Promise.reject(new Error("must not create")) },
     createPeopleDirectory({
+      actors: { revalidate: () => Promise.resolve("active" as const) },
+      transaction: { run: (work) => work({ opaque: undefined }) },
       repository: {
         list: (command) => {
           received = command;
@@ -735,6 +737,8 @@ Deno.test("PEOPLE-006 HTTP hydrates one bounded introducer descriptor", async ()
   const app = createPeopleRoutes(services(
     { create: () => Promise.reject(new Error("must not create")) },
     createPeopleDirectory({
+      actors: { revalidate: () => Promise.resolve("active" as const) },
+      transaction: { run: (work) => work({ opaque: undefined }) },
       repository: {
         findSelected: (command) => {
           selectedCommand = command;
@@ -783,6 +787,8 @@ Deno.test("PEOPLE-006 HTTP binds excluded people to directory continuation", asy
   const app = createPeopleRoutes(services(
     { create: () => Promise.reject(new Error("must not create")) },
     createPeopleDirectory({
+      actors: { revalidate: () => Promise.resolve("active" as const) },
+      transaction: { run: (work) => work({ opaque: undefined }) },
       repository: {
         list: (command) => {
           receivedExclude = command.excludePersonId ?? "";

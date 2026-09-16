@@ -23,22 +23,6 @@ interface RatingRow {
   updated_at: string;
 }
 
-const actor = (
-  command: {
-    memberId: string;
-    role: string;
-    userId: string;
-    workspaceId: string;
-  },
-) =>
-  sql`
-  account.id = ${command.userId}::uuid and account.status = 'active' and account.deleted_at is null
-  and member.id = ${command.memberId}::uuid and member.workspace_id = ${command.workspaceId}::uuid
-  and member.user_id = account.id and member.role = ${command.role}
-  and member.status = 'active' and member.left_at is null
-  and workspace.id = ${command.workspaceId}::uuid and workspace.status = 'active' and workspace.deleted_at is null
-`;
-
 const postColumns = sql`post.id::text, post.title, post.body,
   to_char(post.occurred_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as occurred_at,
   to_char(post.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
@@ -69,29 +53,10 @@ function rating(row: RatingRow): StoredDayRating {
   };
 }
 
-async function authorized(
-  command: {
-    memberId: string;
-    role: string;
-    transaction: { readonly opaque: unknown };
-    userId: string;
-    workspaceId: string;
-  },
-): Promise<boolean> {
-  const result = await sql<{ authorized: boolean }>`
-    select true as authorized from crm.users account
-    join crm.workspace_members member on member.user_id = account.id
-    join crm.workspaces workspace on workspace.id = member.workspace_id
-    where ${actor(command)} for update of member, workspace
-  `.execute(databaseFromSession(command.transaction));
-  return Boolean(result.rows[0]);
-}
-
 export class PostgresJournalRepository implements JournalRepository {
   async createPost(
     command: Parameters<JournalRepository["createPost"]>[0],
   ): Promise<Awaited<ReturnType<JournalRepository["createPost"]>>> {
-    if (!await authorized(command)) return { status: "forbidden" };
     const result = await sql<PostRow>`with inserted as (
       insert into crm.journal_posts (id, workspace_id, title, body, occurred_at, created_by_member_id, created_at, updated_at)
       values (${command.id}::uuid, ${command.workspaceId}::uuid, ${
@@ -108,7 +73,6 @@ export class PostgresJournalRepository implements JournalRepository {
   async deleteItem(
     command: Parameters<JournalRepository["deleteItem"]>[0],
   ): Promise<Awaited<ReturnType<JournalRepository["deleteItem"]>>> {
-    if (!await authorized(command)) return { status: "forbidden" };
     const database = databaseFromSession(command.transaction);
     const found = await sql<
       {
@@ -141,7 +105,6 @@ export class PostgresJournalRepository implements JournalRepository {
   async linkActivity(
     command: Parameters<JournalRepository["linkActivity"]>[0],
   ): Promise<Awaited<ReturnType<JournalRepository["linkActivity"]>>> {
-    if (!await authorized(command)) return { status: "forbidden" };
     const result = await sql<{ id: string; occurred_at: string }>`
       insert into crm.journal_items (id, workspace_id, occurred_at, activity_id, created_by_member_id)
       values (${command.id}::uuid, ${command.workspaceId}::uuid, ${command.occurredAt}, ${command.activityId}::uuid, ${command.memberId}::uuid)
@@ -161,7 +124,6 @@ export class PostgresJournalRepository implements JournalRepository {
   async saveDayRating(
     command: Parameters<JournalRepository["saveDayRating"]>[0],
   ): Promise<Awaited<ReturnType<JournalRepository["saveDayRating"]>>> {
-    if (!await authorized(command)) return { status: "forbidden" };
     const result = await sql<RatingRow & { inserted: boolean }>`with saved as (
       insert into crm.journal_day_ratings (id, workspace_id, rated_on, rating, comment, created_by_member_id, created_at, updated_at)
       values (${command.id}::uuid, ${command.workspaceId}::uuid, ${command.ratedOn}::date, ${command.rating}, ${
@@ -184,7 +146,6 @@ export class PostgresJournalRepository implements JournalRepository {
   async updatePost(
     command: Parameters<JournalRepository["updatePost"]>[0],
   ): Promise<Awaited<ReturnType<JournalRepository["updatePost"]>>> {
-    if (!await authorized(command)) return { status: "forbidden" };
     const result = await sql<PostRow>`with updated as (
       update crm.journal_posts set title = ${
       command.title ?? null

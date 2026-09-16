@@ -66,6 +66,7 @@ Deno.test("[JOURNAL-001] journal HTTP routes protect and expose the complete CRU
       }),
   };
   const journal = createJournalManagement({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
     activities: {
       inspect: () => Promise.resolve({ occurredAt: now, status: "ready" }),
     },
@@ -76,6 +77,8 @@ Deno.test("[JOURNAL-001] journal HTTP routes protect and expose the complete CRU
     transaction: { run: (work) => work({ opaque: {} }) },
   });
   const timeline = createJournalTimeline({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       read: (_actor, itemId) =>
         Promise.resolve({
@@ -181,6 +184,7 @@ Deno.test("[JOURNAL-001] journal HTTP failures preserve concealment and problem 
     updatePost: () => Promise.resolve({ status: "not-found" }),
   };
   const journal = createJournalManagement({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
     activities: {
       inspect: () => Promise.resolve({ occurredAt: now, status: "ready" }),
     },
@@ -191,6 +195,8 @@ Deno.test("[JOURNAL-001] journal HTTP failures preserve concealment and problem 
     transaction: { run: (work) => work({ opaque: {} }) },
   });
   const timeline = createJournalTimeline({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       read: (_actor, itemId) =>
         Promise.resolve(
@@ -271,6 +277,8 @@ Deno.test("[JOURNAL-001] journal HTTP failures preserve concealment and problem 
   }
 
   const unavailableTimeline = createJournalTimeline({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: { read: () => Promise.reject(new Error("offline")) },
   });
   const unavailableApp = createJournalRoutes({

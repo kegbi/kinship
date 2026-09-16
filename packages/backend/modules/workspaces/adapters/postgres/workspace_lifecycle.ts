@@ -175,14 +175,6 @@ export class PostgresWorkspaceLifecycleRepository
       from workspace_reset_settings`.execute(database);
     await sql`insert into crm.workspace_profile_modules select * from workspace_reset_modules`
       .execute(database);
-    await sql`insert into crm.audit_events (
-        workspace_id, actor_member_id, subject_type, subject_id, action,
-        payload, occurred_at, visible_on_dashboard, created_at
-      ) values (
-        ${command.workspaceId}::uuid, ${command.memberId}::uuid, 'workspace',
-        ${command.workspaceId}::uuid, 'workspace.reset', '{}'::jsonb,
-        ${command.occurredAt}, false, ${command.occurredAt}
-      )`.execute(database);
   }
 
   async deleteWorkspace(

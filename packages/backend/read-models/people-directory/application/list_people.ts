@@ -1,4 +1,9 @@
 import type { Failure } from "../../../shared-kernel/result.ts";
+import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
+
+export interface ReadModelTransaction {
+  readonly opaque: unknown;
+}
 
 export interface PeopleDirectoryActor {
   readonly memberId: string;
@@ -214,14 +219,31 @@ function person(record: PeopleDirectoryPersonRecord): PeopleDirectoryPerson {
   };
 }
 
+/**
+ * Read models carry no actor join of their own. The `workspaces` port answers
+ * whether the actor may still read this workspace — without a lock, because
+ * these paths take none — and the repository scopes by workspace alone.
+ */
 export function createPeopleDirectory(dependencies: {
+  readonly actors: ActorRevalidation;
+  readonly transaction: {
+    run<T>(
+      work: (transaction: ReadModelTransaction) => Promise<T>,
+    ): Promise<T>;
+  };
   readonly repository: PeopleDirectoryRepository;
 }) {
+  const readable = async (actor: PeopleDirectoryActor): Promise<boolean> =>
+    await dependencies.transaction.run((transaction) =>
+      dependencies.actors.revalidate({ ...actor, lock: false, transaction })
+    ) === "active";
+
   return {
     list: async (
       actor: PeopleDirectoryActor,
       input: ListPeopleInput,
     ): Promise<ListPeopleResult> => {
+      if (!await readable(actor)) return { status: "forbidden" };
       const criteria = normalize(input);
       const decoded = input.cursor ? decodeCursor(input.cursor) : undefined;
       if (input.cursor && (!decoded || !cursorMatches(decoded, criteria))) {

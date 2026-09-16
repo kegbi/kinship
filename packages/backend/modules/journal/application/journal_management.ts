@@ -4,6 +4,7 @@ import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
 import { boundedText, isInstant } from "../../../shared-kernel/validation.ts";
 import type { PeopleActor, PeopleTransaction } from "../../people/public.ts";
 import type { JournalActivityReference } from "../../interactions/public.ts";
+import type { ActorRevalidation } from "../../workspaces/public.ts";
 
 export interface StoredJournalPost {
   readonly body: string;
@@ -108,6 +109,7 @@ export interface JournalAudit {
 
 export interface JournalManagementDependencies {
   readonly activities: JournalActivityReference;
+  readonly actors: ActorRevalidation;
   readonly audit: JournalAudit;
   readonly clock: Clock;
   readonly ids: { next(): string };
@@ -134,13 +136,27 @@ function date(value: string): string | undefined {
 export function createJournalManagement(
   dependencies: JournalManagementDependencies,
 ) {
+  /**
+   * Every journal mutation runs here: one transaction, the actor's standing
+   * verified under lock first, then the work. The repository no longer carries
+   * its own copy of that join and scopes by workspace alone.
+   */
   const execute = <T>(
+    actor: PeopleActor,
     work: (transaction: PeopleTransaction, now: Date) => Promise<T>,
-  ): Promise<T | Failure<"unavailable">> => {
+  ): Promise<T | Failure<"forbidden" | "unavailable">> => {
     const now = dependencies.clock.now();
     return runOrUnavailable(
       dependencies.transaction,
-      (transaction) => work(transaction, now),
+      async (transaction) => {
+        const standing = await dependencies.actors.revalidate({
+          ...actor,
+          lock: true,
+          transaction,
+        });
+        if (standing === "revoked") return { status: "forbidden" as const };
+        return await work(transaction, now);
+      },
     );
   };
 
@@ -159,7 +175,7 @@ export function createJournalManagement(
       if (!body || !occurredAt || (input.title !== undefined && !title)) {
         return { status: "validation-error" as const };
       }
-      return await execute(async (transaction, now) => {
+      return await execute(actor, async (transaction, now) => {
         const result = await dependencies.repository.createPost({
           ...actor,
           body,
@@ -186,7 +202,7 @@ export function createJournalManagement(
       actor: PeopleActor,
       itemId: string,
     ) =>
-      await execute(async (transaction, now) => {
+      await execute(actor, async (transaction, now) => {
         const result = await dependencies.repository.deleteItem({
           ...actor,
           itemId,
@@ -205,7 +221,7 @@ export function createJournalManagement(
         return result;
       }),
     linkActivity: async (actor: PeopleActor, activityId: string) =>
-      await execute(async (transaction, now) => {
+      await execute(actor, async (transaction, now) => {
         const activity = await dependencies.activities.inspect({
           ...actor,
           activityId,
@@ -247,7 +263,7 @@ export function createJournalManagement(
         !ratedOn || !Number.isInteger(input.rating) || input.rating < 1 ||
         input.rating > 5 || (input.comment !== undefined && !comment)
       ) return { status: "validation-error" as const };
-      return await execute(async (transaction, now) => {
+      return await execute(actor, async (transaction, now) => {
         const result = await dependencies.repository.saveDayRating({
           ...actor,
           ...(comment ? { comment } : {}),
@@ -285,7 +301,7 @@ export function createJournalManagement(
       if (!body || !occurredAt || (input.title !== undefined && !title)) {
         return { status: "validation-error" as const };
       }
-      return await execute(async (transaction, now) => {
+      return await execute(actor, async (transaction, now) => {
         const result = await dependencies.repository.updatePost({
           ...actor,
           body,

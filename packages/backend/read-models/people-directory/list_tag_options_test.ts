@@ -38,7 +38,11 @@ Deno.test("PEOPLE-002 tag options normalize search and emit fixed opaque pages",
       });
     },
   };
-  const tags = createPeopleTagOptions({ repository });
+  const tags = createPeopleTagOptions({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
+    repository,
+  });
   const first = await tags.list(actor, {
     search: "  TAG   ",
     selectedTagId: option(30).id,
@@ -71,7 +75,11 @@ Deno.test("PEOPLE-002 tag options reject malformed or mismatched input before pe
       return Promise.resolve({ status: "forbidden" });
     },
   };
-  const tags = createPeopleTagOptions({ repository });
+  const tags = createPeopleTagOptions({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
+    repository,
+  });
   assert(
     (await tags.list(actor, { cursor: "not-a-cursor" })).status ===
       "invalid-input",
@@ -84,6 +92,8 @@ Deno.test("PEOPLE-002 tag options reject malformed or mismatched input before pe
   );
 
   const source = createPeopleTagOptions({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       listTagOptions: () =>
         Promise.resolve({

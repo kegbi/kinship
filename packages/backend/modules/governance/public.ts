@@ -12,6 +12,7 @@ export { PostgresInvitationAudit } from "./adapters/postgres/invitation_audit.ts
 export { PostgresSettingsAudit } from "./adapters/postgres/settings_audit.ts";
 export { PostgresPersonalLifecycleAudit } from "./adapters/postgres/personal_lifecycle_audit.ts";
 export { PostgresPersonCreatedAudit } from "./adapters/postgres/person_created_audit.ts";
+export { PostgresWorkspaceResetActivityAudit } from "./adapters/postgres/workspace_lifecycle_audit.ts";
 export { PostgresPersonLifecycleAudit } from "./adapters/postgres/person_lifecycle_audit.ts";
 export { PostgresImportantDateAudit } from "./adapters/postgres/important_date_audit.ts";
 export { PostgresProfileFactAudit } from "./adapters/postgres/profile_fact_audit.ts";
@@ -42,6 +43,7 @@ export {
   type LegalAcceptanceRepository,
   type LegalActor,
   type LegalDocument,
+  type LegalTransaction,
 } from "./application/legal_acceptance.ts";
 export { PostgresLegalAcceptanceRepository } from "./adapters/postgres/legal_acceptance_repository.ts";
 export { PostgresGovernanceWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";

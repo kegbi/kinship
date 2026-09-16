@@ -86,10 +86,14 @@ const profileFacts = createProfileFactManagement({
   workspace: new PostgresProfileFactConfiguration(),
 });
 const directory = createPeopleDirectory({
+  actors,
   repository: new PostgresPeopleDirectoryRepository(peopleConnection.db),
+  transaction: new PostgresPeopleTransaction(peopleConnection.db),
 });
 const personProfile = createPersonProfile({
+  actors,
   repository: new PostgresPersonProfileRepository(peopleConnection.db),
+  transaction: new PostgresPeopleTransaction(peopleConnection.db),
 });
 const mail = new CapturedVerificationMail();
 const configured = createConfiguredApiApp(
@@ -1481,13 +1485,17 @@ Deno.test({
       await kyselySql`select 1`.execute(observedDatabase);
       queryCount = 0;
       const observedDirectory = createPeopleDirectory({
+        actors,
         repository: new PostgresPeopleDirectoryRepository(observedDatabase),
+        transaction: new PostgresPeopleTransaction(observedDatabase),
       });
       const observedTagRepository = new PostgresPeopleDirectoryRepository(
         observedDatabase,
       );
       const observedTags = createPeopleTagOptions({
+        actors,
         repository: observedTagRepository,
+        transaction: new PostgresPeopleTransaction(observedDatabase),
       });
       const budgetActor = {
         memberId: owner.memberId,
@@ -1501,8 +1509,10 @@ Deno.test({
       });
       assert(
         budgetFirst.status === "ready" && budgetFirst.nextCursor &&
-          queryCount === 2,
-        "first directory page stays within two SQL statements",
+          queryCount === 4,
+        // The actor revalidation runs in its own read transaction: begin,
+        // one select, commit. The page itself is one statement.
+        "first directory page stays within the actor revalidation and one statement",
       );
       const beforeContinuation = queryCount;
       await observedDirectory.list(budgetActor, {
@@ -1511,8 +1521,8 @@ Deno.test({
         sort: "given-name",
       });
       assert(
-        queryCount - beforeContinuation === 3,
-        "cursor anchor validation keeps continuation within three statements without tag lookup",
+        queryCount - beforeContinuation === 5,
+        "cursor anchor validation keeps continuation within the actor revalidation and two statements without tag lookup",
       );
       const beforeTags = queryCount;
       const tagBudgetFirst = await observedTags.list(budgetActor, {
@@ -1523,16 +1533,16 @@ Deno.test({
           tagBudgetFirst.options.length === 20 &&
           tagBudgetFirst.nextCursor &&
           tagBudgetFirst.selected?.id === friendsTagId &&
-          queryCount - beforeTags === 3,
-        "bounded tag options use authorization, one limited page, and one selected lookup",
+          queryCount - beforeTags === 5,
+        "bounded tag options use the actor revalidation, one limited page, and one selected lookup",
       );
       const beforeTagContinuation = queryCount;
       await observedTags.list(budgetActor, {
         cursor: tagBudgetFirst.nextCursor,
       });
       assert(
-        queryCount - beforeTagContinuation === 2,
-        "tag continuation stays within authorization and one limited seek query",
+        queryCount - beforeTagContinuation === 4,
+        "tag continuation stays within the actor revalidation and one limited seek query",
       );
     } finally {
       await observedDatabase.destroy();
@@ -1945,7 +1955,9 @@ Deno.test({
       await kyselySql`select 1`.execute(observedDatabase);
       summaryQueryCount = 0;
       const observedProfile = createPersonProfile({
+        actors,
         repository: new PostgresPersonProfileRepository(observedDatabase),
+        transaction: new PostgresPeopleTransaction(observedDatabase),
       });
       const observedSummary = await observedProfile.get(
         {
@@ -1958,8 +1970,8 @@ Deno.test({
         { includeSummary: true },
       );
       assert(
-        observedSummary.status === "ready" && summaryQueryCount === 1,
-        "the complete summary is resolved by one tenant-safe SQL statement",
+        observedSummary.status === "ready" && summaryQueryCount === 4,
+        "the complete summary is resolved by the actor revalidation and one tenant-safe SQL statement",
       );
     } finally {
       await observedDatabase.destroy();
@@ -5728,7 +5740,7 @@ Deno.test({
       audit: new PostgresImportantDateAudit(),
       clock: { now: () => new Date() },
       ids: { create: () => crypto.randomUUID() },
-      publisher: new PostgresPersonDateReminderPublisher(),
+      publisher: new PostgresPersonDateReminderPublisher(actors),
       repository: new PostgresImportantDateRepository(),
       transaction: new PostgresPeopleTransaction(peopleConnection.db),
     });
@@ -5858,6 +5870,57 @@ Deno.test({
     assert(
       unchanged?.given_name === actor.personName,
       "a revoked member renamed the person",
+    );
+  },
+});
+
+Deno.test({
+  name: "GAP-009 a revoked member reads no read model",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const actor = await createStaleActorFixture(
+      `read-model-revocation-${crypto.randomUUID()}`,
+    );
+    const tags = createPeopleTagOptions({
+      actors,
+      repository: new PostgresPeopleDirectoryRepository(peopleConnection.db),
+      transaction: new PostgresPeopleTransaction(peopleConnection.db),
+    });
+
+    // Every surface answers while the membership is active, so the refusals
+    // below can only come from the revocation.
+    const beforeList = await directory.list(actor, {});
+    const beforeProfile = await personProfile.get(actor, actor.personId);
+    const beforeTags = await tags.list(actor, {});
+    assert(
+      beforeList.status === "ready" && beforeProfile.status === "ready" &&
+        beforeTags.status === "ready",
+      "an active member reads the people read models",
+    );
+
+    await sql`
+      update crm.workspace_members set left_at = now(), status = 'left'
+      where id = ${actor.memberId}
+    `;
+
+    const listed = await directory.list(actor, {});
+    const profiled = await personProfile.get(actor, actor.personId);
+    const timeline = await personProfile.listTimeline(
+      actor,
+      actor.personId,
+      {},
+    );
+    const lifeEvents = await personProfile.listLifeEvents(
+      actor,
+      actor.personId,
+    );
+    const tagged = await tags.list(actor, {});
+    assert(
+      listed.status === "forbidden" && profiled.status === "forbidden" &&
+        timeline.status === "forbidden" &&
+        lifeEvents.status === "forbidden" && tagged.status === "forbidden",
+      "a revoked member still read a people read model",
     );
   },
 });
