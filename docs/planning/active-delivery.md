@@ -189,6 +189,19 @@ Playwright test carrying its stable flow ID.
       `astro.mjs dev` processes afterwards; if it recurs, make the cleanup
       re-read the process tree before termination and assert absence of every
       listener the child bound.
+- [ ] **REL-037 — The `gifts` coverage set sits under its branch threshold on
+      `main`.** `deno task test:coverage --module=gifts` fails at `2bf0de36`
+      with branch 78.6% against the set's 80% floor (`apps/api/gifts.ts` 72.3%,
+      `gifts/application/gift_management.ts` 83.0%, lines 91.2%, functions
+      100%). The set passed at the Phase 0 checkpoint (`08680601`); nothing has
+      touched `apps/api/gifts.ts` since, and the only changes to the measured
+      files are the GAP-007 and GAP-009 rewrites of `gift_management.ts`, which
+      moved the aggregate branch weight under the floor rather than removing any
+      test. Found on 2026-09-17 while verifying GAP-011, whose diff touches
+      neither measured file and reproduces the identical numbers. Root
+      `test:coverage` stops at this set, so the sets ordered after it were
+      verified one by one and pass. Fix by covering the untaken branches of
+      `apps/api/gifts.ts` in the gifts unit suite, not by lowering the floor.
 
 ## Just-In-Time Technical Capabilities
 
