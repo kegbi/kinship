@@ -1,4 +1,5 @@
 import { sql } from "kysely";
+import { isUniqueViolation } from "../../../../platform/postgres/errors.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import {
   type CreatePendingUserCommand,
@@ -33,12 +34,7 @@ export class PostgresIdentityRegistration
       `.execute(database);
       return { userId: command.userId };
     } catch (error) {
-      if (
-        typeof error === "object" && error !== null && "code" in error &&
-        error.code === "23505"
-      ) {
-        throw new IdentityConflictError();
-      }
+      if (isUniqueViolation(error)) throw new IdentityConflictError();
       throw error;
     }
   }

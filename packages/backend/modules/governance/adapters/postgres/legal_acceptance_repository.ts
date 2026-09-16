@@ -1,6 +1,8 @@
 import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
   LegalAcceptanceRepository,
   LegalDocument,
@@ -19,7 +21,7 @@ function document(row: DocumentRow): LegalDocument {
     content: row.content,
     documentType: row.document_type,
     id: row.id,
-    ...(row.published_at ? { publishedAt: row.published_at } : {}),
+    ...pickDefined({ publishedAt: row.published_at }),
     version: row.version,
   };
 }
@@ -27,7 +29,7 @@ function document(row: DocumentRow): LegalDocument {
 const documentColumns = sql`document.id::text, document.document_type,
   document.version, document.content,
   case when document.published_at is null then null else
-    to_char(document.published_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') end as published_at`;
+    ${instantColumn("document.published_at")} end as published_at`;
 
 export class PostgresLegalAcceptanceRepository
   implements LegalAcceptanceRepository {
@@ -87,7 +89,7 @@ export class PostgresLegalAcceptanceRepository
         return { status: "superseded-version" as const };
       }
       const existing = await sql<{ readonly accepted_at: string }>`
-        select to_char(accepted_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as accepted_at
+        select ${instantColumn("accepted_at")} as accepted_at
         from crm.legal_acceptances
         where user_id = ${command.userId}::uuid
           and workspace_id = ${command.workspaceId}::uuid
@@ -107,7 +109,7 @@ export class PostgresLegalAcceptanceRepository
         values (${command.acceptanceId}::uuid, ${command.workspaceId}::uuid,
           ${command.userId}::uuid, ${command.documentId}::uuid,
           ${command.ipAddress ?? null}::inet, ${command.now}, ${command.now})
-        returning to_char(accepted_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as accepted_at
+        returning ${instantColumn("accepted_at")} as accepted_at
       `.execute(transaction);
       await sql`
         insert into crm.audit_events (

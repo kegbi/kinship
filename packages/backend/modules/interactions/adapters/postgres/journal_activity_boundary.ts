@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type { JournalActivityReference } from "../../application/journal_activity_reference.ts";
 
 export class PostgresJournalActivityBoundary
@@ -8,7 +9,7 @@ export class PostgresJournalActivityBoundary
     command: Parameters<JournalActivityReference["inspect"]>[0],
   ): Promise<Awaited<ReturnType<JournalActivityReference["inspect"]>>> {
     const result = await sql<{ occurred_at: string }>`
-      select to_char(activity.happened_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as occurred_at
+      select ${instantColumn("activity.happened_at")} as occurred_at
       from crm.activities activity
       where activity.id = ${command.activityId}::uuid
         and activity.workspace_id = ${command.workspaceId}::uuid

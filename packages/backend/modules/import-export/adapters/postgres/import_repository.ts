@@ -1,7 +1,9 @@
 import { sql } from "kysely";
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
 import type {
   ImportActor,
   ImportReport,
@@ -12,15 +14,8 @@ import type {
   StageImportCommand,
 } from "../../application/import_management.ts";
 
-export class PostgresImportTransaction {
-  constructor(private readonly database: Kysely<ApplicationDatabase>) {}
-
-  run<T>(work: (transaction: ImportTransaction) => Promise<T>): Promise<T> {
-    return this.database.transaction().execute((transaction) =>
-      work({ opaque: transaction })
-    );
-  }
-}
+export class PostgresImportTransaction
+  extends PostgresTransactionRunner<ImportTransaction> {}
 
 interface ImportRow {
   readonly completed_at: Date | null;
@@ -249,17 +244,19 @@ export class PostgresImportRepository implements ImportRepository {
         ...(contact.deleted_at
           ? { deletedAt: contact.deleted_at.toISOString() }
           : {}),
-        ...(contact.description ? { description: contact.description } : {}),
-        ...(contact.family_name ? { familyName: contact.family_name } : {}),
-        ...(contact.food_preferences
-          ? { foodPreferences: contact.food_preferences }
-          : {}),
+        ...pickDefined({
+          description: contact.description,
+          familyName: contact.family_name,
+          foodPreferences: contact.food_preferences,
+        }),
         givenName: contact.given_name,
         isDeceased: contact.is_dead,
         isPartial: contact.is_partial,
         isStarred: contact.is_starred,
-        ...(contact.middle_name ? { middleName: contact.middle_name } : {}),
-        ...(contact.nickname ? { nickname: contact.nickname } : {}),
+        ...pickDefined({
+          middleName: contact.middle_name,
+          nickname: contact.nickname,
+        }),
         ...(previous.rows[0]?.target_key
           ? { previousTargetPersonId: previous.rows[0].target_key }
           : {}),

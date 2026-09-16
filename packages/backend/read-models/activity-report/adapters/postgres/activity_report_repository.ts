@@ -1,6 +1,10 @@
 import { sql } from "kysely";
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
+import { UNNAMED_PERSON } from "../../../../modules/people/public.ts";
 import type {
   ActivityReportItem,
   ActivityReportRepository,
@@ -31,8 +35,10 @@ interface ProjectionRow {
 function item(row: ProjectionRow): ActivityReportItem | undefined {
   if (row.kind === "activity" && row.summary !== null) {
     return {
-      ...(row.activity_type ? { activityType: row.activity_type } : {}),
-      ...(row.description ? { description: row.description } : {}),
+      ...pickDefined({
+        activityType: row.activity_type,
+        description: row.description,
+      }),
       emotions: row.emotions,
       happenedAt: row.timestamp_at,
       id: row.id,
@@ -63,10 +69,7 @@ export class PostgresActivityReportRepository
   ): Promise<Awaited<ReturnType<ActivityReportRepository["list"]>>> {
     const context = await sql<ContextRow>`
       select person.id::text,
-        coalesce(
-          nullif(trim(concat_ws(' ', nullif(person.given_name, ''), person.family_name)), ''),
-          nullif(person.nickname, ''), 'Unnamed person'
-        ) as name,
+        ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))} as name,
         person.archived_at
       from crm.people person
       where person.id = ${command.personId}::uuid
@@ -162,8 +165,7 @@ export class PostgresActivityReportRepository
         coalesce(nullif(activity_type.name, ''), activity_type.translation_key) as activity_type,
         coalesce(participants.value, '[]'::jsonb) as participants,
         coalesce(emotions.value, '[]'::jsonb) as emotions,
-        to_char(page.timestamp_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as timestamp_at
+        ${instantColumn("page.timestamp_at")} as timestamp_at
       from page
       left join crm.activity_types activity_type
         on activity_type.id = page.activity_type_id
@@ -172,18 +174,18 @@ export class PostgresActivityReportRepository
         select jsonb_agg(jsonb_build_object('id', selected.id::text,
           'name', selected.name) order by lower(selected.name), selected.id) as value
         from (
-          select person.id, coalesce(
-            nullif(trim(concat_ws(' ', nullif(person.given_name, ''), person.family_name)), ''),
-            nullif(person.nickname, ''), 'Unnamed person') as name
+          select person.id, ${
+      sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
+    } as name
           from crm.activity_participants link
           join crm.people person on person.id = link.person_id
             and person.workspace_id = page.workspace_id
             and person.deleted_at is null
           where page.kind = 'activity' and link.activity_id = page.id
           union all
-          select person.id, coalesce(
-            nullif(trim(concat_ws(' ', nullif(person.given_name, ''), person.family_name)), ''),
-            nullif(person.nickname, ''), 'Unnamed person')
+          select person.id, ${
+      sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
+    }
           from crm.notes note
           join crm.people person on person.id = note.person_id
             and person.workspace_id = note.workspace_id

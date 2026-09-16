@@ -21,8 +21,9 @@
  *    into another module or read model targets that unit's public entry point,
  *    whether it comes from a peer module, a read model, an app, or a tool, and
  *    a module or read model may only import modules it declares; `application`,
- *    `domain`, and `ports` carry no infrastructure import, no `Deno.env`, and
- *    no raw `crm.` SQL; read models never write; `apps/web` never imports
+ *    `domain`, and `ports` carry no infrastructure import — neither a vendor
+ *    client nor a `packages/backend/platform` adapter — no `Deno.env`, and no
+ *    raw `crm.` SQL; read models never write; `apps/web` never imports
  *    `packages/backend`; only declared composition roots reach into another
  *    unit's `adapters/`. `sharedKernel.path` is a unit of its own: every layer
  *    may import it, and it may import nothing outside itself.
@@ -430,6 +431,17 @@ const INFRASTRUCTURE_IMPORTS = [
 
 const APPLICATION_LAYERS = ["application", "domain", "ports"];
 
+/**
+ * The shared infrastructure adapters.
+ *
+ * `repository-layout.md` places them beside the modules rather than inside
+ * one, and `backend-architecture.md` calls them adapters, so the same rule
+ * that keeps Kysely out of a use case keeps these out too: a driver-free file
+ * under this path is still infrastructure. Adapters and composition roots
+ * import it freely; `application`, `domain`, and `ports` never do.
+ */
+const PLATFORM_PATH = "packages/backend/platform";
+
 const TABLE_TOKEN = /crm\.([a-z_][a-z0-9_]*)/g;
 
 interface Unit {
@@ -559,6 +571,16 @@ function layerViolations(
           rule: "layer",
           subject: file.path,
           detail: `the ${layer} layer imports ${specifier}`,
+        });
+      }
+      for (const specifier of specifiers) {
+        const resolved = resolveSpecifier(file.path, specifier);
+        if (resolved === undefined) continue;
+        if (!resolved.startsWith(`${PLATFORM_PATH}/`)) continue;
+        violations.push({
+          rule: "layer",
+          subject: file.path,
+          detail: `the ${layer} layer imports the platform adapter ${resolved}`,
         });
       }
       if (/\bDeno\.env\b/.test(file.text)) {

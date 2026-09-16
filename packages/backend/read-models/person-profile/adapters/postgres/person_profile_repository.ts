@@ -1,6 +1,13 @@
 import { sql } from "kysely";
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
+import {
+  instantColumn,
+  millisecondInstantColumn,
+} from "../../../../platform/postgres/timestamps.ts";
+import { UNNAMED_PERSON } from "../../../../modules/people/public.ts";
 import {
   PERSON_PROFILE_TAG_PREVIEW_LIMIT,
   type PersonLifeEvent,
@@ -113,18 +120,22 @@ function identity(row: PersonProfileRow): PersonProfileIdentity | undefined {
     return undefined;
   }
   return {
-    ...(row.description ? { description: row.description } : {}),
-    ...(row.family_name ? { familyName: row.family_name } : {}),
-    ...(row.gender ? { gender: row.gender } : {}),
+    ...pickDefined({
+      description: row.description,
+      familyName: row.family_name,
+      gender: row.gender,
+    }),
     givenName: row.given_name,
     id: row.id,
     isDeceased: row.is_deceased,
     isPartial: row.is_partial,
     isSelf: row.is_self,
     isStarred: row.is_starred,
-    ...(row.last_contact_at ? { lastContactAt: row.last_contact_at } : {}),
-    ...(row.middle_name ? { middleName: row.middle_name } : {}),
-    ...(row.nickname ? { nickname: row.nickname } : {}),
+    ...pickDefined({
+      lastContactAt: row.last_contact_at,
+      middleName: row.middle_name,
+      nickname: row.nickname,
+    }),
     profileSections: row.profile_sections,
     tagCount: row.tag_count,
     tags: row.tags,
@@ -286,8 +297,7 @@ export class PostgresPersonProfileRepository
         person.family_name, person.nickname, person.description,
         gender.name as gender, person.is_partial, person.is_starred,
         person.is_deceased, person.archived_at,
-        to_char(person.updated_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at,
+        ${instantColumn("person.updated_at")} as updated_at,
         coalesce((select self.self_person_id from crm.workspace_members self
           where self.id = ${command.memberId}::uuid) = person.id,
           false) as is_self,
@@ -307,8 +317,9 @@ export class PostgresPersonProfileRepository
         on gender.id = person.gender_option_id
         and gender.workspace_id = workspace.id
       left join lateral (
-        select to_char(max(contacted_at) at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as last_contact_at
+        select ${
+      millisecondInstantColumn("max(contacted_at)")
+    } as last_contact_at
         from (
           select called_at as contacted_at from crm.calls
           where workspace_id = workspace.id and person_id = person.id
@@ -363,8 +374,7 @@ export class PostgresPersonProfileRepository
             where task.workspace_id = workspace.id
               and task.person_id = person.id and task.status = 'open'
               and task.deleted_at is null) as open_task_count,
-          (select to_char(occurrence.deliver_at at time zone 'UTC',
-              'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+          (select ${instantColumn("occurrence.deliver_at")}
             from crm.reminder_occurrences occurrence
             join crm.reminders reminder on reminder.id = occurrence.reminder_id
               and reminder.workspace_id = workspace.id
@@ -374,8 +384,7 @@ export class PostgresPersonProfileRepository
               and occurrence.status in ('pending', 'retry')
             order by occurrence.deliver_at, occurrence.id limit 1
           ) as next_reminder_at,
-          (select to_char(cadence.next_due_at at time zone 'UTC',
-              'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+          (select ${instantColumn("cadence.next_due_at")}
             from crm.stay_in_touch_cadences cadence
             where cadence.person_id = person.id and cadence.is_active
             order by cadence.next_due_at nulls last, cadence.id limit 1
@@ -388,13 +397,9 @@ export class PostgresPersonProfileRepository
     if (!person) return { status: "not-found" };
     return {
       dueInformation: {
-        ...(row.next_reminder_at
-          ? { nextReminderAt: row.next_reminder_at }
-          : {}),
+        ...pickDefined({ nextReminderAt: row.next_reminder_at }),
         openTaskCount: row.open_task_count,
-        ...(row.stay_in_touch_at
-          ? { stayInTouchAt: row.stay_in_touch_at }
-          : {}),
+        ...pickDefined({ stayInTouchAt: row.stay_in_touch_at }),
       },
       person,
       status: row.archived_at ? "archived" : "ready",
@@ -436,8 +441,7 @@ export class PostgresPersonProfileRepository
             'month', event.month,
             'day', event.day,
             'happenedAt', case when event.happened_at is not null then
-              to_char(event.happened_at at time zone 'UTC',
-                'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') end
+              ${instantColumn("event.happened_at")} end
           ))
         )) order by event.year desc nulls last, event.month desc nulls last,
           event.day desc nulls last, event.happened_at desc nulls last,
@@ -690,8 +694,7 @@ export class PostgresPersonProfileRepository
         call_detail.contact_was_caller,
         conversation_detail.channel_type, conversation_detail.contact_method,
         conversation_messages.value as messages,
-        to_char(page.occurred_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as occurred_at
+        ${instantColumn("page.occurred_at")} as occurred_at
       from page
       left join crm.life_events calendar_event on page.kind = 'life-event'
         and calendar_event.id = page.id and calendar_event.person_id = ${command.personId}::uuid
@@ -708,13 +711,11 @@ export class PostgresPersonProfileRepository
       ) activity_detail on true
       left join lateral (
         select jsonb_agg(jsonb_build_object('id', person.id::text,
-          'name', coalesce(
-            nullif(trim(concat_ws(' ', nullif(person.given_name, ''), person.family_name)), ''),
-            nullif(person.nickname, ''), 'Unnamed person'
-          )) order by lower(coalesce(
-            nullif(trim(concat_ws(' ', nullif(person.given_name, ''), person.family_name)), ''),
-            nullif(person.nickname, ''), 'Unnamed person'
-          )), person.id) as value
+          'name', ${
+      sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
+    }) order by lower(${
+      sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
+    }), person.id) as value
         from crm.activity_participants link
         join crm.activities activity on activity.id = link.activity_id
           and activity.workspace_id = ${command.workspaceId}::uuid
@@ -770,8 +771,7 @@ export class PostgresPersonProfileRepository
       left join lateral (
         select jsonb_agg(jsonb_build_object('content', message.content,
           'direction', message.direction,
-          'writtenAt', to_char(message.written_at at time zone 'UTC',
-            'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))
+          'writtenAt', ${instantColumn("message.written_at")})
           order by message.written_at, message.id) as value
         from crm.messages message
         join crm.conversation_threads thread

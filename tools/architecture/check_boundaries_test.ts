@@ -476,6 +476,68 @@ Deno.test("[GAP-005] the application layer keeps infrastructure out", async () =
   );
 });
 
+Deno.test("[GAP-010] platform adapters stay out of the inner layers", async () => {
+  const cases = [
+    {
+      layer: "application",
+      path: "packages/backend/modules/gifts/application/gift_management.ts",
+      specifier: "../../../platform/postgres/session.ts",
+    },
+    {
+      layer: "domain",
+      path: "packages/backend/modules/gifts/domain/gift.ts",
+      specifier: "../../../platform/postgres/person_display.ts",
+    },
+    {
+      layer: "ports",
+      path: "packages/backend/modules/gifts/ports/security.ts",
+      specifier: "../../../platform/postgres/errors.ts",
+    },
+    {
+      layer: "application",
+      path: "packages/backend/read-models/today/application/get_today.ts",
+      specifier: "../../../platform/postgres/timestamps.ts",
+    },
+  ] as const;
+  for (const example of cases) {
+    const violations = await fixture([{
+      path: example.path,
+      text: `import { helper } from "${example.specifier}";`,
+    }]);
+    assert(
+      violations.some((violation) =>
+        violation.rule === "layer" && violation.subject === example.path &&
+        violation.detail.startsWith(
+          `the ${example.layer} layer imports the platform adapter `,
+        )
+      ),
+      `expected ${example.path} to be reported, got ${render(violations)}`,
+    );
+  }
+
+  const adapter = await fixture([{
+    path: "packages/backend/modules/gifts/adapters/postgres/gifts.ts",
+    text:
+      'import { databaseFromSession } from "../../../../platform/postgres/session.ts";',
+  }]);
+  refuse(
+    adapter,
+    ["platform adapter"],
+    "an adapter is where platform belongs",
+  );
+
+  const root = await fixture([{
+    path: "apps/api/composition.ts",
+    text:
+      'import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";',
+  }]);
+  refuse(
+    root,
+    ["platform adapter"],
+    "a composition root wires the platform",
+  );
+});
+
 Deno.test("[GAP-005] read models never write", async () => {
   const violations = await fixture([{
     path: "packages/backend/read-models/today/adapters/postgres/today.ts",

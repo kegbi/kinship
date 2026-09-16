@@ -1,7 +1,9 @@
 import { type Kysely, sql } from "kysely";
-import type { Clock } from "../../../../shared-kernel/clock.ts";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
+import type { Clock } from "../../../../shared-kernel/clock.ts";
 import {
   type CalendarOccurrence,
   generateCalendarOccurrences,
@@ -66,32 +68,32 @@ const reminderColumns = sql`
     where setting.workspace_id = reminder.workspace_id
   ), '12:00'::time)::text as send_time,
   reminder.is_active,
-  to_char(reminder.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
-  to_char(reminder.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+  ${instantColumn("reminder.created_at")} as created_at,
+  ${instantColumn("reminder.updated_at")} as updated_at
 `;
 
 const occurrenceColumns = sql`
   occurrence.id::text, occurrence.occurs_on::text,
-  to_char(occurrence.deliver_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as deliver_at,
+  ${instantColumn("occurrence.deliver_at")} as deliver_at,
   occurrence.status, occurrence.attempt_count, occurrence.error,
-  to_char(occurrence.sent_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as sent_at,
-  to_char(occurrence.provider_effect_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as provider_effect_at,
-  to_char(occurrence.visible_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as visible_at
+  ${instantColumn("occurrence.sent_at")} as sent_at,
+  ${instantColumn("occurrence.provider_effect_at")} as provider_effect_at,
+  ${instantColumn("occurrence.visible_at")} as visible_at
 `;
 
 function occurrence(row: OccurrenceRow): ReminderOccurrenceRecord {
   return {
     attemptCount: row.attempt_count,
     deliverAt: row.deliver_at,
-    ...(row.error ? { error: row.error } : {}),
+    ...pickDefined({ error: row.error }),
     id: row.id,
     occursOn: row.occurs_on,
-    ...(row.provider_effect_at
-      ? { providerEffectAt: row.provider_effect_at }
-      : {}),
-    ...(row.sent_at ? { sentAt: row.sent_at } : {}),
+    ...pickDefined({
+      providerEffectAt: row.provider_effect_at,
+      sentAt: row.sent_at,
+    }),
     status: row.status,
-    ...(row.visible_at ? { visibleAt: row.visible_at } : {}),
+    ...pickDefined({ visibleAt: row.visible_at }),
   };
 }
 
@@ -137,9 +139,7 @@ function cadence(row: CadenceRow): StayInTouchCadenceRecord {
     intervalCount: row.interval_count,
     intervalUnit: row.interval_unit,
     isActive: row.is_active,
-    ...(row.last_contacted_at
-      ? { lastContactedAt: row.last_contacted_at }
-      : {}),
+    ...pickDefined({ lastContactedAt: row.last_contacted_at }),
     nextDueAt: row.next_due_at,
     personId: row.person_id,
     updatedAt: row.updated_at,
@@ -345,9 +345,9 @@ export class PostgresReminderRepository implements ReminderRepository {
         updated_at = greatest(excluded.updated_at, cadence.updated_at + interval '1 microsecond')
       returning id::text, person_id::text, interval_count, interval_unit,
         is_active,
-        to_char(last_contacted_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as last_contacted_at,
-        to_char(next_due_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as next_due_at,
-        to_char(updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+        ${instantColumn("last_contacted_at")} as last_contacted_at,
+        ${instantColumn("next_due_at")} as next_due_at,
+        ${instantColumn("updated_at")} as updated_at
     `.execute(database);
     const row = result.rows[0];
     if (row) {
@@ -374,9 +374,9 @@ export class PostgresReminderRepository implements ReminderRepository {
       select cadence.id::text, cadence.person_id::text,
         cadence.interval_count, cadence.interval_unit, cadence.is_active,
         request.request_fingerprint as last_request_fingerprint,
-        to_char(cadence.last_contacted_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as last_contacted_at,
-        to_char(cadence.next_due_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as next_due_at,
-        to_char(cadence.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+        ${instantColumn("cadence.last_contacted_at")} as last_contacted_at,
+        ${instantColumn("cadence.next_due_at")} as next_due_at,
+        ${instantColumn("cadence.updated_at")} as updated_at
       from crm.stay_in_touch_cadence_requests request
       join crm.stay_in_touch_cadences cadence on cadence.id = request.cadence_id
       join crm.people person on person.id = cadence.person_id
@@ -551,9 +551,9 @@ export class PostgresReminderRepository implements ReminderRepository {
         CadenceRow
       >`select cadence.id::text, cadence.person_id::text, cadence.interval_count,
         cadence.interval_unit, cadence.is_active,
-        to_char(cadence.last_contacted_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as last_contacted_at,
-        to_char(cadence.next_due_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as next_due_at,
-        to_char(cadence.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+        ${instantColumn("cadence.last_contacted_at")} as last_contacted_at,
+        ${instantColumn("cadence.next_due_at")} as next_due_at,
+        ${instantColumn("cadence.updated_at")} as updated_at
         from crm.stay_in_touch_cadences cadence join crm.people person on person.id = cadence.person_id
         where person.workspace_id = ${command.workspaceId}::uuid and cadence.person_id = ${command.personId}::uuid
         order by cadence.updated_at desc limit 1`.execute(database),

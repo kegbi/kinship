@@ -1,5 +1,7 @@
 import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
+import { UNNAMED_PERSON } from "../../../../modules/people/public.ts";
 import type { TodayRecentPeopleRepository } from "../../application/get_today_recent_people.ts";
 
 const UUID =
@@ -55,11 +57,7 @@ export class PostgresTodayRecentPeopleRepository
           readonly name: string;
         }>`
           select person.id::text, person.archived_at is not null as archived,
-            coalesce(
-              nullif(trim(concat_ws(' ', nullif(person.given_name, ''), person.family_name)), ''),
-              nullif(person.nickname, ''),
-              'Unnamed person'
-            ) as name
+            ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))} as name
           from unnest(array[${sql.join(ids.map((id) => sql`${id}`))}]::text[])
             with ordinality as recent(person_id, position)
           join crm.people person on person.id::text = recent.person_id

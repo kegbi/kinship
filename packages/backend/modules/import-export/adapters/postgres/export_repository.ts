@@ -1,6 +1,7 @@
-import { type Kysely, sql } from "kysely";
-import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { sql } from "kysely";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
 import type {
   ExportActor,
   ExportManifest,
@@ -70,7 +71,7 @@ function summary(row: ExportRow): ExportSummary {
       ? { completedAt: row.completed_at.toISOString() }
       : {}),
     createdAt: row.created_at.toISOString(),
-    ...(row.error ? { error: row.error } : {}),
+    ...pickDefined({ error: row.error }),
     ...(row.expires_at ? { expiresAt: row.expires_at.toISOString() } : {}),
     exportId: row.id,
     format: "json",
@@ -84,14 +85,8 @@ const selected = sql`
   export.manifest, export.error, export.created_at, export.completed_at,
   export.expires_at
 `;
-export class PostgresExportTransaction {
-  constructor(private readonly database: Kysely<ApplicationDatabase>) {}
-  run<T>(work: (transaction: ExportTransaction) => Promise<T>): Promise<T> {
-    return this.database.transaction().execute((transaction) =>
-      work({ opaque: transaction })
-    );
-  }
-}
+export class PostgresExportTransaction
+  extends PostgresTransactionRunner<ExportTransaction> {}
 
 export class PostgresExportRepository implements ExportRepository {
   async startOrResume(
@@ -216,7 +211,7 @@ export class PostgresExportRepository implements ExportRepository {
       ...(typeof download.expiresAt === "string"
         ? { downloadExpiresAt: download.expiresAt }
         : {}),
-      ...(row.file_id ? { fileId: row.file_id } : {}),
+      ...pickDefined({ fileId: row.file_id }),
     };
   }
 

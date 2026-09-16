@@ -1,5 +1,9 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import {
+  UNIQUE_CONFLICT,
+  writeWithUniqueConflict,
+} from "../../../../platform/postgres/transactions.ts";
 import type {
   PersonalizationEntry,
   PersonalizationRepository,
@@ -95,33 +99,7 @@ function profileModuleKey(name: string): string | undefined {
   return key && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(key) ? key : undefined;
 }
 
-const UNIQUE_CONFLICT = Symbol("workspace-personalization-unique-conflict");
-
-async function writeWithUniqueConflict<T>(
-  database: ReturnType<typeof databaseFromSession>,
-  write: () => Promise<T>,
-): Promise<T | typeof UNIQUE_CONFLICT> {
-  await sql`savepoint workspace_personalization_write`.execute(database);
-  try {
-    const result = await write();
-    await sql`release savepoint workspace_personalization_write`.execute(
-      database,
-    );
-    return result;
-  } catch (error) {
-    await sql`rollback to savepoint workspace_personalization_write`.execute(
-      database,
-    );
-    await sql`release savepoint workspace_personalization_write`.execute(
-      database,
-    );
-    if (
-      typeof error === "object" && error !== null && "code" in error &&
-      error.code === "23505"
-    ) return UNIQUE_CONFLICT;
-    throw error;
-  }
-}
+const SAVEPOINT = "workspace_personalization_write";
 
 function itemCapabilities(
   section: PersonalizationSection,
@@ -352,6 +330,7 @@ export class PostgresWorkspacePersonalization
       }
       const insertedResult = await writeWithUniqueConflict(
         database,
+        SAVEPOINT,
         async (): Promise<{ readonly id: string } | undefined> => {
           if (command.section === "profile-modules") {
             return (await sql<{ readonly id: string }>`
@@ -432,55 +411,59 @@ export class PostgresWorkspacePersonalization
       command.section === "contact-labels" &&
       (!isActive || sortOrder !== 0)
     ) return { status: "invalid" };
-    const updatedResult = await writeWithUniqueConflict(database, async () => {
-      if (command.section === "profile-modules") {
-        await sql`update crm.workspace_profile_modules set name = ${name},
+    const updatedResult = await writeWithUniqueConflict(
+      database,
+      SAVEPOINT,
+      async () => {
+        if (command.section === "profile-modules") {
+          await sql`update crm.workspace_profile_modules set name = ${name},
         sort_order = ${sortOrder}, is_active = ${isActive}, updated_at = now()
         where id = ${command.id}::uuid and workspace_id = ${command.workspaceId}::uuid`
-          .execute(database);
-      } else if (command.section === "contact-labels") {
-        await sql`update crm.contact_labels set label = ${name}, updated_at = now()
+            .execute(database);
+        } else if (command.section === "contact-labels") {
+          await sql`update crm.contact_labels set label = ${name}, updated_at = now()
         where id = ${command.id}::uuid and workspace_id = ${command.workspaceId}::uuid`
-          .execute(database);
-      } else if (command.section === "relationship-types") {
-        const forwardLabel = command.forwardLabel ??
-          existing.entry.forwardLabel!;
-        const reverseLabel = command.reverseLabel ??
-          existing.entry.reverseLabel!;
-        const pairDuplicate = await sql<{ readonly duplicate: boolean }>`
+            .execute(database);
+        } else if (command.section === "relationship-types") {
+          const forwardLabel = command.forwardLabel ??
+            existing.entry.forwardLabel!;
+          const reverseLabel = command.reverseLabel ??
+            existing.entry.reverseLabel!;
+          const pairDuplicate = await sql<{ readonly duplicate: boolean }>`
         select exists(select 1 from crm.relationship_types
           where workspace_id = ${command.workspaceId}::uuid and id <> ${command.id}::uuid
             and lower(forward_label) = lower(${forwardLabel})
             and lower(reverse_label) = lower(${reverseLabel})) as duplicate
       `.execute(database);
-        if (pairDuplicate.rows[0]?.duplicate) return "conflict" as const;
-        await sql`update crm.relationship_types set forward_label = ${forwardLabel},
+          if (pairDuplicate.rows[0]?.duplicate) return "conflict" as const;
+          await sql`update crm.relationship_types set forward_label = ${forwardLabel},
         reverse_label = ${reverseLabel}, sort_order = ${sortOrder},
         is_archived = ${!isActive}, updated_at = now()
         where id = ${command.id}::uuid and workspace_id = ${command.workspaceId}::uuid`
-          .execute(database);
-      } else {
-        const activeColumn = command.section === "gender-options" ||
-            command.section === "contact-method-types" ||
-            command.section === "activity-types" ||
-            command.section === "life-event-types"
-          ? "is_archived"
-          : undefined;
-        await sql`update ${sql.table(`crm.${vocabulary.table}`)} set
+            .execute(database);
+        } else {
+          const activeColumn = command.section === "gender-options" ||
+              command.section === "contact-method-types" ||
+              command.section === "activity-types" ||
+              command.section === "life-event-types"
+            ? "is_archived"
+            : undefined;
+          await sql`update ${sql.table(`crm.${vocabulary.table}`)} set
         ${sql.ref(vocabulary.nameColumn)} = ${name}, sort_order = ${sortOrder},
         ${activeColumn ? sql.ref(activeColumn) : sql.ref("updated_at")} = ${
-          activeColumn ? !isActive : new Date()
-        }, updated_at = now()
+            activeColumn ? !isActive : new Date()
+          }, updated_at = now()
         where id = ${command.id}::uuid and workspace_id = ${command.workspaceId}::uuid`
-          .execute(database);
-      }
-      if (command.section === "gender-options" && command.isDefault) {
-        await sql`update crm.workspace_settings set default_gender_option_id = ${command.id}::uuid,
+            .execute(database);
+        }
+        if (command.section === "gender-options" && command.isDefault) {
+          await sql`update crm.workspace_settings set default_gender_option_id = ${command.id}::uuid,
         updated_at = now() where workspace_id = ${command.workspaceId}::uuid`
-          .execute(database);
-      }
-      return "updated" as const;
-    });
+            .execute(database);
+        }
+        return "updated" as const;
+      },
+    );
     if (
       updatedResult === UNIQUE_CONFLICT || updatedResult === "conflict"
     ) return { status: "conflict" };

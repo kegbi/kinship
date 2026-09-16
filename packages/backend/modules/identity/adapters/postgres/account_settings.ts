@@ -1,4 +1,5 @@
 import { sql } from "kysely";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type {
   IdentityAccountSettingsFacade,
@@ -63,9 +64,9 @@ export class PostgresIdentityAccountSettings
       current: row.current,
       expiresAt: new Date(row.expiresAt),
       id: row.id,
-      ...(row.ipAddress ? { ipAddress: row.ipAddress } : {}),
+      ...pickDefined({ ipAddress: row.ipAddress }),
       lastSeenAt: new Date(row.lastSeenAt),
-      ...(row.userAgent ? { userAgent: row.userAgent } : {}),
+      ...pickDefined({ userAgent: row.userAgent }),
     }));
   }
 

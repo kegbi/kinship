@@ -1,6 +1,10 @@
 import { sql } from "kysely";
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
+import { UNNAMED_PERSON } from "../../../../modules/people/public.ts";
 import type {
   AuditHistoryRepository,
   AuditHistoryRepositoryItem,
@@ -46,7 +50,7 @@ function mapItem(row: AuditRow): AuditHistoryRepositoryItem {
   return {
     action: row.action,
     actor: {
-      ...(row.actor_id ? { id: row.actor_id } : {}),
+      ...pickDefined({ id: row.actor_id }),
       name: row.actor_name,
     },
     id: row.id,
@@ -56,8 +60,7 @@ function mapItem(row: AuditRow): AuditHistoryRepositoryItem {
       ? { person: { id: row.person_id, name: row.person_name } }
       : {}),
     subject: {
-      ...(row.subject_id ? { id: row.subject_id } : {}),
-      ...(row.subject_type ? { type: row.subject_type } : {}),
+      ...pickDefined({ id: row.subject_id, type: row.subject_type }),
     },
   };
 }
@@ -82,10 +85,7 @@ export class PostgresAuditHistoryRepository implements AuditHistoryRepository {
           and workspace.status = 'active' and workspace.deleted_at is null
       ) as valid_actor,
       person.id::text as person_id,
-      coalesce(
-        nullif(trim(concat_ws(' ', nullif(person.given_name, ''), person.family_name)), ''),
-        nullif(person.nickname, ''), 'Unnamed person'
-      ) as person_name,
+      ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))} as person_name,
       person.archived_at as person_archived_at
       from (values (true)) seed(value)
       left join crm.people person
@@ -131,8 +131,7 @@ export class PostgresAuditHistoryRepository implements AuditHistoryRepository {
 
     const result = await sql<AuditRow>`
       select event.id::text, event.action, event.payload,
-        to_char(event.occurred_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as occurred_at,
+        ${instantColumn("event.occurred_at")} as occurred_at,
         event.actor_member_id::text as actor_id,
         coalesce(nullif(event.actor_name_snapshot, ''),
           case when event.actor_member_id is null then 'System'

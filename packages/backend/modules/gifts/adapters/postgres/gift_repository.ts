@@ -1,5 +1,7 @@
 import { sql } from "kysely";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
   GiftRepository,
   StoredDebt,
@@ -38,36 +40,28 @@ const giftColumns = sql`
   gift.id::text, gift.person_id::text, gift.recipient_person_id::text,
   gift.name, gift.url, gift.comment, gift.status,
   gift.event_at::text, gift.amount::text, gift.currency_code,
-  to_char(gift.created_at at time zone 'UTC',
-    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
-  to_char(gift.updated_at at time zone 'UTC',
-    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+  ${instantColumn("gift.created_at")} as created_at,
+  ${instantColumn("gift.updated_at")} as updated_at
 `;
 const debtColumns = sql`
   debt.id::text, debt.person_id::text, debt.direction, debt.status,
   debt.amount::text, debt.currency_code, debt.reason, debt.settled_at::text,
-  to_char(debt.created_at at time zone 'UTC',
-    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
-  to_char(debt.updated_at at time zone 'UTC',
-    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+  ${instantColumn("debt.created_at")} as created_at,
+  ${instantColumn("debt.updated_at")} as updated_at
 `;
 
 function gift(row: GiftRow): StoredGift {
   return {
-    ...(row.amount ? { amount: row.amount } : {}),
-    ...(row.comment ? { comment: row.comment } : {}),
+    ...pickDefined({ amount: row.amount, comment: row.comment }),
     createdAt: row.created_at,
-    ...(row.currency_code ? { currencyCode: row.currency_code } : {}),
-    ...(row.event_at ? { eventAt: row.event_at } : {}),
+    ...pickDefined({ currencyCode: row.currency_code, eventAt: row.event_at }),
     id: row.id,
     name: row.name,
     personId: row.person_id,
-    ...(row.recipient_person_id
-      ? { recipientPersonId: row.recipient_person_id }
-      : {}),
+    ...pickDefined({ recipientPersonId: row.recipient_person_id }),
     status: row.status,
     updatedAt: row.updated_at,
-    ...(row.url ? { url: row.url } : {}),
+    ...pickDefined({ url: row.url }),
   };
 }
 
@@ -75,12 +69,11 @@ function debt(row: DebtRow): StoredDebt {
   return {
     amount: row.amount,
     createdAt: row.created_at,
-    ...(row.currency_code ? { currencyCode: row.currency_code } : {}),
+    ...pickDefined({ currencyCode: row.currency_code }),
     direction: row.direction,
     id: row.id,
     personId: row.person_id,
-    ...(row.reason ? { reason: row.reason } : {}),
-    ...(row.settled_at ? { settledAt: row.settled_at } : {}),
+    ...pickDefined({ reason: row.reason, settledAt: row.settled_at }),
     status: row.status,
     updatedAt: row.updated_at,
   };

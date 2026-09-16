@@ -1,5 +1,7 @@
 import { sql } from "kysely";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
   JournalRepository,
   StoredDayRating,
@@ -24,13 +26,13 @@ interface RatingRow {
 }
 
 const postColumns = sql`post.id::text, post.title, post.body,
-  to_char(post.occurred_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as occurred_at,
-  to_char(post.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
-  to_char(post.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at`;
+  ${instantColumn("post.occurred_at")} as occurred_at,
+  ${instantColumn("post.created_at")} as created_at,
+  ${instantColumn("post.updated_at")} as updated_at`;
 const ratingColumns =
   sql`rating.id::text, rating.rated_on::text, rating.rating, rating.comment,
-  to_char(rating.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
-  to_char(rating.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at`;
+  ${instantColumn("rating.created_at")} as created_at,
+  ${instantColumn("rating.updated_at")} as updated_at`;
 
 function post(row: PostRow): StoredJournalPost {
   return {
@@ -38,13 +40,13 @@ function post(row: PostRow): StoredJournalPost {
     createdAt: row.created_at,
     id: row.id,
     occurredAt: row.occurred_at,
-    ...(row.title ? { title: row.title } : {}),
+    ...pickDefined({ title: row.title }),
     updatedAt: row.updated_at,
   };
 }
 function rating(row: RatingRow): StoredDayRating {
   return {
-    ...(row.comment ? { comment: row.comment } : {}),
+    ...pickDefined({ comment: row.comment }),
     createdAt: row.created_at,
     id: row.id,
     ratedOn: row.rated_on,
@@ -109,7 +111,7 @@ export class PostgresJournalRepository implements JournalRepository {
       insert into crm.journal_items (id, workspace_id, occurred_at, activity_id, created_by_member_id)
       values (${command.id}::uuid, ${command.workspaceId}::uuid, ${command.occurredAt}, ${command.activityId}::uuid, ${command.memberId}::uuid)
       on conflict (activity_id) where activity_id is not null do nothing
-      returning id::text, to_char(occurred_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as occurred_at
+      returning id::text, ${instantColumn("occurred_at")} as occurred_at
     `.execute(databaseFromSession(command.transaction));
     return result.rows[0]
       ? {

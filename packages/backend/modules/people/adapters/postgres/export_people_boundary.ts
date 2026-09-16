@@ -1,5 +1,7 @@
 import { sql } from "kysely";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
   ExportContactMethod,
   ExportPerson,
@@ -54,17 +56,18 @@ function person(row: ExportPersonRow): ExportPerson {
   return {
     ...(row.archived ? { archived: true } : {}),
     contactMethods: methods(row.contact_methods),
-    ...(row.deleted_at ? { deletedAt: row.deleted_at } : {}),
-    ...(row.description ? { description: row.description } : {}),
-    ...(row.family_name ? { familyName: row.family_name } : {}),
-    ...(row.food_preferences ? { foodPreferences: row.food_preferences } : {}),
+    ...pickDefined({
+      deletedAt: row.deleted_at,
+      description: row.description,
+      familyName: row.family_name,
+      foodPreferences: row.food_preferences,
+    }),
     givenName: row.given_name,
     id: row.id,
     isDeceased: row.is_deceased,
     isPartial: row.is_partial,
     isStarred: row.is_starred,
-    ...(row.middle_name ? { middleName: row.middle_name } : {}),
-    ...(row.nickname ? { nickname: row.nickname } : {}),
+    ...pickDefined({ middleName: row.middle_name, nickname: row.nickname }),
   };
 }
 
@@ -91,7 +94,7 @@ const selected = sql`
   person.is_partial, person.is_starred, person.is_deceased,
   person.archived_at is not null as archived,
   case when person.deleted_at is null then null else
-    to_char(person.deleted_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+    ${instantColumn("person.deleted_at")}
   end as deleted_at,
   coalesce(methods.items, '[]'::jsonb) as contact_methods
 `;

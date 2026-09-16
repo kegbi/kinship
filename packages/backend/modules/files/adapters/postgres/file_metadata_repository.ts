@@ -1,5 +1,7 @@
 import { sql } from "kysely";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
   FileMetadataRepository,
   PersonFileKind,
@@ -24,7 +26,7 @@ interface FileRow {
 function file(row: FileRow): StoredPersonFile {
   return {
     byteSize: Number(row.byte_size),
-    ...(row.checksum_sha256 ? { checksumSha256: row.checksum_sha256 } : {}),
+    ...pickDefined({ checksumSha256: row.checksum_sha256 }),
     createdAt: row.created_at,
     fileId: row.file_id,
     filename: row.filename,
@@ -42,8 +44,7 @@ const selectedColumns = sql`
   stored.original_filename as filename, link.kind, link.title,
   stored.byte_size::text, stored.mime_type, stored.checksum_sha256,
   stored.status, stored.storage_key,
-  to_char(stored.created_at at time zone 'UTC',
-    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at
+  ${instantColumn("stored.created_at")} as created_at
 `;
 
 /**

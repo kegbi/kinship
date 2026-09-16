@@ -1,5 +1,6 @@
 import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import type {
   DavActor,
   DavActorRevalidation,
@@ -61,17 +62,15 @@ function mapped(row: SubscriptionRow): DavSubscription {
   return {
     id: row.id,
     isActive: row.is_active,
-    ...(state.error ? { lastError: state.error } : {}),
+    ...pickDefined({ lastError: state.error }),
     lastOutcome: state.outcome,
     ...(row.last_synced_at
       ? { lastSyncedAt: row.last_synced_at.toISOString() }
       : {}),
     name: row.name,
-    ...(row.remote_sync_token
-      ? { remoteSyncToken: row.remote_sync_token }
-      : {}),
+    ...pickDefined({ remoteSyncToken: row.remote_sync_token }),
     remoteUrl: row.remote_url,
-    ...(row.username ? { username: row.username } : {}),
+    ...pickDefined({ username: row.username }),
   };
 }
 async function lockSubscription(
@@ -380,7 +379,7 @@ export class PostgresDavRepository implements DavRepository {
         actor: command,
         event: {
           action: "sync",
-          ...(outcome.error ? { code: outcome.error } : {}),
+          ...pickDefined({ code: outcome.error }),
           occurredAt: outcome.occurredAt,
           outcome: outcome.status === "success"
             ? "success"

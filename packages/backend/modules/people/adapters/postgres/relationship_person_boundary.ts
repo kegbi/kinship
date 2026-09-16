@@ -1,5 +1,7 @@
 import { sql } from "kysely";
+import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { UNNAMED_PERSON } from "../../domain/person_name.ts";
 import type {
   InteractionPersonBoundary,
   RelationshipPersonBoundary,
@@ -97,10 +99,7 @@ export class PostgresRelationshipPersonBoundary
       readonly name: string;
     }>`
       select id::text, archived_at,
-        coalesce(
-          nullif(trim(concat_ws(' ', nullif(given_name, ''), family_name)), ''),
-          nullif(nickname, ''), 'Unnamed person'
-        ) as name
+        ${sql.raw(personDisplayNameSql(UNNAMED_PERSON))} as name
       from crm.people
       where workspace_id = ${command.workspaceId}::uuid
         and id in (${sql.join(ids.map((id) => sql`${id}::uuid`))})

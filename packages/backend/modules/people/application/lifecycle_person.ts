@@ -5,6 +5,7 @@ import type {
   ValidationFailure,
 } from "../../../shared-kernel/result.ts";
 import { isInstant, optionalText } from "../../../shared-kernel/validation.ts";
+import { displayName } from "../domain/person_name.ts";
 import type { PeopleActor, PeopleTransaction } from "./create_person.ts";
 import type { ActorRevalidation } from "../../workspaces/public.ts";
 
@@ -159,13 +160,6 @@ function validate(input: EditPersonInput): ValidationErrors {
     return { expectedUpdatedAt: "Refresh this person before saving." };
   }
   return {};
-}
-
-function displayName(person: PersonLifecycleRecord): string {
-  const formal = [person.givenName, person.familyName].filter(Boolean).join(
-    " ",
-  );
-  return formal || person.nickname || "Unnamed person";
 }
 
 function confirmation(person: PersonLifecycleRecord): string {

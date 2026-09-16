@@ -1,3 +1,8 @@
+export {
+  displayName,
+  type PersonNameParts,
+  UNNAMED_PERSON,
+} from "./domain/person_name.ts";
 export { createPeopleManagement } from "./application/create_person.ts";
 export { createImportantDateManagement } from "./application/important_dates.ts";
 export { createPersonLifecycle } from "./application/lifecycle_person.ts";

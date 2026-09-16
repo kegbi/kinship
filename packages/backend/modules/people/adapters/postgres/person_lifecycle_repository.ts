@@ -1,5 +1,7 @@
 import { sql } from "kysely";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
   PersonLifecycleRecord,
   PersonLifecycleRepository,
@@ -19,7 +21,7 @@ interface PersonRow {
 
 function record(row: PersonRow): PersonLifecycleRecord {
   return {
-    ...(row.family_name ? { familyName: row.family_name } : {}),
+    ...pickDefined({ familyName: row.family_name }),
     givenName: row.given_name,
     id: row.id,
     isPartial: row.is_partial,
@@ -28,8 +30,7 @@ function record(row: PersonRow): PersonLifecycleRecord {
       : row.archived_at
       ? "archived"
       : "active",
-    ...(row.middle_name ? { middleName: row.middle_name } : {}),
-    ...(row.nickname ? { nickname: row.nickname } : {}),
+    ...pickDefined({ middleName: row.middle_name, nickname: row.nickname }),
     updatedAt: row.updated_at,
   };
 }
@@ -43,8 +44,7 @@ export class PostgresPersonLifecycleRepository
     const result = await sql<PersonRow>`
       select id::text, given_name, middle_name, family_name, nickname,
         is_partial, archived_at, deleted_at,
-        to_char(updated_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+        ${instantColumn("updated_at")} as updated_at
       from crm.people
       where id = ${command.personId}::uuid
         and workspace_id = ${command.workspaceId}::uuid
@@ -78,8 +78,7 @@ export class PostgresPersonLifecycleRepository
           and deleted_at is null and archived_at is null
         returning id::text, given_name, middle_name, family_name, nickname,
           is_partial, archived_at, deleted_at,
-          to_char(updated_at at time zone 'UTC',
-            'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+          ${instantColumn("updated_at")} as updated_at
       `.execute(database);
     } else if (command.action === "archive") {
       result = await sql<PersonRow>`
@@ -96,8 +95,7 @@ export class PostgresPersonLifecycleRepository
           and deleted_at is null and archived_at is null
         returning id::text, given_name, middle_name, family_name, nickname,
           is_partial, archived_at, deleted_at,
-          to_char(updated_at at time zone 'UTC',
-            'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+          ${instantColumn("updated_at")} as updated_at
       `.execute(database);
     } else if (command.action === "restore") {
       result = await sql<PersonRow>`
@@ -111,8 +109,7 @@ export class PostgresPersonLifecycleRepository
           and deleted_at is null and archived_at is not null
         returning id::text, given_name, middle_name, family_name, nickname,
           is_partial, archived_at, deleted_at,
-          to_char(updated_at at time zone 'UTC',
-            'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+          ${instantColumn("updated_at")} as updated_at
       `.execute(database);
     } else if (command.action === "delete") {
       result = await sql<PersonRow>`
@@ -129,8 +126,7 @@ export class PostgresPersonLifecycleRepository
           and deleted_at is null
         returning id::text, given_name, middle_name, family_name, nickname,
           is_partial, archived_at, deleted_at,
-          to_char(updated_at at time zone 'UTC',
-            'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+          ${instantColumn("updated_at")} as updated_at
       `.execute(database);
     } else {
       return undefined;
@@ -162,8 +158,7 @@ export class PostgresPersonLifecycleRepository
         and is_partial = ${command.person.isPartial}
         and (archived_at is not null) = ${expectedArchived}
         and (deleted_at is not null) = ${expectedDeleted}
-        and to_char(updated_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') = ${command.person.updatedAt}
+        and ${instantColumn("updated_at")} = ${command.person.updatedAt}
     `.execute(databaseFromSession(command.transaction));
     if (result.rows[0]?.valid !== true) {
       throw new Error(`Person ${command.action} postcondition failed.`);

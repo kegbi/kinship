@@ -1,5 +1,7 @@
 import { sql } from "kysely";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
   StoredTask,
   TaskRepository,
@@ -22,18 +24,18 @@ interface TaskRow {
 
 function task(row: TaskRow): StoredTask {
   return {
-    ...(row.completed_at ? { completedAt: row.completed_at } : {}),
-    ...(row.completed_by_member_id
-      ? { completedByMemberId: row.completed_by_member_id }
-      : {}),
+    ...pickDefined({
+      completedAt: row.completed_at,
+      completedByMemberId: row.completed_by_member_id,
+    }),
     createdAt: row.created_at,
-    ...(row.created_by_member_id
-      ? { createdByMemberId: row.created_by_member_id }
-      : {}),
-    ...(row.description ? { description: row.description } : {}),
-    ...(row.due_at ? { dueAt: row.due_at } : {}),
+    ...pickDefined({
+      createdByMemberId: row.created_by_member_id,
+      description: row.description,
+      dueAt: row.due_at,
+    }),
     id: row.id,
-    ...(row.person_id ? { personId: row.person_id } : {}),
+    ...pickDefined({ personId: row.person_id }),
     status: row.status,
     title: row.title,
     updatedAt: row.updated_at,
@@ -42,15 +44,11 @@ function task(row: TaskRow): StoredTask {
 
 const columns = sql`
   task.id::text, task.person_id::text, task.title, task.description,
-  task.status, to_char(task.due_at at time zone 'UTC',
-    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as due_at,
-  to_char(task.completed_at at time zone 'UTC',
-    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as completed_at,
+  task.status, ${instantColumn("task.due_at")} as due_at,
+  ${instantColumn("task.completed_at")} as completed_at,
   task.completed_by_member_id::text, task.created_by_member_id::text,
-  to_char(task.created_at at time zone 'UTC',
-    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
-  to_char(task.updated_at at time zone 'UTC',
-    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+  ${instantColumn("task.created_at")} as created_at,
+  ${instantColumn("task.updated_at")} as updated_at
 `;
 
 function dueTimestamp(value: string | null | undefined) {
@@ -163,7 +161,7 @@ export class PostgresTaskRepository implements TaskRepository {
       ...(result.rows.length > command.limit && final
         ? {
           next: {
-            ...(final.due_at ? { dueAt: final.due_at } : {}),
+            ...pickDefined({ dueAt: final.due_at }),
             id: final.id,
             status: final.status,
             updatedAt: final.updated_at,
@@ -234,8 +232,9 @@ export class PostgresTaskRepository implements TaskRepository {
         and task.deleted_at is null
         ${
       command.expectedUpdatedAt
-        ? sql`and to_char(task.updated_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') = ${command.expectedUpdatedAt}`
+        ? sql`and ${
+          instantColumn("task.updated_at")
+        } = ${command.expectedUpdatedAt}`
         : sql``
     }
       returning ${columns}

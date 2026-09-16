@@ -1,6 +1,10 @@
 import { sql } from "kysely";
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
+import { UNNAMED_PERSON } from "../../../../modules/people/public.ts";
 import type { TaskStatus } from "../../../../modules/planning/public.ts";
 import type { TodayTasksRepository } from "../../application/get_today_tasks.ts";
 
@@ -28,20 +32,15 @@ export class PostgresTodayTasksRepository implements TodayTasksRepository {
   ): Promise<Awaited<ReturnType<TodayTasksRepository["getDueTasks"]>>> {
     const result = await sql<TodayTaskRow>`
       select task.id::text, task.title, task.description, task.status,
-        to_char(task.due_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as due_at,
-        to_char(task.completed_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as completed_at,
+        ${instantColumn("task.due_at")} as due_at,
+        ${instantColumn("task.completed_at")} as completed_at,
         task.completed_by_member_id::text, task.created_by_member_id::text,
-        to_char(task.created_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
-        to_char(task.updated_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at,
+        ${instantColumn("task.created_at")} as created_at,
+        ${instantColumn("task.updated_at")} as updated_at,
         task.person_id::text as person_id,
         person.archived_at is not null as archived,
         case when person.id is not null then
-          coalesce(nullif(trim(concat_ws(' ', nullif(person.given_name, ''),
-            person.family_name)), ''), nullif(person.nickname, ''), 'Unnamed person')
+          ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))}
         end as person_name
       from crm.tasks task
       left join crm.people person on person.id = task.person_id
@@ -57,16 +56,16 @@ export class PostgresTodayTasksRepository implements TodayTasksRepository {
       items: result.rows.flatMap((row) =>
         row.id && row.created_at && row.status && row.title && row.updated_at
           ? [{
-            ...(row.completed_at ? { completedAt: row.completed_at } : {}),
-            ...(row.completed_by_member_id
-              ? { completedByMemberId: row.completed_by_member_id }
-              : {}),
+            ...pickDefined({
+              completedAt: row.completed_at,
+              completedByMemberId: row.completed_by_member_id,
+            }),
             createdAt: row.created_at,
-            ...(row.created_by_member_id
-              ? { createdByMemberId: row.created_by_member_id }
-              : {}),
-            ...(row.description ? { description: row.description } : {}),
-            ...(row.due_at ? { dueAt: row.due_at } : {}),
+            ...pickDefined({
+              createdByMemberId: row.created_by_member_id,
+              description: row.description,
+              dueAt: row.due_at,
+            }),
             id: row.id,
             ...(row.person_id
               ? {

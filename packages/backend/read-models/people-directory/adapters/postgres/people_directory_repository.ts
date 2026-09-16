@@ -1,6 +1,7 @@
 import { sql } from "kysely";
 import type { Kysely, RawBuilder } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import {
   PEOPLE_DIRECTORY_TAG_PREVIEW_LIMIT,
   type PeopleDirectoryCriteria,
@@ -154,14 +155,13 @@ export class PostgresPeopleDirectoryRepository
         primary: row.given_name.toLowerCase(),
         secondary: row.family_name?.toLowerCase() ?? "",
       },
-      ...(row.family_name ? { familyName: row.family_name } : {}),
+      ...pickDefined({ familyName: row.family_name }),
       givenName: row.given_name,
       id: row.id,
       isPartial: row.is_partial,
       isStarred: row.is_starred,
       lifecycle: command.lifecycle,
-      ...(row.middle_name ? { middleName: row.middle_name } : {}),
-      ...(row.nickname ? { nickname: row.nickname } : {}),
+      ...pickDefined({ middleName: row.middle_name, nickname: row.nickname }),
       tagCount: 0,
       tags: [],
     };
@@ -250,14 +250,13 @@ export class PostgresPeopleDirectoryRepository
           primary: row.sort_primary,
           secondary: row.sort_secondary,
         },
-        ...(row.family_name ? { familyName: row.family_name } : {}),
+        ...pickDefined({ familyName: row.family_name }),
         givenName: row.given_name,
         id: row.id,
         isPartial: row.is_partial,
         isStarred: row.is_starred,
         lifecycle: command.lifecycle,
-        ...(row.middle_name ? { middleName: row.middle_name } : {}),
-        ...(row.nickname ? { nickname: row.nickname } : {}),
+        ...pickDefined({ middleName: row.middle_name, nickname: row.nickname }),
         tagCount: row.tag_count,
         tags: row.tags,
       })),
