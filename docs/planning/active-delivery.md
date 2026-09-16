@@ -164,6 +164,32 @@ Playwright test carrying its stable flow ID.
       failure from REL-031, which GAP-002 closed: the child dies instead of
       starting slowly. Track it; do not loosen readiness.
 
+- [ ] **REL-035 — Raise the pinned dependencies past the accepted moderate
+      advisories.** `deno task deps:audit` (GAP-003) reports five moderate
+      advisories and no high or critical ones: three in `hono` < 4.13.5 (the
+      repository pins 4.13.1), plus `stream-json` <= 3.4.0 and
+      `decode-uri-component` <= 0.4.2, both transitive through `minio`. GAP-004
+      records them as an explicit exception in
+      `docs/architecture/quality-gates.md` and gates CI at high severity only.
+      Bump `hono` and re-resolve the `minio` graph under the frozen lockfile and
+      the 72-hour minimum dependency age, then shrink the exception; the Hono
+      contract suites and `deno task test:contract` are the focused gates.
+
+- [ ] **REL-036 — An Astro dev child survived the readiness probe's cleanup
+      once.** During the GAP-002 verification on 2026-09-15 a
+      `node …/astro/bin/astro.mjs dev --root apps/web --ignore-lock` process
+      started at 14:47:55 outlived its `deno test` parent, kept listening on
+      127.0.0.1:33826, and held the `.worktrees/GAP-002` directory open until it
+      was stopped by hand. Its parent had already exited, so `stopOwnedProcess`
+      either never ran for that child or terminated a process tree that no
+      longer contained it. The probe's own suite and
+      `deno task test:repro:astro-readiness` were green at the time, and the
+      leak did not recur in the later GAP-003 through GAP-005 runs. Reproduce by
+      running the canonical probe under load and listing surviving
+      `astro.mjs dev` processes afterwards; if it recurs, make the cleanup
+      re-read the process tree before termination and assert absence of every
+      listener the child bound.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.
