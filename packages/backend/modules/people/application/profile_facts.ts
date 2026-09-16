@@ -1,3 +1,19 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { IdGenerator } from "../../../shared-kernel/ids.ts";
+import {
+  decodeCursor,
+  encodeCursor,
+} from "../../../shared-kernel/pagination.ts";
+import type {
+  Failure,
+  ValidationErrors,
+  ValidationFailure,
+} from "../../../shared-kernel/result.ts";
+import {
+  isInstant,
+  optionalText,
+  uuid,
+} from "../../../shared-kernel/validation.ts";
 import type { PeopleActor, PeopleTransaction } from "./create_person.ts";
 
 export type ProfileFactSection =
@@ -249,8 +265,8 @@ export interface ProfileFactAudit {
 
 export interface ProfileFactDependencies {
   readonly audit: ProfileFactAudit;
-  readonly clock: { now(): Date };
-  readonly ids: { create(): string };
+  readonly clock: Clock;
+  readonly ids: IdGenerator;
   readonly organizations: ProfileFactOrganizationBoundary;
   readonly repository: ProfileFactRepository;
   readonly transaction: {
@@ -300,19 +316,11 @@ export type ProfileFactListInput =
   );
 
 export type ProfileFactFailureResult =
-  | {
-    readonly status:
-      | "archived-write-rejected"
-      | "forbidden"
-      | "hidden"
-      | "invalid-reference"
-      | "not-found"
-      | "stale";
-  }
-  | {
-    readonly errors: Readonly<Record<string, string>>;
-    readonly status: "validation-error";
-  };
+  | Failure<
+    "archived-write-rejected" | "forbidden" | "not-found",
+    "hidden" | "invalid-reference" | "stale"
+  >
+  | ValidationFailure;
 export type ProfileFactMutationResult =
   | ProfileFactFailureResult
   | {
@@ -338,8 +346,6 @@ export type ProfileFactUpdateInput = ProfileFactValue & {
 
 export const PROFILE_FACT_PAGE_SIZE = 50;
 const PROFILE_FACT_SELECTED_OPTION_LIMIT = PROFILE_FACT_PAGE_SIZE * 21;
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const REVISION_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
 
 export interface ProfileFactPageAnchor {
@@ -362,62 +368,31 @@ interface ProfileFactOptionCursor extends ProfileFactOptionAnchor {
   readonly version: 2;
 }
 
-function encodeCursor(cursor: ProfileFactCursor): string {
-  return btoa(JSON.stringify(cursor)).replaceAll("+", "-").replaceAll("/", "_")
-    .replace(/=+$/, "");
-}
-
-function decodeCursor(value: string): ProfileFactCursor | undefined {
-  try {
-    const normalized = value.replaceAll("-", "+").replaceAll("_", "/");
-    const parsed = JSON.parse(atob(normalized.padEnd(
-      normalized.length + (4 - normalized.length % 4) % 4,
-      "=",
-    ))) as Partial<ProfileFactCursor>;
-    return parsed.version === 2 && parsed.limit === PROFILE_FACT_PAGE_SIZE &&
-        UUID_PATTERN.test(parsed.id ?? "") &&
-        UUID_PATTERN.test(parsed.personId ?? "") &&
-        REVISION_PATTERN.test(parsed.updatedAt ?? "") &&
-        REVISION_PATTERN.test(parsed.personUpdatedAt ?? "") &&
-        typeof parsed.section === "string"
-      ? parsed as ProfileFactCursor
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function encodeOptionCursor(cursor: ProfileFactOptionCursor): string {
-  return btoa(JSON.stringify(cursor)).replaceAll("+", "-").replaceAll("/", "_")
-    .replace(/=+$/, "");
+function decodeFactCursor(value: string): ProfileFactCursor | undefined {
+  const parsed = decodeCursor(value) as Partial<ProfileFactCursor> | undefined;
+  return parsed?.version === 2 && parsed.limit === PROFILE_FACT_PAGE_SIZE &&
+      uuid(parsed.id) !== undefined && uuid(parsed.personId) !== undefined &&
+      REVISION_PATTERN.test(parsed.updatedAt ?? "") &&
+      REVISION_PATTERN.test(parsed.personUpdatedAt ?? "") &&
+      typeof parsed.section === "string"
+    ? parsed as ProfileFactCursor
+    : undefined;
 }
 
 function decodeOptionCursor(
   value: string,
 ): ProfileFactOptionCursor | undefined {
-  try {
-    const normalized = value.replaceAll("-", "+").replaceAll("_", "/");
-    const parsed = JSON.parse(atob(normalized.padEnd(
-      normalized.length + (4 - normalized.length % 4) % 4,
-      "=",
-    ))) as Partial<ProfileFactOptionCursor>;
-    return parsed.version === 2 && parsed.limit === 50 &&
-        UUID_PATTERN.test(parsed.id ?? "") &&
-        UUID_PATTERN.test(parsed.personId ?? "") &&
-        typeof parsed.primary === "string" &&
-        typeof parsed.secondary === "string" &&
-        typeof parsed.search === "string" &&
-        typeof parsed.section === "string"
-      ? parsed as ProfileFactOptionCursor
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function text(value: string | undefined): string | undefined {
-  const normalized = value?.trim();
-  return normalized || undefined;
+  const parsed = decodeCursor(value) as
+    | Partial<ProfileFactOptionCursor>
+    | undefined;
+  return parsed?.version === 2 && parsed.limit === 50 &&
+      uuid(parsed.id) !== undefined && uuid(parsed.personId) !== undefined &&
+      typeof parsed.primary === "string" &&
+      typeof parsed.secondary === "string" &&
+      typeof parsed.search === "string" &&
+      typeof parsed.section === "string"
+    ? parsed as ProfileFactOptionCursor
+    : undefined;
 }
 
 function normalize(
@@ -426,13 +401,13 @@ function normalize(
 ): ProfileFactValue {
   if (section === "food-preferences") {
     const fact = input as FoodPreferencesFact;
-    const foodPreferences = text(fact.foodPreferences);
+    const foodPreferences = optionalText(fact.foodPreferences);
     return { foodPreferences: foodPreferences ?? "" };
   }
   if (section === "first-meeting") {
     const fact = input as FirstMeetingFact;
-    const notes = text(fact.notes);
-    const placeText = text(fact.placeText);
+    const notes = optionalText(fact.notes);
+    const placeText = optionalText(fact.placeText);
     return {
       ...(fact.introducedByPersonId
         ? { introducedByPersonId: fact.introducedByPersonId }
@@ -449,19 +424,19 @@ function normalize(
     return {
       isPrimary: fact.isPrimary,
       labelIds: [...new Set(fact.labelIds)],
-      ...(text(fact.notes) ? { notes: text(fact.notes) } : {}),
+      ...(optionalText(fact.notes) ? { notes: optionalText(fact.notes) } : {}),
       typeId: fact.typeId,
       value: fact.value.trim(),
     };
   }
   if (section === "addresses") {
     const fact = input as AddressFact;
-    const city = text(fact.city);
-    const country = text(fact.country);
-    const displayName = text(fact.displayName);
-    const postalCode = text(fact.postalCode);
-    const region = text(fact.region);
-    const street = text(fact.street);
+    const city = optionalText(fact.city);
+    const country = optionalText(fact.country);
+    const displayName = optionalText(fact.displayName);
+    const postalCode = optionalText(fact.postalCode);
+    const region = optionalText(fact.region);
+    const street = optionalText(fact.street);
     return {
       ...(city ? { city } : {}),
       ...(country ? { country } : {}),
@@ -475,8 +450,8 @@ function normalize(
   }
   if (section === "work") {
     const fact = input as OccupationFact;
-    const description = text(fact.description);
-    const organizationName = text(fact.organizationName);
+    const description = optionalText(fact.description);
+    const organizationName = optionalText(fact.organizationName);
     return {
       ...(description ? { description } : {}),
       ...(fact.endOn ? { endOn: fact.endOn } : {}),
@@ -488,8 +463,8 @@ function normalize(
     };
   }
   const fact = input as PetFact;
-  const name = text(fact.name);
-  const notes = text(fact.notes);
+  const name = optionalText(fact.name);
+  const notes = optionalText(fact.notes);
   return {
     ...(fact.categoryId ? { categoryId: fact.categoryId } : {}),
     ...(name ? { name } : {}),
@@ -500,7 +475,7 @@ function normalize(
 function validate(
   section: ProfileFactSection,
   value: ProfileFactValue,
-): Readonly<Record<string, string>> {
+): ValidationErrors {
   const errors: Record<string, string> = {};
   if (section === "contact-methods" && !(value as ContactMethodFact).value) {
     errors.value = "Enter a contact value.";
@@ -570,10 +545,9 @@ export function createProfileFactManagement(
       & ProfileFactValue
       & { readonly expectedUpdatedAt?: string; readonly id?: string };
     if (
-      !Number.isFinite(Date.parse(expectedPersonUpdatedAt)) ||
+      !isInstant(expectedPersonUpdatedAt) ||
       (operation === "update" &&
-        (!id || !expectedUpdatedAt ||
-          !Number.isFinite(Date.parse(expectedUpdatedAt))))
+        (!id || !expectedUpdatedAt || !isInstant(expectedUpdatedAt)))
     ) {
       return {
         errors: {
@@ -718,7 +692,9 @@ export function createProfileFactManagement(
         if (!("personUpdatedAt" in context)) {
           return { status: context.status };
         }
-        const cursor = input.cursor ? decodeCursor(input.cursor) : undefined;
+        const cursor = input.cursor
+          ? decodeFactCursor(input.cursor)
+          : undefined;
         const optionSearch = input.optionSearch?.trim().toLowerCase() ?? "";
         const optionCursor = input.optionCursor
           ? decodeOptionCursor(input.optionCursor)
@@ -892,7 +868,7 @@ export function createProfileFactManagement(
           ...(input.includeOptions === true && configuration.hasMore &&
               configuration.nextOptionAnchor
             ? {
-              nextOptionsCursor: encodeOptionCursor({
+              nextOptionsCursor: encodeCursor({
                 ...configuration.nextOptionAnchor,
                 limit: 50,
                 personId,

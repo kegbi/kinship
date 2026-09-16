@@ -1,3 +1,16 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { IdGenerator } from "../../../shared-kernel/ids.ts";
+import {
+  componentShape,
+  type DatePrecision,
+  isRealCalendarDate,
+} from "../../../shared-kernel/partial_date.ts";
+import type {
+  Failure,
+  ValidationErrors,
+  ValidationFailure,
+} from "../../../shared-kernel/result.ts";
+import { isInstant, optionalText } from "../../../shared-kernel/validation.ts";
 import type { PeopleActor, PeopleTransaction } from "./create_person.ts";
 
 export type ImportantDateKind =
@@ -5,14 +18,8 @@ export type ImportantDateKind =
   | "custom"
   | "deceased"
   | "first_met";
-export type ImportantDatePrecision =
-  | "day"
-  | "full"
-  | "month"
-  | "month_day"
-  | "unknown"
-  | "year"
-  | "year_month";
+/** The shared partial-date precision, named for this module's readers. */
+export type ImportantDatePrecision = DatePrecision;
 export type ImportantDateAction = "create" | "delete" | "update";
 
 export interface ImportantDateValue {
@@ -130,8 +137,8 @@ export interface ImportantDateAudit {
 
 export interface ImportantDateDependencies {
   readonly audit: ImportantDateAudit;
-  readonly clock: { now(): Date };
-  readonly ids: { create(): string };
+  readonly clock: Clock;
+  readonly ids: IdGenerator;
   readonly publisher: ImportantDatePublisher;
   readonly repository: ImportantDateRepository;
   readonly transaction: {
@@ -147,26 +154,18 @@ export interface ImportantDateDeleteInput {
   readonly expectedUpdatedAt: string;
 }
 
-export type ImportantDateFailure =
-  | { readonly status: "archived-write-rejected" }
-  | { readonly status: "conflict" }
-  | { readonly status: "forbidden" }
-  | { readonly status: "not-found" }
-  | { readonly status: "stale" };
+export type ImportantDateFailure = Failure<
+  "archived-write-rejected" | "conflict" | "forbidden" | "not-found",
+  "stale"
+>;
 
 export type ImportantDateMutationResult =
   | ImportantDateFailure
-  | {
-    readonly errors: Readonly<Record<string, string>>;
-    readonly status: "validation-error";
-  }
+  | ValidationFailure
   | { readonly date: ImportantDateRecord; readonly status: "created" }
   | { readonly date: ImportantDateRecord; readonly status: "updated" }
   | { readonly dateId: string; readonly status: "deleted" };
-type ImportantDateMutationFailure = ImportantDateFailure | {
-  readonly errors: Readonly<Record<string, string>>;
-  readonly status: "validation-error";
-};
+type ImportantDateMutationFailure = ImportantDateFailure | ValidationFailure;
 export type ImportantDateCreateResult = ImportantDateMutationFailure | {
   readonly date: ImportantDateRecord;
   readonly status: "created";
@@ -188,14 +187,9 @@ export type ImportantDateListResult =
     readonly status: "archived" | "ready";
   };
 
-function optional(value: string | undefined): string | undefined {
-  const normalized = value?.trim();
-  return normalized ? normalized : undefined;
-}
-
 function normalize(input: ImportantDateValue): ImportantDateValue {
-  const label = optional(input.label);
-  const notes = optional(input.notes);
+  const label = optionalText(input.label);
+  const notes = optionalText(input.notes);
   return {
     ...(input.day === undefined ? {} : { day: input.day }),
     isAgeBased: input.isAgeBased,
@@ -209,25 +203,7 @@ function normalize(input: ImportantDateValue): ImportantDateValue {
   };
 }
 
-const componentShape: Readonly<
-  Record<ImportantDatePrecision, readonly ("day" | "month" | "year")[]>
-> = {
-  day: ["day"],
-  full: ["year", "month", "day"],
-  month: ["month"],
-  month_day: ["month", "day"],
-  unknown: [],
-  year: ["year"],
-  year_month: ["year", "month"],
-};
-
-function realCalendarDate(year: number, month: number, day: number): boolean {
-  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  return day <= (days[month - 1] ?? 0);
-}
-
-function validate(value: ImportantDateValue): Readonly<Record<string, string>> {
+function validate(value: ImportantDateValue): ValidationErrors {
   const errors: Record<string, string> = {};
   const expected = componentShape[value.precision];
   for (const component of ["year", "month", "day"] as const) {
@@ -253,7 +229,7 @@ function validate(value: ImportantDateValue): Readonly<Record<string, string>> {
   if (
     value.month !== undefined && value.day !== undefined &&
     !errors.month && !errors.day &&
-    !realCalendarDate(value.year ?? 2000, value.month, value.day)
+    !isRealCalendarDate(value.year ?? 2000, value.month, value.day)
   ) errors.day = "Enter a real calendar date.";
   if (value.isYearApproximate && value.year === undefined) {
     errors.isYearApproximate = "An approximate year still needs a year value.";
@@ -399,7 +375,7 @@ export function createImportantDateManagement(
       const { expectedUpdatedAt, ...rawValue } = rawInput;
       const value = normalize(rawValue);
       const errors = validate(value);
-      if (!Number.isFinite(Date.parse(expectedUpdatedAt))) {
+      if (!isInstant(expectedUpdatedAt)) {
         return {
           errors: { expectedUpdatedAt: "Refresh this date before saving." },
           status: "validation-error",
@@ -454,7 +430,7 @@ export function createImportantDateManagement(
       dateId: string,
       input: ImportantDateDeleteInput,
     ): Promise<ImportantDateDeleteResult> => {
-      if (!Number.isFinite(Date.parse(input.expectedUpdatedAt))) {
+      if (!isInstant(input.expectedUpdatedAt)) {
         return {
           errors: { expectedUpdatedAt: "Refresh this date before deleting." },
           status: "validation-error",

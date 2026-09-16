@@ -1,3 +1,18 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import {
+  deterministicId,
+  type IdGenerator,
+} from "../../../shared-kernel/ids.ts";
+import type {
+  Failure,
+  ValidationErrors,
+  ValidationFailure,
+} from "../../../shared-kernel/result.ts";
+import { optionalText } from "../../../shared-kernel/validation.ts";
+
+/** The namespace that makes a person creation idempotent across retries. */
+const PERSON_ID_NAMESPACE = "kinship.people.external-id.v1";
+
 export interface PeopleTransaction {
   readonly opaque: unknown;
 }
@@ -86,8 +101,8 @@ export interface PersonCreatedAudit {
 
 export interface PeopleManagementDependencies {
   readonly audit: PersonCreatedAudit;
-  readonly clock: { now(): Date };
-  readonly ids: { create(): string };
+  readonly clock: Clock;
+  readonly ids: IdGenerator;
   readonly repository: PeopleRepository;
   readonly transaction: {
     run<T>(work: (transaction: PeopleTransaction) => Promise<T>): Promise<T>;
@@ -103,46 +118,18 @@ export interface TransactionalPeopleCreation {
 }
 
 export type CreatePersonResult =
-  | {
-    readonly errors: Readonly<Record<string, string>>;
-    readonly status: "validation-error";
-  }
+  | ValidationFailure
   | {
     readonly duplicates: readonly PossibleDuplicate[];
     readonly status: "possible-duplicate";
   }
-  | { readonly status: "forbidden" }
+  | Failure<"forbidden">
   | { readonly person: PersonIdentity; readonly status: "created" };
 
 export type EnsurePersonResult =
-  | {
-    readonly errors: Readonly<Record<string, string>>;
-    readonly status: "validation-error";
-  }
-  | { readonly status: "forbidden" | "idempotency-conflict" }
+  | ValidationFailure
+  | Failure<"forbidden", "idempotency-conflict">
   | { readonly person: PersonIdentity; readonly status: "ready" };
-
-async function derivePersonId(
-  workspaceId: string,
-  requestId: string,
-): Promise<string> {
-  const digest = new Uint8Array(
-    await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(
-        `kinship.people.external-id.v1\u0000${workspaceId.toLowerCase()}\u0000${requestId.toLowerCase()}`,
-      ),
-    ),
-  );
-  digest[6] = (digest[6]! & 0x0f) | 0x80;
-  digest[8] = (digest[8]! & 0x3f) | 0x80;
-  const hex = [...digest.slice(0, 16)].map((value) =>
-    value.toString(16).padStart(2, "0")
-  ).join("");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${
-    hex.slice(16, 20)
-  }-${hex.slice(20)}`;
-}
 
 function sameIdentity(left: PersonIdentity, right: CreatePersonInput): boolean {
   return left.givenName === right.givenName &&
@@ -153,15 +140,10 @@ function sameIdentity(left: PersonIdentity, right: CreatePersonInput): boolean {
 
 export type GetPersonResult = PersonIdentityLookup;
 
-function optional(value: string | undefined): string | undefined {
-  const normalized = value?.trim();
-  return normalized ? normalized : undefined;
-}
-
 function normalize(input: CreatePersonInput): CreatePersonInput {
-  const familyName = optional(input.familyName);
-  const middleName = optional(input.middleName);
-  const nickname = optional(input.nickname);
+  const familyName = optionalText(input.familyName);
+  const middleName = optionalText(input.middleName);
+  const nickname = optionalText(input.nickname);
   return {
     ...(input.duplicateOverride ? { duplicateOverride: true } : {}),
     ...(familyName ? { familyName } : {}),
@@ -172,9 +154,7 @@ function normalize(input: CreatePersonInput): CreatePersonInput {
   };
 }
 
-function validate(
-  input: CreatePersonInput,
-): Readonly<Record<string, string>> {
+function validate(input: CreatePersonInput): ValidationErrors {
   if (!input.givenName && !input.familyName && !input.nickname) {
     return {
       givenName: "Enter a given name, family name, or nickname.",
@@ -248,7 +228,10 @@ export function createPeopleManagement(
     if (Object.keys(errors).length > 0) {
       return { errors, status: "validation-error" };
     }
-    const id = await derivePersonId(actor.workspaceId, requestId);
+    const id = await deterministicId(PERSON_ID_NAMESPACE, [
+      actor.workspaceId,
+      requestId,
+    ]);
     if (
       !await dependencies.repository.revalidateAndLockCreateContext({
         ...actor,

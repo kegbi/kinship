@@ -18,6 +18,7 @@ import {
   ARCHITECTURE_PERMISSIONS,
   COVERAGE_AGGREGATE,
   type CoverageSet,
+  DEFAULT_COVERAGE_THRESHOLD,
   expandGlobPattern,
   INTEGRATION_PERMISSIONS,
   isGlob,
@@ -33,7 +34,6 @@ import {
 } from "./manifest.ts";
 
 const ROOT = new URL("../../", import.meta.url);
-const COVERAGE_THRESHOLD = "80";
 
 class TaskFailure extends Error {
   constructor(readonly code: number, message: string) {
@@ -188,7 +188,7 @@ export function coverageReportArguments(set: CoverageSet): string[] {
   return [
     "coverage",
     ...set.include.map((path) => `--include=${path}`),
-    `--threshold=${COVERAGE_THRESHOLD}`,
+    `--threshold=${set.threshold ?? DEFAULT_COVERAGE_THRESHOLD}`,
     `.coverage/${set.directory}`,
   ];
 }

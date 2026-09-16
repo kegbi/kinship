@@ -24,7 +24,8 @@
  *    `domain`, and `ports` carry no infrastructure import, no `Deno.env`, and
  *    no raw `crm.` SQL; read models never write; `apps/web` never imports
  *    `packages/backend`; only declared composition roots reach into another
- *    unit's `adapters/`.
+ *    unit's `adapters/`. `sharedKernel.path` is a unit of its own: every layer
+ *    may import it, and it may import nothing outside itself.
  * 4. `table-access` and `table-foreign-read` — every `crm.<table>` token inside
  *    a module's `adapters/` is measured against the module's `ownsTables` and
  *    the owned tables of its `allowedModuleDependencies`. A token owned by
@@ -288,6 +289,8 @@ export interface ManifestReadModel {
 
 export interface Manifest {
   readonly compositionRoots: readonly string[];
+  /** `sharedKernel.path`: the one unit every other unit may import. */
+  readonly sharedKernelPath: string;
   readonly modules: readonly ManifestModule[];
   readonly readModels: readonly ManifestReadModel[];
 }
@@ -307,8 +310,12 @@ function readManifest(document: JsonObject): Manifest {
   const readModels = Array.isArray(document["readModels"])
     ? document["readModels"]
     : [];
+  const sharedKernel = document["sharedKernel"];
   return {
     compositionRoots: strings(document["compositionRoots"]),
+    sharedKernelPath: isJsonObject(sharedKernel)
+      ? text(sharedKernel["path"])
+      : "",
     modules: modules.filter(isJsonObject).map((entry) => ({
       id: text(entry["id"]),
       path: text(entry["path"]),
@@ -401,7 +408,7 @@ const TABLE_TOKEN = /crm\.([a-z_][a-z0-9_]*)/g;
 interface Unit {
   readonly id: string;
   readonly path: string;
-  readonly kind: "module" | "read-model";
+  readonly kind: "module" | "read-model" | "shared-kernel";
 }
 
 function owningUnit(
@@ -543,6 +550,41 @@ function layerViolations(
       }
     }
 
+    // The shared kernel is the one unit everything may depend on, so it may
+    // depend on nothing: no module, no read model, no vendor client, no
+    // environment, no SQL. `layerRules` lets every other layer import it, and
+    // that permission is only safe while the kernel stays a leaf.
+    if (unit?.kind === "shared-kernel") {
+      for (const specifier of specifiers) {
+        const resolved = resolveSpecifier(file.path, specifier);
+        if (resolved !== undefined && resolved.startsWith(`${unit.path}/`)) {
+          continue;
+        }
+        violations.push({
+          rule: "layer",
+          subject: file.path,
+          detail: `the shared kernel imports ${
+            resolved ?? specifier
+          }, which is outside the kernel`,
+        });
+      }
+      if (/\bDeno\.env\b/.test(file.text)) {
+        violations.push({
+          rule: "layer",
+          subject: file.path,
+          detail: "the shared kernel reads Deno.env",
+        });
+      }
+      for (const table of new Set(tableTokens(file.text))) {
+        violations.push({
+          rule: "layer",
+          subject: file.path,
+          detail: `the shared kernel writes raw SQL against crm.${table}`,
+        });
+      }
+      continue;
+    }
+
     if (unit?.kind === "read-model") {
       for (const call of ["insertInto", "updateTable", "deleteFrom"]) {
         if (!new RegExp(`\\b${call}\\s*\\(`).test(file.text)) continue;
@@ -558,6 +600,9 @@ function layerViolations(
       const resolved = resolveSpecifier(file.path, specifier);
       if (resolved === undefined) continue;
       const target = owningUnit(resolved, units);
+      // `layerRules` lists `shared-kernel` for domain, application, ports, and
+      // adapters, and the read models consume it on the same terms.
+      if (target?.kind === "shared-kernel") continue;
 
       if (
         resolved.includes("/adapters/") &&
@@ -793,6 +838,13 @@ export function inspectBoundaries(input: BoundaryInput): Violation[] {
       path: model.path,
       kind: "read-model" as const,
     })),
+    ...(manifest.sharedKernelPath
+      ? [{
+        id: "shared-kernel",
+        path: manifest.sharedKernelPath,
+        kind: "shared-kernel" as const,
+      }]
+      : []),
   ];
   return sortViolations([
     ...tableOwnershipViolations(input, manifest),

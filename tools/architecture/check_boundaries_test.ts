@@ -523,6 +523,93 @@ Deno.test("[GAP-005] delivery code reaches a read model only through its facade"
   assert(facade.length === 0, `unexpected: ${render(facade)}`);
 });
 
+// --- The shared kernel ---------------------------------------------------
+
+Deno.test("[GAP-006] every backend layer may import the shared kernel", async () => {
+  for (
+    const path of [
+      "packages/backend/modules/gifts/domain/gift.ts",
+      "packages/backend/modules/gifts/application/gift_management.ts",
+      "packages/backend/modules/gifts/ports/gift_repository.ts",
+      "packages/backend/modules/gifts/adapters/postgres/gift_repository.ts",
+      "packages/backend/read-models/today/application/get_today.ts",
+    ]
+  ) {
+    const depth = "../".repeat(path.split("/").length - 3);
+    const violations = await fixture([{
+      path,
+      text: `import type { Clock } from "${depth}shared-kernel/clock.ts";`,
+    }]);
+    assert(
+      violations.length === 0,
+      `${path} must reach the kernel: ${render(violations)}`,
+    );
+  }
+});
+
+Deno.test("[GAP-006] the shared kernel imports nothing outside itself", async () => {
+  const module = await fixture([{
+    path: "packages/backend/shared-kernel/result.ts",
+    text: 'import type { PeopleActor } from "../modules/people/public.ts";',
+  }]);
+  assert(
+    module.length === 1 && module[0]?.rule === "layer" &&
+      module[0].detail ===
+        "the shared kernel imports packages/backend/modules/people/public.ts, which is outside the kernel",
+    `the kernel must not import a module, got ${render(module)}`,
+  );
+
+  const readModel = await fixture([{
+    path: "packages/backend/shared-kernel/pagination.ts",
+    text: 'import { get } from "../read-models/today/public.ts";',
+  }]);
+  assert(
+    readModel.length === 1 && readModel[0]?.rule === "layer" &&
+      readModel[0].detail.includes("which is outside the kernel"),
+    `the kernel must not import a read model, got ${render(readModel)}`,
+  );
+
+  for (const vendor of ["kysely", "postgres", "hono", "minio", "zod"]) {
+    const violations = await fixture([{
+      path: "packages/backend/shared-kernel/clock.ts",
+      text: `import { thing } from "${vendor}";`,
+    }]);
+    assert(
+      violations.length === 1 &&
+        violations[0]?.detail ===
+          `the shared kernel imports ${vendor}, which is outside the kernel`,
+      `the kernel must not import ${vendor}, got ${render(violations)}`,
+    );
+  }
+
+  const environment = await fixture([{
+    path: "packages/backend/shared-kernel/clock.ts",
+    text: "const zone = Deno.env.get('TZ');",
+  }]);
+  assert(
+    environment.length === 1 &&
+      environment[0]?.detail === "the shared kernel reads Deno.env",
+    `the kernel must not read Deno.env, got ${render(environment)}`,
+  );
+
+  const rawSql = await fixture([{
+    path: "packages/backend/shared-kernel/pagination.ts",
+    text: "const query = `select id from crm.people`;",
+  }]);
+  assert(
+    rawSql.length === 1 &&
+      rawSql[0]?.detail ===
+        "the shared kernel writes raw SQL against crm.people",
+    `the kernel must not carry SQL, got ${render(rawSql)}`,
+  );
+
+  const inside = await fixture([{
+    path: "packages/backend/shared-kernel/validation.ts",
+    text: 'import type { Failure } from "./result.ts";',
+  }]);
+  assert(inside.length === 0, `unexpected: ${render(inside)}`);
+});
+
 // --- Rule 5: cycles ------------------------------------------------------
 
 Deno.test("[GAP-005] dependency cycles are reported", async () => {

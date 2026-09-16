@@ -444,6 +444,28 @@ Deno.test("root coverage passes portable production include arguments", async ()
   );
 });
 
+Deno.test("[GAP-006] each coverage set enforces the threshold it declares", () => {
+  const api = moduleById("api");
+  assert(api?.coverage, "the task manifest declares an api coverage set");
+  assert(
+    api.coverage.threshold === undefined &&
+      coverageReportArguments(api.coverage).includes("--threshold=80"),
+    "a set that declares no threshold is held to the repository floor",
+  );
+
+  const kernel = moduleById("shared-kernel");
+  assert(kernel?.coverage, "the task manifest measures the shared kernel");
+  assert(
+    kernel.coverage.threshold === 95 &&
+      coverageReportArguments(kernel.coverage).includes("--threshold=95"),
+    "every module depends on the kernel, so its own bar is higher",
+  );
+  assert(
+    kernel.coverage.include.includes("packages/backend/shared-kernel"),
+    "the kernel coverage set measures the kernel",
+  );
+});
+
 Deno.test({
   name: "Windows cleanup terminates and proves absence of the exact PID tree",
   ignore: Deno.build.os !== "windows",

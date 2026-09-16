@@ -1,3 +1,10 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type {
+  Failure,
+  ValidationErrors,
+  ValidationFailure,
+} from "../../../shared-kernel/result.ts";
+import { isInstant, optionalText } from "../../../shared-kernel/validation.ts";
 import type { PeopleActor, PeopleTransaction } from "./create_person.ts";
 
 export type PersonLifecycleState = "active" | "archived" | "deleted";
@@ -92,25 +99,22 @@ export interface PersonLifecycleAudit {
 
 export interface PersonLifecycleDependencies {
   readonly audit: PersonLifecycleAudit;
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly repository: PersonLifecycleRepository;
   readonly transaction: {
     run<T>(work: (transaction: PeopleTransaction) => Promise<T>): Promise<T>;
   };
 }
 
-export type PersonLifecycleFailure =
-  | { readonly status: "forbidden" }
-  | { readonly status: "not-found" }
-  | { readonly status: "stale" };
+export type PersonLifecycleFailure = Failure<
+  "forbidden" | "not-found",
+  "stale"
+>;
 
 export type EditPersonResult =
   | PersonLifecycleFailure
-  | { readonly status: "archived-write-rejected" }
-  | {
-    readonly errors: Readonly<Record<string, string>>;
-    readonly status: "validation-error";
-  }
+  | Failure<"archived-write-rejected">
+  | ValidationFailure
   | { readonly person: PersonLifecycleRecord; readonly status: "updated" };
 
 export type TransitionPersonResult =
@@ -127,15 +131,10 @@ export type DeletePersonResult =
   | { readonly status: "confirmation-required" }
   | { readonly personId: string; readonly status: "deleted" };
 
-function optional(value: string | undefined): string | undefined {
-  const normalized = value?.trim();
-  return normalized ? normalized : undefined;
-}
-
 function normalize(input: EditPersonInput): EditPersonInput {
-  const familyName = optional(input.familyName);
-  const middleName = optional(input.middleName);
-  const nickname = optional(input.nickname);
+  const familyName = optionalText(input.familyName);
+  const middleName = optionalText(input.middleName);
+  const nickname = optionalText(input.nickname);
   return {
     expectedUpdatedAt: input.expectedUpdatedAt,
     ...(familyName ? { familyName } : {}),
@@ -146,7 +145,7 @@ function normalize(input: EditPersonInput): EditPersonInput {
   };
 }
 
-function validate(input: EditPersonInput): Readonly<Record<string, string>> {
+function validate(input: EditPersonInput): ValidationErrors {
   if (!input.givenName && !input.familyName && !input.nickname) {
     return { givenName: "Enter a given name, family name, or nickname." };
   }
@@ -155,7 +154,7 @@ function validate(input: EditPersonInput): Readonly<Record<string, string>> {
       isPartial: "Mark the person as partial when their given name is unknown.",
     };
   }
-  if (!Number.isFinite(Date.parse(input.expectedUpdatedAt))) {
+  if (!isInstant(input.expectedUpdatedAt)) {
     return { expectedUpdatedAt: "Refresh this person before saving." };
   }
   return {};

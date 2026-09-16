@@ -37,7 +37,16 @@ export interface CoverageSet extends TestSet {
   readonly directory: string;
   /** Production paths measured by this set. */
   readonly include: readonly string[];
+  /**
+   * Minimum line, branch, and function percentage. Defaults to
+   * `DEFAULT_COVERAGE_THRESHOLD`; a set raises it when its code carries a
+   * higher obligation than the repository floor, as the shared kernel does.
+   */
+  readonly threshold?: number;
 }
+
+/** The repository coverage floor every set meets unless it declares more. */
+export const DEFAULT_COVERAGE_THRESHOLD = 80;
 
 export interface OnDemand {
   /** Why the set cannot belong to the aggregate gates. */
@@ -340,6 +349,35 @@ export const INTEGRATION_PERMISSIONS: Permissions = {
 
 export const MODULES: readonly TaskModule[] = [
   {
+    // The shared kernel is pure: no I/O, no environment, no database. Every
+    // backend module depends on it, so it is measured on its own and held to a
+    // higher bar than the repository floor.
+    id: "shared-kernel",
+    unit: {
+      tests: [
+        "packages/backend/shared-kernel/clock_test.ts",
+        "packages/backend/shared-kernel/ids_test.ts",
+        "packages/backend/shared-kernel/pagination_test.ts",
+        "packages/backend/shared-kernel/partial_date_test.ts",
+        "packages/backend/shared-kernel/result_test.ts",
+        "packages/backend/shared-kernel/validation_test.ts",
+      ],
+    },
+    coverage: {
+      directory: "shared-kernel",
+      threshold: 95,
+      tests: [
+        "packages/backend/shared-kernel/clock_test.ts",
+        "packages/backend/shared-kernel/ids_test.ts",
+        "packages/backend/shared-kernel/pagination_test.ts",
+        "packages/backend/shared-kernel/partial_date_test.ts",
+        "packages/backend/shared-kernel/result_test.ts",
+        "packages/backend/shared-kernel/validation_test.ts",
+      ],
+      include: ["packages/backend/shared-kernel"],
+    },
+  },
+  {
     id: "api",
     unit: {
       tests: [
@@ -471,6 +509,14 @@ export const MODULES: readonly TaskModule[] = [
         "apps/api/settings_test.ts",
         "apps/api/workspace_lifecycle_test.ts",
         "apps/worker/composition_test.ts",
+        // This set measures all of packages/backend, the shared kernel
+        // included, so it runs the suites that exercise the kernel too.
+        "packages/backend/shared-kernel/clock_test.ts",
+        "packages/backend/shared-kernel/ids_test.ts",
+        "packages/backend/shared-kernel/pagination_test.ts",
+        "packages/backend/shared-kernel/partial_date_test.ts",
+        "packages/backend/shared-kernel/result_test.ts",
+        "packages/backend/shared-kernel/validation_test.ts",
         "packages/backend/platform/postgres/config_test.ts",
         "packages/backend/modules/api-access/authentication_subject_test.ts",
         "packages/backend/modules/identity/identity_test.ts",
@@ -1040,6 +1086,7 @@ export const MODULES: readonly TaskModule[] = [
  */
 export const TEST_AGGREGATE: readonly string[] = [
   "tasks",
+  "shared-kernel",
   "api",
   "api-access",
   "integrations",
@@ -1064,6 +1111,7 @@ export const TEST_AGGREGATE: readonly string[] = [
  * non-on-demand coverage set must appear exactly once.
  */
 export const COVERAGE_AGGREGATE: readonly string[] = [
+  "shared-kernel",
   "api",
   "api-access",
   "integrations",
