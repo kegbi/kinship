@@ -73,6 +73,16 @@ function dependencies(
   return {
     auditActions,
     management: createTaskManagement({
+      actors: {
+        revalidate: ({ transaction }) => {
+          seenTransactions.push(transaction.opaque);
+          return Promise.resolve(
+            workspaceStatus === "ready"
+              ? "active" as const
+              : "revoked" as const,
+          );
+        },
+      },
       audit: {
         assertPostcondition: () => Promise.resolve(),
         record: ({ action }: { readonly action: string }) => {
@@ -166,12 +176,6 @@ function dependencies(
       transaction: {
         run: <T>(work: (tx: { opaque: string }) => Promise<T>) =>
           work({ opaque: "tx" }),
-      },
-      workspace: {
-        authorize: ({ transaction }) => {
-          seenTransactions.push(transaction.opaque);
-          return Promise.resolve({ status: workspaceStatus });
-        },
       },
     }),
     seenTransactions,
@@ -316,6 +320,7 @@ Deno.test("PLANNING-001 hydrates every person in a bounded 100-task page", async
   const archivedPersonId = tasks.at(-1)!.personId;
   const summarizeBatchSizes: number[] = [];
   const management = createTaskManagement({
+    actors: { revalidate: () => Promise.resolve("active") },
     audit: {
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve(id(9999)),
@@ -365,7 +370,6 @@ Deno.test("PLANNING-001 hydrates every person in a bounded 100-task page", async
       run: <T>(work: (tx: { opaque: string }) => Promise<T>) =>
         work({ opaque: "tx" }),
     },
-    workspace: { authorize: () => Promise.resolve({ status: "ready" }) },
   });
 
   const global = await management.list(actor, { limit: 100 });
@@ -476,6 +480,7 @@ Deno.test("PLANNING-001 concurrent person swaps use one canonical lock set", asy
   });
   const audits: string[] = [];
   const management = createTaskManagement({
+    actors: { revalidate: () => Promise.resolve("active") },
     audit: {
       assertPostcondition: () => Promise.resolve(),
       record: ({ task }) => {
@@ -553,7 +558,6 @@ Deno.test("PLANNING-001 concurrent person swaps use one canonical lock set", asy
         }
       },
     },
-    workspace: { authorize: () => Promise.resolve({ status: "ready" }) },
   });
 
   const outcomes = await Promise.allSettled([
@@ -607,6 +611,7 @@ Deno.test("PLANNING-001 preserves unavailable linked-person history as read-only
     updatedAt: "2026-08-18T10:00:00.000Z",
   };
   const management = createTaskManagement({
+    actors: { revalidate: () => Promise.resolve("active") },
     audit: {
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve(crypto.randomUUID()),
@@ -629,7 +634,6 @@ Deno.test("PLANNING-001 preserves unavailable linked-person history as read-only
       run: <T>(work: (tx: { opaque: string }) => Promise<T>) =>
         work({ opaque: "tx" }),
     },
-    workspace: { authorize: () => Promise.resolve({ status: "ready" }) },
   });
   const listed = await management.list(actor);
   assert(listed.status === "ready", "historical task list failed");
@@ -721,7 +725,7 @@ Deno.test("PLANNING-001 returns a bound continuation that reaches task 101", asy
         run: <T>(work: (tx: { opaque: string }) => Promise<T>) =>
           work({ opaque: "tx" }),
       },
-      workspace: { authorize: () => Promise.resolve({ status: "ready" }) },
+      actors: { revalidate: () => Promise.resolve("active") },
     } as unknown as Parameters<typeof createTaskManagement>[0],
   );
   const first = await management.list(actor, { limit: 2 });

@@ -60,6 +60,5 @@ export type {
   TaskRecord,
   TaskRepository,
   TaskStatus,
-  TaskWorkspaceBoundary,
 } from "./application/task_management.ts";
 export { PostgresPlanningWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";

@@ -120,12 +120,14 @@ function fixture(
   typeRecords: readonly WorkspaceRelationshipTypeRecord[] = [],
   hydrationContext: "forbidden" | "hidden" | "ready" = "ready",
   missingSummaryId?: string,
+  standing: "active" | "revoked" = "active",
 ) {
   const effects: string[] = [];
   let saved: RelationshipRecord | undefined;
   let personSaved = false;
   const transaction: PeopleTransaction = { opaque: "relationship-test" };
   const dependencies: RelationshipDependencies = {
+    actors: { revalidate: () => Promise.resolve(standing) },
     audit: {
       record(command) {
         if (failAt === "relationship-audit") {
@@ -721,4 +723,31 @@ Deno.test("atomic related-person coordination commits both owners or rolls every
       `${failure} retained a partial relationship`,
     );
   }
+});
+
+Deno.test("GAP-008 a revoked actor is refused before the relationship graph is touched", async () => {
+  const revoked = fixture(
+    "ready",
+    "ready",
+    undefined,
+    [],
+    "ready",
+    undefined,
+    "revoked",
+  );
+  const created = await revoked.management.create(actor, sourceId, {
+    relationshipTypeId: typeId,
+    targetPersonId: targetId,
+  });
+  assert(
+    created.status === "forbidden",
+    "a revoked member still wrote an edge",
+  );
+  assert(
+    revoked.effects.length === 0 && !revoked.relationshipSaved(),
+    "a revoked member reached workspace, person, or edge persistence",
+  );
+
+  const listed = await revoked.management.list(actor, sourceId);
+  assert(listed.status === "forbidden", "a revoked member still read edges");
 });

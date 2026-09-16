@@ -15,6 +15,7 @@ import {
   uuid,
 } from "../../../shared-kernel/validation.ts";
 import type { PeopleActor, PeopleTransaction } from "./create_person.ts";
+import type { ActorRevalidation } from "../../workspaces/public.ts";
 
 export type ProfileFactSection =
   | "addresses"
@@ -264,6 +265,7 @@ export interface ProfileFactAudit {
 }
 
 export interface ProfileFactDependencies {
+  readonly actors: ActorRevalidation;
   readonly audit: ProfileFactAudit;
   readonly clock: Clock;
   readonly ids: IdGenerator;
@@ -529,6 +531,41 @@ function contextFailure(
 export function createProfileFactManagement(
   dependencies: ProfileFactDependencies,
 ) {
+  /**
+   * Revalidates the actor before the person context is read. Write paths lock
+   * the actor's rows for the rest of the transaction; the read path keeps the
+   * lock-free concurrency it always had.
+   */
+  const actorContext = async (
+    actor: PeopleActor,
+    personId: string,
+    transaction: PeopleTransaction,
+    lock: boolean,
+  ): Promise<ProfileFactContextLock> => {
+    const standing = await dependencies.actors.revalidate({
+      ...actor,
+      lock,
+      transaction,
+    });
+    if (standing === "revoked") return { status: "forbidden" };
+    const command = { ...actor, personId, transaction };
+    return lock
+      ? await dependencies.repository.lockContext(command)
+      : await dependencies.repository.inspectContext(command);
+  };
+  const lockedContext = (
+    actor: PeopleActor,
+    personId: string,
+    transaction: PeopleTransaction,
+  ): Promise<ProfileFactContextLock> =>
+    actorContext(actor, personId, transaction, true);
+  const inspectedContext = (
+    actor: PeopleActor,
+    personId: string,
+    transaction: PeopleTransaction,
+  ): Promise<ProfileFactContextLock> =>
+    actorContext(actor, personId, transaction, false);
+
   const mutate = async (
     actor: PeopleActor,
     personId: string,
@@ -571,11 +608,7 @@ export function createProfileFactManagement(
       return { errors, status: "validation-error" };
     }
     return await dependencies.transaction.run(async (transaction) => {
-      const context = await dependencies.repository.lockContext({
-        ...actor,
-        personId,
-        transaction,
-      });
+      const context = await lockedContext(actor, personId, transaction);
       if (context.status !== "ready") return contextFailure(context.status);
       if (context.personUpdatedAt !== expectedPersonUpdatedAt) {
         return { status: "stale" };
@@ -684,11 +717,7 @@ export function createProfileFactManagement(
         return Promise.resolve({ status: "stale-cursor" });
       }
       return dependencies.transaction.run(async (transaction) => {
-        const context = await dependencies.repository.inspectContext({
-          ...actor,
-          personId,
-          transaction,
-        });
+        const context = await inspectedContext(actor, personId, transaction);
         if (!("personUpdatedAt" in context)) {
           return { status: context.status };
         }
@@ -906,11 +935,7 @@ export function createProfileFactManagement(
       expectedPersonUpdatedAt: string,
     ): Promise<Exclude<ProfileFactMutationResult, { status: "saved" }>> =>
       dependencies.transaction.run(async (transaction) => {
-        const context = await dependencies.repository.lockContext({
-          ...actor,
-          personId,
-          transaction,
-        });
+        const context = await lockedContext(actor, personId, transaction);
         if (context.status !== "ready") return contextFailure(context.status);
         if (context.personUpdatedAt !== expectedPersonUpdatedAt) {
           return { status: "stale" };

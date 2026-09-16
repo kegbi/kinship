@@ -494,6 +494,10 @@ Deno.test("PLANNING-002 management preserves validation, authorization, replay, 
   let cancellations = 0;
   let regenerations = 0;
   const management = planning.createReminderManagement({
+    actors: {
+      revalidate: () =>
+        Promise.resolve(authorized ? "active" as const : "revoked" as const),
+    },
     audit: {
       record(command) {
         audits.push(command.action);
@@ -548,10 +552,6 @@ Deno.test("PLANNING-002 management preserves validation, authorization, replay, 
     },
     transaction: { run: (work) => work({ opaque: "tx" }) },
     workspace: {
-      authorize: () =>
-        Promise.resolve({
-          status: authorized ? "ready" as const : "forbidden" as const,
-        }),
       effectiveTimezone: () =>
         Promise.resolve(
           timezoneReady

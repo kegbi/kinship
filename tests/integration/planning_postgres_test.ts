@@ -4,14 +4,26 @@ import {
   createConfiguredApiApp,
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
-import { PostgresReminderAudit } from "../../packages/backend/modules/governance/public.ts";
-import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/public.ts";
+import {
+  PostgresReminderAudit,
+  PostgresTaskAudit,
+} from "../../packages/backend/modules/governance/public.ts";
+import {
+  type PeopleActor,
+  PostgresPeopleTransaction,
+  PostgresRelationshipPersonBoundary,
+} from "../../packages/backend/modules/people/public.ts";
+import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import {
   createReminderDeliveryWorker,
+  createReminderManagement,
+  createTaskManagement,
   InAppReminderDelivery,
   PostgresInAppReminderEffectStore,
   PostgresReminderDeliveryRepository,
   PostgresReminderRepository,
+  PostgresReminderWorkspaceBoundary,
+  PostgresTaskRepository,
   type ReminderDeliveryProvider,
 } from "../../packages/backend/modules/planning/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
@@ -4089,6 +4101,148 @@ Deno.test("PLANNING-002 PostgreSQL cancels an expired unattempted claim after di
       JSON.stringify({ staleEffectResult, staleFinalize })
     }`,
   );
+});
+
+/**
+ * A workspace, member, and person written straight to PostgreSQL, so a test can
+ * hold an actor context whose membership it revokes without touching sessions.
+ */
+async function revocableActor(
+  name: string,
+): Promise<PeopleActor & { readonly personId: string }> {
+  const userId = crypto.randomUUID();
+  const workspaceId = crypto.randomUUID();
+  const memberId = crypto.randomUUID();
+  const personId = crypto.randomUUID();
+  await sql.begin(async (transaction) => {
+    await transaction`
+      insert into crm.users (id, email, first_name, status)
+      values (${userId}, ${`${name}@example.test`}, 'Planning', 'active')
+    `;
+    await transaction`
+      insert into crm.workspaces (id, name, status, created_by_user_id)
+      values (${workspaceId}, ${`${name} circle`}, 'active', ${userId})
+    `;
+    await transaction`
+      insert into crm.workspace_members (
+        id, workspace_id, user_id, role, status, joined_at
+      ) values (
+        ${memberId}, ${workspaceId}, ${userId}, 'member', 'active', now()
+      )
+    `;
+    await transaction`
+      insert into crm.people (
+        id, workspace_id, created_by_member_id, given_name
+      ) values (${personId}, ${workspaceId}, ${memberId}, 'Planning subject')
+    `;
+  });
+  return { memberId, personId, role: "member", userId, workspaceId };
+}
+
+Deno.test({
+  name: "GAP-008 a revoked member cannot write tasks or reminders",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const actor = await revocableActor(
+      `planning-revocation-${crypto.randomUUID()}`,
+    );
+    const actors = new PostgresActorRevalidation();
+    const transaction = new PostgresPeopleTransaction(deliveryConnection.db);
+    const tasks = createTaskManagement({
+      actors,
+      audit: new PostgresTaskAudit(),
+      clock: { now: () => new Date() },
+      cursorKeyset: {
+        activeVersion: 1,
+        keys: new Map([[1, new Uint8Array(32).fill(0x52)]]),
+      },
+      people: new PostgresRelationshipPersonBoundary(),
+      repository: new PostgresTaskRepository(),
+      transaction,
+    });
+    const reminders = createReminderManagement({
+      actors,
+      audit: new PostgresReminderAudit(),
+      clock: { now: () => new Date() },
+      people: new PostgresRelationshipPersonBoundary(),
+      repository: new PostgresReminderRepository(),
+      transaction,
+      workspace: new PostgresReminderWorkspaceBoundary(),
+    });
+
+    // The same calls succeed while the membership is active.
+    const allowed = await tasks.create(actor, {
+      requestId: crypto.randomUUID(),
+      title: "Allowed while active",
+    });
+    assert(
+      allowed.status === "created",
+      `an active member creates tasks: ${JSON.stringify(allowed)}`,
+    );
+
+    await sql`
+      update crm.workspace_members set left_at = now(), status = 'left'
+      where id = ${actor.memberId}
+    `;
+
+    const created = await tasks.create(actor, {
+      requestId: crypto.randomUUID(),
+      title: "Refused after revocation",
+    });
+    const changed = await tasks.change(actor, allowed.task.id, {
+      expectedUpdatedAt: allowed.task.updatedAt,
+      title: "Refused rename",
+    });
+    const listed = await tasks.list(actor, { limit: 10 });
+    const read = await tasks.get(actor, allowed.task.id);
+    const reminder = await reminders.createReminder(actor, {
+      anchorOn: "2099-07-04",
+      personId: actor.personId,
+      recurrenceInterval: 1,
+      recurrenceUnit: "year",
+      requestId: crypto.randomUUID(),
+      sendTime: "09:00",
+
+      title: "Refused reminder",
+    });
+    const reminderList = await reminders.listPerson(actor, actor.personId);
+
+    for (
+      const [label, result] of [
+        ["tasks.create", created],
+        ["tasks.change", changed],
+        ["tasks.list", listed],
+        ["tasks.get", read],
+        ["reminders.createReminder", reminder],
+        ["reminders.listPerson", reminderList],
+      ] as const
+    ) {
+      assert(
+        result.status === "forbidden",
+        `${label} answered ${result.status} for a revoked member`,
+      );
+    }
+
+    const [proof] = await sql<{
+      readonly reminders: number;
+      readonly tasks: number;
+      readonly title: string | null;
+    }[]>`
+      select
+        (select count(*)::int from crm.tasks
+          where workspace_id = ${actor.workspaceId}) tasks,
+        (select count(*)::int from crm.reminders
+          where workspace_id = ${actor.workspaceId}) reminders,
+        (select title from crm.tasks where id = ${allowed.task.id}) title
+    `;
+    assert(proof, "planning revocation proof is present");
+    assert(
+      proof.tasks === 1 && proof.reminders === 0 &&
+        proof.title === "Allowed while active",
+      `a revoked member changed planning rows: ${JSON.stringify(proof)}`,
+    );
+  },
 });
 
 Deno.test({

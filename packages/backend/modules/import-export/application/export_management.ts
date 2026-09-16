@@ -7,6 +7,7 @@ import type {
   ExportPerson,
   PeopleExportBoundary,
 } from "../../people/public.ts";
+import type { ActorRevalidation } from "../../workspaces/public.ts";
 
 export interface ExportActor {
   readonly memberId: string;
@@ -116,6 +117,7 @@ export interface ExportRepository {
 }
 
 export interface ExportManagementDependencies {
+  readonly actors: ActorRevalidation;
   readonly audit: ExportAudit;
   readonly clock: Clock;
   readonly files: ExportFileBoundary;
@@ -409,6 +411,14 @@ export function createExportManagement(
     async exportVCard(actor: ExportActor, personId: string) {
       const prepared = await dependencies.transaction.run(
         async (transaction) => {
+          // The people boundary no longer carries its own actor join, so the
+          // actor's standing is established here, in the same transaction.
+          const standing = await dependencies.actors.revalidate({
+            ...actor,
+            lock: false,
+            transaction,
+          });
+          if (standing === "revoked") return undefined;
           const person = await dependencies.people.getPerson({
             actor,
             personId,

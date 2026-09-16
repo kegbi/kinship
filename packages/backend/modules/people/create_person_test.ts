@@ -35,6 +35,16 @@ function dependencies(options: {
           return Promise.resolve();
         },
       },
+      actors: {
+        revalidate(command) {
+          effects.push(
+            command.lock ? "authorization.lock" : "authorization.read",
+          );
+          return Promise.resolve(
+            options.authorize === false ? "revoked" : "active",
+          );
+        },
+      },
       clock: { now: () => new Date("2026-08-15T12:00:00.000Z") },
       ids: {
         create: () => "00000000-0000-4000-8000-000000000100",
@@ -43,10 +53,6 @@ function dependencies(options: {
         lockRequest() {
           effects.push("request.lock");
           return Promise.resolve();
-        },
-        revalidateAndLockCreateContext() {
-          effects.push("authorization.lock");
-          return Promise.resolve(options.authorize !== false);
         },
         findPossibleDuplicates(command) {
           effects.push(`duplicates:${command.workspaceId}`);
@@ -209,7 +215,7 @@ Deno.test("PEOPLE-001 reads identity through the public active-workspace facade"
   );
   assert(
     readyFake.effects.join(",") ===
-      `transaction.begin,people.get:${personId},transaction.commit`,
+      `transaction.begin,authorization.read,people.get:${personId},transaction.commit`,
     "identity read stays inside the application transaction boundary",
   );
 

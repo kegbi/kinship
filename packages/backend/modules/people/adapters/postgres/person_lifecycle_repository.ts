@@ -40,28 +40,6 @@ export class PostgresPersonLifecycleRepository
     command: Parameters<PersonLifecycleRepository["lock"]>[0],
   ): Promise<Awaited<ReturnType<PersonLifecycleRepository["lock"]>>> {
     const database = databaseFromSession(command.transaction);
-    const authorization = await sql<{ readonly authorized: boolean }>`
-      select true as authorized
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      where account.id = ${command.userId}::uuid
-        and account.status = 'active'
-        and account.deleted_at is null
-        and member.id = ${command.memberId}::uuid
-        and member.workspace_id = ${command.workspaceId}::uuid
-        and member.role = ${command.role}
-        and member.role in ('owner', 'admin', 'member')
-        and member.status = 'active'
-        and member.left_at is null
-        and workspace.id = ${command.workspaceId}::uuid
-        and workspace.status = 'active'
-        and workspace.deleted_at is null
-      for update of account, member, workspace
-    `.execute(database);
-    if (authorization.rows[0]?.authorized !== true) {
-      return { status: "forbidden" };
-    }
     const result = await sql<PersonRow>`
       select id::text, given_name, middle_name, family_name, nickname,
         is_partial, archived_at, deleted_at,

@@ -12,6 +12,7 @@ import type {
 } from "../../../shared-kernel/result.ts";
 import { isInstant, optionalText } from "../../../shared-kernel/validation.ts";
 import type { PeopleActor, PeopleTransaction } from "./create_person.ts";
+import type { ActorRevalidation } from "../../workspaces/public.ts";
 
 export type ImportantDateKind =
   | "birthday"
@@ -136,6 +137,7 @@ export interface ImportantDateAudit {
 }
 
 export interface ImportantDateDependencies {
+  readonly actors: ActorRevalidation;
   readonly audit: ImportantDateAudit;
   readonly clock: Clock;
   readonly ids: IdGenerator;
@@ -303,17 +305,35 @@ export function createImportantDateManagement(
     await dependencies.audit.assertPostcondition({ ...auditCommand, auditId });
   };
 
+  /**
+   * Revalidates the actor under lock before the person context is read, so a
+   * revocation committed mid-request cannot reach a write.
+   */
+  const lockContext = async (
+    actor: PeopleActor,
+    personId: string,
+    transaction: PeopleTransaction,
+  ): Promise<ImportantDateContextLock> => {
+    const standing = await dependencies.actors.revalidate({
+      ...actor,
+      lock: true,
+      transaction,
+    });
+    if (standing === "revoked") return { status: "forbidden" };
+    return await dependencies.repository.lockContext({
+      ...actor,
+      personId,
+      transaction,
+    });
+  };
+
   return {
     list: (
       actor: PeopleActor,
       personId: string,
     ): Promise<ImportantDateListResult> =>
       dependencies.transaction.run(async (transaction) => {
-        const context = await dependencies.repository.lockContext({
-          ...actor,
-          personId,
-          transaction,
-        });
+        const context = await lockContext(actor, personId, transaction);
         if (context.status === "forbidden" || context.status === "not-found") {
           return { status: context.status };
         }
@@ -337,11 +357,7 @@ export function createImportantDateManagement(
         return { errors, status: "validation-error" };
       }
       return await dependencies.transaction.run(async (transaction) => {
-        const context = await dependencies.repository.lockContext({
-          ...actor,
-          personId,
-          transaction,
-        });
+        const context = await lockContext(actor, personId, transaction);
         if (context.status !== "ready") return contextFailure(context);
         const occurredAt = dependencies.clock.now();
         const date = await dependencies.repository.create({
@@ -384,11 +400,7 @@ export function createImportantDateManagement(
         return { errors, status: "validation-error" };
       }
       return await dependencies.transaction.run(async (transaction) => {
-        const context = await dependencies.repository.lockContext({
-          ...actor,
-          personId,
-          transaction,
-        });
+        const context = await lockContext(actor, personId, transaction);
         if (context.status !== "ready") return contextFailure(context);
         const locked = await dependencies.repository.lockDate({
           ...actor,
@@ -436,11 +448,7 @@ export function createImportantDateManagement(
         };
       }
       return await dependencies.transaction.run(async (transaction) => {
-        const context = await dependencies.repository.lockContext({
-          ...actor,
-          personId,
-          transaction,
-        });
+        const context = await lockContext(actor, personId, transaction);
         if (context.status !== "ready") return contextFailure(context);
         const locked = await dependencies.repository.lockDate({
           ...actor,

@@ -22,6 +22,14 @@ export {
   PostgresWorkspaceRegistration,
 } from "./adapters/postgres/registration_repository.ts";
 export { PostgresActiveWorkspaceResolver } from "./adapters/postgres/protected_session.ts";
+export { PostgresActorRevalidation } from "./adapters/postgres/actor_revalidation.ts";
+export type {
+  ActorRevalidation,
+  ActorRevalidationCommand,
+  ActorRevalidationTransaction,
+  ActorStanding,
+  RevalidatedActor,
+} from "./application/actor_revalidation.ts";
 export {
   createProtectedSessionCoordinator,
   protectedSessionHttpStatus,

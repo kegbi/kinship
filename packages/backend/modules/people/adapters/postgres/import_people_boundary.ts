@@ -2,27 +2,11 @@ import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type { PeopleImportBoundary } from "../../application/import_people_boundary.ts";
 
-const activeImportActor = (command: {
-  readonly actor: {
-    readonly memberId: string;
-    readonly role: string;
-    readonly userId: string;
-    readonly workspaceId: string;
-  };
-}) =>
-  sql`
-    account.id = ${command.actor.userId}::uuid
-    and account.status = 'active' and account.deleted_at is null
-    and member.id = ${command.actor.memberId}::uuid
-    and member.user_id = account.id
-    and member.workspace_id = ${command.actor.workspaceId}::uuid
-    and member.role = ${command.actor.role}
-    and member.role in ('owner', 'admin')
-    and member.status = 'active' and member.left_at is null
-    and workspace.id = ${command.actor.workspaceId}::uuid
-    and workspace.status = 'active' and workspace.deleted_at is null
-  `;
-
+/**
+ * The import use case revalidates the actor under lock and refuses anyone but
+ * an owner or admin before it reaches this boundary (see the
+ * `ActorRevalidation` port), so the statements below scope by workspace alone.
+ */
 export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
   async create(
     command: Parameters<PeopleImportBoundary["create"]>[0],
@@ -37,7 +21,8 @@ export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
         is_starred, is_deceased, archived_at, created_at, updated_at,
         deleted_at
       )
-      select ${command.person.id}::uuid, workspace.id,
+      values (
+        ${command.person.id}::uuid, ${command.actor.workspaceId}::uuid,
         ${command.actor.memberId}::uuid, ${command.person.givenName},
         ${command.person.middleName ?? null},
         ${command.person.familyName ?? null},
@@ -49,10 +34,7 @@ export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
         ${command.person.archived ? command.occurredAt : null},
         ${command.occurredAt}, ${command.occurredAt},
         ${command.person.deletedAt ?? null}
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      where ${activeImportActor(command)}
+      )
       returning id::text
     `.execute(databaseFromSession(command.transaction));
     if (!result.rows[0]) throw new Error("Imported person context is invalid.");
@@ -63,13 +45,9 @@ export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
   ): Promise<boolean> {
     const result = await sql<{ readonly exists: boolean }>`
       select exists (
-        select 1
-        from crm.users account
-        join crm.workspace_members member on member.user_id = account.id
-        join crm.workspaces workspace on workspace.id = member.workspace_id
-        join crm.people person on person.workspace_id = workspace.id
-          and person.id = ${command.personId}::uuid
-        where ${activeImportActor(command)}
+        select 1 from crm.people person
+        where person.id = ${command.personId}::uuid
+          and person.workspace_id = ${command.actor.workspaceId}::uuid
       ) as exists
     `.execute(databaseFromSession(command.transaction));
     return result.rows[0]?.exists === true;
@@ -81,12 +59,9 @@ export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
     const result = await sql<{ readonly person_id: string }>`
       insert into crm.person_avatars (person_id, source, file_id)
       select person.id, 'file', ${command.fileId}::uuid
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      join crm.people person on person.workspace_id = workspace.id
-        and person.id = ${command.personId}::uuid
-      where ${activeImportActor(command)}
+      from crm.people person
+      where person.id = ${command.personId}::uuid
+        and person.workspace_id = ${command.actor.workspaceId}::uuid
       returning person_id::text
     `.execute(databaseFromSession(command.transaction));
     if (!result.rows[0]) throw new Error("Imported avatar context is invalid.");

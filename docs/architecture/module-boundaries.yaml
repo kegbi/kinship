@@ -21,6 +21,19 @@ compositionRoots:
   - apps/api/composition.ts
   - apps/worker/composition.ts
 
+# The only cross-module table reads the manifest approves by name. Each entry
+# narrows `table-foreign-read` for exactly one adapter file and the tables it
+# names; the owning module must still be a declared dependency.
+approvedCrossModuleReads:
+  - adapter: packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts
+    module: workspaces
+    tables: [users]
+    reason: >-
+      The single approved actor-context read. This adapter is the one place
+      that locks and verifies an actor's user, membership, and workspace inside
+      the caller's transaction, replacing the join every module used to copy
+      into its own adapters.
+
 generatedContracts:
   path: packages/contracts/generated
   source: packages/contracts/openapi
