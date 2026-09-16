@@ -1,5 +1,5 @@
 {
-  "note": "Architecture violations this repository already had when GAP-005 added tools/architecture/check_boundaries.ts. The checker fails on any violation missing from this list and on any entry here that no longer occurs, so the list can only shrink. Do not add an entry to make a new change pass. What is left after GAP-009 is deliberate: sixteen ordinary reads of a declared dependency's tables that are not the actor join, and the two SMTP adapter imports GAP-013 owns.",
+  "note": "Architecture violations this repository already had when GAP-005 added tools/architecture/check_boundaries.ts. The checker fails on any violation missing from this list and on any entry here that no longer occurs, so the list can only shrink. Do not add an entry to make a new change pass. What is left after GAP-011 is deliberate: fourteen ordinary reads of a declared dependency's tables that are not the actor join, and the two SMTP adapter imports GAP-013 owns.",
   "violations": [
     {
       "rule": "layer",
@@ -25,16 +25,6 @@
       "rule": "table-foreign-read",
       "subject": "packages/backend/modules/gifts/adapters/postgres/gift_repository.ts",
       "detail": "gifts reads crm.people, owned by people"
-    },
-    {
-      "rule": "table-foreign-read",
-      "subject": "packages/backend/modules/governance/adapters/postgres/reminder_audit.ts",
-      "detail": "governance reads crm.reminder_occurrences, owned by planning"
-    },
-    {
-      "rule": "table-foreign-read",
-      "subject": "packages/backend/modules/governance/adapters/postgres/reminder_audit.ts",
-      "detail": "governance reads crm.reminders, owned by planning"
     },
     {
       "rule": "table-foreign-read",

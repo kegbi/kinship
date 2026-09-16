@@ -1,3 +1,4 @@
+import { describeImportantDateEvent } from "./application/audit_events.ts";
 import {
   createImportantDateManagement,
   type ImportantDateDependencies,
@@ -6,6 +7,12 @@ import {
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+function assertEquals(actual: unknown, expected: unknown): void {
+  const left = JSON.stringify(actual);
+  const right = JSON.stringify(expected);
+  if (left !== right) throw new Error(`Expected ${right}, received ${left}`);
 }
 
 const actor = {
@@ -200,4 +207,56 @@ Deno.test("PEOPLE-005 rejects archived writes and rolls back planning/audit fail
     failed.effects.at(-1) === "transaction.rollback",
     "date, reminder state, and audit roll back together",
   );
+});
+
+Deno.test("PEOPLE-012 the important-date event pins the row governance writes", () => {
+  const before = {
+    createdAt: "2026-01-01T00:00:00.000Z",
+    id: dateId,
+    isAgeBased: false,
+    isYearApproximate: true,
+    kind: "birthday" as const,
+    personId,
+    precision: "full" as const,
+    scheduling: "annual-reminder" as const,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const event = describeImportantDateEvent({
+    action: "update",
+    actor,
+    after: { ...before, isYearApproximate: false, precision: "month_day" },
+    before,
+    occurredAt: new Date("2026-09-16T08:30:00.000Z"),
+    transaction: { opaque: "important-date-describe" },
+  });
+  assertEquals(event, {
+    action: "people.person-date-updated",
+    actorMemberId: actor.memberId,
+    occurredAt: new Date("2026-09-16T08:30:00.000Z"),
+    payload: {
+      action: "update",
+      from: { isYearApproximate: true, precision: "full" },
+      to: { isYearApproximate: false, precision: "month_day" },
+    },
+    personId,
+    subjectId: dateId,
+    subjectType: "person_date",
+    visibleOnDashboard: true,
+    workspaceId: actor.workspaceId,
+  });
+});
+
+Deno.test("PEOPLE-012 an important-date event without a subject is refused", () => {
+  let refused = false;
+  try {
+    describeImportantDateEvent({
+      action: "delete",
+      actor,
+      occurredAt: new Date("2026-09-16T08:30:00.000Z"),
+      transaction: { opaque: "important-date-describe" },
+    });
+  } catch {
+    refused = true;
+  }
+  assert(refused, "a date event needs a date to describe");
 });

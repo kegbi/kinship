@@ -13,7 +13,7 @@ Deno.test("[AUTH-005] personal lifecycle coordinates only owning public boundari
       "packages/backend/modules/workspaces/adapters/postgres/personal_lifecycle.ts",
     ),
     read(
-      "packages/backend/modules/governance/adapters/postgres/personal_lifecycle_audit.ts",
+      "packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts",
     ),
   ]);
 

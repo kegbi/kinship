@@ -14,7 +14,8 @@ import {
   SecureTokenService,
   WebCryptoRandomSource,
 } from "../../packages/backend/modules/identity/public.ts";
-import { PostgresInvitationAudit } from "../../packages/backend/modules/governance/public.ts";
+import { invitationAuditFrom } from "../../packages/backend/modules/workspaces/public.ts";
+import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import {
   createWorkspaceInvitationCoordinator,
   type InvitationAudit,
@@ -576,7 +577,7 @@ Deno.test({
           assertAcceptancePostcondition: (command) =>
             baseRepository.assertAcceptancePostcondition(command),
         };
-        const baseAudit = new PostgresInvitationAudit();
+        const baseAudit = invitationAuditFrom(new PostgresAuditEventRecorder());
         const audit: InvitationAudit = {
           async recordMemberJoined(command) {
             await baseAudit.recordMemberJoined(command);
@@ -800,7 +801,7 @@ Deno.test({
     const acceptConnection = connectDatabase(databaseUrl);
     const createConnection = connectDatabase(databaseUrl);
     const baseRepository = new PostgresWorkspaceInvitations();
-    const baseAudit = new PostgresInvitationAudit();
+    const baseAudit = invitationAuditFrom(new PostgresAuditEventRecorder());
     const invitationIdentity = new PostgresInvitationIdentity();
     const tokens = new SecureTokenService(new WebCryptoRandomSource());
     const identityDependencies = {

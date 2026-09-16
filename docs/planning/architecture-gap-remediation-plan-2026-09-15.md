@@ -516,7 +516,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     integration 123/0, baseline unchanged at 18; gates fmt:check, lint, check.
     Six web copies of the fallback remain for a frontend ticket.
 
-- [ ] **GAP-011 — Generic audit recorder for governance.** M. Depends: 006.
+- [x] **GAP-011 — Generic audit recorder for governance.** M. Depends: 006.
   - Scope: one `PostgresAuditEventRecorder` with `record(event)` and
     `assertRecorded(expected)`; each of the 21 audited events becomes a small
     pure `describeXEvent(command) → AuditEvent` function colocated with its
@@ -525,6 +525,19 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     behavior as recorder options.
   - Verify: `governance` and consuming modules' tests green; audit-history read
     model unchanged; ≥ 700 lines removed.
+  - Delivered 2026-09-17: one `PostgresAuditEventRecorder` (`record`,
+    `recordWhen`, `assertRecorded`, with `created_at` as an option) replaced the
+    22 governance audit adapters, all deleted along with the duplicate
+    relationship port; the 22 events are pure `describeXEvent` functions with
+    `xAuditFrom(recorder)` factories in ten modules' application code, and the
+    `AuditEvent` contract lives in the shared kernel so no module imports
+    governance; 1266 lines deleted, net +312 after the kernel move; every row
+    verified identical to its deleted adapter; audit-history read model
+    unchanged; payloads now stored as jsonb objects instead of double-encoded
+    strings; baseline 18 → 16 (the two governance reads of planning's tables);
+    unit 718 vitest plus all sets green, integration 123/0; coverage sets green
+    except the pre-existing `gifts` branch floor tracked by REL-037; gates
+    fmt:check, lint, check, check:architecture.
 
 - [ ] **GAP-012 — Generic workspace lifecycle impact and personalization
       references.** S-M. Depends: 006.

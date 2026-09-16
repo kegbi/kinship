@@ -65,3 +65,8 @@ export type {
   TaskStatus,
 } from "./application/task_management.ts";
 export { PostgresPlanningWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
+export {
+  reminderAuditFrom,
+  reminderDeliveryAuditFrom,
+  taskAuditFrom,
+} from "./application/audit_events.ts";

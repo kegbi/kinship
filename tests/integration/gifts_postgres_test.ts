@@ -5,7 +5,8 @@ import {
   PostgresGiftRepository,
 } from "../../packages/backend/modules/gifts/public.ts";
 import { PostgresGiftAttachmentBoundary } from "../../packages/backend/modules/files/public.ts";
-import { PostgresGiftAudit } from "../../packages/backend/modules/governance/public.ts";
+import { giftAuditFrom } from "../../packages/backend/modules/gifts/public.ts";
+import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/public.ts";
 import {
   PostgresActorRevalidation,
@@ -432,7 +433,7 @@ Deno.test({
         attachments: new PostgresGiftAttachmentBoundary(
           new PostgresGiftAttachmentTarget(),
         ),
-        audit: new PostgresGiftAudit(),
+        audit: giftAuditFrom(new PostgresAuditEventRecorder()),
         clock: { now: () => new Date() },
         currencies: new PostgresWorkspaceCurrencyBoundary(),
         ids: { next: () => crypto.randomUUID() },

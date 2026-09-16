@@ -16,9 +16,10 @@ import {
   PostgresRelationshipPersonBoundary,
 } from "../../packages/backend/modules/people/public.ts";
 import {
-  PostgresCommunicationAudit,
-  PostgresInteractionAudit,
-} from "../../packages/backend/modules/governance/public.ts";
+  communicationAuditFrom,
+  interactionAuditFrom,
+} from "../../packages/backend/modules/interactions/public.ts";
+import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import { PostgresInteractionWorkspaceBoundary } from "../../packages/backend/modules/workspaces/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 
@@ -66,7 +67,7 @@ const configured = createConfiguredApiApp(
 const directConnection = connectDatabase(databaseUrl);
 const directInteractions = createInteractionManagement({
   actors: new PostgresActorRevalidation(),
-  audit: new PostgresInteractionAudit(),
+  audit: interactionAuditFrom(new PostgresAuditEventRecorder()),
   clock: { now: () => new Date("2026-08-17T12:30:00.000Z") },
   people: new PostgresRelationshipPersonBoundary(),
   repository: new PostgresInteractionRepository(),
@@ -75,7 +76,7 @@ const directInteractions = createInteractionManagement({
 });
 const directCommunications = createCommunicationManagement({
   actors: new PostgresActorRevalidation(),
-  audit: new PostgresCommunicationAudit(),
+  audit: communicationAuditFrom(new PostgresAuditEventRecorder()),
   clock: { now: () => new Date("2026-08-17T12:30:00.000Z") },
   people: new PostgresRelationshipPersonBoundary(),
   repository: new PostgresCommunicationRepository(),

@@ -14,7 +14,8 @@ import { PostgresPeopleImportBoundary } from "../../packages/backend/modules/peo
 import { PostgresFileImportBoundary } from "../../packages/backend/modules/files/public.ts";
 import {
   type ImportAudit,
-  PostgresImportAudit,
+  importAuditFrom,
+  PostgresAuditEventRecorder,
 } from "../../packages/backend/modules/governance/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 
@@ -257,7 +258,7 @@ Deno.test("[IMPORT-001] owning-boundary failure rolls back every commit effect a
     `import-rollback-${crypto.randomUUID()}@example.test`,
   );
   const connection = connectDatabase(databaseUrl);
-  const persistedAudit = new PostgresImportAudit();
+  const persistedAudit = importAuditFrom(new PostgresAuditEventRecorder());
   let failCommittedAudit = true;
   const audit: ImportAudit = {
     async record(command) {
@@ -387,7 +388,7 @@ Deno.test({
       );
       const imports = createImportManagement({
         actors: new PostgresActorRevalidation(),
-        audit: new PostgresImportAudit(),
+        audit: importAuditFrom(new PostgresAuditEventRecorder()),
         files: new PostgresFileImportBoundary(),
         ids: { next: () => crypto.randomUUID() },
         people: new PostgresPeopleImportBoundary(),

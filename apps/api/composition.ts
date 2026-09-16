@@ -18,6 +18,7 @@ import {
 } from "../../packages/backend/modules/identity/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import {
+  authenticationAuditFrom,
   type AuthenticationResponseEqualizer,
   createMemberUiStateManagement,
   createPersonalizationManagement,
@@ -26,7 +27,9 @@ import {
   createRecentPeopleManagement,
   createVerificationDeliveryRetry,
   createWorkspaceLifecycle,
+  invitationAuditFrom,
   type MemberUiStateManagement,
+  personalLifecycleAuditFrom,
   PostgresActiveWorkspaceResolver,
   PostgresActorRevalidation,
   PostgresMemberUiStateRepository,
@@ -42,7 +45,10 @@ import {
   PostgresWorkspacePersonalization,
   PostgresWorkspaceRegistration,
   PostgresWorkspaceSettings,
+  registrationAuditFrom,
+  settingsAuditFrom,
   type SettingsPlanningPublisher,
+  workspaceResetActivityAuditFrom,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import {
   createFirstWorkspaceRegistration,
@@ -54,34 +60,16 @@ import {
 } from "../../packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail.ts";
 import {
   createLegalAcceptance,
+  exportAuditFrom,
+  importAuditFrom,
   type LegalAcceptance,
-  PostgresApiTokenAudit,
-  PostgresAuthenticationAudit,
-  PostgresCommunicationAudit,
-  PostgresDavAudit,
-  PostgresExportAudit,
-  PostgresFileAudit,
-  PostgresGiftAudit,
+  PostgresAuditEventRecorder,
   PostgresGovernanceWorkspaceLifecycleImpact,
-  PostgresImportantDateAudit,
-  PostgresImportAudit,
-  PostgresInteractionAudit,
-  PostgresInvitationAudit,
-  PostgresJournalAudit,
   PostgresLegalAcceptanceRepository,
-  PostgresPersonalLifecycleAudit,
-  PostgresPersonCreatedAudit,
-  PostgresPersonLifecycleAudit,
-  PostgresProfileFactAudit,
-  PostgresRegistrationAudit,
-  PostgresRelationshipAudit,
-  PostgresReminderAudit,
-  PostgresSettingsAudit,
-  PostgresTaskAudit,
-  PostgresWorkspaceResetActivityAudit,
 } from "../../packages/backend/modules/governance/public.ts";
 import { createWorkspaceInvitationCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import {
+  apiTokenAuditFrom,
   type ApiTokenManagement,
   AuthenticationSubjectDigester,
   type AuthenticationSubjectKeyset,
@@ -94,6 +82,7 @@ import {
 import {
   AesGcmDavSecretBox,
   createDavSyncManagement,
+  davAuditFrom,
   type DavEncryptionKeyset,
   type DavRemoteClient,
   type DavSyncManagement,
@@ -131,7 +120,10 @@ import {
   createPeopleManagement,
   createPersonLifecycle,
   createProfileFactManagement,
+  importantDateAuditFrom,
   type ImportantDateManagement,
+  personCreatedAuditFrom,
+  personLifecycleAuditFrom,
   PostgresImportantDateRepository,
   PostgresPeopleExportBoundary,
   PostgresPeopleImportBoundary,
@@ -144,6 +136,7 @@ import {
   PostgresProfileFactRepository,
   PostgresRelationshipPersonBoundary,
   PostgresTagPersonalization,
+  profileFactAuditFrom,
 } from "../../packages/backend/modules/people/public.ts";
 import {
   createReminderManagement,
@@ -154,13 +147,17 @@ import {
   PostgresReminderRulePersonalization,
   PostgresReminderWorkspaceBoundary,
   PostgresTaskRepository,
+  reminderAuditFrom,
   type ReminderManagement,
+  taskAuditFrom,
   type TaskManagement,
 } from "../../packages/backend/modules/planning/public.ts";
 import {
+  communicationAuditFrom,
   type CommunicationManagement,
   createCommunicationManagement,
   createInteractionManagement,
+  interactionAuditFrom,
   type InteractionManagement,
   PostgresCommunicationRepository,
   PostgresInteractionPersonalizationReferences,
@@ -170,6 +167,7 @@ import {
 } from "../../packages/backend/modules/interactions/public.ts";
 import {
   createJournalManagement,
+  journalAuditFrom,
   type JournalManagement,
   PostgresJournalPersonalizationReferences,
   PostgresJournalRepository,
@@ -183,6 +181,7 @@ import {
   PostgresRelationshipPersonalizationReferences,
   PostgresRelationshipRepository,
   PostgresRelationshipWorkspaceLifecycleImpact,
+  relationshipAuditFrom,
   type RelationshipManagement,
 } from "../../packages/backend/modules/relationships/public.ts";
 import {
@@ -250,6 +249,7 @@ import {
   createPersonFileManagement,
   createStorageSettings,
   DeclaredMediaScanner,
+  fileAuditFrom,
   type ObjectStorage,
   PERSON_FILE_MAX_BYTES,
   type PersonFileManagement,
@@ -266,6 +266,7 @@ import {
 } from "../../packages/backend/modules/files/public.ts";
 import {
   createGiftManagement,
+  giftAuditFrom,
   type GiftManagement,
   PostgresGiftAttachmentTarget,
   PostgresGiftRepository,
@@ -694,8 +695,11 @@ export function createConfiguredApiApp(
     ids,
   );
   const transaction = new PostgresRegistrationTransaction(connection.db);
+  // Governance owns `crm.audit_events`; every module describes its own events
+  // and hands them to this one writer.
+  const auditRecorder = new PostgresAuditEventRecorder();
   const registrationDependencies = {
-    audit: new PostgresRegistrationAudit(),
+    audit: registrationAuditFrom(auditRecorder),
     clock,
     identity: new PostgresIdentityRegistration(),
     ids,
@@ -721,7 +725,7 @@ export function createConfiguredApiApp(
     connection.db,
     new AuthenticationSubjectDigester(subjectKeyset),
   );
-  const authenticationAudit = new PostgresAuthenticationAudit();
+  const authenticationAudit = authenticationAuditFrom(auditRecorder);
   const protectedSessions = createProtectedSessionCoordinator({
     attemptBudget,
     audit: authenticationAudit,
@@ -738,7 +742,7 @@ export function createConfiguredApiApp(
   const apiTokens = createApiTokenManagement({
     actorContext: actors,
     actors,
-    audit: new PostgresApiTokenAudit(),
+    audit: apiTokenAuditFrom(auditRecorder),
     clock,
     ids: { next: () => ids.create() },
     repository: new PostgresApiTokenRepository(),
@@ -763,7 +767,7 @@ export function createConfiguredApiApp(
   });
   const invitationIdentity = new PostgresInvitationIdentity();
   const invitations = createWorkspaceInvitationCoordinator({
-    audit: new PostgresInvitationAudit(),
+    audit: invitationAuditFrom(auditRecorder),
     clock,
     ids,
     identity: {
@@ -806,7 +810,7 @@ export function createConfiguredApiApp(
     current?: SettingsPlanningPublisher;
   } = {};
   const settings = createSettingsManagement({
-    audit: new PostgresSettingsAudit(),
+    audit: settingsAuditFrom(auditRecorder),
     clock,
     identity: new PostgresIdentityAccountSettings(tokens),
     identityDisplay: invitationIdentity,
@@ -829,7 +833,7 @@ export function createConfiguredApiApp(
   });
   const personalLifecycle = createPersonalLifecycle({
     attemptBudget,
-    audit: new PostgresPersonalLifecycleAudit(),
+    audit: personalLifecycleAuditFrom(auditRecorder),
     authenticationAudit,
     clock,
     identity: new PostgresIdentityPersonalLifecycle(hasher),
@@ -838,7 +842,7 @@ export function createConfiguredApiApp(
   });
   const workspacePersonalization = new PostgresWorkspacePersonalization();
   const personalization = createPersonalizationManagement({
-    audit: new PostgresSettingsAudit(),
+    audit: settingsAuditFrom(auditRecorder),
     clock,
     repository: new PersonalizationRepositoryRouter(
       workspacePersonalization,
@@ -872,7 +876,7 @@ export function createConfiguredApiApp(
     );
   })();
   const workspaceLifecycle = createWorkspaceLifecycle({
-    activityAudit: new PostgresWorkspaceResetActivityAudit(),
+    activityAudit: workspaceResetActivityAuditFrom(auditRecorder),
     attemptBudget,
     audit: new PostgresWorkspaceLifecycleSecurityAudit(),
     authenticationAudit,
@@ -898,7 +902,7 @@ export function createConfiguredApiApp(
   });
   const files = createPersonFileManagement({
     actors,
-    audit: new PostgresFileAudit(),
+    audit: fileAuditFrom(auditRecorder),
     clock,
     ids: new WebCryptoFileIdentifiers(),
     keys: new WebCryptoObjectKeys(),
@@ -920,7 +924,7 @@ export function createConfiguredApiApp(
     attachments: new PostgresGiftAttachmentBoundary(
       new PostgresGiftAttachmentTarget(),
     ),
-    audit: new PostgresGiftAudit(),
+    audit: giftAuditFrom(auditRecorder),
     clock,
     currencies: new PostgresWorkspaceCurrencyBoundary(),
     ids: { next: () => ids.create() },
@@ -930,7 +934,7 @@ export function createConfiguredApiApp(
   const journal = createJournalManagement({
     activities: new PostgresJournalActivityBoundary(),
     actors,
-    audit: new PostgresJournalAudit(),
+    audit: journalAuditFrom(auditRecorder),
     clock,
     ids: { next: () => ids.create() },
     repository: new PostgresJournalRepository(),
@@ -938,7 +942,7 @@ export function createConfiguredApiApp(
   });
   const imports = createImportManagement({
     actors,
-    audit: new PostgresImportAudit(),
+    audit: importAuditFrom(auditRecorder),
     files: new PostgresFileImportBoundary(),
     ids: { next: () => ids.create() },
     people: new PostgresPeopleImportBoundary(),
@@ -947,7 +951,7 @@ export function createConfiguredApiApp(
   });
   const exports = createExportManagement({
     actors,
-    audit: new PostgresExportAudit(),
+    audit: exportAuditFrom(auditRecorder),
     clock,
     files: new PostgresExportFileBoundary(connection.db, {
       ids: new WebCryptoFileIdentifiers(),
@@ -963,7 +967,7 @@ export function createConfiguredApiApp(
   const peopleRepository = new PostgresPeopleRepository();
   const peopleManagement = createPeopleManagement({
     actors,
-    audit: new PostgresPersonCreatedAudit(),
+    audit: personCreatedAuditFrom(auditRecorder),
     clock,
     ids,
     repository: peopleRepository,
@@ -981,14 +985,14 @@ export function createConfiguredApiApp(
   });
   const peopleLifecycle = createPersonLifecycle({
     actors,
-    audit: new PostgresPersonLifecycleAudit(),
+    audit: personLifecycleAuditFrom(auditRecorder),
     clock,
     repository: new PostgresPersonLifecycleRepository(),
     transaction: peopleTransaction,
   });
   const importantDates = createImportantDateManagement({
     actors,
-    audit: new PostgresImportantDateAudit(),
+    audit: importantDateAuditFrom(auditRecorder),
     clock,
     ids,
     publisher: new PostgresPersonDateReminderPublisher(actors),
@@ -997,7 +1001,7 @@ export function createConfiguredApiApp(
   });
   const profileFacts = createProfileFactManagement({
     actors,
-    audit: new PostgresProfileFactAudit(),
+    audit: profileFactAuditFrom(auditRecorder),
     clock,
     ids,
     organizations: new PostgresProfileFactOrganizations(),
@@ -1007,7 +1011,7 @@ export function createConfiguredApiApp(
   });
   const relationships = createRelationshipManagement({
     actors,
-    audit: new PostgresRelationshipAudit(),
+    audit: relationshipAuditFrom(auditRecorder),
     clock,
     ids,
     people: new PostgresRelationshipPersonBoundary(),
@@ -1020,7 +1024,7 @@ export function createConfiguredApiApp(
   const interactionPeople = new PostgresRelationshipPersonBoundary();
   const reminders = createReminderManagement({
     actors,
-    audit: new PostgresReminderAudit(),
+    audit: reminderAuditFrom(auditRecorder),
     clock,
     people: interactionPeople,
     repository: new PostgresReminderRepository(actors),
@@ -1031,7 +1035,7 @@ export function createConfiguredApiApp(
   const interactions = {
     ...createInteractionManagement({
       actors,
-      audit: new PostgresInteractionAudit(),
+      audit: interactionAuditFrom(auditRecorder),
       clock,
       people: interactionPeople,
       publisher: reminders,
@@ -1041,7 +1045,7 @@ export function createConfiguredApiApp(
     }),
     ...createCommunicationManagement({
       actors,
-      audit: new PostgresCommunicationAudit(),
+      audit: communicationAuditFrom(auditRecorder),
       clock,
       people: interactionPeople,
       publisher: reminders,
@@ -1052,7 +1056,7 @@ export function createConfiguredApiApp(
   };
   const tasks = createTaskManagement({
     actors,
-    audit: new PostgresTaskAudit(),
+    audit: taskAuditFrom(auditRecorder),
     clock,
     cursorKeyset: subjectKeyset,
     people: interactionPeople,
@@ -1129,7 +1133,7 @@ export function createConfiguredApiApp(
       remote: davRemoteOverride ?? new HttpDavClient(),
       repository: new PostgresDavRepository(
         connection.db,
-        new PostgresDavAudit(),
+        davAuditFrom(auditRecorder),
         actors,
       ),
       secrets: new AesGcmDavSecretBox(davKeyset),
