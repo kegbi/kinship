@@ -3,8 +3,9 @@ import {
   InAppReminderDelivery,
   PostgresInAppReminderEffectStore,
   PostgresReminderDeliveryRepository,
+  reminderDeliveryAuditFrom,
 } from "../../packages/backend/modules/planning/public.ts";
-import { PostgresReminderAudit } from "../../packages/backend/modules/governance/public.ts";
+import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import {
@@ -57,7 +58,7 @@ export function createConfiguredReminderWorker(databaseUrl: string): {
     storageConfiguration.bucket,
   );
   const reminders = createReminderDeliveryWorker({
-    audit: new PostgresReminderAudit(),
+    audit: reminderDeliveryAuditFrom(new PostgresAuditEventRecorder()),
     clock,
     provider: new InAppReminderDelivery(
       new PostgresInAppReminderEffectStore(connection.db, clock),

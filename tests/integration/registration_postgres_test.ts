@@ -7,7 +7,8 @@ import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import {
   PostgresIdentityRegistration,
 } from "../../packages/backend/modules/identity/public.ts";
-import { PostgresRegistrationAudit } from "../../packages/backend/modules/governance/public.ts";
+import { registrationAuditFrom } from "../../packages/backend/modules/workspaces/public.ts";
+import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import {
   DEFAULT_RELATIONSHIP_TYPE_VOCABULARY,
   PostgresRegistrationTransaction,
@@ -587,7 +588,7 @@ Deno.test({
     );
     const identity = new PostgresIdentityRegistration();
     const workspace = new PostgresWorkspaceRegistration();
-    const audit = new PostgresRegistrationAudit();
+    const audit = registrationAuditFrom(new PostgresAuditEventRecorder());
     for (
       const check of [
         () =>

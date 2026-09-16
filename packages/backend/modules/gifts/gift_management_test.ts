@@ -1,3 +1,4 @@
+import { describeGiftEvent } from "./application/audit_events.ts";
 import {
   createGiftManagement,
   type GiftManagementDependencies,
@@ -488,4 +489,33 @@ Deno.test("GIFTS-001 contains transaction failures as unavailable", async () => 
     { status: "unavailable" },
   );
   assertEquals((await management.list(actor, personId)).status, "ready");
+});
+
+Deno.test("GIFTS-006 the gift event pins the row governance writes", () => {
+  const event = describeGiftEvent({
+    action: "changed",
+    actor,
+    occurredAt: new Date("2026-09-16T08:30:00.000Z"),
+    record: {
+      createdAt: "2026-09-01T00:00:00.000Z",
+      id: "10000000-0000-4000-8000-000000000007",
+      name: "Field guide",
+      personId,
+      status: "given",
+      updatedAt: "2026-09-16T08:30:00.000Z",
+    },
+    recordType: "gift",
+    transaction: { opaque: "gift-describe" },
+  });
+  assertEquals(event, {
+    action: "gifts.gift-created-or-state-changed",
+    actorMemberId: actor.memberId,
+    occurredAt: new Date("2026-09-16T08:30:00.000Z"),
+    payload: { action: "changed", personId, status: "given" },
+    personId,
+    subjectId: "10000000-0000-4000-8000-000000000007",
+    subjectType: "gift",
+    visibleOnDashboard: true,
+    workspaceId: actor.workspaceId,
+  });
 });

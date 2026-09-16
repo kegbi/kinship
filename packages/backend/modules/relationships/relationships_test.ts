@@ -1,12 +1,14 @@
+import { describeRelationshipEvent } from "./application/audit_events.ts";
 import {
   createRelationshipManagement,
   PostgresRelationshipRepository,
+  relationshipAuditFrom,
   type RelationshipDependencies,
   type RelationshipRecord,
 } from "./public.ts";
 import type { PeopleTransaction } from "../people/public.ts";
 import type { WorkspaceRelationshipTypeRecord } from "../workspaces/public.ts";
-import { PostgresRelationshipAudit } from "../governance/public.ts";
+import { PostgresAuditEventRecorder } from "../governance/public.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -62,11 +64,11 @@ async function directDependencies(target: string) {
 
 Deno.test("relationships and governance have no direct dependency edge", async () => {
   const governance = new URL(
-    "../governance/adapters/postgres/relationship_audit.ts",
+    "../governance/adapters/postgres/audit_event_recorder.ts",
     import.meta.url,
   ).href;
   const relationships = new URL(
-    "./application/manage_relationships.ts",
+    "./application/audit_events.ts",
     import.meta.url,
   ).href;
   const [governanceDependencies, relationshipDependencies] = await Promise.all([
@@ -77,19 +79,20 @@ Deno.test("relationships and governance have no direct dependency edge", async (
     !governanceDependencies.some((dependency) =>
       dependency.includes("/modules/relationships/")
     ),
-    "governance adapter imports the relationships module",
+    "the audit recorder imports the relationships module",
   );
   assert(
     !relationshipDependencies.some((dependency) =>
       dependency.includes("/modules/governance/")
     ),
-    "relationships application imports the governance module",
+    "the relationship audit description imports the governance module",
   );
 });
 
 Deno.test("API composition can inject governance audit structurally", () => {
-  const audit: RelationshipDependencies["audit"] =
-    new PostgresRelationshipAudit();
+  const audit: RelationshipDependencies["audit"] = relationshipAuditFrom(
+    new PostgresAuditEventRecorder(),
+  );
   assert(
     typeof audit.record === "function" &&
       typeof audit.assertPostcondition === "function",
@@ -750,4 +753,47 @@ Deno.test("GAP-008 a revoked actor is refused before the relationship graph is t
 
   const listed = await revoked.management.list(actor, sourceId);
   assert(listed.status === "forbidden", "a revoked member still read edges");
+});
+
+Deno.test("the relationship event pins the row governance writes", () => {
+  const edge: RelationshipRecord = {
+    createdAt: "2026-09-01T00:00:00.000Z",
+    forwardLabel: "sibling",
+    fromPersonId: sourceId,
+    id: relationshipId,
+    relationshipTypeArchived: false,
+    relationshipTypeId: typeId,
+    reverseLabel: "sibling",
+    status: "active",
+    toPersonId: targetId,
+    updatedAt: "2026-09-16T08:30:00.000Z",
+  };
+  const event = describeRelationshipEvent({
+    action: "update",
+    actor,
+    after: edge,
+    before: edge,
+    occurredAt: new Date("2026-09-16T08:30:00.000Z"),
+    transaction: { opaque: "relationship-describe" },
+  });
+  const expected = {
+    action: "relationships.relationship-changed",
+    actorMemberId: actor.memberId,
+    occurredAt: new Date("2026-09-16T08:30:00.000Z"),
+    payload: {
+      action: "update",
+      fromPersonId: sourceId,
+      relationshipTypeId: typeId,
+      toPersonId: targetId,
+    },
+    personId: sourceId,
+    subjectId: relationshipId,
+    subjectType: "relationship",
+    visibleOnDashboard: true,
+    workspaceId: actor.workspaceId,
+  };
+  assert(
+    JSON.stringify(event) === JSON.stringify(expected),
+    `relationship event drifted: ${JSON.stringify(event)}`,
+  );
 });

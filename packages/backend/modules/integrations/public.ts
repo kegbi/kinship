@@ -20,3 +20,5 @@ export {
 export type { DavEncryptionKeyset } from "./adapters/crypto/dav_secret_box.ts";
 export { HttpDavClient } from "./adapters/dav/http_dav_client.ts";
 export { PostgresDavRepository } from "./adapters/postgres/dav_repository.ts";
+export { davAuditFrom } from "./application/audit_events.ts";
+export type { DavAudit, DavAuditCommand } from "./application/audit_events.ts";

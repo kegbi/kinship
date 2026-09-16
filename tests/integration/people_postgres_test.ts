@@ -22,12 +22,13 @@ import {
   PostgresRelationshipPersonBoundary,
 } from "../../packages/backend/modules/people/public.ts";
 import {
-  PostgresImportantDateAudit,
-  PostgresPersonCreatedAudit,
-  PostgresPersonLifecycleAudit,
-  PostgresProfileFactAudit,
-  PostgresRelationshipAudit,
-} from "../../packages/backend/modules/governance/public.ts";
+  importantDateAuditFrom,
+  personCreatedAuditFrom,
+  personLifecycleAuditFrom,
+  profileFactAuditFrom,
+} from "../../packages/backend/modules/people/public.ts";
+import { relationshipAuditFrom } from "../../packages/backend/modules/relationships/public.ts";
+import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import {
   type ActorRevalidation,
   DEFAULT_RELATIONSHIP_TYPE_VOCABULARY,
@@ -69,7 +70,7 @@ const peopleConnection = connectDatabase(databaseUrl);
 const actors = new PostgresActorRevalidation();
 const people = createPeopleManagement({
   actors,
-  audit: new PostgresPersonCreatedAudit(),
+  audit: personCreatedAuditFrom(new PostgresAuditEventRecorder()),
   clock: { now: () => new Date() },
   ids: { create: () => crypto.randomUUID() },
   repository: new PostgresPeopleRepository(),
@@ -77,7 +78,7 @@ const people = createPeopleManagement({
 });
 const profileFacts = createProfileFactManagement({
   actors,
-  audit: new PostgresProfileFactAudit(),
+  audit: profileFactAuditFrom(new PostgresAuditEventRecorder()),
   clock: { now: () => new Date() },
   ids: { create: () => crypto.randomUUID() },
   organizations: new PostgresProfileFactOrganizations(),
@@ -480,7 +481,7 @@ function racingPeople(
   };
   return createPeopleManagement({
     actors: racingActors,
-    audit: new PostgresPersonCreatedAudit(),
+    audit: personCreatedAuditFrom(new PostgresAuditEventRecorder()),
     clock: { now: () => new Date() },
     ids: { create: () => crypto.randomUUID() },
     repository,
@@ -2902,7 +2903,7 @@ Deno.test({
     const fixedClock = new Date("2099-01-01T00:00:00.000Z");
     const lifecycle = createPersonLifecycle({
       actors,
-      audit: new PostgresPersonLifecycleAudit(),
+      audit: personLifecycleAuditFrom(new PostgresAuditEventRecorder()),
       clock: { now: () => fixedClock },
       repository: new PostgresPersonLifecycleRepository(),
       transaction: new PostgresPeopleTransaction(peopleConnection.db),
@@ -5396,7 +5397,7 @@ Deno.test({
       const transaction = new PostgresPeopleTransaction(peopleConnection.db);
       const peopleManagement = createPeopleManagement({
         actors,
-        audit: new PostgresPersonCreatedAudit(),
+        audit: personCreatedAuditFrom(new PostgresAuditEventRecorder()),
         clock: { now: () => new Date() },
         ids: { create: () => crypto.randomUUID() },
         repository: new PostgresPeopleRepository(),
@@ -5405,7 +5406,7 @@ Deno.test({
       const workspace = new PostgresRelationshipWorkspaceBoundary();
       return {
         actors,
-        audit: new PostgresRelationshipAudit(),
+        audit: relationshipAuditFrom(new PostgresAuditEventRecorder()),
         clock: { now: () => new Date() },
         ids: { create: () => crypto.randomUUID() },
         people: new PostgresRelationshipPersonBoundary(),
@@ -5737,7 +5738,7 @@ Deno.test({
     assert(companion, "the revocation fixture has a second person");
     const importantDates = createImportantDateManagement({
       actors,
-      audit: new PostgresImportantDateAudit(),
+      audit: importantDateAuditFrom(new PostgresAuditEventRecorder()),
       clock: { now: () => new Date() },
       ids: { create: () => crypto.randomUUID() },
       publisher: new PostgresPersonDateReminderPublisher(actors),
@@ -5746,14 +5747,14 @@ Deno.test({
     });
     const lifecycle = createPersonLifecycle({
       actors,
-      audit: new PostgresPersonLifecycleAudit(),
+      audit: personLifecycleAuditFrom(new PostgresAuditEventRecorder()),
       clock: { now: () => new Date() },
       repository: new PostgresPersonLifecycleRepository(),
       transaction: new PostgresPeopleTransaction(peopleConnection.db),
     });
     const relationships = createRelationshipManagement({
       actors,
-      audit: new PostgresRelationshipAudit(),
+      audit: relationshipAuditFrom(new PostgresAuditEventRecorder()),
       clock: { now: () => new Date() },
       ids: { create: () => crypto.randomUUID() },
       people: new PostgresRelationshipPersonBoundary(),

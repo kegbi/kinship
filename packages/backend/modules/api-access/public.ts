@@ -23,3 +23,4 @@ export {
   decodeAuthenticationSubjectKeyset,
 } from "./authentication_subject.ts";
 export type { AuthenticationSubjectKeyset } from "./authentication_subject.ts";
+export { apiTokenAuditFrom } from "./application/audit_events.ts";

@@ -4,10 +4,7 @@ import {
   createConfiguredApiApp,
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
-import {
-  PostgresReminderAudit,
-  PostgresTaskAudit,
-} from "../../packages/backend/modules/governance/public.ts";
+import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import {
   type PeopleActor,
   PostgresPeopleTransaction,
@@ -24,7 +21,10 @@ import {
   PostgresReminderRepository,
   PostgresReminderWorkspaceBoundary,
   PostgresTaskRepository,
+  reminderAuditFrom,
+  reminderDeliveryAuditFrom,
   type ReminderDeliveryProvider,
+  taskAuditFrom,
 } from "../../packages/backend/modules/planning/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import * as generatedPlanningClient from "../../packages/contracts/generated/auth-client.ts";
@@ -1786,7 +1786,7 @@ Deno.test("PLANNING-002 PostgreSQL keeps reminder delivery, tenancy, cadence, an
 
   const provider = new DurableFakeProvider();
   const worker = createReminderDeliveryWorker({
-    audit: new PostgresReminderAudit(),
+    audit: reminderDeliveryAuditFrom(new PostgresAuditEventRecorder()),
     clock: { now: () => new Date() },
     provider,
     repository: deliveryRepository,
@@ -2011,7 +2011,7 @@ Deno.test("PLANNING-002 PostgreSQL keeps reminder delivery, tenancy, cadence, an
     where id = ${crashOccurrence}::uuid
   `;
   const durableWorker = createReminderDeliveryWorker({
-    audit: new PostgresReminderAudit(),
+    audit: reminderDeliveryAuditFrom(new PostgresAuditEventRecorder()),
     clock: { now: () => new Date() },
     provider: durableProvider,
     repository: deliveryRepository,
@@ -2097,7 +2097,7 @@ Deno.test("PLANNING-002 PostgreSQL replenishes ninth occurrence and enforces del
     where reminder_id = ${reminderId}::uuid and occurs_on = '2026-10-20'::date
   `;
   const rollingWorker = createReminderDeliveryWorker({
-    audit: new PostgresReminderAudit(),
+    audit: reminderDeliveryAuditFrom(new PostgresAuditEventRecorder()),
     clock: { now: () => new Date("2026-10-20T03:00:00Z") },
     provider: new DurableFakeProvider(),
     repository: deliveryRepository,
@@ -2454,7 +2454,7 @@ Deno.test("PLANNING-002 PostgreSQL timezone regeneration preserves actionability
     `;
   };
   const worker = createReminderDeliveryWorker({
-    audit: new PostgresReminderAudit(),
+    audit: reminderDeliveryAuditFrom(new PostgresAuditEventRecorder()),
     clock: { now: () => new Date() },
     provider: new InAppReminderDelivery(
       new PostgresInAppReminderEffectStore(deliveryConnection.db, {
@@ -2678,7 +2678,7 @@ Deno.test("PLANNING-002 PostgreSQL keeps one stable calendar identity across tim
     new PostgresActorRevalidation(),
   );
   const worker = createReminderDeliveryWorker({
-    audit: new PostgresReminderAudit(),
+    audit: reminderDeliveryAuditFrom(new PostgresAuditEventRecorder()),
     clock: { now: () => new Date() },
     provider: new InAppReminderDelivery(
       new PostgresInAppReminderEffectStore(deliveryConnection.db, {
@@ -3063,7 +3063,7 @@ Deno.test("PLANNING-002 PostgreSQL important dates publish one deliverable in-ap
     ),
   );
   const worker = createReminderDeliveryWorker({
-    audit: new PostgresReminderAudit(),
+    audit: reminderDeliveryAuditFrom(new PostgresAuditEventRecorder()),
     clock: { now: () => new Date() },
     provider,
     repository: deliveryRepository,
@@ -3333,7 +3333,7 @@ Deno.test("PLANNING-002 PostgreSQL preserves every important-date lead rule thro
     where id in (${initial[0].id}::uuid, ${initial[1].id}::uuid)
   `;
   const worker = createReminderDeliveryWorker({
-    audit: new PostgresReminderAudit(),
+    audit: reminderDeliveryAuditFrom(new PostgresAuditEventRecorder()),
     clock: { now: () => new Date() },
     provider: new InAppReminderDelivery(
       new PostgresInAppReminderEffectStore(deliveryConnection.db, {
@@ -3645,7 +3645,7 @@ Deno.test("PLANNING-002 PostgreSQL reactivates future one-time and recurring rem
     return body.reminder;
   };
   const worker = createReminderDeliveryWorker({
-    audit: new PostgresReminderAudit(),
+    audit: reminderDeliveryAuditFrom(new PostgresAuditEventRecorder()),
     clock: { now: () => new Date() },
     provider: new DurableFakeProvider(),
     repository: deliveryRepository,
@@ -3796,7 +3796,7 @@ Deno.test("PLANNING-002 PostgreSQL preserves an in-flight durable effect across 
     reconcile: (command) => durable.reconcile(command),
   };
   const worker = createReminderDeliveryWorker({
-    audit: new PostgresReminderAudit(),
+    audit: reminderDeliveryAuditFrom(new PostgresAuditEventRecorder()),
     clock: { now: () => new Date() },
     provider: barrierProvider,
     repository: deliveryRepository,
@@ -3936,7 +3936,7 @@ Deno.test("PLANNING-002 PostgreSQL recovers an expired confirmed claim after dis
     where id = ${occurrenceId}::uuid
   `;
   const recoveryWorker = createReminderDeliveryWorker({
-    audit: new PostgresReminderAudit(),
+    audit: reminderDeliveryAuditFrom(new PostgresAuditEventRecorder()),
     clock: { now: () => new Date() },
     provider: durable,
     repository: deliveryRepository,
@@ -4049,7 +4049,7 @@ Deno.test("PLANNING-002 PostgreSQL cancels an expired unattempted claim after di
   await staleProcessObserved;
 
   const maintenanceWorker = createReminderDeliveryWorker({
-    audit: new PostgresReminderAudit(),
+    audit: reminderDeliveryAuditFrom(new PostgresAuditEventRecorder()),
     clock: { now: () => new Date() },
     provider: durable,
     repository: deliveryRepository,
@@ -4154,7 +4154,7 @@ Deno.test({
     const transaction = new PostgresPeopleTransaction(deliveryConnection.db);
     const tasks = createTaskManagement({
       actors,
-      audit: new PostgresTaskAudit(),
+      audit: taskAuditFrom(new PostgresAuditEventRecorder()),
       clock: { now: () => new Date() },
       cursorKeyset: {
         activeVersion: 1,
@@ -4166,7 +4166,7 @@ Deno.test({
     });
     const reminders = createReminderManagement({
       actors,
-      audit: new PostgresReminderAudit(),
+      audit: reminderAuditFrom(new PostgresAuditEventRecorder()),
       clock: { now: () => new Date() },
       people: new PostgresRelationshipPersonBoundary(),
       repository: new PostgresReminderRepository(actors),

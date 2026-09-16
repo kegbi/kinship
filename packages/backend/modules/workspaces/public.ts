@@ -179,3 +179,11 @@ export type {
   ResolvedSessionContext,
   SignInCommand,
 } from "./application/protected_session.ts";
+export {
+  authenticationAuditFrom,
+  invitationAuditFrom,
+  personalLifecycleAuditFrom,
+  registrationAuditFrom,
+  settingsAuditFrom,
+  workspaceResetActivityAuditFrom,
+} from "./application/audit_events.ts";

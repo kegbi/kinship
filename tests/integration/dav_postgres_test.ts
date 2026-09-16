@@ -6,12 +6,13 @@ import {
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import {
+  davAuditFrom,
   type DavRemoteChange,
   type DavRemoteClient,
   DavRemoteFailure,
   PostgresDavRepository,
 } from "../../packages/backend/modules/integrations/public.ts";
-import { PostgresDavAudit } from "../../packages/backend/modules/governance/public.ts";
+import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import { databaseFromSession } from "../../packages/backend/platform/postgres/session.ts";
 import { sql as kyselySql } from "kysely";
@@ -244,7 +245,7 @@ Deno.test("[INTEGRATION-001] PostgreSQL DAV checkpoints isolate tenants and reco
   const boundary = connectDatabase(databaseUrl);
   const davRepository = new PostgresDavRepository(
     boundary.db,
-    new PostgresDavAudit(),
+    davAuditFrom(new PostgresAuditEventRecorder()),
     new PostgresActorRevalidation(),
   );
   const rollbackId = crypto.randomUUID();
@@ -956,7 +957,7 @@ Deno.test({
       );
       const repository = new PostgresDavRepository(
         connection.db,
-        new PostgresDavAudit(),
+        davAuditFrom(new PostgresAuditEventRecorder()),
         new PostgresActorRevalidation(),
       );
       assert(

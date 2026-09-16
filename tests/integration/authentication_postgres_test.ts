@@ -11,7 +11,8 @@ import {
   AuthenticationSubjectDigester,
   PostgresAuthenticationAttemptBudget,
 } from "../../packages/backend/modules/api-access/public.ts";
-import { PostgresAuthenticationAudit } from "../../packages/backend/modules/governance/public.ts";
+import { authenticationAuditFrom } from "../../packages/backend/modules/workspaces/public.ts";
+import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import {
   AesGcmMfaSecretBox,
   Argon2idPasswordHasher,
@@ -838,7 +839,7 @@ Deno.test({
     };
     const coordinator = createProtectedSessionCoordinator({
       attemptBudget,
-      audit: new PostgresAuthenticationAudit(),
+      audit: authenticationAuditFrom(new PostgresAuditEventRecorder()),
       clock: { now: () => new Date() },
       identity: new PostgresIdentityAuthentication(
         connection.db,
@@ -1047,7 +1048,7 @@ Deno.test({
         },
       });
       const transaction = new PostgresRegistrationTransaction(tracked);
-      const audit = new PostgresAuthenticationAudit();
+      const audit = authenticationAuditFrom(new PostgresAuditEventRecorder());
       try {
         return await transaction.run(async (session) => {
           const id = await audit.recordFailure({
@@ -1149,7 +1150,7 @@ Deno.test({
     const occurredAt = new Date("2026-08-14T12:00:00.123Z");
     const connection = connectDatabase(databaseUrl);
     const transaction = new PostgresRegistrationTransaction(connection.db);
-    const audit = new PostgresAuthenticationAudit();
+    const audit = authenticationAuditFrom(new PostgresAuditEventRecorder());
     try {
       for (const outcome of ["succeeded", "failed"] as const) {
         let firstInserted!: () => void;

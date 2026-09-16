@@ -7,6 +7,8 @@ export interface ClaimedReminderOccurrence {
   readonly claimToken: string;
   readonly id: string;
   readonly memberId: string;
+  /** The reminder's person, when the reminder names one. */
+  readonly personId?: string;
   readonly providerIdempotencyKey: string;
   readonly providerResultState:
     | "ambiguous"

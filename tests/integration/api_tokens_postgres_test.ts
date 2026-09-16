@@ -5,7 +5,8 @@ import {
   PostgresApiTokenTransaction,
   WebCryptoApiTokenSecrets,
 } from "../../packages/backend/modules/api-access/public.ts";
-import { PostgresApiTokenAudit } from "../../packages/backend/modules/governance/public.ts";
+import { apiTokenAuditFrom } from "../../packages/backend/modules/api-access/public.ts";
+import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
@@ -284,7 +285,7 @@ Deno.test({
       const tokens = createApiTokenManagement({
         actorContext: actors,
         actors,
-        audit: new PostgresApiTokenAudit(),
+        audit: apiTokenAuditFrom(new PostgresAuditEventRecorder()),
         clock: { now: () => new Date() },
         ids: { next: () => crypto.randomUUID() },
         repository: new PostgresApiTokenRepository(),

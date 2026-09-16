@@ -345,12 +345,12 @@ Deno.test("[OPS-001E1] RustFS owns local and recovery S3 boundaries", async () =
   }
   const auditAdapter = await Deno.readTextFile(
     new URL(
-      "../packages/backend/modules/governance/adapters/postgres/file_audit.ts",
+      "../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts",
       import.meta.url,
     ),
   );
   assert(
-    !auditAdapter.includes('from "../../../files'),
+    !/from "\.\.\/\.\.\/\.\.\/[a-z-]+\/public\.ts"/.test(auditAdapter),
     "governance keeps its accepted dependency manifest",
   );
 });

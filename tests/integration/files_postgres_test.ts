@@ -6,7 +6,8 @@ import {
   WebCryptoFileIdentifiers,
   WebCryptoObjectKeys,
 } from "../../packages/backend/modules/files/public.ts";
-import { PostgresFileAudit } from "../../packages/backend/modules/governance/public.ts";
+import { fileAuditFrom } from "../../packages/backend/modules/files/public.ts";
+import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/public.ts";
 import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
@@ -651,7 +652,7 @@ Deno.test({
       );
       const files = createPersonFileManagement({
         actors: new PostgresActorRevalidation(),
-        audit: new PostgresFileAudit(),
+        audit: fileAuditFrom(new PostgresAuditEventRecorder()),
         clock: { now: () => new Date() },
         ids: new WebCryptoFileIdentifiers(),
         keys: new WebCryptoObjectKeys(),

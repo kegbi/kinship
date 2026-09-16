@@ -1,6 +1,7 @@
 import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
+import type { DavAudit } from "../../application/audit_events.ts";
 import type {
   DavActor,
   DavActorRevalidation,
@@ -21,15 +22,6 @@ interface SubscriptionRow {
   readonly remote_sync_token: string | null;
   readonly remote_url: string;
   readonly username: string | null;
-}
-interface DavAudit {
-  record(
-    command: {
-      readonly actor: DavActor;
-      readonly event: DavAuditEvent;
-      readonly transaction: { readonly opaque: unknown };
-    },
-  ): Promise<void>;
 }
 const errors = new Set([
   "dav_authentication_failed",

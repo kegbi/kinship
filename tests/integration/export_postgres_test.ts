@@ -10,7 +10,10 @@ import {
   WebCryptoObjectKeys,
 } from "../../packages/backend/modules/files/public.ts";
 import { PostgresPeopleExportBoundary } from "../../packages/backend/modules/people/public.ts";
-import { PostgresExportAudit } from "../../packages/backend/modules/governance/public.ts";
+import {
+  exportAuditFrom,
+  PostgresAuditEventRecorder,
+} from "../../packages/backend/modules/governance/public.ts";
 import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
@@ -443,7 +446,7 @@ Deno.test({
       const storage = new CapturedStorage();
       const exports = createExportManagement({
         actors: new PostgresActorRevalidation(),
-        audit: new PostgresExportAudit(),
+        audit: exportAuditFrom(new PostgresAuditEventRecorder()),
         clock: { now: () => new Date() },
         files: new PostgresExportFileBoundary(connection.db, {
           ids: new WebCryptoFileIdentifiers(),

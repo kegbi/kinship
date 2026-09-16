@@ -582,6 +582,7 @@ interface ClaimRow {
   readonly claim_token: string;
   readonly id: string;
   readonly member_id: string;
+  readonly person_id: string | null;
   readonly provider_idempotency_key: string;
   readonly provider_result_state:
     | "ambiguous"
@@ -801,8 +802,9 @@ export class PostgresReminderDeliveryRepository
       from due, crm.reminders reminder
       where occurrence.id = due.id and reminder.id = occurrence.reminder_id
       returning occurrence.id::text, occurrence.member_id::text,
-        reminder.workspace_id::text, occurrence.claim_token::text,
-        occurrence.attempt_count, occurrence.provider_idempotency_key,
+        reminder.person_id::text, reminder.workspace_id::text,
+        occurrence.claim_token::text, occurrence.attempt_count,
+        occurrence.provider_idempotency_key,
         occurrence.provider_result_state, occurrence.title_snapshot as title,
         occurrence.body_snapshot as body
     `.execute(this.database);
@@ -812,6 +814,7 @@ export class PostgresReminderDeliveryRepository
       claimToken: row.claim_token,
       id: row.id,
       memberId: row.member_id,
+      ...(row.person_id ? { personId: row.person_id } : {}),
       providerIdempotencyKey: row.provider_idempotency_key,
       providerResultState: row.provider_result_state,
       title: row.title ?? "Reminder",

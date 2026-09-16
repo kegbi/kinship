@@ -2,7 +2,8 @@ import { connectDatabase } from "../../packages/backend/platform/postgres/databa
 import { createJournalManagement } from "../../packages/backend/modules/journal/public.ts";
 import { PostgresJournalRepository } from "../../packages/backend/modules/journal/public.ts";
 import { PostgresJournalActivityBoundary } from "../../packages/backend/modules/interactions/public.ts";
-import { PostgresJournalAudit } from "../../packages/backend/modules/governance/public.ts";
+import { journalAuditFrom } from "../../packages/backend/modules/journal/public.ts";
+import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/public.ts";
 import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
@@ -280,7 +281,7 @@ Deno.test({
       const journal = createJournalManagement({
         activities: new PostgresJournalActivityBoundary(),
         actors: new PostgresActorRevalidation(),
-        audit: new PostgresJournalAudit(),
+        audit: journalAuditFrom(new PostgresAuditEventRecorder()),
         clock: { now: () => new Date() },
         ids: { next: () => crypto.randomUUID() },
         repository: new PostgresJournalRepository(),
