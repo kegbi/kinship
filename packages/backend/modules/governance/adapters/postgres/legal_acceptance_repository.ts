@@ -1,8 +1,8 @@
 import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type {
   LegalAcceptanceRepository,
-  LegalActor,
   LegalDocument,
 } from "../../application/legal_acceptance.ts";
 
@@ -24,28 +24,6 @@ function document(row: DocumentRow): LegalDocument {
   };
 }
 
-async function authorized(
-  database: Kysely<ApplicationDatabase>,
-  actor: LegalActor,
-): Promise<boolean> {
-  const result = await sql<{ readonly authorized: boolean }>`
-    select exists (
-      select 1 from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      where account.id = ${actor.userId}::uuid
-        and account.status = 'active' and account.deleted_at is null
-        and member.id = ${actor.memberId}::uuid
-        and member.workspace_id = ${actor.workspaceId}::uuid
-        and member.role = ${actor.role}
-        and member.status = 'active' and member.left_at is null
-        and workspace.id = ${actor.workspaceId}::uuid
-        and workspace.status = 'active' and workspace.deleted_at is null
-    ) as authorized
-  `.execute(database);
-  return Boolean(result.rows[0]?.authorized);
-}
-
 const documentColumns = sql`document.id::text, document.document_type,
   document.version, document.content,
   case when document.published_at is null then null else
@@ -55,10 +33,9 @@ export class PostgresLegalAcceptanceRepository
   implements LegalAcceptanceRepository {
   constructor(private readonly database: Kysely<ApplicationDatabase>) {}
 
-  async requirements(actor: LegalActor) {
-    if (!await authorized(this.database, actor)) {
-      return { status: "forbidden" as const };
-    }
+  async requirements(
+    command: Parameters<LegalAcceptanceRepository["requirements"]>[0],
+  ) {
     const result = await sql<DocumentRow>`
       select ${documentColumns}
       from crm.legal_documents document
@@ -68,12 +45,12 @@ export class PostgresLegalAcceptanceRepository
         and not exists (
           select 1 from crm.legal_acceptances acceptance
           where acceptance.legal_document_id = document.id
-            and acceptance.user_id = ${actor.userId}::uuid
-            and acceptance.workspace_id = ${actor.workspaceId}::uuid
+            and acceptance.user_id = ${command.userId}::uuid
+            and acceptance.workspace_id = ${command.workspaceId}::uuid
         )
       order by case document.document_type when 'terms' then 1 when 'privacy' then 2 else 3 end,
         document.document_type, document.version, document.id
-    `.execute(this.database);
+    `.execute(databaseFromSession(command.transaction));
     return { documents: result.rows.map(document), status: "ready" as const };
   }
 
@@ -93,12 +70,10 @@ export class PostgresLegalAcceptanceRepository
   }
 
   accept(command: Parameters<LegalAcceptanceRepository["accept"]>[0]) {
-    return this.database.transaction().execute(async (transaction) => {
+    return (async () => {
+      const transaction = databaseFromSession(command.transaction);
       await sql`select pg_advisory_xact_lock(hashtextextended(${`${command.userId}:${command.workspaceId}`}, 0))`
         .execute(transaction);
-      if (!await authorized(transaction, command)) {
-        return { status: "forbidden" as const };
-      }
       const selected = await sql<{
         readonly document_type: string;
         readonly version: string;
@@ -157,6 +132,6 @@ export class PostgresLegalAcceptanceRepository
         documentId: command.documentId,
         status: "accepted" as const,
       };
-    });
+    })();
   }
 }

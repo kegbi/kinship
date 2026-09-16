@@ -18,6 +18,8 @@ Deno.test("PLANNING-002 Today reminder projection uses the bounded current insta
   let received: Parameters<TodayRemindersRepository["get"]>[0] | undefined;
   const now = new Date("2026-08-18T12:00:00.000Z");
   const today = createTodayReminders({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     clock: { now: () => now },
     repository: {
       get(command) {

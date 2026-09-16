@@ -288,7 +288,9 @@ export class PostgresPersonProfileRepository
         person.is_deceased, person.archived_at,
         to_char(person.updated_at at time zone 'UTC',
           'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at,
-        coalesce(member.self_person_id = person.id, false) as is_self,
+        coalesce((select self.self_person_id from crm.workspace_members self
+          where self.id = ${command.memberId}::uuid) = person.id,
+          false) as is_self,
         coalesce(tag_summary.tag_count, 0)::int as tag_count,
         coalesce(tag_preview.tags, '[]'::jsonb) as tags
         , coalesce(profile_sections.sections, '[]'::jsonb) as profile_sections,
@@ -296,9 +298,7 @@ export class PostgresPersonProfileRepository
         coalesce(due.open_task_count, 0)::int as open_task_count,
         due.next_reminder_at, due.stay_in_touch_at
         ${summaryColumns}
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
+      from (select ${command.workspaceId}::uuid as id) workspace
       left join crm.people person
         on person.id = ${command.personId}::uuid
         and person.workspace_id = workspace.id
@@ -370,7 +370,7 @@ export class PostgresPersonProfileRepository
               and reminder.workspace_id = workspace.id
             where reminder.person_id = person.id and reminder.is_active
               and reminder.deleted_at is null
-              and occurrence.member_id = member.id
+              and occurrence.member_id = ${command.memberId}::uuid
               and occurrence.status in ('pending', 'retry')
             order by occurrence.deliver_at, occurrence.id limit 1
           ) as next_reminder_at,
@@ -382,20 +382,8 @@ export class PostgresPersonProfileRepository
           ) as stay_in_touch_at
       ) due on true
       ${summaryJoin}
-      where account.id = ${command.userId}::uuid
-        and account.status = 'active'
-        and account.deleted_at is null
-        and member.id = ${command.memberId}::uuid
-        and member.workspace_id = ${command.workspaceId}::uuid
-        and member.role = ${command.role}
-        and member.status = 'active'
-        and member.left_at is null
-        and workspace.id = ${command.workspaceId}::uuid
-        and workspace.status = 'active'
-        and workspace.deleted_at is null
     `.execute(this.database);
-    const row = result.rows[0];
-    if (!row) return { status: "forbidden" };
+    const row = result.rows[0]!;
     const person = identity(row);
     if (!person) return { status: "not-found" };
     return {
@@ -429,9 +417,7 @@ export class PostgresPersonProfileRepository
       select person.id::text as person_id,
         coalesce(profile_module.is_active, true) as module_is_active,
         coalesce(history.events, '[]'::jsonb) as events
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
+      from (select ${command.workspaceId}::uuid as id) workspace
       left join crm.people person
         on person.id = ${command.personId}::uuid
         and person.workspace_id = workspace.id and person.deleted_at is null
@@ -471,17 +457,8 @@ export class PostgresPersonProfileRepository
           on event_type.id = event.life_event_type_id
           and event_type.workspace_id = workspace.id
       ) history on true
-      where account.id = ${command.userId}::uuid
-        and account.status = 'active' and account.deleted_at is null
-        and member.id = ${command.memberId}::uuid
-        and member.workspace_id = ${command.workspaceId}::uuid
-        and member.role = ${command.role} and member.status = 'active'
-        and member.left_at is null
-        and workspace.id = ${command.workspaceId}::uuid
-        and workspace.status = 'active' and workspace.deleted_at is null
     `.execute(this.database);
-    const row = result.rows[0];
-    if (!row) return { status: "forbidden" };
+    const row = result.rows[0]!;
     if (!row.person_id) return { status: "not-found" };
     if (!row.module_is_active) return { events: [], status: "hidden" };
     return { events: row.events, status: "ready" };
@@ -492,24 +469,13 @@ export class PostgresPersonProfileRepository
   ): Promise<Awaited<ReturnType<PersonProfileRepository["listTimeline"]>>> {
     const context = await sql<PersonTimelineContextRow>`
       select person.id::text, person.archived_at
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      left join crm.people person
-        on person.id = ${command.personId}::uuid
-        and person.workspace_id = workspace.id and person.deleted_at is null
-      where account.id = ${command.userId}::uuid
-        and account.status = 'active' and account.deleted_at is null
-        and member.id = ${command.memberId}::uuid
-        and member.workspace_id = ${command.workspaceId}::uuid
-        and member.role = ${command.role}
-        and member.status = 'active' and member.left_at is null
-        and workspace.id = ${command.workspaceId}::uuid
-        and workspace.status = 'active' and workspace.deleted_at is null
+      from crm.people person
+      where person.id = ${command.personId}::uuid
+        and person.workspace_id = ${command.workspaceId}::uuid
+        and person.deleted_at is null
     `.execute(this.database);
     const resolved = context.rows[0];
-    if (!resolved) return { status: "forbidden" };
-    if (!resolved.id) return { status: "not-found" };
+    if (!resolved) return { status: "not-found" };
 
     if (command.after) {
       const anchor = await sql<{ readonly valid: boolean }>`

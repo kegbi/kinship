@@ -1,4 +1,3 @@
-import type { Failure } from "../../shared-kernel/result.ts";
 import {
   type CommunicationAudit,
   type CommunicationRepository,
@@ -170,17 +169,21 @@ function harness(overrides: {
     },
   };
   let authorizationCall = 0;
-  const workspace: InteractionWorkspaceBoundary & {
-    authorize(): Promise<Failure<"forbidden"> | { readonly status: "ready" }>;
-  } = {
-    authorize() {
+  // The actor's standing is the `workspaces` port's answer now, not the
+  // workspace boundary's, so the harness records it here.
+  const actors = {
+    revalidate() {
       calls.push("authorize");
       const statuses = overrides.authorizationStatuses ?? ["ready"];
       const status =
         statuses[Math.min(authorizationCall, statuses.length - 1)]!;
       authorizationCall += 1;
-      return Promise.resolve({ status });
+      return Promise.resolve(
+        status === "ready" ? "active" as const : "revoked" as const,
+      );
     },
+  };
+  const workspace: InteractionWorkspaceBoundary = {
     describe() {
       return Promise.resolve({
         activityType: { id: activityTypeId, name: "Shared meal" },
@@ -208,6 +211,7 @@ function harness(overrides: {
     },
   };
   const management = createInteractionManagement({
+    actors,
     audit,
     clock: { now: () => new Date("2026-08-17T12:30:00.000Z") },
     people: {
@@ -317,6 +321,7 @@ function harness(overrides: {
     },
   };
   const communication = createCommunicationManagement({
+    actors,
     audit: communicationAudit,
     clock: { now: () => new Date("2026-08-17T12:30:00.000Z") },
     people: {

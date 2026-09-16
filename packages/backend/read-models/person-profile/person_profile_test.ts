@@ -74,7 +74,11 @@ Deno.test("[APP-003C] person profile composes orientation through one read-only 
     listLifeEvents,
     listTimeline,
   };
-  const profile = createPersonProfile({ repository });
+  const profile = createPersonProfile({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
+    repository,
+  });
 
   const result = await profile.get(actor, personId);
 
@@ -104,6 +108,8 @@ Deno.test("[APP-003C] person profile preserves archived, missing, and forbidden 
   const statuses = ["archived", "not-found", "forbidden"] as const;
   for (const status of statuses) {
     const profile = createPersonProfile({
+      actors: { revalidate: () => Promise.resolve("active" as const) },
+      transaction: { run: (work) => work({ opaque: undefined }) },
       repository: {
         get: () =>
           Promise.resolve(
@@ -136,6 +142,8 @@ Deno.test("[APP-003C] person profile preserves archived, missing, and forbidden 
 
 Deno.test("PEOPLE-006 hidden tag projection discloses no retained assignments", async () => {
   const profile = createPersonProfile({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       get: () =>
         Promise.resolve({
@@ -173,6 +181,8 @@ Deno.test("PEOPLE-006 hidden tag projection discloses no retained assignments", 
 Deno.test("[UXD-013] person summary reuses due dates and counts every profile section", async () => {
   let received: unknown;
   const profile = createPersonProfile({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       get(command) {
         received = command;
@@ -277,6 +287,8 @@ Deno.test("[UXD-013] person summary reuses due dates and counts every profile se
 
 Deno.test("[UXD-013] hidden summary sections disclose neither counts nor retained previews", async () => {
   const profile = createPersonProfile({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       get: () =>
         Promise.resolve({
@@ -338,6 +350,8 @@ Deno.test("[UXD-013] hidden summary sections disclose neither counts nor retaine
 Deno.test("[PEOPLE-003] person life events use the read-only profile boundary", async () => {
   let received: unknown;
   const profile = createPersonProfile({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       get: () => Promise.resolve({ status: "not-found" }),
       listLifeEvents(command) {
@@ -401,6 +415,8 @@ Deno.test("[UXD-002C2A] person timeline bounds filters and round-trips its opaqu
   ];
   const commands: Parameters<PersonProfileRepository["listTimeline"]>[0][] = [];
   const profile = createPersonProfile({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       get: () => Promise.resolve({ status: "not-found" }),
       listLifeEvents,
@@ -463,6 +479,8 @@ Deno.test("[UXD-002C2A] person timeline bounds filters and round-trips its opaqu
 Deno.test("[UXD-002C2A] person timeline rejects every stale cursor shape before querying", async () => {
   let calls = 0;
   const profile = createPersonProfile({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       get: () => Promise.resolve({ status: "not-found" }),
       listLifeEvents,
@@ -502,6 +520,8 @@ Deno.test("[UXD-002C2A] person timeline rejects every stale cursor shape before 
   assert(calls === 0, "stale cursors never reach the repository");
 
   const repositoryStale = createPersonProfile({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       get: () => Promise.resolve({ status: "not-found" }),
       listLifeEvents,

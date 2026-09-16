@@ -11,7 +11,6 @@ const actor = {
   workspaceId: crypto.randomUUID(),
 };
 const repository: ImportRepository = {
-  authorize: () => Promise.resolve(true),
   complete: () => Promise.resolve(),
   get: (_actor, importId) =>
     Promise.resolve({
@@ -55,6 +54,7 @@ const repository: ImportRepository = {
     }),
 };
 const imports = createImportManagement({
+  actors: { revalidate: () => Promise.resolve("active" as const) },
   audit: { record: () => Promise.resolve() },
   files: { representMissing: () => Promise.resolve() },
   ids: { next: () => crypto.randomUUID() },

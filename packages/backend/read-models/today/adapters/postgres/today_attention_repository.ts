@@ -37,33 +37,18 @@ export class PostgresTodayAttentionRepository
     )
       .execute(async (transaction) => {
         const context = await sql<{ readonly timezone: string }>`
-      select coalesce(preference.timezone, setting.default_timezone, 'UTC') as timezone
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      left join crm.member_preferences preference on preference.member_id = member.id
-      left join crm.workspace_settings setting on setting.workspace_id = workspace.id
-      where account.id = ${command.userId}::uuid and account.status = 'active'
-        and account.deleted_at is null and member.id = ${command.memberId}::uuid
-        and member.workspace_id = ${command.workspaceId}::uuid
-        and member.role = ${command.role} and member.status = 'active'
-        and member.left_at is null and workspace.status = 'active'
-        and workspace.deleted_at is null
+      select coalesce(
+        (select preference.timezone from crm.member_preferences preference
+          where preference.member_id = ${command.memberId}::uuid),
+        (select setting.default_timezone from crm.workspace_settings setting
+          where setting.workspace_id = ${command.workspaceId}::uuid),
+        'UTC') as timezone
     `.execute(transaction);
-        const timezone = context.rows[0]?.timezone;
-        if (!timezone) return { status: "forbidden" as const };
+        const timezone = context.rows[0]!.timezone;
         const window = todayAttentionWindow(command.now, timezone);
         const result = await sql<ItemRow>`
       with authorized as (
-        select workspace.id from crm.users account
-        join crm.workspace_members member on member.user_id = account.id
-        join crm.workspaces workspace on workspace.id = member.workspace_id
-        where account.id = ${command.userId}::uuid and account.status = 'active'
-          and account.deleted_at is null and member.id = ${command.memberId}::uuid
-          and member.workspace_id = ${command.workspaceId}::uuid
-          and member.role = ${command.role} and member.status = 'active'
-          and member.left_at is null and workspace.status = 'active'
-          and workspace.deleted_at is null
+        select ${command.workspaceId}::uuid as id
       ), projection_source as (
         select task.id, 'task'::text as kind, task.title, task.due_at,
           null::date as occurs_on, null::text as reminder_status,

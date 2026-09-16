@@ -2,6 +2,7 @@ import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import type {
   DavActor,
+  DavActorRevalidation,
   DavAuditEvent,
   DavOutcome,
   DavRepository,
@@ -73,32 +74,6 @@ function mapped(row: SubscriptionRow): DavSubscription {
     ...(row.username ? { username: row.username } : {}),
   };
 }
-function memberGuard(actor: DavActor) {
-  return sql`exists (select 1 from crm.workspace_members member
-    join crm.users account on account.id=member.user_id
-    join crm.workspaces workspace on workspace.id=member.workspace_id
-    where member.id=${actor.memberId}::uuid and member.user_id=${actor.userId}::uuid
-      and member.workspace_id=${actor.workspaceId}::uuid and member.role=${actor.role}
-      and member.role in ('owner','admin') and member.status='active' and member.left_at is null
-      and account.status='active' and account.deleted_at is null
-      and workspace.status='active' and workspace.deleted_at is null)`;
-}
-async function lockActor(
-  database: Kysely<ApplicationDatabase>,
-  actor: DavActor,
-): Promise<boolean> {
-  const result = await sql<{ id: string }>`select member.id::text
-    from crm.workspace_members member
-    join crm.users account on account.id=member.user_id
-    join crm.workspaces workspace on workspace.id=member.workspace_id
-    where member.id=${actor.memberId}::uuid and member.user_id=${actor.userId}::uuid
-      and member.workspace_id=${actor.workspaceId}::uuid and member.role=${actor.role}
-      and member.role in ('owner','admin') and member.status='active' and member.left_at is null
-      and account.status='active' and account.deleted_at is null
-      and workspace.status='active' and workspace.deleted_at is null
-    for update of member,account,workspace`.execute(database);
-  return result.rows.length === 1;
-}
 async function lockSubscription(
   database: Kysely<ApplicationDatabase>,
   actor: DavActor,
@@ -112,11 +87,17 @@ async function lockSubscription(
   return result.rows[0];
 }
 async function lockDavContext(
+  actors: DavActorRevalidation,
   database: Kysely<ApplicationDatabase>,
   actor: DavActor,
   subscriptionId: string,
 ): Promise<SubscriptionRow | undefined> {
-  if (!await lockActor(database, actor)) return undefined;
+  const standing = await actors.revalidate({
+    ...actor,
+    lock: true,
+    transaction: { opaque: database },
+  });
+  if (standing !== "active") return undefined;
   return await lockSubscription(database, actor, subscriptionId);
 }
 function claimState(value: unknown): {
@@ -137,16 +118,23 @@ function claimState(value: unknown): {
   };
 }
 
+/**
+ * `createDavSyncManagement` refuses a member role, and the actor's standing is
+ * the `workspaces` port's answer throughout, so these queries scope by
+ * workspace and subscription ownership alone.
+ */
 export class PostgresDavRepository implements DavRepository {
   constructor(
     private readonly database: Kysely<ApplicationDatabase>,
     private readonly audit: DavAudit,
+    private readonly actors: DavActorRevalidation,
   ) {}
   async authorize(actor: DavActor): Promise<boolean> {
-    const result = await sql<{ authorized: boolean }>`select ${
-      memberGuard(actor)
-    } authorized`.execute(this.database);
-    return result.rows[0]?.authorized === true;
+    return await this.actors.revalidate({
+      ...actor,
+      lock: false,
+      transaction: { opaque: this.database },
+    }) === "active";
   }
   async claim(
     actor: DavActor,
@@ -156,6 +144,7 @@ export class PostgresDavRepository implements DavRepository {
   ) {
     return await this.database.transaction().execute(async (transaction) => {
       const locked = await lockDavContext(
+        this.actors,
         transaction,
         actor,
         subscriptionId,
@@ -186,12 +175,17 @@ export class PostgresDavRepository implements DavRepository {
   }
   async create(command: Parameters<DavRepository["create"]>[0]) {
     return await this.database.transaction().execute(async (transaction) => {
-      if (!await lockActor(transaction, command)) return undefined;
+      const standing = await this.actors.revalidate({
+        ...command,
+        lock: true,
+        transaction: { opaque: transaction },
+      });
+      if (standing !== "active") return undefined;
       const book = await sql<
         { id: string }
       >`insert into crm.dav_address_books(workspace_id,owner_member_id,name,uri)
-        select ${command.workspaceId}::uuid,${command.memberId}::uuid,${command.name},${`subscription-${command.id}`}
-        where ${memberGuard(command)} returning id::text`.execute(transaction);
+        values (${command.workspaceId}::uuid,${command.memberId}::uuid,${command.name},${`subscription-${command.id}`})
+        returning id::text`.execute(transaction);
       if (!book.rows[0]) return undefined;
       const result = await sql<
         SubscriptionRow
@@ -226,6 +220,7 @@ export class PostgresDavRepository implements DavRepository {
   ) {
     return await this.database.transaction().execute(async (transaction) => {
       const locked = await lockDavContext(
+        this.actors,
         transaction,
         actor,
         subscriptionId,
@@ -259,6 +254,7 @@ export class PostgresDavRepository implements DavRepository {
   ) {
     return await this.database.transaction().execute(async (transaction) => {
       const subscription = await lockDavContext(
+        this.actors,
         transaction,
         command,
         command.subscriptionId,
@@ -320,15 +316,18 @@ export class PostgresDavRepository implements DavRepository {
     const result = await sql<
       SubscriptionRow
     >`select id::text,name,remote_url,username,is_active,capabilities,remote_sync_token,last_synced_at
-      from crm.dav_address_book_subscriptions where workspace_id=${actor.workspaceId}::uuid and ${
-      memberGuard(actor)
-    }
+      from crm.dav_address_book_subscriptions where workspace_id=${actor.workspaceId}::uuid
       order by created_at desc,id desc`.execute(this.database);
     return result.rows.map(mapped);
   }
   async recordAudit(actor: DavActor, event: DavAuditEvent): Promise<boolean> {
     return await this.database.transaction().execute(async (transaction) => {
-      if (!await lockActor(transaction, actor)) return false;
+      const standing = await this.actors.revalidate({
+        ...actor,
+        lock: true,
+        transaction: { opaque: transaction },
+      });
+      if (standing !== "active") return false;
       const owned = await sql<{ allowed: boolean }>`select
         (exists(select 1 from crm.dav_address_book_subscriptions where id=${event.subscriptionId}::uuid
           and workspace_id=${actor.workspaceId}::uuid)
@@ -351,6 +350,7 @@ export class PostgresDavRepository implements DavRepository {
   ) {
     return await this.database.transaction().execute(async (transaction) => {
       const locked = await lockDavContext(
+        this.actors,
         transaction,
         command,
         command.subscriptionId,

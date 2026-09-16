@@ -1,5 +1,10 @@
 import type { Failure } from "../../../shared-kernel/result.ts";
 import type { PeopleActor } from "../../../modules/people/public.ts";
+import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
+
+export interface ReadModelTransaction {
+  readonly opaque: unknown;
+}
 
 export interface JournalLinkableActivity {
   readonly happenedAt: string;
@@ -52,11 +57,25 @@ export interface JournalTimelineRepository {
 }
 
 export function createJournalTimeline(
-  dependencies: { readonly repository: JournalTimelineRepository },
+  dependencies: {
+    readonly actors: ActorRevalidation;
+    readonly transaction: {
+      run<T>(
+        work: (transaction: ReadModelTransaction) => Promise<T>,
+      ): Promise<T>;
+    };
+    readonly repository: JournalTimelineRepository;
+  },
 ) {
+  const readable = async (actor: PeopleActor): Promise<boolean> =>
+    await dependencies.transaction.run((transaction) =>
+      dependencies.actors.revalidate({ ...actor, lock: false, transaction })
+    ) === "active";
+
   return {
     get: async (actor: PeopleActor, itemId: string) => {
       try {
+        if (!await readable(actor)) return { status: "forbidden" as const };
         const result = await dependencies.repository.read(actor, itemId);
         if (result.status !== "ready") return result;
         return result.items[0]
@@ -68,6 +87,7 @@ export function createJournalTimeline(
     },
     list: async (actor: PeopleActor) => {
       try {
+        if (!await readable(actor)) return { status: "forbidden" as const };
         return await dependencies.repository.read(actor);
       } catch {
         return { status: "unavailable" as const };

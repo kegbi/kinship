@@ -474,7 +474,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     FK deadlock, still blocking every revocation update; gates fmt:check, lint,
     check. E2E behaviour proof deferred to the Phase 1 checkpoint.
 
-- [ ] **GAP-009 — Actor revalidation wave 2 and the files → gifts edge.** L.
+- [x] **GAP-009 — Actor revalidation wave 2 and the files → gifts edge.** L.
       Depends: 008.
   - Scope: interactions, journal, gifts, files, governance, api-access,
     import-export, integrations, and workspaces' own adapters. For
@@ -485,6 +485,15 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     if empty.
   - Verify: `check:architecture` green with an empty baseline; all integration
     suites green.
+  - Delivered 2026-09-16: baseline 80 -> 18 with zero crm.users reads outside
+    identity and the approved adapter and zero table-access entries; the 16
+    declared-dependency foreign reads outside the actor join and the 2 SMTP
+    layer entries owned by GAP-013 stay by controller decision, so the baseline
+    file is kept; GiftAttachmentTarget port closes files -> gifts; identity asks
+    a workspaces port for the sign-in landing workspace; 10 negative revocation
+    integration tests; unit 18 sets plus 718 vitest green, integration 123/0;
+    gates fmt:check, lint, check. Read models revalidate in a short separate
+    transaction before their lock-free reads.
 
 - [ ] **GAP-010 — Platform Postgres helpers and the display-name formula.** M.
       Depends: 006.

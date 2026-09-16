@@ -222,6 +222,20 @@ interface TaskFacade {
     transaction: DavTransaction,
   ): Promise<{ readonly status: string }>;
 }
+/**
+ * The actor-standing question this module asks `workspaces`. It is declared
+ * here so the repository adapter, which may not import another module, can be
+ * given the one approved implementation at the composition root.
+ */
+export interface DavActorRevalidation {
+  revalidate(
+    command: DavActor & {
+      readonly lock: boolean;
+      readonly transaction: { readonly opaque: unknown };
+    },
+  ): Promise<"active" | "revoked">;
+}
+
 export interface DavSyncDependencies {
   readonly clock: Clock;
   readonly ids:

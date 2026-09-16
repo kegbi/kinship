@@ -21,13 +21,18 @@ export {
   PostgresRegistrationTransaction,
   PostgresWorkspaceRegistration,
 } from "./adapters/postgres/registration_repository.ts";
-export { PostgresActiveWorkspaceResolver } from "./adapters/postgres/protected_session.ts";
-export { PostgresActorRevalidation } from "./adapters/postgres/actor_revalidation.ts";
+export {
+  PostgresActiveWorkspaceResolver,
+  PostgresActorRevalidation,
+} from "./adapters/postgres/actor_revalidation.ts";
 export type {
+  ActorContext,
+  ActorRecipients,
   ActorRevalidation,
   ActorRevalidationCommand,
   ActorRevalidationTransaction,
   ActorStanding,
+  EligibleRecipient,
   RevalidatedActor,
 } from "./application/actor_revalidation.ts";
 export {
@@ -93,6 +98,7 @@ export type {
   WorkspaceLifecycleSecurityAudit,
   WorkspaceLifecycleSnapshot,
   WorkspaceLifecycleTransaction,
+  WorkspaceResetActivityAudit,
 } from "./application/workspace_lifecycle.ts";
 export { PostgresWorkspacePersonalization } from "./adapters/postgres/personalization.ts";
 export { PostgresWorkspaceCurrencyBoundary } from "./adapters/postgres/currency_boundary.ts";

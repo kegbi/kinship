@@ -30,9 +30,11 @@ approvedCrossModuleReads:
     tables: [users]
     reason: >-
       The single approved actor-context read. This adapter is the one place
-      that locks and verifies an actor's user, membership, and workspace inside
-      the caller's transaction, replacing the join every module used to copy
-      into its own adapters.
+      outside identity that reads the user row: it locks and verifies an
+      actor's user, membership, and workspace inside the caller's transaction,
+      resolves the actor a stored credential names, and resolves the workspaces
+      an authenticated user may enter at sign-in. It replaced the join every
+      module used to copy into its own adapters.
 
 generatedContracts:
   path: packages/contracts/generated
@@ -384,6 +386,7 @@ readModels:
       gifts,
       governance,
       interactions,
+      journal,
       people,
       planning,
       workspaces,

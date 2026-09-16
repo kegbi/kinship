@@ -1,3 +1,10 @@
+import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import {
+  createLegalAcceptance,
+  PostgresLegalAcceptanceRepository,
+} from "../../packages/backend/modules/governance/public.ts";
+import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/public.ts";
+import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
@@ -603,6 +610,101 @@ Deno.test("GOVERNANCE-001 PostgreSQL cleans an interrupted legal-document fixtur
   assert(interrupted && remaining?.count === 0, "interrupted fixture leaked");
 });
 
+// --- GAP-009 -------------------------------------------------------------
+
+/**
+ * A workspace whose only member can be revoked mid-test. The actor is built
+ * directly so the use case is exercised without the session layer refusing
+ * first.
+ */
+async function revocableActor(name: string): Promise<{
+  readonly memberId: string;
+  readonly personId: string;
+  readonly role: "owner";
+  readonly userId: string;
+  readonly workspaceId: string;
+}> {
+  const userId = crypto.randomUUID();
+  const workspaceId = crypto.randomUUID();
+  const memberId = crypto.randomUUID();
+  const personId = crypto.randomUUID();
+  await sql.begin(async (transaction) => {
+    await transaction`
+      insert into crm.users (id, email, first_name, status)
+      values (${userId}, ${`${name}@example.test`}, 'Revocable', 'active')
+    `;
+    await transaction`
+      insert into crm.workspaces (id, name, status, created_by_user_id)
+      values (${workspaceId}, ${name}, 'active', ${userId})
+    `;
+    await transaction`
+      insert into crm.workspace_members (
+        id, workspace_id, user_id, role, status, joined_at
+      ) values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active', now())
+    `;
+    await transaction`
+      insert into crm.people (id, workspace_id, created_by_member_id, given_name)
+      values (${personId}, ${workspaceId}, ${memberId}, 'Revocation subject')
+    `;
+  });
+  return { memberId, personId, role: "owner", userId, workspaceId };
+}
+
+async function revokeMembership(memberId: string): Promise<void> {
+  await sql`
+    update crm.workspace_members set status = 'left', left_at = now()
+    where id = ${memberId}
+  `;
+}
+
+Deno.test({
+  name:
+    "GOVERNANCE-001 GAP-009 a revoked member cannot read or accept legal terms",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const actor = await revocableActor(
+        `legal-revocation-${crypto.randomUUID()}`,
+      );
+      const legal = createLegalAcceptance({
+        actors: new PostgresActorRevalidation(),
+        clock: { now: () => new Date() },
+        ids: { next: () => crypto.randomUUID() },
+        repository: new PostgresLegalAcceptanceRepository(connection.db),
+        transaction: new PostgresPeopleTransaction(connection.db),
+      });
+
+      const allowed = await legal.requirements(actor);
+      assert(
+        allowed.status === "ready",
+        "an active member reads its legal requirements",
+      );
+      const allowedAccept = await legal.accept(actor, {
+        documentId: crypto.randomUUID(),
+      });
+      assert(
+        allowedAccept.status === "superseded-version",
+        "an active member reaches the document lookup",
+      );
+
+      await revokeMembership(actor.memberId);
+
+      const refusedRequirements = await legal.requirements(actor);
+      const refusedAccept = await legal.accept(actor, {
+        documentId: crypto.randomUUID(),
+      });
+      assert(
+        refusedRequirements.status === "forbidden" &&
+          refusedAccept.status === "forbidden",
+        "a revoked member still reached legal acceptance",
+      );
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
 Deno.test({
   name: "GOVERNANCE-002 PostgreSQL resources close",
   sanitizeOps: false,

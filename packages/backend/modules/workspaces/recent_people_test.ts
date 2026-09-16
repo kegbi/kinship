@@ -20,7 +20,11 @@ const transactionRunner = {
   },
 };
 const manage = (repository: RecentPeopleRepository) =>
-  createRecentPeopleManagement({ repository, transaction: transactionRunner });
+  createRecentPeopleManagement({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    repository,
+    transaction: transactionRunner,
+  });
 const person = (suffix: number) =>
   `00000000-0000-4000-8000-${suffix.toString().padStart(12, "0")}`;
 

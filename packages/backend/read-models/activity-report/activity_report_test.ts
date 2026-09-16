@@ -11,6 +11,8 @@ Deno.test("INTERACTION-001 activity report scopes one person and bounds its page
   let calls = 0;
   let received: Parameters<ActivityReportRepository["list"]>[0] | undefined;
   const report = createActivityReport({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       list(command) {
         calls += 1;
@@ -115,6 +117,8 @@ Deno.test("INTERACTION-001 activity report continues after a workspace-derived i
   const firstPage = Array.from({ length: 20 }, (_, index) => note(20 - index));
   let calls = 0;
   const report = createActivityReport({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       list(command) {
         calls += 1;

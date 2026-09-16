@@ -9,6 +9,7 @@ import type {
   PeopleTransaction,
 } from "../../people/public.ts";
 import type {
+  ActorRevalidation,
   InteractionWorkspaceBoundary,
   WorkspaceInteractionOption,
 } from "../../workspaces/public.ts";
@@ -333,6 +334,7 @@ function validate(
 }
 
 export function createCommunicationManagement(dependencies: {
+  readonly actors: ActorRevalidation;
   readonly audit: CommunicationAudit;
   readonly clock: Clock;
   readonly people: InteractionPersonBoundary;
@@ -493,18 +495,31 @@ export function createCommunicationManagement(dependencies: {
       }];
     });
   };
+  /**
+   * The actor's standing, asked first inside the caller's transaction. Write
+   * paths lock the actor's rows; read paths keep their lock-free concurrency.
+   */
+  const active = async (
+    actor: PeopleActor,
+    transaction: PeopleTransaction,
+    lock: boolean,
+  ): Promise<boolean> =>
+    await dependencies.actors.revalidate({ ...actor, lock, transaction }) ===
+      "active";
   return {
     communicationOptions: (actor: PeopleActor) =>
-      dependencies.transaction.run((transaction) =>
-        dependencies.workspace.communicationOptions({ ...actor, transaction })
-      ),
-    listCommunications: (actor: PeopleActor, personId: string) =>
       dependencies.transaction.run(async (transaction) => {
-        const authorization = await dependencies.workspace.authorize({
+        if (!await active(actor, transaction, false)) {
+          return { status: "forbidden" as const };
+        }
+        return await dependencies.workspace.communicationOptions({
           ...actor,
           transaction,
         });
-        if (authorization.status !== "ready") {
+      }),
+    listCommunications: (actor: PeopleActor, personId: string) =>
+      dependencies.transaction.run(async (transaction) => {
+        if (!await active(actor, transaction, false)) {
           return { status: "forbidden" as const };
         }
         const people = await dependencies.people.inspect({
@@ -542,11 +557,7 @@ export function createCommunicationManagement(dependencies: {
       };
       const personId = canonicalUuid(input.personId);
       return await dependencies.transaction.run(async (transaction) => {
-        const authorization = await dependencies.workspace.authorize({
-          ...canonicalActor,
-          transaction,
-        });
-        if (authorization.status !== "ready") {
+        if (!await active(canonicalActor, transaction, true)) {
           return { status: "forbidden" as const };
         }
         const id = await derivedId(

@@ -1,6 +1,7 @@
 import type { Failure } from "../../../shared-kernel/result.ts";
 import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
 import type { PeopleTransaction } from "../../people/public.ts";
+import type { ActorRevalidation } from "../../workspaces/public.ts";
 import type { PersonFileActor, PersonFileStatus } from "./person_files.ts";
 
 export interface StorageFileLookupItem {
@@ -42,6 +43,7 @@ export interface StorageSettingsRepository {
 }
 
 export interface StorageSettingsDependencies {
+  readonly actors: ActorRevalidation;
   readonly maximumUploadBytes: number;
   readonly provider: { readonly bucket: string; readonly name: string };
   readonly providerHealth: () => Promise<
@@ -82,12 +84,19 @@ export function createStorageSettings(
       if (query && query.length > 100) return { status: "validation-error" };
       const result = await runOrUnavailable(
         dependencies.transaction,
-        (transaction) =>
-          dependencies.repository.read({
+        async (transaction) => {
+          const standing = await dependencies.actors.revalidate({
+            ...actor,
+            lock: false,
+            transaction,
+          });
+          if (standing === "revoked") return { status: "forbidden" as const };
+          return await dependencies.repository.read({
             ...actor,
             ...(query ? { query } : {}),
             transaction,
-          }),
+          });
+        },
       );
       if (result.status !== "ready") return result;
       const health = await dependencies.providerHealth().catch(() =>

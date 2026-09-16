@@ -16,12 +16,12 @@ export interface WorkspaceInteractionOption {
   readonly name: string;
 }
 
+/**
+ * The workspace vocabulary an interaction refers to. The actor's standing is
+ * not this boundary's question: callers establish it with `ActorRevalidation`
+ * before they ask, so every method here only reads the workspace's own rows.
+ */
 export interface InteractionWorkspaceBoundary {
-  authorize(
-    command: InteractionWorkspaceActor & {
-      readonly transaction: InteractionWorkspaceTransaction;
-    },
-  ): Promise<Failure<"forbidden"> | { readonly status: "ready" }>;
   describe(
     command: {
       readonly activityTypeId?: string;

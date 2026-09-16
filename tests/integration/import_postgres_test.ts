@@ -1,3 +1,4 @@
+import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
@@ -267,6 +268,7 @@ Deno.test("[IMPORT-001] owning-boundary failure rolls back every commit effect a
     },
   };
   const imports = createImportManagement({
+    actors: new PostgresActorRevalidation(),
     audit,
     files: new PostgresFileImportBoundary(),
     ids: { next: () => crypto.randomUUID() },
@@ -325,6 +327,110 @@ Deno.test("[IMPORT-001] owning-boundary failure rolls back every commit effect a
   }
 });
 
+// --- GAP-009 -------------------------------------------------------------
+
+/**
+ * A workspace whose only member can be revoked mid-test. The actor is built
+ * directly so the use case is exercised without the session layer refusing
+ * first.
+ */
+async function revocableActor(name: string): Promise<{
+  readonly memberId: string;
+  readonly personId: string;
+  readonly role: "owner";
+  readonly userId: string;
+  readonly workspaceId: string;
+}> {
+  const userId = crypto.randomUUID();
+  const workspaceId = crypto.randomUUID();
+  const memberId = crypto.randomUUID();
+  const personId = crypto.randomUUID();
+  await sql.begin(async (transaction) => {
+    await transaction`
+      insert into crm.users (id, email, first_name, status)
+      values (${userId}, ${`${name}@example.test`}, 'Revocable', 'active')
+    `;
+    await transaction`
+      insert into crm.workspaces (id, name, status, created_by_user_id)
+      values (${workspaceId}, ${name}, 'active', ${userId})
+    `;
+    await transaction`
+      insert into crm.workspace_members (
+        id, workspace_id, user_id, role, status, joined_at
+      ) values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active', now())
+    `;
+    await transaction`
+      insert into crm.people (id, workspace_id, created_by_member_id, given_name)
+      values (${personId}, ${workspaceId}, ${memberId}, 'Revocation subject')
+    `;
+  });
+  return { memberId, personId, role: "owner", userId, workspaceId };
+}
+
+async function revokeMembership(memberId: string): Promise<void> {
+  await sql`
+    update crm.workspace_members set status = 'left', left_at = now()
+    where id = ${memberId}
+  `;
+}
+
+Deno.test({
+  name:
+    "[IMPORT-001] GAP-009 a revoked member cannot stage or commit an import",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const actor = await revocableActor(
+        `import-revocation-${crypto.randomUUID()}`,
+      );
+      const imports = createImportManagement({
+        actors: new PostgresActorRevalidation(),
+        audit: new PostgresImportAudit(),
+        files: new PostgresFileImportBoundary(),
+        ids: { next: () => crypto.randomUUID() },
+        people: new PostgresPeopleImportBoundary(),
+        repository: new PostgresImportRepository(connection.db),
+        transaction: new PostgresImportTransaction(connection.db),
+      });
+      const source = {
+        format: "monica-json",
+        tables: { contacts: [] },
+        version: 1,
+      };
+
+      const allowed = await imports.dryRun(actor, source);
+      assert(allowed.status === "dry_run", "an active member stages an import");
+
+      await revokeMembership(actor.memberId);
+
+      const refusedDryRun = await imports.dryRun(actor, source);
+      const refusedCommit = await imports.commit(
+        actor,
+        allowed.status === "dry_run" ? allowed.importId : crypto.randomUUID(),
+        true,
+      );
+      assert(
+        refusedDryRun.status === "forbidden" &&
+          refusedCommit.status === "forbidden",
+        "a revoked member still reached the importer",
+      );
+      assert(
+        (await imports.list(actor)).length === 0 &&
+          (await imports.get(
+              actor,
+              allowed.status === "dry_run"
+                ? allowed.importId
+                : crypto.randomUUID(),
+            )) === undefined,
+        "a revoked member still read import history",
+      );
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
 Deno.test({
   name: "IMPORT-001 PostgreSQL resources close",
   sanitizeOps: false,

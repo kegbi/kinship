@@ -29,7 +29,11 @@ Deno.test("TODAY-001 recent people is an explicit bounded read-only projection",
       });
     },
   };
-  const result = await createTodayRecentPeople({ repository }).get(actor);
+  const result = await createTodayRecentPeople({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    repository,
+    transaction: { run: (work) => work({ opaque: undefined }) },
+  }).get(actor);
   assert(result.status === "ready", "recent people was forbidden");
   assert(receivedLimit === 8, "recent people was not hard bounded to eight");
   assert(
@@ -47,6 +51,8 @@ Deno.test("TODAY-001 recent people preserves forbidden and empty states", async 
     ]
   ) {
     const actual = await createTodayRecentPeople({
+      actors: { revalidate: () => Promise.resolve("active" as const) },
+      transaction: { run: (work) => work({ opaque: undefined }) },
       repository: { list: () => Promise.resolve(result) },
     }).get(actor);
     assert(actual.status === result.status, "projection status changed");

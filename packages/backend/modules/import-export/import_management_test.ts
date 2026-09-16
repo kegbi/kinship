@@ -13,6 +13,7 @@ const ids = [
   "00000000-0000-4000-8000-000000000013",
 ];
 const owners = {
+  actors: { revalidate: () => Promise.resolve("active" as const) },
   audit: { record: () => Promise.resolve() },
   files: { representMissing: () => Promise.resolve() },
   people: {
@@ -26,7 +27,6 @@ Deno.test("[IMPORT-001] Monica JSON dry-run redacts credentials and commits idem
   const staged: unknown[] = [];
   let commits = 0;
   const repository: ImportRepository = {
-    authorize: () => Promise.resolve(true),
     complete: () => Promise.resolve(),
     prepareCommit: (_actor, importId) => {
       commits++;
@@ -123,7 +123,6 @@ Deno.test("[IMPORT-001] Monica JSON dry-run redacts credentials and commits idem
 
 Deno.test("[IMPORT-001] rejects unsupported, hostile, oversized, and unconfirmed imports", async () => {
   const repository: ImportRepository = {
-    authorize: () => Promise.resolve(true),
     complete: () => Promise.resolve(),
     get: () => Promise.resolve(undefined),
     list: () => Promise.resolve([]),
@@ -167,7 +166,6 @@ Deno.test("[IMPORT-001] rejects unsupported, hostile, oversized, and unconfirmed
 
 Deno.test("[IMPORT-001] rejects ambiguous identities, truncated text, and unrepresentable manifests", async () => {
   const repository: ImportRepository = {
-    authorize: () => Promise.resolve(true),
     complete: () => Promise.resolve(),
     get: () => Promise.resolve(undefined),
     list: () => Promise.resolve([]),
@@ -211,7 +209,6 @@ Deno.test("[IMPORT-001] rejects ambiguous identities, truncated text, and unrepr
 
 Deno.test("[IMPORT-001] canonical UUID identities reject case-variant duplicates", async () => {
   const repository: ImportRepository = {
-    authorize: () => Promise.resolve(true),
     complete: () => Promise.resolve(),
     get: () => Promise.resolve(undefined),
     list: () => Promise.resolve([]),
@@ -245,7 +242,6 @@ Deno.test("[IMPORT-001] canonical UUID identities reject case-variant duplicates
 Deno.test("[IMPORT-001] reports Monica introducer references as explicitly skipped", async () => {
   let unsupported = -1;
   const repository: ImportRepository = {
-    authorize: () => Promise.resolve(true),
     complete: () => Promise.resolve(),
     get: () => Promise.resolve(undefined),
     list: () => Promise.resolve([]),
@@ -306,7 +302,6 @@ Deno.test("[IMPORT-001] reports unsupported fields while concealing admin reads 
     status: "dry_run" as const,
   };
   const repository: ImportRepository = {
-    authorize: () => Promise.resolve(true),
     complete: () => Promise.resolve(),
     get: () => Promise.resolve(summary),
     list: () => Promise.resolve([summary]),
@@ -361,7 +356,6 @@ Deno.test("[IMPORT-001] reports unsupported fields while concealing admin reads 
 
 Deno.test("[IMPORT-001] refuses staging when active admin authority is lost", async () => {
   const repository: ImportRepository = {
-    authorize: () => Promise.resolve(false),
     complete: () => Promise.resolve(),
     get: () => Promise.resolve(undefined),
     list: () => Promise.resolve([]),
@@ -371,6 +365,7 @@ Deno.test("[IMPORT-001] refuses staging when active admin authority is lost", as
   };
   const imports = createImportManagement({
     ...owners,
+    actors: { revalidate: () => Promise.resolve("revoked" as const) },
     ids: { next: () => crypto.randomUUID() },
     repository,
     transaction: { run: (work) => work({ opaque: {} }) },

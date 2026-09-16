@@ -1,3 +1,10 @@
+import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import { createJournalManagement } from "../../packages/backend/modules/journal/public.ts";
+import { PostgresJournalRepository } from "../../packages/backend/modules/journal/public.ts";
+import { PostgresJournalActivityBoundary } from "../../packages/backend/modules/interactions/public.ts";
+import { PostgresJournalAudit } from "../../packages/backend/modules/governance/public.ts";
+import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/public.ts";
+import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
@@ -213,6 +220,104 @@ Deno.test("[JOURNAL-001] PostgreSQL journal ordering, update, audit, and tenant 
   );
 });
 
+// --- GAP-009 -------------------------------------------------------------
+
+/**
+ * A workspace whose only member can be revoked mid-test. The actor is built
+ * directly so the use case is exercised without the session layer refusing
+ * first.
+ */
+async function revocableActor(name: string): Promise<{
+  readonly memberId: string;
+  readonly personId: string;
+  readonly role: "owner";
+  readonly userId: string;
+  readonly workspaceId: string;
+}> {
+  const userId = crypto.randomUUID();
+  const workspaceId = crypto.randomUUID();
+  const memberId = crypto.randomUUID();
+  const personId = crypto.randomUUID();
+  await sql.begin(async (transaction) => {
+    await transaction`
+      insert into crm.users (id, email, first_name, status)
+      values (${userId}, ${`${name}@example.test`}, 'Revocable', 'active')
+    `;
+    await transaction`
+      insert into crm.workspaces (id, name, status, created_by_user_id)
+      values (${workspaceId}, ${name}, 'active', ${userId})
+    `;
+    await transaction`
+      insert into crm.workspace_members (
+        id, workspace_id, user_id, role, status, joined_at
+      ) values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active', now())
+    `;
+    await transaction`
+      insert into crm.people (id, workspace_id, created_by_member_id, given_name)
+      values (${personId}, ${workspaceId}, ${memberId}, 'Revocation subject')
+    `;
+  });
+  return { memberId, personId, role: "owner", userId, workspaceId };
+}
+
+async function revokeMembership(memberId: string): Promise<void> {
+  await sql`
+    update crm.workspace_members set status = 'left', left_at = now()
+    where id = ${memberId}
+  `;
+}
+
+Deno.test({
+  name: "[JOURNAL-001] GAP-009 a revoked member cannot write journal entries",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const actor = await revocableActor(
+        `journal-revocation-${crypto.randomUUID()}`,
+      );
+      const journal = createJournalManagement({
+        activities: new PostgresJournalActivityBoundary(),
+        actors: new PostgresActorRevalidation(),
+        audit: new PostgresJournalAudit(),
+        clock: { now: () => new Date() },
+        ids: { next: () => crypto.randomUUID() },
+        repository: new PostgresJournalRepository(),
+        transaction: new PostgresPeopleTransaction(connection.db),
+      });
+
+      const allowed = await journal.createPost(actor, {
+        body: "Allowed entry",
+        occurredAt: new Date().toISOString(),
+      });
+      assert(allowed.status === "created", "an active member writes a post");
+
+      await revokeMembership(actor.memberId);
+
+      const refusedPost = await journal.createPost(actor, {
+        body: "Refused entry",
+        occurredAt: new Date().toISOString(),
+      });
+      const refusedRating = await journal.saveDayRating(actor, {
+        ratedOn: new Date().toISOString().slice(0, 10),
+        rating: 4,
+      });
+      assert(
+        refusedPost.status === "forbidden" &&
+          refusedRating.status === "forbidden",
+        "a revoked member still wrote a journal entry",
+      );
+      const [remaining] = await sql<[{ readonly count: number }]>`
+        select count(*)::int as count from crm.journal_posts
+        where workspace_id = ${actor.workspaceId}
+      `;
+      assert(remaining?.count === 1, "a revoked member wrote a journal row");
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
 Deno.test({
   name: "JOURNAL-001 PostgreSQL resources close",
   sanitizeOps: false,

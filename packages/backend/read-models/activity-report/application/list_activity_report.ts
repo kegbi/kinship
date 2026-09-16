@@ -1,4 +1,9 @@
 import type { Failure } from "../../../shared-kernel/result.ts";
+import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
+
+export interface ReadModelTransaction {
+  readonly opaque: unknown;
+}
 
 export interface ActivityReportActor {
   readonly memberId: string;
@@ -63,9 +68,25 @@ export interface ActivityReportRepository {
   >;
 }
 
+/**
+ * Read models carry no actor join of their own. The `workspaces` port answers
+ * whether the actor may still read this workspace — without a lock, because
+ * these paths take none — and the repository scopes by workspace alone.
+ */
 export function createActivityReport(dependencies: {
+  readonly actors: ActorRevalidation;
   readonly repository: ActivityReportRepository;
+  readonly transaction: {
+    run<T>(
+      work: (transaction: ReadModelTransaction) => Promise<T>,
+    ): Promise<T>;
+  };
 }) {
+  const readable = async (actor: ActivityReportActor): Promise<boolean> =>
+    await dependencies.transaction.run((transaction) =>
+      dependencies.actors.revalidate({ ...actor, lock: false, transaction })
+    ) === "active";
+
   return {
     list: async (
       actor: ActivityReportActor,
@@ -101,6 +122,7 @@ export function createActivityReport(dependencies: {
           return { status: "stale-cursor" as const };
         }
       }
+      if (!await readable(actor)) return { status: "forbidden" as const };
       const result = await dependencies.repository.list({
         ...actor,
         ...(after ? { after } : {}),

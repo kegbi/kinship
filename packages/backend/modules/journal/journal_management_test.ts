@@ -75,6 +75,7 @@ Deno.test("[JOURNAL-001] posts and same-day ratings remain one ordered journal",
   };
   let id = 0;
   const journal = createJournalManagement({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
     activities: { inspect: () => Promise.resolve({ status: "not-found" }) },
     audit: { record: () => Promise.resolve("audit-id") },
     clock: { now: () => new Date("2026-08-23T10:00:00.000Z") },
@@ -122,6 +123,7 @@ Deno.test("[JOURNAL-001] journal validation and dependency failures do not write
     updatePost: () => Promise.resolve({ status: "not-found" }),
   };
   const journal = createJournalManagement({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
     activities: { inspect: () => Promise.resolve({ status: "not-found" }) },
     audit: { record: () => Promise.resolve("audit") },
     clock: { now: () => new Date("2026-08-23T10:00:00.000Z") },
@@ -165,6 +167,7 @@ Deno.test("[JOURNAL-001] deletion audit uses the stored journal item type", asyn
     updatePost: () => Promise.resolve({ status: "not-found" }),
   };
   const journal = createJournalManagement({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
     activities: { inspect: () => Promise.resolve({ status: "not-found" }) },
     audit: {
       record: (command) => {

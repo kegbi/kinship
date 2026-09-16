@@ -41,17 +41,11 @@ export class PostgresJournalTimelineRepository
         item.journal_post_id::text, post.title, post.body,
         to_char(post.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at,
         item.day_rating_id::text, rating.rated_on::text, rating.rating, rating.comment
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      join crm.journal_items item on item.workspace_id = workspace.id
-      left join crm.activities activity on activity.id = item.activity_id and activity.workspace_id = workspace.id
-      left join crm.journal_posts post on post.id = item.journal_post_id and post.workspace_id = workspace.id
-      left join crm.journal_day_ratings rating on rating.id = item.day_rating_id and rating.workspace_id = workspace.id
-      where account.id = ${actor.userId}::uuid and account.status = 'active' and account.deleted_at is null
-        and member.id = ${actor.memberId}::uuid and member.workspace_id = ${actor.workspaceId}::uuid
-        and member.role = ${actor.role} and member.status = 'active' and member.left_at is null
-        and workspace.id = ${actor.workspaceId}::uuid and workspace.status = 'active' and workspace.deleted_at is null
+      from crm.journal_items item
+      left join crm.activities activity on activity.id = item.activity_id and activity.workspace_id = item.workspace_id
+      left join crm.journal_posts post on post.id = item.journal_post_id and post.workspace_id = item.workspace_id
+      left join crm.journal_day_ratings rating on rating.id = item.day_rating_id and rating.workspace_id = item.workspace_id
+      where item.workspace_id = ${actor.workspaceId}::uuid
         and (${itemId ?? null}::uuid is null or item.id = ${
       itemId ?? null
     }::uuid)
@@ -62,21 +56,11 @@ export class PostgresJournalTimelineRepository
     const activities = itemId ? [] : (await sql<ActivityRow>`
         select activity.id::text, activity.summary,
           to_char(activity.happened_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as happened_at
-        from crm.users account
-        join crm.workspace_members member on member.user_id = account.id
-        join crm.workspaces workspace on workspace.id = member.workspace_id
-        join crm.activities activity on activity.workspace_id = workspace.id
-        where account.id = ${actor.userId}::uuid
-          and account.status = 'active' and account.deleted_at is null
-          and member.id = ${actor.memberId}::uuid
-          and member.workspace_id = ${actor.workspaceId}::uuid
-          and member.role = ${actor.role} and member.status = 'active'
-          and member.left_at is null
-          and workspace.id = ${actor.workspaceId}::uuid
-          and workspace.status = 'active' and workspace.deleted_at is null
+        from crm.activities activity
+        where activity.workspace_id = ${actor.workspaceId}::uuid
           and not exists (
             select 1 from crm.journal_items item
-            where item.workspace_id = workspace.id
+            where item.workspace_id = activity.workspace_id
               and item.activity_id = activity.id
           )
         order by activity.happened_at desc, activity.id desc

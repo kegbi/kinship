@@ -12,6 +12,25 @@ export interface ApplicationEntryContext {
   readonly workspaceName: string;
 }
 
+/**
+ * Where a just-verified user lands. `workspaces` owns membership and
+ * `identity` may not depend on it, so the composition root injects the
+ * workspace side of the handoff and this module only consumes its own session.
+ */
+export interface ApplicationEntryWorkspaces {
+  resolveActiveContext(command: {
+    readonly transaction: IdentityTransaction;
+    readonly userId: string;
+  }): Promise<
+    | {
+      readonly memberId: string;
+      readonly workspaceId: string;
+      readonly workspaceName: string;
+    }
+    | undefined
+  >;
+}
+
 export interface VerifiedIdentityEntry {
   readonly firstName: string;
   readonly userId: string;

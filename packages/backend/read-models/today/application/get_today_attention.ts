@@ -1,6 +1,8 @@
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
 import type { PeopleActor } from "../../../modules/people/public.ts";
+import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
+import type { ReadModelTransaction } from "./get_today_interactions.ts";
 
 export interface TodayAttentionPerson {
   readonly archived: boolean;
@@ -81,12 +83,36 @@ function compare(left: TodayAttentionItem, right: TodayAttentionItem): number {
     left.id.localeCompare(right.id, "en");
 }
 
+/**
+ * Read models carry no actor join of their own. The `workspaces` port answers
+ * whether the actor may still read this workspace — without a lock, because
+ * these paths take none — and the repository scopes by workspace alone.
+ */
 export function createTodayAttention(dependencies: {
+  readonly actors: ActorRevalidation;
+  readonly transaction: {
+    run<T>(
+      work: (transaction: ReadModelTransaction) => Promise<T>,
+    ): Promise<T>;
+  };
   readonly clock: Clock;
   readonly repository: TodayAttentionRepository;
 }) {
+  const readable = async (
+    actor: {
+      readonly memberId: string;
+      readonly role: "admin" | "member" | "owner";
+      readonly userId: string;
+      readonly workspaceId: string;
+    },
+  ): Promise<boolean> =>
+    await dependencies.transaction.run((transaction) =>
+      dependencies.actors.revalidate({ ...actor, lock: false, transaction })
+    ) === "active";
+
   return {
     async get(actor: PeopleActor) {
+      if (!await readable(actor)) return { status: "forbidden" as const };
       const now = dependencies.clock.now();
       const result = await dependencies.repository.getSnapshot({
         ...actor,

@@ -8,6 +8,7 @@ import {
   type ReminderDefinitionRecord,
   type ReminderOccurrenceRecord,
   type ReminderOccurrenceStatus,
+  type ReminderRecipients,
   type ReminderRepository,
   type ReminderWorkspaceBoundary,
   type StayInTouchCadenceRecord,
@@ -178,6 +179,8 @@ export class PostgresReminderWorkspaceBoundary
 }
 
 export class PostgresReminderRepository implements ReminderRepository {
+  constructor(private readonly recipients: ReminderRecipients) {}
+
   async lockRequest(
     command: Parameters<ReminderRepository["lockRequest"]>[0],
   ): Promise<void> {
@@ -397,13 +400,12 @@ export class PostgresReminderRepository implements ReminderRepository {
     if (command.personIds.length === 0) return;
     await sql`
       with context as (
-        select coalesce(preference.timezone, setting.default_timezone, 'UTC') as timezone
-        from crm.workspace_members member
-        left join crm.member_preferences preference on preference.member_id = member.id
-        left join crm.workspace_settings setting on setting.workspace_id = member.workspace_id
-        where member.id = ${command.memberId}::uuid
-          and member.workspace_id = ${command.workspaceId}::uuid
-          and member.status = 'active' and member.left_at is null
+        select coalesce(
+          (select preference.timezone from crm.member_preferences preference
+            where preference.member_id = ${command.memberId}::uuid),
+          (select setting.default_timezone from crm.workspace_settings setting
+            where setting.workspace_id = ${command.workspaceId}::uuid),
+          'UTC') as timezone
       ), selected as (
         select cadence.id, cadence.interval_count, cadence.interval_unit,
           greatest(coalesce(cadence.last_contacted_at, '-infinity'::timestamptz), ${command.happenedAt}::timestamptz) as contacted,
@@ -471,6 +473,14 @@ export class PostgresReminderRepository implements ReminderRepository {
       ReminderRepository["regenerateForWorkspaceTimezone"]
     >[0],
   ): Promise<void> {
+    // `workspaces` names the members still eligible for delivery; this module
+    // no longer reads membership to find out.
+    const recipients = await this.recipients.listEligible({
+      transaction: command.transaction,
+      workspaceId: command.workspaceId,
+    });
+    if (recipients.length === 0) return;
+    const recipientIds = recipients.map((recipient) => recipient.memberId);
     await sql`
       with recalculated as (
         select occurrence.id,
@@ -483,11 +493,11 @@ export class PostgresReminderRepository implements ReminderRepository {
           )) at time zone ${command.timezone} as deliver_at
         from crm.reminder_occurrences occurrence
         join crm.reminders reminder on reminder.id = occurrence.reminder_id
-        join crm.workspace_members member on member.id = occurrence.member_id
-        left join crm.member_preferences preference on preference.member_id = member.id
+        left join crm.member_preferences preference
+          on preference.member_id = occurrence.member_id
         where reminder.workspace_id = ${command.workspaceId}::uuid
           and reminder.is_active and reminder.deleted_at is null
-          and member.status = 'active' and member.left_at is null
+          and occurrence.member_id = any(${recipientIds}::uuid[])
           and preference.timezone is null
           and occurrence.status = 'pending'
           and occurrence.attempt_count = 0
@@ -596,7 +606,10 @@ interface ReplenishmentRow {
 
 export class PostgresReminderDeliveryRepository
   implements ReminderDeliveryRepository {
-  constructor(private readonly database: Kysely<ApplicationDatabase>) {}
+  constructor(
+    private readonly database: Kysely<ApplicationDatabase>,
+    private readonly recipients: ReminderRecipients,
+  ) {}
 
   async replenish(
     command: Parameters<ReminderDeliveryRepository["replenish"]>[0],
@@ -625,6 +638,25 @@ export class PostgresReminderDeliveryRepository
         order by preference.member_id
         for share
       `.execute(transaction);
+      // The scan reaches every workspace at once, so the eligible members come
+      // from the `workspaces` port rather than a membership join here.
+      const candidateMembers = await sql<{ readonly member_id: string }>`
+        select distinct occurrence.member_id::text as member_id
+        from crm.reminders reminder
+        join crm.reminder_occurrences occurrence
+          on occurrence.reminder_id = reminder.id
+        join crm.people person on person.id = reminder.person_id
+        where reminder.is_active and reminder.deleted_at is null
+          and reminder.recurrence_unit <> 'none'
+          and person.archived_at is null and person.deleted_at is null
+      `.execute(transaction);
+      const eligible = await this.recipients.filterEligible({
+        memberIds: candidateMembers.rows.map((row) => row.member_id),
+        transaction: { opaque: transaction },
+      });
+      if (eligible.length === 0) return;
+      const eligibleMemberIds = eligible.map((row) => row.memberId);
+      const eligibleWorkspaceIds = eligible.map((row) => row.workspaceId);
       const candidates = await sql<ReplenishmentRow>`
         select distinct reminder.id::text as reminder_id,
           occurrence.member_id::text, reminder.anchor_on::text,
@@ -639,20 +671,17 @@ export class PostgresReminderDeliveryRepository
         join crm.reminder_occurrences occurrence
           on occurrence.reminder_id = reminder.id
         join crm.people person on person.id = reminder.person_id
-        join crm.workspaces workspace on workspace.id = reminder.workspace_id
-        join crm.workspace_members member on member.id = occurrence.member_id
-          and member.workspace_id = workspace.id
-        join crm.users account on account.id = member.user_id
+        join unnest(${eligibleMemberIds}::uuid[], ${eligibleWorkspaceIds}::uuid[])
+          as eligible(member_id, workspace_id)
+          on eligible.member_id = occurrence.member_id
+          and eligible.workspace_id = reminder.workspace_id
         left join crm.member_preferences preference
-          on preference.member_id = member.id
+          on preference.member_id = occurrence.member_id
         left join crm.workspace_settings setting
-          on setting.workspace_id = workspace.id
+          on setting.workspace_id = reminder.workspace_id
         where reminder.is_active and reminder.deleted_at is null
           and reminder.recurrence_unit <> 'none'
           and person.archived_at is null and person.deleted_at is null
-          and workspace.status = 'active' and workspace.deleted_at is null
-          and member.status = 'active' and member.left_at is null
-          and account.status = 'active' and account.deleted_at is null
       `.execute(transaction);
       for (const candidate of candidates.rows) {
         let occurrences: readonly CalendarOccurrence[];
@@ -698,6 +727,23 @@ export class PostgresReminderDeliveryRepository
   async claimDue(
     command: Parameters<ReminderDeliveryRepository["claimDue"]>[0],
   ): Promise<readonly ClaimedReminderOccurrence[]> {
+    // The same set-based question: which members may still be delivered to.
+    const candidateMembers = await sql<{ readonly member_id: string }>`
+      select distinct occurrence.member_id::text as member_id
+      from crm.reminder_occurrences occurrence
+      join crm.reminders reminder on reminder.id = occurrence.reminder_id
+      where occurrence.channel = 'in_app'
+        and (
+          occurrence.status in ('pending','retry','claimed')
+          or occurrence.provider_result_state in ('ambiguous','confirmed')
+        )
+    `.execute(this.database);
+    const eligible = await this.recipients.filterEligible({
+      memberIds: candidateMembers.rows.map((row) => row.member_id),
+      transaction: { opaque: this.database },
+    });
+    const eligibleMemberIds = eligible.map((row) => row.memberId);
+    const eligibleWorkspaceIds = eligible.map((row) => row.workspaceId);
     const result = await sql<ClaimRow>`
       with inactive_expired_unattempted as (
         update crm.reminder_occurrences occurrence set
@@ -720,18 +766,15 @@ export class PostgresReminderDeliveryRepository
         from crm.reminder_occurrences occurrence
         join crm.reminders reminder on reminder.id = occurrence.reminder_id
         join crm.people person on person.id = reminder.person_id
-        join crm.workspaces workspace on workspace.id = reminder.workspace_id
-        join crm.workspace_members member on member.id = occurrence.member_id
-          and member.workspace_id = workspace.id
-        join crm.users account on account.id = member.user_id
+        join unnest(${eligibleMemberIds}::uuid[], ${eligibleWorkspaceIds}::uuid[])
+          as eligible(member_id, workspace_id)
+          on eligible.member_id = occurrence.member_id
+          and eligible.workspace_id = reminder.workspace_id
         where occurrence.channel = 'in_app'
           and (
             (
               reminder.is_active and reminder.deleted_at is null
               and person.archived_at is null and person.deleted_at is null
-              and workspace.status = 'active' and workspace.deleted_at is null
-              and member.status = 'active' and member.left_at is null
-              and account.status = 'active' and account.deleted_at is null
               and (
                 (occurrence.status in ('pending','retry') and coalesce(occurrence.next_attempt_at, occurrence.deliver_at) <= ${command.now})
                 or (occurrence.status = 'claimed' and occurrence.lease_expires_at <= ${command.now})

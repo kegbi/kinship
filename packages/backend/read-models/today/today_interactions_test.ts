@@ -8,6 +8,8 @@ Deno.test("INTERACTION-001 Today delegates a bounded read-only projection", asyn
   let favoriteLimit = 0;
   let recentLimit = 0;
   const projection = createTodayInteractions({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       getFavoriteNotes(command) {
         favoriteLimit = command.favoriteLimit;
@@ -50,6 +52,8 @@ Deno.test("INTERACTION-001 Today application keeps region failures independent",
     workspaceId: crypto.randomUUID(),
   };
   const projection = createTodayInteractions({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       getFavoriteNotes: () => Promise.reject(new Error("favorite offline")),
       getRecentActivity: () => Promise.resolve({ items: [], status: "ready" }),
@@ -67,6 +71,8 @@ Deno.test("INTERACTION-001 Today application keeps region failures independent",
   );
 
   const reverse = createTodayInteractions({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
       getFavoriteNotes: () => Promise.resolve({ items: [], status: "ready" }),
       getRecentActivity: () => Promise.reject(new Error("recent offline")),

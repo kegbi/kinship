@@ -1,4 +1,5 @@
 import type { Failure } from "../../../shared-kernel/result.ts";
+import type { ActorRevalidation } from "./actor_revalidation.ts";
 
 export interface RecentPeopleActor {
   readonly memberId: string;
@@ -60,6 +61,7 @@ function recentIds(value: unknown): readonly string[] {
 }
 
 export function createRecentPeopleManagement(dependencies: {
+  readonly actors: ActorRevalidation;
   readonly repository: RecentPeopleRepository;
   readonly transaction: {
     run<T>(
@@ -73,6 +75,12 @@ export function createRecentPeopleManagement(dependencies: {
       personId: string,
     ) {
       return await dependencies.transaction.run(async (transaction) => {
+        const standing = await dependencies.actors.revalidate({
+          ...actor,
+          lock: true,
+          transaction,
+        });
+        if (standing === "revoked") return { status: "forbidden" as const };
         const locked = await dependencies.repository.lock({
           ...actor,
           transaction,

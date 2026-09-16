@@ -1,4 +1,5 @@
 import type { Failure } from "../../../shared-kernel/result.ts";
+import type { ActorRevalidation } from "./actor_revalidation.ts";
 
 export type PersonWorkspaceView =
   | "all"
@@ -100,6 +101,7 @@ function validInput(value: unknown): value is MemberUiState {
 }
 
 export function createMemberUiStateManagement(dependencies: {
+  readonly actors: ActorRevalidation;
   readonly repository: MemberUiStateRepository;
   readonly transaction: {
     run<T>(
@@ -110,6 +112,12 @@ export function createMemberUiStateManagement(dependencies: {
   return {
     async read(actor: MemberUiStateActor) {
       return await dependencies.transaction.run(async (transaction) => {
+        const standing = await dependencies.actors.revalidate({
+          ...actor,
+          lock: false,
+          transaction,
+        });
+        if (standing === "revoked") return { status: "forbidden" as const };
         const result = await dependencies.repository.read({
           ...actor,
           transaction,
@@ -123,6 +131,12 @@ export function createMemberUiStateManagement(dependencies: {
     async save(actor: MemberUiStateActor, input: MemberUiState) {
       if (!validInput(input)) return { status: "forbidden" as const };
       return await dependencies.transaction.run(async (transaction) => {
+        const standing = await dependencies.actors.revalidate({
+          ...actor,
+          lock: true,
+          transaction,
+        });
+        if (standing === "revoked") return { status: "forbidden" as const };
         const locked = await dependencies.repository.lock({
           ...actor,
           transaction,

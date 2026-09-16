@@ -1,5 +1,10 @@
 import type { Failure } from "../../../shared-kernel/result.ts";
 import type { DatePrecision } from "../../../shared-kernel/partial_date.ts";
+import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
+
+export interface ReadModelTransaction {
+  readonly opaque: unknown;
+}
 import {
   createPersonTimeline,
   type PersonTimelineRepository,
@@ -226,15 +231,32 @@ function summary(
   };
 }
 
+/**
+ * Read models carry no actor join of their own. The `workspaces` port answers
+ * whether the actor may still read this workspace — without a lock, because
+ * these paths take none — and the repository scopes by workspace alone.
+ */
 export function createPersonProfile(dependencies: {
+  readonly actors: ActorRevalidation;
+  readonly transaction: {
+    run<T>(
+      work: (transaction: ReadModelTransaction) => Promise<T>,
+    ): Promise<T>;
+  };
   readonly repository: PersonProfileRepository;
 }) {
+  const readable = async (actor: PersonProfileActor): Promise<boolean> =>
+    await dependencies.transaction.run((transaction) =>
+      dependencies.actors.revalidate({ ...actor, lock: false, transaction })
+    ) === "active";
+
   return {
     get: async (
       actor: PersonProfileActor,
       personId: string,
       options: { readonly includeSummary?: boolean } = {},
     ): Promise<GetPersonProfileResult> => {
+      if (!await readable(actor)) return { status: "forbidden" };
       const result = await dependencies.repository.get({
         ...actor,
         ...(options.includeSummary ? { includeSummary: true } : {}),
@@ -270,7 +292,9 @@ export function createPersonProfile(dependencies: {
       };
     },
     listLifeEvents: async (actor: PersonProfileActor, personId: string) =>
-      await dependencies.repository.listLifeEvents({ ...actor, personId }),
+      await readable(actor)
+        ? await dependencies.repository.listLifeEvents({ ...actor, personId })
+        : { status: "forbidden" as const },
     ...createPersonTimeline(dependencies),
   };
 }

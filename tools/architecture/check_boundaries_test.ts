@@ -836,9 +836,17 @@ Deno.test("[GAP-008] one adapter carries the whole actor-context read", async ()
     }`,
   );
 
-  const undeclared = await repository([
-    "packages/backend/modules/workspaces/adapters/postgres/member_ui_state.ts",
-  ]);
+  // The exemption names one file, so any other workspaces adapter that went
+  // back to the join is still reported.
+  const undeclared = await fixture([{
+    path:
+      "packages/backend/modules/workspaces/adapters/postgres/member_ui_state.ts",
+    text: "const query = sql`select id from crm.users where id = ${id}`;",
+  }], {
+    manifestText: await read(MANIFEST_PATH),
+    canonicalSchemaPath: CANONICAL_SCHEMA_PATH,
+    canonicalSchemaSql: await read(CANONICAL_SCHEMA_PATH),
+  });
   assert(
     undeclared.some((violation) =>
       violation.rule === "table-foreign-read" &&
@@ -863,6 +871,42 @@ Deno.test("[GAP-008] one adapter carries the whole actor-context read", async ()
     waveOne,
     ["crm.users", "crm.workspace_members", "crm.workspaces,"],
     "wave-one adapters must not re-create the actor-context join",
+  );
+});
+
+Deno.test("[GAP-009] wave two carries no copy of the actor-context join", async () => {
+  const waveTwo = await repository([
+    "packages/backend/modules/api-access/adapters/postgres/api_token_repository.ts",
+    "packages/backend/modules/files/adapters/postgres/export_file_boundary.ts",
+    "packages/backend/modules/files/adapters/postgres/file_metadata_repository.ts",
+    "packages/backend/modules/files/adapters/postgres/gift_attachment_boundary.ts",
+    "packages/backend/modules/files/adapters/postgres/import_file_boundary.ts",
+    "packages/backend/modules/files/adapters/postgres/storage_settings_repository.ts",
+    "packages/backend/modules/gifts/adapters/postgres/gift_repository.ts",
+    "packages/backend/modules/governance/adapters/postgres/legal_acceptance_repository.ts",
+    "packages/backend/modules/import-export/adapters/postgres/export_repository.ts",
+    "packages/backend/modules/import-export/adapters/postgres/import_repository.ts",
+    "packages/backend/modules/integrations/adapters/postgres/dav_repository.ts",
+    "packages/backend/modules/interactions/adapters/postgres/journal_activity_boundary.ts",
+    "packages/backend/modules/journal/adapters/postgres/journal_repository.ts",
+    "packages/backend/modules/workspaces/adapters/postgres/interaction_workspace_boundary.ts",
+    "packages/backend/modules/workspaces/adapters/postgres/member_ui_state.ts",
+    "packages/backend/modules/workspaces/adapters/postgres/recent_people.ts",
+    "packages/backend/modules/workspaces/adapters/postgres/relationship_workspace_boundary.ts",
+    "packages/backend/read-models/activity-report/adapters/postgres/activity_report_repository.ts",
+    "packages/backend/read-models/journal-timeline/adapters/postgres/journal_timeline_repository.ts",
+    "packages/backend/read-models/people-directory/adapters/postgres/people_directory_repository.ts",
+    "packages/backend/read-models/person-profile/adapters/postgres/person_profile_repository.ts",
+    "packages/backend/read-models/today/adapters/postgres/today_attention_repository.ts",
+    "packages/backend/read-models/today/adapters/postgres/today_interactions_repository.ts",
+    "packages/backend/read-models/today/adapters/postgres/today_recent_people_repository.ts",
+    "packages/backend/read-models/today/adapters/postgres/today_reminders_repository.ts",
+    "packages/backend/read-models/today/adapters/postgres/today_tasks_repository.ts",
+  ]);
+  refuse(
+    waveTwo,
+    ["crm.users", "crm.gifts,"],
+    "wave-two adapters must not re-create the actor-context join",
   );
 });
 

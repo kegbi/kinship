@@ -1,3 +1,4 @@
+import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
@@ -244,13 +245,14 @@ Deno.test("[INTEGRATION-001] PostgreSQL DAV checkpoints isolate tenants and reco
   const davRepository = new PostgresDavRepository(
     boundary.db,
     new PostgresDavAudit(),
+    new PostgresActorRevalidation(),
   );
   const rollbackId = crypto.randomUUID();
   let auditRolledBack = false;
   try {
     await new PostgresDavRepository(boundary.db, {
       record: () => Promise.reject(new Error("audit unavailable")),
-    }).create({
+    }, new PostgresActorRevalidation()).create({
       ...actor,
       encryptedPassword: "encrypted",
       id: rollbackId,
@@ -894,6 +896,101 @@ Deno.test("[INTEGRATION-001] PostgreSQL DAV checkpoints isolate tenants and reco
   await boundary.destroy();
 });
 
+// --- GAP-009 -------------------------------------------------------------
+
+/**
+ * A workspace whose only member can be revoked mid-test. The actor is built
+ * directly so the use case is exercised without the session layer refusing
+ * first.
+ */
+async function revocableActor(name: string): Promise<{
+  readonly memberId: string;
+  readonly personId: string;
+  readonly role: "owner";
+  readonly userId: string;
+  readonly workspaceId: string;
+}> {
+  const userId = crypto.randomUUID();
+  const workspaceId = crypto.randomUUID();
+  const memberId = crypto.randomUUID();
+  const personId = crypto.randomUUID();
+  await sql.begin(async (transaction) => {
+    await transaction`
+      insert into crm.users (id, email, first_name, status)
+      values (${userId}, ${`${name}@example.test`}, 'Revocable', 'active')
+    `;
+    await transaction`
+      insert into crm.workspaces (id, name, status, created_by_user_id)
+      values (${workspaceId}, ${name}, 'active', ${userId})
+    `;
+    await transaction`
+      insert into crm.workspace_members (
+        id, workspace_id, user_id, role, status, joined_at
+      ) values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active', now())
+    `;
+    await transaction`
+      insert into crm.people (id, workspace_id, created_by_member_id, given_name)
+      values (${personId}, ${workspaceId}, ${memberId}, 'Revocation subject')
+    `;
+  });
+  return { memberId, personId, role: "owner", userId, workspaceId };
+}
+
+async function revokeMembership(memberId: string): Promise<void> {
+  await sql`
+    update crm.workspace_members set status = 'left', left_at = now()
+    where id = ${memberId}
+  `;
+}
+
+Deno.test({
+  name:
+    "[INTEGRATION-001] GAP-009 a revoked member cannot configure a DAV subscription",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const actor = await revocableActor(
+        `dav-revocation-${crypto.randomUUID()}`,
+      );
+      const repository = new PostgresDavRepository(
+        connection.db,
+        new PostgresDavAudit(),
+        new PostgresActorRevalidation(),
+      );
+      assert(
+        await repository.authorize(actor),
+        "an active owner is authorized for DAV",
+      );
+
+      await revokeMembership(actor.memberId);
+
+      assert(
+        !await repository.authorize(actor),
+        "a revoked member kept DAV authority",
+      );
+      const created = await repository.create({
+        ...actor,
+        encryptedPassword: "encrypted",
+        id: crypto.randomUUID(),
+        name: "Refused book",
+        occurredAt: new Date(),
+        remoteUrl: "https://dav.example.test/books/refused",
+        username: "revoked",
+      });
+      assert(created === undefined, "a revoked member created a subscription");
+      const [remaining] = await sql<[{ readonly count: number }]>`
+        select count(*)::int as count
+        from crm.dav_address_book_subscriptions
+        where workspace_id = ${actor.workspaceId}
+      `;
+      assert(remaining?.count === 0, "a revoked member wrote a DAV row");
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
 Deno.test({
   name: "close DAV PostgreSQL fixture",
   sanitizeOps: false,

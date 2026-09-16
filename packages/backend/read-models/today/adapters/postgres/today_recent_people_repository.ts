@@ -42,20 +42,9 @@ export class PostgresTodayRecentPeopleRepository
       .execute(async (transaction) => {
         const context = await sql<{ readonly uiState: unknown }>`
           select preference.ui_state as "uiState"
-          from crm.users account
-          join crm.workspace_members member on member.user_id = account.id
-          join crm.workspaces workspace on workspace.id = member.workspace_id
-          left join crm.member_preferences preference on preference.member_id = member.id
-          where account.id = ${command.userId}::uuid
-            and account.status = 'active' and account.deleted_at is null
-            and member.id = ${command.memberId}::uuid
-            and member.workspace_id = ${command.workspaceId}::uuid
-            and member.role = ${command.role}
-            and member.status = 'active' and member.left_at is null
-            and workspace.id = ${command.workspaceId}::uuid
-            and workspace.status = 'active' and workspace.deleted_at is null
+          from crm.member_preferences preference
+          where preference.member_id = ${command.memberId}::uuid
         `.execute(transaction);
-        if (context.rows.length === 0) return { status: "forbidden" as const };
         const ids = idsFromUiState(context.rows[0]?.uiState, command.limit);
         if (ids.length === 0) {
           return { people: [], status: "ready" as const };

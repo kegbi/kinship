@@ -43,26 +43,16 @@ export class PostgresTodayTasksRepository implements TodayTasksRepository {
           coalesce(nullif(trim(concat_ws(' ', nullif(person.given_name, ''),
             person.family_name)), ''), nullif(person.nickname, ''), 'Unnamed person')
         end as person_name
-      from crm.users account
-      join crm.workspace_members member on member.user_id = account.id
-      join crm.workspaces workspace on workspace.id = member.workspace_id
-      left join crm.tasks task on task.workspace_id = workspace.id
+      from crm.tasks task
+      left join crm.people person on person.id = task.person_id
+        and person.workspace_id = task.workspace_id
+        and person.deleted_at is null
+      where task.workspace_id = ${command.workspaceId}::uuid
         and task.status = 'open' and task.deleted_at is null
         and task.due_at is not null and task.due_at <= ${command.dueBefore}
-      left join crm.people person on person.id = task.person_id
-        and person.workspace_id = workspace.id and person.deleted_at is null
-      where account.id = ${command.userId}::uuid
-        and account.status = 'active' and account.deleted_at is null
-        and member.id = ${command.memberId}::uuid
-        and member.workspace_id = ${command.workspaceId}::uuid
-        and member.role = ${command.role}
-        and member.status = 'active' and member.left_at is null
-        and workspace.id = ${command.workspaceId}::uuid
-        and workspace.status = 'active' and workspace.deleted_at is null
       order by task.due_at, task.id
       limit ${command.limit}
     `.execute(this.database);
-    if (result.rows.length === 0) return { status: "forbidden" };
     return {
       items: result.rows.flatMap((row) =>
         row.id && row.created_at && row.status && row.title && row.updated_at

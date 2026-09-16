@@ -9,7 +9,10 @@ import {
 } from "../../../shared-kernel/validation.ts";
 import type { PeopleActor, PeopleTransaction } from "../../people/public.ts";
 import type { GiftAttachmentBoundary } from "../../files/public.ts";
-import type { WorkspaceCurrencyBoundary } from "../../workspaces/public.ts";
+import type {
+  ActorRevalidation,
+  WorkspaceCurrencyBoundary,
+} from "../../workspaces/public.ts";
 
 export type GiftStatus = "archived" | "given" | "idea" | "planned" | "received";
 export type DebtStatus = "cancelled" | "open" | "settled";
@@ -157,6 +160,7 @@ export interface GiftAudit {
 }
 
 export interface GiftManagementDependencies {
+  readonly actors: ActorRevalidation;
   readonly attachments: GiftAttachmentBoundary;
   readonly audit: GiftAudit;
   readonly clock: Clock;
@@ -240,6 +244,18 @@ function hydrateGifts(
 }
 
 export function createGiftManagement(dependencies: GiftManagementDependencies) {
+  /**
+   * The actor's standing, asked first inside the caller's transaction. Write
+   * paths lock the actor's rows; the list keeps its lock-free concurrency.
+   */
+  const active = async (
+    actor: PeopleActor,
+    transaction: PeopleTransaction,
+    lock: boolean,
+  ): Promise<boolean> =>
+    await dependencies.actors.revalidate({ ...actor, lock, transaction }) ===
+      "active";
+
   return {
     createGift: async (
       actor: PeopleActor,
@@ -262,6 +278,9 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
       const occurredAt = dependencies.clock.now();
       try {
         return await dependencies.transaction.run(async (transaction) => {
+          if (!await active(actor, transaction, true)) {
+            return { status: "forbidden" as const };
+          }
           if (input.attachmentFileId) {
             const valid = await dependencies.attachments.validateForGift({
               ...actor,
@@ -364,6 +383,9 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
       return await runOrUnavailable(
         dependencies.transaction,
         async (transaction) => {
+          if (!await active(actor, transaction, true)) {
+            return { status: "forbidden" as const };
+          }
           if (
             !await dependencies.currencies.isSupported({
               code: currencyCode,
@@ -408,6 +430,9 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
       const occurredAt = dependencies.clock.now();
       try {
         return await dependencies.transaction.run(async (transaction) => {
+          if (!await active(actor, transaction, true)) {
+            return { status: "forbidden" as const };
+          }
           const found = await dependencies.repository.findGift({
             ...actor,
             id,
@@ -471,6 +496,9 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
       return await runOrUnavailable(
         dependencies.transaction,
         async (transaction) => {
+          if (!await active(actor, transaction, true)) {
+            return { status: "forbidden" as const };
+          }
           const found = await dependencies.repository.findDebt({
             ...actor,
             id,
@@ -511,6 +539,9 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
       return await runOrUnavailable(
         dependencies.transaction,
         async (transaction) => {
+          if (!await active(actor, transaction, false)) {
+            return { status: "forbidden" as const };
+          }
           const records = await dependencies.repository.list({
             ...actor,
             personId,

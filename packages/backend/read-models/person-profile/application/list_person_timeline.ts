@@ -2,7 +2,9 @@ import type { Failure } from "../../../shared-kernel/result.ts";
 import type {
   PersonLifeEventPrecision,
   PersonProfileActor,
+  ReadModelTransaction,
 } from "./get_person_profile.ts";
+import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
 import type {
   InteractionOption,
   InteractionParticipant,
@@ -66,9 +68,25 @@ export interface PersonTimelineRepository {
   >;
 }
 
+/**
+ * Read models carry no actor join of their own. The `workspaces` port answers
+ * whether the actor may still read this workspace — without a lock, because
+ * these paths take none — and the repository scopes by workspace alone.
+ */
 export function createPersonTimeline(dependencies: {
+  readonly actors: ActorRevalidation;
+  readonly transaction: {
+    run<T>(
+      work: (transaction: ReadModelTransaction) => Promise<T>,
+    ): Promise<T>;
+  };
   readonly repository: PersonTimelineRepository;
 }) {
+  const readable = async (actor: PersonProfileActor): Promise<boolean> =>
+    await dependencies.transaction.run((transaction) =>
+      dependencies.actors.revalidate({ ...actor, lock: false, transaction })
+    ) === "active";
+
   return {
     listTimeline: async (
       actor: PersonProfileActor,
@@ -79,6 +97,7 @@ export function createPersonTimeline(dependencies: {
         readonly limit?: number;
       } = {},
     ) => {
+      if (!await readable(actor)) return { status: "forbidden" as const };
       let after:
         | { readonly id: string; readonly timestamp: string }
         | undefined;

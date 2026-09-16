@@ -1,3 +1,10 @@
+import {
+  createMemberUiStateManagement as createRevocableMemberUiState,
+  createRecentPeopleManagement,
+  PostgresMemberUiStateRepository as RevocableMemberUiStateRepository,
+  PostgresRecentPeopleRepository,
+} from "../../packages/backend/modules/workspaces/public.ts";
+import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
@@ -251,6 +258,7 @@ Deno.test({
     const boundaryConnection = connectDatabase(databaseUrl);
     try {
       const memberUiState = createMemberUiStateManagement({
+        actors: new PostgresActorRevalidation(),
         repository: new PostgresMemberUiStateRepository(),
         transaction: new PostgresRegistrationTransaction(boundaryConnection.db),
       });
@@ -2240,6 +2248,109 @@ Deno.test({
   },
 });
 
+// --- GAP-009 -------------------------------------------------------------
+
+/**
+ * A workspace whose only member can be revoked mid-test. The actor is built
+ * directly so the use case is exercised without the session layer refusing
+ * first.
+ */
+async function revocableActor(name: string): Promise<{
+  readonly memberId: string;
+  readonly personId: string;
+  readonly role: "owner";
+  readonly userId: string;
+  readonly workspaceId: string;
+}> {
+  const userId = crypto.randomUUID();
+  const workspaceId = crypto.randomUUID();
+  const memberId = crypto.randomUUID();
+  const personId = crypto.randomUUID();
+  await sql.begin(async (transaction) => {
+    await transaction`
+      insert into crm.users (id, email, first_name, status)
+      values (${userId}, ${`${name}@example.test`}, 'Revocable', 'active')
+    `;
+    await transaction`
+      insert into crm.workspaces (id, name, status, created_by_user_id)
+      values (${workspaceId}, ${name}, 'active', ${userId})
+    `;
+    await transaction`
+      insert into crm.workspace_members (
+        id, workspace_id, user_id, role, status, joined_at
+      ) values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active', now())
+    `;
+    await transaction`
+      insert into crm.people (id, workspace_id, created_by_member_id, given_name)
+      values (${personId}, ${workspaceId}, ${memberId}, 'Revocation subject')
+    `;
+  });
+  return { memberId, personId, role: "owner", userId, workspaceId };
+}
+
+async function revokeMembership(memberId: string): Promise<void> {
+  await sql`
+    update crm.workspace_members set status = 'left', left_at = now()
+    where id = ${memberId}
+  `;
+}
+
+Deno.test({
+  name:
+    "UXD-002C3 GAP-009 a revoked member cannot read or write its own UI state",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const actor = await revocableActor(
+        `ui-state-revocation-${crypto.randomUUID()}`,
+      );
+      const actors = new PostgresActorRevalidation();
+      const transaction = new PostgresRegistrationTransaction(connection.db);
+      const memberUiState = createRevocableMemberUiState({
+        actors,
+        repository: new RevocableMemberUiStateRepository(),
+        transaction,
+      });
+      const recentPeople = createRecentPeopleManagement({
+        actors,
+        repository: new PostgresRecentPeopleRepository(),
+        transaction,
+      });
+
+      const allowed = await memberUiState.save(actor, { theme: "dark" });
+      assert(allowed.status === "ready", "an active member saves UI state");
+      const allowedRecent = await recentPeople.record(actor, actor.personId);
+      assert(
+        allowedRecent.status === "recorded",
+        "an active member records a recent person",
+      );
+
+      await revokeMembership(actor.memberId);
+
+      const refusedRead = await memberUiState.read(actor);
+      const refusedSave = await memberUiState.save(actor, { theme: "light" });
+      const refusedRecent = await recentPeople.record(actor, actor.personId);
+      assert(
+        refusedRead.status === "forbidden" &&
+          refusedSave.status === "forbidden" &&
+          refusedRecent.status === "forbidden",
+        "a revoked member still reached its member preferences",
+      );
+      const [stored] = await sql<[{ readonly state: string }]>`
+        select ui_state::text as state from crm.member_preferences
+        where member_id = ${actor.memberId}
+      `;
+      assert(
+        stored?.state.includes('"dark"'),
+        "a revoked member overwrote its stored UI state",
+      );
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
 Deno.test({
   name: "APP-002E PostgreSQL resources close",
   sanitizeOps: false,

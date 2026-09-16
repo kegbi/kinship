@@ -8,6 +8,7 @@ import type {
   PeopleActor,
   PeopleTransaction,
 } from "../../people/public.ts";
+import type { ActorRevalidation } from "../../workspaces/public.ts";
 
 export interface InteractionParticipant {
   readonly id: string;
@@ -70,12 +71,11 @@ export type StoredInteraction =
     readonly personId: string;
   };
 
+/**
+ * The workspace vocabulary an interaction refers to. The actor's standing is
+ * established with `ActorRevalidation` before any of these are asked.
+ */
 export interface InteractionWorkspaceBoundary {
-  authorize(
-    command: PeopleActor & {
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<Failure<"forbidden"> | { readonly status: "ready" }>;
   describe(
     command: {
       readonly activityTypeId?: string;
@@ -362,6 +362,7 @@ function validate(input: RecordInteractionInput):
 }
 
 export function createInteractionManagement(dependencies: {
+  readonly actors: ActorRevalidation;
   readonly audit: InteractionAudit;
   readonly clock: Clock;
   readonly people: InteractionPersonBoundary;
@@ -372,6 +373,17 @@ export function createInteractionManagement(dependencies: {
   };
   readonly workspace: InteractionWorkspaceBoundary;
 }) {
+  /**
+   * The actor's standing, asked first inside the caller's transaction. Write
+   * paths lock the actor's rows; read paths keep their lock-free concurrency.
+   */
+  const active = async (
+    actor: PeopleActor,
+    transaction: PeopleTransaction,
+    lock: boolean,
+  ): Promise<boolean> =>
+    await dependencies.actors.revalidate({ ...actor, lock, transaction }) ===
+      "active";
   return {
     options: (
       actor: PeopleActor,
@@ -383,8 +395,11 @@ export function createInteractionManagement(dependencies: {
         readonly limit?: number;
       } = {},
     ) =>
-      dependencies.transaction.run((transaction) =>
-        dependencies.workspace.options({
+      dependencies.transaction.run(async (transaction) => {
+        if (!await active(actor, transaction, false)) {
+          return { status: "forbidden" as const };
+        }
+        return await dependencies.workspace.options({
           ...actor,
           ...(input.activityTypeCursor
             ? { activityTypeCursor: input.activityTypeCursor }
@@ -400,8 +415,8 @@ export function createInteractionManagement(dependencies: {
             : {}),
           limit: Math.max(1, Math.min(20, Math.trunc(input.limit ?? 20))),
           transaction,
-        })
-      ),
+        });
+      }),
     record: async (
       actor: PeopleActor,
       input: RecordInteractionInput,
@@ -417,11 +432,7 @@ export function createInteractionManagement(dependencies: {
         workspaceId: canonicalUuid(actor.workspaceId),
       };
       return await dependencies.transaction.run(async (transaction) => {
-        const authorization = await dependencies.workspace.authorize({
-          ...canonicalActor,
-          transaction,
-        });
-        if (authorization.status !== "ready") {
+        if (!await active(canonicalActor, transaction, true)) {
           return { status: "forbidden" as const };
         }
         const id = await deriveInteractionId(

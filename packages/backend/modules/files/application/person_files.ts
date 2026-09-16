@@ -3,6 +3,7 @@ import type { Failure } from "../../../shared-kernel/result.ts";
 import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
 import { boundedText } from "../../../shared-kernel/validation.ts";
 import type { PeopleTransaction } from "../../people/public.ts";
+import type { ActorRevalidation } from "../../workspaces/public.ts";
 
 export const PERSON_FILE_MAX_BYTES = 10 * 1024 * 1024;
 
@@ -168,6 +169,19 @@ export interface FileAudit {
   }): Promise<string>;
 }
 
+/**
+ * Which of the named gifts a workspace owns. The `gifts` module owns the gift
+ * table and already depends on this one, so it fills this port at the
+ * composition root instead of `files` reading a table it does not own.
+ */
+export interface GiftAttachmentTarget {
+  ownedGiftIds(command: {
+    readonly giftIds: readonly string[];
+    readonly transaction: PeopleTransaction;
+    readonly workspaceId: string;
+  }): Promise<readonly string[]>;
+}
+
 export interface GiftAttachmentBoundary {
   attachToGift(
     command: PersonFileActor & {
@@ -206,6 +220,7 @@ export interface GiftAttachmentBoundary {
 }
 
 export interface PersonFileManagementDependencies {
+  readonly actors: ActorRevalidation;
   readonly audit: FileAudit;
   readonly clock: Clock;
   readonly ids: { next(): string };
@@ -279,6 +294,19 @@ async function checksum(bytes: Uint8Array): Promise<string> {
 export function createPersonFileManagement(
   dependencies: PersonFileManagementDependencies,
 ) {
+  /**
+   * Every step below opens its own transaction, so each one re-establishes the
+   * actor's standing inside it. Write steps lock the actor's rows; reads keep
+   * their lock-free concurrency.
+   */
+  const active = async (
+    actor: PersonFileActor,
+    transaction: PeopleTransaction,
+    lock: boolean,
+  ): Promise<boolean> =>
+    await dependencies.actors.revalidate({ ...actor, lock, transaction }) ===
+      "active";
+
   return {
     upload: async (
       actor: PersonFileActor,
@@ -302,12 +330,16 @@ export function createPersonFileManagement(
 
       const authorization = await runOrUnavailable(
         dependencies.transaction,
-        (transaction) =>
-          dependencies.repository.authorizeUpload({
+        async (transaction) => {
+          if (!await active(actor, transaction, true)) {
+            return { status: "forbidden" as const };
+          }
+          return await dependencies.repository.authorizeUpload({
             ...actor,
             personId,
             transaction,
-          }),
+          });
+        },
       );
       if (authorization.status !== "authorized") return authorization;
 
@@ -329,8 +361,11 @@ export function createPersonFileManagement(
 
       const reserved = await runOrUnavailable(
         dependencies.transaction,
-        async (transaction) =>
-          dependencies.repository.reserveUpload({
+        async (transaction) => {
+          if (!await active(actor, transaction, true)) {
+            return { status: "forbidden" as const };
+          }
+          return await dependencies.repository.reserveUpload({
             ...actor,
             byteSize: input.bytes.byteLength,
             checksumSha256: await checksum(input.bytes),
@@ -345,7 +380,8 @@ export function createPersonFileManagement(
             storageProvider: dependencies.storage.provider,
             title,
             transaction,
-          }),
+          });
+        },
       );
       if (reserved.status !== "reserved") return reserved;
 
@@ -358,13 +394,15 @@ export function createPersonFileManagement(
       } catch {
         await runOrUnavailable(
           dependencies.transaction,
-          (transaction) =>
-            dependencies.repository.markMissing({
+          async (transaction) => {
+            if (!await active(actor, transaction, true)) return undefined;
+            return await dependencies.repository.markMissing({
               ...actor,
               fileId,
               occurredAt,
               transaction,
-            }),
+            });
+          },
         );
         return { status: "unavailable" };
       }
@@ -372,6 +410,9 @@ export function createPersonFileManagement(
       const result = await runOrUnavailable(
         dependencies.transaction,
         async (transaction) => {
+          if (!await active(actor, transaction, true)) {
+            return { status: "forbidden" as const };
+          }
           const finalized = await dependencies.repository.finalizeUpload({
             ...actor,
             fileId,
@@ -402,8 +443,16 @@ export function createPersonFileManagement(
     ): Promise<ListPersonFilesResult> => {
       const result = await runOrUnavailable(
         dependencies.transaction,
-        (transaction) =>
-          dependencies.repository.list({ ...actor, personId, transaction }),
+        async (transaction) => {
+          if (!await active(actor, transaction, false)) {
+            return { status: "forbidden" as const };
+          }
+          return await dependencies.repository.list({
+            ...actor,
+            personId,
+            transaction,
+          });
+        },
       );
       return result.status === "ready"
         ? { files: result.files.map(publicFile), status: "ready" }
@@ -417,13 +466,17 @@ export function createPersonFileManagement(
     ): Promise<DownloadPersonFileResult> => {
       const found = await runOrUnavailable(
         dependencies.transaction,
-        (transaction) =>
-          dependencies.repository.find({
+        async (transaction) => {
+          if (!await active(actor, transaction, false)) {
+            return { status: "forbidden" as const };
+          }
+          return await dependencies.repository.find({
             ...actor,
             fileId,
             personId,
             transaction,
-          }),
+          });
+        },
       );
       if (found.status !== "found") return found;
       if (found.file.status !== "available") {
@@ -441,6 +494,9 @@ export function createPersonFileManagement(
         return await runOrUnavailable(
           dependencies.transaction,
           async (transaction) => {
+            if (!await active(actor, transaction, true)) {
+              return { status: "forbidden" } as const;
+            }
             await dependencies.repository.markMissing({
               ...actor,
               fileId,
@@ -454,6 +510,9 @@ export function createPersonFileManagement(
       const recorded = await runOrUnavailable(
         dependencies.transaction,
         async (transaction) => {
+          if (!await active(actor, transaction, true)) {
+            return { status: "forbidden" } as const;
+          }
           await dependencies.repository.recordRead({
             ...actor,
             fileId,
@@ -483,6 +542,9 @@ export function createPersonFileManagement(
       const removed = await runOrUnavailable(
         dependencies.transaction,
         async (transaction) => {
+          if (!await active(actor, transaction, true)) {
+            return { status: "forbidden" as const };
+          }
           const reserved = await dependencies.repository.reserveRemoval({
             ...actor,
             fileId,
