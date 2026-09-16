@@ -403,7 +403,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
 
 ### Phase 1 — Shared kernel and backend consolidation
 
-- [ ] **GAP-006 — Create `packages/backend/shared-kernel` and adopt it in people
+- [x] **GAP-006 — Create `packages/backend/shared-kernel` and adopt it in people
       and planning.** M. Depends: 005.
   - Problem: no shared kernel (mandated by `module-boundaries.yaml:5-18`); 48
     result unions, 25 clock shapes, duplicated precision enums, validators,
@@ -423,6 +423,12 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     `ImportantDatePrecision` and `PersonLifeEventPrecision`.
   - Verify: kernel ≥ 95% coverage; people and planning unit and integration
     tests green; `check:architecture` allows `shared-kernel` per `layerRules`.
+  - Delivered 2026-09-16: kernel 28/0 at 98.6% branch and 100% line/function
+    against an enforced 95% threshold; api unit 328/0, planning unit 46/0, tasks
+    43/0; api integration 57/0, planning integration 34/0; check:architecture
+    treats the kernel as a leaf unit with the baseline unchanged at 98; derived
+    identifiers pinned byte-compatible with the pre-kernel derivation; gates
+    fmt:check, lint, check.
 
 - [ ] **GAP-007 — Adopt the shared kernel in the remaining 12 modules and 6 read
       models.** M. Depends: 006.

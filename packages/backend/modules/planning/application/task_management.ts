@@ -1,8 +1,30 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import { deterministicId } from "../../../shared-kernel/ids.ts";
+import {
+  type CursorKeyset,
+  signCursor,
+  verifyCursor,
+} from "../../../shared-kernel/pagination.ts";
+import type {
+  Failure,
+  ValidationFailure,
+} from "../../../shared-kernel/result.ts";
+import {
+  boundedText,
+  instant,
+  isInstant,
+  uuid,
+} from "../../../shared-kernel/validation.ts";
 import type {
   PeopleActor,
   PeopleTransaction,
   RelationshipPersonBoundary,
 } from "../../people/public.ts";
+
+/** The namespace that makes a task creation idempotent across retries. */
+const TASK_ID_NAMESPACE = "kinship.planning.task-id.v1";
+/** The signing domain that keeps a task cursor usable only for task listing. */
+const TASK_CURSOR_DOMAIN = "kinship.planning.task-cursor.v1";
 
 export type TaskStatus = "cancelled" | "completed" | "open";
 
@@ -109,10 +131,7 @@ export interface TaskListAnchor {
   readonly updatedAt: string;
 }
 
-export interface TaskCursorKeyset {
-  readonly activeVersion: number;
-  readonly keys: ReadonlyMap<number, Uint8Array>;
-}
+export type TaskCursorKeyset = CursorKeyset;
 
 export type TaskAuditAction = "changed" | "completed" | "created" | "reopened";
 
@@ -136,7 +155,7 @@ export interface TaskAudit {
 
 export interface TaskManagementDependencies {
   readonly audit: TaskAudit;
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly cursorKeyset: TaskCursorKeyset;
   readonly people: RelationshipPersonBoundary;
   readonly repository: TaskRepository;
@@ -164,17 +183,8 @@ export interface ChangeTaskInput {
 }
 
 export type TaskFailure =
-  | {
-    readonly status:
-      | "archived-write-rejected"
-      | "forbidden"
-      | "not-found"
-      | "stale";
-  }
-  | {
-    readonly errors: Readonly<Record<string, string>>;
-    readonly status: "validation-error";
-  };
+  | Failure<"archived-write-rejected" | "forbidden" | "not-found", "stale">
+  | ValidationFailure;
 
 export type CreateTaskResult =
   | { readonly status: "created"; readonly task: TaskRecord }
@@ -197,67 +207,21 @@ export type ListTasksResult =
   }
   | { readonly status: "forbidden" | "stale-cursor" };
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-58][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function canonicalUuid(value: string): string {
-  return value.toLowerCase();
-}
-
-function normalizedText(value: string, maximum: number): string | undefined {
-  const normalized = value.trim();
-  return normalized.length > 0 && normalized.length <= maximum
-    ? normalized
-    : undefined;
-}
-
-function optionalText(
+/**
+ * A patchable text field: `null` clears it, `undefined` leaves it alone, and a
+ * value is kept only while it fits.
+ */
+function nullableText(
   value: string | null | undefined,
   maximum: number,
 ): string | null | undefined {
   if (value === null) return null;
   if (value === undefined) return undefined;
-  return normalizedText(value, maximum);
+  return boundedText(value, maximum);
 }
 
 function parsedDate(value: string | undefined): Date | undefined {
-  if (value === undefined) return undefined;
-  const parsed = new Date(value);
-  return Number.isFinite(parsed.getTime()) ? parsed : undefined;
-}
-
-function canonicalInstant(value: string | undefined): string | undefined {
-  if (value === undefined || !Number.isFinite(Date.parse(value))) {
-    return undefined;
-  }
-  if (/\.(\d{7,})(?:Z|[+-]\d{2}:\d{2})$/i.test(value)) return undefined;
-  const fraction = /\.(\d{1,6})(?:Z|[+-]\d{2}:\d{2})$/i.exec(value)?.[1] ??
-    "";
-  return `${new Date(value).toISOString().slice(0, 19)}.${
-    fraction.padEnd(6, "0")
-  }Z`;
-}
-
-async function deriveTaskId(
-  workspaceId: string,
-  requestId: string,
-): Promise<string> {
-  const digest = new Uint8Array(
-    await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(
-        `kinship.planning.task-id.v1\u0000${workspaceId.toLowerCase()}\u0000${requestId.toLowerCase()}`,
-      ),
-    ),
-  );
-  digest[6] = (digest[6]! & 0x0f) | 0x80;
-  digest[8] = (digest[8]! & 0x3f) | 0x80;
-  const hex = [...digest.slice(0, 16)].map((value) =>
-    value.toString(16).padStart(2, "0")
-  ).join("");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${
-    hex.slice(16, 20)
-  }-${hex.slice(20)}`;
+  return isInstant(value) ? new Date(value) : undefined;
 }
 
 function createValidation(input: CreateTaskInput): {
@@ -269,32 +233,32 @@ function createValidation(input: CreateTaskInput): {
   readonly title?: string;
 } {
   const errors: Record<string, string> = {};
-  const title = normalizedText(input.title, 500);
+  const title = boundedText(input.title, 500);
   if (!title) errors.title = "Add a title of at most 500 characters.";
   const description = input.description === undefined
     ? undefined
-    : normalizedText(input.description, 10_000);
+    : boundedText(input.description, 10_000);
   if (input.description !== undefined && !description) {
     errors.description = "Description must be at most 10,000 characters.";
   }
-  const dueAt = canonicalInstant(input.dueAt);
+  const dueAt = instant(input.dueAt);
   if (input.dueAt !== undefined && !dueAt) {
     errors.dueAt = "Choose a valid due time.";
   }
-  if (!UUID_PATTERN.test(input.requestId)) {
+  const requestId = uuid(input.requestId);
+  if (requestId === undefined) {
     errors.requestId = "Use a canonical request identifier.";
   }
-  if (input.personId && !UUID_PATTERN.test(input.personId)) {
+  const personId = input.personId ? uuid(input.personId) : undefined;
+  if (input.personId && personId === undefined) {
     errors.personId = "Choose a person from this workspace.";
   }
   return {
     ...(description ? { description } : {}),
     ...(dueAt ? { dueAt } : {}),
     errors,
-    ...(input.personId ? { personId: canonicalUuid(input.personId) } : {}),
-    ...(UUID_PATTERN.test(input.requestId)
-      ? { requestId: canonicalUuid(input.requestId) }
-      : {}),
+    ...(personId ? { personId } : {}),
+    ...(requestId ? { requestId } : {}),
     ...(title ? { title } : {}),
   };
 }
@@ -356,56 +320,19 @@ interface TaskCursorBody extends Omit<TaskListAnchor, "dueAt"> {
   readonly workspaceId: string;
 }
 
-function base64Url(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes)).replaceAll("+", "-")
-    .replaceAll("/", "_").replaceAll("=", "");
-}
-
-function decodeBase64Url(value: string): Uint8Array | undefined {
-  if (!/^[A-Za-z0-9_-]+$/.test(value)) return undefined;
-  const padded = value.replaceAll("-", "+").replaceAll("_", "/") +
-    "=".repeat((4 - value.length % 4) % 4);
-  try {
-    const decoded = Uint8Array.from(
-      atob(padded),
-      (character) => character.charCodeAt(0),
-    );
-    return base64Url(decoded) === value ? decoded : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-async function hmacKey(
-  bytes: Uint8Array,
-  usage: "sign" | "verify",
-): Promise<CryptoKey> {
-  return await crypto.subtle.importKey(
-    "raw",
-    new Uint8Array(bytes).buffer,
-    { hash: "SHA-256", name: "HMAC" },
-    false,
-    [usage],
-  );
-}
-
-async function encodeCursor(
+function encodeCursor(
   body: TaskCursorBody,
   keyset: TaskCursorKeyset,
 ): Promise<string> {
-  const keyVersion = keyset.activeVersion;
-  const keyBytes = keyset.keys.get(keyVersion);
-  if (!keyBytes) throw new Error("Active task cursor key is unavailable.");
-  const encodedBody = base64Url(new TextEncoder().encode(JSON.stringify(body)));
-  const signed = `v1.v${keyVersion}.${encodedBody}`;
-  const signature = await crypto.subtle.sign(
-    "HMAC",
-    await hmacKey(keyBytes, "sign"),
-    new TextEncoder().encode(`kinship.planning.task-cursor.v1\n${signed}`),
-  );
-  return `${signed}.${base64Url(new Uint8Array(signature))}`;
+  return signCursor(TASK_CURSOR_DOMAIN, body, keyset);
 }
 
+/**
+ * Reads a signed task cursor. The signature proves the anchor is one this
+ * service minted; the checks below prove it belongs to the listing being
+ * continued, so a cursor cannot carry a caller into another workspace's rows
+ * or past a filter they did not ask for.
+ */
 async function decodeCursor(
   cursor: string,
   expected: Pick<
@@ -414,51 +341,26 @@ async function decodeCursor(
   >,
   keyset: TaskCursorKeyset,
 ): Promise<TaskListAnchor | undefined> {
-  try {
-    const [format, keyLabel, encodedBody, encodedSignature, extra] = cursor
-      .split(".");
-    const keyMatch = /^v([1-9][0-9]*)$/.exec(keyLabel ?? "");
-    if (
-      format !== "v1" || !keyMatch || !encodedBody || !encodedSignature || extra
-    ) return undefined;
-    const keyVersion = Number(keyMatch[1]);
-    const keyBytes = keyset.keys.get(keyVersion);
-    const bodyBytes = decodeBase64Url(encodedBody);
-    const signature = decodeBase64Url(encodedSignature);
-    if (!keyBytes || !bodyBytes || signature?.length !== 32) return undefined;
-    const signed = `${format}.${keyLabel}.${encodedBody}`;
-    const authentic = await crypto.subtle.verify(
-      "HMAC",
-      await hmacKey(keyBytes, "verify"),
-      new Uint8Array(signature).buffer,
-      new TextEncoder().encode(`kinship.planning.task-cursor.v1\n${signed}`),
-    );
-    if (!authentic) return undefined;
-    const body = JSON.parse(
-      new TextDecoder("utf-8", { fatal: true }).decode(bodyBytes),
-    ) as Record<string, unknown>;
-    if (
-      body.version !== 1 || body.workspaceId !== expected.workspaceId ||
-      body.personId !== expected.personId ||
-      body.statusFilter !== expected.statusFilter ||
-      body.dueBefore !== expected.dueBefore ||
-      typeof body.id !== "string" || !UUID_PATTERN.test(body.id) ||
-      !["cancelled", "completed", "open"].includes(String(body.status)) ||
-      typeof body.updatedAt !== "string" ||
-      !Number.isFinite(Date.parse(body.updatedAt)) ||
-      !(body.dueAt === null ||
-        (typeof body.dueAt === "string" &&
-          Number.isFinite(Date.parse(body.dueAt))))
-    ) return undefined;
-    return {
-      ...(typeof body.dueAt === "string" ? { dueAt: body.dueAt } : {}),
-      id: canonicalUuid(body.id),
-      status: body.status as TaskStatus,
-      updatedAt: body.updatedAt,
-    };
-  } catch {
-    return undefined;
-  }
+  const verified = await verifyCursor(TASK_CURSOR_DOMAIN, cursor, keyset);
+  if (verified === null || typeof verified !== "object") return undefined;
+  const body = verified as Record<string, unknown>;
+  const id = typeof body.id === "string" ? uuid(body.id) : undefined;
+  if (
+    body.version !== 1 || body.workspaceId !== expected.workspaceId ||
+    body.personId !== expected.personId ||
+    body.statusFilter !== expected.statusFilter ||
+    body.dueBefore !== expected.dueBefore || id === undefined ||
+    !["cancelled", "completed", "open"].includes(String(body.status)) ||
+    typeof body.updatedAt !== "string" || !isInstant(body.updatedAt) ||
+    !(body.dueAt === null ||
+      (typeof body.dueAt === "string" && isInstant(body.dueAt)))
+  ) return undefined;
+  return {
+    ...(typeof body.dueAt === "string" ? { dueAt: body.dueAt } : {}),
+    id,
+    status: body.status as TaskStatus,
+    updatedAt: body.updatedAt,
+  };
 }
 
 async function inspectWritablePeople(
@@ -505,7 +407,8 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
       taskId: string,
       existingTransaction?: PeopleTransaction,
     ): Promise<GetTaskResult> => {
-      if (!UUID_PATTERN.test(taskId)) {
+      const id = uuid(taskId);
+      if (id === undefined) {
         return Promise.resolve({ status: "validation-error" });
       }
       const work = async (
@@ -518,7 +421,7 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
         if (authorized.status !== "ready") return { status: "forbidden" };
         const current = await dependencies.repository.find({
           ...actor,
-          id: canonicalUuid(taskId),
+          id,
           lock: false,
           transaction,
         });
@@ -552,7 +455,10 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
           transaction,
         });
         if (authorized.status !== "ready") return { status: "forbidden" };
-        const id = await deriveTaskId(actor.workspaceId, checked.requestId!);
+        const id = await deterministicId(TASK_ID_NAMESPACE, [
+          actor.workspaceId,
+          checked.requestId!,
+        ]);
         await dependencies.repository.lockRequest({ id, transaction });
         const replay = await dependencies.repository.find({
           ...actor,
@@ -625,7 +531,7 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
           : undefined;
         const scope = {
           dueBefore: dueBefore ?? null,
-          personId: input.personId ? canonicalUuid(input.personId) : null,
+          personId: input.personId ? input.personId.toLowerCase() : null,
           statusFilter: input.status ?? null,
           workspaceId: actor.workspaceId,
         };
@@ -638,9 +544,7 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
           ...(after ? { after } : {}),
           ...(dueBefore ? { dueBefore: new Date(dueBefore) } : {}),
           limit: Math.max(1, Math.min(100, Math.trunc(input.limit ?? 100))),
-          ...(input.personId
-            ? { personId: canonicalUuid(input.personId) }
-            : {}),
+          ...(input.personId ? { personId: input.personId.toLowerCase() } : {}),
           ...(input.status ? { status: input.status } : {}),
           transaction,
         });
@@ -674,30 +578,32 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
       existingTransaction?: PeopleTransaction,
     ): Promise<ChangeTaskResult> => {
       const errors: Record<string, string> = {};
-      if (!UUID_PATTERN.test(taskId)) {
+      const id = uuid(taskId);
+      if (id === undefined) {
         errors.taskId = "Use a canonical task identifier.";
       }
-      if (!Number.isFinite(Date.parse(input.expectedUpdatedAt))) {
+      if (!isInstant(input.expectedUpdatedAt)) {
         errors.expectedUpdatedAt = "Refresh this task before saving.";
       }
       const title = input.title === undefined
         ? undefined
-        : normalizedText(input.title, 500);
+        : boundedText(input.title, 500);
       if (input.title !== undefined && !title) {
         errors.title = "Add a title of at most 500 characters.";
       }
-      const description = optionalText(input.description, 10_000);
+      const description = nullableText(input.description, 10_000);
       if (typeof input.description === "string" && description === undefined) {
         errors.description = "Description must be at most 10,000 characters.";
       }
       const dueAt = input.dueAt === null
         ? null
-        : canonicalInstant(input.dueAt ?? undefined);
+        : instant(input.dueAt ?? undefined);
       if (typeof input.dueAt === "string" && !dueAt) {
         errors.dueAt = "Choose a valid due time.";
       }
       if (
-        typeof input.personId === "string" && !UUID_PATTERN.test(input.personId)
+        typeof input.personId === "string" &&
+        uuid(input.personId) === undefined
       ) {
         errors.personId = "Choose a person from this workspace.";
       }
@@ -714,7 +620,8 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
         if (authorized.status !== "ready") return { status: "forbidden" };
         const current = await dependencies.repository.find({
           ...actor,
-          id: canonicalUuid(taskId),
+          // The validation above rejected a non-canonical identifier.
+          id: id!,
           lock: true,
           transaction,
         });
@@ -726,7 +633,7 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
           ? current.task.personId
           : input.personId === null
           ? undefined
-          : canonicalUuid(input.personId);
+          : uuid(input.personId)!;
         const personStatus = await inspectWritablePeople(
           dependencies.people,
           actor,
@@ -790,7 +697,8 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
       completed: boolean,
       existingTransaction?: PeopleTransaction,
     ): Promise<ChangeTaskResult> => {
-      if (!UUID_PATTERN.test(taskId)) {
+      const id = uuid(taskId);
+      if (id === undefined) {
         return Promise.resolve({
           errors: { taskId: "Use a canonical task identifier." },
           status: "validation-error",
@@ -806,7 +714,7 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
         if (authorized.status !== "ready") return { status: "forbidden" };
         const current = await dependencies.repository.find({
           ...actor,
-          id: canonicalUuid(taskId),
+          id,
           lock: true,
           transaction,
         });

@@ -1,3 +1,4 @@
+import type { DatePrecision } from "../../../shared-kernel/partial_date.ts";
 import {
   createPersonTimeline,
   type PersonTimelineRepository,
@@ -119,14 +120,8 @@ export interface PersonDueProjection {
   readonly stayInTouchAt?: string;
 }
 
-export type PersonLifeEventPrecision =
-  | "day"
-  | "full"
-  | "month"
-  | "month_day"
-  | "unknown"
-  | "year"
-  | "year_month";
+/** The shared partial-date precision, named for this read model's readers. */
+export type PersonLifeEventPrecision = DatePrecision;
 
 export interface PersonLifeEvent {
   readonly date: {

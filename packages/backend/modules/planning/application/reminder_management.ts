@@ -1,8 +1,21 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import { deterministicId } from "../../../shared-kernel/ids.ts";
+import type {
+  Failure,
+  ValidationFailure,
+} from "../../../shared-kernel/result.ts";
+import { isoDate, isoTime, uuid } from "../../../shared-kernel/validation.ts";
 import type {
   PeopleActor,
   PeopleTransaction,
   RelationshipPersonBoundary,
 } from "../../people/public.ts";
+
+/** The namespaces that make a reminder or cadence idempotent across retries. */
+const ID_NAMESPACE = {
+  cadence: "kinship.planning.cadence-id.v1",
+  reminder: "kinship.planning.reminder-id.v1",
+} as const;
 
 export type RecurrenceUnit = "day" | "month" | "none" | "week" | "year";
 export type CadenceUnit = Exclude<RecurrenceUnit, "none">;
@@ -203,7 +216,7 @@ export interface ReminderAudit {
 
 export interface ReminderManagementDependencies {
   readonly audit: ReminderAudit;
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly people: RelationshipPersonBoundary;
   readonly repository: ReminderRepository;
   readonly transaction: {
@@ -232,27 +245,11 @@ export interface CreateCadenceInput {
 export type ReminderMutationResult =
   | { readonly reminder: ReminderDefinitionRecord; readonly status: "created" }
   | { readonly cadence: StayInTouchCadenceRecord; readonly status: "created" }
-  | {
-    readonly status:
-      | "archived-write-rejected"
-      | "forbidden"
-      | "idempotency-conflict"
-      | "not-found";
-  }
-  | {
-    readonly errors: Readonly<Record<string, string>>;
-    readonly status: "validation-error";
-  };
-
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-58][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/;
-
-function canonicalTime(value: string): string | undefined {
-  if (!TIME_PATTERN.test(value)) return undefined;
-  return value.length === 5 ? `${value}:00` : value;
-}
+  | Failure<
+    "archived-write-rejected" | "forbidden" | "not-found",
+    "idempotency-conflict"
+  >
+  | ValidationFailure;
 
 function zonedInstant(
   date: Temporal.PlainDate,
@@ -353,29 +350,6 @@ function cadenceDueAt(
   ).toInstant().toString();
 }
 
-async function deterministicId(
-  kind: "cadence" | "reminder",
-  workspaceId: string,
-  requestId: string,
-): Promise<string> {
-  const digest = new Uint8Array(
-    await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(
-        `kinship.planning.${kind}-id.v1\u0000${workspaceId.toLowerCase()}\u0000${requestId.toLowerCase()}`,
-      ),
-    ),
-  );
-  digest[6] = (digest[6]! & 0x0f) | 0x80;
-  digest[8] = (digest[8]! & 0x3f) | 0x80;
-  const hex = [...digest.slice(0, 16)].map((value) =>
-    value.toString(16).padStart(2, "0")
-  ).join("");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${
-    hex.slice(16, 20)
-  }-${hex.slice(20)}`;
-}
-
 async function cadenceFingerprint(input: CreateCadenceInput): Promise<string> {
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -416,16 +390,16 @@ export function createReminderManagement(
       if (!title || title.length > 500) {
         errors.title = "Add a title of at most 500 characters.";
       }
-      if (!UUID_PATTERN.test(input.personId)) {
+      if (uuid(input.personId) === undefined) {
         errors.personId = "Choose a person from this workspace.";
       }
-      if (!UUID_PATTERN.test(input.requestId)) {
+      if (uuid(input.requestId) === undefined) {
         errors.requestId = "Use a canonical request identifier.";
       }
-      if (!DATE_PATTERN.test(input.anchorOn)) {
+      if (isoDate(input.anchorOn) === undefined) {
         errors.anchorOn = "Choose a calendar date.";
       }
-      const sendTime = canonicalTime(input.sendTime);
+      const sendTime = isoTime(input.sendTime);
       if (!sendTime) errors.sendTime = "Choose a local delivery time.";
       if (
         !Number.isInteger(input.recurrenceInterval) ||
@@ -434,7 +408,7 @@ export function createReminderManagement(
         errors.recurrenceInterval = "Choose an interval from 1 to 100.";
       }
       try {
-        if (DATE_PATTERN.test(input.anchorOn)) {
+        if (isoDate(input.anchorOn) !== undefined) {
           Temporal.PlainDate.from(input.anchorOn);
         }
       } catch {
@@ -455,11 +429,10 @@ export function createReminderManagement(
           transaction,
         );
         if (person !== "ready") return { status: person };
-        const id = await deterministicId(
-          "reminder",
+        const id = await deterministicId(ID_NAMESPACE.reminder, [
           actor.workspaceId,
           input.requestId,
-        );
+        ]);
         await dependencies.repository.lockRequest({ id, transaction });
         const replay = await dependencies.repository.findReminder({
           ...actor,
@@ -536,10 +509,10 @@ export function createReminderManagement(
       input: CreateCadenceInput,
     ): Promise<ReminderMutationResult> => {
       const errors: Record<string, string> = {};
-      if (!UUID_PATTERN.test(input.personId)) {
+      if (uuid(input.personId) === undefined) {
         errors.personId = "Choose a person from this workspace.";
       }
-      if (!UUID_PATTERN.test(input.requestId)) {
+      if (uuid(input.requestId) === undefined) {
         errors.requestId = "Use a canonical request identifier.";
       }
       if (
@@ -564,11 +537,10 @@ export function createReminderManagement(
         );
         if (person !== "ready") return { status: person };
         const occurredAt = dependencies.clock.now();
-        const id = await deterministicId(
-          "cadence",
+        const id = await deterministicId(ID_NAMESPACE.cadence, [
           actor.workspaceId,
           input.requestId,
-        );
+        ]);
         const requestFingerprint = await cadenceFingerprint(input);
         await dependencies.repository.lockRequest({ id, transaction });
         const replay = await dependencies.repository.findCadenceRequest({
