@@ -1,3 +1,9 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { IdGenerator } from "../../../shared-kernel/ids.ts";
+import type {
+  Failure,
+  ValidationFailure,
+} from "../../../shared-kernel/result.ts";
 import type {
   CreatePersonInput,
   CreatePersonResult,
@@ -58,7 +64,7 @@ export interface RelationshipCursor {
 
 export type RelationshipLock =
   | { readonly relationship: RelationshipRecord; readonly status: "ready" }
-  | { readonly status: "not-found" };
+  | Failure<"not-found">;
 
 export interface RelationshipRepository {
   list(
@@ -133,8 +139,8 @@ export interface RelationshipRepository {
 
 export interface RelationshipDependencies {
   readonly audit: RelationshipAudit;
-  readonly clock: { now(): Date };
-  readonly ids: { create(): string };
+  readonly clock: Clock;
+  readonly ids: IdGenerator;
   readonly people: RelationshipPersonBoundary;
   readonly peopleCreation: TransactionalPeopleCreation;
   readonly repository: RelationshipRepository;
@@ -145,17 +151,8 @@ export interface RelationshipDependencies {
 }
 
 type MutationFailure =
-  | {
-    readonly status:
-      | "archived-write-rejected"
-      | "forbidden"
-      | "not-found"
-      | "stale";
-  }
-  | {
-    readonly errors: Readonly<Record<string, string>>;
-    readonly status: "validation-error";
-  };
+  | Failure<"archived-write-rejected" | "forbidden" | "not-found", "stale">
+  | ValidationFailure;
 
 type MutationSuccess = {
   readonly affectedPersonIds: readonly [string, string];

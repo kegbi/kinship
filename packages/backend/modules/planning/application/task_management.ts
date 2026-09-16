@@ -56,7 +56,7 @@ export interface StoredTask extends Omit<TaskRecord, "person"> {
 export interface TaskWorkspaceBoundary {
   authorize(
     command: PeopleActor & { readonly transaction: PeopleTransaction },
-  ): Promise<{ readonly status: "forbidden" | "ready" }>;
+  ): Promise<Failure<"forbidden"> | { readonly status: "ready" }>;
 }
 
 export interface TaskRepository {
@@ -71,7 +71,7 @@ export interface TaskRepository {
       readonly transaction: PeopleTransaction;
     },
   ): Promise<
-    | { readonly status: "not-found" }
+    | Failure<"not-found">
     | { readonly status: "found"; readonly task: StoredTask }
   >;
   list(
@@ -192,7 +192,9 @@ export type CreateTaskResult =
   | TaskFailure;
 
 export type GetTaskResult =
-  | { readonly status: "forbidden" | "not-found" | "validation-error" }
+  // A malformed task identifier names no field, so this is the module's own
+  // bare `validation-error`, not the kernel's payload-carrying one.
+  | Failure<"forbidden" | "not-found", "validation-error">
   | { readonly status: "ready"; readonly task: TaskRecord };
 
 export type ChangeTaskResult =
@@ -205,7 +207,7 @@ export type ListTasksResult =
     readonly nextCursor?: string;
     readonly status: "ready";
   }
-  | { readonly status: "forbidden" | "stale-cursor" };
+  | Failure<"forbidden", "stale-cursor">;
 
 /**
  * A patchable text field: `null` clears it, `undefined` leaves it alone, and a

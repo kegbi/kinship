@@ -1,3 +1,6 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { Failure } from "../../../shared-kernel/result.ts";
+import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
 import type { ExportFileBoundary } from "../../files/public.ts";
 import type { ExportAudit } from "../../governance/public.ts";
 import type {
@@ -86,7 +89,7 @@ export interface ExportRepository {
     readonly transaction: ExportTransaction;
   }): Promise<
     | { readonly fileId: string; readonly status: "consumed" }
-    | { readonly status: "expired" | "not-found" }
+    | Failure<"not-found", "expired">
   >;
   issueDownload(command: {
     readonly actor: ExportActor;
@@ -114,7 +117,7 @@ export interface ExportRepository {
 
 export interface ExportManagementDependencies {
   readonly audit: ExportAudit;
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly files: ExportFileBoundary;
   readonly ids: { next(): string };
   readonly people: PeopleExportBoundary;
@@ -282,123 +285,126 @@ export function createExportManagement(
         },
       );
       if (!claimed) return { status: "forbidden" as const };
-      return dependencies.transaction.run(async (transaction) => {
-        const locked = await dependencies.repository.lock(
-          actor,
-          claimed.exportId,
-          transaction,
-        );
-        if (!locked) return { status: "unavailable" as const };
-        if (locked.status === "completed") return publicSummary(locked);
-        if (locked.status !== "running") {
-          return { status: "unavailable" as const };
-        }
-
-        let artifact = await dependencies.files.recover({
-          ...actor,
-          exportId: claimed.exportId,
-        }).catch(() => ({ status: "unavailable" as const }));
-        let prepared = artifact.status === "stored"
-          ? await recoveredArtifact(artifact.bytes)
-          : undefined;
-        if (artifact.status === "stored" && !prepared) {
-          const discarded = await dependencies.files.discard({
-            ...actor,
-            fileId: artifact.fileId,
-          }).catch(() => ({ status: "unavailable" as const }));
-          if (discarded.status !== "discarded") {
+      return runOrUnavailable(
+        dependencies.transaction,
+        async (transaction) => {
+          const locked = await dependencies.repository.lock(
+            actor,
+            claimed.exportId,
+            transaction,
+          );
+          if (!locked) return { status: "unavailable" as const };
+          if (locked.status === "completed") return publicSummary(locked);
+          if (locked.status !== "running") {
             return { status: "unavailable" as const };
           }
-          artifact = { status: "absent" as const };
-        }
-        if (
-          artifact.status === "unavailable" || artifact.status === "forbidden"
-        ) {
-          return { status: "unavailable" as const };
-        }
 
-        if (artifact.status === "absent") {
-          const people = await dependencies.people.listWorkspace({
-            actor,
-            transaction,
-          });
-          if (people.length > MAX_PORTABLE_PEOPLE) {
-            await dependencies.repository.fail({
+          let artifact = await dependencies.files.recover({
+            ...actor,
+            exportId: claimed.exportId,
+          }).catch(() => ({ status: "unavailable" as const }));
+          let prepared = artifact.status === "stored"
+            ? await recoveredArtifact(artifact.bytes)
+            : undefined;
+          if (artifact.status === "stored" && !prepared) {
+            const discarded = await dependencies.files.discard({
+              ...actor,
+              fileId: artifact.fileId,
+            }).catch(() => ({ status: "unavailable" as const }));
+            if (discarded.status !== "discarded") {
+              return { status: "unavailable" as const };
+            }
+            artifact = { status: "absent" as const };
+          }
+          if (
+            artifact.status === "unavailable" || artifact.status === "forbidden"
+          ) {
+            return { status: "unavailable" as const };
+          }
+
+          if (artifact.status === "absent") {
+            const people = await dependencies.people.listWorkspace({
               actor,
-              error: "Portable export is limited to 500 people.",
-              exportId: claimed.exportId,
-              failedAt: dependencies.clock.now(),
               transaction,
             });
-            return { status: "too-large" as const };
-          }
-          const contacts = people.map(portableContact);
-          const manifest: ExportManifest = {
-            attachments: {
-              count: 0,
-              items: [],
-              sha256: await sha256("[]"),
-            },
-            limitations: [
-              "Only person identity fields accepted by Monica JSON import are included.",
-              "Contact methods are available in person vCard exports but are not in this portable JSON profile.",
-              "Attachments are not included in this bounded export profile.",
-            ],
-            profile: "monica-json",
-            rows: {
-              people: {
-                count: contacts.length,
-                sha256: await sha256(canonical(contacts)),
+            if (people.length > MAX_PORTABLE_PEOPLE) {
+              await dependencies.repository.fail({
+                actor,
+                error: "Portable export is limited to 500 people.",
+                exportId: claimed.exportId,
+                failedAt: dependencies.clock.now(),
+                transaction,
+              });
+              return { status: "too-large" as const };
+            }
+            const contacts = people.map(portableContact);
+            const manifest: ExportManifest = {
+              attachments: {
+                count: 0,
+                items: [],
+                sha256: await sha256("[]"),
               },
-            },
-            version: 1,
-          };
-          const bytes = encoder.encode(JSON.stringify({
-            attachments: [],
-            format: "monica-json",
-            manifest,
-            tables: { contacts },
-            version: 1,
-          }));
-          const checksumSha256 = await sha256(bytes);
-          const stored = await dependencies.files.store({
-            ...actor,
-            bytes,
-            checksumSha256,
+              limitations: [
+                "Only person identity fields accepted by Monica JSON import are included.",
+                "Contact methods are available in person vCard exports but are not in this portable JSON profile.",
+                "Attachments are not included in this bounded export profile.",
+              ],
+              profile: "monica-json",
+              rows: {
+                people: {
+                  count: contacts.length,
+                  sha256: await sha256(canonical(contacts)),
+                },
+              },
+              version: 1,
+            };
+            const bytes = encoder.encode(JSON.stringify({
+              attachments: [],
+              format: "monica-json",
+              manifest,
+              tables: { contacts },
+              version: 1,
+            }));
+            const checksumSha256 = await sha256(bytes);
+            const stored = await dependencies.files.store({
+              ...actor,
+              bytes,
+              checksumSha256,
+              exportId: claimed.exportId,
+              filename: `kinship-${claimed.exportId}.json`,
+              mimeType: "application/json",
+            }).catch(() => ({ status: "unavailable" as const }));
+            if (stored.status !== "stored") return stored;
+            artifact = { ...stored, bytes };
+            prepared = { checksumSha256, manifest, people: contacts.length };
+          }
+          if (!prepared || artifact.status !== "stored") {
+            return { status: "unavailable" as const };
+          }
+          const completedAt = dependencies.clock.now();
+          const summary = await dependencies.repository.complete({
+            actor,
+            completedAt,
+            expiresAt: new Date(completedAt.getTime() + SEVEN_DAYS),
             exportId: claimed.exportId,
-            filename: `kinship-${claimed.exportId}.json`,
-            mimeType: "application/json",
-          }).catch(() => ({ status: "unavailable" as const }));
-          if (stored.status !== "stored") return stored;
-          artifact = { ...stored, bytes };
-          prepared = { checksumSha256, manifest, people: contacts.length };
-        }
-        if (!prepared || artifact.status !== "stored") {
-          return { status: "unavailable" as const };
-        }
-        const completedAt = dependencies.clock.now();
-        const summary = await dependencies.repository.complete({
-          actor,
-          completedAt,
-          expiresAt: new Date(completedAt.getTime() + SEVEN_DAYS),
-          exportId: claimed.exportId,
-          fileId: artifact.fileId,
-          manifest: prepared.manifest,
-          transaction,
-        });
-        await dependencies.audit.record({
-          action: "completed",
-          actor,
-          exportId: claimed.exportId,
-          occurredAt: completedAt,
-          payload: {
-            checksumSha256: prepared.checksumSha256,
-            people: prepared.people,
-          },
-          transaction,
-        });
-        return summary;
-      }).catch(() => ({ status: "unavailable" as const }));
+            fileId: artifact.fileId,
+            manifest: prepared.manifest,
+            transaction,
+          });
+          await dependencies.audit.record({
+            action: "completed",
+            actor,
+            exportId: claimed.exportId,
+            occurredAt: completedAt,
+            payload: {
+              checksumSha256: prepared.checksumSha256,
+              people: prepared.people,
+            },
+            transaction,
+          });
+          return summary;
+        },
+      );
     },
     async exportVCard(actor: ExportActor, personId: string) {
       const prepared = await dependencies.transaction.run(

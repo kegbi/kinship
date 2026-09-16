@@ -1,3 +1,4 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
 import type { ObjectStorage } from "./person_files.ts";
 
 export interface ExportFileActor {
@@ -9,7 +10,7 @@ export interface ExportFileActor {
 
 export interface ExportFileBoundary {
   discard(command: ExportFileActor & { readonly fileId: string }): Promise<
-    { readonly status: "discarded" | "forbidden" | "unavailable" }
+    Failure<"forbidden" | "unavailable", "discarded">
   >;
   recover(command: ExportFileActor & { readonly exportId: string }): Promise<
     | {
@@ -17,7 +18,7 @@ export interface ExportFileBoundary {
       readonly fileId: string;
       readonly status: "stored";
     }
-    | { readonly status: "absent" | "forbidden" | "unavailable" }
+    | Failure<"forbidden" | "unavailable", "absent">
   >;
   read(command: ExportFileActor & { readonly fileId: string }): Promise<
     | {
@@ -26,13 +27,7 @@ export interface ExportFileBoundary {
       readonly mimeType: string;
       readonly status: "ready";
     }
-    | {
-      readonly status:
-        | "forbidden"
-        | "missing"
-        | "not-found"
-        | "unavailable";
-    }
+    | Failure<"forbidden" | "not-found" | "unavailable", "missing">
   >;
   store(
     command: ExportFileActor & {
@@ -44,7 +39,7 @@ export interface ExportFileBoundary {
     },
   ): Promise<
     | { readonly fileId: string; readonly status: "stored" }
-    | { readonly status: "forbidden" | "unavailable" }
+    | Failure<"forbidden" | "unavailable">
   >;
 }
 

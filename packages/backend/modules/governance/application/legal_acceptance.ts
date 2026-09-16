@@ -1,3 +1,6 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { Failure } from "../../../shared-kernel/result.ts";
+
 export interface LegalActor {
   readonly memberId: string;
   readonly role: "admin" | "member" | "owner";
@@ -16,11 +19,11 @@ export interface LegalDocument {
 export interface LegalAcceptanceRepository {
   requirements(actor: LegalActor): Promise<
     | { readonly documents: readonly LegalDocument[]; readonly status: "ready" }
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
   >;
   publicDocument(documentType: "privacy" | "terms"): Promise<
     | { readonly document: LegalDocument; readonly status: "ready" }
-    | { readonly status: "not-found" }
+    | Failure<"not-found">
   >;
   accept(
     command: LegalActor & {
@@ -35,12 +38,12 @@ export interface LegalAcceptanceRepository {
       readonly documentId: string;
       readonly status: "accepted" | "already-accepted";
     }
-    | { readonly status: "forbidden" | "superseded-version" }
+    | Failure<"forbidden", "superseded-version">
   >;
 }
 
 export interface LegalAcceptanceDependencies {
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly ids: { next(): string };
   readonly repository: LegalAcceptanceRepository;
 }

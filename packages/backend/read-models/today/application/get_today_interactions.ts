@@ -1,3 +1,4 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
 import type {
   ActivityReportActor,
   ActivityReportItem,
@@ -16,7 +17,7 @@ export interface TodayInteractionsRepository {
       >[];
       readonly status: "ready";
     }
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
   >;
   getRecentActivity(
     command: ActivityReportActor & {
@@ -27,7 +28,7 @@ export interface TodayInteractionsRepository {
       readonly items: readonly ActivityReportItem[];
       readonly status: "ready";
     }
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
   >;
 }
 

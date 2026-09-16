@@ -1,4 +1,5 @@
 import { type Kysely, sql } from "kysely";
+import type { Clock } from "../../../../shared-kernel/clock.ts";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import {
@@ -812,7 +813,7 @@ export class PostgresInAppReminderEffectStore
   implements InAppReminderEffectStore {
   constructor(
     private readonly database: Kysely<ApplicationDatabase>,
-    private readonly clock: { now(): Date },
+    private readonly clock: Clock,
   ) {}
 
   async record(command: {

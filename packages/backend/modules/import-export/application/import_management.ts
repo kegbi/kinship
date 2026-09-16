@@ -1,3 +1,6 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
+import { optionalText } from "../../../shared-kernel/validation.ts";
+
 export interface ImportActor {
   readonly memberId: string;
   readonly role: "admin" | "member" | "owner";
@@ -94,7 +97,7 @@ export type PreparedImportCommit =
     readonly peopleReused: number;
     readonly status: "completed";
   }
-  | { readonly status: "not-found" };
+  | Failure<"not-found">;
 
 export interface ImportSummary {
   readonly completedAt?: string;
@@ -112,7 +115,7 @@ export type ImportCommitResult =
     readonly peopleReused: number;
     readonly status: "completed";
   }
-  | { readonly status: "confirmation-required" | "forbidden" | "not-found" };
+  | Failure<"forbidden" | "not-found", "confirmation-required">;
 
 export interface ImportRepository {
   authorize(
@@ -163,7 +166,7 @@ type DryRunResult =
     readonly status: "dry_run";
   }
   | { readonly detail: string; readonly status: "invalid-source" }
-  | { readonly status: "forbidden" };
+  | Failure<"forbidden">;
 
 export interface ImportManagement {
   commit(
@@ -193,9 +196,8 @@ function object(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 function textValue(value: unknown, max = 500): string | undefined {
-  return typeof value === "string" && value.trim().length > 0 &&
-      value.length <= max
-    ? value.trim()
+  return typeof value === "string" && value.length <= max
+    ? optionalText(value)
     : undefined;
 }
 function sourceId(value: unknown): string | undefined {

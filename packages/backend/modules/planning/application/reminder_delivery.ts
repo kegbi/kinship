@@ -1,3 +1,4 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { PeopleTransaction } from "../../people/public.ts";
 
 export interface ClaimedReminderOccurrence {
@@ -84,7 +85,7 @@ export interface ReminderDeliveryAudit {
 
 export interface ReminderDeliveryDependencies {
   readonly audit: ReminderDeliveryAudit;
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly provider: ReminderDeliveryProvider;
   readonly repository: ReminderDeliveryRepository;
   readonly transaction: {

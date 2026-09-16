@@ -1,3 +1,4 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
 import type { RelationshipPersonBoundary } from "./relationship_person_boundary.ts";
 
 export interface InteractionPersonBoundary extends RelationshipPersonBoundary {
@@ -31,6 +32,6 @@ export interface InteractionPersonBoundary extends RelationshipPersonBoundary {
       };
       readonly status: "ready";
     }
-    | { readonly status: "not-found" }
+    | Failure<"not-found">
   >;
 }

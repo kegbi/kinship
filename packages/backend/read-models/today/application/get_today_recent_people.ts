@@ -1,3 +1,4 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
 import type { PeopleActor } from "../../../modules/people/public.ts";
 
 export interface TodayRecentPerson {
@@ -10,7 +11,7 @@ export interface TodayRecentPeopleRepository {
   list(
     command: PeopleActor & { readonly limit: number },
   ): Promise<
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
     | {
       readonly people: readonly TodayRecentPerson[];
       readonly status: "ready";

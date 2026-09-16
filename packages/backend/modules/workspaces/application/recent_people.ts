@@ -1,3 +1,5 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
+
 export interface RecentPeopleActor {
   readonly memberId: string;
   readonly role: "admin" | "member" | "owner";
@@ -15,7 +17,7 @@ export interface RecentPeopleRepository {
       readonly transaction: RecentPeopleTransaction;
     },
   ): Promise<
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
     | { readonly status: "ready"; readonly uiState: unknown }
   >;
   save(

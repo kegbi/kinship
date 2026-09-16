@@ -1,3 +1,5 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
+
 export interface InteractionWorkspaceTransaction {
   readonly opaque: unknown;
 }
@@ -19,7 +21,7 @@ export interface InteractionWorkspaceBoundary {
     command: InteractionWorkspaceActor & {
       readonly transaction: InteractionWorkspaceTransaction;
     },
-  ): Promise<{ readonly status: "forbidden" | "ready" }>;
+  ): Promise<Failure<"forbidden"> | { readonly status: "ready" }>;
   describe(
     command: {
       readonly activityTypeId?: string;
@@ -67,7 +69,7 @@ export interface InteractionWorkspaceBoundary {
       readonly emotions: readonly WorkspaceInteractionOption[];
       readonly status: "ready";
     }
-    | { readonly status: "forbidden" | "hidden" | "not-found" }
+    | Failure<"forbidden" | "not-found", "hidden">
   >;
   options(
     command: InteractionWorkspaceActor & {
@@ -90,7 +92,7 @@ export interface InteractionWorkspaceBoundary {
       readonly emotionsNextCursor?: string;
       readonly status: "ready";
     }
-    | { readonly status: "forbidden" | "stale-cursor" }
+    | Failure<"forbidden", "stale-cursor">
   >;
   inspectCommunication(
     command: InteractionWorkspaceActor & {
@@ -106,7 +108,7 @@ export interface InteractionWorkspaceBoundary {
       readonly emotions: readonly WorkspaceInteractionOption[];
       readonly status: "ready";
     }
-    | { readonly status: "forbidden" | "hidden" | "not-found" }
+    | Failure<"forbidden" | "not-found", "hidden">
   >;
   communicationOptions(
     command: InteractionWorkspaceActor & {
@@ -122,6 +124,6 @@ export interface InteractionWorkspaceBoundary {
       readonly emotions: readonly WorkspaceInteractionOption[];
       readonly status: "ready";
     }
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
   >;
 }

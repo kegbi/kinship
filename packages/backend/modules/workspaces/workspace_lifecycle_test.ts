@@ -120,6 +120,7 @@ function setup(options: {
     identity: {
       verifyPassword: ({ password }) => Promise.resolve(password === "valid"),
     },
+    ids: { create: () => crypto.randomUUID() },
     impact: createTestCascadeParticipants({
       ...(options.relationshipsImpact
         ? {

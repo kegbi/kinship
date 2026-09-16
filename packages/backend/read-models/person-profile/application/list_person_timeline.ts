@@ -1,3 +1,4 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
 import type {
   PersonLifeEventPrecision,
   PersonProfileActor,
@@ -61,7 +62,7 @@ export interface PersonTimelineRepository {
       readonly next?: { readonly id: string; readonly timestamp: string };
       readonly status: "archived" | "ready";
     }
-    | { readonly status: "forbidden" | "not-found" | "stale-cursor" }
+    | Failure<"forbidden" | "not-found", "stale-cursor">
   >;
 }
 

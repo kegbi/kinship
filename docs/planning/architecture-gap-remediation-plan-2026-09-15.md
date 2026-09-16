@@ -430,7 +430,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     identifiers pinned byte-compatible with the pre-kernel derivation; gates
     fmt:check, lint, check.
 
-- [ ] **GAP-007 — Adopt the shared kernel in the remaining 12 modules and 6 read
+- [x] **GAP-007 — Adopt the shared kernel in the remaining 12 modules and 6 read
       models.** M. Depends: 006.
   - Scope: replace local clock/id types, `optional`/`text`/`instant` helpers,
     status unions, and the `try { transaction.run } catch { unavailable }`
@@ -440,6 +440,14 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     generator. Delete the local duplicates.
   - Verify: all backend unit tests green; grep shows zero local `optional()` or
     `readonly status: "forbidden"` declarations outside the kernel.
+  - Delivered 2026-09-16: all 18 unit sets green plus 718 vitest, integration
+    111/0; zero local optional/text helpers and zero
+    `readonly status: "forbidden"` declarations remain in packages/backend
+    (tests included); 14 transaction wrappers replaced by the kernel
+    runOrUnavailable (kernel 32/0 at 98.6% branch, 100% line); baseline
+    unchanged at 98; gates fmt:check, lint, check. Deferred and reported:
+    `{ next(): string }` id shapes, adapter-layer randomUUID, per-module cursor
+    codecs.
 
 - [ ] **GAP-008 — Actor revalidation port, wave 1 (people, relationships,
       planning).** L. Depends: 005, 006.

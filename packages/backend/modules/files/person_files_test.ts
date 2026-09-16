@@ -1,3 +1,4 @@
+import type { Failure } from "../../shared-kernel/result.ts";
 import {
   createPersonFileManagement,
   type FileAudit,
@@ -68,7 +69,7 @@ class MemoryFiles implements FileMetadataRepository {
 
   authorizeUpload(): Promise<
     | { readonly status: "authorized" }
-    | { readonly status: "forbidden" | "not-found" }
+    | Failure<"forbidden" | "not-found">
   > {
     return Promise.resolve({ status: this.authorizeStatus });
   }

@@ -1,3 +1,4 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
 import type {
   IdentityAccountSettingsFacade,
   IdentityProfile,
@@ -129,7 +130,7 @@ export interface SettingsPlanningPublisher {
 
 export interface SettingsManagementDependencies {
   readonly audit: SettingsAudit;
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly identity: IdentityAccountSettingsFacade;
   readonly identityDisplay: Pick<
     InvitationIdentityFacade,

@@ -1,3 +1,5 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { IdGenerator } from "../../../shared-kernel/ids.ts";
 import type { IdentityTransaction } from "./contracts.ts";
 import type { PasswordHasher } from "../ports/security.ts";
 
@@ -45,11 +47,11 @@ export interface PasswordRecoveryFacade {
 }
 
 export function createPasswordRecovery(dependencies: {
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly delay?: (milliseconds: number) => Promise<void>;
   readonly deliveryWindowMilliseconds?: number;
   readonly hasher: PasswordHasher;
-  readonly ids: { create(): string };
+  readonly ids: IdGenerator;
   readonly mail: PasswordRecoveryMail;
   readonly repository: PasswordRecoveryRepository;
   readonly tokens: {

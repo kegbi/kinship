@@ -22,8 +22,7 @@ export interface PersonLifecycleRecord {
 }
 
 export type PersonLifecycleLock =
-  | { readonly status: "forbidden" }
-  | { readonly status: "not-found" }
+  | Failure<"forbidden" | "not-found">
   | { readonly person: PersonLifecycleRecord; readonly status: "ready" };
 
 export interface EditPersonInput {

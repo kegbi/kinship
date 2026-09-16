@@ -1,3 +1,6 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { IdGenerator } from "../../../shared-kernel/ids.ts";
+import type { Failure } from "../../../shared-kernel/result.ts";
 import type {
   IdentityAuthenticationFacade,
   IdentityRegistrationFacade,
@@ -54,7 +57,7 @@ export interface WorkspaceMemberRecord {
 }
 
 export type WorkspaceInvitationList =
-  | { readonly status: "forbidden" }
+  | Failure<"forbidden">
   | {
     readonly invitations: readonly InvitationSummary[];
     readonly members: readonly WorkspaceMemberSummary[];
@@ -77,7 +80,7 @@ export interface WorkspaceInvitationRepository {
     readonly now: Date;
     readonly transaction: RegistrationTransaction;
   }): Promise<
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
     | {
       readonly invitations: readonly WorkspaceInvitationRecord[];
       readonly members: readonly WorkspaceMemberRecord[];
@@ -176,8 +179,8 @@ export type InvitationAcceptance =
 
 export interface WorkspaceInvitationDependencies {
   readonly audit: InvitationAudit;
-  readonly clock: { now(): Date };
-  readonly ids: { create(): string };
+  readonly clock: Clock;
+  readonly ids: IdGenerator;
   readonly identity:
     & IdentityRegistrationFacade
     & Pick<VerifiedIdentityEntryFacade, "consumeVerifiedIdentityEntry">

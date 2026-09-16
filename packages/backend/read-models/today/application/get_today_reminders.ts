@@ -1,3 +1,5 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { Failure } from "../../../shared-kernel/result.ts";
 import type { PeopleActor } from "../../../modules/people/public.ts";
 
 interface TodayReminderBase {
@@ -41,7 +43,7 @@ export interface TodayCadenceItem {
 
 export interface TodayRemindersRepository {
   get(command: PeopleActor & { readonly now: Date }): Promise<
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
     | {
       readonly cadences: readonly TodayCadenceItem[];
       readonly reminders: readonly TodayReminderItem[];
@@ -52,7 +54,7 @@ export interface TodayRemindersRepository {
 }
 
 export function createTodayReminders(dependencies: {
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly repository: TodayRemindersRepository;
 }) {
   return {

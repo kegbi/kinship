@@ -1,3 +1,5 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { IdGenerator } from "../../../shared-kernel/ids.ts";
 import type {
   ActiveWorkspaceContext,
   AuthenticationAttemptBudget,
@@ -127,7 +129,7 @@ export interface WorkspaceLifecycleDependencies {
   readonly attemptBudget: AuthenticationAttemptBudget;
   readonly audit: WorkspaceLifecycleSecurityAudit;
   readonly authenticationAudit: AuthenticationAudit;
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly identity: {
     verifyPassword(command: {
       readonly password: string;
@@ -135,6 +137,7 @@ export interface WorkspaceLifecycleDependencies {
       readonly userId: string;
     }): Promise<boolean>;
   };
+  readonly ids: IdGenerator;
   readonly impact: WorkspaceLifecycleCascadeParticipants;
   readonly repository: WorkspaceLifecycleRepository;
   readonly storage: {
@@ -394,7 +397,7 @@ export function createWorkspaceLifecycle(
           await record("stale-impact", occurredAt, transaction);
           return { status: "stale-impact" as const };
         }
-        const recordId = crypto.randomUUID();
+        const recordId = dependencies.ids.create();
         const command = {
           ...actor,
           counts: current.counts,

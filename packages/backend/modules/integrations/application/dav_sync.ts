@@ -1,3 +1,7 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { IdGenerator } from "../../../shared-kernel/ids.ts";
+import type { Failure } from "../../../shared-kernel/result.ts";
+
 export type DavRole = "admin" | "member" | "owner";
 export const DAV_REMOTE_URL_MAX_BYTES = 2_048;
 export interface DavActor {
@@ -169,12 +173,8 @@ interface PeopleFacade {
     input: ContactPayload & { readonly requestId: string },
     transaction: DavTransaction,
   ): Promise<
-    { readonly person: { readonly id: string }; readonly status: "ready" } | {
-      readonly status:
-        | "forbidden"
-        | "idempotency-conflict"
-        | "validation-error";
-    }
+    | { readonly person: { readonly id: string }; readonly status: "ready" }
+    | Failure<"forbidden", "idempotency-conflict" | "validation-error">
   >;
   update(
     actor: DavActor,
@@ -199,15 +199,11 @@ interface TaskFacade {
     input: TaskPayload & { readonly requestId: string },
     transaction: DavTransaction,
   ): Promise<
-    { readonly status: "created"; readonly task: { readonly id: string } } | {
-      readonly status:
-        | "archived-write-rejected"
-        | "forbidden"
-        | "idempotency-conflict"
-        | "not-found"
-        | "stale"
-        | "validation-error";
-    }
+    | { readonly status: "created"; readonly task: { readonly id: string } }
+    | Failure<
+      "archived-write-rejected" | "forbidden" | "not-found",
+      "idempotency-conflict" | "stale" | "validation-error"
+    >
   >;
   update(
     actor: DavActor,
@@ -227,11 +223,10 @@ interface TaskFacade {
   ): Promise<{ readonly status: string }>;
 }
 export interface DavSyncDependencies {
-  readonly clock: { now(): Date };
-  readonly ids: {
-    create(): string;
-    fromRemote(value: string): string | Promise<string>;
-  };
+  readonly clock: Clock;
+  readonly ids:
+    & IdGenerator
+    & { fromRemote(value: string): string | Promise<string> };
   readonly people: PeopleFacade;
   readonly remote: DavRemoteClient;
   readonly repository: DavRepository;

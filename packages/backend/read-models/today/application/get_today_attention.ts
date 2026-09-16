@@ -1,3 +1,5 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { Failure } from "../../../shared-kernel/result.ts";
 import type { PeopleActor } from "../../../modules/people/public.ts";
 
 export interface TodayAttentionPerson {
@@ -39,7 +41,7 @@ export interface TodayAttentionRepository {
       readonly upcomingLimit: number;
     },
   ): Promise<
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
     | {
       readonly items: readonly TodayAttentionItem[];
       readonly status: "ready";
@@ -80,7 +82,7 @@ function compare(left: TodayAttentionItem, right: TodayAttentionItem): number {
 }
 
 export function createTodayAttention(dependencies: {
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly repository: TodayAttentionRepository;
 }) {
   return {

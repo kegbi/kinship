@@ -1,3 +1,4 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
 import type { IdentityTransaction } from "./contracts.ts";
 
 export interface IdentityProfile {
@@ -41,6 +42,6 @@ export interface IdentityAccountSettingsFacade {
     readonly userId: string;
   }): Promise<
     | { readonly current: boolean; readonly status: "revoked" }
-    | { readonly status: "forbidden" | "stale" }
+    | Failure<"forbidden", "stale">
   >;
 }

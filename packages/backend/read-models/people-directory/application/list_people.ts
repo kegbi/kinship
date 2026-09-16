@@ -1,3 +1,5 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
+
 export interface PeopleDirectoryActor {
   readonly memberId: string;
   readonly role: "admin" | "member" | "owner";
@@ -62,7 +64,7 @@ export interface PeopleDirectoryCriteria {
 }
 
 export type PeopleDirectoryRepositoryResult =
-  | { readonly status: "forbidden" }
+  | Failure<"forbidden">
   | { readonly status: "stale-cursor" }
   | {
     readonly people: readonly PeopleDirectoryPersonRecord[];
@@ -84,7 +86,7 @@ export interface PeopleDirectoryRepository {
 }
 
 export type ListPeopleResult =
-  | { readonly status: "forbidden" }
+  | Failure<"forbidden">
   | { readonly status: "stale-cursor" }
   | {
     readonly nextCursor?: string;

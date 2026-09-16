@@ -1,3 +1,4 @@
+import type { Failure } from "../../../shared-kernel/result.ts";
 import type { PeopleActor, PeopleTransaction } from "../../people/public.ts";
 
 export interface JournalActivityReference {
@@ -7,8 +8,7 @@ export interface JournalActivityReference {
       readonly transaction: PeopleTransaction;
     },
   ): Promise<
-    { readonly occurredAt: string; readonly status: "ready" } | {
-      readonly status: "forbidden" | "not-found";
-    }
+    | { readonly occurredAt: string; readonly status: "ready" }
+    | Failure<"forbidden" | "not-found">
   >;
 }

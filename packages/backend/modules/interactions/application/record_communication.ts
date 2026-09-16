@@ -1,3 +1,8 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type {
+  Failure,
+  ValidationFailure,
+} from "../../../shared-kernel/result.ts";
 import type {
   InteractionPersonBoundary,
   PeopleActor,
@@ -161,18 +166,11 @@ export interface CommunicationAudit {
 
 export type RecordCommunicationResult =
   | { readonly record: CommunicationRecord; readonly status: "created" }
-  | {
-    readonly errors: Readonly<Record<string, string>>;
-    readonly status: "validation-error";
-  }
-  | {
-    readonly status:
-      | "archived-write-rejected"
-      | "forbidden"
-      | "hidden"
-      | "idempotency-conflict"
-      | "not-found";
-  };
+  | ValidationFailure
+  | Failure<
+    "archived-write-rejected" | "forbidden" | "not-found",
+    "hidden" | "idempotency-conflict"
+  >;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -336,7 +334,7 @@ function validate(
 
 export function createCommunicationManagement(dependencies: {
   readonly audit: CommunicationAudit;
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly people: InteractionPersonBoundary;
   readonly publisher?: InteractionRecordedPublisher;
   readonly repository: CommunicationRepository;

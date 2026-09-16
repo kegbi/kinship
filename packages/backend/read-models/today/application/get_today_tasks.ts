@@ -1,3 +1,5 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { Failure } from "../../../shared-kernel/result.ts";
 import type { PeopleActor } from "../../../modules/people/public.ts";
 import type { TaskRecord } from "../../../modules/planning/public.ts";
 
@@ -9,12 +11,12 @@ export interface TodayTasksRepository {
     },
   ): Promise<
     | { readonly items: readonly TaskRecord[]; readonly status: "ready" }
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
   >;
 }
 
 export function createTodayTasks(dependencies: {
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly repository: TodayTasksRepository;
 }) {
   return {

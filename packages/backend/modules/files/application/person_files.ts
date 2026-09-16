@@ -1,3 +1,7 @@
+import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { Failure } from "../../../shared-kernel/result.ts";
+import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
+import { boundedText } from "../../../shared-kernel/validation.ts";
 import type { PeopleTransaction } from "../../people/public.ts";
 
 export const PERSON_FILE_MAX_BYTES = 10 * 1024 * 1024;
@@ -63,7 +67,7 @@ export interface FileMetadataRepository {
     },
   ): Promise<
     | { readonly status: "authorized" }
-    | { readonly status: "forbidden" | "not-found" }
+    | Failure<"forbidden" | "not-found">
   >;
   reserveUpload(
     command: PersonFileActor & {
@@ -83,7 +87,7 @@ export interface FileMetadataRepository {
     },
   ): Promise<
     | { readonly file: StoredPersonFile; readonly status: "reserved" }
-    | { readonly status: "forbidden" | "not-found" }
+    | Failure<"forbidden" | "not-found">
   >;
   finalizeUpload(
     command: PersonFileActor & {
@@ -95,7 +99,7 @@ export interface FileMetadataRepository {
     },
   ): Promise<
     | { readonly file: StoredPersonFile; readonly status: "created" }
-    | { readonly status: "forbidden" | "not-found" }
+    | Failure<"forbidden" | "not-found">
   >;
   find(
     command: PersonFileActor & {
@@ -105,7 +109,7 @@ export interface FileMetadataRepository {
     },
   ): Promise<
     | { readonly file: StoredPersonFile; readonly status: "found" }
-    | { readonly status: "forbidden" | "not-found" }
+    | Failure<"forbidden" | "not-found">
   >;
   list(
     command: PersonFileActor & {
@@ -114,7 +118,7 @@ export interface FileMetadataRepository {
     },
   ): Promise<
     | { readonly files: readonly StoredPersonFile[]; readonly status: "ready" }
-    | { readonly status: "forbidden" | "not-found" }
+    | Failure<"forbidden" | "not-found">
   >;
   markMissing(
     command: PersonFileActor & {
@@ -139,7 +143,7 @@ export interface FileMetadataRepository {
     },
   ): Promise<
     | { readonly file: StoredPersonFile; readonly status: "reserved" }
-    | { readonly status: "forbidden" | "not-found" | "processing" }
+    | Failure<"forbidden" | "not-found", "processing">
   >;
   finalizeRemoval(
     command: PersonFileActor & {
@@ -150,7 +154,7 @@ export interface FileMetadataRepository {
     },
   ): Promise<
     | { readonly file: StoredPersonFile; readonly status: "removed" }
-    | { readonly status: "forbidden" | "not-found" }
+    | Failure<"forbidden" | "not-found">
   >;
 }
 
@@ -173,7 +177,7 @@ export interface GiftAttachmentBoundary {
     },
   ): Promise<
     | { readonly status: "attached" }
-    | { readonly status: "forbidden" | "not-found" }
+    | Failure<"forbidden" | "not-found">
   >;
   validateForGift(
     command: PersonFileActor & {
@@ -182,7 +186,7 @@ export interface GiftAttachmentBoundary {
     },
   ): Promise<
     | { readonly status: "ready" }
-    | { readonly status: "forbidden" | "not-found" }
+    | Failure<"forbidden" | "not-found">
   >;
   listForGifts(
     command: PersonFileActor & {
@@ -197,13 +201,13 @@ export interface GiftAttachmentBoundary {
       }[];
       readonly status: "ready";
     }
-    | { readonly status: "forbidden" }
+    | Failure<"forbidden">
   >;
 }
 
 export interface PersonFileManagementDependencies {
   readonly audit: FileAudit;
-  readonly clock: { now(): Date };
+  readonly clock: Clock;
   readonly ids: { next(): string };
   readonly keys: { next(): string };
   readonly repository: FileMetadataRepository;
@@ -224,15 +228,10 @@ export interface PersonFileUploadInput {
 
 export type UploadPersonFileResult =
   | { readonly file: PersonFileRecord; readonly status: "created" }
-  | {
-    readonly status:
-      | "forbidden"
-      | "not-found"
-      | "rejected-media"
-      | "storage-limit"
-      | "unavailable"
-      | "validation-error";
-  };
+  | Failure<
+    "forbidden" | "not-found" | "unavailable",
+    "rejected-media" | "storage-limit" | "validation-error"
+  >;
 
 export type DownloadPersonFileResult =
   | {
@@ -240,30 +239,18 @@ export type DownloadPersonFileResult =
     readonly file: PersonFileRecord;
     readonly status: "ready";
   }
-  | {
-    readonly status:
-      | "deleted"
-      | "forbidden"
-      | "missing"
-      | "not-found"
-      | "processing"
-      | "quarantined"
-      | "unavailable";
-  };
+  | Failure<
+    "forbidden" | "not-found" | "unavailable",
+    "deleted" | "missing" | "processing" | "quarantined"
+  >;
 
 export type ListPersonFilesResult =
   | { readonly files: readonly PersonFileRecord[]; readonly status: "ready" }
-  | { readonly status: "forbidden" | "not-found" | "unavailable" };
+  | Failure<"forbidden" | "not-found" | "unavailable">;
 
 export type RemovePersonFileResult =
   | { readonly fileId: string; readonly status: "removed" }
-  | {
-    readonly status:
-      | "forbidden"
-      | "not-found"
-      | "processing"
-      | "unavailable";
-  };
+  | Failure<"forbidden" | "not-found" | "unavailable", "processing">;
 
 const allowedMedia: Readonly<Record<PersonFileKind, ReadonlySet<string>>> = {
   document: new Set([
@@ -278,13 +265,6 @@ function publicFile(file: StoredPersonFile): PersonFileRecord {
   const { checksumSha256: _checksum, storageKey: _storageKey, ...visible } =
     file;
   return visible;
-}
-
-function normalizedText(value: string, maximum: number): string | undefined {
-  const normalized = value.trim();
-  return normalized.length > 0 && normalized.length <= maximum
-    ? normalized
-    : undefined;
 }
 
 async function checksum(bytes: Uint8Array): Promise<string> {
@@ -310,8 +290,8 @@ export function createPersonFileManagement(
       }
       if (
         input.bytes.byteLength === 0 ||
-        !normalizedText(input.filename, 500) ||
-        !normalizedText(input.title, 500)
+        !boundedText(input.filename, 500) ||
+        !boundedText(input.title, 500)
       ) {
         return { status: "validation-error" };
       }
@@ -320,20 +300,15 @@ export function createPersonFileManagement(
         return { status: "rejected-media" };
       }
 
-      let authorization:
-        | { readonly status: "authorized" }
-        | { readonly status: "forbidden" | "not-found" };
-      try {
-        authorization = await dependencies.transaction.run((transaction) =>
+      const authorization = await runOrUnavailable(
+        dependencies.transaction,
+        (transaction) =>
           dependencies.repository.authorizeUpload({
             ...actor,
             personId,
             transaction,
-          })
-        );
-      } catch {
-        return { status: "unavailable" };
-      }
+          }),
+      );
       if (authorization.status !== "authorized") return authorization;
 
       const fileId = dependencies.ids.next();
@@ -352,11 +327,9 @@ export function createPersonFileManagement(
         return { status: "unavailable" };
       }
 
-      let reserved: Awaited<
-        ReturnType<FileMetadataRepository["reserveUpload"]>
-      >;
-      try {
-        reserved = await dependencies.transaction.run(async (transaction) =>
+      const reserved = await runOrUnavailable(
+        dependencies.transaction,
+        async (transaction) =>
           dependencies.repository.reserveUpload({
             ...actor,
             byteSize: input.bytes.byteLength,
@@ -372,11 +345,8 @@ export function createPersonFileManagement(
             storageProvider: dependencies.storage.provider,
             title,
             transaction,
-          })
-        );
-      } catch {
-        return { status: "unavailable" };
-      }
+          }),
+      );
       if (reserved.status !== "reserved") return reserved;
 
       try {
@@ -386,61 +356,58 @@ export function createPersonFileManagement(
           mimeType,
         });
       } catch {
-        await dependencies.transaction.run((transaction) =>
-          dependencies.repository.markMissing({
-            ...actor,
-            fileId,
-            occurredAt,
-            transaction,
-          })
-        ).catch(() => {});
-        return { status: "unavailable" };
-      }
-
-      try {
-        const result = await dependencies.transaction.run(
-          async (transaction) => {
-            const finalized = await dependencies.repository.finalizeUpload({
+        await runOrUnavailable(
+          dependencies.transaction,
+          (transaction) =>
+            dependencies.repository.markMissing({
               ...actor,
               fileId,
               occurredAt,
-              personId,
-              status: scan === "clean" ? "available" : "quarantined",
               transaction,
-            });
-            if (finalized.status !== "created") return finalized;
-            await dependencies.audit.record({
-              action: "uploaded",
-              actor,
-              file: finalized.file,
-              occurredAt,
-              transaction,
-            });
-            return finalized;
-          },
+            }),
         );
-        return result.status === "created"
-          ? { file: publicFile(result.file), status: "created" }
-          : result;
-      } catch {
         return { status: "unavailable" };
       }
+
+      const result = await runOrUnavailable(
+        dependencies.transaction,
+        async (transaction) => {
+          const finalized = await dependencies.repository.finalizeUpload({
+            ...actor,
+            fileId,
+            occurredAt,
+            personId,
+            status: scan === "clean" ? "available" : "quarantined",
+            transaction,
+          });
+          if (finalized.status !== "created") return finalized;
+          await dependencies.audit.record({
+            action: "uploaded",
+            actor,
+            file: finalized.file,
+            occurredAt,
+            transaction,
+          });
+          return finalized;
+        },
+      );
+      return result.status === "created"
+        ? { file: publicFile(result.file), status: "created" }
+        : result;
     },
 
     list: async (
       actor: PersonFileActor,
       personId: string,
     ): Promise<ListPersonFilesResult> => {
-      try {
-        const result = await dependencies.transaction.run((transaction) =>
-          dependencies.repository.list({ ...actor, personId, transaction })
-        );
-        return result.status === "ready"
-          ? { files: result.files.map(publicFile), status: "ready" }
-          : result;
-      } catch {
-        return { status: "unavailable" };
-      }
+      const result = await runOrUnavailable(
+        dependencies.transaction,
+        (transaction) =>
+          dependencies.repository.list({ ...actor, personId, transaction }),
+      );
+      return result.status === "ready"
+        ? { files: result.files.map(publicFile), status: "ready" }
+        : result;
     },
 
     download: async (
@@ -448,19 +415,16 @@ export function createPersonFileManagement(
       personId: string,
       fileId: string,
     ): Promise<DownloadPersonFileResult> => {
-      let found: Awaited<ReturnType<FileMetadataRepository["find"]>>;
-      try {
-        found = await dependencies.transaction.run((transaction) =>
+      const found = await runOrUnavailable(
+        dependencies.transaction,
+        (transaction) =>
           dependencies.repository.find({
             ...actor,
             fileId,
             personId,
             transaction,
-          })
-        );
-      } catch {
-        return { status: "unavailable" };
-      }
+          }),
+      );
       if (found.status !== "found") return found;
       if (found.file.status !== "available") {
         return { status: found.file.status };
@@ -474,22 +438,22 @@ export function createPersonFileManagement(
       }
       const occurredAt = dependencies.clock.now();
       if (!bytes) {
-        try {
-          await dependencies.transaction.run((transaction) =>
-            dependencies.repository.markMissing({
+        return await runOrUnavailable(
+          dependencies.transaction,
+          async (transaction) => {
+            await dependencies.repository.markMissing({
               ...actor,
               fileId,
               occurredAt,
               transaction,
-            })
-          );
-        } catch {
-          return { status: "unavailable" };
-        }
-        return { status: "missing" };
+            });
+            return { status: "missing" } as const;
+          },
+        );
       }
-      try {
-        await dependencies.transaction.run(async (transaction) => {
+      const recorded = await runOrUnavailable(
+        dependencies.transaction,
+        async (transaction) => {
           await dependencies.repository.recordRead({
             ...actor,
             fileId,
@@ -503,10 +467,10 @@ export function createPersonFileManagement(
             occurredAt,
             transaction,
           });
-        });
-      } catch {
-        return { status: "unavailable" };
-      }
+          return { status: "recorded" } as const;
+        },
+      );
+      if (recorded.status !== "recorded") return recorded;
       return { bytes, file: publicFile(found.file), status: "ready" };
     },
 
@@ -516,44 +480,39 @@ export function createPersonFileManagement(
       fileId: string,
     ): Promise<RemovePersonFileResult> => {
       const occurredAt = dependencies.clock.now();
-      try {
-        const removed = await dependencies.transaction.run(
-          async (transaction) => {
-            const reserved = await dependencies.repository.reserveRemoval({
-              ...actor,
-              fileId,
-              occurredAt,
-              personId,
-              transaction,
-            });
-            if (reserved.status !== "reserved") return reserved;
-            await dependencies.storage.remove({
-              key: reserved.file.storageKey,
-            });
-            const result = await dependencies.repository.finalizeRemoval({
-              ...actor,
-              fileId,
-              occurredAt,
-              personId,
-              transaction,
-            });
-            if (result.status !== "removed") return result;
-            await dependencies.audit.record({
-              action: "removed",
-              actor,
-              file: result.file,
-              occurredAt,
-              transaction,
-            });
-            return result;
-          },
-        );
-        return removed.status === "removed"
-          ? { fileId, status: "removed" }
-          : removed;
-      } catch {
-        return { status: "unavailable" };
-      }
+      const removed = await runOrUnavailable(
+        dependencies.transaction,
+        async (transaction) => {
+          const reserved = await dependencies.repository.reserveRemoval({
+            ...actor,
+            fileId,
+            occurredAt,
+            personId,
+            transaction,
+          });
+          if (reserved.status !== "reserved") return reserved;
+          await dependencies.storage.remove({ key: reserved.file.storageKey });
+          const result = await dependencies.repository.finalizeRemoval({
+            ...actor,
+            fileId,
+            occurredAt,
+            personId,
+            transaction,
+          });
+          if (result.status !== "removed") return result;
+          await dependencies.audit.record({
+            action: "removed",
+            actor,
+            file: result.file,
+            occurredAt,
+            transaction,
+          });
+          return result;
+        },
+      );
+      return removed.status === "removed"
+        ? { fileId, status: "removed" }
+        : removed;
     },
   };
 }
