@@ -1,6 +1,8 @@
-import { type Kysely, sql } from "kysely";
-import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { sql } from "kysely";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
+import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
 import type {
   ApiTokenRecord,
   ApiTokenRepository,
@@ -26,33 +28,32 @@ interface AuthenticationRow extends TokenRow {
 
 const columns = sql`
   token.id::text, token.name, token.scopes,
-  to_char(token.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
-  case when token.expires_at is null then null else to_char(token.expires_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') end as expires_at,
-  case when token.last_used_at is null then null else to_char(token.last_used_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') end as last_used_at,
-  case when token.revoked_at is null then null else to_char(token.revoked_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') end as revoked_at
+  ${instantColumn("token.created_at")} as created_at,
+  case when token.expires_at is null then null else ${
+  instantColumn("token.expires_at")
+} end as expires_at,
+  case when token.last_used_at is null then null else ${
+  instantColumn("token.last_used_at")
+} end as last_used_at,
+  case when token.revoked_at is null then null else ${
+  instantColumn("token.revoked_at")
+} end as revoked_at
 `;
 
 function record(row: TokenRow): ApiTokenRecord {
   return {
     createdAt: row.created_at,
-    ...(row.expires_at ? { expiresAt: row.expires_at } : {}),
+    ...pickDefined({ expiresAt: row.expires_at }),
     id: row.id,
-    ...(row.last_used_at ? { lastUsedAt: row.last_used_at } : {}),
+    ...pickDefined({ lastUsedAt: row.last_used_at }),
     name: row.name,
-    ...(row.revoked_at ? { revokedAt: row.revoked_at } : {}),
+    ...pickDefined({ revokedAt: row.revoked_at }),
     scopes: row.scopes,
   };
 }
 
-export class PostgresApiTokenTransaction {
-  constructor(private readonly database: Kysely<ApplicationDatabase>) {}
-
-  run<T>(work: (transaction: ApiTokenTransaction) => Promise<T>): Promise<T> {
-    return this.database.transaction().execute((transaction) =>
-      work({ opaque: transaction })
-    );
-  }
-}
+export class PostgresApiTokenTransaction
+  extends PostgresTransactionRunner<ApiTokenTransaction> {}
 
 export class PostgresApiTokenRepository implements ApiTokenRepository {
   async create(command: Parameters<ApiTokenRepository["create"]>[0]) {

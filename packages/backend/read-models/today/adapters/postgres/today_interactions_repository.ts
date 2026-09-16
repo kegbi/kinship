@@ -1,6 +1,10 @@
 import { sql } from "kysely";
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
+import { UNNAMED_PERSON } from "../../../../modules/people/public.ts";
 import type { ActivityReportItem } from "../../../activity-report/public.ts";
 import type { TodayInteractionsRepository } from "../../application/get_today_interactions.ts";
 
@@ -21,7 +25,7 @@ interface TodayRow {
 function item(row: TodayRow): ActivityReportItem | undefined {
   if (row.kind === "activity" && row.summary) {
     return {
-      ...(row.activity_type ? { activityType: row.activity_type } : {}),
+      ...pickDefined({ activityType: row.activity_type }),
       emotions: [],
       happenedAt: row.happened_at,
       id: row.id,
@@ -68,10 +72,7 @@ export class PostgresTodayInteractionsRepository
         left join lateral (
           select jsonb_agg(jsonb_build_object(
             'id', person.id::text,
-            'name', coalesce(
-              nullif(trim(concat_ws(' ', nullif(person.given_name, ''), person.family_name)), ''),
-              nullif(person.nickname, ''), 'Unnamed person'
-            )
+            'name', ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))}
           ) order by lower(coalesce(person.given_name, person.nickname, '')), person.id) as value
           from crm.activity_participants link
           join crm.people person on person.id = link.person_id
@@ -85,10 +86,7 @@ export class PostgresTodayInteractionsRepository
           note.is_favorited, note.created_at,
           jsonb_build_array(jsonb_build_object(
             'id', person.id::text,
-            'name', coalesce(
-              nullif(trim(concat_ws(' ', nullif(person.given_name, ''), person.family_name)), ''),
-              nullif(person.nickname, ''), 'Unnamed person'
-            )
+            'name', ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))}
           ))
         from crm.notes note
         join crm.people person on person.id = note.person_id
@@ -97,8 +95,7 @@ export class PostgresTodayInteractionsRepository
       )
       select id::text, kind, summary, activity_type, body, is_favorited,
         participants,
-        to_char(happened_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as happened_at
+        ${instantColumn("happened_at")} as happened_at
       from projection order by happened_at desc, id desc
       limit ${command.recentLimit}
     `.execute(this.database);
@@ -121,13 +118,9 @@ export class PostgresTodayInteractionsRepository
         null::text as activity_type, note.body, note.is_favorited,
         jsonb_build_array(jsonb_build_object(
           'id', person.id::text,
-          'name', coalesce(
-            nullif(trim(concat_ws(' ', nullif(person.given_name, ''), person.family_name)), ''),
-            nullif(person.nickname, ''), 'Unnamed person'
-          )
+          'name', ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))}
         )) as participants,
-        to_char(note.created_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as happened_at
+        ${instantColumn("note.created_at")} as happened_at
       from crm.notes note
       join crm.people person on person.id = note.person_id
         and person.workspace_id = note.workspace_id

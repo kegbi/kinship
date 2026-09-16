@@ -1,4 +1,5 @@
 import { sql } from "kysely";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type {
   ResolvedMemberPreferences,
@@ -33,25 +34,23 @@ function preferences(row: PreferenceRow): ResolvedMemberPreferences {
     effectiveTimezone: row.effectiveTimezone,
     contactNameOrder: row.contactNameOrder,
     contactSortOrder: row.contactSortOrder,
-    ...(row.currencyCode ? { currencyCode: row.currencyCode } : {}),
+    ...pickDefined({ currencyCode: row.currencyCode }),
     fluidLayout: row.fluidLayout,
     locale: row.locale,
     measurementSystem: row.measurementSystem,
     temperatureScale: row.temperatureScale,
-    ...(row.timezone ? { timezone: row.timezone } : {}),
+    ...pickDefined({ timezone: row.timezone }),
   };
 }
 
 function workspace(row: WorkspaceRow): WorkspaceConfiguration {
   return {
-    ...(row.defaultCurrencyCode
-      ? { defaultCurrencyCode: row.defaultCurrencyCode }
-      : {}),
+    ...pickDefined({ defaultCurrencyCode: row.defaultCurrencyCode }),
     defaultLocale: row.defaultLocale,
     defaultReminderTime: row.defaultReminderTime.slice(0, 5),
-    ...(row.defaultTimezone ? { defaultTimezone: row.defaultTimezone } : {}),
+    ...pickDefined({ defaultTimezone: row.defaultTimezone }),
     name: row.name,
-    ...(row.slug ? { slug: row.slug } : {}),
+    ...pickDefined({ slug: row.slug }),
   };
 }
 

@@ -1,7 +1,8 @@
 import { sql } from "kysely";
-import type { Kysely } from "kysely";
-import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
+import { displayName } from "../../domain/person_name.ts";
 import type {
   PeopleRepository,
   PeopleTransaction,
@@ -17,22 +18,8 @@ interface DuplicateRow {
   readonly nickname: string | null;
 }
 
-function displayName(row: DuplicateRow): string {
-  const formal = [row.given_name, row.family_name].filter(Boolean).join(" ");
-  return formal || row.nickname || "Unnamed person";
-}
-
-export class PostgresPeopleTransaction {
-  constructor(private readonly database: Kysely<ApplicationDatabase>) {}
-
-  run<T>(
-    work: (transaction: PeopleTransaction) => Promise<T>,
-  ): Promise<T> {
-    return this.database.transaction().execute((transaction) =>
-      work({ opaque: transaction })
-    );
-  }
-}
+export class PostgresPeopleTransaction
+  extends PostgresTransactionRunner<PeopleTransaction> {}
 
 export class PostgresPeopleRepository implements PeopleRepository {
   async lockRequest(
@@ -59,7 +46,11 @@ export class PostgresPeopleRepository implements PeopleRepository {
       limit 5
     `.execute(databaseFromSession(command.transaction));
     return result.rows.map((row) => ({
-      displayName: displayName(row),
+      displayName: displayName({
+        familyName: row.family_name,
+        givenName: row.given_name,
+        nickname: row.nickname,
+      }),
       id: row.id,
     }));
   }
@@ -88,12 +79,11 @@ export class PostgresPeopleRepository implements PeopleRepository {
     if (!row) return { status: "not-found" };
     return {
       person: {
-        ...(row.family_name ? { familyName: row.family_name } : {}),
+        ...pickDefined({ familyName: row.family_name }),
         givenName: row.given_name,
         id: row.id,
         isPartial: row.is_partial,
-        ...(row.middle_name ? { middleName: row.middle_name } : {}),
-        ...(row.nickname ? { nickname: row.nickname } : {}),
+        ...pickDefined({ middleName: row.middle_name, nickname: row.nickname }),
       },
       status: row.archived_at ? "archived" : "ready",
     };
@@ -126,12 +116,11 @@ export class PostgresPeopleRepository implements PeopleRepository {
     const row = result.rows[0];
     return row
       ? {
-        ...(row.family_name ? { familyName: row.family_name } : {}),
+        ...pickDefined({ familyName: row.family_name }),
         givenName: row.given_name,
         id: row.id,
         isPartial: row.is_partial,
-        ...(row.middle_name ? { middleName: row.middle_name } : {}),
-        ...(row.nickname ? { nickname: row.nickname } : {}),
+        ...pickDefined({ middleName: row.middle_name, nickname: row.nickname }),
       }
       : undefined;
   }

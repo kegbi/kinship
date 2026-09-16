@@ -1,5 +1,7 @@
 import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
   TodayCadenceItem,
   TodayReminderItem,
@@ -86,10 +88,10 @@ export class PostgresTodayRemindersRepository
               or occurrence.deliver_at >= ${command.now}::timestamptz - interval '90 days')
         )
         select occurrence.id::text, occurrence.attempt_count,
-          to_char(occurrence.deliver_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as deliver_at,
-          to_char(occurrence.next_attempt_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as next_attempt_at,
+          ${instantColumn("occurrence.deliver_at")} as deliver_at,
+          ${instantColumn("occurrence.next_attempt_at")} as next_attempt_at,
           occurrence.status, occurrence.title,
-          to_char(occurrence.visible_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as visible_at,
+          ${instantColumn("occurrence.visible_at")} as visible_at,
           occurrence.person_id::text, occurrence.person_archived,
           occurrence.person_name
         from ranked occurrence where occurrence.relevance = 1
@@ -103,8 +105,8 @@ export class PostgresTodayRemindersRepository
         select cadence.id::text, person.id::text as person_id,
           person.archived_at is not null as person_archived,
           coalesce(nullif(person.nickname, ''), nullif(concat_ws(' ', person.given_name, person.family_name), ''), 'Person') as person_name,
-          to_char(cadence.next_due_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as due_at,
-          to_char(cadence.last_contacted_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as last_contacted_at
+          ${instantColumn("cadence.next_due_at")} as due_at,
+          ${instantColumn("cadence.last_contacted_at")} as last_contacted_at
         from crm.stay_in_touch_cadences cadence
         join crm.people person on person.id = cadence.person_id
         where person.workspace_id = ${command.workspaceId}::uuid
@@ -118,9 +120,7 @@ export class PostgresTodayRemindersRepository
       cadences: cadences.rows.map((row): TodayCadenceItem => ({
         dueAt: row.due_at,
         id: row.id,
-        ...(row.last_contacted_at
-          ? { lastContactedAt: row.last_contacted_at }
-          : {}),
+        ...pickDefined({ lastContactedAt: row.last_contacted_at }),
         person: {
           archived: row.person_archived,
           id: row.person_id,
@@ -138,7 +138,7 @@ export class PostgresTodayRemindersRepository
             name: row.person_name,
           },
           title: row.title,
-          ...(row.visible_at ? { visibleAt: row.visible_at } : {}),
+          ...pickDefined({ visibleAt: row.visible_at }),
         };
         return row.status === "retry"
           ? { ...item, nextAttemptAt: row.next_attempt_at!, status: row.status }

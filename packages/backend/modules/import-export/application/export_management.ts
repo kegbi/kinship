@@ -3,9 +3,10 @@ import type { Failure } from "../../../shared-kernel/result.ts";
 import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
 import type { ExportFileBoundary } from "../../files/public.ts";
 import type { ExportAudit } from "../../governance/public.ts";
-import type {
-  ExportPerson,
-  PeopleExportBoundary,
+import {
+  displayName,
+  type ExportPerson,
+  type PeopleExportBoundary,
 } from "../../people/public.ts";
 import type { ActorRevalidation } from "../../workspaces/public.ts";
 
@@ -178,9 +179,7 @@ function vcardText(person: ExportPerson): string {
       .replaceAll(",", "\\,").replaceAll(";", "\\;");
   const parameter = (value: string) =>
     value.trim().replace(/[^A-Za-z0-9-]/g, "-").slice(0, 40) || "other";
-  const display =
-    [person.givenName, person.familyName].filter(Boolean).join(" ") ||
-    person.nickname || "Unnamed person";
+  const display = displayName(person);
   const lines = [
     "BEGIN:VCARD",
     "VERSION:4.0",

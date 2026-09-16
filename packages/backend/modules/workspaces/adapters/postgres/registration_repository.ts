@@ -1,6 +1,6 @@
-import { type Kysely, sql } from "kysely";
-import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
 import type {
   RegistrationTransaction,
   RegistrationTransactionRunner,
@@ -8,17 +8,8 @@ import type {
 } from "../../application/register_first_workspace.ts";
 
 export class PostgresRegistrationTransaction
-  implements RegistrationTransactionRunner {
-  constructor(private readonly database: Kysely<ApplicationDatabase>) {}
-
-  run<T>(
-    work: (transaction: RegistrationTransaction) => Promise<T>,
-  ): Promise<T> {
-    return this.database.transaction().execute((transaction) =>
-      work({ opaque: transaction })
-    );
-  }
-}
+  extends PostgresTransactionRunner<RegistrationTransaction>
+  implements RegistrationTransactionRunner {}
 
 export class PostgresWorkspaceRegistration
   implements WorkspaceRegistrationWriter {

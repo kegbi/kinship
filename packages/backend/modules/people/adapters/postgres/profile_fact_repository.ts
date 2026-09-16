@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
   AddressFact,
   ContactMethodFact,
@@ -20,8 +21,7 @@ interface FactRow {
   readonly value: ProfileFactValue;
 }
 
-const timestamp = sql.raw(`to_char(updated_at at time zone 'UTC',
-  'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`);
+const timestamp = instantColumn("updated_at");
 
 function record(section: ProfileFactSection, row: FactRow): ProfileFactRecord {
   return { id: row.id, section, updatedAt: row.updated_at, value: row.value };
@@ -53,8 +53,7 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
       readonly archived_at: Date | null;
       readonly updated_at: string;
     }>`
-      select archived_at, to_char(updated_at at time zone 'UTC',
-        'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+      select archived_at, ${instantColumn("updated_at")} as updated_at
       from crm.people
       where id = ${command.personId}::uuid
         and workspace_id = ${command.workspaceId}::uuid
@@ -112,8 +111,7 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
       where id = ${command.personId}::uuid
         and workspace_id = ${command.workspaceId}::uuid
         and archived_at is null and deleted_at is null
-      returning to_char(updated_at at time zone 'UTC',
-        'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+      returning ${instantColumn("updated_at")} as updated_at
     `.execute(database);
     const revision = updated.rows[0]?.updated_at;
     if (!revision) throw new Error("Locked person revision could not advance.");
@@ -131,8 +129,7 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
     if (command.section === "contact-methods") {
       result = await sql<FactRow>`
         select method.id::text,
-          to_char(method.updated_at at time zone 'UTC',
-            'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at,
+          ${instantColumn("method.updated_at")} as updated_at,
           jsonb_build_object(
             'typeId', method.type_id::text, 'value', method.value,
             'isPrimary', method.is_primary, 'notes', method.notes,
@@ -162,8 +159,9 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
       `.execute(database);
     } else if (command.section === "addresses") {
       result = await sql<FactRow>`
-        select address.id::text, to_char(address.updated_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at,
+        select address.id::text, ${
+        instantColumn("address.updated_at")
+      } as updated_at,
           jsonb_strip_nulls(jsonb_build_object(
             'displayName', address.display_name, 'isPrimary', address.is_primary,
             'street', location.street, 'city', location.city,
@@ -194,8 +192,7 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
     } else if (command.section === "first-meeting") {
       result = await sql<FactRow>`
         select meeting.person_id::text as id,
-          to_char(meeting.updated_at at time zone 'UTC',
-            'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at,
+          ${instantColumn("meeting.updated_at")} as updated_at,
           jsonb_strip_nulls(jsonb_build_object(
             'introducedByPersonId', introducer.id::text,
             'placeText', meeting.place_text, 'notes', meeting.notes
@@ -234,8 +231,9 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
       `.execute(database);
     } else if (command.section === "work") {
       result = await sql<FactRow>`
-        select occupation.id::text, to_char(occupation.updated_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at,
+        select occupation.id::text, ${
+        instantColumn("occupation.updated_at")
+      } as updated_at,
           jsonb_strip_nulls(jsonb_build_object(
             'title', occupation.title, 'description', occupation.description,
             'organizationId', organization.id::text,
@@ -276,8 +274,9 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
       `.execute(database);
     } else {
       result = await sql<FactRow>`
-        select person.id::text, to_char(person.updated_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at,
+        select person.id::text, ${
+        instantColumn("person.updated_at")
+      } as updated_at,
           jsonb_build_object(
             'tagIds', coalesce(tags.ids, '[]'::jsonb)
           ) as value

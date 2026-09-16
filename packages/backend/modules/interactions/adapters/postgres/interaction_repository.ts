@@ -1,5 +1,10 @@
 import { sql } from "kysely";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import {
+  instantColumn,
+  millisecondInstantColumn,
+} from "../../../../platform/postgres/timestamps.ts";
 import type {
   ActivityRecord,
   InteractionRepository,
@@ -30,8 +35,8 @@ export class PostgresInteractionRepository implements InteractionRepository {
     }>`
       select activity.created_by_member_id::text, activity.activity_type_id::text,
         activity.summary, activity.description,
-        to_char(activity.happened_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as happened_at,
-        to_char(activity.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
+        ${millisecondInstantColumn("activity.happened_at")} as happened_at,
+        ${instantColumn("activity.created_at")} as created_at,
         coalesce(participant_ids.value, array[]::text[]) as participant_ids,
         coalesce(emotions.value, array[]::text[]) as emotion_ids
       from crm.activities activity
@@ -52,16 +57,12 @@ export class PostgresInteractionRepository implements InteractionRepository {
     if (activityRow) {
       return {
         interaction: {
-          ...(activityRow.activity_type_id
-            ? { activityTypeId: activityRow.activity_type_id }
-            : {}),
+          ...pickDefined({ activityTypeId: activityRow.activity_type_id }),
           createdAt: activityRow.created_at,
-          ...(activityRow.created_by_member_id
-            ? { createdByMemberId: activityRow.created_by_member_id }
-            : {}),
-          ...(activityRow.description
-            ? { description: activityRow.description }
-            : {}),
+          ...pickDefined({
+            createdByMemberId: activityRow.created_by_member_id,
+            description: activityRow.description,
+          }),
           emotionIds: activityRow.emotion_ids,
           happenedAt: activityRow.happened_at,
           id: command.id,
@@ -81,7 +82,7 @@ export class PostgresInteractionRepository implements InteractionRepository {
     }>`
       select note.created_by_member_id::text,
         note.person_id::text, note.body, note.is_favorited,
-        to_char(note.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at
+        ${instantColumn("note.created_at")} as created_at
       from crm.notes note
       where note.id = ${command.id}::uuid
         and note.workspace_id = ${command.workspaceId}::uuid
@@ -92,9 +93,7 @@ export class PostgresInteractionRepository implements InteractionRepository {
       interaction: {
         body: noteRow.body,
         createdAt: noteRow.created_at,
-        ...(noteRow.created_by_member_id
-          ? { createdByMemberId: noteRow.created_by_member_id }
-          : {}),
+        ...pickDefined({ createdByMemberId: noteRow.created_by_member_id }),
         id: command.id,
         isFavorited: noteRow.is_favorited,
         kind: "note",
@@ -118,8 +117,7 @@ export class PostgresInteractionRepository implements InteractionRepository {
         ${command.description ?? null}, ${command.happenedAt},
         ${command.memberId}::uuid, ${command.occurredAt}, ${command.occurredAt}
       )
-      returning to_char(created_at at time zone 'UTC',
-        'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at
+      returning ${instantColumn("created_at")} as created_at
     `.execute(database);
     const row = inserted.rows[0];
     if (!row) return undefined;
@@ -146,7 +144,7 @@ export class PostgresInteractionRepository implements InteractionRepository {
         ? { activityType: command.activityType.name }
         : {}),
       createdAt: row.created_at,
-      ...(command.description ? { description: command.description } : {}),
+      ...pickDefined({ description: command.description }),
       emotions: command.emotions,
       happenedAt: command.happenedAt.toISOString(),
       id: command.id,
@@ -169,8 +167,7 @@ export class PostgresInteractionRepository implements InteractionRepository {
         ${command.isFavorited ? command.occurredAt : null},
         ${command.memberId}::uuid, ${command.occurredAt}, ${command.occurredAt}
       )
-      returning to_char(created_at at time zone 'UTC',
-        'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at
+      returning ${instantColumn("created_at")} as created_at
     `.execute(databaseFromSession(command.transaction));
     const row = result.rows[0];
     return row

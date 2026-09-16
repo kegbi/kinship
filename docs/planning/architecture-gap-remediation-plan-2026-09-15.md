@@ -495,7 +495,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     gates fmt:check, lint, check. Read models revalidate in a short separate
     transaction before their lock-free reads.
 
-- [ ] **GAP-010 — Platform Postgres helpers and the display-name formula.** M.
+- [x] **GAP-010 — Platform Postgres helpers and the display-name formula.** M.
       Depends: 006.
   - Scope: `platform/postgres/` gains `timestamps.ts` (the single `to_char`
     fragment and `instantColumn(name)`), `rows.ts` (`pickDefined` mapper),
@@ -506,6 +506,15 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     Replace the 20 display-name occurrences and the per-repository idioms.
   - Verify: unit and integration tests green; grep finds one definition of the
     `Unnamed person` fallback.
+  - Delivered 2026-09-16: platform/postgres gained timestamps, rows, errors,
+    transactions, and the SQL person-display fragment (13 platform tests); 93
+    to_char fragments, 108 conditional spreads, 4 SQLSTATE guards, and 5 runner
+    classes consolidated; the TypeScript formula and its single `Unnamed person`
+    literal live in the people domain and the platform fragment takes the
+    fallback as an argument; the checker now refuses platform imports from
+    application, domain, and ports layers; unit 18 sets plus 718 vitest green,
+    integration 123/0, baseline unchanged at 18; gates fmt:check, lint, check.
+    Six web copies of the fallback remain for a frontend ticket.
 
 - [ ] **GAP-011 — Generic audit recorder for governance.** M. Depends: 006.
   - Scope: one `PostgresAuditEventRecorder` with `record(event)` and

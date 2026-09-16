@@ -1,5 +1,9 @@
 import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
+import { UNNAMED_PERSON } from "../../../../modules/people/public.ts";
 import type {
   TodayAttentionItem,
   TodayAttentionRepository,
@@ -19,11 +23,6 @@ interface ItemRow {
   readonly title: string | null;
   readonly unavailable: boolean | null;
 }
-
-const instant = (expression: string) =>
-  sql.raw(
-    `to_char(${expression} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
-  );
 
 export class PostgresTodayAttentionRepository
   implements TodayAttentionRepository {
@@ -58,7 +57,9 @@ export class PostgresTodayAttentionRepository
           person.id is not null and person.deleted_at is not null as unavailable,
           case when person.id is null then null
             when person.deleted_at is not null then 'Deleted/Unavailable person'
-            else coalesce(nullif(trim(concat_ws(' ', nullif(person.given_name, ''), person.family_name)), ''), nullif(person.nickname, ''), 'Unnamed person') end as person_name
+            else ${
+          sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
+        } end as person_name
         from authorized join crm.tasks task on task.workspace_id = authorized.id
         left join crm.people person on person.id = task.person_id
           and person.workspace_id = authorized.id
@@ -80,7 +81,9 @@ export class PostgresTodayAttentionRepository
           target_person.id is not null and target_person.deleted_at is not null,
           case when target_person.id is null then null
             when target_person.deleted_at is not null then 'Deleted/Unavailable person'
-            else coalesce(nullif(trim(concat_ws(' ', nullif(target_person.given_name, ''), target_person.family_name)), ''), nullif(target_person.nickname, ''), 'Unnamed person') end
+            else ${
+          sql.raw(personDisplayNameSql(UNNAMED_PERSON, "target_person"))
+        } end
         from authorized join crm.reminders reminder on reminder.workspace_id = authorized.id
         join crm.reminder_occurrences occurrence on occurrence.reminder_id = reminder.id
           and occurrence.member_id = ${command.memberId}::uuid
@@ -120,10 +123,12 @@ export class PostgresTodayAttentionRepository
           and not exists (select 1 from crm.stay_in_touch_cadences cadence
             where cadence.reminder_id = reminder.id and cadence.is_active)
         union all
-        select cadence.id, 'cadence', 'Reconnect with ' || coalesce(nullif(trim(concat_ws(' ', nullif(person.given_name, ''), person.family_name)), ''), nullif(person.nickname, ''), 'Unnamed person'),
+        select cadence.id, 'cadence', 'Reconnect with ' || ${
+          sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
+        },
           cadence.next_due_at, null::date, null::text, cadence.last_contacted_at,
           person.id, 2::int, cadence.id, person.archived_at is not null, false,
-          coalesce(nullif(trim(concat_ws(' ', nullif(person.given_name, ''), person.family_name)), ''), nullif(person.nickname, ''), 'Unnamed person')
+          ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))}
         from authorized join crm.people person on person.workspace_id = authorized.id
         join crm.stay_in_touch_cadences cadence on cadence.person_id = person.id
         where cadence.is_active and cadence.next_due_at is not null
@@ -146,9 +151,9 @@ export class PostgresTodayAttentionRepository
             lower(coalesce(person_name, title)), kind, id) as position
         from projection
       )
-      select id::text, kind, title, ${instant("due_at")} as due_at,
+      select id::text, kind, title, ${instantColumn("due_at")} as due_at,
         occurs_on::text, reminder_status,
-        ${instant("last_contacted_at")} as last_contacted_at,
+        ${instantColumn("last_contacted_at")} as last_contacted_at,
         person_id::text, archived, unavailable, person_name
       from ranked where position <= case when bucket = 'upcoming'
         then ${command.upcomingLimit}::bigint
@@ -181,9 +186,7 @@ export class PostgresTodayAttentionRepository
               dueAt: row.due_at,
               id: row.id,
               kind: row.kind,
-              ...(row.last_contacted_at
-                ? { lastContactedAt: row.last_contacted_at }
-                : {}),
+              ...pickDefined({ lastContactedAt: row.last_contacted_at }),
               person,
               title: row.title,
             }];

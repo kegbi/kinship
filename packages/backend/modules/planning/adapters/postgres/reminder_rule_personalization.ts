@@ -1,5 +1,9 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import {
+  UNIQUE_CONFLICT,
+  writeWithUniqueConflict,
+} from "../../../../platform/postgres/transactions.ts";
 import type {
   ReminderRulePersonalizationCommand,
   ReminderRulePersonalizationFacade,
@@ -42,34 +46,7 @@ function entry(row: ReminderRuleRow) {
   };
 }
 
-const UNIQUE_CONFLICT = Symbol(
-  "planning-reminder-rule-personalization-unique-conflict",
-);
-
-async function writeWithUniqueConflict<T>(
-  database: ReturnType<typeof databaseFromSession>,
-  write: () => Promise<T>,
-): Promise<T | typeof UNIQUE_CONFLICT> {
-  await sql`savepoint planning_reminder_rule_personalization_write`.execute(
-    database,
-  );
-  try {
-    const result = await write();
-    await sql`release savepoint planning_reminder_rule_personalization_write`
-      .execute(database);
-    return result;
-  } catch (error) {
-    await sql`rollback to savepoint planning_reminder_rule_personalization_write`
-      .execute(database);
-    await sql`release savepoint planning_reminder_rule_personalization_write`
-      .execute(database);
-    if (
-      typeof error === "object" && error !== null && "code" in error &&
-      error.code === "23505"
-    ) return UNIQUE_CONFLICT;
-    throw error;
-  }
-}
+const SAVEPOINT = "planning_reminder_rule_personalization_write";
 
 async function find(
   command: ReminderRulePersonalizationCommand & { readonly id: string },
@@ -121,6 +98,7 @@ export class PostgresReminderRulePersonalization
     if (command.action === "create" && command.daysBefore !== undefined) {
       const created = await writeWithUniqueConflict(
         database,
+        SAVEPOINT,
         () =>
           sql<ReminderRuleRow>`insert into crm.reminder_rules
             (workspace_id, days_before) values (${command.workspaceId}::uuid, ${command.daysBefore})
@@ -148,6 +126,7 @@ export class PostgresReminderRulePersonalization
     const isActive = command.isActive ?? row.isActive;
     const updated = await writeWithUniqueConflict(
       database,
+      SAVEPOINT,
       () =>
         sql<ReminderRuleRow>`update crm.reminder_rules
           set days_before = ${daysBefore}, is_active = ${isActive}, updated_at = now()

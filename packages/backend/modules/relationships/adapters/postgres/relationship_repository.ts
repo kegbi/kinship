@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
   RelationshipRecord,
   RelationshipRepository,
@@ -34,14 +35,12 @@ function record(
   };
 }
 
-const projection = sql.raw(`
+const projection = sql`
   edge.id::text, edge.from_person_id::text, edge.to_person_id::text,
   edge.relationship_type_id::text, edge.status,
-  to_char(edge.created_at at time zone 'UTC',
-    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
-  to_char(edge.updated_at at time zone 'UTC',
-    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
-`);
+  ${instantColumn("edge.created_at")} as created_at,
+  ${instantColumn("edge.updated_at")} as updated_at
+`;
 
 export class PostgresRelationshipRepository implements RelationshipRepository {
   async list(
@@ -50,8 +49,7 @@ export class PostgresRelationshipRepository implements RelationshipRepository {
     const database = databaseFromSession(command.transaction);
     if (command.after) {
       const anchor = await sql<{ readonly created_at: string }>`
-        select to_char(created_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at
+        select ${instantColumn("created_at")} as created_at
         from crm.relationships
         where id = ${command.after.id}::uuid
           and workspace_id = ${command.workspaceId}::uuid
@@ -135,10 +133,8 @@ export class PostgresRelationshipRepository implements RelationshipRepository {
       ) on conflict (from_person_id, to_person_id, relationship_type_id) do nothing
       returning id::text, from_person_id::text, to_person_id::text,
         relationship_type_id::text, status,
-        to_char(created_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
-        to_char(updated_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+        ${instantColumn("created_at")} as created_at,
+        ${instantColumn("updated_at")} as updated_at
     `.execute(databaseFromSession(command.transaction));
     return result.rows[0] ? record(result.rows[0], command.type) : undefined;
   }
@@ -162,10 +158,8 @@ export class PostgresRelationshipRepository implements RelationshipRepository {
         )
       returning edge.id::text, edge.from_person_id::text,
         edge.to_person_id::text, edge.relationship_type_id::text, edge.status,
-        to_char(edge.created_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
-        to_char(edge.updated_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+        ${instantColumn("edge.created_at")} as created_at,
+        ${instantColumn("edge.updated_at")} as updated_at
     `.execute(databaseFromSession(command.transaction));
     return result.rows[0] ? record(result.rows[0], command.type) : undefined;
   }

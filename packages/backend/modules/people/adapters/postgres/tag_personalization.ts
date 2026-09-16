@@ -1,5 +1,9 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import {
+  UNIQUE_CONFLICT,
+  writeWithUniqueConflict,
+} from "../../../../platform/postgres/transactions.ts";
 import type {
   TagPersonalizationCommand,
   TagPersonalizationEntry,
@@ -37,33 +41,7 @@ function entry(row: TagRow): TagPersonalizationEntry {
   };
 }
 
-const UNIQUE_CONFLICT = Symbol("people-tag-personalization-unique-conflict");
-
-async function writeWithUniqueConflict<T>(
-  database: ReturnType<typeof databaseFromSession>,
-  write: () => Promise<T>,
-): Promise<T | typeof UNIQUE_CONFLICT> {
-  await sql`savepoint people_tag_personalization_write`.execute(database);
-  try {
-    const result = await write();
-    await sql`release savepoint people_tag_personalization_write`.execute(
-      database,
-    );
-    return result;
-  } catch (error) {
-    await sql`rollback to savepoint people_tag_personalization_write`.execute(
-      database,
-    );
-    await sql`release savepoint people_tag_personalization_write`.execute(
-      database,
-    );
-    if (
-      typeof error === "object" && error !== null && "code" in error &&
-      error.code === "23505"
-    ) return UNIQUE_CONFLICT;
-    throw error;
-  }
-}
+const SAVEPOINT = "people_tag_personalization_write";
 
 async function find(
   command: TagPersonalizationCommand & { readonly id: string },
@@ -126,6 +104,7 @@ export class PostgresTagPersonalization implements TagPersonalizationFacade {
       if (duplicate.rows[0]?.duplicate) return { status: "conflict" };
       const created = await writeWithUniqueConflict(
         database,
+        SAVEPOINT,
         () =>
           sql<TagRow>`
             insert into crm.tags (workspace_id, name, slug)
@@ -174,6 +153,7 @@ export class PostgresTagPersonalization implements TagPersonalizationFacade {
       if (conflict.rows[0]?.duplicate) return { status: "conflict" };
       const updated = await writeWithUniqueConflict(
         database,
+        SAVEPOINT,
         () =>
           sql<TagRow>`
             update crm.tags set name = ${name}, slug = ${slug}, updated_at = now()

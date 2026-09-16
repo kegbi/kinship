@@ -1,5 +1,7 @@
 import { sql } from "kysely";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
   StorageFileLookupItem,
   StorageSettingsRepository,
@@ -58,8 +60,7 @@ export class PostgresStorageSettingsRepository
           stored.status,
           person.id::text as person_id,
           nullif(trim(concat_ws(' ', person.given_name, person.family_name)), '') as person_name,
-          to_char(stored.created_at at time zone 'UTC',
-            'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at
+          ${instantColumn("stored.created_at")} as created_at
         from crm.files stored
         left join lateral (
           select candidate.person_id, candidate.kind, candidate.title
@@ -94,8 +95,10 @@ export class PostgresStorageSettingsRepository
         filename: item.filename,
         kind: item.kind,
         mimeType: item.mime_type,
-        ...(item.person_id ? { personId: item.person_id } : {}),
-        ...(item.person_name ? { personName: item.person_name } : {}),
+        ...pickDefined({
+          personId: item.person_id,
+          personName: item.person_name,
+        }),
         status: item.status,
         title: item.title,
       }));

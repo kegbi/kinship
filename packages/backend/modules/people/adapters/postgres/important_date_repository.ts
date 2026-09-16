@@ -1,5 +1,7 @@
 import { sql } from "kysely";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
   ImportantDateRecord,
   ImportantDateRepository,
@@ -30,9 +32,9 @@ function record(row: ImportantDateRow): ImportantDateRecord {
     isAgeBased: row.is_age_based,
     isYearApproximate: row.is_year_approximate,
     kind: row.kind,
-    ...(row.label ? { label: row.label } : {}),
+    ...pickDefined({ label: row.label }),
     ...(row.month === null ? {} : { month: row.month }),
-    ...(row.notes ? { notes: row.notes } : {}),
+    ...pickDefined({ notes: row.notes }),
     personId: row.person_id,
     precision: row.precision,
     scheduling: row.month !== null && row.day !== null
@@ -43,14 +45,12 @@ function record(row: ImportantDateRow): ImportantDateRecord {
   };
 }
 
-const projection = sql.raw(`
+const projection = sql`
   id::text, person_id::text, kind, label, year::int, month::int, day::int,
   precision, is_year_approximate, is_age_based, notes,
-  to_char(created_at at time zone 'UTC',
-    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
-  to_char(updated_at at time zone 'UTC',
-    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
-`);
+  ${instantColumn("created_at")} as created_at,
+  ${instantColumn("updated_at")} as updated_at
+`;
 
 function valueParameters(value: ImportantDateValue) {
   return {
@@ -214,8 +214,7 @@ export class PostgresImportantDateRepository
     }
             and is_age_based = ${command.after?.isAgeBased ?? false}
             and notes is not distinct from ${command.after?.notes ?? null}
-            and to_char(updated_at at time zone 'UTC',
-              'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') = ${
+            and ${instantColumn("updated_at")} = ${
       command.after?.updatedAt ?? ""
     }
         )

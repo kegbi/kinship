@@ -1,5 +1,10 @@
 import { sql } from "kysely";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import {
+  instantColumn,
+  millisecondInstantColumn,
+} from "../../../../platform/postgres/timestamps.ts";
 import type {
   CallRecord,
   CommunicationMessage,
@@ -7,15 +12,6 @@ import type {
   ConversationRecord,
   StoredCommunication,
 } from "../../application/record_communication.ts";
-
-const instant = (column: string) =>
-  sql.raw(
-    `to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
-  );
-const created = (column: string) =>
-  sql.raw(
-    `to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
-  );
 
 interface CallRow {
   readonly called_at: string;
@@ -54,10 +50,10 @@ export class PostgresCommunicationRepository
     const database = databaseFromSession(command.transaction);
     const calls = await sql<CallRow>`
       select call.id::text, call.person_id::text, ${
-      instant("call.called_at")
+      millisecondInstantColumn("call.called_at")
     } as called_at,
         call.contact_was_caller, call.content, call.created_by_member_id::text,
-        ${created("call.created_at")} as created_at,
+        ${instantColumn("call.created_at")} as created_at,
         coalesce((select array_agg(link.emotion_id::text order by link.emotion_id)
           from crm.call_emotions link where link.call_id = call.id), array[]::text[]) as emotion_ids
       from crm.calls call where call.id = ${command.id}::uuid
@@ -68,13 +64,13 @@ export class PostgresCommunicationRepository
     const conversations = await sql<ConversationRow>`
       select thread.id::text, thread.person_id::text, thread.channel_type_id::text,
         thread.contact_method_id::text, ${
-      instant("thread.happened_at")
+      millisecondInstantColumn("thread.happened_at")
     } as happened_at,
-        thread.title, ${created("thread.created_at")} as created_at,
+        thread.title, ${instantColumn("thread.created_at")} as created_at,
         coalesce((select jsonb_agg(jsonb_build_object('id', message.id::text,
           'content', message.content, 'direction', message.direction,
           'writtenAt', ${
-      instant("message.written_at")
+      millisecondInstantColumn("message.written_at")
     }) order by message.written_at, message.id)
           from crm.messages message where message.conversation_id = thread.id), '[]'::jsonb) as messages
       from crm.conversation_threads thread where thread.id = ${command.id}::uuid
@@ -90,11 +86,9 @@ export class PostgresCommunicationRepository
     return {
       calledAt: row.called_at,
       contactWasCaller: row.contact_was_caller,
-      ...(row.content ? { content: row.content } : {}),
+      ...pickDefined({ content: row.content }),
       createdAt: row.created_at,
-      ...(row.created_by_member_id
-        ? { createdByMemberId: row.created_by_member_id }
-        : {}),
+      ...pickDefined({ createdByMemberId: row.created_by_member_id }),
       emotionIds: row.emotion_ids,
       id: row.id,
       kind: "call",
@@ -104,17 +98,17 @@ export class PostgresCommunicationRepository
 
   private storedConversation(row: ConversationRow): StoredCommunication {
     return {
-      ...(row.channel_type_id ? { channelTypeId: row.channel_type_id } : {}),
-      ...(row.contact_method_id
-        ? { contactMethodId: row.contact_method_id }
-        : {}),
+      ...pickDefined({
+        channelTypeId: row.channel_type_id,
+        contactMethodId: row.contact_method_id,
+      }),
       createdAt: row.created_at,
       happenedAt: row.happened_at,
       id: row.id,
       kind: "conversation",
       messages: row.messages,
       personId: row.person_id,
-      ...(row.title ? { title: row.title } : {}),
+      ...pickDefined({ title: row.title }),
     };
   }
 
@@ -130,7 +124,7 @@ export class PostgresCommunicationRepository
       command.content ?? null
     },
         ${command.memberId}::uuid, ${command.occurredAt}, ${command.occurredAt})
-      returning ${created("created_at")} as created_at
+      returning ${instantColumn("created_at")} as created_at
     `.execute(database);
     const row = inserted.rows[0];
     if (!row) return undefined;
@@ -148,7 +142,7 @@ export class PostgresCommunicationRepository
     return {
       calledAt: command.calledAt.toISOString(),
       contactWasCaller: command.contactWasCaller,
-      ...(command.content ? { content: command.content } : {}),
+      ...pickDefined({ content: command.content }),
       createdAt: row.created_at,
       emotions: command.emotions,
       id: command.id,
@@ -171,7 +165,7 @@ export class PostgresCommunicationRepository
         ${command.happenedAt}, ${
       command.title ?? null
     }, ${command.occurredAt}, ${command.occurredAt})
-      returning ${created("created_at")} as created_at
+      returning ${instantColumn("created_at")} as created_at
     `.execute(database);
     const row = inserted.rows[0];
     if (!row) return undefined;
@@ -194,16 +188,14 @@ export class PostgresCommunicationRepository
     }
     return {
       channelType: command.channelType,
-      ...(command.contactMethod
-        ? { contactMethod: command.contactMethod }
-        : {}),
+      ...pickDefined({ contactMethod: command.contactMethod }),
       createdAt: row.created_at,
       happenedAt: command.happenedAt.toISOString(),
       id: command.id,
       kind: "conversation",
       messages: command.messages,
       person: command.person,
-      ...(command.title ? { title: command.title } : {}),
+      ...pickDefined({ title: command.title }),
     };
   }
 
@@ -214,10 +206,10 @@ export class PostgresCommunicationRepository
     const [calls, conversations] = await Promise.all([
       sql<CallRow>`
         select call.id::text, call.person_id::text, ${
-        instant("call.called_at")
+        millisecondInstantColumn("call.called_at")
       } as called_at,
           call.contact_was_caller, call.content, call.created_by_member_id::text,
-          ${created("call.created_at")} as created_at,
+          ${instantColumn("call.created_at")} as created_at,
           coalesce((select array_agg(link.emotion_id::text order by link.emotion_id)
             from crm.call_emotions link where link.call_id = call.id), array[]::text[]) as emotion_ids
         from crm.calls call
@@ -229,11 +221,11 @@ export class PostgresCommunicationRepository
       sql<ConversationRow>`
         select thread.id::text, thread.person_id::text,
           thread.channel_type_id::text, thread.contact_method_id::text,
-          ${instant("thread.happened_at")} as happened_at,
-          thread.title, ${created("thread.created_at")} as created_at,
+          ${millisecondInstantColumn("thread.happened_at")} as happened_at,
+          thread.title, ${instantColumn("thread.created_at")} as created_at,
           coalesce((select jsonb_agg(jsonb_build_object('id', message.id::text,
             'content', message.content, 'direction', message.direction,
-            'writtenAt', ${instant("message.written_at")})
+            'writtenAt', ${millisecondInstantColumn("message.written_at")})
             order by message.written_at, message.id)
             from crm.messages message where message.conversation_id = thread.id),
             '[]'::jsonb) as messages

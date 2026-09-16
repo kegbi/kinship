@@ -1,5 +1,7 @@
 import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { pickDefined } from "../../../../platform/postgres/rows.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
   JournalTimelineItem,
   JournalTimelineRepository,
@@ -36,10 +38,10 @@ export class PostgresJournalTimelineRepository
   ): Promise<Awaited<ReturnType<JournalTimelineRepository["read"]>>> {
     const result = await sql<Row>`
       select item.id::text,
-        to_char(item.occurred_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as occurred_at,
+        ${instantColumn("item.occurred_at")} as occurred_at,
         item.activity_id::text, activity.summary as activity_summary,
         item.journal_post_id::text, post.title, post.body,
-        to_char(post.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at,
+        ${instantColumn("post.updated_at")} as updated_at,
         item.day_rating_id::text, rating.rated_on::text, rating.rating, rating.comment
       from crm.journal_items item
       left join crm.activities activity on activity.id = item.activity_id and activity.workspace_id = item.workspace_id
@@ -55,7 +57,7 @@ export class PostgresJournalTimelineRepository
     if (itemId && !result.rows[0]) return { status: "not-found" };
     const activities = itemId ? [] : (await sql<ActivityRow>`
         select activity.id::text, activity.summary,
-          to_char(activity.happened_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as happened_at
+          ${instantColumn("activity.happened_at")} as happened_at
         from crm.activities activity
         where activity.workspace_id = ${actor.workspaceId}::uuid
           and not exists (
@@ -80,7 +82,7 @@ export class PostgresJournalTimelineRepository
             post: {
               body: row.body,
               id: row.journal_post_id,
-              ...(row.title ? { title: row.title } : {}),
+              ...pickDefined({ title: row.title }),
               updatedAt: row.updated_at,
             },
             type: "post",
@@ -89,7 +91,7 @@ export class PostgresJournalTimelineRepository
         if (row.day_rating_id && row.rated_on && row.rating !== null) {
           return {
             dayRating: {
-              ...(row.comment ? { comment: row.comment } : {}),
+              ...pickDefined({ comment: row.comment }),
               id: row.day_rating_id,
               ratedOn: row.rated_on,
               rating: row.rating,
