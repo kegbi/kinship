@@ -652,13 +652,36 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     contracts:check green, baseline 14 unchanged; gates fmt:check, lint, check,
     check:architecture.
 
-- [ ] **GAP-016 — Domain and ports extraction: planning and relationships.** L.
+- [x] **GAP-016 — Domain and ports extraction: planning and relationships.** L.
       Depends: 015.
   - Scope: same pattern for `task_management`, `reminder_management`,
     `reminder_delivery` (cadence math, occurrence generation, time-zone rules
     into `planning/domain/`), and `manage_relationships` (inverse/romantic rules
     into `relationships/domain/`).
   - Verify: as above; reminder time-zone and DST tests moved to domain.
+  - Delivered 2026-09-17: `planning/domain/` gained `recurrence.ts` (the
+    Temporal calendar math, with the DST, fold, month-edge, and time-zone tests
+    moved into `recurrence_test.ts`), `cadence.ts`, `reminder_rules.ts`,
+    `task_rules.ts`, `cursors.ts` (over the kernel's signed cursors), and
+    `delivery_rules.ts`; `planning/ports/` holds context, task, reminder,
+    delivery, and audit contracts; `InAppReminderDelivery` moved to
+    `adapters/in_app/`; `relationships/domain/` gained `relationship_rules.ts`
+    (inverse labels, relabelling, success shapes, validation; no romantic rule
+    existed to extract) and `cursors.ts` over the kernel codecs, with
+    `relationships/ports/` beside it; `task_management.ts` (768),
+    `reminder_management.ts` (757), and `manage_relationships.ts` (830) are
+    facades over context, listing, and write files, the largest application file
+    is 319 lines, and every previous `public.ts` name except the adapter class
+    is still exported; both domain sets at 100/100/100 in the new
+    `planning-domain` and `relationships` manifest entries, `planning` set up to
+    89.7 branch, api set to 87.5; review found three literal NUL bytes in
+    `cadence.ts`, fixed as `\u0000` escapes with the fingerprint digest pinned
+    against main, and the new `tools/source_hygiene_test.ts` guard now fails the
+    unit gate on any raw NUL in a source file, which also exposed and fixed one
+    in `integrations/composition.ts`; 17 code files changed (+316/-2676) plus 35
+    new files (5090 lines); unit 718 vitest plus all sets green, integration
+    126/0, contracts:check green, baseline 14 unchanged; gates fmt:check, lint,
+    check, check:architecture.
 
 - [ ] **GAP-017 — Domain and ports extraction: interactions, journal, gifts,
       files.** M-L. Depends: 015.

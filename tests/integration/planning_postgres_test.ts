@@ -11,12 +11,14 @@ import {
   createReminderDeliveryWorker,
   createReminderManagement,
   createTaskManagement,
-  InAppReminderDelivery,
   reminderAuditFrom,
   reminderDeliveryAuditFrom,
   type ReminderDeliveryProvider,
   taskAuditFrom,
 } from "../../packages/backend/modules/planning/public.ts";
+import {
+  InAppReminderDelivery,
+} from "../../packages/backend/modules/planning/adapters/in_app/reminder_delivery.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import * as generatedPlanningClient from "../../packages/contracts/generated/auth-client.ts";
 import {

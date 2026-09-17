@@ -12,9 +12,11 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
-import type { ReminderDeliveryAudit } from "./reminder_delivery.ts";
-import type { ReminderAudit } from "./reminder_management.ts";
-import type { TaskAudit } from "./task_management.ts";
+import type {
+  ReminderAudit,
+  ReminderDeliveryAudit,
+  TaskAudit,
+} from "../ports/audit.ts";
 
 export function describeReminderEvent(
   command: Parameters<ReminderAudit["record"]>[0],

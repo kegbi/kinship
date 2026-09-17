@@ -1,10 +1,8 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
-import type {
-  RelationshipRecord,
-  RelationshipRepository,
-} from "../../public.ts";
+import type { RelationshipRecord } from "../../domain/relationship_rules.ts";
+import type { RelationshipRepository } from "../../ports/relationship_repository.ts";
 
 interface RelationshipRow {
   readonly created_at: string;

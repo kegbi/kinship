@@ -15,7 +15,7 @@ import type {
 import type {
   RelationshipAudit,
   RelationshipAuditCommand,
-} from "./manage_relationships.ts";
+} from "../ports/audit.ts";
 
 export function describeRelationshipEvent(
   command: RelationshipAuditCommand,

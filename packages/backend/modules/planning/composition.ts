@@ -7,6 +7,7 @@
  */
 
 import type { SharedComposition } from "../../platform/composition.ts";
+import { InAppReminderDelivery } from "./adapters/in_app/reminder_delivery.ts";
 import { PostgresPersonDateReminderPublisher } from "./adapters/postgres/person_date_reminders.ts";
 import {
   PostgresInAppReminderEffectStore,
@@ -17,16 +18,15 @@ import {
 import { PostgresReminderRulePersonalization } from "./adapters/postgres/reminder_rule_personalization.ts";
 import { PostgresTaskRepository } from "./adapters/postgres/task_repository.ts";
 import { PostgresPlanningWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
-import type { TaskCursorKeyset } from "./application/task_management.ts";
 import type { RelationshipPersonBoundary } from "../people/public.ts";
 import {
   createReminderDeliveryWorker,
   createReminderManagement,
   createTaskManagement,
-  InAppReminderDelivery,
   reminderAuditFrom,
   reminderDeliveryAuditFrom,
   taskAuditFrom,
+  type TaskCursorKeyset,
 } from "./public.ts";
 
 /**

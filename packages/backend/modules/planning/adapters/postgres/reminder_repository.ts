@@ -4,23 +4,29 @@ import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type { Clock } from "../../../../shared-kernel/clock.ts";
+import type { StayInTouchCadenceRecord } from "../../domain/cadence.ts";
+import type {
+  ClaimedReminderOccurrence,
+  ProviderDeliveryResult,
+} from "../../domain/delivery_rules.ts";
 import {
   type CalendarOccurrence,
   generateCalendarOccurrences,
-  type ReminderDefinitionRecord,
-  type ReminderOccurrenceRecord,
-  type ReminderOccurrenceStatus,
-  type ReminderRecipients,
-  type ReminderRepository,
-  type ReminderWorkspaceBoundary,
-  type StayInTouchCadenceRecord,
-} from "../../application/reminder_management.ts";
+} from "../../domain/recurrence.ts";
 import type {
-  ClaimedReminderOccurrence,
+  ReminderDefinitionRecord,
+  ReminderOccurrenceRecord,
+  ReminderOccurrenceStatus,
+} from "../../domain/reminder_rules.ts";
+import type {
   InAppReminderEffectStore,
-  ProviderDeliveryResult,
   ReminderDeliveryRepository,
-} from "../../application/reminder_delivery.ts";
+} from "../../ports/reminder_delivery.ts";
+import type {
+  ReminderRecipients,
+  ReminderRepository,
+  ReminderWorkspaceBoundary,
+} from "../../ports/reminder_repository.ts";
 
 interface ReminderRow {
   readonly anchor_on: string;

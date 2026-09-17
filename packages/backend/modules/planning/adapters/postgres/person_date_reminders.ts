@@ -1,6 +1,6 @@
 import { sql } from "kysely";
 import type { ImportantDatePublisher } from "../../../people/public.ts";
-import type { ReminderRecipients } from "../../application/reminder_management.ts";
+import type { ReminderRecipients } from "../../ports/reminder_repository.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 
 interface ReminderRow {

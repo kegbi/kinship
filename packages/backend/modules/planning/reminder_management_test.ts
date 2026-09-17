@@ -1,88 +1,11 @@
 import * as planning from "./public.ts";
+import { InAppReminderDelivery } from "./adapters/in_app/reminder_delivery.ts";
 import { fixedClock } from "../../testing/fakes.ts";
 
 Deno.test("PLANNING-002 exposes calendar reminder management", () => {
   const publicPlanning = planning as unknown as Record<string, unknown>;
   if (typeof publicPlanning.createReminderManagement !== "function") {
     throw new Error("calendar reminder management is not public");
-  }
-});
-
-Deno.test("PLANNING-002 calendar recurrence is deterministic across DST gaps, folds, and month edges", () => {
-  const gap = planning.generateCalendarOccurrences({
-    anchorOn: "2026-03-29",
-    count: 1,
-    from: "2026-03-01T00:00:00Z",
-    recurrenceInterval: 1,
-    recurrenceUnit: "none",
-    sendTime: "02:30:00",
-    timezone: "Europe/Belgrade",
-  });
-  const fold = planning.generateCalendarOccurrences({
-    anchorOn: "2026-10-25",
-    count: 1,
-    from: "2026-10-01T00:00:00Z",
-    recurrenceInterval: 1,
-    recurrenceUnit: "none",
-    sendTime: "02:30:00",
-    timezone: "Europe/Belgrade",
-  });
-  const monthly = planning.generateCalendarOccurrences({
-    anchorOn: "2026-01-31",
-    count: 3,
-    from: "2026-01-01T00:00:00Z",
-    recurrenceInterval: 1,
-    recurrenceUnit: "month",
-    sendTime: "00:00:00",
-    timezone: "UTC",
-  });
-  if (
-    gap[0]?.deliverAt !== "2026-03-29T01:30:00Z" ||
-    fold[0]?.deliverAt !== "2026-10-25T00:30:00Z" ||
-    monthly.map((item) => item.occursOn).join(",") !==
-      "2026-01-31,2026-02-28,2026-03-31"
-  ) {
-    throw new Error(JSON.stringify({ fold, gap, monthly }));
-  }
-});
-
-Deno.test("PLANNING-002 recurrence jumps to old daily, monthly, and yearly anchors", () => {
-  const cases = [
-    planning.generateCalendarOccurrences({
-      anchorOn: "2000-01-01",
-      count: 2,
-      from: "2026-08-18T00:00:00Z",
-      recurrenceInterval: 1,
-      recurrenceUnit: "day",
-      sendTime: "09:00:00",
-      timezone: "UTC",
-    }),
-    planning.generateCalendarOccurrences({
-      anchorOn: "1600-01-31",
-      count: 2,
-      from: "2026-08-18T00:00:00Z",
-      recurrenceInterval: 1,
-      recurrenceUnit: "month",
-      sendTime: "09:00:00",
-      timezone: "UTC",
-    }),
-    planning.generateCalendarOccurrences({
-      anchorOn: "1600-02-29",
-      count: 2,
-      from: "2026-08-18T00:00:00Z",
-      recurrenceInterval: 1,
-      recurrenceUnit: "year",
-      sendTime: "09:00:00",
-      timezone: "UTC",
-    }),
-  ];
-  if (
-    cases.some((items) => items.length !== 2) ||
-    cases[0]?.[0]?.occursOn !== "2026-08-18" ||
-    cases[1]?.[0]?.occursOn !== "2026-08-31" ||
-    cases[2]?.[0]?.occursOn !== "2027-02-28"
-  ) {
-    throw new Error(JSON.stringify(cases));
   }
 });
 
@@ -125,7 +48,7 @@ Deno.test("PLANNING-002 worker replenishes a bounded rolling occurrence window b
 
 Deno.test("PLANNING-002 in-app provider delegates delivery and reconciliation to durable effect storage", async () => {
   const calls: string[] = [];
-  const provider = new planning.InAppReminderDelivery({
+  const provider = new InAppReminderDelivery({
     record: (command) => {
       calls.push(`record:${command.occurrenceId}:${command.idempotencyKey}`);
       return Promise.resolve({
