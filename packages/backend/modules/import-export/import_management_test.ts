@@ -1,11 +1,7 @@
 import { createImportManagement, type ImportRepository } from "./public.ts";
+import * as fixtures from "../../testing/fixtures.ts";
 
-const actor = {
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "admin" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-};
+const actor = fixtures.actor({ role: "admin" });
 const ids = [
   "00000000-0000-4000-8000-000000000010",
   "00000000-0000-4000-8000-000000000011",

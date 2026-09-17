@@ -5,12 +5,12 @@ import {
   type StoredDebt,
   type StoredGift,
 } from "./public.ts";
-
-function assertEquals(actual: unknown, expected: unknown): void {
-  const left = JSON.stringify(actual);
-  const right = JSON.stringify(expected);
-  if (left !== right) throw new Error(`Expected ${right}, received ${left}`);
-}
+import { assertEquals } from "../../testing/assert.ts";
+import {
+  fixedClock,
+  recordingAudit,
+  sequentialIds,
+} from "../../testing/fakes.ts";
 
 const actor = {
   memberId: "10000000-0000-4000-8000-000000000001",
@@ -26,9 +26,11 @@ function fixture(options: { readonly attachmentDisappears?: boolean } = {}) {
   const gifts = new Map<string, StoredGift>();
   const debts = new Map<string, StoredDebt>();
   const attachments: string[] = [];
-  const audit: string[] = [];
+  const audit = recordingAudit<{
+    readonly action: string;
+    readonly recordType: string;
+  }>();
   let attachmentListingAvailable = true;
-  let nextId = 7;
   const dependencies: GiftManagementDependencies = {
     actors: { revalidate: () => Promise.resolve("active" as const) },
     attachments: {
@@ -59,21 +61,13 @@ function fixture(options: { readonly attachmentDisappears?: boolean } = {}) {
             : { status: "forbidden" as const },
         ),
     },
-    audit: {
-      record: (command) => {
-        audit.push(`${command.recordType}:${command.action}`);
-        return Promise.resolve("audit-id");
-      },
-    },
-    clock: { now: () => new Date("2026-08-23T10:00:00.000Z") },
+    audit,
+    clock: fixedClock("2026-08-23T10:00:00.000Z"),
     currencies: {
       isSupported: ({ code }) => Promise.resolve(code === "EUR"),
       listSupported: () => Promise.resolve(["EUR", "USD"]),
     },
-    ids: {
-      next: () =>
-        `10000000-0000-4000-8000-${String(nextId++).padStart(12, "0")}`,
-    },
+    ids: sequentialIds({ prefix: "10000000-0000-4000-8000-", start: 7 }),
     repository: {
       createDebt: (command) => {
         const debt: StoredDebt = {
@@ -304,14 +298,17 @@ Deno.test("GIFTS-001 manages gift ideas, attachments, and debts with guarded tra
     )).status,
     "saved",
   );
-  assertEquals(audit, [
-    "gift:created",
-    "gift:created",
-    "gift:changed",
-    "gift:changed",
-    "debt:created",
-    "debt:changed",
-  ]);
+  assertEquals(
+    audit.commands.map((command) => `${command.recordType}:${command.action}`),
+    [
+      "gift:created",
+      "gift:created",
+      "gift:changed",
+      "gift:changed",
+      "debt:created",
+      "debt:changed",
+    ],
+  );
 });
 
 Deno.test("GIFTS-001 rejects a missing attachment without saving the gift", async () => {

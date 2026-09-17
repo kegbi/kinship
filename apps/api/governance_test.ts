@@ -6,10 +6,7 @@ import {
   createGovernanceRoutes,
   createLegalRequirementGuard,
 } from "./governance.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
 
 const ids = {
   actor: "00000000-0000-4000-8000-000000000002",
@@ -117,8 +114,8 @@ Deno.test("GOVERNANCE-001 HTTP reviews and accepts an exact required version", a
     },
   );
 
-  assert(publicDocument.status === 200, "active public document was hidden");
-  assert(requirements.status === 200, "required versions were unavailable");
+  assertStatus(publicDocument, 200, "active public document was hidden");
+  assertStatus(requirements, 200, "required versions were unavailable");
   assert(
     acceptance.status === 201 && ipv4Acceptance.status === 201,
     "exact version was not accepted",
@@ -190,8 +187,8 @@ Deno.test("GOVERNANCE-001 HTTP rejects unsafe or superseded acceptance", async (
       method: "POST",
     },
   );
-  assert(wrongOrigin.status === 403, "cross-origin acceptance was allowed");
-  assert(stale.status === 409, "superseded version was accepted");
+  assertStatus(wrongOrigin, 403, "cross-origin acceptance was allowed");
+  assertStatus(stale, 409, "superseded version was accepted");
   assert(
     absent.status === 404 && unsupported.status === 404 &&
       malformed.status === 400,
@@ -226,7 +223,7 @@ Deno.test("GOVERNANCE-002 HTTP authorizes and forwards workspace audit filters",
     `http://localhost/api/v1/audit-events?personId=${ids.person}&actorMemberId=${ids.actor}&action=people.person-created&from=2026-08-01T00%3A00%3A00.000Z&to=2026-09-01T00%3A00%3A00.000Z&limit=25`,
     { headers: { cookie: "kinship_session=test" } },
   );
-  assert(response.status === 200, `expected 200, received ${response.status}`);
+  assertStatus(response, 200);
   assert(
     response.headers.get("cache-control") === "private, no-store",
     "audit response can be cached",
@@ -281,7 +278,7 @@ Deno.test("GOVERNANCE-002 HTTP rejects invalid filters before the read model", a
   );
   assert(invalid.status === 400 && !called, "invalid range reached storage");
   const anonymous = await app.request("http://localhost/api/v1/audit-events");
-  assert(anonymous.status === 401, "anonymous audit access was not rejected");
+  assertStatus(anonymous, 401, "anonymous audit access was not rejected");
 });
 
 Deno.test("GOVERNANCE-001 guard blocks pending and unavailable legal state before protected APIs", async () => {
@@ -328,9 +325,9 @@ Deno.test("GOVERNANCE-001 guard blocks pending and unavailable legal state befor
   mode = "ready";
   const ready = await request();
 
-  assert(pending.status === 403, "pending acceptance reached protected API");
-  assert(unavailable.status === 503, "requirement outage bypassed protection");
-  assert(ready.status === 200, "satisfied requirement remained blocked");
+  assertStatus(pending, 403, "pending acceptance reached protected API");
+  assertStatus(unavailable, 503, "requirement outage bypassed protection");
+  assertStatus(ready, 200, "satisfied requirement remained blocked");
 });
 
 Deno.test("GOVERNANCE-001 guard fails closed when session resolution fails once", async () => {
@@ -375,10 +372,7 @@ Deno.test("GOVERNANCE-001 guard fails closed when session resolution fails once"
     headers: { cookie: "kinship_session=test" },
   });
 
-  assert(
-    response.status === 503,
-    "resolver outage reached the protected route",
-  );
+  assertStatus(response, 503, "resolver outage reached the protected route");
   assert(
     resolutions === 1,
     "guard allowed a second resolver call to bypass legal state",
@@ -444,6 +438,6 @@ Deno.test("GOVERNANCE-001 guard leaves only resolution and bootstrap surfaces re
       headers: { cookie: "kinship_session=test" },
       method,
     });
-    assert(response.status === 204, `${method} ${path} was blocked`);
+    assertStatus(response, 204, `${method} ${path} was blocked`);
   }
 });

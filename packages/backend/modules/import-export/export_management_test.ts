@@ -9,17 +9,11 @@ import {
   type PeopleExportBoundary,
   type StoredExport,
 } from "./public.ts";
+import { assert } from "../../testing/assert.ts";
+import * as fixtures from "../../testing/fixtures.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
-
-const actor: ExportActor = {
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "admin",
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-};
+const actor: ExportActor = fixtures.actor({ role: "admin" });
 const exportId = "00000000-0000-4000-8000-000000000004";
 const fileId = "00000000-0000-4000-8000-000000000005";
 const personId = "00000000-0000-4000-8000-000000000006";
@@ -203,7 +197,7 @@ function context() {
         return Promise.resolve();
       },
     },
-    clock: { now: () => new Date("2026-08-23T10:00:00.000Z") },
+    clock: fixedClock("2026-08-23T10:00:00.000Z"),
     files,
     ids: { next: () => exportId },
     people,
@@ -276,7 +270,7 @@ Deno.test("[EXPORT-001] exports a member-authorized vCard with escaped contact d
       record: () => Promise.resolve(),
       recordPersonDownload: () => Promise.resolve(),
     },
-    clock: { now: () => new Date("2026-08-23T10:00:00.000Z") },
+    clock: fixedClock("2026-08-23T10:00:00.000Z"),
     files: new MemoryFiles(),
     ids: { next: () => exportId },
     people: {
@@ -418,7 +412,7 @@ Deno.test("[EXPORT-001] conceals lost authority, missing people, and missing job
       record: () => Promise.resolve(),
       recordPersonDownload: () => Promise.resolve(),
     },
-    clock: { now: () => new Date("2026-08-23T10:00:00.000Z") },
+    clock: fixedClock("2026-08-23T10:00:00.000Z"),
     files: new MemoryFiles(),
     ids: { next: () => exportId },
     people: missingPeople,
@@ -437,7 +431,7 @@ Deno.test("[EXPORT-001] conceals lost authority, missing people, and missing job
       record: () => Promise.resolve(),
       recordPersonDownload: () => Promise.resolve(),
     },
-    clock: { now: () => new Date("2026-08-23T10:00:00.000Z") },
+    clock: fixedClock("2026-08-23T10:00:00.000Z"),
     files: new MemoryFiles(),
     ids: { next: () => exportId },
     people: {

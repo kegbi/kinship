@@ -5,22 +5,13 @@ import type {
 import type { ActivityReport } from "../../packages/backend/read-models/activity-report/public.ts";
 import type { TodayInteractions } from "../../packages/backend/read-models/today/public.ts";
 import { createInteractionRoutes } from "./interactions.ts";
+import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
+import * as fixtures from "../../packages/backend/testing/fixtures.ts";
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
-
-const personId = "00000000-0000-4000-8000-000000000100";
+const personId = fixtures.personId();
 const otherPersonId = "00000000-0000-4000-8000-000000000101";
 const requestId = "00000000-0000-4000-8000-000000000800";
-const actor = {
-  accessibleWorkspaces: [],
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "member" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-  workspaceName: "Circle",
-};
+const actor = fixtures.sessionActor({ workspaceName: "Circle" });
 
 type Interactions = InteractionManagement & CommunicationManagement;
 
@@ -121,7 +112,7 @@ Deno.test("INTERACTION-001 HTTP records strict activities and exposes read-only 
     headers,
     method: "POST",
   });
-  assert(created.status === 201, `create returned ${created.status}`);
+  assertStatus(created, 201);
   assert(
     (received as { readonly participantIds?: readonly string[] })
       .participantIds?.length === 2,
@@ -136,7 +127,7 @@ Deno.test("INTERACTION-001 HTTP records strict activities and exposes read-only 
     ]
   ) {
     const response = await app.request(`http://localhost${path}`, { headers });
-    assert(response.status === 200, `${path} returned ${response.status}`);
+    assertStatus(response, 200, path);
     if (path === "/api/v1/today/recent-activity") {
       assert(
         (await response.json() as {
@@ -158,7 +149,7 @@ Deno.test("INTERACTION-001 HTTP records strict activities and exposes read-only 
     headers,
     method: "POST",
   });
-  assert(extra.status === 400, "APP-005B call fields were accepted");
+  assertStatus(extra, 400, "APP-005B call fields were accepted");
 });
 
 Deno.test("INTERACTION-002 HTTP records calls/conversations and exposes the person projection", async () => {
@@ -263,12 +254,12 @@ Deno.test("INTERACTION-001 HTTP maps tenant, archive, session, origin, and outag
       method: "POST",
     },
   );
-  assert(badOrigin.status === 403, "cross-origin mutation was accepted");
+  assertStatus(badOrigin, 403, "cross-origin mutation was accepted");
   const noSession = await createInteractionRoutes({
     ...services(),
     protectedSessions: { resolve: () => Promise.resolve(undefined) },
   }).request("http://localhost/api/v1/today/recent-activity", { headers });
-  assert(noSession.status === 401, "projection accepted a missing session");
+  assertStatus(noSession, 401, "projection accepted a missing session");
   const outage = await createInteractionRoutes(services({
     record: () => Promise.reject(new Error("offline")),
   })).request("http://localhost/api/v1/interactions", {
@@ -281,7 +272,7 @@ Deno.test("INTERACTION-001 HTTP maps tenant, archive, session, origin, and outag
     headers,
     method: "POST",
   });
-  assert(outage.status === 503, "outage was concealed as a domain result");
+  assertStatus(outage, 503, "outage was concealed as a domain result");
 });
 
 Deno.test("INTERACTION-001 HTTP isolates Today region outages", async () => {
@@ -359,7 +350,7 @@ Deno.test("INTERACTION-001 HTTP forwards bounded cursors and keeps note timestam
     "http://localhost/api/v1/interaction-options?activityTypeSearch=meal&activityTypeCursor=opaque&limit=7",
     { headers },
   );
-  assert(options.status === 200, "bounded options query failed");
+  assertStatus(options, 200, "bounded options query failed");
   assert(
     (optionInput as { readonly limit?: number }).limit === 7,
     "options query was not forwarded",
@@ -368,7 +359,7 @@ Deno.test("INTERACTION-001 HTTP forwards bounded cursors and keeps note timestam
     `http://localhost/api/v1/people/${personId}/activity-report?cursor=opaque&kind=activity&limit=9&year=2026`,
     { headers },
   );
-  assert(report.status === 200, "report cursor query failed");
+  assertStatus(report, 200, "report cursor query failed");
   assert(
     (reportInput as { readonly cursor?: string; readonly kind?: string })
           .cursor === "opaque" &&
@@ -392,8 +383,9 @@ Deno.test("INTERACTION-001 HTTP forwards bounded cursors and keeps note timestam
       headers,
       method: "POST",
     });
-    assert(
-      invalid.status === 400,
+    assertStatus(
+      invalid,
+      400,
       "note timestamp or missing request id was accepted",
     );
   }
@@ -407,10 +399,7 @@ Deno.test("INTERACTION-001 HTTP forwards bounded cursors and keeps note timestam
     headers,
     method: "POST",
   });
-  assert(
-    conflict.status === 409,
-    "idempotency conflict was not stable HTTP 409",
-  );
+  assertStatus(conflict, 409, "idempotency conflict was not stable HTTP 409");
   const stale = services({
     options: () => Promise.resolve({ status: "stale-cursor" as const }),
   });

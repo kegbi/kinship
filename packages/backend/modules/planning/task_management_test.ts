@@ -1,16 +1,10 @@
 import { createTaskManagement } from "./application/task_management.ts";
+import { assert } from "../../testing/assert.ts";
+import * as fixtures from "../../testing/fixtures.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
-
-const actor = {
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "member" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-};
-const personId = "00000000-0000-4000-8000-000000000100";
+const actor = fixtures.actor();
+const personId = fixtures.personId();
 const taskId = "00000000-0000-4000-8000-000000000900";
 const cursorKeyset = {
   activeVersion: 1,
@@ -90,7 +84,7 @@ function dependencies(
           return Promise.resolve(crypto.randomUUID());
         },
       },
-      clock: { now: () => new Date("2026-08-18T10:00:00.000Z") },
+      clock: fixedClock("2026-08-18T10:00:00.000Z"),
       cursorKeyset,
       people: {
         inspect: () => Promise.resolve({ status: personStatus }),
@@ -325,7 +319,7 @@ Deno.test("PLANNING-001 hydrates every person in a bounded 100-task page", async
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve(id(9999)),
     },
-    clock: { now: () => new Date("2026-08-18T10:00:00.000Z") },
+    clock: fixedClock("2026-08-18T10:00:00.000Z"),
     cursorKeyset,
     people: {
       inspect: ({ personIds }) =>
@@ -488,7 +482,7 @@ Deno.test("PLANNING-001 concurrent person swaps use one canonical lock set", asy
         return Promise.resolve(crypto.randomUUID());
       },
     },
-    clock: { now: () => new Date("2026-08-18T10:00:00.001Z") },
+    clock: fixedClock("2026-08-18T10:00:00.001Z"),
     cursorKeyset,
     people: {
       inspect: async (command) => {
@@ -616,7 +610,7 @@ Deno.test("PLANNING-001 preserves unavailable linked-person history as read-only
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve(crypto.randomUUID()),
     },
-    clock: { now: () => new Date("2026-08-18T10:00:00.000Z") },
+    clock: fixedClock("2026-08-18T10:00:00.000Z"),
     cursorKeyset,
     people: {
       inspect: () => Promise.resolve({ status: "not-found" }),
@@ -682,7 +676,7 @@ Deno.test("PLANNING-001 returns a bound continuation that reaches task 101", asy
         assertPostcondition: () => Promise.resolve(),
         record: () => Promise.resolve(id(9999)),
       },
-      clock: { now: () => new Date("2026-08-18T10:00:00.000Z") },
+      clock: fixedClock("2026-08-18T10:00:00.000Z"),
       cursorKeyset,
       people: {
         inspect: () => Promise.resolve({ status: "ready" }),

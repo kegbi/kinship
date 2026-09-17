@@ -34,10 +34,7 @@ import {
 import {
   PostgresInteractionWorkspaceBoundary,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/interaction_workspace_boundary.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../packages/backend/testing/assert.ts";
 
 function deepEqual(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) return true;

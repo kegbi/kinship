@@ -4,10 +4,8 @@ import {
   type PersonalizationMutation,
   type PersonalizationTransaction,
 } from "./application/personalization.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
 const owner = {
   memberId: "member-a",
@@ -28,7 +26,7 @@ function fixture() {
         return Promise.resolve();
       },
     },
-    clock: { now: () => new Date("2026-08-16T12:00:00Z") },
+    clock: fixedClock("2026-08-16T12:00:00Z"),
     repository: {
       inspect(command) {
         effects.push(`inspect:${command.section}:${command.id}`);

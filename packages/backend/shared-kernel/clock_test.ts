@@ -1,8 +1,5 @@
 import type { Clock, Instant } from "./clock.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../testing/assert.ts";
 
 Deno.test("[GAP-006] a clock is an injected now(), never ambient time", () => {
   const pinned = new Date("2026-09-16T10:00:00.000Z");

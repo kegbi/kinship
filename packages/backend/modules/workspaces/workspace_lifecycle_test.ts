@@ -3,10 +3,8 @@ import {
   type WorkspaceLifecycleDependencies,
   type WorkspaceLifecycleSnapshot,
 } from "./public.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertRejects } from "../../testing/assert.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
 const actor = {
   memberId: "10000000-0000-4000-8000-000000000001",
@@ -122,7 +120,7 @@ function setup(options: {
       record: () => Promise.resolve("audit-event"),
       recordFailure: () => Promise.resolve("audit-event"),
     },
-    clock: { now: () => new Date("2026-08-23T10:00:00.000Z") },
+    clock: fixedClock("2026-08-23T10:00:00.000Z"),
     identity: {
       verifyPassword: ({ password }) => Promise.resolve(password === "valid"),
     },
@@ -254,17 +252,13 @@ Deno.test("[WORKSPACE-002] rolled-back primary mutation records a separate redac
   const { effects, lifecycle } = setup({ failMutation: true });
   const preview = await lifecycle.preview(actor);
   assert(preview.status === "ready", "failure preview missing");
-  let rejected = false;
-  try {
+  await assertRejects(async () => {
     await lifecycle.deleteWorkspace(actor, {
       confirmation: "DELETE Family",
       impactToken: preview.impactToken,
       password: "valid",
     }, { clientAddress: "203.0.113.19" });
-  } catch {
-    rejected = true;
-  }
-  assert(rejected, "primary mutation failure was hidden");
+  }, "primary mutation failure was hidden");
   assert(
     effects.filter((effect) =>
       effect === "attempt:delete:transactional-failure"

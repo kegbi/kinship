@@ -4,10 +4,7 @@ import {
   type SharedFailureStatus,
   type ValidationFailure,
 } from "./result.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../testing/assert.ts";
 
 Deno.test("[GAP-006] the shared failure vocabulary is declared once", () => {
   assert(

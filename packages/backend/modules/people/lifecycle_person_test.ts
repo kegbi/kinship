@@ -3,18 +3,12 @@ import {
   type PersonLifecycleDependencies,
   type PersonLifecycleRecord,
 } from "./application/lifecycle_person.ts";
+import { assert } from "../../testing/assert.ts";
+import * as fixtures from "../../testing/fixtures.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
-
-const actor = {
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "member" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-};
-const personId = "00000000-0000-4000-8000-000000000100";
+const actor = fixtures.actor();
+const personId = fixtures.personId();
 const updatedAt = "2026-08-15T08:00:00.000Z";
 
 function fake(lifecycle: "active" | "archived" | "deleted" = "active") {
@@ -36,7 +30,7 @@ function fake(lifecycle: "active" | "archived" | "deleted" = "active") {
         return Promise.resolve("00000000-0000-4000-8000-000000000200");
       },
     },
-    clock: { now: () => new Date("2026-08-15T09:00:00.000Z") },
+    clock: fixedClock("2026-08-15T09:00:00.000Z"),
     repository: {
       assertPostcondition: () => Promise.resolve(),
       lock: () => Promise.resolve({ person: current, status: "ready" }),
@@ -80,7 +74,7 @@ Deno.test("PEOPLE-004 rejects editing an archived person before mutation", async
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve("00000000-0000-4000-8000-000000000200"),
     },
-    clock: { now: () => new Date("2026-08-15T09:00:00.000Z") },
+    clock: fixedClock("2026-08-15T09:00:00.000Z"),
     repository: {
       assertPostcondition: () => Promise.resolve(),
       lock: () =>

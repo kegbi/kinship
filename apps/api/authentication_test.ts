@@ -3,10 +3,7 @@ import {
   type AuthenticationHttpServices,
   createAuthenticationRoutes,
 } from "./authentication.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
 
 function services(
   signOut: (token: string) => Promise<void>,
@@ -48,7 +45,7 @@ Deno.test("recovery dependency failure is retryable and never reported accepted"
       body: JSON.stringify({ email: "owner@example.test" }),
     },
   );
-  assert(response.status === 503, "failed durable request is not accepted");
+  assertStatus(response, 503, "failed durable request is not accepted");
   const body = await response.json() as { code?: string };
   assert(
     body.code === "password_recovery_unavailable",
@@ -76,7 +73,7 @@ Deno.test("provider delivery failure keeps the public recovery response non-enum
       body: JSON.stringify({ email: "owner@example.test" }),
     },
   );
-  assert(response.status === 202, "provider failure remains non-enumerating");
+  assertStatus(response, 202, "provider failure remains non-enumerating");
   assert(
     JSON.stringify(await response.json()) ===
       JSON.stringify({ status: "accepted" }),
@@ -95,7 +92,7 @@ Deno.test("sign-out reports revocation failure without discarding the session co
       origin: "http://localhost",
     },
   });
-  assert(response.status === 503, "failed revocation must not report sign-out");
+  assertStatus(response, 503, "failed revocation must not report sign-out");
   assert(
     response.headers.get("set-cookie") === null,
     "failed revocation keeps the cookie so the person can retry",
@@ -245,7 +242,7 @@ Deno.test("session context exposes the active workspace and accessible switcher 
     readonly workspace?: { readonly id?: string };
     readonly workspaces?: readonly { readonly id?: string }[];
   };
-  assert(response.status === 200, "active session resolves");
+  assertStatus(response, 200, "active session resolves");
   assert(
     body.uiState?.personWorkspaceView === "things",
     "session refresh omitted ready member UI state",

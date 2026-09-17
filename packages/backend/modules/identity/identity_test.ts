@@ -4,10 +4,7 @@ import {
   decodeMfaEncryptionKeyset,
 } from "./adapters/crypto/totp.ts";
 import { Argon2idPasswordHasher } from "./adapters/crypto/argon2id.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertThrows } from "../../testing/assert.ts";
 
 const deterministicRandom: RandomSource = {
   bytes(length) {
@@ -133,12 +130,8 @@ Deno.test("MFA encryption keysets issue actively and retain bounded old-key decr
       JSON.stringify({ activeKeyId: "current", keys: { current: "short" } }),
     ]
   ) {
-    let rejected = false;
-    try {
+    assertThrows(() => {
       decodeMfaEncryptionKeyset(invalid);
-    } catch {
-      rejected = true;
-    }
-    assert(rejected, "malformed MFA keysets fail closed");
+    }, "malformed MFA keysets fail closed");
   }
 });

@@ -28,10 +28,8 @@ import {
 import {
   PostgresAuditEventRecorder,
 } from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
+import { assert } from "../../packages/backend/testing/assert.ts";
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
 const databaseUrl = Deno.env.get("DATABASE_URL");
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
 const sql = postgres(databaseUrl, { max: 2, onnotice: () => undefined });

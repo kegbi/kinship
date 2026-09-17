@@ -4,10 +4,7 @@ import {
   createAuthenticationResponseEqualizer,
   resolveAuthenticationResponseFloor,
 } from "./authentication_response.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertThrows } from "../../packages/backend/testing/assert.ts";
 
 Deno.test("browser handoff policy is strict outside explicit loopback HTTP", () => {
   assert(
@@ -25,13 +22,9 @@ Deno.test("browser handoff policy is strict outside explicit loopback HTTP", () 
       ["test", "https://kinship.example/path"],
     ] as const
   ) {
-    let rejected = false;
-    try {
+    assertThrows(() => {
       browserSecurityPolicy(environment, origin);
-    } catch {
-      rejected = true;
-    }
-    assert(rejected, `${environment} ${origin} must fail closed`);
+    }, `${environment} ${origin} must fail closed`);
   }
 });
 
@@ -43,13 +36,9 @@ Deno.test("authentication response floor is explicit, bounded, and monotonic", a
     "the response floor has a documented safe default and inclusive bounds",
   );
   for (const invalid of ["99", "2001", "8.5", "not-a-duration"]) {
-    let rejected = false;
-    try {
+    assertThrows(() => {
       resolveAuthenticationResponseFloor(invalid);
-    } catch {
-      rejected = true;
-    }
-    assert(rejected, `${invalid} must fail before composition`);
+    }, `${invalid} must fail before composition`);
   }
 
   let monotonicMilliseconds = 1_000;

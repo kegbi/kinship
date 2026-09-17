@@ -1,8 +1,5 @@
 import { pickDefined } from "./rows.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
 
 Deno.test("[GAP-010] an absent column leaves the property off entirely", () => {
   const picked = pickDefined({

@@ -3,10 +3,7 @@ import {
   createWorkspaceLifecycleRoutes,
   type WorkspaceLifecycleHttpServices,
 } from "./workspace_lifecycle.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
 
 const impactToken = "a".repeat(64);
 const headers = {
@@ -106,7 +103,7 @@ Deno.test("WORKSPACE-002 API exposes private impact and destructive session effe
     headers,
   });
   const body = await preview.json();
-  assert(preview.status === 200, "preview should succeed");
+  assertStatus(preview, 200, "preview should succeed");
   assert(
     preview.headers.get("Cache-Control") === "private, no-store",
     "preview must not cache",
@@ -149,7 +146,7 @@ Deno.test("WORKSPACE-002 API rejects stale impact and unsafe requests", async ()
       method: "DELETE",
     },
   );
-  assert(stale.status === 409, "stale preview should conflict");
+  assertStatus(stale, 409, "stale preview should conflict");
   const invalid = await fixture().request(
     "/api/v1/settings/workspace-lifecycle/reset",
     {
@@ -158,7 +155,7 @@ Deno.test("WORKSPACE-002 API rejects stale impact and unsafe requests", async ()
       method: "POST",
     },
   );
-  assert(invalid.status === 400, "malformed mutation rejected");
+  assertStatus(invalid, 400, "malformed mutation rejected");
   const origin = await fixture().request(
     "/api/v1/settings/workspace-lifecycle/reset",
     {
@@ -171,7 +168,7 @@ Deno.test("WORKSPACE-002 API rejects stale impact and unsafe requests", async ()
       method: "POST",
     },
   );
-  assert(origin.status === 403, "cross-origin mutation rejected");
+  assertStatus(origin, 403, "cross-origin mutation rejected");
 });
 
 Deno.test("WORKSPACE-002 API maps lifecycle authorization and revalidation failures", async () => {
@@ -196,7 +193,7 @@ Deno.test("WORKSPACE-002 API maps lifecycle authorization and revalidation failu
   const anonymous = await fixture().request(
     "/api/v1/settings/workspace-lifecycle",
   );
-  assert(anonymous.status === 401, "anonymous preview allowed");
+  assertStatus(anonymous, 401, "anonymous preview allowed");
 
   const reset = await fixture().request(
     "/api/v1/settings/workspace-lifecycle/reset",
@@ -228,6 +225,6 @@ Deno.test("WORKSPACE-002 API maps lifecycle authorization and revalidation failu
       method: "DELETE",
     },
   );
-  assert(limited.status === 429, "destructive password guessing is unbounded");
+  assertStatus(limited, 429, "destructive password guessing is unbounded");
   assert(limited.headers.get("Retry-After") === "17", "retry delay is missing");
 });

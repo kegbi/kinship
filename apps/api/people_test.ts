@@ -9,10 +9,8 @@ import type { RecentPeopleManagement } from "../../packages/backend/modules/work
 import { createPeopleDirectory } from "../../packages/backend/read-models/people-directory/public.ts";
 import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
 import type { TodayRecentPeople } from "../../packages/backend/read-models/today/public.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
+import * as fixtures from "../../packages/backend/testing/fixtures.ts";
 
 Deno.test("PEOPLE-001 person creation requires an active session", async () => {
   const app = createApiApp({
@@ -53,20 +51,10 @@ Deno.test("PEOPLE-001 person creation requires an active session", async () => {
     method: "POST",
   });
 
-  assert(
-    response.status === 401,
-    `expected protected route status 401, received ${response.status}`,
-  );
+  assertStatus(response, 401, "the protected route refuses an absent session");
 });
 
-const actor = {
-  accessibleWorkspaces: [],
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "member" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-  workspaceName: "Circle",
-};
+const actor = fixtures.sessionActor({ workspaceName: "Circle" });
 
 function services(
   people:
@@ -177,14 +165,11 @@ Deno.test("API-001 bearer scope authenticates only the people directory read", a
     },
     method: "POST",
   });
-  assert(
-    mutation.status === 401,
-    "bearer cannot reuse browser mutation boundary",
-  );
+  assertStatus(mutation, 401, "bearer cannot reuse browser mutation boundary");
 });
 
 Deno.test("PEOPLE-006 HTTP refreshes one strict profile-fact section", async () => {
-  const personId = "00000000-0000-4000-8000-000000000100";
+  const personId = fixtures.personId();
   const factId = "00000000-0000-4000-8000-000000000200";
   const record = {
     id: factId,
@@ -272,8 +257,9 @@ Deno.test("PEOPLE-006 HTTP refreshes one strict profile-fact section", async () 
     `http://localhost/api/v1/people/${personId}/facts/contact-methods?includeOptions=false`,
     { headers },
   );
-  assert(
-    falseOptions.status === 400,
+  assertStatus(
+    falseOptions,
+    400,
     "includeOptions rejects every value except the literal true semantic",
   );
   const beforeMissingInclude = listInputs.length;
@@ -282,8 +268,9 @@ Deno.test("PEOPLE-006 HTTP refreshes one strict profile-fact section", async () 
       `http://localhost/api/v1/people/${personId}/facts/contact-methods?optionCursor=${cursor}`,
       { headers },
     );
-    assert(
-      missingInclude.status === 400,
+    assertStatus(
+      missingInclude,
+      400,
       "option cursors require the explicit options continuation mode",
     );
   }
@@ -411,7 +398,7 @@ Deno.test("PEOPLE-006 HTTP refreshes one strict profile-fact section", async () 
       method: "POST",
     },
   );
-  assert(extra.status === 400, "route rejects undeclared workspace evidence");
+  assertStatus(extra, 400, "route rejects undeclared workspace evidence");
   for (
     const [section, value] of [
       ["addresses", { isPrimary: false, labelIds: [] }],
@@ -432,7 +419,7 @@ Deno.test("PEOPLE-006 HTTP refreshes one strict profile-fact section", async () 
         method: "POST",
       },
     );
-    assert(rejected.status === 400, `${section} rejects an empty fact`);
+    assertStatus(rejected, 400, `${section} rejects an empty fact`);
   }
   for (
     const invalid of [
@@ -458,7 +445,7 @@ Deno.test("PEOPLE-006 HTTP refreshes one strict profile-fact section", async () 
       `http://localhost/api/v1/people/${personId}/facts/contact-methods`,
       { body: JSON.stringify(invalid), headers, method: "POST" },
     );
-    assert(rejected.status === 400, "empty and cross-section inputs fail");
+    assertStatus(rejected, 400, "empty and cross-section inputs fail");
   }
   const invalidRange = await app.request(
     `http://localhost/api/v1/people/${personId}/facts/work`,
@@ -494,14 +481,15 @@ Deno.test("PEOPLE-006 HTTP refreshes one strict profile-fact section", async () 
       method: "DELETE",
     },
   );
-  assert(
-    clearedFood.status === 200,
+  assertStatus(
+    clearedFood,
+    200,
     "food preferences expose an explicit clear command",
   );
 });
 
 Deno.test("PEOPLE-005 HTTP preserves precision across list, create, update, and delete", async () => {
-  const personId = "00000000-0000-4000-8000-000000000100";
+  const personId = fixtures.personId();
   const date = {
     createdAt: "2026-08-15T12:00:00.000000Z",
     id: "00000000-0000-4000-8000-000000000200",
@@ -556,7 +544,7 @@ Deno.test("PEOPLE-005 HTTP preserves precision across list, create, update, and 
     `http://localhost/api/v1/people/${personId}/dates`,
     { body, headers, method: "POST" },
   );
-  assert(created.status === 201, "create route is ready");
+  assertStatus(created, 201, "create route is ready");
   assert(
     (createdInput as { year?: number; month?: number }).year === 1984 &&
       !("month" in (createdInput as object)),
@@ -573,7 +561,7 @@ Deno.test("PEOPLE-005 HTTP preserves precision across list, create, update, and 
       method: "PATCH",
     },
   );
-  assert(updated.status === 200, "update route is ready");
+  assertStatus(updated, 200, "update route is ready");
   const deleted = await app.request(
     `http://localhost/api/v1/people/${personId}/dates/${date.id}`,
     {
@@ -582,11 +570,11 @@ Deno.test("PEOPLE-005 HTTP preserves precision across list, create, update, and 
       method: "DELETE",
     },
   );
-  assert(deleted.status === 200, "delete route is ready");
+  assertStatus(deleted, 200, "delete route is ready");
 });
 
 Deno.test("PEOPLE-005 HTTP maps invalid precision, conflicts, stale versions, and tenancy safely", async () => {
-  const personId = "00000000-0000-4000-8000-000000000100";
+  const personId = fixtures.personId();
   let calls = 0;
   const base: ImportantDateManagement = {
     create: () => {
@@ -640,12 +628,12 @@ Deno.test("PEOPLE-005 HTTP maps invalid precision, conflicts, stale versions, an
       method: "POST",
     },
   );
-  assert(conflict.status === 409, "singleton conflict is explicit");
+  assertStatus(conflict, 409, "singleton conflict is explicit");
   const concealed = await app.request(
     `http://localhost/api/v1/people/${personId}/dates`,
     { headers },
   );
-  assert(concealed.status === 404, "cross-workspace person is concealed");
+  assertStatus(concealed, 404, "cross-workspace person is concealed");
 });
 
 const headers = {
@@ -696,7 +684,7 @@ Deno.test("PEOPLE-002 HTTP lists only the resolved active workspace", async () =
     "http://localhost/api/v1/people?search=Ada&lifecycle=active&sort=family-name&limit=20",
     { headers },
   );
-  assert(response.status === 200, "directory response is ready");
+  assertStatus(response, 200, "directory response is ready");
   const body = await response.json() as {
     readonly people?: readonly {
       readonly id: string;
@@ -830,8 +818,9 @@ Deno.test("PEOPLE-006 HTTP binds excluded people to directory continuation", asy
     }`,
     { headers },
   );
-  assert(
-    mismatch.status === 409,
+  assertStatus(
+    mismatch,
+    409,
     "opaque continuation rejects a changed excluded-person criterion",
   );
 });
@@ -940,7 +929,7 @@ Deno.test("PEOPLE-002 maps tag-option validation, denial, cursor, and outage saf
     "http://localhost/api/v1/people/tag-options",
     { headers },
   );
-  assert(outage.status === 503, "tag option outage is retryable");
+  assertStatus(outage, 503, "tag option outage is retryable");
   assert(
     !(await outage.text()).includes("private tag query detail"),
     "tag option dependency detail stays private",
@@ -997,7 +986,7 @@ Deno.test("PEOPLE-002 HTTP maps directory validation, denial, stale cursor, and 
   const outage = await unavailable.request("http://localhost/api/v1/people", {
     headers,
   });
-  assert(outage.status === 503, "dependency outage is retryable");
+  assertStatus(outage, 503, "dependency outage is retryable");
   assert(
     !(await outage.text()).includes("private database detail"),
     "dependency detail stays private",
@@ -1005,7 +994,7 @@ Deno.test("PEOPLE-002 HTTP maps directory validation, denial, stale cursor, and 
 });
 
 Deno.test("PEOPLE-002 HTTP distinguishes an archived canonical identity", async () => {
-  const personId = "00000000-0000-4000-8000-000000000100";
+  const personId = fixtures.personId();
   const app = createPeopleRoutes(services(
     { create: () => Promise.reject(new Error("must not create")) },
     undefined,
@@ -1046,7 +1035,7 @@ Deno.test("PEOPLE-002 HTTP distinguishes an archived canonical identity", async 
 });
 
 Deno.test("[APP-003C] HTTP opens the read-only person workspace summary", async () => {
-  const personId = "00000000-0000-4000-8000-000000000100";
+  const personId = fixtures.personId();
   const app = createPeopleRoutes(services(
     { create: () => Promise.reject(new Error("must not create")) },
     undefined,
@@ -1091,7 +1080,7 @@ Deno.test("[APP-003C] HTTP opens the read-only person workspace summary", async 
     };
   };
 
-  assert(response.status === 200, "person workspace summary is readable");
+  assertStatus(response, 200, "person workspace summary is readable");
   assert(
     body.person?.description === "Mathematician and correspondent." &&
       body.person.isStarred === true && body.person.isDeceased === true,
@@ -1104,7 +1093,7 @@ Deno.test("[APP-003C] HTTP opens the read-only person workspace summary", async 
 });
 
 Deno.test("[UXD-013] HTTP includes person section counts when summary is requested", async () => {
-  const personId = "00000000-0000-4000-8000-000000000100";
+  const personId = fixtures.personId();
   let includeSummary = false;
   const app = createPeopleRoutes(services(
     { create: () => Promise.reject(new Error("must not create")) },
@@ -1158,7 +1147,7 @@ Deno.test("[UXD-013] HTTP includes person section counts when summary is request
     };
   };
 
-  assert(response.status === 200, "summary person response is readable");
+  assertStatus(response, 200, "summary person response is readable");
   assert(
     includeSummary &&
       JSON.stringify(body.summary?.sectionCounts) === JSON.stringify([
@@ -1171,7 +1160,7 @@ Deno.test("[UXD-013] HTTP includes person section counts when summary is request
 });
 
 Deno.test("[UXD-013] HTTP leaves the person response unchanged without include", async () => {
-  const personId = "00000000-0000-4000-8000-000000000100";
+  const personId = fixtures.personId();
   let argumentCount = 0;
   const dueInformation = {
     detail: "0 open tasks.",
@@ -1215,7 +1204,7 @@ Deno.test("[UXD-013] HTTP leaves the person response unchanged without include",
     { headers },
   );
 
-  assert(response.status === 200, "base person response is readable");
+  assertStatus(response, 200, "base person response is readable");
   assert(
     await response.text() === JSON.stringify({
           dueInformation,
@@ -1235,7 +1224,7 @@ Deno.test("[UXD-013] HTTP leaves the person response unchanged without include",
 });
 
 Deno.test("[PEOPLE-003] HTTP reads person life events through the profile projection", async () => {
-  const personId = "00000000-0000-4000-8000-000000000100";
+  const personId = fixtures.personId();
   let received: unknown;
   const app = createPeopleRoutes(services(
     { create: () => Promise.reject(new Error("must not create")) },
@@ -1280,7 +1269,7 @@ Deno.test("[PEOPLE-003] HTTP reads person life events through the profile projec
 });
 
 Deno.test("[PEOPLE-003] HTTP isolates life-event section failures", async () => {
-  const personId = "00000000-0000-4000-8000-000000000100";
+  const personId = fixtures.personId();
   for (
     const scenario of [
       { expected: 403, status: "forbidden" as const },
@@ -1327,11 +1316,11 @@ Deno.test("[PEOPLE-003] HTTP isolates life-event section failures", async () => 
     "http://localhost/api/v1/people/not-a-person/life-events",
     { headers },
   );
-  assert(invalid.status === 400, "invalid life-event person ID is rejected");
+  assertStatus(invalid, 400, "invalid life-event person ID is rejected");
 });
 
 Deno.test("[PEOPLE-003] HTTP returns the non-disclosing hidden life-event projection", async () => {
-  const personId = "00000000-0000-4000-8000-000000000100";
+  const personId = fixtures.personId();
   const app = createPeopleRoutes(services(
     { create: () => Promise.reject(new Error("must not create")) },
     undefined,
@@ -1357,7 +1346,7 @@ Deno.test("[PEOPLE-003] HTTP returns the non-disclosing hidden life-event projec
 });
 
 Deno.test("[UXD-002C2A] HTTP returns a private filtered person timeline page", async () => {
-  const personId = "00000000-0000-4000-8000-000000000100";
+  const personId = fixtures.personId();
   let received: unknown;
   const app = createPeopleRoutes(services(
     { create: () => Promise.reject(new Error("must not create")) },
@@ -1466,7 +1455,7 @@ Deno.test("[UXD-002C2A] HTTP rejects invalid timeline queries before resolution"
 });
 
 Deno.test("[UXD-002C2A] HTTP maps every person timeline problem without disclosure", async () => {
-  const personId = "00000000-0000-4000-8000-000000000100";
+  const personId = fixtures.personId();
   const unauthenticated = createPeopleRoutes({
     ...services({ create: () => Promise.reject(new Error("must not create")) }),
     protectedSessions: { resolve: () => Promise.resolve(undefined) },
@@ -1569,7 +1558,7 @@ Deno.test("PEOPLE-001 HTTP creates in only the resolved active workspace", async
     method: "POST",
   });
   const body = await response.json() as { readonly next: string };
-  assert(response.status === 201, "created response");
+  assertStatus(response, 201, "created response");
   assert(
     body.next === "/app/people/00000000-0000-4000-8000-000000000100",
     "canonical next route returned",
@@ -1586,7 +1575,7 @@ Deno.test("PEOPLE-001 HTTP creates in only the resolved active workspace", async
 });
 
 Deno.test("PEOPLE-001 HTTP reads canonical identity only in the resolved workspace", async () => {
-  const personId = "00000000-0000-4000-8000-000000000100";
+  const personId = fixtures.personId();
   let received: unknown;
   const app = createPeopleRoutes(services(
     { create: () => Promise.reject(new Error("must not create")) },
@@ -1626,7 +1615,7 @@ Deno.test("PEOPLE-001 HTTP reads canonical identity only in the resolved workspa
     readonly person?: { readonly id: string };
     readonly status?: string;
   };
-  assert(response.status === 200, "canonical person identity is readable");
+  assertStatus(response, 200, "canonical person identity is readable");
   assert(
     body.status === "ready" && body.person?.id === personId,
     "ready identity is returned",
@@ -1644,7 +1633,7 @@ Deno.test("PEOPLE-001 HTTP reads canonical identity only in the resolved workspa
 });
 
 Deno.test("PEOPLE-001 HTTP maps canonical identity read states safely", async () => {
-  const personId = "00000000-0000-4000-8000-000000000100";
+  const personId = fixtures.personId();
   for (
     const scenario of [
       { expected: 403, status: "forbidden" as const },
@@ -1680,7 +1669,7 @@ Deno.test("PEOPLE-001 HTTP maps canonical identity read states safely", async ()
     `http://localhost/api/v1/people/${personId}`,
     { headers },
   );
-  assert(unavailableResponse.status === 503, "read dependency failure retries");
+  assertStatus(unavailableResponse, 503, "read dependency failure retries");
   assert(
     !(await unavailableResponse.text()).includes("private dependency detail"),
     "read dependency detail stays private",
@@ -1690,7 +1679,7 @@ Deno.test("PEOPLE-001 HTTP maps canonical identity read states safely", async ()
     "http://localhost/api/v1/people/not-a-uuid",
     { headers },
   );
-  assert(malformed.status === 400, "malformed canonical ID is rejected");
+  assertStatus(malformed, 400, "malformed canonical ID is rejected");
 });
 
 Deno.test("PEOPLE-001 HTTP maps validation, duplicate, denial, and dependency outcomes", async () => {
@@ -1742,7 +1731,7 @@ Deno.test("PEOPLE-001 HTTP maps validation, duplicate, denial, and dependency ou
       method: "POST",
     },
   );
-  assert(response.status === 503, "dependency failure is safe and retryable");
+  assertStatus(response, 503, "dependency failure is safe and retryable");
   assert(
     !(await response.text()).includes("private dependency detail"),
     "safe problem",
@@ -1771,8 +1760,8 @@ Deno.test("PEOPLE-001 HTTP rejects forged origin and malformed identity before u
     headers,
     method: "POST",
   });
-  assert(forged.status === 403, "exact origin required");
-  assert(malformed.status === 400, "unknown body fields rejected");
+  assertStatus(forged, 403, "exact origin required");
+  assertStatus(malformed, 400, "unknown body fields rejected");
   assert(calls === 0, "invalid requests do not invoke application behavior");
 });
 
@@ -1814,7 +1803,7 @@ Deno.test("PEOPLE-004 HTTP exposes versioned edit, archive, restore, impact, and
     `http://localhost/api/v1/people/${person.id}`,
     { body: mutationBody, headers, method: "PATCH" },
   );
-  assert(edit.status === 200, "edit route is ready");
+  assertStatus(edit, 200, "edit route is ready");
   for (const action of ["archive", "restore"] as const) {
     const response = await app.request(
       `http://localhost/api/v1/people/${person.id}/${action}`,
@@ -1824,7 +1813,7 @@ Deno.test("PEOPLE-004 HTTP exposes versioned edit, archive, restore, impact, and
         method: "POST",
       },
     );
-    assert(response.status === 200, `${action} route is ready`);
+    assertStatus(response, 200, `${action} route is ready`);
   }
   const impact = await app.request(
     `http://localhost/api/v1/people/${person.id}/deletion-impact`,
@@ -1847,7 +1836,7 @@ Deno.test("PEOPLE-004 HTTP exposes versioned edit, archive, restore, impact, and
       method: "DELETE",
     },
   );
-  assert(deleted.status === 200, "confirmed deletion route is ready");
+  assertStatus(deleted, 200, "confirmed deletion route is ready");
 });
 
 Deno.test("PEOPLE-004 HTTP maps lifecycle conflicts without leaking dependencies", async () => {
@@ -1883,7 +1872,7 @@ Deno.test("PEOPLE-004 HTTP maps lifecycle conflicts without leaking dependencies
 });
 
 Deno.test("TODAY-001 HTTP records a resolved profile view only through explicit origin POST", async () => {
-  const personId = "00000000-0000-4000-8000-000000000100";
+  const personId = fixtures.personId();
   const effects: string[] = [];
   const app = todayRoutes({
     profile: {

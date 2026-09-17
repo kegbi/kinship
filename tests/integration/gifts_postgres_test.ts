@@ -30,10 +30,7 @@ import {
 import {
   PostgresWorkspaceCurrencyBoundary,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/currency_boundary.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../packages/backend/testing/assert.ts";
 
 const databaseUrl = Deno.env.get("DATABASE_URL");
 if (!databaseUrl) throw new Error("DATABASE_URL is required");

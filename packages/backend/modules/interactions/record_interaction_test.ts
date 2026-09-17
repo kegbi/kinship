@@ -9,10 +9,8 @@ import {
   type StoredCommunication,
   type StoredInteraction,
 } from "./public.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
+import { fixedClock, inMemoryRepository } from "../../testing/fakes.ts";
 
 function deepEqual(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) return true;
@@ -86,11 +84,10 @@ function harness(overrides: {
   readonly contactMethodStatus?: "not-found" | "ready";
 } = {}) {
   const calls: string[] = [];
-  const requests = new Map<
-    string,
-    StoredInteraction
-  >();
-  const communicationRequests = new Map<string, StoredCommunication>();
+  const requests = inMemoryRepository<StoredInteraction>((entry) => entry.id);
+  const communicationRequests = inMemoryRepository<StoredCommunication>(
+    (entry) => entry.id,
+  );
   let committed = false;
   let findRequests = 0;
   const repository: InteractionRepository = {
@@ -99,7 +96,7 @@ function harness(overrides: {
     },
     findRequest(command) {
       findRequests += 1;
-      const existing = requests.get(command.id);
+      const existing = requests.find(command.id);
       if (!existing) return Promise.resolve({ status: "absent" as const });
       return Promise.resolve({ interaction: existing, status: "found" });
     },
@@ -116,7 +113,7 @@ function harness(overrides: {
         participants: command.participants,
         summary: command.summary,
       } as const;
-      requests.set(command.id, {
+      requests.save({
         ...(command.activityType
           ? { activityTypeId: command.activityType.id }
           : {}),
@@ -142,7 +139,7 @@ function harness(overrides: {
         kind: "note",
         person: command.person,
       } as const;
-      requests.set(command.id, {
+      requests.save({
         body: command.body,
         createdAt: command.occurredAt.toISOString(),
         createdByMemberId: command.memberId,
@@ -213,7 +210,7 @@ function harness(overrides: {
   const management = createInteractionManagement({
     actors,
     audit,
-    clock: { now: () => new Date("2026-08-17T12:30:00.000Z") },
+    clock: fixedClock("2026-08-17T12:30:00.000Z"),
     people: {
       describeContactMethods: () => Promise.resolve([]),
       inspectContactMethod: () => Promise.resolve({ status: "not-found" }),
@@ -239,7 +236,7 @@ function harness(overrides: {
   const communicationRepository: CommunicationRepository = {
     lockRequest: repository.lockRequest,
     findRequest: ({ id }) => {
-      const communication = communicationRequests.get(id);
+      const communication = communicationRequests.find(id);
       return Promise.resolve(
         communication
           ? { communication, status: "found" as const }
@@ -248,7 +245,7 @@ function harness(overrides: {
     },
     createCall(command) {
       calls.push(`call:${command.person.id}`);
-      communicationRequests.set(command.id, {
+      communicationRequests.save({
         calledAt: command.calledAt.toISOString(),
         contactWasCaller: command.contactWasCaller,
         ...(command.content ? { content: command.content } : {}),
@@ -274,7 +271,7 @@ function harness(overrides: {
       calls.push(
         `conversation:${command.person.id}:${command.messages.length}`,
       );
-      communicationRequests.set(command.id, {
+      communicationRequests.save({
         channelTypeId: command.channelType.id,
         ...(command.contactMethod
           ? { contactMethodId: command.contactMethod.id }
@@ -323,7 +320,7 @@ function harness(overrides: {
   const communication = createCommunicationManagement({
     actors,
     audit: communicationAudit,
-    clock: { now: () => new Date("2026-08-17T12:30:00.000Z") },
+    clock: fixedClock("2026-08-17T12:30:00.000Z"),
     people: {
       describeContactMethods: () => Promise.resolve([]),
       inspect: () =>

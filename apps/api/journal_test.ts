@@ -4,14 +4,11 @@ import {
   type JournalRepository,
 } from "../../packages/backend/modules/journal/public.ts";
 import { createJournalTimeline } from "../../packages/backend/read-models/journal-timeline/public.ts";
+import * as fixtures from "../../packages/backend/testing/fixtures.ts";
+import { fixedClock } from "../../packages/backend/testing/fakes.ts";
 
 const id = "00000000-0000-4000-8000-000000000010";
-const actor = {
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "member" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-};
+const actor = fixtures.actor();
 const now = "2026-08-23T10:00:00.000Z";
 
 Deno.test("[JOURNAL-001] journal HTTP routes protect and expose the complete CRUD surface", async () => {
@@ -71,7 +68,7 @@ Deno.test("[JOURNAL-001] journal HTTP routes protect and expose the complete CRU
       inspect: () => Promise.resolve({ occurredAt: now, status: "ready" }),
     },
     audit: { record: () => Promise.resolve(id) },
-    clock: { now: () => new Date(now) },
+    clock: fixedClock(now),
     ids: { next: () => id },
     repository,
     transaction: { run: (work) => work({ opaque: {} }) },
@@ -189,7 +186,7 @@ Deno.test("[JOURNAL-001] journal HTTP failures preserve concealment and problem 
       inspect: () => Promise.resolve({ occurredAt: now, status: "ready" }),
     },
     audit: { record: () => Promise.resolve(id) },
-    clock: { now: () => new Date(now) },
+    clock: fixedClock(now),
     ids: { next: () => id },
     repository,
     transaction: { run: (work) => work({ opaque: {} }) },

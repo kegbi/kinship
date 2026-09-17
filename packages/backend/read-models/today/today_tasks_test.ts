@@ -1,8 +1,6 @@
 import { createTodayTasks } from "./application/get_today_tasks.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
 Deno.test("PLANNING-001 Today requests a bounded thirty-day read-only task projection", async () => {
   let received:
@@ -11,7 +9,7 @@ Deno.test("PLANNING-001 Today requests a bounded thirty-day read-only task proje
   const today = createTodayTasks({
     actors: { revalidate: () => Promise.resolve("active" as const) },
     transaction: { run: (work) => work({ opaque: undefined }) },
-    clock: { now: () => new Date("2026-08-18T10:00:00.000Z") },
+    clock: fixedClock("2026-08-18T10:00:00.000Z"),
     repository: {
       getDueTasks: (command) => {
         received = command;

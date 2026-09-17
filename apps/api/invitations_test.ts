@@ -2,10 +2,7 @@ import {
   createInvitationRoutes,
   type InvitationHttpServices,
 } from "./invitations.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
 
 function services(overrides: {
   readonly accept?: InvitationHttpServices["invitations"]["accept"];
@@ -136,7 +133,7 @@ Deno.test("invitation HTTP creation is origin/session protected and never return
       body: JSON.stringify({ email: "invitee@example.test", role: "member" }),
     },
   );
-  assert(forged.status === 403, "wrong origin is denied before mutation");
+  assertStatus(forged, 403, "wrong origin is denied before mutation");
 });
 
 Deno.test("invitation HTTP checks workspace selection through the authenticated resolver", async () => {
@@ -218,7 +215,7 @@ Deno.test("invitation inspection is POST-only, origin checked, and non-reflectin
   const get = await app.request(
     "https://kinship.test/api/v1/workspace-invitations/inspect",
   );
-  assert(get.status === 404, "GET cannot inspect bearer material");
+  assertStatus(get, 404, "GET cannot inspect bearer material");
   const response = await app.request(
     "https://kinship.test/api/v1/workspace-invitations/inspect",
     {
@@ -284,7 +281,7 @@ Deno.test("new invitee registration preserves invitation in scoped HttpOnly stat
   );
   const body = await response.text();
   const cookie = response.headers.get("set-cookie") ?? "";
-  assert(response.status === 202, "pending invited identity is accepted");
+  assertStatus(response, 202, "pending invited identity is accepted");
   assert(
     cookie.includes("kinship_invitation=") && cookie.includes("HttpOnly") &&
       cookie.includes("Path=/api/v1/workspace-invitations"),
@@ -316,10 +313,7 @@ Deno.test("invited registration reports post-commit mail failure and scoped retr
       }),
     },
   );
-  assert(
-    registration.status === 503,
-    "mail failure is not reported as success",
-  );
+  assertStatus(registration, 503, "mail failure is not reported as success");
   const registrationBody = await registration.text();
   const cookies = registration.headers.get("set-cookie") ?? "";
   assert(
@@ -344,7 +338,7 @@ Deno.test("invited registration reports post-commit mail failure and scoped retr
       body: "{}",
     },
   );
-  assert(retry.status === 503, "repeated provider failure remains truthful");
+  assertStatus(retry, 503, "repeated provider failure remains truthful");
   assert(
     !(await retry.text()).includes(token),
     "retry never returns bearer material",
@@ -365,7 +359,7 @@ Deno.test("invited registration reports post-commit mail failure and scoped retr
       body: "{}",
     },
   );
-  assert(success.status === 202, "a later bounded retry can succeed");
+  assertStatus(success, 202, "a later bounded retry can succeed");
 });
 
 Deno.test("replacement invitation can authenticate a verified identity without membership", async () => {
@@ -399,10 +393,7 @@ Deno.test("replacement invitation can authenticate a verified identity without m
   );
   const body = await response.text();
   const cookies = response.headers.get("set-cookie") ?? "";
-  assert(
-    response.status === 200,
-    "verified identity receives invitation entry",
-  );
+  assertStatus(response, 200, "verified identity receives invitation entry");
   assert(
     JSON.stringify(commands).includes('"identityOnly":true') &&
       JSON.stringify(commands).includes(
@@ -506,7 +497,7 @@ Deno.test("verified entry accepts invitation and rotates into an authenticated s
     },
   );
   const cookies = response.headers.get("set-cookie") ?? "";
-  assert(response.status === 200, "verified invitee is accepted");
+  assertStatus(response, 200, "verified invitee is accepted");
   assert(
     command?.ipAddress === "2001:db8::42",
     "session rotation receives the gateway-provided client address",

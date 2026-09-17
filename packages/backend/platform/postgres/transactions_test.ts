@@ -2,10 +2,7 @@ import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "./database.ts";
 import { databaseFromSession } from "./session.ts";
 import { PostgresTransactionRunner } from "./transactions.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
 
 /** A module's opaque handle, declared the way every module declares one. */
 interface PeopleTransaction {

@@ -1,8 +1,5 @@
 import { createTodayInteractions } from "./public.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
 
 Deno.test("INTERACTION-001 Today delegates a bounded read-only projection", async () => {
   let favoriteLimit = 0;

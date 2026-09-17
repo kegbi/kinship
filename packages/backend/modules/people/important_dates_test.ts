@@ -4,24 +4,12 @@ import {
   type ImportantDateDependencies,
   type PeopleTransaction,
 } from "./public.ts";
+import { assert, assertEquals } from "../../testing/assert.ts";
+import * as fixtures from "../../testing/fixtures.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
-
-function assertEquals(actual: unknown, expected: unknown): void {
-  const left = JSON.stringify(actual);
-  const right = JSON.stringify(expected);
-  if (left !== right) throw new Error(`Expected ${right}, received ${left}`);
-}
-
-const actor = {
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "member" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-};
-const personId = "00000000-0000-4000-8000-000000000100";
+const actor = fixtures.actor();
+const personId = fixtures.personId();
 const dateId = "00000000-0000-4000-8000-000000000200";
 
 function dependencies(options: {
@@ -46,7 +34,7 @@ function dependencies(options: {
         },
       },
       actors: { revalidate: () => Promise.resolve("active") },
-      clock: { now: () => new Date("2026-08-15T12:00:00.000Z") },
+      clock: fixedClock("2026-08-15T12:00:00.000Z"),
       ids: { create: () => dateId },
       publisher: {
         regenerate(command) {

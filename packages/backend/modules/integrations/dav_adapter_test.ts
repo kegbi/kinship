@@ -2,10 +2,7 @@ import { DavRemoteFailure } from "./application/dav_sync.ts";
 import { HttpDavClient } from "./adapters/dav/http_dav_client.ts";
 import { AesGcmDavSecretBox } from "./adapters/crypto/dav_secret_box.ts";
 import { decodeDavEncryptionKeyset } from "./adapters/crypto/dav_secret_box.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
 
 Deno.test("DAV adapter sends auth and sync token and parses CardDAV plus VTODO", async () => {
   let request: RequestInit | undefined;

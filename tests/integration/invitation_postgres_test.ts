@@ -41,10 +41,7 @@ import {
 import {
   PostgresWorkspaceInvitations,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/workspace_invitations.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../packages/backend/testing/assert.ts";
 
 const databaseUrl = Deno.env.get("DATABASE_URL");
 if (!databaseUrl) {

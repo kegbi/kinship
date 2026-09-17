@@ -8,10 +8,7 @@ import {
   type QueryResult,
 } from "kysely";
 import { referenceCounter } from "./reference_counter.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
 
 const ENTRY = "00000000-0000-4000-8000-0000000000aa";
 const REPLACEMENT = "00000000-0000-4000-8000-0000000000bb";

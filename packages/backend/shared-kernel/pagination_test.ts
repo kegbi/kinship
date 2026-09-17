@@ -7,10 +7,7 @@ import {
   signCursor,
   verifyCursor,
 } from "./pagination.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertRejects } from "../testing/assert.ts";
 
 const keyset: CursorKeyset = {
   activeVersion: 2,
@@ -153,15 +150,3 @@ Deno.test("[GAP-006] malformed signed cursors decode to undefined", async () => 
     );
   }
 });
-
-async function assertRejects(
-  work: () => Promise<unknown>,
-  message: string,
-): Promise<void> {
-  try {
-    await work();
-  } catch {
-    return;
-  }
-  throw new Error(message);
-}

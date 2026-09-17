@@ -8,13 +8,11 @@ import type {
   TodayTasks,
 } from "../../packages/backend/read-models/today/public.ts";
 import { createPlanningRoutes } from "./planning.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
+import * as fixtures from "../../packages/backend/testing/fixtures.ts";
 
 const taskId = "00000000-0000-4000-8000-000000000900";
-const personId = "00000000-0000-4000-8000-000000000100";
+const personId = fixtures.personId();
 const task = {
   createdAt: "2026-08-18T10:00:00.000Z",
   createdByMemberId: "00000000-0000-4000-8000-000000000002",
@@ -25,14 +23,7 @@ const task = {
   title: "Call Ada",
   updatedAt: "2026-08-18T10:00:00.000Z",
 };
-const actor = {
-  accessibleWorkspaces: [],
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "member" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-  workspaceName: "Circle",
-};
+const actor = fixtures.sessionActor({ workspaceName: "Circle" });
 
 function services(overrides: Partial<TaskManagement> = {}) {
   const tasks = {
@@ -105,13 +96,13 @@ Deno.test("PLANNING-001 HTTP creates, lists, changes, completes, and projects ta
   const today = await app.request("http://localhost/api/v1/today/tasks", {
     headers,
   });
-  assert(created.status === 201, `create returned ${created.status}`);
+  assertStatus(created, 201);
   assert(
     listed.status === 200 && changed.status === 200,
     "task list/change failed",
   );
-  assert(completed.status === 200, "idempotent completion failed");
-  assert(today.status === 200, "Today task projection failed");
+  assertStatus(completed, 200, "idempotent completion failed");
+  assertStatus(today, 200, "Today task projection failed");
   assert(received.length === 3, "task inputs were not forwarded");
 });
 
@@ -210,16 +201,16 @@ Deno.test("PLANNING-001 HTTP maps security, archive, tenant, stale, and outage s
       method: "POST",
     },
   );
-  assert(badOrigin.status === 403, "cross-origin task mutation was accepted");
+  assertStatus(badOrigin, 403, "cross-origin task mutation was accepted");
   const noSession = await createPlanningRoutes({
     ...services(),
     protectedSessions: { resolve: () => Promise.resolve(undefined) },
   }).request("http://localhost/api/v1/tasks", { headers });
-  assert(noSession.status === 401, "task list accepted a missing session");
+  assertStatus(noSession, 401, "task list accepted a missing session");
   const outage = await createPlanningRoutes(services({
     list: () => Promise.reject(new Error("offline")),
   })).request("http://localhost/api/v1/tasks", { headers });
-  assert(outage.status === 503, "task outage was concealed");
+  assertStatus(outage, 503, "task outage was concealed");
 });
 
 Deno.test("PLANNING-001 HTTP rejects loose payloads and isolates Today outages", async () => {

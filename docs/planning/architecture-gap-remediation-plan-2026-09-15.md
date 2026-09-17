@@ -596,7 +596,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     all sets green, integration 126/0, coverage api 86.4 branch, build and
     contracts:check green; gates fmt:check, lint, check, check:architecture.
 
-- [ ] **GAP-014 — Backend and API test support package.** M. Depends: 006.
+- [x] **GAP-014 — Backend and API test support package.** M. Depends: 006.
       Parallelizable with 008-013.
   - Scope: `packages/backend/testing/` (allowed by the layout contract as a
     test-only package that exposes no private production internals):
@@ -606,6 +606,22 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     the 43 backend and 20 API unit tests to it; delete the 36 local `assert()`
     copies.
   - Verify: all unit tests green; coverage unchanged or higher.
+  - Delivered 2026-09-17: `packages/backend/testing/` holds `assert.ts` (assert,
+    assertEquals with the JSON-text semantics the copies relied on,
+    assertThrows, assertRejects, assertStatus), `fixtures.ts` (deterministic
+    uuid, user, member, workspace, person ids and actor, workspaceActor,
+    sessionActor, person builders, typed structurally), and `fakes.ts`
+    (fixedClock, sequentialIds, recordingAudit satisfying the kernel recorder,
+    inMemoryRepository, fakeMail, fakeObjectStore), each with its own suite and
+    importing only shared-kernel types; 93 local assertion copies removed (69
+    assert, 5 assertEquals, 1 assertRejects, 18 in integration suites), 95 test
+    files migrated, 33 actor literals and 49 inline clocks replaced; the layout
+    contract now names the package and its three constraints; 97 files changed
+    (+560/-986) plus 858 new lines; every coverage set unchanged or higher (api
+    86.4 to 86.5 branch), `gifts` still at the parked REL-037 floor; unit 718
+    vitest plus all sets green, integration 126/0, baseline 14 unchanged; gates
+    fmt:check, lint, check, check:architecture. Bespoke doubles with failure
+    toggles were left in their tests by decision.
 
 ### Phase 2 — Module internal structure (domain and ports)
 

@@ -2,10 +2,7 @@ import {
   AuthenticationSubjectDigester,
   decodeAuthenticationSubjectKeyset,
 } from "./public.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertThrows } from "../../testing/assert.ts";
 
 function encoded(byte: number): string {
   const binary = String.fromCharCode(...new Uint8Array(32).fill(byte));
@@ -59,13 +56,9 @@ Deno.test("authentication subject keysets fail closed", () => {
       JSON.stringify({ activeVersion: 2, keys: { v1: encoded(1) } }),
     ]
   ) {
-    let rejected = false;
-    try {
+    assertThrows(() => {
       decodeAuthenticationSubjectKeyset(value);
-    } catch {
-      rejected = true;
-    }
-    assert(rejected, `invalid keyset ${value} must fail closed`);
+    }, `invalid keyset ${value} must fail closed`);
   }
 });
 
@@ -87,12 +80,8 @@ Deno.test("authentication subject key versions are canonical safe integers", () 
       }),
     ]
   ) {
-    let rejected = false;
-    try {
+    assertThrows(() => {
       decodeAuthenticationSubjectKeyset(value);
-    } catch {
-      rejected = true;
-    }
-    assert(rejected, `non-canonical keyset ${value} must fail closed`);
+    }, `non-canonical keyset ${value} must fail closed`);
   }
 });

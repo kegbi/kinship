@@ -5,10 +5,9 @@ import {
   type InvitationInspection,
   type WorkspaceInvitationDependencies,
 } from "./public.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertRejects } from "../../testing/assert.ts";
+import * as fixtures from "../../testing/fixtures.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
 Deno.test("workspaces invitation adapter does not read identity-owned storage", async () => {
   const source = await Deno.readTextFile(
@@ -20,12 +19,11 @@ Deno.test("workspaces invitation adapter does not read identity-owned storage", 
   );
 });
 
-const owner: InvitationActor = {
-  memberId: "00000000-0000-4000-8000-000000000001",
+const owner: InvitationActor = fixtures.actor({
+  memberId: fixtures.uuid(1),
   role: "owner",
-  userId: "00000000-0000-4000-8000-000000000002",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-};
+  userId: fixtures.uuid(2),
+});
 
 interface InvitationDependenciesUnderTest
   extends WorkspaceInvitationDependencies {
@@ -112,7 +110,7 @@ function dependencies(overrides: {
           return Promise.resolve();
         },
       },
-      clock: { now: () => new Date("2026-08-15T12:00:00.000Z") },
+      clock: fixedClock("2026-08-15T12:00:00.000Z"),
       ids: { create: () => "00000000-0000-4000-8000-000000000004" },
       identity: {
         assertPendingUserPostconditions() {
@@ -295,16 +293,12 @@ Deno.test("AUTH-002 rolls back when an exact acceptance postcondition fails", as
   const { deps, effects } = dependencies({
     repositoryPostconditionFails: true,
   });
-  let rejected = false;
-  try {
+  await assertRejects(async () => {
     await createWorkspaceInvitationCoordinator(deps).accept({
       token: "raw-token",
       userId: owner.userId,
     });
-  } catch {
-    rejected = true;
-  }
-  assert(rejected, "a perturbed required effect rejects acceptance");
+  }, "a perturbed required effect rejects acceptance");
   assert(
     effects.includes("transaction.rollback") &&
       !effects.includes("transaction.commit") &&

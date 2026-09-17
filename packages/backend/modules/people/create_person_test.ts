@@ -3,10 +3,9 @@ import {
   type PeopleManagementDependencies,
   type PeopleTransaction,
 } from "./public.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertRejects } from "../../testing/assert.ts";
+import * as fixtures from "../../testing/fixtures.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
 function dependencies(options: {
   readonly authorize?: boolean;
@@ -45,7 +44,7 @@ function dependencies(options: {
           );
         },
       },
-      clock: { now: () => new Date("2026-08-15T12:00:00.000Z") },
+      clock: fixedClock("2026-08-15T12:00:00.000Z"),
       ids: {
         create: () => "00000000-0000-4000-8000-000000000100",
       },
@@ -116,12 +115,7 @@ function dependencies(options: {
   };
 }
 
-const actor = {
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "member" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-};
+const actor = fixtures.actor();
 
 Deno.test("PEOPLE-001 preserves partial unknown identity values explicitly", async () => {
   const fake = dependencies();
@@ -186,16 +180,12 @@ Deno.test("PEOPLE-001 rejects stale membership and rolls back missing audit", as
   );
 
   const failedFake = dependencies({ failAuditPostcondition: true });
-  let failed = false;
-  try {
+  await assertRejects(async () => {
     await createPeopleManagement(failedFake.dependencies).create(actor, {
       givenName: "Ada",
       isPartial: false,
     });
-  } catch {
-    failed = true;
-  }
-  assert(failed, "required audit failure surfaces");
+  }, "required audit failure surfaces");
   assert(
     failedFake.effects.at(-1) === "transaction.rollback",
     "person and audit are atomic",
@@ -203,7 +193,7 @@ Deno.test("PEOPLE-001 rejects stale membership and rolls back missing audit", as
 });
 
 Deno.test("PEOPLE-001 reads identity through the public active-workspace facade", async () => {
-  const personId = "00000000-0000-4000-8000-000000000100";
+  const personId = fixtures.personId();
   const readyFake = dependencies();
   const ready = await createPeopleManagement(readyFake.dependencies).get(
     actor,
