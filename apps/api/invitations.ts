@@ -1,9 +1,42 @@
+/**
+ * Inviting somebody into a workspace, and everything they do to accept.
+ *
+ * Eight routes over one flow: an owner invites, the invitee registers or signs
+ * in — possibly through a second factor — and finally accepts. The problem
+ * responder, the cookie composer, the origin check, the client address, and
+ * the kernel status map came from `http/` (GAP-019, GAP-020).
+ *
+ * The cookies are what hold the flow together, and each is scoped to the
+ * narrowest path that needs it: the invitation token and the entry handoff to
+ * the invitation routes, the challenge to the one route that completes it, the
+ * pending marker to the verification route, and only the established session
+ * to `/`. Accepting clears all three of the temporary ones, so a finished
+ * invitation leaves nothing behind that could be replayed.
+ *
+ * Every refusal that names the invitation's own state — expired, revoked,
+ * already used, not an invitation at all — is one table, because the four are
+ * one vocabulary and the three routes that meet them said the same three
+ * sentences.
+ */
+
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import type { createWorkspaceInvitationCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import type { PasswordHasher } from "../../packages/backend/modules/identity/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
+import { clientAddress } from "./http/client_address.ts";
+import { cookieValue, SESSION_COOKIE, setCookie } from "./http/cookies.ts";
+import { failureResponder, type FailureTable } from "./http/failures.ts";
+import { requireMatchingOrigin } from "./http/origin.ts";
+import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import {
+  type ActorEnv,
+  requireSession,
+  sessionActor,
+  sessionOf,
+} from "./http/session.ts";
+import { parseJsonBody } from "./http/validate.ts";
 
 type Invitations = ReturnType<typeof createWorkspaceInvitationCoordinator>;
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
@@ -38,209 +71,448 @@ const invitationMfaSchema = z.object({
   factor: z.string().trim().min(6).max(128),
 }).strict();
 
-function problem(
-  context: Context,
-  status: 400 | 401 | 403 | 404 | 409 | 410 | 429 | 503,
-  code: string,
-  title: string,
-  detail: string,
-): Response {
-  return context.body(
-    JSON.stringify({
-      type: `https://kinship.test/problems/${code}`,
-      title,
-      status,
-      detail,
-      code,
-    }),
-    status,
-    {
-      "Cache-Control": "no-store",
-      "Content-Type": "application/problem+json",
+/** The cookies this flow carries, and the paths they are scoped to. */
+const INVITATION_COOKIE = "kinship_invitation";
+const ENTRY_COOKIE = "kinship_entry";
+const MFA_COOKIE = "kinship_mfa";
+const PENDING_COOKIE = "kinship_invitation_pending";
+const INVITATION_PATH = "/api/v1/workspace-invitations";
+const MFA_PATH = "/api/v1/workspace-invitations/mfa";
+const VERIFICATION_PATH = "/api/v1/email-verifications";
+/** A day for the invitation itself, five minutes for a pending factor. */
+const INVITATION_COOKIE_SECONDS = 24 * 60 * 60;
+const MFA_COOKIE_SECONDS = 5 * 60;
+
+/**
+ * What an invitation that cannot be used says.
+ *
+ * `invalid` is 404 and the three spent states are 410, which is the
+ * distinction a page needs: a link that was never an invitation is a wrong
+ * address, and one that has expired, been revoked, or been used is an address
+ * that no longer leads anywhere.
+ */
+export const INVITATION_FAILURES: FailureTable = {
+  fallback: {
+    code: "invitation_used",
+    detail: "This invitation has already been used.",
+    status: 410,
+    title: "Invitation unavailable",
+  },
+  statuses: {
+    "already-member": {
+      code: "already_member",
+      detail:
+        "A membership record for this workspace already exists and this invitation was not consumed.",
+      status: 409,
+      title: "Membership already exists",
     },
-  );
-}
+    expired: {
+      code: "invitation_expired",
+      detail: "This invitation has expired.",
+      status: 410,
+      title: "Invitation unavailable",
+    },
+    invalid: {
+      code: "invitation_invalid",
+      detail: "This invitation link is invalid.",
+      status: 404,
+      title: "Invitation unavailable",
+    },
+    revoked: {
+      code: "invitation_revoked",
+      detail: "This invitation was revoked.",
+      status: 410,
+      title: "Invitation unavailable",
+    },
+    used: {
+      code: "invitation_used",
+      detail: "This invitation has already been used.",
+      status: 410,
+      title: "Invitation unavailable",
+    },
+    "wrong-user": {
+      code: "invitation_wrong_user",
+      detail: "This invitation belongs to a different email address.",
+      status: 403,
+      title: "Use the invited account",
+    },
+  },
+};
 
-function cookieValue(
-  header: string | undefined,
-  name: string,
-): string | undefined {
-  return header?.split(";").map((value) => value.trim()).find((value) =>
-    value.startsWith(`${name}=`)
-  )?.slice(name.length + 1);
-}
+/**
+ * What a refused invitation registration says.
+ *
+ * A spent invitation says so; anything else — a wrong address, an identity
+ * store that will not answer — says the same sentence, because the invitee's
+ * next step is the same either way and the difference is not theirs to act on.
+ */
+export const INVITATION_REGISTRATION_FAILURES: FailureTable = {
+  fallback: {
+    code: "invitation_registration_unavailable",
+    detail: "Use the invited email address or sign in to an existing account.",
+    status: 409,
+    title: "Registration unavailable",
+  },
+  statuses: {
+    expired: {
+      code: "invitation_expired",
+      detail: "This invitation can no longer be used.",
+      status: 410,
+      title: "Registration unavailable",
+    },
+    invalid: {
+      code: "invitation_registration_unavailable",
+      detail:
+        "Use the invited email address or sign in to an existing account.",
+      status: 404,
+      title: "Registration unavailable",
+    },
+    revoked: {
+      code: "invitation_revoked",
+      detail: "This invitation can no longer be used.",
+      status: 410,
+      title: "Registration unavailable",
+    },
+    used: {
+      code: "invitation_used",
+      detail: "This invitation can no longer be used.",
+      status: 410,
+      title: "Registration unavailable",
+    },
+  },
+};
 
-function requireOrigin(
-  context: Context,
-  policy: BrowserSecurityPolicy,
-): Response | undefined {
-  return context.req.header("Origin") === policy.origin ? undefined : problem(
-    context,
-    403,
-    "origin_invalid",
-    "Request forbidden",
-    "This request did not come from the configured application origin.",
-  );
-}
+/** What a refused retry of the invitee's verification email says. */
+export const INVITATION_DELIVERY_FAILURES: FailureTable = {
+  fallback: {
+    code: "invitation_used",
+    detail: "This invitation can no longer continue.",
+    status: 410,
+    title: "Verification delivery unavailable",
+  },
+  statuses: {
+    expired: {
+      code: "invitation_expired",
+      detail: "This invitation can no longer continue.",
+      status: 410,
+      title: "Verification delivery unavailable",
+    },
+    invalid: {
+      code: "invitation_invalid",
+      detail: "This invitation can no longer continue.",
+      status: 404,
+      title: "Verification delivery unavailable",
+    },
+    revoked: {
+      code: "invitation_revoked",
+      detail: "This invitation can no longer continue.",
+      status: 410,
+      title: "Verification delivery unavailable",
+    },
+    used: {
+      code: "invitation_used",
+      detail: "This invitation can no longer continue.",
+      status: 410,
+      title: "Verification delivery unavailable",
+    },
+  },
+};
 
-function cookie(
-  name: string,
-  value: string,
-  policy: BrowserSecurityPolicy,
-  maxAge: number,
-  path: string,
-): string {
-  return [
-    `${name}=${value}`,
-    "HttpOnly",
-    "SameSite=Strict",
-    policy.secureCookie ? "Secure" : undefined,
-    `Max-Age=${Math.max(0, Math.floor(maxAge))}`,
-    `Path=${path}`,
-  ].filter(Boolean).join("; ");
-}
+/** What a refused invitation sign-in says. */
+export const INVITATION_SIGN_IN_FAILURES: FailureTable = {
+  fallback: {
+    code: "invalid_credentials",
+    detail: "The email address or password is incorrect.",
+    status: 401,
+    title: "Sign-in failed",
+  },
+  statuses: {
+    "rate-limited": {
+      code: "authentication_rate_limited",
+      detail: "Wait before trying again.",
+      status: 429,
+      title: "Sign-in delayed",
+    },
+  },
+};
 
+/** What a refused invitation second factor says. */
+export const INVITATION_MFA_FAILURES: FailureTable = {
+  fallback: {
+    code: "invalid_mfa",
+    detail: "That authenticator or recovery code is not valid.",
+    status: 401,
+    title: "Challenge failed",
+  },
+  statuses: {
+    "challenge-expired": {
+      code: "mfa_challenge_expired",
+      detail: "Return to the invitation and sign in again.",
+      status: 410,
+      title: "Challenge failed",
+    },
+    "rate-limited": {
+      code: "authentication_rate_limited",
+      detail: "Wait before trying again.",
+      status: 429,
+      title: "Challenge delayed",
+    },
+  },
+};
+
+const failure = failureResponder(INVITATION_FAILURES);
+const registrationFailure = failureResponder(
+  INVITATION_REGISTRATION_FAILURES,
+);
+const deliveryFailure = failureResponder(INVITATION_DELIVERY_FAILURES);
+const signInFailure = failureResponder(INVITATION_SIGN_IN_FAILURES);
+const mfaFailure = failureResponder(INVITATION_MFA_FAILURES);
+
+const INVITATION_REQUEST_INVALID: ProblemDefinition = {
+  code: "validation_failed",
+  detail: "Provide a valid email address and allowed role.",
+  status: 400,
+  title: "Invalid invitation",
+};
+const ALREADY_MEMBER: ProblemDefinition = {
+  code: "already_member",
+  detail:
+    "That email already has a membership record in this workspace. Manage its lifecycle explicitly instead of inviting it again.",
+  status: 409,
+  title: "Membership already exists",
+};
+const INVITATION_FORBIDDEN: ProblemDefinition = {
+  code: "invitation_forbidden",
+  detail: "Only an active workspace owner or admin may invite members.",
+  status: 403,
+  title: "Invitation forbidden",
+};
+const INVITATION_DELIVERY_FAILED: ProblemDefinition = {
+  code: "invitation_delivery_failed",
+  detail:
+    "The invitation was saved but its email could not be delivered. Contact an administrator before trying again.",
+  status: 503,
+  title: "Invitation delivery unavailable",
+};
+const INVITATION_NOT_CREATED: ProblemDefinition = {
+  code: "invitation_delivery_failed",
+  detail: "The invitation could not be created. Please try again.",
+  status: 503,
+  title: "Invitation delivery unavailable",
+};
+const REGISTRATION_REQUEST_INVALID: ProblemDefinition = {
+  code: "validation_failed",
+  detail: "Check the invitation and registration fields.",
+  status: 400,
+  title: "Registration unavailable",
+};
+const INVITEE_VERIFICATION_DELAYED: ProblemDefinition = {
+  code: "invitation_verification_delivery_failed",
+  detail:
+    "Your account was created for this invitation, but the verification email could not be delivered. Retry delivery.",
+  status: 503,
+  title: "Verification email delayed",
+};
+const DELIVERY_TOKEN_MISSING: ProblemDefinition = {
+  code: "invitation_invalid",
+  detail: "Return to the invitation and try again.",
+  status: 404,
+  title: "Verification delivery unavailable",
+};
+const DELIVERY_RATE_LIMITED: ProblemDefinition = {
+  code: "verification_delivery_rate_limited",
+  detail: "Wait a few minutes before requesting another verification email.",
+  status: 429,
+  title: "Verification retry delayed",
+};
+const DELIVERY_STILL_FAILING: ProblemDefinition = {
+  code: "invitation_verification_delivery_failed",
+  detail:
+    "The verification email still could not be delivered. Please try again.",
+  status: 503,
+  title: "Verification email delayed",
+};
+const INVALID_CREDENTIALS: ProblemDefinition = {
+  code: "invalid_credentials",
+  detail: "The email address or password is incorrect.",
+  status: 401,
+  title: "Sign-in failed",
+};
+const SIGN_IN_UNAVAILABLE: ProblemDefinition = {
+  code: "authentication_unavailable",
+  detail: "Please try again.",
+  status: 503,
+  title: "Sign-in unavailable",
+};
+const MFA_CHALLENGE_EXPIRED: ProblemDefinition = {
+  code: "mfa_challenge_expired",
+  detail: "Return to the invitation and sign in again.",
+  status: 410,
+  title: "Challenge expired",
+};
+const INVITATION_DISCONTINUED: ProblemDefinition = {
+  code: "invitation_unavailable",
+  detail: "This invitation can no longer continue.",
+  status: 410,
+  title: "Invitation unavailable",
+};
+const MFA_UNAVAILABLE: ProblemDefinition = {
+  code: "authentication_unavailable",
+  detail: "Please try again.",
+  status: 503,
+  title: "Challenge unavailable",
+};
+const MEMBERS_UNAVAILABLE: ProblemDefinition = {
+  code: "members_unavailable",
+  detail: "Members and invitations could not be loaded.",
+  status: 503,
+  title: "Members unavailable",
+};
+const MEMBERS_FORBIDDEN: ProblemDefinition = {
+  code: "members_forbidden",
+  detail: "Only an active workspace owner or admin may view this page.",
+  status: 403,
+  title: "Members unavailable",
+};
+const INVITATION_LINK_INVALID: ProblemDefinition = {
+  code: "invitation_invalid",
+  detail: "This invitation link is invalid.",
+  status: 404,
+  title: "Invitation unavailable",
+};
+const INVITATION_NOT_CHECKED: ProblemDefinition = {
+  code: "invitation_unavailable",
+  detail: "The invitation could not be checked. Please try again.",
+  status: 503,
+  title: "Invitation unavailable",
+};
+const INVITATION_SIGN_IN_REQUIRED: ProblemDefinition = {
+  code: "session_invalid",
+  detail: "Sign in as the invited email address to accept.",
+  status: 401,
+  title: "Sign in required",
+};
+const INVITATION_NOT_ACCEPTED: ProblemDefinition = {
+  code: "invitation_unavailable",
+  detail: "The invitation could not be accepted. Please try again.",
+  status: 503,
+  title: "Invitation unavailable",
+};
+
+/** Every problem this file answers on its own, for the pinning suite. */
+export const INVITATION_PROBLEMS: readonly ProblemDefinition[] = [
+  ALREADY_MEMBER,
+  DELIVERY_RATE_LIMITED,
+  DELIVERY_STILL_FAILING,
+  DELIVERY_TOKEN_MISSING,
+  INVALID_CREDENTIALS,
+  INVITATION_DELIVERY_FAILED,
+  INVITATION_DISCONTINUED,
+  INVITATION_FORBIDDEN,
+  INVITATION_LINK_INVALID,
+  INVITATION_NOT_ACCEPTED,
+  INVITATION_NOT_CHECKED,
+  INVITATION_NOT_CREATED,
+  INVITATION_REQUEST_INVALID,
+  INVITATION_SIGN_IN_REQUIRED,
+  INVITEE_VERIFICATION_DELAYED,
+  MEMBERS_FORBIDDEN,
+  MEMBERS_UNAVAILABLE,
+  MFA_CHALLENGE_EXPIRED,
+  MFA_UNAVAILABLE,
+  REGISTRATION_REQUEST_INVALID,
+  SIGN_IN_UNAVAILABLE,
+];
+
+/** The invitation token this request carries in its cookie. */
 function invitationToken(context: Context): string | undefined {
-  return cookieValue(context.req.header("Cookie"), "kinship_invitation");
+  return cookieValue(context.req.header("Cookie"), INVITATION_COOKIE);
 }
 
-function clientAddress(context: Context): string {
-  const supplied = context.req.header("X-Kinship-Client-Address");
-  return supplied && supplied.length <= 64 && /^[0-9A-Fa-f:.]+$/.test(supplied)
-    ? supplied
-    : "127.0.0.1";
+/** The user agent, bounded to what an audit row will hold. */
+function userAgent(context: Context): { readonly userAgent?: string } {
+  const value = context.req.header("User-Agent")?.slice(0, 1_000);
+  return value ? { userAgent: value } : {};
 }
 
+/** The two cookies that carry a signed-in invitee to the accept step. */
 function invitationContinuationCookies(
   context: Context,
-  services: InvitationHttpServices,
+  policy: BrowserSecurityPolicy,
   invitation: string,
   entry: string,
   expiresAt: Date,
 ): void {
   context.header(
     "Set-Cookie",
-    cookie(
-      "kinship_entry",
-      entry,
-      services.browserSecurity,
-      (expiresAt.getTime() - Date.now()) / 1_000,
-      "/api/v1/workspace-invitations",
-    ),
+    setCookie(policy, {
+      maxAgeSeconds: (expiresAt.getTime() - Date.now()) / 1_000,
+      name: ENTRY_COOKIE,
+      path: INVITATION_PATH,
+      value: entry,
+    }),
     { append: true },
   );
   context.header(
     "Set-Cookie",
-    cookie(
-      "kinship_invitation",
-      invitation,
-      services.browserSecurity,
-      24 * 60 * 60,
-      "/api/v1/workspace-invitations",
-    ),
+    setCookie(policy, {
+      maxAgeSeconds: INVITATION_COOKIE_SECONDS,
+      name: INVITATION_COOKIE,
+      path: INVITATION_PATH,
+      value: invitation,
+    }),
     { append: true },
   );
 }
 
-async function actor(context: Context, services: InvitationHttpServices) {
-  const sessionToken = cookieValue(
-    context.req.header("Cookie"),
-    "kinship_session",
-  );
-  if (!sessionToken) return undefined;
-  const requestedWorkspaceId = context.req.header("X-Workspace-Id");
-  return await services.protectedSessions.resolve({
-    sessionToken,
-    ...(requestedWorkspaceId ? { requestedWorkspaceId } : {}),
-  }).catch(() => undefined);
-}
+export function createInvitationRoutes(
+  services: InvitationHttpServices,
+): Hono<ActorEnv> {
+  const routes = new Hono<ActorEnv>();
+  const session = sessionActor(services.protectedSessions);
+  const origin = requireMatchingOrigin(services.browserSecurity);
+  const policy = services.browserSecurity;
 
-export function createInvitationRoutes(services: InvitationHttpServices): Hono {
-  const routes = new Hono();
-
-  routes.post("/api/v1/workspace-invitations", async (context) => {
-    const forbidden = requireOrigin(context, services.browserSecurity);
-    if (forbidden) return forbidden;
-    const parsed = createSchema.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    if (!parsed.success) {
-      return problem(
-        context,
-        400,
-        "validation_failed",
-        "Invalid invitation",
-        "Provide a valid email address and allowed role.",
-      );
+  routes.post(INVITATION_PATH, origin, session, async (context) => {
+    const parsed = await parseJsonBody(context, createSchema);
+    if ("errors" in parsed) {
+      return definedProblem(context, INVITATION_REQUEST_INVALID);
     }
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
+    const actor = await requireSession(context);
+    if (actor instanceof Response) return actor;
     const result = await services.invitations.create({
       actor: {
-        memberId: resolved.memberId,
-        role: resolved.role,
-        userId: resolved.userId,
-        workspaceId: resolved.workspaceId,
+        memberId: actor.memberId,
+        role: actor.role,
+        userId: actor.userId,
+        workspaceId: actor.workspaceId,
       },
       email: parsed.data.email,
       role: parsed.data.role,
-      workspaceName: resolved.workspaceName,
+      workspaceName: actor.workspaceName,
     }).catch(() => "unavailable" as const);
     if (result === "created") {
       context.header("Cache-Control", "private, no-store");
       return context.json({ status: "invited" }, 201);
     }
     if (result === "already-member") {
-      return problem(
-        context,
-        409,
-        "already_member",
-        "Membership already exists",
-        "That email already has a membership record in this workspace. Manage its lifecycle explicitly instead of inviting it again.",
-      );
+      return definedProblem(context, ALREADY_MEMBER);
     }
     if (result === "forbidden") {
-      return problem(
-        context,
-        403,
-        "invitation_forbidden",
-        "Invitation forbidden",
-        "Only an active workspace owner or admin may invite members.",
-      );
+      return definedProblem(context, INVITATION_FORBIDDEN);
     }
-    return problem(
+    return definedProblem(
       context,
-      503,
-      "invitation_delivery_failed",
-      "Invitation delivery unavailable",
       result === "delivery-failed"
-        ? "The invitation was saved but its email could not be delivered. Contact an administrator before trying again."
-        : "The invitation could not be created. Please try again.",
+        ? INVITATION_DELIVERY_FAILED
+        : INVITATION_NOT_CREATED,
     );
   });
 
-  routes.post("/api/v1/workspace-invitations/register", async (context) => {
-    const forbidden = requireOrigin(context, services.browserSecurity);
-    if (forbidden) return forbidden;
-    const parsed = invitationRegistrationSchema.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    if (!parsed.success) {
-      return problem(
-        context,
-        400,
-        "validation_failed",
-        "Registration unavailable",
-        "Check the invitation and registration fields.",
-      );
+  routes.post(`${INVITATION_PATH}/register`, origin, async (context) => {
+    const parsed = await parseJsonBody(context, invitationRegistrationSchema);
+    if ("errors" in parsed) {
+      return definedProblem(context, REGISTRATION_REQUEST_INVALID);
     }
     const passwordHash = await services.hasher.hash(parsed.data.password);
     const result = await services.invitations.registerInvitee({
@@ -253,64 +525,39 @@ export function createInvitationRoutes(services: InvitationHttpServices): Hono {
     if (result === "verification-required" || result === "delivery-failed") {
       context.header(
         "Set-Cookie",
-        cookie(
-          "kinship_invitation",
-          parsed.data.token,
-          services.browserSecurity,
-          24 * 60 * 60,
-          "/api/v1/workspace-invitations",
-        ),
+        setCookie(policy, {
+          maxAgeSeconds: INVITATION_COOKIE_SECONDS,
+          name: INVITATION_COOKIE,
+          path: INVITATION_PATH,
+          value: parsed.data.token,
+        }),
       );
       context.header(
         "Set-Cookie",
-        cookie(
-          "kinship_invitation_pending",
-          "1",
-          services.browserSecurity,
-          24 * 60 * 60,
-          "/api/v1/email-verifications",
-        ),
+        setCookie(policy, {
+          maxAgeSeconds: INVITATION_COOKIE_SECONDS,
+          name: PENDING_COOKIE,
+          path: VERIFICATION_PATH,
+          value: "1",
+        }),
         { append: true },
       );
       context.header("Cache-Control", "private, no-store");
       if (result === "delivery-failed") {
-        return problem(
-          context,
-          503,
-          "invitation_verification_delivery_failed",
-          "Verification email delayed",
-          "Your account was created for this invitation, but the verification email could not be delivered. Retry delivery.",
-        );
+        return definedProblem(context, INVITEE_VERIFICATION_DELAYED);
       }
       return context.json({ status: "verification-required" }, 202);
     }
-    const gone = result === "expired" || result === "revoked" ||
-      result === "used";
-    return problem(
-      context,
-      gone ? 410 : result === "invalid" ? 404 : 409,
-      gone ? `invitation_${result}` : "invitation_registration_unavailable",
-      "Registration unavailable",
-      gone
-        ? "This invitation can no longer be used."
-        : "Use the invited email address or sign in to an existing account.",
-    );
+    return registrationFailure(context, result);
   });
 
   routes.post(
-    "/api/v1/workspace-invitations/verification-delivery",
+    `${INVITATION_PATH}/verification-delivery`,
+    origin,
     async (context) => {
-      const forbidden = requireOrigin(context, services.browserSecurity);
-      if (forbidden) return forbidden;
       const token = invitationToken(context);
       if (!token) {
-        return problem(
-          context,
-          404,
-          "invitation_invalid",
-          "Verification delivery unavailable",
-          "Return to the invitation and try again.",
-        );
+        return definedProblem(context, DELIVERY_TOKEN_MISSING);
       }
       const result = await services.invitations.retryInviteeVerification(token)
         .catch(() => "delivery-failed" as const);
@@ -319,176 +566,97 @@ export function createInvitationRoutes(services: InvitationHttpServices): Hono {
         return context.json({ status: "accepted" }, 202);
       }
       if (result === "rate-limited") {
-        return problem(
-          context,
-          429,
-          "verification_delivery_rate_limited",
-          "Verification retry delayed",
-          "Wait a few minutes before requesting another verification email.",
-        );
+        return definedProblem(context, DELIVERY_RATE_LIMITED);
       }
       if (result === "delivery-failed") {
-        return problem(
-          context,
-          503,
-          "invitation_verification_delivery_failed",
-          "Verification email delayed",
-          "The verification email still could not be delivered. Please try again.",
-        );
+        return definedProblem(context, DELIVERY_STILL_FAILING);
       }
-      return problem(
-        context,
-        result === "invalid" ? 404 : 410,
-        `invitation_${result}`,
-        "Verification delivery unavailable",
-        "This invitation can no longer continue.",
-      );
+      return deliveryFailure(context, result);
     },
   );
 
-  routes.post(
-    "/api/v1/workspace-invitations/authenticate",
-    async (context) => {
-      const forbidden = requireOrigin(context, services.browserSecurity);
-      if (forbidden) return forbidden;
-      const parsed = invitationAuthenticationSchema.safeParse(
-        await context.req.json().catch(() => undefined),
-      );
-      const token = parsed.success
-        ? parsed.data.token ?? invitationToken(context)
-        : undefined;
-      if (!parsed.success || !token) {
-        return problem(
-          context,
-          401,
-          "invalid_credentials",
-          "Sign-in failed",
-          "The email address or password is incorrect.",
-        );
-      }
-      const invitation = await services.invitations.inspect(token).catch(() =>
-        undefined
-      );
-      if (
-        !invitation || invitation.status !== "pending" ||
-        invitation.email.toLowerCase() !== parsed.data.email
-      ) {
-        return problem(
-          context,
-          401,
-          "invalid_credentials",
-          "Sign-in failed",
-          "The email address or password is incorrect.",
-        );
-      }
-      const result = await services.protectedSessions.signIn({
-        email: parsed.data.email,
-        expectedEmail: invitation.email.toLowerCase(),
-        identityOnly: true,
-        ipAddress: clientAddress(context),
-        password: parsed.data.password,
-        ...(context.req.header("User-Agent")
-          ? { userAgent: context.req.header("User-Agent")!.slice(0, 1_000) }
-          : {}),
-      }).catch(() => undefined);
-      if (!result) {
-        return problem(
-          context,
-          503,
-          "authentication_unavailable",
-          "Sign-in unavailable",
-          "Please try again.",
-        );
-      }
-      if (result.status === "identity-authenticated") {
-        invitationContinuationCookies(
-          context,
-          services,
-          token,
-          result.entryToken,
-          result.expiresAt,
-        );
-        context.header("Cache-Control", "private, no-store");
-        return context.json({
-          status: "authenticated",
-          next: "/invite/continue",
-        });
-      }
-      if (result.status === "mfa-required") {
-        context.header(
-          "Set-Cookie",
-          cookie(
-            "kinship_mfa",
-            result.challengeToken,
-            services.browserSecurity,
-            5 * 60,
-            "/api/v1/workspace-invitations/mfa",
-          ),
-          { append: true },
-        );
-        context.header(
-          "Set-Cookie",
-          cookie(
-            "kinship_invitation",
-            token,
-            services.browserSecurity,
-            24 * 60 * 60,
-            "/api/v1/workspace-invitations",
-          ),
-          { append: true },
-        );
-        return context.json({ status: "mfa-required", next: "/auth/mfa" }, 202);
-      }
-      if (result.status === "rate-limited") {
-        return problem(
-          context,
-          429,
-          "authentication_rate_limited",
-          "Sign-in delayed",
-          "Wait before trying again.",
-        );
-      }
-      return problem(
-        context,
-        401,
-        "invalid_credentials",
-        "Sign-in failed",
-        "The email address or password is incorrect.",
-      );
-    },
-  );
-
-  routes.post("/api/v1/workspace-invitations/mfa", async (context) => {
-    const forbidden = requireOrigin(context, services.browserSecurity);
-    if (forbidden) return forbidden;
-    const parsed = invitationMfaSchema.safeParse(
-      await context.req.json().catch(() => undefined),
+  routes.post(`${INVITATION_PATH}/authenticate`, origin, async (context) => {
+    const parsed = await parseJsonBody(
+      context,
+      invitationAuthenticationSchema,
     );
+    const token = "errors" in parsed
+      ? undefined
+      : parsed.data.token ?? invitationToken(context);
+    if ("errors" in parsed || !token) {
+      return definedProblem(context, INVALID_CREDENTIALS);
+    }
+    const invitation = await services.invitations.inspect(token).catch(() =>
+      undefined
+    );
+    if (
+      !invitation || invitation.status !== "pending" ||
+      invitation.email.toLowerCase() !== parsed.data.email
+    ) return definedProblem(context, INVALID_CREDENTIALS);
+    const result = await services.protectedSessions.signIn({
+      email: parsed.data.email,
+      expectedEmail: invitation.email.toLowerCase(),
+      identityOnly: true,
+      ipAddress: clientAddress(context),
+      password: parsed.data.password,
+      ...userAgent(context),
+    }).catch(() => undefined);
+    if (!result) return definedProblem(context, SIGN_IN_UNAVAILABLE);
+    if (result.status === "identity-authenticated") {
+      invitationContinuationCookies(
+        context,
+        policy,
+        token,
+        result.entryToken,
+        result.expiresAt,
+      );
+      context.header("Cache-Control", "private, no-store");
+      return context.json({
+        status: "authenticated",
+        next: "/invite/continue",
+      });
+    }
+    if (result.status === "mfa-required") {
+      context.header(
+        "Set-Cookie",
+        setCookie(policy, {
+          maxAgeSeconds: MFA_COOKIE_SECONDS,
+          name: MFA_COOKIE,
+          path: MFA_PATH,
+          value: result.challengeToken,
+        }),
+        { append: true },
+      );
+      context.header(
+        "Set-Cookie",
+        setCookie(policy, {
+          maxAgeSeconds: INVITATION_COOKIE_SECONDS,
+          name: INVITATION_COOKIE,
+          path: INVITATION_PATH,
+          value: token,
+        }),
+        { append: true },
+      );
+      return context.json({ status: "mfa-required", next: "/auth/mfa" }, 202);
+    }
+    return signInFailure(context, result);
+  });
+
+  routes.post(MFA_PATH, origin, async (context) => {
+    const parsed = await parseJsonBody(context, invitationMfaSchema);
     const token = invitationToken(context);
     const challengeToken = cookieValue(
       context.req.header("Cookie"),
-      "kinship_mfa",
+      MFA_COOKIE,
     );
-    if (!parsed.success || !token || !challengeToken) {
-      return problem(
-        context,
-        410,
-        "mfa_challenge_expired",
-        "Challenge expired",
-        "Return to the invitation and sign in again.",
-      );
+    if ("errors" in parsed || !token || !challengeToken) {
+      return definedProblem(context, MFA_CHALLENGE_EXPIRED);
     }
     const invitation = await services.invitations.inspect(token).catch(() =>
       undefined
     );
     if (!invitation || invitation.status !== "pending") {
-      return problem(
-        context,
-        410,
-        "invitation_unavailable",
-        "Invitation unavailable",
-        "This invitation can no longer continue.",
-      );
+      return definedProblem(context, INVITATION_DISCONTINUED);
     }
     const result = await services.protectedSessions.completeMfa({
       challengeToken,
@@ -496,36 +664,25 @@ export function createInvitationRoutes(services: InvitationHttpServices): Hono {
       factor: parsed.data.factor,
       identityOnly: true,
       ipAddress: clientAddress(context),
-      ...(context.req.header("User-Agent")
-        ? { userAgent: context.req.header("User-Agent")!.slice(0, 1_000) }
-        : {}),
+      ...userAgent(context),
     }).catch(() => undefined);
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "authentication_unavailable",
-        "Challenge unavailable",
-        "Please try again.",
-      );
-    }
+    if (!result) return definedProblem(context, MFA_UNAVAILABLE);
     if (result.status === "identity-authenticated") {
       invitationContinuationCookies(
         context,
-        services,
+        policy,
         token,
         result.entryToken,
         result.expiresAt,
       );
       context.header(
         "Set-Cookie",
-        cookie(
-          "kinship_mfa",
-          "",
-          services.browserSecurity,
-          0,
-          "/api/v1/workspace-invitations/mfa",
-        ),
+        setCookie(policy, {
+          maxAgeSeconds: 0,
+          name: MFA_COOKIE,
+          path: MFA_PATH,
+          value: "",
+        }),
         { append: true },
       );
       context.header("Cache-Control", "private, no-store");
@@ -534,202 +691,95 @@ export function createInvitationRoutes(services: InvitationHttpServices): Hono {
         next: "/invite/continue",
       });
     }
-    if (result.status === "rate-limited") {
-      return problem(
-        context,
-        429,
-        "authentication_rate_limited",
-        "Challenge delayed",
-        "Wait before trying again.",
-      );
-    }
-    return problem(
-      context,
-      result.status === "challenge-expired" ? 410 : 401,
-      result.status === "challenge-expired"
-        ? "mfa_challenge_expired"
-        : "invalid_mfa",
-      "Challenge failed",
-      result.status === "challenge-expired"
-        ? "Return to the invitation and sign in again."
-        : "That authenticator or recovery code is not valid.",
-    );
+    return mfaFailure(context, result);
   });
 
-  routes.get("/api/v1/workspace-members", async (context) => {
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
+  routes.get("/api/v1/workspace-members", session, async (context) => {
+    const actor = await requireSession(context);
+    if (actor instanceof Response) return actor;
     const result = await services.invitations.list({
-      memberId: resolved.memberId,
-      role: resolved.role,
-      userId: resolved.userId,
-      workspaceId: resolved.workspaceId,
+      memberId: actor.memberId,
+      role: actor.role,
+      userId: actor.userId,
+      workspaceId: actor.workspaceId,
     }).catch(() => undefined);
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "members_unavailable",
-        "Members unavailable",
-        "Members and invitations could not be loaded.",
-      );
-    }
+    if (!result) return definedProblem(context, MEMBERS_UNAVAILABLE);
     if (result.status === "forbidden") {
-      return problem(
-        context,
-        403,
-        "members_forbidden",
-        "Members unavailable",
-        "Only an active workspace owner or admin may view this page.",
-      );
+      return definedProblem(context, MEMBERS_FORBIDDEN);
     }
     context.header("Cache-Control", "private, no-store");
     return context.json(result);
   });
 
-  routes.post("/api/v1/workspace-invitations/inspect", async (context) => {
-    const forbidden = requireOrigin(context, services.browserSecurity);
-    if (forbidden) return forbidden;
-    const parsed = optionalTokenSchema.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    const token = parsed.success
-      ? parsed.data.token ?? invitationToken(context)
-      : undefined;
-    if (!token) {
-      return problem(
-        context,
-        404,
-        "invitation_invalid",
-        "Invitation unavailable",
-        "This invitation link is invalid.",
-      );
-    }
+  routes.post(`${INVITATION_PATH}/inspect`, origin, async (context) => {
+    const parsed = await parseJsonBody(context, optionalTokenSchema);
+    const token = "errors" in parsed
+      ? undefined
+      : parsed.data.token ?? invitationToken(context);
+    if (!token) return definedProblem(context, INVITATION_LINK_INVALID);
     const result = await services.invitations.inspect(token).catch(
       () => undefined,
     );
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "invitation_unavailable",
-        "Invitation unavailable",
-        "The invitation could not be checked. Please try again.",
-      );
-    }
+    if (!result) return definedProblem(context, INVITATION_NOT_CHECKED);
     if (result.status === "pending") {
       context.header("Cache-Control", "private, no-store");
       return context.json(result);
     }
-    if (result.status === "invalid") {
-      return problem(
-        context,
-        404,
-        "invitation_invalid",
-        "Invitation unavailable",
-        "This invitation link is invalid.",
-      );
-    }
-    return problem(
-      context,
-      410,
-      `invitation_${result.status}`,
-      "Invitation unavailable",
-      result.status === "expired"
-        ? "This invitation has expired."
-        : result.status === "revoked"
-        ? "This invitation was revoked."
-        : "This invitation has already been used.",
-    );
+    return failure(context, result);
   });
 
-  routes.post("/api/v1/workspace-invitations/accept", async (context) => {
-    const forbidden = requireOrigin(context, services.browserSecurity);
-    if (forbidden) return forbidden;
-    const parsed = optionalTokenSchema.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    const token = parsed.success
-      ? parsed.data.token ?? invitationToken(context)
-      : undefined;
-    if (!token) {
-      return problem(
-        context,
-        404,
-        "invitation_invalid",
-        "Invitation unavailable",
-        "This invitation link is invalid.",
+  routes.post(
+    `${INVITATION_PATH}/accept`,
+    origin,
+    session,
+    async (context) => {
+      const parsed = await parseJsonBody(context, optionalTokenSchema);
+      const token = "errors" in parsed
+        ? undefined
+        : parsed.data.token ?? invitationToken(context);
+      if (!token) return definedProblem(context, INVITATION_LINK_INVALID);
+      const signedIn = await sessionOf(context);
+      const entryToken = cookieValue(
+        context.req.header("Cookie"),
+        ENTRY_COOKIE,
       );
-    }
-    const resolved = await actor(context, services);
-    const entryToken = cookieValue(
-      context.req.header("Cookie"),
-      "kinship_entry",
-    );
-    if (!resolved && !entryToken) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Sign in required",
-        "Sign in as the invited email address to accept.",
-      );
-    }
-    const result = await (resolved
-      ? services.invitations.accept({ token, userId: resolved.userId })
-      : services.invitations.acceptVerifiedEntry({
-        entryToken: entryToken!,
-        ipAddress: clientAddress(context),
-        invitationToken: token,
-        ...(context.req.header("User-Agent")
-          ? { userAgent: context.req.header("User-Agent")!.slice(0, 1_000) }
-          : {}),
-      })).catch(() =>
-        undefined
-      );
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "invitation_unavailable",
-        "Invitation unavailable",
-        "The invitation could not be accepted. Please try again.",
-      );
-    }
-    if (result.status === "accepted") {
+      if (!signedIn && !entryToken) {
+        return definedProblem(context, INVITATION_SIGN_IN_REQUIRED);
+      }
+      const result =
+        await (signedIn
+          ? services.invitations.accept({ token, userId: signedIn.userId })
+          : services.invitations.acceptVerifiedEntry({
+            entryToken: entryToken!,
+            ipAddress: clientAddress(context),
+            invitationToken: token,
+            ...userAgent(context),
+          })).catch(() => undefined);
+      if (!result) return definedProblem(context, INVITATION_NOT_ACCEPTED);
+      if (result.status !== "accepted") return failure(context, result);
       if (
-        "sessionToken" in result &&
-        typeof result.sessionToken === "string" &&
+        "sessionToken" in result && typeof result.sessionToken === "string" &&
         "expiresAt" in result && result.expiresAt instanceof Date
       ) {
         context.header(
           "Set-Cookie",
-          cookie(
-            "kinship_session",
-            result.sessionToken,
-            services.browserSecurity,
-            (result.expiresAt.getTime() - Date.now()) / 1_000,
-            "/",
-          ),
+          setCookie(policy, {
+            maxAgeSeconds: (result.expiresAt.getTime() - Date.now()) / 1_000,
+            name: SESSION_COOKIE,
+            path: "/",
+            value: result.sessionToken,
+          }),
           { append: true },
         );
-        for (
-          const [name, path] of [
-            ["kinship_entry", "/api/v1/workspace-invitations"],
-            ["kinship_invitation", "/api/v1/workspace-invitations"],
-          ] as const
-        ) {
+        for (const name of [ENTRY_COOKIE, INVITATION_COOKIE] as const) {
           context.header(
             "Set-Cookie",
-            cookie(name, "", services.browserSecurity, 0, path),
+            setCookie(policy, {
+              maxAgeSeconds: 0,
+              name,
+              path: INVITATION_PATH,
+              value: "",
+            }),
             { append: true },
           );
         }
@@ -740,46 +790,8 @@ export function createInvitationRoutes(services: InvitationHttpServices): Hono {
         next: "/app",
         workspace: { id: result.workspaceId, name: result.workspaceName },
       });
-    }
-    if (result.status === "wrong-user") {
-      return problem(
-        context,
-        403,
-        "invitation_wrong_user",
-        "Use the invited account",
-        "This invitation belongs to a different email address.",
-      );
-    }
-    if (result.status === "already-member") {
-      return problem(
-        context,
-        409,
-        "already_member",
-        "Membership already exists",
-        "A membership record for this workspace already exists and this invitation was not consumed.",
-      );
-    }
-    if (result.status === "invalid") {
-      return problem(
-        context,
-        404,
-        "invitation_invalid",
-        "Invitation unavailable",
-        "This invitation link is invalid.",
-      );
-    }
-    return problem(
-      context,
-      410,
-      `invitation_${result.status}`,
-      "Invitation unavailable",
-      result.status === "expired"
-        ? "This invitation has expired."
-        : result.status === "revoked"
-        ? "This invitation was revoked."
-        : "This invitation has already been used.",
-    );
-  });
+    },
+  );
 
   return routes;
 }

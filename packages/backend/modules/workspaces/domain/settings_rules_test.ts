@@ -1,6 +1,7 @@
 import { assert, assertEquals, assertThrows } from "../../../testing/assert.ts";
 import {
   FALLBACK_TIMEZONE,
+  isSchedulableTimezone,
   managedMembers,
   memberTimezoneChanged,
   type ResolvedMemberPreferences,
@@ -131,4 +132,22 @@ Deno.test("[GAP-018] planning is told when the workspace moves when reminders ar
   );
   assertEquals(workspaceScheduleChanged(undefined, CONFIGURATION), true);
   assertEquals(FALLBACK_TIMEZONE, "UTC");
+});
+
+Deno.test("[GAP-020] only a time zone the calendar can resolve may be stored", () => {
+  for (
+    const zone of ["UTC", "Europe/Belgrade", "America/Sao_Paulo", "Etc/GMT+5"]
+  ) {
+    assert(
+      isSchedulableTimezone(zone),
+      `${zone} is a zone the calendar can schedule in`,
+    );
+  }
+  for (const zone of ["Not/AZone", "", "Europe/Atlantis", "europe/belgrade "]) {
+    assertEquals(
+      isSchedulableTimezone(zone),
+      false,
+      `${zone} is not a zone anything can be scheduled in`,
+    );
+  }
 });

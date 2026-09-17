@@ -425,14 +425,14 @@ Deno.test({
           refusedCommit.status === "forbidden",
         "a revoked member still reached the importer",
       );
+      const history = await imports.list(actor);
+      const report = await imports.get(
+        actor,
+        allowed.status === "dry_run" ? allowed.importId : crypto.randomUUID(),
+      );
       assert(
-        (await imports.list(actor)).length === 0 &&
-          (await imports.get(
-              actor,
-              allowed.status === "dry_run"
-                ? allowed.importId
-                : crypto.randomUUID(),
-            )) === undefined,
+        history.status === "ready" && history.imports.length === 0 &&
+          report.status === "not-found",
         "a revoked member still read import history",
       );
     } finally {

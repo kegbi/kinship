@@ -1,8 +1,26 @@
-import { type Context, Hono } from "hono";
+/**
+ * Relationships between people over HTTP.
+ *
+ * Two reads and four writes. The problem responder, the session cookie, the
+ * origin check, and the kernel status map came from `http/` (GAP-019,
+ * GAP-020).
+ *
+ * The type list keeps its own refusals rather than sharing the relationship
+ * ones: a workspace that cannot offer relationship types is a different
+ * outage, on a different part of the form, from one that cannot save a link
+ * between two people, and the page shows them in different places.
+ */
+
+import { Hono } from "hono";
 import { z } from "zod";
 import type { RelationshipManagement } from "../../packages/backend/modules/relationships/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
+import { failureResponder, type FailureTable } from "./http/failures.ts";
+import { requireMatchingOrigin } from "./http/origin.ts";
+import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { type ActorEnv, requireActor, sessionActor } from "./http/session.ts";
+import { parseJsonBody, parseQuery, parseValue } from "./http/validate.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
@@ -46,339 +64,263 @@ const listQuery = z.object({
   limit: z.coerce.number().int().min(1).max(20).default(20),
 }).strict();
 
-function problem(
-  context: Context,
-  status: 400 | 401 | 403 | 404 | 409 | 503,
-  code: string,
-  title: string,
-  detail: string,
-  errors?: Readonly<Record<string, string>>,
-) {
-  return context.body(
-    JSON.stringify({
-      type: `https://kinship.test/problems/${code}`,
-      title,
-      status,
-      detail,
-      code,
-      ...(errors ? { errors } : {}),
-    }),
-    status,
-    {
-      "Cache-Control": "no-store",
-      "Content-Type": "application/problem+json",
-    },
-  );
-}
-
-function cookieValue(header: string | undefined, name: string) {
-  return header?.split(";").map((value) => value.trim()).find((value) =>
-    value.startsWith(`${name}=`)
-  )?.slice(name.length + 1);
-}
-
-async function actor(context: Context, services: RelationshipHttpServices) {
-  const sessionToken = cookieValue(
-    context.req.header("Cookie"),
-    "kinship_session",
-  );
-  if (!sessionToken) return undefined;
-  const requestedWorkspaceId = context.req.header("X-Workspace-Id");
-  const resolved = await services.protectedSessions.resolve({
-    sessionToken,
-    ...(requestedWorkspaceId ? { requestedWorkspaceId } : {}),
-  }).catch(() => undefined);
-  return resolved && {
-    memberId: resolved.memberId,
-    role: resolved.role,
-    userId: resolved.userId,
-    workspaceId: resolved.workspaceId,
-  };
-}
-
-function origin(context: Context, services: RelationshipHttpServices) {
-  return context.req.header("Origin") === services.browserSecurity.origin;
-}
-
-function failure(
-  context: Context,
-  result: {
-    readonly errors?: Readonly<Record<string, string>>;
-    readonly status: string;
+/** What a refused relationship write says. */
+export const RELATIONSHIP_FAILURES: FailureTable = {
+  fallback: {
+    code: "validation_failed",
+    detail: "Review the selected person, type, and current version.",
+    status: 400,
+    title: "Invalid relationship",
   },
-) {
-  if (result.status === "forbidden") {
-    return problem(
-      context,
-      403,
-      "relationships_forbidden",
-      "Relationships unavailable",
-      "Your active workspace membership no longer permits this action.",
-    );
-  }
-  if (result.status === "not-found") {
-    return problem(
-      context,
-      404,
-      "relationship_not_found",
-      "Relationship unavailable",
-      "The relationship, person, or type does not exist in the active workspace.",
-    );
-  }
-  if (result.status === "archived-write-rejected") {
-    return problem(
-      context,
-      409,
-      "archived_write_rejected",
-      "Archived person is read-only",
-      "Restore both people before changing their relationship.",
-    );
-  }
-  if (result.status === "stale") {
-    return problem(
-      context,
-      409,
-      "relationship_stale",
-      "Relationship changed",
-      "Refresh relationships before trying again.",
-    );
-  }
-  if (result.status === "possible-duplicate") {
-    return problem(
-      context,
-      409,
-      "related_person_possible_duplicate",
-      "Possible duplicate person",
-      "Choose the existing person or explicitly confirm creating another.",
-    );
-  }
-  return problem(
-    context,
-    400,
-    "validation_failed",
-    "Invalid relationship",
-    "Review the selected person, type, and current version.",
-    result.errors,
-  );
-}
+  statuses: {
+    "archived-write-rejected": {
+      code: "archived_write_rejected",
+      detail: "Restore both people before changing their relationship.",
+      title: "Archived person is read-only",
+    },
+    forbidden: {
+      code: "relationships_forbidden",
+      detail: "Your active workspace membership no longer permits this action.",
+      title: "Relationships unavailable",
+    },
+    "not-found": {
+      code: "relationship_not_found",
+      detail:
+        "The relationship, person, or type does not exist in the active workspace.",
+      title: "Relationship unavailable",
+    },
+    "possible-duplicate": {
+      code: "related_person_possible_duplicate",
+      detail:
+        "Choose the existing person or explicitly confirm creating another.",
+      status: 409,
+      title: "Possible duplicate person",
+    },
+    stale: {
+      code: "relationship_stale",
+      detail: "Refresh relationships before trying again.",
+      status: 409,
+      title: "Relationship changed",
+    },
+  },
+};
+
+/** What a refused read of one person's relationships says. */
+export const RELATIONSHIP_SECTION_FAILURES: FailureTable = {
+  fallback: {
+    code: "relationships_unavailable",
+    detail: "This relationship section is temporarily unavailable.",
+    status: 503,
+    title: "Relationships unavailable",
+  },
+  statuses: {
+    forbidden: {
+      code: "relationships_forbidden",
+      detail: "Your active workspace membership no longer permits this view.",
+      title: "Relationships unavailable",
+    },
+    "not-found": {
+      code: "relationship_not_found",
+      detail: "The person does not exist in the active workspace.",
+      title: "Relationships unavailable",
+    },
+    "stale-cursor": {
+      code: "relationships_cursor_stale",
+      detail: "Refresh the relationship section before loading another page.",
+      status: 409,
+      title: "Relationships changed",
+    },
+  },
+};
+
+/** What a refused read of the relationship types says. */
+export const RELATIONSHIP_TYPE_FAILURES: FailureTable = {
+  fallback: {
+    code: "relationship_types_unavailable",
+    detail: "Relationship types are temporarily unavailable.",
+    status: 503,
+    title: "Relationship types unavailable",
+  },
+  statuses: {
+    forbidden: {
+      code: "relationship_types_forbidden",
+      detail: "Your active workspace no longer permits this action.",
+      title: "Relationship types unavailable",
+    },
+    "stale-cursor": {
+      code: "relationship_types_cursor_stale",
+      detail: "Restart relationship type search from the first page.",
+      status: 409,
+      title: "Relationship types changed",
+    },
+  },
+};
+
+const failure = failureResponder(RELATIONSHIP_FAILURES);
+const sectionFailure = failureResponder(RELATIONSHIP_SECTION_FAILURES);
+const typeFailure = failureResponder(RELATIONSHIP_TYPE_FAILURES);
+
+const TYPES_QUERY_INVALID: ProblemDefinition = {
+  code: "relationship_types_query_invalid",
+  detail: "Review the search and selected type.",
+  status: 400,
+  title: "Invalid relationship type query",
+};
+const SECTION_REQUEST_INVALID: ProblemDefinition = {
+  code: "relationship_request_invalid",
+  detail: "Use a canonical person identifier.",
+  status: 400,
+  title: "Invalid relationship request",
+};
+const CREATE_REQUEST_INVALID: ProblemDefinition = {
+  code: "relationship_request_invalid",
+  detail: "Select another person and an active relationship type.",
+  status: 400,
+  title: "Invalid relationship",
+};
+const RELATED_PERSON_INVALID: ProblemDefinition = {
+  code: "relationship_request_invalid",
+  detail: "Provide a valid person identity and active relationship type.",
+  status: 400,
+  title: "Invalid related person",
+};
+const VERSIONED_REQUEST_INVALID: ProblemDefinition = {
+  code: "relationship_request_invalid",
+  detail: "Use current canonical identifiers and version.",
+  status: 400,
+  title: "Invalid relationship",
+};
+const RELATIONSHIP_NOT_SAVED: ProblemDefinition = {
+  code: "relationships_unavailable",
+  detail: "The relationship could not be saved.",
+  status: 503,
+  title: "Relationships unavailable",
+};
+const RELATED_PERSON_NOT_SAVED: ProblemDefinition = {
+  code: "relationships_unavailable",
+  detail: "Neither the person nor relationship was saved.",
+  status: 503,
+  title: "Related person unavailable",
+};
+const RELATIONSHIP_NOT_CHANGED: ProblemDefinition = {
+  code: "relationships_unavailable",
+  detail: "The relationship could not be changed.",
+  status: 503,
+  title: "Relationships unavailable",
+};
+const RELATIONSHIP_NOT_UNLINKED: ProblemDefinition = {
+  code: "relationships_unavailable",
+  detail: "The relationship could not be unlinked.",
+  status: 503,
+  title: "Relationships unavailable",
+};
+
+/** Every problem this file answers on its own, for the pinning suite. */
+export const RELATIONSHIP_PROBLEMS: readonly ProblemDefinition[] = [
+  CREATE_REQUEST_INVALID,
+  RELATED_PERSON_INVALID,
+  RELATED_PERSON_NOT_SAVED,
+  RELATIONSHIP_NOT_CHANGED,
+  RELATIONSHIP_NOT_SAVED,
+  RELATIONSHIP_NOT_UNLINKED,
+  SECTION_REQUEST_INVALID,
+  TYPES_QUERY_INVALID,
+  VERSIONED_REQUEST_INVALID,
+];
 
 export function createRelationshipRoutes(
   services: RelationshipHttpServices,
-): Hono {
-  const routes = new Hono();
-  routes.get("/api/v1/relationship-types", async (context) => {
-    const parsed = typesQuery.safeParse(context.req.query());
-    if (!parsed.success) {
-      return problem(
-        context,
-        400,
-        "relationship_types_query_invalid",
-        "Invalid relationship type query",
-        "Review the search and selected type.",
-      );
+): Hono<ActorEnv> {
+  const routes = new Hono<ActorEnv>();
+  const session = sessionActor(services.protectedSessions);
+  const origin = requireMatchingOrigin(services.browserSecurity);
+
+  routes.get("/api/v1/relationship-types", session, async (context) => {
+    const parsed = parseQuery(context, typesQuery);
+    if ("errors" in parsed) {
+      return definedProblem(context, TYPES_QUERY_INVALID);
     }
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const result = await services.relationships.listTypes(resolved, {
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.relationships.listTypes(actor, {
       ...(parsed.data.cursor ? { cursor: parsed.data.cursor } : {}),
       ...(parsed.data.search ? { search: parsed.data.search } : {}),
       ...(parsed.data.selected
         ? { selectedTypeIds: parsed.data.selected }
         : {}),
     }).catch(() => undefined);
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "relationship_types_unavailable",
-        "Relationship types unavailable",
-        "Relationship types are temporarily unavailable.",
-      );
-    }
-    if (result.status === "stale-cursor") {
-      return problem(
-        context,
-        409,
-        "relationship_types_cursor_stale",
-        "Relationship types changed",
-        "Restart relationship type search from the first page.",
-      );
-    }
-    if (result.status === "forbidden") {
-      return problem(
-        context,
-        403,
-        "relationship_types_forbidden",
-        "Relationship types unavailable",
-        "Your active workspace no longer permits this action.",
-      );
+    if (!result) return typeFailure(context, "unavailable");
+    if (result.status === "forbidden" || result.status === "stale-cursor") {
+      return typeFailure(context, result);
     }
     context.header("Cache-Control", "private, no-store");
     return context.json(result);
   });
-  routes.get("/api/v1/people/:personId/relationships", async (context) => {
-    const personId = id.safeParse(context.req.param("personId"));
-    const query = listQuery.safeParse(context.req.query());
-    if (!personId.success || !query.success) {
-      return problem(
-        context,
-        400,
-        "relationship_request_invalid",
-        "Invalid relationship request",
-        "Use a canonical person identifier.",
-      );
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const result = await services.relationships.list(resolved, personId.data, {
-      ...(query.data.cursor ? { cursor: query.data.cursor } : {}),
-      limit: query.data.limit,
-    })
-      .catch(() => undefined);
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "relationships_unavailable",
-        "Relationships unavailable",
-        "This relationship section is temporarily unavailable.",
-      );
-    }
-    if (result.status === "forbidden") {
-      return problem(
-        context,
-        403,
-        "relationships_forbidden",
-        "Relationships unavailable",
-        "Your active workspace membership no longer permits this view.",
-      );
-    }
-    if (result.status === "not-found") {
-      return problem(
-        context,
-        404,
-        "relationship_not_found",
-        "Relationships unavailable",
-        "The person does not exist in the active workspace.",
-      );
-    }
-    if (result.status === "stale-cursor") {
-      return problem(
-        context,
-        409,
-        "relationships_cursor_stale",
-        "Relationships changed",
-        "Refresh the relationship section before loading another page.",
-      );
-    }
-    context.header("Cache-Control", "private, no-store");
-    return context.json(result);
-  });
-  routes.post("/api/v1/people/:personId/relationships", async (context) => {
-    if (!origin(context, services)) {
-      return problem(
-        context,
-        403,
-        "origin_invalid",
-        "Request forbidden",
-        "This request did not come from the configured application origin.",
-      );
-    }
-    const personId = id.safeParse(context.req.param("personId"));
-    const input = createSchema.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    if (!personId.success || !input.success) {
-      return problem(
-        context,
-        400,
-        "relationship_request_invalid",
-        "Invalid relationship",
-        "Select another person and an active relationship type.",
-      );
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const result = await services.relationships.create(
-      resolved,
-      personId.data,
-      input.data,
-    ).catch(() => undefined);
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "relationships_unavailable",
-        "Relationships unavailable",
-        "The relationship could not be saved.",
-      );
-    }
-    if (result.status !== "created" && result.status !== "existing") {
-      return failure(context, result);
-    }
-    return context.json(result, result.status === "created" ? 201 : 200);
-  });
+
+  routes.get(
+    "/api/v1/people/:personId/relationships",
+    session,
+    async (context) => {
+      const personId = parseValue(id, context.req.param("personId"));
+      const query = parseQuery(context, listQuery);
+      if ("errors" in personId || "errors" in query) {
+        return definedProblem(context, SECTION_REQUEST_INVALID);
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.relationships.list(actor, personId.data, {
+        ...(query.data.cursor ? { cursor: query.data.cursor } : {}),
+        limit: query.data.limit,
+      }).catch(() => undefined);
+      if (!result) return sectionFailure(context, "unavailable");
+      if (
+        result.status === "forbidden" || result.status === "not-found" ||
+        result.status === "stale-cursor"
+      ) return sectionFailure(context, result);
+      context.header("Cache-Control", "private, no-store");
+      return context.json(result);
+    },
+  );
+
+  routes.post(
+    "/api/v1/people/:personId/relationships",
+    origin,
+    session,
+    async (context) => {
+      const personId = parseValue(id, context.req.param("personId"));
+      const input = await parseJsonBody(context, createSchema);
+      if ("errors" in personId || "errors" in input) {
+        return definedProblem(context, CREATE_REQUEST_INVALID);
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.relationships.create(
+        actor,
+        personId.data,
+        input.data,
+      ).catch(() => undefined);
+      if (!result) return definedProblem(context, RELATIONSHIP_NOT_SAVED);
+      if (result.status !== "created" && result.status !== "existing") {
+        return failure(context, result);
+      }
+      return context.json(result, result.status === "created" ? 201 : 200);
+    },
+  );
+
   routes.post(
     "/api/v1/people/:personId/relationships/related-person",
+    origin,
+    session,
     async (context) => {
-      if (!origin(context, services)) {
-        return problem(
-          context,
-          403,
-          "origin_invalid",
-          "Request forbidden",
-          "This request did not come from the configured application origin.",
-        );
+      const personId = parseValue(id, context.req.param("personId"));
+      const input = await parseJsonBody(context, relatedPersonSchema);
+      if ("errors" in personId || "errors" in input) {
+        return definedProblem(context, RELATED_PERSON_INVALID);
       }
-      const personId = id.safeParse(context.req.param("personId"));
-      const input = relatedPersonSchema.safeParse(
-        await context.req.json().catch(() => undefined),
-      );
-      if (!personId.success || !input.success) {
-        return problem(
-          context,
-          400,
-          "relationship_request_invalid",
-          "Invalid related person",
-          "Provide a valid person identity and active relationship type.",
-        );
-      }
-      const resolved = await actor(context, services);
-      if (!resolved) {
-        return problem(
-          context,
-          401,
-          "session_invalid",
-          "Authentication required",
-          "Sign in with an active workspace membership.",
-        );
-      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
       const result = await services.relationships.createRelatedPerson(
-        resolved,
+        actor,
         personId.data,
         {
           person: {
@@ -400,127 +342,65 @@ export function createRelationshipRoutes(
           relationshipTypeId: input.data.relationshipTypeId,
         },
       ).catch(() => undefined);
-      if (!result) {
-        return problem(
-          context,
-          503,
-          "relationships_unavailable",
-          "Related person unavailable",
-          "Neither the person nor relationship was saved.",
-        );
-      }
+      if (!result) return definedProblem(context, RELATED_PERSON_NOT_SAVED);
       return result.status === "created"
         ? context.json(result, 201)
         : failure(context, result);
     },
   );
+
   routes.patch(
     "/api/v1/people/:personId/relationships/:relationshipId",
+    origin,
+    session,
     async (context) => {
-      if (!origin(context, services)) {
-        return problem(
-          context,
-          403,
-          "origin_invalid",
-          "Request forbidden",
-          "This request did not come from the configured application origin.",
-        );
-      }
-      const personId = id.safeParse(context.req.param("personId"));
-      const relationshipId = id.safeParse(context.req.param("relationshipId"));
-      const input = updateSchema.safeParse(
-        await context.req.json().catch(() => undefined),
+      const personId = parseValue(id, context.req.param("personId"));
+      const relationshipId = parseValue(
+        id,
+        context.req.param("relationshipId"),
       );
-      if (!personId.success || !relationshipId.success || !input.success) {
-        return problem(
-          context,
-          400,
-          "relationship_request_invalid",
-          "Invalid relationship",
-          "Use current canonical identifiers and version.",
-        );
-      }
-      const resolved = await actor(context, services);
-      if (!resolved) {
-        return problem(
-          context,
-          401,
-          "session_invalid",
-          "Authentication required",
-          "Sign in with an active workspace membership.",
-        );
-      }
+      const input = await parseJsonBody(context, updateSchema);
+      if (
+        "errors" in personId || "errors" in relationshipId || "errors" in input
+      ) return definedProblem(context, VERSIONED_REQUEST_INVALID);
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
       const result = await services.relationships.update(
-        resolved,
+        actor,
         personId.data,
         relationshipId.data,
         input.data,
       ).catch(() => undefined);
-      if (!result) {
-        return problem(
-          context,
-          503,
-          "relationships_unavailable",
-          "Relationships unavailable",
-          "The relationship could not be changed.",
-        );
-      }
+      if (!result) return definedProblem(context, RELATIONSHIP_NOT_CHANGED);
       return result.status === "updated"
         ? context.json(result)
         : failure(context, result);
     },
   );
+
   routes.delete(
     "/api/v1/people/:personId/relationships/:relationshipId",
+    origin,
+    session,
     async (context) => {
-      if (!origin(context, services)) {
-        return problem(
-          context,
-          403,
-          "origin_invalid",
-          "Request forbidden",
-          "This request did not come from the configured application origin.",
-        );
-      }
-      const personId = id.safeParse(context.req.param("personId"));
-      const relationshipId = id.safeParse(context.req.param("relationshipId"));
-      const input = deleteSchema.safeParse(
-        await context.req.json().catch(() => undefined),
+      const personId = parseValue(id, context.req.param("personId"));
+      const relationshipId = parseValue(
+        id,
+        context.req.param("relationshipId"),
       );
-      if (!personId.success || !relationshipId.success || !input.success) {
-        return problem(
-          context,
-          400,
-          "relationship_request_invalid",
-          "Invalid relationship",
-          "Use current canonical identifiers and version.",
-        );
-      }
-      const resolved = await actor(context, services);
-      if (!resolved) {
-        return problem(
-          context,
-          401,
-          "session_invalid",
-          "Authentication required",
-          "Sign in with an active workspace membership.",
-        );
-      }
+      const input = await parseJsonBody(context, deleteSchema);
+      if (
+        "errors" in personId || "errors" in relationshipId || "errors" in input
+      ) return definedProblem(context, VERSIONED_REQUEST_INVALID);
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
       const result = await services.relationships.delete(
-        resolved,
+        actor,
         personId.data,
         relationshipId.data,
         input.data,
       ).catch(() => undefined);
-      if (!result) {
-        return problem(
-          context,
-          503,
-          "relationships_unavailable",
-          "Relationships unavailable",
-          "The relationship could not be unlinked.",
-        );
-      }
+      if (!result) return definedProblem(context, RELATIONSHIP_NOT_UNLINKED);
       return result.status === "deleted"
         ? context.json(result)
         : failure(context, result);

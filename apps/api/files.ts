@@ -1,5 +1,19 @@
-import { type Context, Hono } from "hono";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
+/**
+ * A person's files over HTTP.
+ *
+ * Four routes over the files a person has, and one over the workspace's
+ * storage diagnostics. The problem responder, the session cookie, the origin
+ * check, the kernel status map, and the download response came from `http/`
+ * (GAP-019, GAP-020).
+ *
+ * The upload does not use the shared body reader. It streams against its own
+ * ten megabyte ceiling and refuses as soon as the running total passes it, so
+ * a browser that ignores the declared length is stopped by what it actually
+ * sent rather than by what it claimed; the composition root exempts this route
+ * from the global cap for that reason.
+ */
+
+import { Hono } from "hono";
 import { z } from "zod";
 import {
   PERSON_FILE_MAX_BYTES,
@@ -8,6 +22,11 @@ import {
 } from "../../packages/backend/modules/files/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
+import { fileDownload } from "./http/downloads.ts";
+import { failureResponder, type FailureTable } from "./http/failures.ts";
+import { requireMatchingOrigin } from "./http/origin.ts";
+import { type ActorEnv, requireActor, sessionActor } from "./http/session.ts";
+import { parseValue } from "./http/validate.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
@@ -20,70 +39,116 @@ export interface FileHttpServices {
 
 const uuid = z.uuid();
 const kind = z.enum(["document", "photo"]);
+const storageQuery = z.string().trim().max(100).optional();
 
-function problem(
-  context: Context,
-  status: ContentfulStatusCode,
-  code: string,
-  title: string,
-  detail: string,
-): Response {
-  return context.body(
-    JSON.stringify({
-      type: `https://kinship.test/problems/${code}`,
-      title,
-      status,
-      detail,
-      code,
-    }),
-    status,
-    {
-      "Cache-Control": "no-store",
-      "Content-Type": "application/problem+json",
+/**
+ * What a refused file says.
+ *
+ * The three that are not refusals of the request — missing bytes, a
+ * quarantined file, one still being processed — each keep their own status,
+ * because a person looking at a file that will not open needs to know whether
+ * to wait, to ask an administrator, or to give up.
+ */
+export const FILE_FAILURES: FailureTable = {
+  fallback: {
+    code: "files_unavailable",
+    detail: "The file service is temporarily unavailable.",
+    status: 503,
+    title: "Files unavailable",
+  },
+  statuses: {
+    deleted: {
+      code: "file_deleted",
+      detail: "This file has been removed.",
+      status: 410,
+      title: "File removed",
     },
-  );
-}
+    forbidden: {
+      code: "files_forbidden",
+      detail: "Your active workspace membership no longer permits this action.",
+      title: "Files unavailable",
+    },
+    missing: {
+      code: "file_missing",
+      detail:
+        "The file metadata remains visible, but its stored bytes are missing.",
+      status: 410,
+      title: "File bytes missing",
+    },
+    "not-found": {
+      code: "person_file_not_found",
+      detail:
+        "No file with this opaque identifier exists for this person in the active workspace.",
+      title: "File not found",
+    },
+    processing: {
+      code: "file_processing",
+      detail: "This file is not ready to open yet.",
+      status: 409,
+      title: "File processing",
+    },
+    quarantined: {
+      code: "file_quarantined",
+      detail: "This file cannot be opened while it is quarantined.",
+      status: 423,
+      title: "File quarantined",
+    },
+    "rejected-media": {
+      code: "file_media_rejected",
+      detail:
+        "Choose a supported PDF, document, text, JPEG, PNG, or WebP file.",
+      status: 415,
+      title: "File type rejected",
+    },
+    "storage-limit": {
+      code: "file_storage_limit",
+      detail: `Files must be ${PERSON_FILE_MAX_BYTES} bytes or smaller.`,
+      status: 413,
+      title: "File too large",
+    },
+    "validation-error": {
+      code: "file_invalid",
+      detail: "Provide a non-empty filename, title, and file body.",
+      status: 400,
+      title: "Invalid file",
+    },
+  },
+};
 
-function cookieValue(header: string | undefined, name: string) {
-  return header?.split(";").map((value) => value.trim()).find((value) =>
-    value.startsWith(`${name}=`)
-  )?.slice(name.length + 1);
-}
+/** What a refused look at workspace storage says. */
+export const STORAGE_FAILURES: FailureTable = {
+  fallback: {
+    code: "storage_settings_unavailable",
+    detail: "Workspace storage diagnostics could not be loaded.",
+    status: 503,
+    title: "Storage diagnostics unavailable",
+  },
+  statuses: {
+    forbidden: {
+      code: "storage_settings_forbidden",
+      detail:
+        "Only an active workspace owner or administrator may view storage diagnostics.",
+      title: "Storage settings forbidden",
+    },
+    "validation-error": {
+      code: "storage_lookup_invalid",
+      detail: "Search terms must be 100 characters or fewer.",
+      status: 400,
+      title: "Invalid file lookup",
+    },
+  },
+};
 
-async function actor(context: Context, services: FileHttpServices) {
-  const sessionToken = cookieValue(
-    context.req.header("Cookie"),
-    "kinship_session",
-  );
-  if (!sessionToken) return undefined;
-  const requestedWorkspaceId = context.req.header("X-Workspace-Id");
-  const resolved = await services.protectedSessions.resolve({
-    sessionToken,
-    ...(requestedWorkspaceId ? { requestedWorkspaceId } : {}),
-  }).catch(() => undefined);
-  return resolved
-    ? {
-      memberId: resolved.memberId,
-      role: resolved.role,
-      userId: resolved.userId,
-      workspaceId: resolved.workspaceId,
-    }
-    : undefined;
-}
+const failure = failureResponder(FILE_FAILURES);
+const storageFailure = failureResponder(STORAGE_FAILURES);
 
-function requireOrigin(
-  context: Context,
-  policy: BrowserSecurityPolicy,
-): Response | undefined {
-  return context.req.header("Origin") === policy.origin ? undefined : problem(
-    context,
-    403,
-    "origin_invalid",
-    "Request forbidden",
-    "This request did not come from the configured application origin.",
-  );
-}
-
+/**
+ * The whole body, or nothing when it is too large.
+ *
+ * The declared length is refused first so an oversized upload costs nothing,
+ * and the running total is checked again per chunk so a missing or lying
+ * `Content-Length` cannot get past it.
+ */
 async function boundedBytes(request: Request): Promise<Uint8Array | undefined> {
   const declared = Number(request.headers.get("content-length") ?? "0");
   if (Number.isFinite(declared) && declared > PERSON_FILE_MAX_BYTES) {
@@ -112,107 +177,7 @@ async function boundedBytes(request: Request): Promise<Uint8Array | undefined> {
   return bytes;
 }
 
-function unavailable(context: Context, status: string): Response {
-  if (status === "not-found") {
-    return problem(
-      context,
-      404,
-      "person_file_not_found",
-      "File not found",
-      "No file with this opaque identifier exists for this person in the active workspace.",
-    );
-  }
-  if (status === "forbidden") {
-    return problem(
-      context,
-      403,
-      "files_forbidden",
-      "Files unavailable",
-      "Your active workspace membership no longer permits this action.",
-    );
-  }
-  if (status === "missing") {
-    return problem(
-      context,
-      410,
-      "file_missing",
-      "File bytes missing",
-      "The file metadata remains visible, but its stored bytes are missing.",
-    );
-  }
-  if (status === "quarantined") {
-    return problem(
-      context,
-      423,
-      "file_quarantined",
-      "File quarantined",
-      "This file cannot be opened while it is quarantined.",
-    );
-  }
-  if (status === "processing") {
-    return problem(
-      context,
-      409,
-      "file_processing",
-      "File processing",
-      "This file is not ready to open yet.",
-    );
-  }
-  if (status === "deleted") {
-    return problem(
-      context,
-      410,
-      "file_deleted",
-      "File removed",
-      "This file has been removed.",
-    );
-  }
-  if (status === "storage-limit") {
-    return problem(
-      context,
-      413,
-      "file_storage_limit",
-      "File too large",
-      `Files must be ${PERSON_FILE_MAX_BYTES} bytes or smaller.`,
-    );
-  }
-  if (status === "rejected-media") {
-    return problem(
-      context,
-      415,
-      "file_media_rejected",
-      "File type rejected",
-      "Choose a supported PDF, document, text, JPEG, PNG, or WebP file.",
-    );
-  }
-  if (status === "validation-error") {
-    return problem(
-      context,
-      400,
-      "file_invalid",
-      "Invalid file",
-      "Provide a non-empty filename, title, and file body.",
-    );
-  }
-  return problem(
-    context,
-    503,
-    "files_unavailable",
-    "Files unavailable",
-    "The file service is temporarily unavailable.",
-  );
-}
-
-function attachmentFilename(filename: string): string {
-  const fallback = filename.replace(/[\r\n"\\]/g, "_").replace(
-    /[^\x20-\x7e]/g,
-    "_",
-  );
-  return `attachment; filename="${fallback}"; filename*=UTF-8''${
-    encodeURIComponent(filename)
-  }`;
-}
-
+/** A filename or title carried in a header, percent-encoded by the browser. */
 function decodedHeader(value: string | undefined): string | undefined {
   if (!value) return undefined;
   try {
@@ -222,192 +187,120 @@ function decodedHeader(value: string | undefined): string | undefined {
   }
 }
 
-export function createFileRoutes(services: FileHttpServices): Hono {
-  const routes = new Hono();
+export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
+  const routes = new Hono<ActorEnv>();
+  const session = sessionActor(services.protectedSessions);
+  const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get("/api/v1/settings/storage", async (context) => {
-    const parsed = z.string().trim().max(100).optional().safeParse(
-      context.req.query("query"),
+  routes.get("/api/v1/settings/storage", session, async (context) => {
+    const query = parseValue(storageQuery, context.req.query("query"));
+    if ("errors" in query) {
+      return storageFailure(context, "validation-error");
+    }
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.storageSettings?.get(actor, query.data).catch(
+      () => ({ status: "unavailable" as const }),
     );
-    if (!parsed.success) {
-      return problem(
-        context,
-        400,
-        "storage_lookup_invalid",
-        "Invalid file lookup",
-        "Search terms must be 100 characters or fewer.",
-      );
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const result = await services.storageSettings?.get(
-      resolved,
-      parsed.data,
-    ).catch(() => ({ status: "unavailable" as const }));
-    if (result?.status === "forbidden") {
-      return problem(
-        context,
-        403,
-        "storage_settings_forbidden",
-        "Storage settings forbidden",
-        "Only an active workspace owner or administrator may view storage diagnostics.",
-      );
-    }
-    if (result?.status === "validation-error") {
-      return problem(
-        context,
-        400,
-        "storage_lookup_invalid",
-        "Invalid file lookup",
-        "Search terms must be 100 characters or fewer.",
-      );
-    }
     if (!result || result.status !== "ready") {
-      return problem(
-        context,
-        503,
-        "storage_settings_unavailable",
-        "Storage diagnostics unavailable",
-        "Workspace storage diagnostics could not be loaded.",
-      );
+      return storageFailure(context, result ?? "unavailable");
     }
     context.header("Cache-Control", "private, no-store");
     return context.json(result);
   });
 
-  routes.post("/api/v1/people/:personId/files", async (context) => {
-    const originFailure = requireOrigin(context, services.browserSecurity);
-    if (originFailure) return originFailure;
-    const personId = uuid.safeParse(context.req.param("personId"));
-    const fileKind = kind.safeParse(context.req.header("X-File-Kind"));
-    const filename = decodedHeader(context.req.header("X-File-Name"));
-    const title = decodedHeader(context.req.header("X-File-Title"));
-    const mimeType = context.req.header("Content-Type")?.split(";", 1)[0]
-      ?.trim();
-    if (
-      !personId.success || !fileKind.success || !filename || !title || !mimeType
-    ) {
-      return unavailable(context, "validation-error");
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const bytes = await boundedBytes(context.req.raw).catch(() => undefined);
-    if (!bytes) return unavailable(context, "storage-limit");
-    const result = await services.files.upload(resolved, personId.data, {
-      bytes,
-      filename,
-      kind: fileKind.data,
-      mimeType,
-      title,
-    }).catch(() => ({ status: "unavailable" as const }));
-    if (result.status !== "created") return unavailable(context, result.status);
-    context.header("Cache-Control", "private, no-store");
-    return context.json({ file: result.file, status: "created" }, 201);
-  });
+  routes.post(
+    "/api/v1/people/:personId/files",
+    origin,
+    session,
+    async (context) => {
+      const personId = parseValue(uuid, context.req.param("personId"));
+      const fileKind = parseValue(kind, context.req.header("X-File-Kind"));
+      const filename = decodedHeader(context.req.header("X-File-Name"));
+      const title = decodedHeader(context.req.header("X-File-Title"));
+      const mimeType = context.req.header("Content-Type")?.split(";", 1)[0]
+        ?.trim();
+      if (
+        "errors" in personId || "errors" in fileKind || !filename || !title ||
+        !mimeType
+      ) return failure(context, "validation-error");
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const bytes = await boundedBytes(context.req.raw).catch(() => undefined);
+      if (!bytes) return failure(context, "storage-limit");
+      const result = await services.files.upload(actor, personId.data, {
+        bytes,
+        filename,
+        kind: fileKind.data,
+        mimeType,
+        title,
+      }).catch(() => ({ status: "unavailable" as const }));
+      if (result.status !== "created") return failure(context, result);
+      context.header("Cache-Control", "private, no-store");
+      return context.json({ file: result.file, status: "created" }, 201);
+    },
+  );
 
-  routes.get("/api/v1/people/:personId/files", async (context) => {
-    const personId = uuid.safeParse(context.req.param("personId"));
-    if (!personId.success) return unavailable(context, "not-found");
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const result = await services.files.list(resolved, personId.data).catch(
+  routes.get("/api/v1/people/:personId/files", session, async (context) => {
+    const personId = parseValue(uuid, context.req.param("personId"));
+    if ("errors" in personId) return failure(context, "not-found");
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.files.list(actor, personId.data).catch(
       () => ({ status: "unavailable" as const }),
     );
-    if (result.status !== "ready") return unavailable(context, result.status);
+    if (result.status !== "ready") return failure(context, result);
     context.header("Cache-Control", "private, no-store");
     return context.json({ files: result.files, status: "ready" });
   });
 
   routes.get(
     "/api/v1/people/:personId/files/:fileId/content",
+    session,
     async (context) => {
-      const personId = uuid.safeParse(context.req.param("personId"));
-      const fileId = uuid.safeParse(context.req.param("fileId"));
-      if (!personId.success || !fileId.success) {
-        return unavailable(
-          context,
-          "not-found",
-        );
+      const personId = parseValue(uuid, context.req.param("personId"));
+      const fileId = parseValue(uuid, context.req.param("fileId"));
+      if ("errors" in personId || "errors" in fileId) {
+        return failure(context, "not-found");
       }
-      const resolved = await actor(context, services);
-      if (!resolved) {
-        return problem(
-          context,
-          401,
-          "session_invalid",
-          "Authentication required",
-          "Sign in with an active workspace membership.",
-        );
-      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
       const result = await services.files.download(
-        resolved,
+        actor,
         personId.data,
         fileId.data,
       ).catch(() => ({ status: "unavailable" as const }));
-      if (result.status !== "ready") return unavailable(context, result.status);
-      return new Response(result.bytes.slice().buffer, {
-        headers: {
-          "Cache-Control": "private, no-store",
-          "Content-Disposition": attachmentFilename(result.file.filename),
-          "Content-Length": String(result.bytes.byteLength),
-          "Content-Type": result.file.mimeType,
-          "X-Content-Type-Options": "nosniff",
-        },
+      if (result.status !== "ready") return failure(context, result);
+      return fileDownload({
+        bytes: result.bytes,
+        filename: result.file.filename,
+        mimeType: result.file.mimeType,
       });
     },
   );
 
-  routes.delete("/api/v1/people/:personId/files/:fileId", async (context) => {
-    const originFailure = requireOrigin(context, services.browserSecurity);
-    if (originFailure) return originFailure;
-    const personId = uuid.safeParse(context.req.param("personId"));
-    const fileId = uuid.safeParse(context.req.param("fileId"));
-    if (!personId.success || !fileId.success) {
-      return unavailable(context, "not-found");
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const result = await services.files.remove(
-      resolved,
-      personId.data,
-      fileId.data,
-    ).catch(() => ({ status: "unavailable" as const }));
-    if (result.status !== "removed") return unavailable(context, result.status);
-    context.header("Cache-Control", "private, no-store");
-    return context.json(result);
-  });
+  routes.delete(
+    "/api/v1/people/:personId/files/:fileId",
+    origin,
+    session,
+    async (context) => {
+      const personId = parseValue(uuid, context.req.param("personId"));
+      const fileId = parseValue(uuid, context.req.param("fileId"));
+      if ("errors" in personId || "errors" in fileId) {
+        return failure(context, "not-found");
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.files.remove(
+        actor,
+        personId.data,
+        fileId.data,
+      ).catch(() => ({ status: "unavailable" as const }));
+      if (result.status !== "removed") return failure(context, result);
+      context.header("Cache-Control", "private, no-store");
+      return context.json(result);
+    },
+  );
 
   return routes;
 }

@@ -9,20 +9,24 @@ import {
   type ActorEnv,
   actorOf,
   bearerToken,
+  readActor,
   requireActor,
+  requireSession,
+  type ResolvedSession,
   type ScopedTokenAuthority,
   type SessionActor,
   sessionActor,
   type SessionCoordinator,
   tokenOrSessionActor,
   WORKSPACE_HEADER,
+  workspaceScopedActor,
 } from "./session.ts";
 
 const member = fixtureActor();
 
 function coordinator(
   calls: { readonly sessionToken: string }[],
-  resolved: SessionActor | undefined = member,
+  resolved: ResolvedSession | undefined = member,
 ): SessionCoordinator {
   return {
     resolve(command) {
@@ -213,5 +217,107 @@ Deno.test("[GAP-019] a token authority that throws is nobody", async () => {
     (await response.json() as { readonly member: string | null }).member,
     null,
     "an outage in the token authority conceals",
+  );
+});
+
+Deno.test("[GAP-020] the wider reading keeps what the narrow one drops", async () => {
+  const calls: { readonly sessionToken: string }[] = [];
+  const app = new Hono<ActorEnv>();
+  app.get("/both", sessionActor(coordinator(calls)), async (context) => {
+    const actor = await requireActor(context);
+    const session = await requireSession(context);
+    if (actor instanceof Response || session instanceof Response) {
+      return context.json({ refused: true });
+    }
+    return context.json({
+      actor: Object.keys(actor).sort().join(","),
+      session: Object.keys(session).sort().join(","),
+    });
+  });
+
+  const response = await app.request("http://localhost/both", {
+    headers: { Cookie: "kinship_session=token" },
+  });
+
+  assertEquals(
+    await response.json(),
+    {
+      actor: "memberId,role,userId,workspaceId",
+      session:
+        "accessibleWorkspaces,memberId,role,userId,workspaceId,workspaceName",
+    },
+    "the membership is narrowed and the resolution is not",
+  );
+  assertEquals(calls.length, 1, "both readings share one resolution");
+});
+
+Deno.test("[GAP-020] a route may name its own workspace instead of the header", async () => {
+  const calls: { readonly requestedWorkspaceId?: string }[] = [];
+  const sessions = coordinator(calls as { sessionToken: string }[]);
+  const app = new Hono();
+  app.get("/scoped", async (context) => {
+    const actor = await workspaceScopedActor(
+      context,
+      sessions,
+      context.req.query("workspaceId"),
+    );
+    return context.json({ member: actor?.memberId ?? null });
+  });
+
+  const named = await app.request(
+    "http://localhost/scoped?workspaceId=workspace-9",
+    {
+      headers: { Cookie: "kinship_session=token", [WORKSPACE_HEADER]: "held" },
+    },
+  );
+  const unnamed = await app.request("http://localhost/scoped", {
+    headers: { Cookie: "kinship_session=token", [WORKSPACE_HEADER]: "held" },
+  });
+
+  assertStatus(named, 200);
+  assertEquals(
+    (await unnamed.json() as { readonly member: string | null }).member,
+    member.memberId,
+    "a request that names no workspace falls back to the header",
+  );
+  assertEquals(
+    calls.map((call) => call.requestedWorkspaceId).join(","),
+    "workspace-9,held",
+    "the query string wins, and only where there is one",
+  );
+});
+
+Deno.test("[GAP-020] one reading lets an outage through as a throw", async () => {
+  const offline: SessionCoordinator = {
+    resolve: () => Promise.reject(new Error("offline")),
+  };
+  const app = new Hono();
+  app.get("/guard", async (context) => {
+    const resolved = await readActor(context, offline).catch(() =>
+      "unavailable" as const
+    );
+    return context.json({ resolved });
+  });
+  app.get("/anonymous", async (context) => {
+    const resolved = await readActor(context, offline).catch(() =>
+      "unavailable" as const
+    );
+    return context.json({ resolved: resolved ?? null });
+  });
+
+  const outage = await app.request("http://localhost/guard", {
+    headers: { Cookie: "kinship_session=token" },
+  });
+  const anonymous = await app.request("http://localhost/anonymous");
+
+  assertEquals(
+    (await outage.json() as { readonly resolved: string }).resolved,
+    "unavailable",
+    "a session store that will not answer is not read as nobody",
+  );
+  assertEquals(
+    (await anonymous.json() as { readonly resolved: string | null }).resolved,
+    null,
+    "no cookie is still nobody, and costs no read",
   );
 });

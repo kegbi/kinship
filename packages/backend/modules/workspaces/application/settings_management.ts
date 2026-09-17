@@ -13,11 +13,17 @@
  * moves when reminders are due; planning owns that, so it is told inside the
  * same transaction and only when the value actually changed — a save that
  * re-sends the same timezone must not reschedule everybody.
+ *
+ * Both writes refuse an unschedulable timezone before they open a
+ * transaction, because a name the calendar cannot resolve would otherwise be
+ * stored and only discovered when a reminder came due. The route checked this
+ * with its own copy of the rule until GAP-020.
  */
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import {
   FALLBACK_TIMEZONE,
+  isSchedulableTimezone,
   type ManagedMember,
   managedMembers,
   type MemberPreferences,
@@ -114,8 +120,13 @@ export function createSettingsManagement(
       dependencies.transaction.run((transaction) =>
         dependencies.workspace.getPreferences({ ...actor, transaction })
       ),
-    updatePreferences: (actor: SettingsActor, input: MemberPreferences) =>
-      dependencies.transaction.run(async (transaction) => {
+    updatePreferences: (actor: SettingsActor, input: MemberPreferences) => {
+      if (
+        input.timezone !== undefined && !isSchedulableTimezone(input.timezone)
+      ) {
+        return Promise.resolve({ status: "invalid-timezone" as const });
+      }
+      return dependencies.transaction.run(async (transaction) => {
         const previous = await dependencies.workspace.getPreferences({
           ...actor,
           transaction,
@@ -143,7 +154,8 @@ export function createSettingsManagement(
           );
         }
         return { preferences, status: "ready" as const };
-      }),
+      });
+    },
     listSessions: (
       actor: SettingsActor,
       currentToken: string,
@@ -184,8 +196,14 @@ export function createSettingsManagement(
       dependencies.transaction.run((transaction) =>
         dependencies.workspace.getWorkspace({ ...actor, transaction })
       ),
-    updateWorkspace: (actor: SettingsActor, input: WorkspaceConfiguration) =>
-      dependencies.transaction.run(async (transaction) => {
+    updateWorkspace: (actor: SettingsActor, input: WorkspaceConfiguration) => {
+      if (
+        input.defaultTimezone !== undefined &&
+        !isSchedulableTimezone(input.defaultTimezone)
+      ) {
+        return Promise.resolve("invalid-timezone" as const);
+      }
+      return dependencies.transaction.run(async (transaction) => {
         const previous = await dependencies.workspace.getWorkspace({
           ...actor,
           transaction,
@@ -214,7 +232,8 @@ export function createSettingsManagement(
           );
         }
         return result;
-      }),
+      });
+    },
     listMembers: (actor: SettingsActor) =>
       dependencies.transaction.run(async (transaction) => {
         const memberships = await dependencies.workspace.listMembers({

@@ -277,3 +277,56 @@ Deno.test("[EXPORT-001] export HTTP maps concealed, expired, and unavailable sta
     "download mint origin enforced",
   );
 });
+
+Deno.test("[GAP-020] every export route names its own outage and needs a session", async () => {
+  const offline = () => Promise.reject(new Error("offline"));
+  const target = app("admin", {
+    createDownload: offline,
+    createWorkspace: offline,
+    download: offline,
+    exportVCard: offline,
+    list: offline,
+  } as unknown as ExportManagement);
+  const routes = [
+    {
+      detail: "Export history could not be loaded.",
+      method: "GET",
+      path: "/api/v1/exports",
+    },
+    {
+      detail: "The export artifact could not be completed.",
+      method: "POST",
+      path: "/api/v1/exports",
+    },
+    {
+      detail: "A download reference could not be issued.",
+      method: "POST",
+      path: `/api/v1/exports/${exportId}/downloads`,
+    },
+    {
+      detail: "The export artifact could not be read.",
+      method: "GET",
+      path: `/api/v1/exports/${exportId}/download?token=secret`,
+    },
+    {
+      detail: "This person could not be exported right now.",
+      method: "GET",
+      path: `/api/v1/people/${personId}/vcard`,
+    },
+  ];
+
+  for (const route of routes) {
+    const outage = await request(target, route.path, route.method);
+    const anonymous = await target.request(`http://localhost${route.path}`, {
+      headers: { origin: "http://localhost" },
+      method: route.method,
+    });
+    assertStatus(outage, 503, `${route.path} reports its own outage`);
+    assert(
+      ((await outage.json()) as { readonly detail: string }).detail ===
+        route.detail,
+      `${route.path} says what did not happen`,
+    );
+    assertStatus(anonymous, 401, `${route.path} needs a session`);
+  }
+});

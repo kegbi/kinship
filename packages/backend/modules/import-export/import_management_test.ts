@@ -335,16 +335,19 @@ Deno.test("[IMPORT-001] reports unsupported fields while concealing admin reads 
     stagedReport.counts.unsupported !== 2 ||
     !stagedReport.diagnostics.some((item) => item.code === "unsupported-data")
   ) throw new Error("complete diagnostics unavailable");
-  if ((await imports.list(actor)).length !== 1) {
+  const history = await imports.list(actor);
+  if (history.status !== "ready" || history.imports.length !== 1) {
     throw new Error("admin history unavailable");
   }
-  if (!(await imports.get(actor, ids[0]!))) {
+  if ((await imports.get(actor, ids[0]!)).status !== "ready") {
     throw new Error("admin report unavailable");
   }
+  // The role rule lives in the domain and every path asks it (GAP-020), so a
+  // member is refused rather than shown an empty history.
   const member = { ...actor, role: "member" as const };
   if (
-    (await imports.list(member)).length !== 0 ||
-    (await imports.get(member, ids[0]!)) !== undefined ||
+    (await imports.list(member)).status !== "forbidden" ||
+    (await imports.get(member, ids[0]!)).status !== "forbidden" ||
     (await imports.dryRun(member, {})).status !== "forbidden" ||
     (await imports.commit(member, ids[0]!, true)).status !== "forbidden"
   ) throw new Error("member import data was not concealed");

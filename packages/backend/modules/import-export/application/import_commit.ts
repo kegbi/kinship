@@ -17,6 +17,7 @@
 import {
   type ImportCommitResult,
   importedPerson,
+  mayImport,
 } from "../domain/import_rules.ts";
 import type { ImportActor } from "../ports/context.ts";
 import { active, type ImportManagementDependencies } from "./import_context.ts";
@@ -29,7 +30,7 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
       confirmed: boolean,
     ): Promise<ImportCommitResult> => {
       if (!confirmed) return { status: "confirmation-required" };
-      if (actor.role === "member") return { status: "forbidden" };
+      if (!mayImport(actor.role)) return { status: "forbidden" };
       return await dependencies.transaction.run(async (transaction) => {
         if (!(await active(dependencies, actor, transaction))) {
           return { status: "forbidden" as const };

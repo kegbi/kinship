@@ -8,16 +8,24 @@
  * have turned a database outage into a 500 instead of the 401 its neighbour
  * answered.
  *
- * The middleware here puts that resolution in `c.var.actor` once. It is stored
- * as a memoized thunk rather than an awaited value on purpose: a route that
- * refuses a request before it ever asks who is making it — a foreign `Origin`,
- * an unparsable body — must not pay for a session read, and the order in which
- * a route's checks answer must not change because a middleware now runs in
- * front of it. The first `actorOf(context)` resolves; later ones reuse it.
+ * The middleware here puts that resolution in `c.var` once. It is stored as a
+ * memoized thunk rather than an awaited value on purpose: a route that refuses
+ * a request before it ever asks who is making it — a foreign `Origin`, an
+ * unparsable body — must not pay for a session read, and the order in which a
+ * route's checks answer must not change because a middleware now runs in front
+ * of it. The first `actorOf(context)` resolves; later ones reuse it.
+ *
+ * Nine of those copies narrowed the coordinator's answer to the membership and
+ * four kept the whole of it, because their use cases are the ones that name
+ * the active workspace. Both readings are here: `actorOf` narrows, `sessionOf`
+ * does not, and neither costs a second resolution.
  */
 
 import type { Context, MiddlewareHandler } from "hono";
-import type { WorkspaceRole } from "../../../packages/backend/modules/workspaces/public.ts";
+import type {
+  ResolvedSessionContext,
+  WorkspaceRole,
+} from "../../../packages/backend/modules/workspaces/public.ts";
 import { cookieValue, SESSION_COOKIE } from "./cookies.ts";
 import { definedProblem, type ProblemDefinition } from "./problem.ts";
 
@@ -32,18 +40,38 @@ export interface SessionActor {
   readonly workspaceId: string;
 }
 
+/**
+ * Everything the coordinator knows about this request's session.
+ *
+ * Most routes want the membership and nothing else, which is what `actorOf`
+ * hands them. Four flows want more: the invitation, both lifecycle pages, and
+ * the session read name the active workspace, and the session read also lists
+ * the workspaces the same user could switch to. They ask for it explicitly
+ * through `sessionOf`, so the wider shape never leaks into a use case that
+ * asked for a membership.
+ */
+export type ResolvedSession = ResolvedSessionContext;
+
 /** What this module needs of the protected-session coordinator. */
 export interface SessionCoordinator {
   resolve(command: {
     readonly requestedWorkspaceId?: string;
     readonly sessionToken: string;
-  }): Promise<SessionActor | undefined>;
+  }): Promise<ResolvedSession | undefined>;
 }
 
-/** The context variable the middleware sets. */
+/**
+ * The context variables the middleware sets.
+ *
+ * Both are thunks over the same single resolution: `actor` narrows it to the
+ * membership, `session` hands back all of it. Each memoizes its own answer, so
+ * a route that asks twice gets the same object twice and the coordinator is
+ * still asked once.
+ */
 export interface ActorEnv {
   Variables: {
     actor: () => Promise<SessionActor | undefined>;
+    session: () => Promise<ResolvedSession | undefined>;
   };
 }
 
@@ -55,40 +83,65 @@ export const SESSION_INVALID: ProblemDefinition = {
   title: "Authentication required",
 };
 
-async function resolve(
+/** The coordinator's answer, outage and all. */
+function read(
   context: Context,
   sessions: SessionCoordinator,
-): Promise<SessionActor | undefined> {
+  requestedWorkspaceId: string | undefined,
+): Promise<ResolvedSession | undefined> {
   const sessionToken = cookieValue(
     context.req.header("Cookie"),
     SESSION_COOKIE,
   );
-  if (!sessionToken) return undefined;
-  const requestedWorkspaceId = context.req.header(WORKSPACE_HEADER);
-  const resolved = await sessions.resolve({
+  if (!sessionToken) return Promise.resolve(undefined);
+  return sessions.resolve({
     sessionToken,
     ...(requestedWorkspaceId ? { requestedWorkspaceId } : {}),
-  }).catch(() => undefined);
-  return resolved
-    ? {
-      memberId: resolved.memberId,
-      role: resolved.role,
-      userId: resolved.userId,
-      workspaceId: resolved.workspaceId,
-    }
-    : undefined;
+  });
 }
 
-/** Puts the session resolution for this request in `c.var.actor`. */
+/** The same, with an outage concealed as nobody. */
+function resolve(
+  context: Context,
+  sessions: SessionCoordinator,
+  requestedWorkspaceId: string | undefined,
+): Promise<ResolvedSession | undefined> {
+  return read(context, sessions, requestedWorkspaceId).catch(() => undefined);
+}
+
+/** The membership, and nothing else, out of a wider resolution. */
+function membership(resolved: ResolvedSession): SessionActor {
+  return {
+    memberId: resolved.memberId,
+    role: resolved.role,
+    userId: resolved.userId,
+    workspaceId: resolved.workspaceId,
+  };
+}
+
+/** Puts the session resolution for this request in `c.var`. */
 export function sessionActor(
   sessions: SessionCoordinator,
 ): MiddlewareHandler<ActorEnv> {
   return async (context, next) => {
-    let resolved: Promise<SessionActor | undefined> | undefined;
-    context.set("actor", () => {
-      resolved ??= resolve(context, sessions);
+    let resolved: Promise<ResolvedSession | undefined> | undefined;
+    let narrowed: Promise<SessionActor | undefined> | undefined;
+    const session = () => {
+      resolved ??= resolve(
+        context,
+        sessions,
+        context.req.header(WORKSPACE_HEADER),
+      );
       return resolved;
-    });
+    };
+    context.set("session", session);
+    context.set(
+      "actor",
+      () => {
+        narrowed ??= session().then((value) => value && membership(value));
+        return narrowed;
+      },
+    );
     await next();
   };
 }
@@ -106,6 +159,64 @@ export async function requireActor(
 ): Promise<SessionActor | Response> {
   return await actorOf(context) ??
     definedProblem(context, SESSION_INVALID);
+}
+
+/** The whole resolution, for a route that names the active workspace. */
+export function sessionOf(
+  context: Context<ActorEnv>,
+): Promise<ResolvedSession | undefined> {
+  return context.var.session();
+}
+
+/** The same, or the 401 a route answers instead. */
+export async function requireSession(
+  context: Context<ActorEnv>,
+): Promise<ResolvedSession | Response> {
+  return await sessionOf(context) ?? definedProblem(context, SESSION_INVALID);
+}
+
+/**
+ * The member behind a request that names its workspace somewhere else.
+ *
+ * Two export routes are opened from a link rather than from the application,
+ * so the workspace they mean arrives in the query string instead of the header
+ * everything else uses. They resolve on their own rather than through the
+ * middleware, because the answer depends on a value the middleware cannot see;
+ * a request that names no workspace falls back to the header, which is what
+ * makes the same two routes work from inside the application as well.
+ */
+export async function workspaceScopedActor(
+  context: Context,
+  sessions: SessionCoordinator,
+  requestedWorkspaceId: string | undefined,
+): Promise<SessionActor | undefined> {
+  const resolved = await resolve(
+    context,
+    sessions,
+    requestedWorkspaceId ?? context.req.header(WORKSPACE_HEADER),
+  );
+  return resolved && membership(resolved);
+}
+
+/**
+ * The member behind this request, without concealing an outage.
+ *
+ * The legal guard is the one caller that has to tell "nobody is signed in"
+ * from "the session store is down". The first lets a public route through; the
+ * second must refuse every route, because a guard that cannot check whether a
+ * document is outstanding may not decide that none is. Every other caller
+ * wants the concealing readings above.
+ */
+export async function readActor(
+  context: Context,
+  sessions: SessionCoordinator,
+): Promise<SessionActor | undefined> {
+  const resolved = await read(
+    context,
+    sessions,
+    context.req.header(WORKSPACE_HEADER),
+  );
+  return resolved && membership(resolved);
 }
 
 /** What this module needs of a scoped API-token authority. */

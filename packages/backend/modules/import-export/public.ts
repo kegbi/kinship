@@ -1,12 +1,16 @@
 export type {
   ImportCommitResult,
+  ImportListResult,
+  ImportReadResult,
   ImportReport,
+  ImportRole,
   ImportSummary,
   PreparedImportAvatar,
   PreparedImportCommit,
   PreparedImportContact,
   StagedContact,
 } from "./domain/import_rules.ts";
+export { mayImport } from "./domain/import_rules.ts";
 export type { ImportActor, ImportTransaction } from "./ports/context.ts";
 export type {
   ImportRepository,

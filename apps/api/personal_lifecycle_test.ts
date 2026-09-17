@@ -226,3 +226,47 @@ Deno.test("AUTH-005 exposes retryable bounded step-up rate limits", async () => 
   assert(limited.headers.get("Retry-After") === "47", "retry interval");
   assert(problem.code === "authentication_rate_limited", "bounded policy code");
 });
+
+Deno.test("[GAP-020] every account-lifecycle route needs a session and a body", async () => {
+  const anonymous = fixture({ resolved: false });
+  const body = JSON.stringify({
+    confirmation: "LEAVE Family",
+    password: "correct",
+  });
+  const routes = [
+    {
+      body: undefined,
+      method: "GET",
+      path: "/api/v1/settings/personal-lifecycle",
+    },
+    {
+      body,
+      method: "POST",
+      path: "/api/v1/settings/personal-lifecycle/leave",
+    },
+    { body, method: "DELETE", path: "/api/v1/settings/personal-lifecycle" },
+  ];
+
+  for (const route of routes) {
+    const response = await anonymous.request(route.path, {
+      ...(route.body ? { body: route.body } : {}),
+      headers,
+      method: route.method,
+    });
+    assertStatus(
+      response,
+      401,
+      `${route.method} ${route.path} needs a session`,
+    );
+  }
+
+  const malformed = await fixture().request(
+    "/api/v1/settings/personal-lifecycle",
+    { body: JSON.stringify({ confirmation: "" }), headers, method: "DELETE" },
+  );
+  const outage = await fixture({ previewResult: { status: "unavailable" } })
+    .request("/api/v1/settings/personal-lifecycle", { headers });
+
+  assertStatus(malformed, 400, "a deletion without a password is refused");
+  assertStatus(outage, 503, "a preview that cannot be revalidated says so");
+});

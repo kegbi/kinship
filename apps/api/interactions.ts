@@ -1,4 +1,17 @@
-import { type Context, Hono } from "hono";
+/**
+ * Interactions, communication, and the Today regions built on them, over HTTP.
+ *
+ * One write and six reads. The problem responder, the session cookie, the
+ * origin check, and the kernel status map came from `http/` (GAP-019,
+ * GAP-020).
+ *
+ * `hidden` and `forbidden` answer the same refusal on purpose: a section an
+ * administrator turned off and a membership that no longer permits the action
+ * are the same thing to the person looking at the page, and telling them apart
+ * would say which sections a workspace has configured.
+ */
+
+import { Hono } from "hono";
 import { z } from "zod";
 import type {
   CommunicationManagement,
@@ -10,6 +23,11 @@ import type { ActivityReport } from "../../packages/backend/read-models/activity
 import type { TodayInteractions } from "../../packages/backend/read-models/today/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
+import { failureResponder, type FailureTable } from "./http/failures.ts";
+import { requireMatchingOrigin } from "./http/origin.ts";
+import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { type ActorEnv, requireActor, sessionActor } from "./http/session.ts";
+import { parseJsonBody, parseQuery, parseValue } from "./http/validate.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
@@ -83,156 +101,153 @@ const optionsQuery = z.object({
   limit: z.coerce.number().int().min(1).max(20).default(20),
 }).strict();
 
-function problem(
-  context: Context,
-  status: 400 | 401 | 403 | 404 | 409 | 503,
-  code: string,
-  title: string,
-  detail: string,
-  errors?: Readonly<Record<string, string>>,
-) {
-  return context.body(
-    JSON.stringify({
-      type: `https://kinship.test/problems/${code}`,
-      title,
-      status,
-      detail,
-      code,
-      ...(errors ? { errors } : {}),
-    }),
-    status,
-    {
-      "Cache-Control": "no-store",
-      "Content-Type": "application/problem+json",
-    },
-  );
-}
-
-function cookieValue(header: string | undefined, name: string) {
-  return header?.split(";").map((value) => value.trim()).find((value) =>
-    value.startsWith(`${name}=`)
-  )?.slice(name.length + 1);
-}
-
-async function actor(context: Context, services: InteractionHttpServices) {
-  const sessionToken = cookieValue(
-    context.req.header("Cookie"),
-    "kinship_session",
-  );
-  if (!sessionToken) return undefined;
-  const requestedWorkspaceId = context.req.header("X-Workspace-Id");
-  const resolved = await services.protectedSessions.resolve({
-    sessionToken,
-    ...(requestedWorkspaceId ? { requestedWorkspaceId } : {}),
-  }).catch(() => undefined);
-  return resolved && {
-    memberId: resolved.memberId,
-    role: resolved.role,
-    userId: resolved.userId,
-    workspaceId: resolved.workspaceId,
-  };
-}
-
-function mutationFailure(
-  context: Context,
-  result: {
-    readonly errors?: Readonly<Record<string, string>>;
-    readonly status: string;
+/** What a refused interaction or communication says. */
+export const INTERACTION_FAILURES: FailureTable = {
+  fallback: {
+    code: "validation_failed",
+    detail: "Review the participants, occurrence time, and content.",
+    status: 400,
+    title: "Invalid interaction",
   },
-) {
-  if (result.status === "forbidden" || result.status === "hidden") {
-    return problem(
-      context,
-      403,
-      "interactions_forbidden",
-      "Interaction unavailable",
-      "Your active workspace membership or profile configuration no longer permits this action.",
-    );
-  }
-  if (result.status === "not-found") {
-    return problem(
-      context,
-      404,
-      "interaction_context_not_found",
-      "Interaction unavailable",
-      "A selected person, activity type, or emotion does not exist in the active workspace.",
-    );
-  }
-  if (result.status === "archived-write-rejected") {
-    return problem(
-      context,
-      409,
-      "archived_write_rejected",
-      "Archived person is read-only",
-      "Restore every selected person before recording an interaction.",
-    );
-  }
-  if (result.status === "idempotency-conflict") {
-    return problem(
-      context,
-      409,
-      "interaction_request_conflict",
-      "Request identifier already used",
-      "Use a new request identifier when the interaction payload changes.",
-    );
-  }
-  if (result.status === "stale-cursor") {
-    return problem(
-      context,
-      409,
-      "interaction_cursor_stale",
-      "Interaction page changed",
-      "Restart this bounded option or report search.",
-    );
-  }
-  return problem(
-    context,
-    400,
-    "validation_failed",
-    "Invalid interaction",
-    "Review the participants, occurrence time, and content.",
-    result.errors,
-  );
-}
+  statuses: {
+    "archived-write-rejected": {
+      code: "archived_write_rejected",
+      detail: "Restore every selected person before recording an interaction.",
+      title: "Archived person is read-only",
+    },
+    forbidden: {
+      code: "interactions_forbidden",
+      detail:
+        "Your active workspace membership or profile configuration no longer permits this action.",
+      title: "Interaction unavailable",
+    },
+    hidden: {
+      code: "interactions_forbidden",
+      detail:
+        "Your active workspace membership or profile configuration no longer permits this action.",
+      status: 403,
+      title: "Interaction unavailable",
+    },
+    "idempotency-conflict": {
+      code: "interaction_request_conflict",
+      detail:
+        "Use a new request identifier when the interaction payload changes.",
+      status: 409,
+      title: "Request identifier already used",
+    },
+    "not-found": {
+      code: "interaction_context_not_found",
+      detail:
+        "A selected person, activity type, or emotion does not exist in the active workspace.",
+      title: "Interaction unavailable",
+    },
+    "stale-cursor": {
+      code: "interaction_cursor_stale",
+      detail: "Restart this bounded option or report search.",
+      status: 409,
+      title: "Interaction page changed",
+    },
+  },
+};
 
-function authenticationRequired(context: Context) {
-  return problem(
-    context,
-    401,
-    "session_invalid",
-    "Authentication required",
-    "Sign in with an active workspace membership.",
-  );
-}
+const failure = failureResponder(INTERACTION_FAILURES);
+
+const INTERACTION_REQUEST_INVALID: ProblemDefinition = {
+  code: "interaction_request_invalid",
+  detail: "Use supported interaction fields and canonical identifiers.",
+  status: 400,
+  title: "Invalid interaction",
+};
+const INTERACTION_NOT_SAVED: ProblemDefinition = {
+  code: "interactions_unavailable",
+  detail: "Nothing was saved. Try again when the service is available.",
+  status: 503,
+  title: "Interaction unavailable",
+};
+const COMMUNICATION_OPTIONS_UNAVAILABLE: ProblemDefinition = {
+  code: "communication_options_unavailable",
+  detail: "Try again before recording communication.",
+  status: 503,
+  title: "Communication options unavailable",
+};
+const COMMUNICATION_QUERY_INVALID: ProblemDefinition = {
+  code: "communication_query_invalid",
+  detail: "Use a canonical person identifier.",
+  status: 400,
+  title: "Invalid communication query",
+};
+const COMMUNICATIONS_UNAVAILABLE: ProblemDefinition = {
+  code: "communications_unavailable",
+  detail: "Saved communication was not changed.",
+  status: 503,
+  title: "Communication unavailable",
+};
+const OPTIONS_QUERY_INVALID: ProblemDefinition = {
+  code: "interaction_options_query_invalid",
+  detail: "Use bounded searches and opaque cursors.",
+  status: 400,
+  title: "Invalid options search",
+};
+const OPTIONS_UNAVAILABLE: ProblemDefinition = {
+  code: "interaction_options_unavailable",
+  detail: "Try again before recording an interaction.",
+  status: 503,
+  title: "Options unavailable",
+};
+const ACTIVITY_REPORT_QUERY_INVALID: ProblemDefinition = {
+  code: "activity_report_query_invalid",
+  detail: "Use a canonical person, year, and bounded page size.",
+  status: 400,
+  title: "Invalid activity report",
+};
+const ACTIVITY_REPORT_UNAVAILABLE: ProblemDefinition = {
+  code: "activity_report_unavailable",
+  detail: "Saved interactions were not changed.",
+  status: 503,
+  title: "Activity report unavailable",
+};
+const FAVORITE_NOTES_UNAVAILABLE: ProblemDefinition = {
+  code: "today_favorite_notes_unavailable",
+  detail: "Other Today regions remain available.",
+  status: 503,
+  title: "Favorite notes unavailable",
+};
+const RECENT_ACTIVITY_UNAVAILABLE: ProblemDefinition = {
+  code: "today_recent_activity_unavailable",
+  detail: "Other Today regions remain available.",
+  status: 503,
+  title: "Recent activity unavailable",
+};
+
+/** Every problem this file answers on its own, for the pinning suite. */
+export const INTERACTION_PROBLEMS: readonly ProblemDefinition[] = [
+  ACTIVITY_REPORT_QUERY_INVALID,
+  ACTIVITY_REPORT_UNAVAILABLE,
+  COMMUNICATION_OPTIONS_UNAVAILABLE,
+  COMMUNICATION_QUERY_INVALID,
+  COMMUNICATIONS_UNAVAILABLE,
+  FAVORITE_NOTES_UNAVAILABLE,
+  INTERACTION_NOT_SAVED,
+  INTERACTION_REQUEST_INVALID,
+  OPTIONS_QUERY_INVALID,
+  OPTIONS_UNAVAILABLE,
+  RECENT_ACTIVITY_UNAVAILABLE,
+];
 
 export function createInteractionRoutes(
   services: InteractionHttpServices,
-): Hono {
-  const routes = new Hono();
-  routes.post("/api/v1/interactions", async (context) => {
-    if (context.req.header("Origin") !== services.browserSecurity.origin) {
-      return problem(
-        context,
-        403,
-        "origin_invalid",
-        "Request forbidden",
-        "This request did not come from the configured application origin.",
-      );
+): Hono<ActorEnv> {
+  const routes = new Hono<ActorEnv>();
+  const session = sessionActor(services.protectedSessions);
+  const origin = requireMatchingOrigin(services.browserSecurity);
+
+  routes.post("/api/v1/interactions", origin, session, async (context) => {
+    const input = await parseJsonBody(context, inputSchema);
+    if ("errors" in input) {
+      return definedProblem(context, INTERACTION_REQUEST_INVALID);
     }
-    const input = inputSchema.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    if (!input.success) {
-      return problem(
-        context,
-        400,
-        "interaction_request_invalid",
-        "Invalid interaction",
-        "Use supported interaction fields and canonical identifiers.",
-      );
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
     const normalized = input.data.kind === "activity"
       ? {
         ...(input.data.activityTypeId
@@ -283,92 +298,64 @@ export function createInteractionRoutes(
     const result =
       await (input.data.kind === "activity" || input.data.kind === "note"
         ? services.interactions.record(
-          resolved,
+          actor,
           normalized as RecordInteractionInput,
         )
         : services.interactions.recordCommunication(
-          resolved,
+          actor,
           normalized as RecordCommunicationInput,
         ))
         .catch(() => undefined);
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "interactions_unavailable",
-        "Interaction unavailable",
-        "Nothing was saved. Try again when the service is available.",
-      );
-    }
-    if (result.status !== "created") return mutationFailure(context, result);
+    if (!result) return definedProblem(context, INTERACTION_NOT_SAVED);
+    if (result.status !== "created") return failure(context, result);
     context.header("Cache-Control", "private, no-store");
     return context.json(result, 201);
   });
 
-  routes.get("/api/v1/communication-options", async (context) => {
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const result = await services.interactions.communicationOptions(resolved)
+  routes.get("/api/v1/communication-options", session, async (context) => {
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.interactions.communicationOptions(actor)
       .catch(() => undefined);
     if (!result) {
-      return problem(
-        context,
-        503,
-        "communication_options_unavailable",
-        "Communication options unavailable",
-        "Try again before recording communication.",
-      );
+      return definedProblem(context, COMMUNICATION_OPTIONS_UNAVAILABLE);
     }
-    if (result.status !== "ready") return mutationFailure(context, result);
+    if (result.status !== "ready") return failure(context, result);
     context.header("Cache-Control", "private, no-store");
     return context.json(result);
   });
 
-  routes.get("/api/v1/people/:personId/communications", async (context) => {
-    const personId = id.safeParse(context.req.param("personId"));
-    if (!personId.success) {
-      return problem(
-        context,
-        400,
-        "communication_query_invalid",
-        "Invalid communication query",
-        "Use a canonical person identifier.",
-      );
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const result = await services.interactions.listCommunications(
-      resolved,
-      personId.data,
-    ).catch(() => undefined);
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "communications_unavailable",
-        "Communication unavailable",
-        "Saved communication was not changed.",
-      );
-    }
-    if (result.status !== "ready") return mutationFailure(context, result);
-    context.header("Cache-Control", "private, no-store");
-    return context.json(result);
-  });
+  routes.get(
+    "/api/v1/people/:personId/communications",
+    session,
+    async (context) => {
+      const personId = parseValue(id, context.req.param("personId"));
+      if ("errors" in personId) {
+        return definedProblem(context, COMMUNICATION_QUERY_INVALID);
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.interactions.listCommunications(
+        actor,
+        personId.data,
+      ).catch(() => undefined);
+      if (!result) {
+        return definedProblem(context, COMMUNICATIONS_UNAVAILABLE);
+      }
+      if (result.status !== "ready") return failure(context, result);
+      context.header("Cache-Control", "private, no-store");
+      return context.json(result);
+    },
+  );
 
-  routes.get("/api/v1/interaction-options", async (context) => {
-    const input = optionsQuery.safeParse(context.req.query());
-    if (!input.success) {
-      return problem(
-        context,
-        400,
-        "interaction_options_query_invalid",
-        "Invalid options search",
-        "Use bounded searches and opaque cursors.",
-      );
+  routes.get("/api/v1/interaction-options", session, async (context) => {
+    const input = parseQuery(context, optionsQuery);
+    if ("errors" in input) {
+      return definedProblem(context, OPTIONS_QUERY_INVALID);
     }
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const result = await services.interactions.options(resolved, {
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.interactions.options(actor, {
       ...(input.data.activityTypeCursor
         ? { activityTypeCursor: input.data.activityTypeCursor }
         : {}),
@@ -383,97 +370,65 @@ export function createInteractionRoutes(
         : {}),
       limit: input.data.limit,
     }).catch(() => undefined);
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "interaction_options_unavailable",
-        "Options unavailable",
-        "Try again before recording an interaction.",
-      );
-    }
-    if (result.status !== "ready") return mutationFailure(context, result);
+    if (!result) return definedProblem(context, OPTIONS_UNAVAILABLE);
+    if (result.status !== "ready") return failure(context, result);
     context.header("Cache-Control", "private, no-store");
     return context.json(result);
   });
 
-  routes.get("/api/v1/people/:personId/activity-report", async (context) => {
-    const personId = id.safeParse(context.req.param("personId"));
-    const input = reportQuery.safeParse(context.req.query());
-    if (!personId.success || !input.success) {
-      return problem(
-        context,
-        400,
-        "activity_report_query_invalid",
-        "Invalid activity report",
-        "Use a canonical person, year, and bounded page size.",
-      );
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const result = await services.activityReport.list(
-      resolved,
-      personId.data,
-      {
-        ...(input.data.cursor ? { cursor: input.data.cursor } : {}),
-        ...(input.data.kind ? { kind: input.data.kind } : {}),
-        limit: input.data.limit,
-        ...(input.data.year ? { year: input.data.year } : {}),
-      },
-    ).catch(() => undefined);
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "activity_report_unavailable",
-        "Activity report unavailable",
-        "Saved interactions were not changed.",
-      );
-    }
-    if (result.status === "forbidden") return mutationFailure(context, result);
-    if (result.status === "not-found") return mutationFailure(context, result);
-    if (result.status === "stale-cursor") {
-      return mutationFailure(context, result);
-    }
+  routes.get(
+    "/api/v1/people/:personId/activity-report",
+    session,
+    async (context) => {
+      const personId = parseValue(id, context.req.param("personId"));
+      const input = parseQuery(context, reportQuery);
+      if ("errors" in personId || "errors" in input) {
+        return definedProblem(context, ACTIVITY_REPORT_QUERY_INVALID);
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.activityReport.list(
+        actor,
+        personId.data,
+        {
+          ...(input.data.cursor ? { cursor: input.data.cursor } : {}),
+          ...(input.data.kind ? { kind: input.data.kind } : {}),
+          limit: input.data.limit,
+          ...(input.data.year ? { year: input.data.year } : {}),
+        },
+      ).catch(() => undefined);
+      if (!result) {
+        return definedProblem(context, ACTIVITY_REPORT_UNAVAILABLE);
+      }
+      if (
+        result.status === "forbidden" || result.status === "not-found" ||
+        result.status === "stale-cursor"
+      ) return failure(context, result);
+      context.header("Cache-Control", "private, no-store");
+      return context.json(result);
+    },
+  );
+
+  routes.get("/api/v1/today/favorite-notes", session, async (context) => {
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.today.getFavoriteNotes(actor).catch(() =>
+      undefined
+    );
+    if (!result) return definedProblem(context, FAVORITE_NOTES_UNAVAILABLE);
+    if (result.status === "forbidden") return failure(context, result);
     context.header("Cache-Control", "private, no-store");
     return context.json(result);
   });
 
-  routes.get("/api/v1/today/favorite-notes", async (context) => {
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const result = await services.today.getFavoriteNotes(resolved).catch(() =>
+  routes.get("/api/v1/today/recent-activity", session, async (context) => {
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.today.getRecentActivity(actor).catch(() =>
       undefined
     );
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "today_favorite_notes_unavailable",
-        "Favorite notes unavailable",
-        "Other Today regions remain available.",
-      );
-    }
-    if (result.status === "forbidden") return mutationFailure(context, result);
-    context.header("Cache-Control", "private, no-store");
-    return context.json(result);
-  });
-  routes.get("/api/v1/today/recent-activity", async (context) => {
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const result = await services.today.getRecentActivity(resolved).catch(() =>
-      undefined
-    );
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "today_recent_activity_unavailable",
-        "Recent activity unavailable",
-        "Other Today regions remain available.",
-      );
-    }
-    if (result.status === "forbidden") return mutationFailure(context, result);
+    if (!result) return definedProblem(context, RECENT_ACTIVITY_UNAVAILABLE);
+    if (result.status === "forbidden") return failure(context, result);
     context.header("Cache-Control", "private, no-store");
     return context.json(result);
   });

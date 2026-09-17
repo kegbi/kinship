@@ -184,3 +184,111 @@ Deno.test("DAV HTTP maps authentication, validation, authorization, lookup, and 
     "invalid identifier hidden",
   );
 });
+
+Deno.test("[GAP-020] a run that reached the remote reports its outcome at 200", async () => {
+  for (
+    const outcome of [
+      "auth-failure",
+      "conflict",
+      "disabled",
+      "partial",
+      "success",
+    ] as const
+  ) {
+    const response = await app({
+      synchronize: () =>
+        Promise.resolve(
+          { status: outcome, subscription } as Awaited<
+            ReturnType<DavSyncManagement["synchronize"]>
+          >,
+        ),
+    }).request(
+      `https://api.example.test/api/v1/settings/integrations/dav/${id}/sync`,
+      {
+        headers,
+        method: "POST",
+      },
+    );
+
+    assertStatus(response, 200, `a ${outcome} run is a state, not a refusal`);
+    assert(
+      (await response.text()).includes(`"status":"${outcome}"`),
+      `the ${outcome} outcome reaches the page`,
+    );
+  }
+});
+
+Deno.test("[GAP-020] every DAV route needs a session, an origin, and a real id", async () => {
+  const offline = () => Promise.reject(new Error("offline"));
+  const down = app({
+    configure: offline,
+    disable: offline,
+    list: offline,
+    synchronize: offline,
+  } as unknown as Partial<DavSyncManagement>);
+  const routes = [
+    { detail: "Integrations could not be loaded.", method: "GET", path: "" },
+    {
+      detail: "The integration could not be configured.",
+      method: "POST",
+      path: "",
+    },
+    {
+      detail: "Synchronization could not finish.",
+      method: "POST",
+      path: `/${id}/sync`,
+    },
+    {
+      detail: "The integration could not be disabled.",
+      method: "DELETE",
+      path: `/${id}`,
+    },
+  ];
+  const body = JSON.stringify({
+    name: "DAV",
+    password: "remote-secret",
+    remoteUrl: "https://dav.example.test/collection/",
+    username: "ada",
+  });
+
+  for (const route of routes) {
+    const url =
+      `https://api.example.test/api/v1/settings/integrations/dav${route.path}`;
+    const sent = route.method === "GET" ? {} : { body };
+    const outage = await down.request(url, {
+      ...sent,
+      headers,
+      method: route.method,
+    });
+    const anonymous = await app().request(url, {
+      ...sent,
+      headers: { Origin: headers.Origin },
+      method: route.method,
+    });
+    assertStatus(outage, 503, `${route.method} ${url} reports its outage`);
+    assert(
+      ((await outage.json()) as { readonly detail: string }).detail ===
+        route.detail,
+      `${route.method} ${url} says what did not happen`,
+    );
+    assertStatus(anonymous, 401, `${route.method} ${url} needs a session`);
+  }
+
+  for (const path of [`/${id}/sync`, `/${id}`]) {
+    const foreign = await app().request(
+      `https://api.example.test/api/v1/settings/integrations/dav${path}`,
+      {
+        headers: { ...headers, Origin: "https://attacker.test" },
+        method: path.endsWith("sync") ? "POST" : "DELETE",
+      },
+    );
+    const malformed = await app().request(
+      `https://api.example.test/api/v1/settings/integrations/dav${
+        path.replace(id, "not-a-uuid")
+      }`,
+      { headers, method: path.endsWith("sync") ? "POST" : "DELETE" },
+    );
+    assertStatus(foreign, 403, `${path} refuses a foreign origin`);
+    assertStatus(malformed, 404, `${path} conceals a malformed identifier`);
+  }
+});

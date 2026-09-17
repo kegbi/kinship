@@ -785,7 +785,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     browser headers; `/livez` and `/readyz` wait for the Phase 6 infrastructure
     tickets to be referenced.
 
-- [ ] **GAP-020 — Migrate the remaining 15 route files to the HTTP kit.** M-L.
+- [x] **GAP-020 — Migrate the remaining 15 route files to the HTTP kit.** M-L.
       Depends: 019.
   - Scope: api_tokens, authentication, exports, files, governance, imports,
     integrations, interactions, invitations, people, personal_lifecycle,
@@ -798,6 +798,27 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     paths if any.
   - Verify: all `apps/api/*_test.ts` and integration suites green; removable
     scaffold (≈ 2,200 lines) gone.
+  - Delivered 2026-09-17: all fifteen route files are on the HTTP kit with their
+    refusals as `FailureTable`s and named `ProblemDefinition`s, every code,
+    title, and detail preserved and checked mechanically against the
+    pre-migration literals; 84 duplicated helpers (1628 lines of scaffold) are
+    gone and `function problem(` exists once, in `http/`; the IANA time-zone
+    rule is `isSchedulableTimezone` in the workspaces settings domain and the
+    use case refuses `invalid-timezone` itself, cookie composition is the kit's
+    `setCookie`, client addresses go through `http/client_address.ts` (a strict
+    IPv4 and RFC 4291 IPv6 parser that refuses zone ids, brackets, and ports),
+    the imports role gate is `mayImport` in the import domain asked by all four
+    paths, and `personalization_router.ts` lost its one dead replacement path;
+    the kit grew `readActor`, `sessionOf`, `workspaceScopedActor`, problem
+    extensions, and a shared private-download helper; the only wire-visible
+    change is governance's problem `type` host normalised from `kinship.invalid`
+    to `kinship.test` and the body key order unified, which no contract, test,
+    or client read; route files went from 7857 to 7066 lines; 41 files changed
+    (+6516/-5746) plus 4 new files (406 lines); unit 718 vitest plus all sets
+    green, integration 126/0, every coverage set unchanged or higher per file
+    (governance 84.8 to 99.4 line), contracts:check, build, and astro-readiness
+    green, baseline 14 unchanged; gates fmt:check, lint, check,
+    check:architecture.
 
 - [ ] **GAP-021 — Split people.ts, settings.ts, invitations.ts by concern.** M.
       Depends: 020.

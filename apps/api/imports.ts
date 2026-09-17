@@ -1,4 +1,21 @@
-import { type Context, Hono } from "hono";
+/**
+ * Importing a Monica export over HTTP.
+ *
+ * Two reads and two writes. What is left here is the staging envelope — the
+ * three places a source is measured before it is parsed — and the prose each
+ * refusal carries; the problem responder, the session cookie, the origin
+ * check, and the kernel status map came from `http/` (GAP-019, GAP-020), and
+ * the rule that only an owner or an administrator may import moved into the
+ * import use case, which now answers `forbidden` for all four paths instead of
+ * two of them being decided here (GAP-020).
+ *
+ * The dry run does not use the shared body reader. It has to weigh the raw
+ * text against its own 1.5 MB envelope before anything parses it, and then
+ * weigh the `source` member again on its own, so the envelope is refused by
+ * size rather than by running out of memory.
+ */
+
+import { Hono } from "hono";
 import { z } from "zod";
 import type { ImportManagement } from "../../packages/backend/modules/import-export/public.ts";
 import {
@@ -7,6 +24,11 @@ import {
 } from "../../packages/contracts/imports.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
+import { failureResponder, type FailureTable } from "./http/failures.ts";
+import { requireMatchingOrigin } from "./http/origin.ts";
+import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { type ActorEnv, requireActor, sessionActor } from "./http/session.ts";
+import { parseValue } from "./http/validate.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface ImportHttpServices {
@@ -17,145 +39,138 @@ export interface ImportHttpServices {
 
 const uuid = z.uuid();
 
-function problem(
-  context: Context,
-  status: 400 | 401 | 403 | 404 | 413 | 503,
-  code: string,
-  title: string,
-  detail: string,
-) {
-  return context.body(
-    JSON.stringify({
-      type: `https://kinship.test/problems/${code}`,
-      title,
-      status,
-      detail,
-      code,
-    }),
-    status,
-    {
-      "Cache-Control": "no-store",
-      "Content-Type": "application/problem+json",
+const IMPORT_FORBIDDEN = {
+  code: "import_forbidden",
+  detail: "Workspace import is available to owners and administrators only.",
+  title: "Import unavailable",
+} as const;
+const IMPORT_NOT_FOUND: ProblemDefinition = {
+  code: "import_not_found",
+  detail: "This import does not exist in the active workspace.",
+  status: 404,
+  title: "Import unavailable",
+};
+const CONFIRMATION_REQUIRED: ProblemDefinition = {
+  code: "import_confirmation_required",
+  detail: "Confirm the validated dry-run before committing it.",
+  status: 400,
+  title: "Confirmation required",
+};
+const IMPORT_TOO_LARGE: ProblemDefinition = {
+  code: "import_too_large",
+  detail: "The Monica JSON source exceeds the 1.5 MB staging limit.",
+  status: 413,
+  title: "Import too large",
+};
+
+/** What a refused read of import history says. */
+export const IMPORT_HISTORY_FAILURES: FailureTable = {
+  fallback: IMPORT_NOT_FOUND,
+  statuses: {
+    forbidden: IMPORT_FORBIDDEN,
+    "not-found": {
+      code: IMPORT_NOT_FOUND.code,
+      detail: IMPORT_NOT_FOUND.detail,
+      title: IMPORT_NOT_FOUND.title,
     },
-  );
-}
-function cookieValue(header: string | undefined, name: string) {
-  return header?.split(";").map((value) => value.trim()).find((value) =>
-    value.startsWith(`${name}=`)
-  )?.slice(name.length + 1);
-}
-async function actor(context: Context, services: ImportHttpServices) {
-  const sessionToken = cookieValue(
-    context.req.header("Cookie"),
-    "kinship_session",
-  );
-  if (!sessionToken) return undefined;
-  const requestedWorkspaceId = context.req.header("X-Workspace-Id");
-  const resolved = await services.protectedSessions.resolve({
-    sessionToken,
-    ...(requestedWorkspaceId ? { requestedWorkspaceId } : {}),
-  }).catch(() => undefined);
-  return resolved
-    ? {
-      memberId: resolved.memberId,
-      role: resolved.role,
-      userId: resolved.userId,
-      workspaceId: resolved.workspaceId,
-    }
-    : undefined;
-}
-function requireOrigin(context: Context, policy: BrowserSecurityPolicy) {
-  return context.req.header("Origin") === policy.origin ? undefined : problem(
-    context,
-    403,
-    "origin_invalid",
-    "Request forbidden",
-    "This request did not come from the configured application origin.",
-  );
-}
-async function authenticate(context: Context, services: ImportHttpServices) {
-  const resolved = await actor(context, services);
-  return resolved ?? problem(
-    context,
-    401,
-    "session_invalid",
-    "Authentication required",
-    "Sign in with an active workspace membership.",
-  );
-}
-function forbidden(context: Context) {
-  return problem(
-    context,
-    403,
-    "import_forbidden",
-    "Import unavailable",
-    "Workspace import is available to owners and administrators only.",
-  );
+  },
+};
+
+/**
+ * What a refused dry run or commit says.
+ *
+ * `not-found` says "validated" where the history table does not: a commit
+ * names a run the member has already seen a report for, so the sentence tells
+ * them which of their runs is gone rather than that some import is missing.
+ */
+export const IMPORT_WRITE_FAILURES: FailureTable = {
+  fallback: CONFIRMATION_REQUIRED,
+  statuses: {
+    "confirmation-required": {
+      code: CONFIRMATION_REQUIRED.code,
+      detail: CONFIRMATION_REQUIRED.detail,
+      status: CONFIRMATION_REQUIRED.status,
+      title: CONFIRMATION_REQUIRED.title,
+    },
+    forbidden: IMPORT_FORBIDDEN,
+    "not-found": {
+      code: "import_not_found",
+      detail: "This validated import does not exist in the active workspace.",
+      title: "Import unavailable",
+    },
+  },
+};
+
+const historyFailure = failureResponder(IMPORT_HISTORY_FAILURES);
+const writeFailure = failureResponder(IMPORT_WRITE_FAILURES);
+
+/** The rejected source, carrying the sentence the parser produced. */
+export function importSourceInvalid(detail: string): ProblemDefinition {
+  return {
+    code: "import_invalid",
+    detail,
+    status: 400,
+    title: "Import source invalid",
+  };
 }
 
-export function createImportRoutes(services: ImportHttpServices): Hono {
-  const routes = new Hono();
-  routes.get("/api/v1/imports", async (context) => {
-    const authenticated = await authenticate(context, services);
-    if (authenticated instanceof Response) return authenticated;
-    if (authenticated.role === "member") return forbidden(context);
+/** Every problem this file answers on its own, for the pinning suite. */
+export const IMPORT_PROBLEMS: readonly ProblemDefinition[] = [
+  CONFIRMATION_REQUIRED,
+  IMPORT_NOT_FOUND,
+  IMPORT_TOO_LARGE,
+];
+
+/** The byte length of a UTF-8 encoding of `value`. */
+function encodedBytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+/** The `source` member of a staging envelope, if it has one at all. */
+function stagedSource(body: unknown): unknown {
+  return body !== null && typeof body === "object" && !Array.isArray(body) &&
+      "source" in body
+    ? (body as { source: unknown }).source
+    : undefined;
+}
+
+export function createImportRoutes(
+  services: ImportHttpServices,
+): Hono<ActorEnv> {
+  const routes = new Hono<ActorEnv>();
+  const session = sessionActor(services.protectedSessions);
+  const origin = requireMatchingOrigin(services.browserSecurity);
+
+  routes.get("/api/v1/imports", session, async (context) => {
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.imports.list(actor);
+    if (result.status !== "ready") return historyFailure(context, result);
     context.header("Cache-Control", "private, no-store");
-    return context.json({
-      imports: await services.imports.list(authenticated),
-    });
+    return context.json({ imports: result.imports });
   });
-  routes.get("/api/v1/imports/:importId", async (context) => {
-    const importId = uuid.safeParse(context.req.param("importId"));
-    if (!importId.success) {
-      return problem(
-        context,
-        404,
-        "import_not_found",
-        "Import unavailable",
-        "This import does not exist in the active workspace.",
-      );
+
+  routes.get("/api/v1/imports/:importId", session, async (context) => {
+    const importId = parseValue(uuid, context.req.param("importId"));
+    if ("errors" in importId) {
+      return definedProblem(context, IMPORT_NOT_FOUND);
     }
-    const authenticated = await authenticate(context, services);
-    if (authenticated instanceof Response) return authenticated;
-    if (authenticated.role === "member") return forbidden(context);
-    const result = await services.imports.get(authenticated, importId.data);
-    if (!result) {
-      return problem(
-        context,
-        404,
-        "import_not_found",
-        "Import unavailable",
-        "This import does not exist in the active workspace.",
-      );
-    }
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.imports.get(actor, importId.data);
+    if (result.status !== "ready") return historyFailure(context, result);
     context.header("Cache-Control", "private, no-store");
-    return context.json(result);
+    return context.json(result.import);
   });
-  routes.post("/api/v1/imports/dry-runs", async (context) => {
-    const origin = requireOrigin(context, services.browserSecurity);
-    if (origin) return origin;
+
+  routes.post("/api/v1/imports/dry-runs", origin, session, async (context) => {
     const declared = Number(context.req.header("Content-Length") ?? 0);
     if (declared > IMPORT_HTTP_ENVELOPE_MAX_BYTES) {
-      return problem(
-        context,
-        413,
-        "import_too_large",
-        "Import too large",
-        "The Monica JSON source exceeds the 1.5 MB staging limit.",
-      );
+      return definedProblem(context, IMPORT_TOO_LARGE);
     }
     const raw = await context.req.text();
-    if (
-      new TextEncoder().encode(raw).byteLength >
-        IMPORT_HTTP_ENVELOPE_MAX_BYTES
-    ) {
-      return problem(
-        context,
-        413,
-        "import_too_large",
-        "Import too large",
-        "The Monica JSON source exceeds the 1.5 MB staging limit.",
-      );
+    if (encodedBytes(raw) > IMPORT_HTTP_ENVELOPE_MAX_BYTES) {
+      return definedProblem(context, IMPORT_TOO_LARGE);
     }
     const body = (() => {
       try {
@@ -164,81 +179,45 @@ export function createImportRoutes(services: ImportHttpServices): Hono {
         return undefined;
       }
     })();
-    const authenticated = await authenticate(context, services);
-    if (authenticated instanceof Response) return authenticated;
-    const source = body !== null && typeof body === "object" &&
-        !Array.isArray(body) && "source" in body
-      ? (body as { source: unknown }).source
-      : undefined;
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const source = stagedSource(body);
     if (
       source !== undefined &&
-      new TextEncoder().encode(JSON.stringify(source)).byteLength >
-        IMPORT_SOURCE_MAX_BYTES
+      encodedBytes(JSON.stringify(source)) > IMPORT_SOURCE_MAX_BYTES
     ) {
-      return problem(
-        context,
-        413,
-        "import_too_large",
-        "Import too large",
-        "The Monica JSON source exceeds the 1.5 MB staging limit.",
-      );
+      return definedProblem(context, IMPORT_TOO_LARGE);
     }
-    const result = await services.imports.dryRun(authenticated, source);
-    if (result.status === "forbidden") return forbidden(context);
+    const result = await services.imports.dryRun(actor, source);
     if (result.status === "invalid-source") {
-      return problem(
-        context,
-        400,
-        "import_invalid",
-        "Import source invalid",
-        result.detail,
-      );
+      return definedProblem(context, importSourceInvalid(result.detail));
     }
+    if (result.status !== "dry_run") return writeFailure(context, result);
     return context.json(result, 201);
   });
-  routes.post("/api/v1/imports/:importId/commit", async (context) => {
-    const origin = requireOrigin(context, services.browserSecurity);
-    if (origin) return origin;
-    const importId = uuid.safeParse(context.req.param("importId"));
-    const body = await context.req.json().catch(() => undefined) as
-      | { readonly confirmed?: unknown }
-      | undefined;
-    if (!importId.success || body?.confirmed !== true) {
-      return problem(
-        context,
-        400,
-        "import_confirmation_required",
-        "Confirmation required",
-        "Confirm the validated dry-run before committing it.",
+
+  routes.post(
+    "/api/v1/imports/:importId/commit",
+    origin,
+    session,
+    async (context) => {
+      const importId = parseValue(uuid, context.req.param("importId"));
+      const body = await context.req.json().catch(() => undefined) as
+        | { readonly confirmed?: unknown }
+        | undefined;
+      if ("errors" in importId || body?.confirmed !== true) {
+        return definedProblem(context, CONFIRMATION_REQUIRED);
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.imports.commit(
+        actor,
+        importId.data,
+        true,
       );
-    }
-    const authenticated = await authenticate(context, services);
-    if (authenticated instanceof Response) return authenticated;
-    const result = await services.imports.commit(
-      authenticated,
-      importId.data,
-      true,
-    );
-    if (result.status === "forbidden") return forbidden(context);
-    if (result.status === "not-found") {
-      return problem(
-        context,
-        404,
-        "import_not_found",
-        "Import unavailable",
-        "This validated import does not exist in the active workspace.",
-      );
-    }
-    if (result.status === "confirmation-required") {
-      return problem(
-        context,
-        400,
-        "import_confirmation_required",
-        "Confirmation required",
-        "Confirm the validated dry-run before committing it.",
-      );
-    }
-    return context.json(result);
-  });
+      if (result.status !== "completed") return writeFailure(context, result);
+      return context.json(result);
+    },
+  );
   return routes;
 }

@@ -427,7 +427,14 @@ Deno.test("WORKSPACE-001 HTTP enforces role outcomes, origin, and validation", a
     },
   );
   assertStatus(invalidOrigin, 403, "mutations require exact origin");
-  const invalidTimezone = await app.request(
+  // The rule that decides this lives in the settings use case (GAP-020); the
+  // route's job is to turn its refusal back into the field the form marks.
+  const unschedulable = createSettingsRoutes(services(settings({
+    updatePreferences: () =>
+      Promise.resolve({ status: "invalid-timezone" as const }),
+    updateWorkspace: () => Promise.resolve("invalid-timezone" as const),
+  })));
+  const invalidTimezone = await unschedulable.request(
     "http://localhost/api/v1/settings/preferences",
     {
       method: "PUT",
@@ -451,6 +458,28 @@ Deno.test("WORKSPACE-001 HTTP enforces role outcomes, origin, and validation", a
     invalidTimezoneProblem.errors?.timezone ===
       "Enter a valid IANA time zone.",
     "invalid time zone identifies its responsible field",
+  );
+  const invalidWorkspaceTimezone = await unschedulable.request(
+    "http://localhost/api/v1/settings/workspace",
+    {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        defaultLocale: "en",
+        defaultReminderTime: "12:00",
+        defaultTimezone: "Not/AZone",
+        name: "Circle",
+      }),
+    },
+  );
+  assertStatus(invalidWorkspaceTimezone, 400, "invalid default zone rejected");
+  const workspaceTimezoneProblem = await invalidWorkspaceTimezone.json() as {
+    readonly errors?: Readonly<Record<string, string>>;
+  };
+  assert(
+    workspaceTimezoneProblem.errors?.defaultTimezone ===
+      "Enter a valid IANA time zone.",
+    "an invalid workspace default names its own field",
   );
 
   const unsupported = createSettingsRoutes(services(settings({
