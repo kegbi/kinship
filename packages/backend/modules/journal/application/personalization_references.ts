@@ -9,5 +9,5 @@ export interface JournalPersonalizationReferences {
     readonly replacementId: string;
     readonly transaction: { readonly opaque: unknown };
     readonly workspaceId: string;
-  }): Promise<void>;
+  }): Promise<"conflict" | "replaced">;
 }

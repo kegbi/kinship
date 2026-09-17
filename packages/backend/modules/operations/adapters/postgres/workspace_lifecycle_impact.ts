@@ -1,23 +1,11 @@
-import { sql } from "kysely";
-import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { workspaceLifecycleImpact } from "../../../../platform/postgres/lifecycle_impact.ts";
 
-export class PostgresOperationsWorkspaceLifecycleImpact {
-  async inspectBeforeCascade(
-    command: {
-      readonly transaction: { readonly opaque: unknown };
-      readonly workspaceId: string;
-    },
-  ) {
-    const result = await sql<{ operations: number; revision: string }>`
-      select count(*)::int as operations,
-        md5(coalesce(jsonb_agg(to_jsonb(snapshot) order by snapshot.id), '[]'::jsonb)::text) as revision
-      from crm.statistics_snapshots snapshot
-      where snapshot.workspace_id = ${command.workspaceId}::uuid
-    `.execute(databaseFromSession(command.transaction));
-    const row = result.rows[0]!;
-    return {
-      counts: { operations: row.operations },
-      revision: row.revision,
-    };
-  }
-}
+/**
+ * What a workspace cascade destroys in operations. One table, so the digest
+ * hashes that array on its own rather than a labelled object.
+ */
+export const PostgresOperationsWorkspaceLifecycleImpact =
+  workspaceLifecycleImpact({
+    counts: { operations: "crm.statistics_snapshots" },
+    revision: "crm.statistics_snapshots@id",
+  });

@@ -16,5 +16,5 @@ export interface InteractionPersonalizationReferences {
     readonly section: InteractionReferenceSection;
     readonly transaction: { readonly opaque: unknown };
     readonly workspaceId: string;
-  }): Promise<void>;
+  }): Promise<"conflict" | "replaced">;
 }
