@@ -31,4 +31,3 @@ export type {
   PeopleTagOptionsRepository,
   PeopleTagOptionsRepositoryResult,
 } from "./application/list_tag_options.ts";
-export { PostgresPeopleDirectoryRepository } from "./adapters/postgres/people_directory_repository.ts";

@@ -1,9 +1,9 @@
+import { type RandomSource } from "./public.ts";
 import {
   AesGcmMfaSecretBox,
-  Argon2idPasswordHasher,
   decodeMfaEncryptionKeyset,
-  type RandomSource,
-} from "./public.ts";
+} from "./adapters/crypto/totp.ts";
+import { Argon2idPasswordHasher } from "./adapters/crypto/argon2id.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

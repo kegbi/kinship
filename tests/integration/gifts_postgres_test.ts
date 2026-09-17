@@ -1,23 +1,35 @@
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import {
   createGiftManagement,
-  PostgresGiftAttachmentTarget,
-  PostgresGiftRepository,
 } from "../../packages/backend/modules/gifts/public.ts";
-import { PostgresGiftAttachmentBoundary } from "../../packages/backend/modules/files/public.ts";
 import { giftAuditFrom } from "../../packages/backend/modules/gifts/public.ts";
-import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
-import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/public.ts";
-import {
-  PostgresActorRevalidation,
-  PostgresWorkspaceCurrencyBoundary,
-} from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
+import {
+  PostgresGiftAttachmentTarget,
+} from "../../packages/backend/modules/gifts/adapters/postgres/gift_attachment_target.ts";
+import {
+  PostgresGiftRepository,
+} from "../../packages/backend/modules/gifts/adapters/postgres/gift_repository.ts";
+import {
+  PostgresGiftAttachmentBoundary,
+} from "../../packages/backend/modules/files/adapters/postgres/gift_attachment_boundary.ts";
+import {
+  PostgresAuditEventRecorder,
+} from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
+import {
+  PostgresPeopleTransaction,
+} from "../../packages/backend/modules/people/adapters/postgres/people_repository.ts";
+import {
+  PostgresActorRevalidation,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
+import {
+  PostgresWorkspaceCurrencyBoundary,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/currency_boundary.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

@@ -1,16 +1,22 @@
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import {
   createLegalAcceptance,
-  PostgresLegalAcceptanceRepository,
 } from "../../packages/backend/modules/governance/public.ts";
-import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/public.ts";
-import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
+import {
+  PostgresLegalAcceptanceRepository,
+} from "../../packages/backend/modules/governance/adapters/postgres/legal_acceptance_repository.ts";
+import {
+  PostgresPeopleTransaction,
+} from "../../packages/backend/modules/people/adapters/postgres/people_repository.ts";
+import {
+  PostgresActorRevalidation,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

@@ -13,13 +13,6 @@ import {
   createProfileFactManagement,
   type PeopleActor,
   type PeopleRepository,
-  PostgresImportantDateRepository,
-  PostgresPeopleRepository,
-  PostgresPeopleTransaction,
-  PostgresPersonLifecycleRepository,
-  PostgresProfileFactOrganizations,
-  PostgresProfileFactRepository,
-  PostgresRelationshipPersonBoundary,
 } from "../../packages/backend/modules/people/public.ts";
 import {
   importantDateAuditFrom,
@@ -28,20 +21,14 @@ import {
   profileFactAuditFrom,
 } from "../../packages/backend/modules/people/public.ts";
 import { relationshipAuditFrom } from "../../packages/backend/modules/relationships/public.ts";
-import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import {
   type ActorRevalidation,
   DEFAULT_RELATIONSHIP_TYPE_VOCABULARY,
-  PostgresActorRevalidation,
-  PostgresProfileFactConfiguration,
-  PostgresRelationshipWorkspaceBoundary,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import {
   createRelationshipManagement,
-  PostgresRelationshipRepository,
   type RelationshipDependencies,
 } from "../../packages/backend/modules/relationships/public.ts";
-import { PostgresPersonDateReminderPublisher } from "../../packages/backend/modules/planning/public.ts";
 import {
   type ApplicationDatabase,
   connectDatabase,
@@ -49,12 +36,53 @@ import {
 import {
   createPeopleDirectory,
   createPeopleTagOptions,
-  PostgresPeopleDirectoryRepository,
 } from "../../packages/backend/read-models/people-directory/public.ts";
 import {
   createPersonProfile,
-  PostgresPersonProfileRepository,
 } from "../../packages/backend/read-models/person-profile/public.ts";
+import {
+  PostgresImportantDateRepository,
+} from "../../packages/backend/modules/people/adapters/postgres/important_date_repository.ts";
+import {
+  PostgresPeopleRepository,
+  PostgresPeopleTransaction,
+} from "../../packages/backend/modules/people/adapters/postgres/people_repository.ts";
+import {
+  PostgresPersonLifecycleRepository,
+} from "../../packages/backend/modules/people/adapters/postgres/person_lifecycle_repository.ts";
+import {
+  PostgresProfileFactOrganizations,
+} from "../../packages/backend/modules/people/adapters/postgres/profile_fact_organizations.ts";
+import {
+  PostgresProfileFactRepository,
+} from "../../packages/backend/modules/people/adapters/postgres/profile_fact_repository.ts";
+import {
+  PostgresRelationshipPersonBoundary,
+} from "../../packages/backend/modules/people/adapters/postgres/relationship_person_boundary.ts";
+import {
+  PostgresAuditEventRecorder,
+} from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
+import {
+  PostgresActorRevalidation,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
+import {
+  PostgresProfileFactConfiguration,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/profile_fact_configuration.ts";
+import {
+  PostgresRelationshipWorkspaceBoundary,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/relationship_workspace_boundary.ts";
+import {
+  PostgresRelationshipRepository,
+} from "../../packages/backend/modules/relationships/adapters/postgres/relationship_repository.ts";
+import {
+  PostgresPersonDateReminderPublisher,
+} from "../../packages/backend/modules/planning/adapters/postgres/person_date_reminders.ts";
+import {
+  PostgresPeopleDirectoryRepository,
+} from "../../packages/backend/read-models/people-directory/adapters/postgres/people_directory_repository.ts";
+import {
+  PostgresPersonProfileRepository,
+} from "../../packages/backend/read-models/person-profile/adapters/postgres/person_profile_repository.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

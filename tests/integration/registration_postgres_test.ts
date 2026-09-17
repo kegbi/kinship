@@ -4,18 +4,22 @@ import {
   createConfiguredApiApp,
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
-import {
-  PostgresIdentityRegistration,
-} from "../../packages/backend/modules/identity/public.ts";
 import { registrationAuditFrom } from "../../packages/backend/modules/workspaces/public.ts";
-import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import {
   DEFAULT_RELATIONSHIP_TYPE_VOCABULARY,
-  PostgresRegistrationTransaction,
-  PostgresWorkspaceRegistration,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import { applyCanonicalSchema } from "../../tools/migrations/baseline.ts";
+import {
+  PostgresIdentityRegistration,
+} from "../../packages/backend/modules/identity/adapters/postgres/identity_repository.ts";
+import {
+  PostgresAuditEventRecorder,
+} from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
+import {
+  PostgresRegistrationTransaction,
+  PostgresWorkspaceRegistration,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/registration_repository.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

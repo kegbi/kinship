@@ -1,11 +1,7 @@
-export { PostgresInteractionPersonalizationReferences } from "./adapters/postgres/personalization_references.ts";
-export { PostgresJournalActivityBoundary } from "./adapters/postgres/journal_activity_boundary.ts";
 export type { JournalActivityReference } from "./application/journal_activity_reference.ts";
 export type { InteractionPersonalizationReferences } from "./application/personalization_references.ts";
 export { createInteractionManagement } from "./application/record_interaction.ts";
-export { PostgresInteractionRepository } from "./adapters/postgres/interaction_repository.ts";
 export { createCommunicationManagement } from "./application/record_communication.ts";
-export { PostgresCommunicationRepository } from "./adapters/postgres/communication_repository.ts";
 export type {
   CallRecord,
   CommunicationAudit,
@@ -33,7 +29,6 @@ export type {
   RecordInteractionResult,
   StoredInteraction,
 } from "./application/record_interaction.ts";
-export { PostgresInteractionWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
 export {
   communicationAuditFrom,
   interactionAuditFrom,

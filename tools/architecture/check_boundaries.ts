@@ -12,7 +12,7 @@
  * and the repository's source files, and returns violations — so the same
  * engine backs both the repository gate and its regression suite.
  *
- * Five rules:
+ * Seven rules:
  *
  * 1. `manifest-schema` — the manifest satisfies `module-boundaries.schema.json`.
  * 2. `table-ownership` — every canonical table has exactly one owning module,
@@ -40,6 +40,13 @@
  *    one file, and one table, and it never excuses a `table-access` breach.
  * 5. `cycle` — neither the declared dependencies nor the real module imports
  *    form a cycle.
+ * 6. `composition` — a unit's `composition.ts` is where that unit builds its
+ *    own adapters. Only a declared composition root may import one, plus the
+ *    unit's own files, so the adapter registry cannot leak back out through a
+ *    second door once `public.ts` stopped being one.
+ * 7. `public-surface` — a declared public entry point exports types, factories,
+ *    and pure helpers. It never re-exports a value from its own `adapters/`,
+ *    which is what made `public.ts` an adapter registry before GAP-013.
  *
  * Known violations live in `tools/architecture/boundary-baseline.json`. The
  * check fails on any violation missing from the baseline and on any baseline
@@ -58,7 +65,9 @@ export type BoundaryRule =
   | "layer"
   | "table-access"
   | "table-foreign-read"
-  | "cycle";
+  | "cycle"
+  | "composition"
+  | "public-surface";
 
 export interface Violation {
   readonly rule: BoundaryRule;
@@ -671,6 +680,9 @@ function layerViolations(
       // already owns every adapter import, composition roots included.
       if (target.path === unit?.path) continue;
       if (resolved.includes("/adapters/")) continue;
+      // A unit's `composition.ts` is not a facade and never will be; the
+      // `composition` rule below decides who may import one.
+      if (resolved === `${target.path}/composition.ts`) continue;
 
       // Everything else — another unit's file, whether the importer is a
       // module, a read model, an app, or a tool — enters through the facade.
@@ -869,6 +881,95 @@ function cycleViolations(
   return violations;
 }
 
+/** A unit's own composition file, the one place it may build its adapters. */
+function compositionFileOf(unit: Unit): string {
+  return `${unit.path}/composition.ts`;
+}
+
+/**
+ * Per-module composition files are private to the roots.
+ *
+ * `public.ts` stopped exporting adapter classes, so `composition.ts` is now the
+ * only reachable name for them. This rule keeps that name reachable from the
+ * declared roots alone: anything else importing it would rebuild the registry
+ * the ticket removed.
+ */
+function compositionViolations(
+  input: BoundaryInput,
+  manifest: Manifest,
+  units: readonly Unit[],
+): Violation[] {
+  const violations: Violation[] = [];
+  const compositionRoots = new Set(manifest.compositionRoots);
+  for (const file of input.files) {
+    if (compositionRoots.has(file.path)) continue;
+    const importer = owningUnit(file.path, units);
+    for (const specifier of importSpecifiers(file.text)) {
+      const resolved = resolveSpecifier(file.path, specifier);
+      if (resolved === undefined) continue;
+      const target = owningUnit(resolved, units);
+      if (target === undefined) continue;
+      if (resolved !== compositionFileOf(target)) continue;
+      // A unit composes itself freely; nobody else may.
+      if (importer?.path === target.path) continue;
+      violations.push({
+        rule: "composition",
+        subject: file.path,
+        detail:
+          `${resolved} is ${target.id}'s composition file and this file is not a declared composition root`,
+      });
+    }
+  }
+  return violations;
+}
+
+/** `export ... from "..."`, with whether every exported name is a type. */
+const EXPORT_FROM =
+  /export\s+(type\s+)?(\*|\{[^}]*\})\s*from\s*["']([^"']+)["']/g;
+
+function exportsOnlyTypes(clause: string, typeKeyword: boolean): boolean {
+  if (typeKeyword) return true;
+  if (!clause.startsWith("{")) return false;
+  const names = clause.slice(1, -1).split(",").map((name) => name.trim())
+    .filter((name) => name.length > 0);
+  return names.length > 0 &&
+    names.every((name) => /^type\s/.test(name));
+}
+
+/**
+ * A public entry point is a facade, not an adapter registry.
+ *
+ * Re-exporting an adapter class from `public.ts` made every consumer able to
+ * construct infrastructure while appearing to obey the layer rule. Types are
+ * still fine — a keyset or an options shape carries no implementation.
+ */
+function publicSurfaceViolations(
+  input: BoundaryInput,
+  manifest: Manifest,
+): Violation[] {
+  const violations: Violation[] = [];
+  const entryPoints = new Set([
+    ...manifest.modules.flatMap((module) => module.publicEntryPoints),
+    ...manifest.readModels.flatMap((model) => model.publicEntryPoints),
+  ]);
+  for (const file of input.files) {
+    if (!entryPoints.has(file.path)) continue;
+    for (const match of file.text.matchAll(EXPORT_FROM)) {
+      const clause = match[2] ?? "";
+      if (exportsOnlyTypes(clause, match[1] !== undefined)) continue;
+      const resolved = resolveSpecifier(file.path, match[3] ?? "");
+      if (resolved === undefined || !resolved.includes("/adapters/")) continue;
+      violations.push({
+        rule: "public-surface",
+        subject: file.path,
+        detail:
+          `${resolved} is an adapter and a public entry point may re-export only its types`,
+      });
+    }
+  }
+  return violations;
+}
+
 // --- The checker ---------------------------------------------------------
 
 function sortViolations(violations: readonly Violation[]): Violation[] {
@@ -909,6 +1010,8 @@ export function inspectBoundaries(input: BoundaryInput): Violation[] {
     ...layerViolations(input, manifest, units),
     ...tableAccessViolations(input, manifest),
     ...cycleViolations(input, manifest, units),
+    ...compositionViolations(input, manifest, units),
+    ...publicSurfaceViolations(input, manifest),
   ]);
 }
 

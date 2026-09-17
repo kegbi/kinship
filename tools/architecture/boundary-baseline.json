@@ -1,16 +1,6 @@
 {
-  "note": "Architecture violations this repository already had when GAP-005 added tools/architecture/check_boundaries.ts. The checker fails on any violation missing from this list and on any entry here that no longer occurs, so the list can only shrink. Do not add an entry to make a new change pass. What is left after GAP-011 is deliberate: fourteen ordinary reads of a declared dependency's tables that are not the actor join, and the two SMTP adapter imports GAP-013 owns.",
+  "note": "Architecture violations this repository already had when GAP-005 added tools/architecture/check_boundaries.ts. The checker fails on any violation missing from this list and on any entry here that no longer occurs, so the list can only shrink. Do not add an entry to make a new change pass. What is left after GAP-013 is deliberate: fourteen ordinary reads of a declared dependency's tables that are not the actor join.",
   "violations": [
-    {
-      "rule": "layer",
-      "subject": "apps/api/main.ts",
-      "detail": "packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail.ts is an adapter and this file is not a declared composition root"
-    },
-    {
-      "rule": "layer",
-      "subject": "tools/operations/private_production_preflight.ts",
-      "detail": "packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail.ts is an adapter and this file is not a declared composition root"
-    },
     {
       "rule": "table-foreign-read",
       "subject": "packages/backend/modules/files/adapters/postgres/file_metadata_repository.ts",

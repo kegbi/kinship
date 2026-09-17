@@ -1,12 +1,16 @@
-import {
-  createObjectStorageRequestTransport,
-  DeclaredMediaScanner,
-  S3CompatibleObjectStorage,
-  WebCryptoFileIdentifiers,
-  WebCryptoObjectKeys,
-} from "./public.ts";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import {
+  createObjectStorageRequestTransport,
+  S3CompatibleObjectStorage,
+} from "./adapters/object_storage/s3_compatible_object_storage.ts";
+import {
+  DeclaredMediaScanner,
+} from "./adapters/scanning/declared_media_scanner.ts";
+import {
+  WebCryptoFileIdentifiers,
+  WebCryptoObjectKeys,
+} from "./adapters/crypto/file_identifiers.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

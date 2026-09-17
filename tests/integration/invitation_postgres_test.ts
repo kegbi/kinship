@@ -1,4 +1,3 @@
-import { PostgresActiveWorkspaceResolver } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import { sql as kyselySql } from "kysely";
 import {
@@ -6,25 +5,42 @@ import {
   createConfiguredApiApp,
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
-import {
-  AesGcmMfaSecretBox,
-  PostgresEmailVerification,
-  PostgresIdentityAuthentication,
-  PostgresInvitationIdentity,
-  SecureTokenService,
-  WebCryptoRandomSource,
-} from "../../packages/backend/modules/identity/public.ts";
 import { invitationAuditFrom } from "../../packages/backend/modules/workspaces/public.ts";
-import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import {
   createWorkspaceInvitationCoordinator,
   type InvitationAudit,
-  PostgresRegistrationTransaction,
-  PostgresWorkspaceInvitations,
   type WorkspaceInvitationRepository,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import { databaseFromSession } from "../../packages/backend/platform/postgres/session.ts";
+import {
+  PostgresActiveWorkspaceResolver,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
+import {
+  AesGcmMfaSecretBox,
+} from "../../packages/backend/modules/identity/adapters/crypto/totp.ts";
+import {
+  PostgresEmailVerification,
+} from "../../packages/backend/modules/identity/adapters/postgres/email_verification.ts";
+import {
+  PostgresIdentityAuthentication,
+} from "../../packages/backend/modules/identity/adapters/postgres/authentication.ts";
+import {
+  PostgresInvitationIdentity,
+} from "../../packages/backend/modules/identity/adapters/postgres/invitation_identity.ts";
+import {
+  SecureTokenService,
+  WebCryptoRandomSource,
+} from "../../packages/backend/modules/identity/adapters/crypto/secure_tokens.ts";
+import {
+  PostgresAuditEventRecorder,
+} from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
+import {
+  PostgresRegistrationTransaction,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/registration_repository.ts";
+import {
+  PostgresWorkspaceInvitations,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/workspace_invitations.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

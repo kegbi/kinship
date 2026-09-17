@@ -32,4 +32,3 @@ export type {
   PersonTimelineKind,
   PersonTimelineRepository,
 } from "./application/list_person_timeline.ts";
-export { PostgresPersonProfileRepository } from "./adapters/postgres/person_profile_repository.ts";

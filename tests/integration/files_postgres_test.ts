@@ -1,15 +1,8 @@
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import {
   createPersonFileManagement,
-  DeclaredMediaScanner,
-  PostgresFileMetadataRepository,
-  WebCryptoFileIdentifiers,
-  WebCryptoObjectKeys,
 } from "../../packages/backend/modules/files/public.ts";
 import { fileAuditFrom } from "../../packages/backend/modules/files/public.ts";
-import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
-import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/public.ts";
-import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
@@ -17,13 +10,32 @@ import {
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import type { ObjectStorage } from "../../packages/backend/modules/files/public.ts";
-import {
-  createObjectStorageRequestTransport,
-  S3CompatibleObjectStorage,
-} from "../../packages/backend/modules/files/public.ts";
 import { Client as MinioClient } from "minio";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import {
+  DeclaredMediaScanner,
+} from "../../packages/backend/modules/files/adapters/scanning/declared_media_scanner.ts";
+import {
+  PostgresFileMetadataRepository,
+} from "../../packages/backend/modules/files/adapters/postgres/file_metadata_repository.ts";
+import {
+  WebCryptoFileIdentifiers,
+  WebCryptoObjectKeys,
+} from "../../packages/backend/modules/files/adapters/crypto/file_identifiers.ts";
+import {
+  PostgresAuditEventRecorder,
+} from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
+import {
+  PostgresPeopleTransaction,
+} from "../../packages/backend/modules/people/adapters/postgres/people_repository.ts";
+import {
+  PostgresActorRevalidation,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
+import {
+  createObjectStorageRequestTransport,
+  S3CompatibleObjectStorage,
+} from "../../packages/backend/modules/files/adapters/object_storage/s3_compatible_object_storage.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

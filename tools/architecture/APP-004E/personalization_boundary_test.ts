@@ -45,7 +45,7 @@ Deno.test("APP-004E personalization adapters keep table ownership boundaries", a
   );
 
   const router = await Deno.readTextFile(
-    "apps/api/personalization_repository.ts",
+    "apps/api/personalization_router.ts",
   );
   assert(
     router.indexOf("workspace.authorize(command)") <

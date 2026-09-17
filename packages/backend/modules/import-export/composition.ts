@@ -1,0 +1,64 @@
+/**
+ * Import-export composition. Only a declared composition root imports it.
+ *
+ * Both use cases are pure orchestration over other modules' boundaries, so
+ * every collaborator arrives as a port.
+ */
+
+import type { SharedComposition } from "../../platform/composition.ts";
+import {
+  PostgresExportRepository,
+  PostgresExportTransaction,
+} from "./adapters/postgres/export_repository.ts";
+import {
+  PostgresImportRepository,
+  PostgresImportTransaction,
+} from "./adapters/postgres/import_repository.ts";
+import { PostgresImportExportWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
+import {
+  createExportManagement,
+  createImportManagement,
+  type ExportFileBoundary,
+} from "./public.ts";
+import { exportAuditFrom, importAuditFrom } from "../governance/public.ts";
+import type { FileImportBoundary } from "../files/public.ts";
+import type {
+  PeopleExportBoundary,
+  PeopleImportBoundary,
+} from "../people/public.ts";
+
+export interface ImportExportPorts {
+  readonly exportFiles: ExportFileBoundary;
+  readonly exportPeople: PeopleExportBoundary;
+  readonly importFiles: FileImportBoundary;
+  readonly importPeople: PeopleImportBoundary;
+}
+
+export function composeImportExport(
+  shared: SharedComposition,
+  ports: ImportExportPorts,
+) {
+  return {
+    exports: createExportManagement({
+      actors: shared.actors,
+      audit: exportAuditFrom(shared.audit),
+      clock: shared.clock,
+      files: ports.exportFiles,
+      ids: { next: () => shared.ids.create() },
+      people: ports.exportPeople,
+      repository: new PostgresExportRepository(),
+      tokens: { next: () => crypto.randomUUID() },
+      transaction: new PostgresExportTransaction(shared.database),
+    }),
+    imports: createImportManagement({
+      actors: shared.actors,
+      audit: importAuditFrom(shared.audit),
+      files: ports.importFiles,
+      ids: { next: () => shared.ids.create() },
+      people: ports.importPeople,
+      repository: new PostgresImportRepository(shared.database),
+      transaction: new PostgresImportTransaction(shared.database),
+    }),
+    lifecycleImpact: PostgresImportExportWorkspaceLifecycleImpact,
+  };
+}

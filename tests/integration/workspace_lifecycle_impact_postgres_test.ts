@@ -18,21 +18,43 @@ import {
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
-import { PostgresFileWorkspaceLifecycleImpact } from "../../packages/backend/modules/files/public.ts";
-import { PostgresGiftWorkspaceLifecycleImpact } from "../../packages/backend/modules/gifts/public.ts";
-import { PostgresGovernanceWorkspaceLifecycleImpact } from "../../packages/backend/modules/governance/public.ts";
-import { PostgresImportExportWorkspaceLifecycleImpact } from "../../packages/backend/modules/import-export/public.ts";
-import { PostgresIntegrationWorkspaceLifecycleImpact } from "../../packages/backend/modules/integrations/public.ts";
-import { PostgresInteractionWorkspaceLifecycleImpact } from "../../packages/backend/modules/interactions/public.ts";
-import { PostgresJournalWorkspaceLifecycleImpact } from "../../packages/backend/modules/journal/public.ts";
-import { PostgresOperationsWorkspaceLifecycleImpact } from "../../packages/backend/modules/operations/public.ts";
-import { PostgresPeopleWorkspaceLifecycleImpact } from "../../packages/backend/modules/people/public.ts";
-import { PostgresPlanningWorkspaceLifecycleImpact } from "../../packages/backend/modules/planning/public.ts";
-import { PostgresRelationshipWorkspaceLifecycleImpact } from "../../packages/backend/modules/relationships/public.ts";
 import type {
   WorkspaceLifecycleCascadeParticipant,
   WorkspaceLifecycleImpactContribution,
 } from "../../packages/backend/modules/workspaces/public.ts";
+import {
+  PostgresFileWorkspaceLifecycleImpact,
+} from "../../packages/backend/modules/files/adapters/postgres/workspace_lifecycle_impact.ts";
+import {
+  PostgresGiftWorkspaceLifecycleImpact,
+} from "../../packages/backend/modules/gifts/adapters/postgres/workspace_lifecycle_impact.ts";
+import {
+  PostgresGovernanceWorkspaceLifecycleImpact,
+} from "../../packages/backend/modules/governance/adapters/postgres/workspace_lifecycle_impact.ts";
+import {
+  PostgresImportExportWorkspaceLifecycleImpact,
+} from "../../packages/backend/modules/import-export/adapters/postgres/workspace_lifecycle_impact.ts";
+import {
+  PostgresIntegrationWorkspaceLifecycleImpact,
+} from "../../packages/backend/modules/integrations/adapters/postgres/workspace_lifecycle_impact.ts";
+import {
+  PostgresInteractionWorkspaceLifecycleImpact,
+} from "../../packages/backend/modules/interactions/adapters/postgres/workspace_lifecycle_impact.ts";
+import {
+  PostgresJournalWorkspaceLifecycleImpact,
+} from "../../packages/backend/modules/journal/adapters/postgres/workspace_lifecycle_impact.ts";
+import {
+  PostgresOperationsWorkspaceLifecycleImpact,
+} from "../../packages/backend/modules/operations/adapters/postgres/workspace_lifecycle_impact.ts";
+import {
+  PostgresPeopleWorkspaceLifecycleImpact,
+} from "../../packages/backend/modules/people/adapters/postgres/workspace_lifecycle_impact.ts";
+import {
+  PostgresPlanningWorkspaceLifecycleImpact,
+} from "../../packages/backend/modules/planning/adapters/postgres/workspace_lifecycle_impact.ts";
+import {
+  PostgresRelationshipWorkspaceLifecycleImpact,
+} from "../../packages/backend/modules/relationships/adapters/postgres/workspace_lifecycle_impact.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

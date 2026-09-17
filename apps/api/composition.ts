@@ -1,294 +1,189 @@
+/**
+ * The API composition root.
+ *
+ * Every adapter in this deployment is built by the module that owns it, in
+ * that module's `composition.ts`. What is left here is what no single module
+ * owns: the shared context they all receive, the order they are composed in,
+ * and the four seams that cross modules — the workspace-cascade impact map,
+ * the personalization router, the DAV bridges into people and planning, and
+ * planning's hook into a settings timezone change.
+ *
+ * `createApiApp` is the route wiring and takes services; `createConfiguredApiApp`
+ * is the real deployment; `createApiRuntime` reads the environment and is what
+ * `main.ts` serves.
+ */
+
 import { Hono } from "hono";
-import { sql } from "kysely";
+import { type Kysely, sql } from "kysely";
 import { HEALTH_RESPONSE } from "../../packages/contracts/health.ts";
 import {
-  AesGcmMfaSecretBox,
-  Argon2idPasswordHasher,
-  createPasswordRecovery,
-  type MfaEncryptionKeyset,
-  PostgresEmailVerification,
-  PostgresIdentityAccountSettings,
-  PostgresIdentityAuthentication,
-  PostgresIdentityPersonalLifecycle,
-  PostgresIdentityRegistration,
-  PostgresInvitationIdentity,
-  PostgresPasswordRecoveryRepository,
-  SecureTokenService,
-  WebCryptoRandomSource,
-} from "../../packages/backend/modules/identity/public.ts";
-import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+  type ApplicationDatabase,
+  connectDatabase,
+} from "../../packages/backend/platform/postgres/database.ts";
+import type { SharedComposition } from "../../packages/backend/platform/composition.ts";
 import {
-  authenticationAuditFrom,
-  type AuthenticationResponseEqualizer,
-  createMemberUiStateManagement,
-  createPersonalizationManagement,
-  createPersonalLifecycle,
-  createProtectedSessionCoordinator,
-  createRecentPeopleManagement,
-  createVerificationDeliveryRetry,
-  createWorkspaceLifecycle,
-  invitationAuditFrom,
-  type MemberUiStateManagement,
-  personalLifecycleAuditFrom,
-  PostgresActiveWorkspaceResolver,
-  PostgresActorRevalidation,
-  PostgresMemberUiStateRepository,
-  PostgresPersonalLifecycleMemberships,
-  PostgresProfileFactConfiguration,
-  PostgresRecentPeopleRepository,
-  PostgresRegistrationTransaction,
-  PostgresRelationshipWorkspaceBoundary,
-  PostgresWorkspaceCurrencyBoundary,
-  PostgresWorkspaceInvitations,
-  PostgresWorkspaceLifecycleRepository,
-  PostgresWorkspaceLifecycleSecurityAudit,
-  PostgresWorkspacePersonalization,
-  PostgresWorkspaceRegistration,
-  PostgresWorkspaceSettings,
-  registrationAuditFrom,
-  settingsAuditFrom,
-  type SettingsPlanningPublisher,
-  workspaceResetActivityAuditFrom,
-} from "../../packages/backend/modules/workspaces/public.ts";
+  type EnvironmentReader,
+  resolveDatabaseUrl,
+} from "../../packages/backend/platform/postgres/config.ts";
 import {
-  createFirstWorkspaceRegistration,
-  type VerificationMail,
-} from "../../packages/backend/modules/workspaces/public.ts";
+  composeApiAccess,
+} from "../../packages/backend/modules/api-access/composition.ts";
 import {
-  resolveSmtpVerificationMailOptions,
-  SmtpVerificationMail,
-} from "../../packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail.ts";
-import {
-  createLegalAcceptance,
-  exportAuditFrom,
-  importAuditFrom,
-  type LegalAcceptance,
-  PostgresAuditEventRecorder,
-  PostgresGovernanceWorkspaceLifecycleImpact,
-  PostgresLegalAcceptanceRepository,
-} from "../../packages/backend/modules/governance/public.ts";
-import { createWorkspaceInvitationCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
-import {
-  apiTokenAuditFrom,
   type ApiTokenManagement,
-  AuthenticationSubjectDigester,
   type AuthenticationSubjectKeyset,
-  createApiTokenManagement,
-  PostgresApiTokenRepository,
-  PostgresApiTokenTransaction,
-  PostgresAuthenticationAttemptBudget,
-  WebCryptoApiTokenSecrets,
+  decodeAuthenticationSubjectKeyset,
 } from "../../packages/backend/modules/api-access/public.ts";
 import {
-  AesGcmDavSecretBox,
-  createDavSyncManagement,
-  davAuditFrom,
-  type DavEncryptionKeyset,
-  type DavRemoteClient,
-  type DavSyncManagement,
-  HttpDavClient,
-  PostgresDavRepository,
+  composeFiles,
+  composeObjectStorage,
+} from "../../packages/backend/modules/files/composition.ts";
+import type {
+  ObjectStorage,
+  PersonFileManagement,
+  StorageSettings,
+} from "../../packages/backend/modules/files/public.ts";
+import {
+  composeGifts,
+  giftAttachmentTarget,
+} from "../../packages/backend/modules/gifts/composition.ts";
+import type { GiftManagement } from "../../packages/backend/modules/gifts/public.ts";
+import {
+  composeGovernance,
+  governanceAuditRecorder,
+} from "../../packages/backend/modules/governance/composition.ts";
+import type { LegalAcceptance } from "../../packages/backend/modules/governance/public.ts";
+import {
+  composeIdentity,
+  decodeMfaEncryptionKeyset,
+} from "../../packages/backend/modules/identity/composition.ts";
+import type { MfaEncryptionKeyset } from "../../packages/backend/modules/identity/public.ts";
+import { composeImportExport } from "../../packages/backend/modules/import-export/composition.ts";
+import type {
+  ExportManagement,
+  ImportManagement,
+} from "../../packages/backend/modules/import-export/public.ts";
+import {
+  composeDavSync,
+  composeIntegrations,
+  type DavPorts,
+  decodeDavEncryptionKeyset,
+} from "../../packages/backend/modules/integrations/composition.ts";
+import type {
+  DavEncryptionKeyset,
+  DavRemoteClient,
+  DavSyncManagement,
 } from "../../packages/backend/modules/integrations/public.ts";
 import {
-  createRegistrationRoutes,
-  type RegistrationHttpServices,
-} from "./registration.ts";
+  composeInteractions,
+  journalActivityBoundary,
+} from "../../packages/backend/modules/interactions/composition.ts";
+import type {
+  CommunicationManagement,
+  InteractionManagement,
+} from "../../packages/backend/modules/interactions/public.ts";
+import { composeJournal } from "../../packages/backend/modules/journal/composition.ts";
+import type { JournalManagement } from "../../packages/backend/modules/journal/public.ts";
+import { composeOperations } from "../../packages/backend/modules/operations/composition.ts";
+import {
+  composePeople,
+  peopleTransactionRunner,
+  personBoundary,
+} from "../../packages/backend/modules/people/composition.ts";
+import type { ImportantDateManagement } from "../../packages/backend/modules/people/public.ts";
+import {
+  composePlanning,
+  personDateReminderPublisher,
+} from "../../packages/backend/modules/planning/composition.ts";
+import type {
+  ReminderManagement,
+  TaskManagement,
+} from "../../packages/backend/modules/planning/public.ts";
+import { composeRelationships } from "../../packages/backend/modules/relationships/composition.ts";
+import type { RelationshipManagement } from "../../packages/backend/modules/relationships/public.ts";
+import {
+  activeWorkspaceResolver,
+  composeVerificationMail,
+  composeWorkspaceBoundaries,
+  composeWorkspaces,
+  passwordResetMail,
+  workspaceActors,
+  workspaceTransactionRunner,
+} from "../../packages/backend/modules/workspaces/composition.ts";
+import {
+  type AuthenticationResponseEqualizer,
+  createPersonalizationManagement,
+  type MemberUiStateManagement,
+  settingsAuditFrom,
+  type VerificationMail,
+} from "../../packages/backend/modules/workspaces/public.ts";
+import { composeActivityReport } from "../../packages/backend/read-models/activity-report/composition.ts";
+import type { ActivityReport } from "../../packages/backend/read-models/activity-report/public.ts";
+import { composeAuditHistory } from "../../packages/backend/read-models/audit-history/composition.ts";
+import type { AuditHistory } from "../../packages/backend/read-models/audit-history/public.ts";
+import { composeJournalTimeline } from "../../packages/backend/read-models/journal-timeline/composition.ts";
+import type { JournalTimeline } from "../../packages/backend/read-models/journal-timeline/public.ts";
+import { composePeopleDirectory } from "../../packages/backend/read-models/people-directory/composition.ts";
+import type {
+  PeopleDirectory,
+  PeopleTagOptions,
+} from "../../packages/backend/read-models/people-directory/public.ts";
+import { composePersonProfile } from "../../packages/backend/read-models/person-profile/composition.ts";
+import type { PersonProfile } from "../../packages/backend/read-models/person-profile/public.ts";
+import { composeToday } from "../../packages/backend/read-models/today/composition.ts";
+import type {
+  TodayAttention,
+  TodayInteractions,
+  TodayRecentPeople,
+  TodayReminders,
+  TodayTasks,
+} from "../../packages/backend/read-models/today/public.ts";
+import { createApiTokenRoutes } from "./api_tokens.ts";
 import {
   type AuthenticationHttpServices,
   createAuthenticationRoutes,
 } from "./authentication.ts";
 import {
+  createAuthenticationResponseEqualizer,
+  DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
+  resolveAuthenticationResponseFloor,
+} from "./authentication_response.ts";
+import { createExportRoutes } from "./exports.ts";
+import { resolveObjectStorageConfiguration } from "./file_storage_config.ts";
+import { createFileRoutes } from "./files.ts";
+import { createGiftRoutes } from "./gifts.ts";
+import {
+  createGovernanceRoutes,
+  createLegalRequirementGuard,
+} from "./governance.ts";
+import { createImportRoutes } from "./imports.ts";
+import { createIntegrationRoutes } from "./integrations.ts";
+import { createInteractionRoutes } from "./interactions.ts";
+import {
   createInvitationRoutes,
   type InvitationHttpServices,
 } from "./invitations.ts";
+import { createJournalRoutes } from "./journal.ts";
+import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
+import {
+  createPersonalLifecycleRoutes,
+  type PersonalLifecycleHttpServices,
+} from "./personal_lifecycle.ts";
+import { PersonalizationRouter } from "./personalization_router.ts";
+import { createPlanningRoutes } from "./planning.ts";
+import {
+  createRegistrationRoutes,
+  type RegistrationHttpServices,
+} from "./registration.ts";
+import { createRelationshipRoutes } from "./relationships.ts";
 import {
   type BrowserSecurityPolicy,
   browserSecurityPolicy,
 } from "./security_config.ts";
 import { createSettingsRoutes, type SettingsHttpServices } from "./settings.ts";
 import {
-  createPersonalLifecycleRoutes,
-  type PersonalLifecycleHttpServices,
-} from "./personal_lifecycle.ts";
-import {
   createWorkspaceLifecycleRoutes,
   type WorkspaceLifecycleHttpServices,
 } from "./workspace_lifecycle.ts";
-import { createSettingsManagement } from "../../packages/backend/modules/workspaces/public.ts";
-import {
-  createImportantDateManagement,
-  createPeopleManagement,
-  createPersonLifecycle,
-  createProfileFactManagement,
-  importantDateAuditFrom,
-  type ImportantDateManagement,
-  personCreatedAuditFrom,
-  personLifecycleAuditFrom,
-  PostgresImportantDateRepository,
-  PostgresPeopleExportBoundary,
-  PostgresPeopleImportBoundary,
-  PostgresPeoplePersonalizationReferences,
-  PostgresPeopleRepository,
-  PostgresPeopleTransaction,
-  PostgresPeopleWorkspaceLifecycleImpact,
-  PostgresPersonLifecycleRepository,
-  PostgresProfileFactOrganizations,
-  PostgresProfileFactRepository,
-  PostgresRelationshipPersonBoundary,
-  PostgresTagPersonalization,
-  profileFactAuditFrom,
-} from "../../packages/backend/modules/people/public.ts";
-import {
-  createReminderManagement,
-  createTaskManagement,
-  PostgresPersonDateReminderPublisher,
-  PostgresPlanningWorkspaceLifecycleImpact,
-  PostgresReminderRepository,
-  PostgresReminderRulePersonalization,
-  PostgresReminderWorkspaceBoundary,
-  PostgresTaskRepository,
-  reminderAuditFrom,
-  type ReminderManagement,
-  taskAuditFrom,
-  type TaskManagement,
-} from "../../packages/backend/modules/planning/public.ts";
-import {
-  communicationAuditFrom,
-  type CommunicationManagement,
-  createCommunicationManagement,
-  createInteractionManagement,
-  interactionAuditFrom,
-  type InteractionManagement,
-  PostgresCommunicationRepository,
-  PostgresInteractionPersonalizationReferences,
-  PostgresInteractionRepository,
-  PostgresInteractionWorkspaceLifecycleImpact,
-  PostgresJournalActivityBoundary,
-} from "../../packages/backend/modules/interactions/public.ts";
-import {
-  createJournalManagement,
-  journalAuditFrom,
-  type JournalManagement,
-  PostgresJournalPersonalizationReferences,
-  PostgresJournalRepository,
-  PostgresJournalWorkspaceLifecycleImpact,
-} from "../../packages/backend/modules/journal/public.ts";
-import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
-import { createRelationshipRoutes } from "./relationships.ts";
-import { createInteractionRoutes } from "./interactions.ts";
-import {
-  createRelationshipManagement,
-  PostgresRelationshipPersonalizationReferences,
-  PostgresRelationshipRepository,
-  PostgresRelationshipWorkspaceLifecycleImpact,
-  relationshipAuditFrom,
-  type RelationshipManagement,
-} from "../../packages/backend/modules/relationships/public.ts";
-import {
-  createPeopleDirectory,
-  createPeopleTagOptions,
-  type PeopleDirectory,
-  type PeopleTagOptions,
-  PostgresPeopleDirectoryRepository,
-} from "../../packages/backend/read-models/people-directory/public.ts";
-import {
-  createPersonProfile,
-  type PersonProfile,
-  PostgresPersonProfileRepository,
-} from "../../packages/backend/read-models/person-profile/public.ts";
-import {
-  createAuthenticationResponseEqualizer,
-  DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
-} from "./authentication_response.ts";
-import { PersonalizationRepositoryRouter } from "./personalization_repository.ts";
-import { PostgresInteractionWorkspaceBoundary } from "../../packages/backend/modules/workspaces/public.ts";
-import {
-  type ActivityReport,
-  createActivityReport,
-  PostgresActivityReportRepository,
-} from "../../packages/backend/read-models/activity-report/public.ts";
-import {
-  createTodayAttention,
-  createTodayInteractions,
-  createTodayRecentPeople,
-  createTodayReminders,
-  createTodayTasks,
-  PostgresTodayAttentionRepository,
-  PostgresTodayInteractionsRepository,
-  PostgresTodayRecentPeopleRepository,
-  PostgresTodayRemindersRepository,
-  PostgresTodayTasksRepository,
-  type TodayAttention,
-  type TodayInteractions,
-  type TodayRecentPeople,
-  type TodayReminders,
-  type TodayTasks,
-} from "../../packages/backend/read-models/today/public.ts";
-import {
-  type AuditHistory,
-  createAuditHistory,
-  PostgresAuditHistoryRepository,
-} from "../../packages/backend/read-models/audit-history/public.ts";
-import {
-  createGovernanceRoutes,
-  createLegalRequirementGuard,
-} from "./governance.ts";
-import { createPlanningRoutes } from "./planning.ts";
-import { createFileRoutes } from "./files.ts";
-import { createGiftRoutes } from "./gifts.ts";
-import { createJournalRoutes } from "./journal.ts";
-import { createImportRoutes } from "./imports.ts";
-import { createIntegrationRoutes } from "./integrations.ts";
-import {
-  createJournalTimeline,
-  type JournalTimeline,
-  PostgresJournalTimelineRepository,
-} from "../../packages/backend/read-models/journal-timeline/public.ts";
-import {
-  createObjectStorageRequestTransport,
-  createPersonFileManagement,
-  createStorageSettings,
-  DeclaredMediaScanner,
-  fileAuditFrom,
-  type ObjectStorage,
-  PERSON_FILE_MAX_BYTES,
-  type PersonFileManagement,
-  PostgresExportFileBoundary,
-  PostgresFileImportBoundary,
-  PostgresFileMetadataRepository,
-  PostgresFileWorkspaceLifecycleImpact,
-  PostgresGiftAttachmentBoundary,
-  PostgresStorageSettingsRepository,
-  S3CompatibleObjectStorage,
-  type StorageSettings,
-  WebCryptoFileIdentifiers,
-  WebCryptoObjectKeys,
-} from "../../packages/backend/modules/files/public.ts";
-import {
-  createGiftManagement,
-  giftAuditFrom,
-  type GiftManagement,
-  PostgresGiftAttachmentTarget,
-  PostgresGiftRepository,
-  PostgresGiftWorkspaceLifecycleImpact,
-} from "../../packages/backend/modules/gifts/public.ts";
-import { Client as MinioClient } from "minio";
-import { resolveObjectStorageConfiguration } from "./file_storage_config.ts";
-import {
-  createExportManagement,
-  createImportManagement,
-  type ExportManagement,
-  type ImportManagement,
-  PostgresExportRepository,
-  PostgresExportTransaction,
-  PostgresImportExportWorkspaceLifecycleImpact,
-  PostgresImportRepository,
-  PostgresImportTransaction,
-} from "../../packages/backend/modules/import-export/public.ts";
-import { PostgresIntegrationWorkspaceLifecycleImpact } from "../../packages/backend/modules/integrations/public.ts";
-import { PostgresOperationsWorkspaceLifecycleImpact } from "../../packages/backend/modules/operations/public.ts";
-import { createExportRoutes } from "./exports.ts";
-import { createApiTokenRoutes } from "./api_tokens.ts";
 
 export interface ApiServices extends RegistrationHttpServices {
   readonly apiTokens?: ApiTokenManagement;
@@ -635,6 +530,141 @@ export function createApiApp(services?: ApiServices): Hono {
   return api;
 }
 
+/**
+ * The readiness probe behind `GET /api/v1/health`: one trivial statement,
+ * bounded so a stalled pool answers "unavailable" instead of hanging the probe.
+ */
+async function databaseReadiness(
+  database: Kysely<ApplicationDatabase>,
+): Promise<boolean> {
+  try {
+    const probe = await Promise.race([
+      sql<{ ready: number }>`select 1 as ready`.execute(database),
+      new Promise<undefined>((resolve) =>
+        setTimeout(() => resolve(undefined), 1_500)
+      ),
+    ]);
+    return probe !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The DAV bridge into people.
+ *
+ * A remote contact card is a person, but integrations may not spend people's
+ * use cases on its own authority, so the root lends them: every edit reads the
+ * current revision first and hands it back as the expected one, which is what
+ * turns a remote overwrite into an optimistic update.
+ */
+function davPeople(
+  people: ReturnType<typeof composePeople>,
+): DavPorts["people"] {
+  const revised = async <Result>(
+    actor: Parameters<typeof people.lifecycle.inspectInTransaction>[0],
+    personId: string,
+    transaction: Parameters<typeof people.lifecycle.inspectInTransaction>[2],
+    apply: (expectedUpdatedAt: string) => Promise<Result>,
+  ) => {
+    const current = await people.lifecycle.inspectInTransaction(
+      actor,
+      personId,
+      transaction,
+    );
+    if (current.status !== "ready") return current;
+    return await apply(current.person.updatedAt);
+  };
+  return {
+    ensure: (actor, input, transaction) => {
+      const { requestId, ...identity } = input;
+      return people.people.ensureInTransaction(actor, requestId, {
+        ...identity,
+        isPartial: !identity.givenName,
+      }, transaction);
+    },
+    update: (actor, personId, input, transaction) =>
+      revised(
+        actor,
+        personId,
+        transaction,
+        (expectedUpdatedAt) =>
+          people.lifecycle.editInTransaction(actor, personId, {
+            ...input,
+            expectedUpdatedAt,
+            isPartial: !input.givenName,
+          }, transaction),
+      ),
+    archive: (actor, personId, transaction) =>
+      revised(
+        actor,
+        personId,
+        transaction,
+        (expectedUpdatedAt) =>
+          people.lifecycle.archiveInTransaction(actor, personId, {
+            expectedUpdatedAt,
+          }, transaction),
+      ),
+    restore: (actor, personId, transaction) =>
+      revised(
+        actor,
+        personId,
+        transaction,
+        (expectedUpdatedAt) =>
+          people.lifecycle.restoreInTransaction(actor, personId, {
+            expectedUpdatedAt,
+          }, transaction),
+      ),
+  };
+}
+
+/** The DAV bridge into planning, on the same borrowed-use-case terms. */
+function davTasks(
+  tasks: ReturnType<typeof composePlanning>["tasks"],
+): DavPorts["tasks"] {
+  return {
+    create: (actor, input, transaction) =>
+      tasks.create(actor, input, transaction),
+    update: async (actor, taskId, input, transaction) => {
+      const current = await tasks.get(actor, taskId, transaction);
+      if (current.status !== "ready") return current;
+      return await tasks.change(actor, taskId, {
+        ...input,
+        expectedUpdatedAt: current.task.updatedAt,
+      }, transaction);
+    },
+    complete: (actor, taskId, transaction) =>
+      tasks.setCompletion(actor, taskId, true, transaction),
+    reopen: (actor, taskId, transaction) =>
+      tasks.setCompletion(actor, taskId, false, transaction),
+  };
+}
+
+/**
+ * A keyset the deployment must supply in production and may default locally.
+ * The local value is a fixed pattern so a developer's data survives a restart.
+ */
+function configuredKeyset<Keyset>(
+  environment: string,
+  name: string,
+  override: Keyset | undefined,
+  local: () => Keyset,
+  required = true,
+): Keyset {
+  if (override) return override;
+  if (required && environment === "production") {
+    throw new Error(`${name} is required in production.`);
+  }
+  return local();
+}
+
+function localKeyset(fill: number) {
+  return () => ({
+    activeKeyId: "local-development",
+    keys: new Map([["local-development", new Uint8Array(32).fill(fill)]]),
+  });
+}
+
 export function createConfiguredApiApp(
   databaseUrl: string,
   mailAdapter?: VerificationMail,
@@ -647,641 +677,254 @@ export function createConfiguredApiApp(
   davKeysetOverride?: DavEncryptionKeyset,
   davEnabled = true,
 ): { readonly app: Hono; readonly close: () => Promise<void> } {
-  const random = new WebCryptoRandomSource();
-  const tokens = new SecureTokenService(random);
-  const clock = { now: () => new Date() };
-  const ids = { create: () => crypto.randomUUID() };
   const environment = Deno.env.get("APP_ENV") ?? "development";
-  const mail = mailAdapter ?? new SmtpVerificationMail(
-    resolveSmtpVerificationMailOptions(Deno.env),
+  const davKeyset = configuredKeyset<DavEncryptionKeyset>(
+    environment,
+    "INTEGRATIONS_ENCRYPTION_KEYSET",
+    davKeysetOverride,
+    localKeyset(0x69),
+    davEnabled,
   );
+  const mfaKeyset = configuredKeyset<MfaEncryptionKeyset>(
+    environment,
+    "AUTH_MFA_ENCRYPTION_KEYSET",
+    mfaKeysetOverride,
+    localKeyset(0x4b),
+  );
+  const subjectKeyset = configuredKeyset<AuthenticationSubjectKeyset>(
+    environment,
+    "AUTH_THROTTLE_SUBJECT_KEYSET",
+    subjectKeysetOverride,
+    () => ({
+      activeVersion: 1,
+      keys: new Map([[1, new Uint8Array(32).fill(0x52)]]),
+    }),
+  );
+  const mail = mailAdapter ?? composeVerificationMail(Deno.env);
+  const objectStore = objectStorageOverride ??
+    composeObjectStorage(resolveObjectStorageConfiguration(Deno.env));
   const connection = connectDatabase(databaseUrl);
-  if (environment === "production" && davEnabled && !davKeysetOverride) {
-    throw new Error(
-      "INTEGRATIONS_ENCRYPTION_KEYSET is required in production.",
-    );
-  }
-  const davKeyset = davKeysetOverride ?? {
-    activeKeyId: "local-development",
-    keys: new Map([["local-development", new Uint8Array(32).fill(0x69)]]),
+  const shared: SharedComposition = {
+    actors: workspaceActors(),
+    audit: governanceAuditRecorder(),
+    clock: { now: () => new Date() },
+    database: connection.db,
+    ids: { create: () => crypto.randomUUID() },
+    peopleTransaction: peopleTransactionRunner(connection.db),
+    transaction: workspaceTransactionRunner(connection.db),
+    workspaceEntry: activeWorkspaceResolver(),
   };
-  const hasher = new Argon2idPasswordHasher(random, {
-    memoryKiB: 19_456,
-    iterations: 2,
-    parallelism: 1,
-    saltLength: 16,
-    hashLength: 32,
+
+  // Composition order follows the ports, not the module list: a module is
+  // composed once every port it takes has been produced.
+  const identity = composeIdentity(shared, {
+    mail: passwordResetMail(mail),
+    mfaKeyset,
   });
-  if (environment === "production" && !mfaKeysetOverride) {
-    throw new Error("AUTH_MFA_ENCRYPTION_KEYSET is required in production.");
-  }
-  const mfaKeyset = mfaKeysetOverride ?? {
-    activeKeyId: "local-development",
-    keys: new Map([["local-development", new Uint8Array(32).fill(0x4b)]]),
-  };
-  if (environment === "production" && !subjectKeysetOverride) {
-    throw new Error("AUTH_THROTTLE_SUBJECT_KEYSET is required in production.");
-  }
-  const subjectKeyset = subjectKeysetOverride ?? {
-    activeVersion: 1,
-    keys: new Map([[1, new Uint8Array(32).fill(0x52)]]),
-  };
-  const authentication = new PostgresIdentityAuthentication(
-    connection.db,
-    hasher,
-    tokens,
-    new AesGcmMfaSecretBox(mfaKeyset, random),
-    clock,
-    ids,
-  );
-  const transaction = new PostgresRegistrationTransaction(connection.db);
-  // Governance owns `crm.audit_events`; every module describes its own events
-  // and hands them to this one writer.
-  const auditRecorder = new PostgresAuditEventRecorder();
-  const registrationDependencies = {
-    audit: registrationAuditFrom(auditRecorder),
-    clock,
-    identity: new PostgresIdentityRegistration(),
-    ids,
+  const apiAccess = composeApiAccess(shared, { subjectKeyset });
+  const configuration = composeWorkspaceBoundaries();
+  const persons = personBoundary();
+  const people = composePeople(shared, {
+    importantDatePublisher: personDateReminderPublisher(shared),
+    profileFactWorkspace: configuration.profileFacts,
+  });
+  const planning = composePlanning(shared, {
+    cursorKeyset: subjectKeyset,
+    people: persons,
+  });
+  const relationships = composeRelationships(shared, {
+    people: persons,
+    peopleCreation: people.people,
+    workspace: configuration.relationships,
+  });
+  const interactions = composeInteractions(shared, {
+    people: persons,
+    publisher: planning.reminders,
+    workspace: configuration.interactions,
+  });
+  const journal = composeJournal(shared, {
+    activities: journalActivityBoundary(),
+  });
+  const files = composeFiles(shared, {
+    giftTarget: giftAttachmentTarget(),
+    objectStore,
+  });
+  const gifts = composeGifts(shared, {
+    attachments: files.giftAttachments,
+    currencies: configuration.currencies,
+  });
+  const transfer = composeImportExport(shared, {
+    exportFiles: files.exportBoundary,
+    exportPeople: people.exportBoundary,
+    importFiles: files.importBoundary,
+    importPeople: people.importBoundary,
+  });
+  const governance = composeGovernance(shared);
+  const workspaces = composeWorkspaces(shared, {
+    attemptBudget: apiAccess.attemptBudget,
+    identity: {
+      accountSettings: identity.accountSettings,
+      authentication: identity.authentication,
+      invitations: identity.invitations,
+      personalLifecycle: identity.personalLifecycle,
+      registration: identity.registration,
+      verification: identity.verification,
+    },
+    // The one cross-module map: what each module destroys when a workspace is
+    // reset or deleted, assembled from the participants they each return.
+    impact: {
+      files: files.lifecycleImpact,
+      gifts: gifts.lifecycleImpact,
+      governance: governance.lifecycleImpact,
+      importExport: transfer.lifecycleImpact,
+      integrations: composeIntegrations().lifecycleImpact,
+      interactions: interactions.lifecycleImpact,
+      journal: journal.lifecycleImpact,
+      operations: composeOperations().lifecycleImpact,
+      people: people.lifecycleImpact,
+      planning: planning.lifecycleImpact,
+      relationships: relationships.lifecycleImpact,
+    },
     mail,
-    tokens,
-    transaction,
-    workspace: new PostgresWorkspaceRegistration(),
-  };
-  const registration = createFirstWorkspaceRegistration(
-    registrationDependencies,
-  );
-  // The one approved actor-context read, shared by every use case that writes
-  // or reads on an actor's behalf.
-  const actors = new PostgresActorRevalidation();
-  const verification = new PostgresEmailVerification(
-    connection.db,
-    tokens,
-    clock,
-    ids,
-    new PostgresActiveWorkspaceResolver(),
-  );
-  const attemptBudget = new PostgresAuthenticationAttemptBudget(
-    connection.db,
-    new AuthenticationSubjectDigester(subjectKeyset),
-  );
-  const authenticationAudit = authenticationAuditFrom(auditRecorder);
-  const protectedSessions = createProtectedSessionCoordinator({
-    attemptBudget,
-    audit: authenticationAudit,
-    clock,
-    identity: authentication,
-    identityEntry: verification,
+    // Planning's hook: changing a timezone reschedules the reminders it owns.
+    planningPublisher: planning.reminders,
     responseEqualizer: responseEqualizerOverride ??
       createAuthenticationResponseEqualizer(
         DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
       ),
-    transaction,
-    workspace: new PostgresActiveWorkspaceResolver(),
+    storage: objectStore,
+    tokens: identity.tokens,
   });
-  const apiTokens = createApiTokenManagement({
-    actorContext: actors,
-    actors,
-    audit: apiTokenAuditFrom(auditRecorder),
-    clock,
-    ids: { next: () => ids.create() },
-    repository: new PostgresApiTokenRepository(),
-    secrets: new WebCryptoApiTokenSecrets(),
-    transaction: new PostgresApiTokenTransaction(connection.db),
-  });
-  const passwordRecovery = createPasswordRecovery({
-    clock,
-    hasher,
-    ids,
-    mail: {
-      sendPasswordReset: (message) => {
-        if (!mail.sendPasswordReset) {
-          return Promise.reject(new Error("Password-reset mail unavailable."));
-        }
-        return mail.sendPasswordReset(message);
-      },
-    },
-    repository: new PostgresPasswordRecoveryRepository(),
-    tokens,
-    transaction,
-  });
-  const invitationIdentity = new PostgresInvitationIdentity();
-  const invitations = createWorkspaceInvitationCoordinator({
-    audit: invitationAuditFrom(auditRecorder),
-    clock,
-    ids,
-    identity: {
-      assertPendingUserPostconditions: (command) =>
-        registrationDependencies.identity.assertPendingUserPostconditions(
-          command,
-        ),
-      assertSessionPostcondition: (command) =>
-        authentication.assertSessionPostcondition(command),
-      consumeVerifiedIdentityEntry: (command) =>
-        verification.consumeVerifiedIdentityEntry(command),
-      createPendingUser: (command) =>
-        registrationDependencies.identity.createPendingUser(command),
-      createRetryVerificationToken: (command) =>
-        registrationDependencies.identity.createRetryVerificationToken(
-          command,
-        ),
-      findIdentityIdByEmail: (command) =>
-        invitationIdentity.findIdentityIdByEmail(command),
-      isVerifiedInvitationIdentity: (command) =>
-        invitationIdentity.isVerifiedInvitationIdentity(command),
-      issueSession: (command) => authentication.issueSession(command),
-      listIdentityDisplaySummaries: (command) =>
-        invitationIdentity.listIdentityDisplaySummaries(command),
-    },
-    mail: {
-      sendInvitation: (message) => {
-        if (!mail.sendInvitation) {
-          return Promise.reject(new Error("Invitation mail unavailable."));
-        }
-        return mail.sendInvitation(message);
-      },
-      sendVerification: (message) => mail.sendVerification(message),
-    },
-    repository: new PostgresWorkspaceInvitations(),
-    tokens,
-    transaction,
-  });
-  const settingsPlanningPublisher: {
-    current?: SettingsPlanningPublisher;
-  } = {};
-  const settings = createSettingsManagement({
-    audit: settingsAuditFrom(auditRecorder),
-    clock,
-    identity: new PostgresIdentityAccountSettings(tokens),
-    identityDisplay: invitationIdentity,
-    planningPublisher: {
-      timezoneChanged: (actor, settingsTransaction) =>
-        settingsPlanningPublisher.current?.timezoneChanged(
-          actor,
-          settingsTransaction,
-        ) ??
-          Promise.resolve(),
-      workspaceTimezoneChanged: (actor, timezone, settingsTransaction) =>
-        settingsPlanningPublisher.current?.workspaceTimezoneChanged(
-          actor,
-          timezone,
-          settingsTransaction,
-        ) ?? Promise.resolve(),
-    },
-    transaction,
-    workspace: new PostgresWorkspaceSettings(),
-  });
-  const personalLifecycle = createPersonalLifecycle({
-    attemptBudget,
-    audit: personalLifecycleAuditFrom(auditRecorder),
-    authenticationAudit,
-    clock,
-    identity: new PostgresIdentityPersonalLifecycle(hasher),
-    memberships: new PostgresPersonalLifecycleMemberships(),
-    transaction,
-  });
-  const workspacePersonalization = new PostgresWorkspacePersonalization();
+  // Personalization is one settings page over seven owners; the router is the
+  // only place that knows which module answers for which section.
   const personalization = createPersonalizationManagement({
-    audit: settingsAuditFrom(auditRecorder),
-    clock,
-    repository: new PersonalizationRepositoryRouter(
-      workspacePersonalization,
-      new PostgresTagPersonalization(),
-      new PostgresReminderRulePersonalization(),
-      PostgresPeoplePersonalizationReferences,
-      PostgresRelationshipPersonalizationReferences,
-      PostgresInteractionPersonalizationReferences,
-      PostgresJournalPersonalizationReferences,
+    audit: settingsAuditFrom(shared.audit),
+    clock: shared.clock,
+    repository: new PersonalizationRouter(
+      configuration.personalization,
+      people.tagPersonalization,
+      planning.personalizationReferences,
+      people.personalizationReferences,
+      relationships.personalizationReferences,
+      interactions.personalizationReferences,
+      journal.personalizationReferences,
     ),
-    transaction,
+    transaction: shared.transaction,
   });
-  const peopleTransaction = new PostgresPeopleTransaction(connection.db);
-  const objectStorage = objectStorageOverride ?? (() => {
-    const configuration = resolveObjectStorageConfiguration(Deno.env);
-    return new S3CompatibleObjectStorage(
-      new MinioClient({
-        accessKey: configuration.accessKey,
-        endPoint: configuration.host,
-        port: configuration.port,
-        secretKey: configuration.secretKey,
-        transport: createObjectStorageRequestTransport(
-          configuration.useSsl,
-          configuration.requestTimeoutMs,
-        ),
-        useSSL: configuration.useSsl,
-      }) as unknown as ConstructorParameters<
-        typeof S3CompatibleObjectStorage
-      >[0],
-      configuration.bucket,
-    );
-  })();
-  const workspaceLifecycle = createWorkspaceLifecycle({
-    activityAudit: workspaceResetActivityAuditFrom(auditRecorder),
-    attemptBudget,
-    audit: new PostgresWorkspaceLifecycleSecurityAudit(),
-    authenticationAudit,
-    clock,
-    identity: new PostgresIdentityPersonalLifecycle(hasher),
-    ids,
-    impact: {
-      files: PostgresFileWorkspaceLifecycleImpact,
-      gifts: PostgresGiftWorkspaceLifecycleImpact,
-      governance: PostgresGovernanceWorkspaceLifecycleImpact,
-      importExport: PostgresImportExportWorkspaceLifecycleImpact,
-      integrations: PostgresIntegrationWorkspaceLifecycleImpact,
-      interactions: PostgresInteractionWorkspaceLifecycleImpact,
-      journal: PostgresJournalWorkspaceLifecycleImpact,
-      operations: PostgresOperationsWorkspaceLifecycleImpact,
-      people: PostgresPeopleWorkspaceLifecycleImpact,
-      planning: PostgresPlanningWorkspaceLifecycleImpact,
-      relationships: PostgresRelationshipWorkspaceLifecycleImpact,
-    },
-    repository: new PostgresWorkspaceLifecycleRepository(connection.db),
-    storage: objectStorage,
-    transaction,
-  });
-  const files = createPersonFileManagement({
-    actors,
-    audit: fileAuditFrom(auditRecorder),
-    clock,
-    ids: new WebCryptoFileIdentifiers(),
-    keys: new WebCryptoObjectKeys(),
-    repository: new PostgresFileMetadataRepository(),
-    scanner: new DeclaredMediaScanner(),
-    storage: objectStorage,
-    transaction: peopleTransaction,
-  });
-  const storageSettings = createStorageSettings({
-    actors,
-    maximumUploadBytes: PERSON_FILE_MAX_BYTES,
-    provider: { bucket: objectStorage.bucket, name: objectStorage.provider },
-    providerHealth: () => objectStorage.health(),
-    repository: new PostgresStorageSettingsRepository(),
-    transaction: peopleTransaction,
-  });
-  const gifts = createGiftManagement({
-    actors,
-    attachments: new PostgresGiftAttachmentBoundary(
-      new PostgresGiftAttachmentTarget(),
-    ),
-    audit: giftAuditFrom(auditRecorder),
-    clock,
-    currencies: new PostgresWorkspaceCurrencyBoundary(),
-    ids: { next: () => ids.create() },
-    repository: new PostgresGiftRepository(),
-    transaction: peopleTransaction,
-  });
-  const journal = createJournalManagement({
-    activities: new PostgresJournalActivityBoundary(),
-    actors,
-    audit: journalAuditFrom(auditRecorder),
-    clock,
-    ids: { next: () => ids.create() },
-    repository: new PostgresJournalRepository(),
-    transaction: peopleTransaction,
-  });
-  const imports = createImportManagement({
-    actors,
-    audit: importAuditFrom(auditRecorder),
-    files: new PostgresFileImportBoundary(),
-    ids: { next: () => ids.create() },
-    people: new PostgresPeopleImportBoundary(),
-    repository: new PostgresImportRepository(connection.db),
-    transaction: new PostgresImportTransaction(connection.db),
-  });
-  const exports = createExportManagement({
-    actors,
-    audit: exportAuditFrom(auditRecorder),
-    clock,
-    files: new PostgresExportFileBoundary(connection.db, {
-      ids: new WebCryptoFileIdentifiers(),
-      keys: new WebCryptoObjectKeys(),
-      storage: objectStorage,
-    }),
-    ids: { next: () => ids.create() },
-    people: new PostgresPeopleExportBoundary(),
-    repository: new PostgresExportRepository(),
-    tokens: { next: () => crypto.randomUUID() },
-    transaction: new PostgresExportTransaction(connection.db),
-  });
-  const peopleRepository = new PostgresPeopleRepository();
-  const peopleManagement = createPeopleManagement({
-    actors,
-    audit: personCreatedAuditFrom(auditRecorder),
-    clock,
-    ids,
-    repository: peopleRepository,
-    transaction: peopleTransaction,
-  });
-  const recentPeople = createRecentPeopleManagement({
-    actors,
-    repository: new PostgresRecentPeopleRepository(),
-    transaction,
-  });
-  const memberUiState = createMemberUiStateManagement({
-    actors,
-    repository: new PostgresMemberUiStateRepository(),
-    transaction,
-  });
-  const peopleLifecycle = createPersonLifecycle({
-    actors,
-    audit: personLifecycleAuditFrom(auditRecorder),
-    clock,
-    repository: new PostgresPersonLifecycleRepository(),
-    transaction: peopleTransaction,
-  });
-  const importantDates = createImportantDateManagement({
-    actors,
-    audit: importantDateAuditFrom(auditRecorder),
-    clock,
-    ids,
-    publisher: new PostgresPersonDateReminderPublisher(actors),
-    repository: new PostgresImportantDateRepository(),
-    transaction: peopleTransaction,
-  });
-  const profileFacts = createProfileFactManagement({
-    actors,
-    audit: profileFactAuditFrom(auditRecorder),
-    clock,
-    ids,
-    organizations: new PostgresProfileFactOrganizations(),
-    repository: new PostgresProfileFactRepository(),
-    transaction: peopleTransaction,
-    workspace: new PostgresProfileFactConfiguration(),
-  });
-  const relationships = createRelationshipManagement({
-    actors,
-    audit: relationshipAuditFrom(auditRecorder),
-    clock,
-    ids,
-    people: new PostgresRelationshipPersonBoundary(),
-    peopleCreation: peopleManagement,
-    repository: new PostgresRelationshipRepository(),
-    transaction: peopleTransaction,
-    workspace: new PostgresRelationshipWorkspaceBoundary(),
-  });
-  const interactionWorkspace = new PostgresInteractionWorkspaceBoundary();
-  const interactionPeople = new PostgresRelationshipPersonBoundary();
-  const reminders = createReminderManagement({
-    actors,
-    audit: reminderAuditFrom(auditRecorder),
-    clock,
-    people: interactionPeople,
-    repository: new PostgresReminderRepository(actors),
-    transaction: peopleTransaction,
-    workspace: new PostgresReminderWorkspaceBoundary(),
-  });
-  settingsPlanningPublisher.current = reminders;
-  const interactions = {
-    ...createInteractionManagement({
-      actors,
-      audit: interactionAuditFrom(auditRecorder),
-      clock,
-      people: interactionPeople,
-      publisher: reminders,
-      repository: new PostgresInteractionRepository(),
-      transaction: peopleTransaction,
-      workspace: interactionWorkspace,
-    }),
-    ...createCommunicationManagement({
-      actors,
-      audit: communicationAuditFrom(auditRecorder),
-      clock,
-      people: interactionPeople,
-      publisher: reminders,
-      repository: new PostgresCommunicationRepository(),
-      transaction: peopleTransaction,
-      workspace: interactionWorkspace,
-    }),
-  };
-  const tasks = createTaskManagement({
-    actors,
-    audit: taskAuditFrom(auditRecorder),
-    clock,
-    cursorKeyset: subjectKeyset,
-    people: interactionPeople,
-    repository: new PostgresTaskRepository(),
-    transaction: peopleTransaction,
-  });
-  const davRemoteId = async (value: string) => {
-    const digest = new Uint8Array(
-      await crypto.subtle.digest(
-        "SHA-256",
-        new TextEncoder().encode(`kinship.dav.remote.v1\u0000${value}`),
-      ),
-    );
-    digest[6] = (digest[6]! & 0x0f) | 0x80;
-    digest[8] = (digest[8]! & 0x3f) | 0x80;
-    const hex = [...digest.slice(0, 16)].map((byte) =>
-      byte.toString(16).padStart(2, "0")
-    ).join("");
-    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${
-      hex.slice(16, 20)
-    }-${hex.slice(20)}`;
-  };
+  // The DAV bridges: a remote card is a person and a remote to-do is a task,
+  // and only a root may spend one module's use case on another's behalf.
   const dav = davEnabled
-    ? createDavSyncManagement({
-      clock,
-      ids: {
-        create: () => ids.create(),
-        fromRemote: davRemoteId,
-      },
-      people: {
-        ensure: (actor, input, transaction) => {
-          const { requestId, ...identity } = input;
-          return peopleManagement.ensureInTransaction(actor, requestId, {
-            ...identity,
-            isPartial: !identity.givenName,
-          }, transaction);
-        },
-        update: async (actor, personId, input, transaction) => {
-          const current = await peopleLifecycle.inspectInTransaction(
-            actor,
-            personId,
-            transaction,
-          );
-          if (current.status !== "ready") return current;
-          return await peopleLifecycle.editInTransaction(actor, personId, {
-            ...input,
-            expectedUpdatedAt: current.person.updatedAt,
-            isPartial: !input.givenName,
-          }, transaction);
-        },
-        archive: async (actor, personId, transaction) => {
-          const current = await peopleLifecycle.inspectInTransaction(
-            actor,
-            personId,
-            transaction,
-          );
-          if (current.status !== "ready") return current;
-          return await peopleLifecycle.archiveInTransaction(actor, personId, {
-            expectedUpdatedAt: current.person.updatedAt,
-          }, transaction);
-        },
-        restore: async (actor, personId, transaction) => {
-          const current = await peopleLifecycle.inspectInTransaction(
-            actor,
-            personId,
-            transaction,
-          );
-          if (current.status !== "ready") return current;
-          return await peopleLifecycle.restoreInTransaction(actor, personId, {
-            expectedUpdatedAt: current.person.updatedAt,
-          }, transaction);
-        },
-      },
-      remote: davRemoteOverride ?? new HttpDavClient(),
-      repository: new PostgresDavRepository(
-        connection.db,
-        davAuditFrom(auditRecorder),
-        actors,
-      ),
-      secrets: new AesGcmDavSecretBox(davKeyset),
-      tasks: {
-        create: (actor, input, transaction) =>
-          tasks.create(actor, input, transaction),
-        update: async (actor, taskId, input, transaction) => {
-          const current = await tasks.get(actor, taskId, transaction);
-          if (current.status !== "ready") return current;
-          return await tasks.change(actor, taskId, {
-            ...input,
-            expectedUpdatedAt: current.task.updatedAt,
-          }, transaction);
-        },
-        complete: (actor, taskId, transaction) =>
-          tasks.setCompletion(actor, taskId, true, transaction),
-        reopen: (actor, taskId, transaction) =>
-          tasks.setCompletion(actor, taskId, false, transaction),
-      },
+    ? composeDavSync(shared, {
+      keyset: davKeyset,
+      people: davPeople(people),
+      remote: davRemoteOverride,
+      tasks: davTasks(planning.tasks),
     })
     : undefined;
-  const people = { ...peopleManagement, ...peopleLifecycle };
-  const directoryRepository = new PostgresPeopleDirectoryRepository(
-    connection.db,
-  );
-  const directory = createPeopleDirectory({
-    actors,
-    repository: directoryRepository,
-    transaction: peopleTransaction,
-  });
-  const tagOptions = createPeopleTagOptions({
-    actors,
-    repository: directoryRepository,
-    transaction: peopleTransaction,
-  });
-  const profile = createPersonProfile({
-    actors,
-    repository: new PostgresPersonProfileRepository(connection.db),
-    transaction: peopleTransaction,
-  });
-  const activityReport = createActivityReport({
-    actors,
-    repository: new PostgresActivityReportRepository(connection.db),
-    transaction: peopleTransaction,
-  });
-  const journalTimeline = createJournalTimeline({
-    actors,
-    repository: new PostgresJournalTimelineRepository(connection.db),
-    transaction: peopleTransaction,
-  });
-  const auditHistory = createAuditHistory({
-    cursorKeyset: subjectKeyset,
-    repository: new PostgresAuditHistoryRepository(connection.db),
-  });
-  const legal = createLegalAcceptance({
-    actors,
-    clock,
-    ids: { next: () => ids.create() },
-    repository: new PostgresLegalAcceptanceRepository(connection.db),
-    transaction: peopleTransaction,
-  });
-  const today = createTodayInteractions({
-    actors,
-    repository: new PostgresTodayInteractionsRepository(connection.db),
-    transaction: peopleTransaction,
-  });
-  const todayAttention = createTodayAttention({
-    actors,
-    clock,
-    repository: new PostgresTodayAttentionRepository(connection.db),
-    transaction: peopleTransaction,
-  });
-  const todayTasks = createTodayTasks({
-    actors,
-    clock,
-    repository: new PostgresTodayTasksRepository(connection.db),
-    transaction: peopleTransaction,
-  });
-  const todayReminders = createTodayReminders({
-    actors,
-    clock,
-    repository: new PostgresTodayRemindersRepository(connection.db),
-    transaction: peopleTransaction,
-  });
-  const todayRecentPeople = createTodayRecentPeople({
-    actors,
-    repository: new PostgresTodayRecentPeopleRepository(connection.db),
-    transaction: peopleTransaction,
-  });
+  const directory = composePeopleDirectory(shared);
+  const today = composeToday(shared);
+
   const app = createApiApp({
-    apiTokens,
-    activityReport,
-    auditHistory,
+    activityReport: composeActivityReport(shared),
+    apiTokens: apiAccess.apiTokens,
+    auditHistory: composeAuditHistory(shared, { cursorKeyset: subjectKeyset }),
     browserSecurity: policy,
-    directory,
     ...(dav ? { dav } : {}),
-    files,
-    storageSettings,
-    gifts,
-    hasher,
-    invitations,
-    importantDates,
-    imports,
-    exports,
-    interactions,
-    journal,
-    journalTimeline,
-    legal,
-    memberUiState,
-    passwordRecovery,
-    personalLifecycle,
-    workspaceLifecycle,
-    people,
-    profile,
-    profileFacts,
-    recentPeople,
-    relationships,
-    reminders,
-    protectedSessions,
-    personalization,
-    settings,
-    tagOptions,
-    tasks,
-    today,
-    todayAttention,
-    todayReminders,
-    todayRecentPeople,
-    todayTasks,
-    register: registration,
-    retryVerificationDelivery: createVerificationDeliveryRetry(
-      registrationDependencies,
-    ),
-    verification,
+    directory: directory.directory,
     establishVerifiedEntry: (command) =>
-      protectedSessions.establishVerifiedEntry(command),
-    readiness: async () => {
-      try {
-        const probe = await Promise.race([
-          sql<{ ready: number }>`select 1 as ready`.execute(connection.db),
-          new Promise<undefined>((resolve) =>
-            setTimeout(() => resolve(undefined), 1_500)
-          ),
-        ]);
-        return probe !== undefined;
-      } catch {
-        return false;
-      }
-    },
+      workspaces.protectedSessions.establishVerifiedEntry(command),
+    exports: transfer.exports,
+    files: files.files,
+    gifts: gifts.gifts,
+    hasher: identity.hasher,
+    importantDates: people.importantDates,
+    imports: transfer.imports,
+    interactions: interactions.interactions,
+    invitations: workspaces.invitations,
+    journal: journal.journal,
+    journalTimeline: composeJournalTimeline(shared),
+    legal: governance.legal,
+    memberUiState: workspaces.memberUiState,
+    passwordRecovery: identity.passwordRecovery,
+    people: { ...people.people, ...people.lifecycle },
+    personalization,
+    personalLifecycle: workspaces.personalLifecycle,
+    profile: composePersonProfile(shared),
+    profileFacts: people.profileFacts,
+    protectedSessions: workspaces.protectedSessions,
+    readiness: () => databaseReadiness(connection.db),
+    recentPeople: workspaces.recentPeople,
+    register: workspaces.registration,
+    relationships: relationships.relationships,
+    reminders: planning.reminders,
+    retryVerificationDelivery: workspaces.retryVerificationDelivery,
+    settings: workspaces.settings,
+    storageSettings: files.storageSettings,
+    tagOptions: directory.tagOptions,
+    tasks: planning.tasks,
+    today: today.interactions,
+    todayAttention: today.attention,
+    todayRecentPeople: today.recentPeople,
+    todayReminders: today.reminders,
+    todayTasks: today.tasks,
+    verification: identity.verification,
+    workspaceLifecycle: workspaces.workspaceLifecycle,
   });
   return { app, close: connection.destroy };
+}
+
+/**
+ * The deployment's runtime: the environment read once, decoded, and handed to
+ * `createConfiguredApiApp`. Without a database URL the process still serves the
+ * public health surface, which is what a container start probe needs.
+ */
+export function createApiRuntime(
+  environment: EnvironmentReader,
+  configure: typeof createConfiguredApiApp = createConfiguredApiApp,
+):
+  | ReturnType<typeof createConfiguredApiApp>
+  | { readonly app: Hono } {
+  const databaseUrl = resolveDatabaseUrl(environment);
+  if (!databaseUrl) return { app: createApiApp() };
+
+  const applicationEnvironment = environment.get("APP_ENV") ?? "development";
+  const mfaKeysetValue = environment.get("AUTH_MFA_ENCRYPTION_KEYSET");
+  const subjectKeysetValue = environment.get("AUTH_THROTTLE_SUBJECT_KEYSET");
+  const davKeysetValue = environment.get("INTEGRATIONS_ENCRYPTION_KEYSET");
+  const davEnabled = environment.get("INTEGRATIONS_DAV_ENABLED") !== "false";
+  if (applicationEnvironment === "production" && !mfaKeysetValue) {
+    throw new Error("AUTH_MFA_ENCRYPTION_KEYSET is required in production.");
+  }
+  if (applicationEnvironment === "production" && !subjectKeysetValue) {
+    throw new Error("AUTH_THROTTLE_SUBJECT_KEYSET is required in production.");
+  }
+  if (
+    applicationEnvironment === "production" && davEnabled && !davKeysetValue
+  ) {
+    throw new Error(
+      "INTEGRATIONS_ENCRYPTION_KEYSET is required in production.",
+    );
+  }
+  const policy = browserSecurityPolicy(
+    applicationEnvironment,
+    environment.get("PUBLIC_WEB_ORIGIN"),
+  );
+  return configure(
+    databaseUrl,
+    composeVerificationMail(environment),
+    policy,
+    mfaKeysetValue ? decodeMfaEncryptionKeyset(mfaKeysetValue) : undefined,
+    subjectKeysetValue
+      ? decodeAuthenticationSubjectKeyset(subjectKeysetValue)
+      : undefined,
+    createAuthenticationResponseEqualizer(
+      resolveAuthenticationResponseFloor(
+        environment.get("AUTH_MINIMUM_RESPONSE_MS"),
+      ),
+    ),
+    undefined,
+    undefined,
+    davKeysetValue ? decodeDavEncryptionKeyset(davKeysetValue) : undefined,
+    davEnabled,
+  );
 }

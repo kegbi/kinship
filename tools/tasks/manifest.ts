@@ -166,7 +166,7 @@ export const API_CONFIGURATION_READS = [
   "Dockerfile.web",
   "gateway/nginx.conf",
   "gateway/security_headers.conf",
-  "apps/api/personalization_repository.ts",
+  "apps/api/personalization_router.ts",
   "apps/api/governance.ts",
   "packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts",
   "packages/backend/modules/interactions/adapters/postgres/communication_repository.ts",

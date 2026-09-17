@@ -1,4 +1,3 @@
-import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
@@ -8,20 +7,33 @@ import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import {
   createCommunicationManagement,
   createInteractionManagement,
-  PostgresCommunicationRepository,
-  PostgresInteractionRepository,
 } from "../../packages/backend/modules/interactions/public.ts";
-import {
-  PostgresPeopleTransaction,
-  PostgresRelationshipPersonBoundary,
-} from "../../packages/backend/modules/people/public.ts";
 import {
   communicationAuditFrom,
   interactionAuditFrom,
 } from "../../packages/backend/modules/interactions/public.ts";
-import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
-import { PostgresInteractionWorkspaceBoundary } from "../../packages/backend/modules/workspaces/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import {
+  PostgresActorRevalidation,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
+import {
+  PostgresCommunicationRepository,
+} from "../../packages/backend/modules/interactions/adapters/postgres/communication_repository.ts";
+import {
+  PostgresInteractionRepository,
+} from "../../packages/backend/modules/interactions/adapters/postgres/interaction_repository.ts";
+import {
+  PostgresPeopleTransaction,
+} from "../../packages/backend/modules/people/adapters/postgres/people_repository.ts";
+import {
+  PostgresRelationshipPersonBoundary,
+} from "../../packages/backend/modules/people/adapters/postgres/relationship_person_boundary.ts";
+import {
+  PostgresAuditEventRecorder,
+} from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
+import {
+  PostgresInteractionWorkspaceBoundary,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/interaction_workspace_boundary.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

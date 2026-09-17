@@ -1,23 +1,23 @@
-import {
-  createReminderDeliveryWorker,
-  InAppReminderDelivery,
-  PostgresInAppReminderEffectStore,
-  PostgresReminderDeliveryRepository,
-  reminderDeliveryAuditFrom,
-} from "../../packages/backend/modules/planning/public.ts";
-import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
-import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/public.ts";
+/**
+ * The worker composition root.
+ *
+ * The worker is the second deployable and composes the same modules the API
+ * does, through the same per-module `compose*` functions: planning's delivery
+ * loop and the workspace cleanup reconciler, over one shared context.
+ */
+
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import type { SharedComposition } from "../../packages/backend/platform/composition.ts";
+import { composeObjectStorage } from "../../packages/backend/modules/files/composition.ts";
+import { governanceAuditRecorder } from "../../packages/backend/modules/governance/composition.ts";
+import { peopleTransactionRunner } from "../../packages/backend/modules/people/composition.ts";
+import { composeReminderDelivery } from "../../packages/backend/modules/planning/composition.ts";
 import {
-  createWorkspaceCleanupReconciler,
-  PostgresActorRevalidation,
-  PostgresWorkspaceLifecycleRepository,
-} from "../../packages/backend/modules/workspaces/public.ts";
-import {
-  createObjectStorageRequestTransport,
-  S3CompatibleObjectStorage,
-} from "../../packages/backend/modules/files/public.ts";
-import { Client as MinioClient } from "minio";
+  activeWorkspaceResolver,
+  composeWorkspaceCleanup,
+  workspaceActors,
+  workspaceTransactionRunner,
+} from "../../packages/backend/modules/workspaces/composition.ts";
 import { resolveObjectStorageConfiguration } from "../api/file_storage_config.ts";
 
 interface TickWorker {
@@ -40,43 +40,26 @@ export function createConfiguredReminderWorker(databaseUrl: string): {
   readonly close: () => Promise<void>;
   readonly worker: TickWorker;
 } {
-  const connection = connectDatabase(databaseUrl);
-  const clock = { now: () => new Date() };
-  const storageConfiguration = resolveObjectStorageConfiguration(Deno.env);
-  const storage = new S3CompatibleObjectStorage(
-    new MinioClient({
-      accessKey: storageConfiguration.accessKey,
-      endPoint: storageConfiguration.host,
-      port: storageConfiguration.port,
-      secretKey: storageConfiguration.secretKey,
-      transport: createObjectStorageRequestTransport(
-        storageConfiguration.useSsl,
-        storageConfiguration.requestTimeoutMs,
-      ),
-      useSSL: storageConfiguration.useSsl,
-    }) as unknown as ConstructorParameters<typeof S3CompatibleObjectStorage>[0],
-    storageConfiguration.bucket,
+  const storage = composeObjectStorage(
+    resolveObjectStorageConfiguration(Deno.env),
   );
-  const reminders = createReminderDeliveryWorker({
-    audit: reminderDeliveryAuditFrom(new PostgresAuditEventRecorder()),
-    clock,
-    provider: new InAppReminderDelivery(
-      new PostgresInAppReminderEffectStore(connection.db, clock),
-    ),
-    repository: new PostgresReminderDeliveryRepository(
-      connection.db,
-      new PostgresActorRevalidation(),
-    ),
-    transaction: new PostgresPeopleTransaction(connection.db),
-  });
-  const cleanup = createWorkspaceCleanupReconciler({
-    clock,
-    repository: new PostgresWorkspaceLifecycleRepository(connection.db),
-    storage,
-  });
+  const connection = connectDatabase(databaseUrl);
+  const shared: SharedComposition = {
+    actors: workspaceActors(),
+    audit: governanceAuditRecorder(),
+    clock: { now: () => new Date() },
+    database: connection.db,
+    ids: { create: () => crypto.randomUUID() },
+    peopleTransaction: peopleTransactionRunner(connection.db),
+    transaction: workspaceTransactionRunner(connection.db),
+    workspaceEntry: activeWorkspaceResolver(),
+  };
   return {
     close: connection.destroy,
-    worker: createApplicationWorker(reminders, cleanup),
+    worker: createApplicationWorker(
+      composeReminderDelivery(shared),
+      composeWorkspaceCleanup(shared, { storage }),
+    ),
   };
 }
 

@@ -1,10 +1,14 @@
-import { PostgresPersonProfileRepository } from "../../packages/backend/read-models/person-profile/public.ts";
 import postgres from "postgres";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import {
+  PostgresPersonProfileRepository,
+} from "../../packages/backend/read-models/person-profile/adapters/postgres/person_profile_repository.ts";
+import {
   PostgresRegistrationTransaction,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/registration_repository.ts";
+import {
   PostgresWorkspaceSettings,
-} from "../../packages/backend/modules/workspaces/public.ts";
+} from "../../packages/backend/modules/workspaces/adapters/postgres/settings_management.ts";
 
 function assert(value: unknown, message: string): asserts value {
   if (!value) throw new Error(message);

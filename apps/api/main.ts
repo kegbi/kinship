@@ -1,19 +1,12 @@
-import { createConfiguredApiApp } from "./composition.ts";
-import { app as publicOnlyApp } from "./app.ts";
-import { browserSecurityPolicy } from "./security_config.ts";
-import { resolveDatabaseUrl } from "../../packages/backend/platform/postgres/config.ts";
-import {
-  resolveSmtpVerificationMailOptions,
-  SmtpVerificationMail,
-} from "../../packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail.ts";
-import type { EnvironmentReader } from "../../packages/backend/platform/postgres/config.ts";
-import { decodeMfaEncryptionKeyset } from "../../packages/backend/modules/identity/public.ts";
-import { decodeAuthenticationSubjectKeyset } from "../../packages/backend/modules/api-access/public.ts";
-import { decodeDavEncryptionKeyset } from "../../packages/backend/modules/integrations/public.ts";
-import {
-  createAuthenticationResponseEqualizer,
-  resolveAuthenticationResponseFloor,
-} from "./authentication_response.ts";
+/**
+ * The API entry point.
+ *
+ * It resolves a port and serves what the composition root assembled. Reading
+ * the environment, decoding keysets, and building adapters all belong to
+ * `composition.ts`, so nothing here knows what an adapter is.
+ */
+
+import { createApiRuntime } from "./composition.ts";
 
 const DEFAULT_PORT = 8000;
 
@@ -27,66 +20,6 @@ export function resolvePort(value: string | undefined): number {
     throw new Error("PORT must be an integer between 1 and 65535");
   }
   return port;
-}
-
-export function createApiRuntime(
-  environment: EnvironmentReader,
-  configure: typeof createConfiguredApiApp = createConfiguredApiApp,
-):
-  | ReturnType<typeof createConfiguredApiApp>
-  | { readonly app: typeof publicOnlyApp } {
-  const databaseUrl = resolveDatabaseUrl(environment);
-  if (!databaseUrl) return { app: publicOnlyApp };
-
-  const applicationEnvironment = environment.get("APP_ENV") ?? "development";
-  const mfaKeysetValue = environment.get("AUTH_MFA_ENCRYPTION_KEYSET");
-  const subjectKeysetValue = environment.get("AUTH_THROTTLE_SUBJECT_KEYSET");
-  const davKeysetValue = environment.get("INTEGRATIONS_ENCRYPTION_KEYSET");
-  const davEnabled = environment.get("INTEGRATIONS_DAV_ENABLED") !== "false";
-  if (applicationEnvironment === "production" && !mfaKeysetValue) {
-    throw new Error("AUTH_MFA_ENCRYPTION_KEYSET is required in production.");
-  }
-  if (applicationEnvironment === "production" && !subjectKeysetValue) {
-    throw new Error("AUTH_THROTTLE_SUBJECT_KEYSET is required in production.");
-  }
-  if (
-    applicationEnvironment === "production" && davEnabled && !davKeysetValue
-  ) {
-    throw new Error(
-      "INTEGRATIONS_ENCRYPTION_KEYSET is required in production.",
-    );
-  }
-  const mfaKeyset = mfaKeysetValue
-    ? decodeMfaEncryptionKeyset(mfaKeysetValue)
-    : undefined;
-  const subjectKeyset = subjectKeysetValue
-    ? decodeAuthenticationSubjectKeyset(subjectKeysetValue)
-    : undefined;
-  const davKeyset = davKeysetValue
-    ? decodeDavEncryptionKeyset(davKeysetValue)
-    : undefined;
-  const authenticationResponseFloor = resolveAuthenticationResponseFloor(
-    environment.get("AUTH_MINIMUM_RESPONSE_MS"),
-  );
-  const policy = browserSecurityPolicy(
-    applicationEnvironment,
-    environment.get("PUBLIC_WEB_ORIGIN"),
-  );
-  const mail = new SmtpVerificationMail(
-    resolveSmtpVerificationMailOptions(environment),
-  );
-  return configure(
-    databaseUrl,
-    mail,
-    policy,
-    mfaKeyset,
-    subjectKeyset,
-    createAuthenticationResponseEqualizer(authenticationResponseFloor),
-    undefined,
-    undefined,
-    davKeyset,
-    davEnabled,
-  );
 }
 
 if (import.meta.main) {

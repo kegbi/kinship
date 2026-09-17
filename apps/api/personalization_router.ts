@@ -15,8 +15,7 @@ import type {
   WorkspacePersonalizationRepository,
 } from "../../packages/backend/modules/workspaces/public.ts";
 
-export class PersonalizationRepositoryRouter
-  implements PersonalizationRepository {
+export class PersonalizationRouter implements PersonalizationRepository {
   constructor(
     private readonly workspace: WorkspacePersonalizationRepository,
     private readonly tags: TagPersonalizationFacade,

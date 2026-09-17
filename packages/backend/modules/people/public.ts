@@ -89,15 +89,6 @@ export type {
   PreviewPersonDeletionResult,
   TransitionPersonResult,
 } from "./application/lifecycle_person.ts";
-export {
-  PostgresPeopleRepository,
-  PostgresPeopleTransaction,
-} from "./adapters/postgres/people_repository.ts";
-export { PostgresPersonLifecycleRepository } from "./adapters/postgres/person_lifecycle_repository.ts";
-export { PostgresImportantDateRepository } from "./adapters/postgres/important_date_repository.ts";
-export { PostgresProfileFactRepository } from "./adapters/postgres/profile_fact_repository.ts";
-export { PostgresProfileFactOrganizations } from "./adapters/postgres/profile_fact_organizations.ts";
-export { PostgresRelationshipPersonBoundary } from "./adapters/postgres/relationship_person_boundary.ts";
 export type {
   InteractionPersonBoundary,
 } from "./application/interaction_person_boundary.ts";
@@ -107,8 +98,6 @@ export type {
   RelationshipPersonSummary,
 } from "./application/relationship_person_boundary.ts";
 export type { TagPersonalizationFacade } from "./application/tag_personalization.ts";
-export { PostgresTagPersonalization } from "./adapters/postgres/tag_personalization.ts";
-export { PostgresPeoplePersonalizationReferences } from "./adapters/postgres/personalization_references.ts";
 export type { PeoplePersonalizationReferences } from "./application/personalization_references.ts";
 export type {
   ImportedPerson,
@@ -116,14 +105,11 @@ export type {
   PeopleImportBoundary,
   PeopleImportTransaction,
 } from "./application/import_people_boundary.ts";
-export { PostgresPeopleImportBoundary } from "./adapters/postgres/import_people_boundary.ts";
 export type {
   ExportContactMethod,
   ExportPerson,
   PeopleExportBoundary,
 } from "./application/export_people_boundary.ts";
-export { PostgresPeopleExportBoundary } from "./adapters/postgres/export_people_boundary.ts";
-export { PostgresPeopleWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
 export {
   importantDateAuditFrom,
   personCreatedAuditFrom,
