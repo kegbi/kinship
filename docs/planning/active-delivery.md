@@ -194,7 +194,7 @@ Playwright test carrying its stable flow ID.
       `astro.mjs dev` processes afterwards; if it recurs, make the cleanup
       re-read the process tree before termination and assert absence of every
       listener the child bound.
-- [ ] **REL-037 — The `gifts` coverage set sits under its branch threshold on
+- [x] **REL-037 — The `gifts` coverage set sits under its branch threshold on
       `main`.** `deno task test:coverage --module=gifts` fails at `2bf0de36`
       with branch 78.6% against the set's 80% floor (`apps/api/gifts.ts` 72.3%,
       `gifts/application/gift_management.ts` 83.0%, lines 91.2%, functions
@@ -207,6 +207,11 @@ Playwright test carrying its stable flow ID.
       `test:coverage` stops at this set, so the sets ordered after it were
       verified one by one and pass. Fix by covering the untaken branches of
       `apps/api/gifts.ts` in the gifts unit suite, not by lowering the floor.
+      Delivered 2026-09-17: five route tests in `apps/api/gifts_test.ts` cover
+      the origin, validation, session, creation-failure, and status-mapping
+      branches; `apps/api/gifts.ts` is at 92.2% branch and 100% line, the set at
+      87.3% branch, and root `test:coverage` runs to completion again. No
+      production file or threshold changed.
 
 ## Just-In-Time Technical Capabilities
 
