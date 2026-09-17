@@ -539,7 +539,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     except the pre-existing `gifts` branch floor tracked by REL-037; gates
     fmt:check, lint, check, check:architecture.
 
-- [ ] **GAP-012 — Generic workspace lifecycle impact and personalization
+- [x] **GAP-012 — Generic workspace lifecycle impact and personalization
       references.** S-M. Depends: 006.
   - Scope: `platform/postgres/lifecycle_impact.ts` generic class driven by a
     per-module `{ counts, revisionSources }` spec; 11 files become 11 specs.
@@ -547,6 +547,23 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     pluggable composite-key conflict detector; 8 files become 4 specs.
   - Verify: workspace lifecycle and personalization tests green; ≥ 300 lines
     removed.
+  - Delivered 2026-09-17: `platform/postgres/` gained `workspace_scope.ts` (one
+    ownership-path source string compiled to the from-list and predicate that
+    select, update, and delete share), `lifecycle_impact.ts` (counts, digest,
+    and object keys from a per-module spec), and `reference_counter.ts` (count,
+    rewrite, label-junction insert-and-delete, and a declared composite-key
+    conflict rule); the 11 lifecycle impact adapters and 4 personalization
+    reference adapters are specs that keep their export names, and the
+    interactions and journal replace ports return the same outcome as the
+    others; the impact digest is byte-identical so held previews stay valid; 583
+    lines deleted, net -310 on pre-existing files, +547 lines of platform code
+    with 17 pinned SQL tests; a new
+    `workspace_lifecycle_impact_postgres_test.ts` runs all 11 participants
+    against the real schema (3 tests, mutation-checked against a broken join);
+    unit 718 vitest plus all sets green, integration 126/0, baseline unchanged
+    at 16, coverage sets green except the parked `gifts` floor (REL-037); gates
+    fmt:check, lint, check, check:architecture. One `tools/e2e_test.ts` Astro
+    child start flake passed on rerun (REL-034).
 
 - [ ] **GAP-013 — Per-module composition and a thin composition root.** L.
       Depends: 007.

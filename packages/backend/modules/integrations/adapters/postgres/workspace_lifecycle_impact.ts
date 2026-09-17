@@ -1,29 +1,23 @@
-import { sql } from "kysely";
-import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { workspaceLifecycleImpact } from "../../../../platform/postgres/lifecycle_impact.ts";
 
-export class PostgresIntegrationWorkspaceLifecycleImpact {
-  async inspectBeforeCascade(
-    command: {
-      readonly transaction: { readonly opaque: unknown };
-      readonly workspaceId: string;
+/**
+ * What a workspace cascade destroys in integrations, table by table. The
+ * reported number is books and subscriptions together, as the operator sees
+ * one "integrations" figure.
+ */
+export const PostgresIntegrationWorkspaceLifecycleImpact =
+  workspaceLifecycleImpact({
+    counts: {
+      integrations: [
+        "crm.dav_address_books",
+        "crm.dav_address_book_subscriptions",
+      ],
     },
-  ) {
-    const result = await sql<{ integrations: number; revision: string }>`
-      select
-        ((select count(*) from crm.dav_address_books where workspace_id=${command.workspaceId}::uuid) +
-         (select count(*) from crm.dav_address_book_subscriptions where workspace_id=${command.workspaceId}::uuid))::int integrations,
-        md5(jsonb_build_object(
-          'books', coalesce((select jsonb_agg(to_jsonb(t) order by t.id) from crm.dav_address_books t where t.workspace_id=${command.workspaceId}::uuid), '[]'::jsonb),
-          'subscriptions', coalesce((select jsonb_agg(to_jsonb(t) order by t.id) from crm.dav_address_book_subscriptions t where t.workspace_id=${command.workspaceId}::uuid), '[]'::jsonb),
-          'objects', coalesce((select jsonb_agg(to_jsonb(t) order by t.id) from crm.dav_objects t where t.workspace_id=${command.workspaceId}::uuid), '[]'::jsonb),
-          'tokens', coalesce((select jsonb_agg(to_jsonb(t) order by t.id) from crm.dav_sync_tokens t where t.workspace_id=${command.workspaceId}::uuid), '[]'::jsonb),
-          'weather', coalesce((select jsonb_agg(to_jsonb(t) order by t.id) from crm.location_weather_cache t join crm.locations owned on owned.id=t.location_id where owned.workspace_id=${command.workspaceId}::uuid), '[]'::jsonb)
-        )::text) revision
-    `.execute(databaseFromSession(command.transaction));
-    const row = result.rows[0]!;
-    return {
-      counts: { integrations: row.integrations },
-      revision: row.revision,
-    };
-  }
-}
+    revision: {
+      books: "crm.dav_address_books@id",
+      subscriptions: "crm.dav_address_book_subscriptions@id",
+      objects: "crm.dav_objects@id",
+      tokens: "crm.dav_sync_tokens@id",
+      weather: "crm.location_weather_cache@id via crm.locations.location_id",
+    },
+  });
