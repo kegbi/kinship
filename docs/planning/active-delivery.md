@@ -162,7 +162,12 @@ Playwright test carrying its stable flow ID.
       The same probe passed in the following root `test:coverage` run and in an
       isolated `deno task test:unit --module=api` rerun. This is a different
       failure from REL-031, which GAP-002 closed: the child dies instead of
-      starting slowly. Track it; do not loosen readiness.
+      starting slowly. Track it; do not loosen readiness. Recurred once on
+      2026-09-17 during the GAP-012 verification: the same probe failed in the
+      first root `test:unit` (`deno task dev:web` exited with code 0 before
+      readiness), then passed in an isolated `tools/e2e_test.ts` run and in the
+      full rerun; the candidate touched nothing under `apps/web` or
+      `tools/e2e.ts`.
 
 - [ ] **REL-035 — Raise the pinned dependencies past the accepted moderate
       advisories.** `deno task deps:audit` (GAP-003) reports five moderate
