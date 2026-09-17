@@ -683,8 +683,31 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     126/0, contracts:check green, baseline 14 unchanged; gates fmt:check, lint,
     check, check:architecture.
 
-- [ ] **GAP-017 — Domain and ports extraction: interactions, journal, gifts,
+- [x] **GAP-017 — Domain and ports extraction: interactions, journal, gifts,
       files.** M-L. Depends: 015.
+  - Delivered 2026-09-17: interactions gained `domain/communication_rules.ts`
+    and `domain/interaction_rules.ts` (records, message canonicalisation,
+    validation, replay matching, and the aggregate, call, conversation, and
+    message id derivations now on the kernel's `deterministicId`, pinned
+    byte-identical to main; the client-id pattern stays local because it must
+    refuse the version-8 ids the backend derives), journal
+    `domain/
+    journal_rules.ts`, gifts `domain/gift_rules.ts` (status
+    vocabularies, transition tables, money, hydration), and files
+    `domain/file_rules.ts` (size, kind and status vocabulary, allowed media,
+    checksum, upload validation); each module gained `ports/` with context,
+    repository, boundary, and audit contracts; `record_communication.ts` (717),
+    `record_interaction.ts` (641), `gift_management.ts` (572), and
+    `person_files.ts` (584) are facades over context, listing or reads, and
+    write files, the largest application file is 267 lines, and every previous
+    `public.ts` name is still exported; domain sets at 99.4 / 100 / 99.4
+    (interactions) and 100 / 100 / 100 (files, gifts, journal) in the new
+    `interactions`, `files`, `gifts-domain`, and `journal-domain` manifest
+    entries; gifts, journal, and storage sets unchanged or higher, api set to
+    87.8 branch; 26 files changed (+338/-2759) plus 38 new files (5393 lines);
+    unit 718 vitest plus all sets green, integration 126/0, contracts:check
+    green, baseline 14 unchanged; gates fmt:check, lint, check,
+    check:architecture.
 - [ ] **GAP-018 — Domain and ports extraction: workspaces, identity, governance,
       import-export, integrations, api-access.** M-L. Depends: 015.
   - Both: same pattern; identity keeps `ports/security.ts`; import-export

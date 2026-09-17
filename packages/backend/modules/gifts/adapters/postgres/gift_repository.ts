@@ -2,11 +2,8 @@ import { sql } from "kysely";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
-import type {
-  GiftRepository,
-  StoredDebt,
-  StoredGift,
-} from "../../application/gift_management.ts";
+import type { StoredDebt, StoredGift } from "../../domain/gift_rules.ts";
+import type { GiftRepository } from "../../ports/gift_repository.ts";
 
 interface GiftRow {
   readonly amount: string | null;

@@ -1,46 +1,26 @@
+/**
+ * What an administrator is shown about the workspace's storage.
+ *
+ * Two things happen here and only two: a member is refused before anything is
+ * read, because the page is an administrator's, and the provider's health is
+ * asked outside the transaction, because it is a network call to a service
+ * that is not in the database's unit of work and a slow or broken provider
+ * must not hold a transaction open. The totals and the lookup are the
+ * repository's; the shapes they come back in are the port's.
+ */
+
 import type { Failure } from "../../../shared-kernel/result.ts";
 import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
-import type { PeopleTransaction } from "../../people/public.ts";
+import type {
+  PersonFileActor,
+  PersonFileTransactionRunner,
+} from "../ports/context.ts";
+import type {
+  StorageFileLookupItem,
+  StorageSettingsRepository,
+  StorageUsage,
+} from "../ports/storage_settings_repository.ts";
 import type { ActorRevalidation } from "../../workspaces/public.ts";
-import type { PersonFileActor, PersonFileStatus } from "./person_files.ts";
-
-export interface StorageFileLookupItem {
-  readonly byteSize: number;
-  readonly createdAt: string;
-  readonly fileId: string;
-  readonly filename: string;
-  readonly kind: string;
-  readonly mimeType: string;
-  readonly personId?: string;
-  readonly personName?: string;
-  readonly status: PersonFileStatus;
-  readonly title: string;
-}
-
-export interface StorageUsage {
-  readonly available: number;
-  readonly missing: number;
-  readonly processing: number;
-  readonly quarantined: number;
-  readonly totalBytes: number;
-  readonly totalFiles: number;
-}
-
-export interface StorageSettingsRepository {
-  read(
-    command: PersonFileActor & {
-      readonly query?: string;
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<
-    | {
-      readonly files: readonly StorageFileLookupItem[];
-      readonly status: "ready";
-      readonly usage: StorageUsage;
-    }
-    | Failure<"forbidden">
-  >;
-}
 
 export interface StorageSettingsDependencies {
   readonly actors: ActorRevalidation;
@@ -50,9 +30,7 @@ export interface StorageSettingsDependencies {
     "available" | "not-initialized" | "unavailable"
   >;
   readonly repository: StorageSettingsRepository;
-  readonly transaction: {
-    run<T>(work: (transaction: PeopleTransaction) => Promise<T>): Promise<T>;
-  };
+  readonly transaction: PersonFileTransactionRunner;
 }
 
 export type StorageSettingsResult =

@@ -1,4 +1,4 @@
-import { PERSON_FILE_MAX_BYTES } from "./person_files.ts";
+import { PERSON_FILE_MAX_BYTES } from "../domain/file_rules.ts";
 
 export interface FileImportBoundary {
   representMissing(command: {

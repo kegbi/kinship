@@ -8,10 +8,10 @@ import {
 import type {
   CallRecord,
   CommunicationMessage,
-  CommunicationRepository,
   ConversationRecord,
   StoredCommunication,
-} from "../../application/record_communication.ts";
+} from "../../domain/communication_rules.ts";
+import type { CommunicationRepository } from "../../ports/communication_repository.ts";
 
 interface CallRow {
   readonly called_at: string;

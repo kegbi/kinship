@@ -1,0 +1,120 @@
+/**
+ * How the module stores gifts and debts.
+ *
+ * Both halves of the table pair read the same way — `find` before a change,
+ * `list` for a person's page — and write the same way: `create` inserts,
+ * `save` moves a status the rules already allowed. Neither save decides
+ * anything; `domain/gift_rules.ts` has already said whether the move is legal
+ * by the time one is called.
+ *
+ * `archived-write-rejected` appears on every write because a person may be
+ * archived between the actor's standing being established and the row being
+ * touched, and an archived person's gifts are read-only.
+ */
+
+import type { Failure } from "../../../shared-kernel/result.ts";
+import type {
+  DebtDirection,
+  DebtStatus,
+  GiftStatus,
+  StoredDebt,
+  StoredGift,
+} from "../domain/gift_rules.ts";
+import type { GiftActor, GiftTransaction } from "./context.ts";
+
+export interface GiftRepository {
+  createGift(
+    command: GiftActor & {
+      readonly amount?: string;
+      readonly comment?: string;
+      readonly currencyCode?: string;
+      readonly eventAt?: string;
+      readonly id: string;
+      readonly name: string;
+      readonly occurredAt: Date;
+      readonly personId: string;
+      readonly recipientPersonId?: string;
+      readonly status: GiftStatus;
+      readonly transaction: GiftTransaction;
+      readonly url?: string;
+    },
+  ): Promise<
+    | { readonly gift: StoredGift; readonly status: "created" }
+    | Failure<"archived-write-rejected" | "not-found">
+  >;
+  createDebt(
+    command: GiftActor & {
+      readonly amount: string;
+      readonly currencyCode?: string;
+      readonly direction: DebtDirection;
+      readonly id: string;
+      readonly occurredAt: Date;
+      readonly personId: string;
+      readonly reason?: string;
+      readonly settledAt?: Date;
+      readonly status: DebtStatus;
+      readonly transaction: GiftTransaction;
+    },
+  ): Promise<
+    | { readonly debt: StoredDebt; readonly status: "created" }
+    | Failure<"archived-write-rejected" | "not-found">
+  >;
+  findGift(
+    command: GiftActor & {
+      readonly id: string;
+      readonly personId: string;
+      readonly transaction: GiftTransaction;
+    },
+  ): Promise<
+    | { readonly gift: StoredGift; readonly status: "found" }
+    | Failure<"archived-write-rejected" | "not-found">
+  >;
+  findDebt(
+    command: GiftActor & {
+      readonly id: string;
+      readonly personId: string;
+      readonly transaction: GiftTransaction;
+    },
+  ): Promise<
+    | { readonly debt: StoredDebt; readonly status: "found" }
+    | Failure<"archived-write-rejected" | "not-found">
+  >;
+  list(
+    command: GiftActor & {
+      readonly personId: string;
+      readonly transaction: GiftTransaction;
+    },
+  ): Promise<
+    | {
+      readonly debts: readonly StoredDebt[];
+      readonly gifts: readonly StoredGift[];
+      readonly status: "ready";
+    }
+    | Failure<"forbidden" | "not-found">
+  >;
+  saveGift(
+    command: GiftActor & {
+      readonly id: string;
+      readonly occurredAt: Date;
+      readonly personId: string;
+      readonly status: GiftStatus;
+      readonly transaction: GiftTransaction;
+    },
+  ): Promise<
+    | { readonly gift: StoredGift; readonly status: "saved" }
+    | Failure<"archived-write-rejected" | "not-found">
+  >;
+  saveDebt(
+    command: GiftActor & {
+      readonly id: string;
+      readonly occurredAt: Date;
+      readonly personId: string;
+      readonly settledAt?: Date;
+      readonly status: DebtStatus;
+      readonly transaction: GiftTransaction;
+    },
+  ): Promise<
+    | { readonly debt: StoredDebt; readonly status: "saved" }
+    | Failure<"archived-write-rejected" | "not-found">
+  >;
+}

@@ -1,4 +1,4 @@
-import type { ObjectStorage } from "../../application/person_files.ts";
+import type { ObjectStorage } from "../../ports/object_storage.ts";
 import { Buffer } from "node:buffer";
 import * as http from "node:http";
 import * as https from "node:https";

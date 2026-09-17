@@ -11,7 +11,7 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
-import type { FileAudit } from "./person_files.ts";
+import type { FileAudit } from "../ports/audit.ts";
 
 export function describeFileEvent(
   command: Parameters<FileAudit["record"]>[0],

@@ -5,7 +5,7 @@ import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
   StorageFileLookupItem,
   StorageSettingsRepository,
-} from "../../application/storage_settings.ts";
+} from "../../ports/storage_settings_repository.ts";
 
 interface UsageRow {
   readonly available: string;

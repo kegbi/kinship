@@ -3,11 +3,11 @@ import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
-  FileMetadataRepository,
   PersonFileKind,
   PersonFileStatus,
   StoredPersonFile,
-} from "../../application/person_files.ts";
+} from "../../domain/file_rules.ts";
+import type { FileMetadataRepository } from "../../ports/file_metadata_repository.ts";
 
 interface FileRow {
   readonly byte_size: string;

@@ -12,7 +12,7 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
-import type { JournalAudit } from "./journal_management.ts";
+import type { JournalAudit } from "../ports/audit.ts";
 
 export function describeJournalEvent(
   command: Parameters<JournalAudit["record"]>[0],

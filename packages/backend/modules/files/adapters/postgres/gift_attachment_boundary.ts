@@ -3,7 +3,7 @@ import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type {
   GiftAttachmentBoundary,
   GiftAttachmentTarget,
-} from "../../application/person_files.ts";
+} from "../../ports/gift_attachment.ts";
 
 /**
  * `files` owns the gift-to-file links, not the gift rows themselves. Which

@@ -446,9 +446,6 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/api-access/authentication_subject_test.ts",
         "packages/backend/modules/identity/identity_test.ts",
         "packages/backend/modules/identity/application/password_recovery_test.ts",
-        "packages/backend/modules/files/object_storage_test.ts",
-        "packages/backend/modules/files/person_files_test.ts",
-        "packages/backend/modules/interactions/record_interaction_test.ts",
         "packages/backend/read-models/activity-report/activity_report_test.ts",
         "packages/backend/read-models/audit-history/audit_history_test.ts",
         "packages/backend/read-models/people-directory/list_people_test.ts",
@@ -579,12 +576,17 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/api-access/authentication_subject_test.ts",
         "packages/backend/modules/identity/identity_test.ts",
         "packages/backend/modules/identity/application/password_recovery_test.ts",
+        "packages/backend/modules/files/domain/file_rules_test.ts",
         "packages/backend/modules/files/object_storage_test.ts",
         "packages/backend/modules/files/person_files_test.ts",
+        "packages/backend/modules/gifts/domain/gift_rules_test.ts",
         "packages/backend/modules/gifts/gift_management_test.ts",
         "packages/backend/modules/import-export/import_management_test.ts",
         "packages/backend/modules/import-export/export_management_test.ts",
+        "packages/backend/modules/interactions/domain/communication_rules_test.ts",
+        "packages/backend/modules/interactions/domain/interaction_rules_test.ts",
         "packages/backend/modules/interactions/record_interaction_test.ts",
+        "packages/backend/modules/journal/domain/journal_rules_test.ts",
         "packages/backend/modules/journal/journal_management_test.ts",
         "packages/backend/modules/people/domain/important_dates/rules_test.ts",
         "packages/backend/modules/people/domain/lifecycle_rules_test.ts",
@@ -869,6 +871,37 @@ export const MODULES: readonly TaskModule[] = [
     },
   },
   {
+    // The interactions module's domain is pure: what an activity, a note, a
+    // call, and a conversation are, the canonical order a conversation's
+    // messages read in, and the two deterministic identifier derivations that
+    // make recording idempotent. It is measured on its own at the bar the
+    // shared kernel keeps, and the module's use-case suite, which used to live
+    // in the `api` unit set, lives here too so it has exactly one unit home.
+    id: "interactions",
+    unit: {
+      tests: [
+        "packages/backend/modules/interactions/domain/communication_rules_test.ts",
+        "packages/backend/modules/interactions/domain/interaction_rules_test.ts",
+        "packages/backend/modules/interactions/record_interaction_test.ts",
+      ],
+      permissions: {
+        // The suite proves the workspace interaction boundary owns its own
+        // actor and transaction types by reading the module graph with
+        // `deno info`.
+        run: ["deno"],
+      },
+    },
+    coverage: {
+      directory: "interactions-domain",
+      threshold: 95,
+      tests: [
+        "packages/backend/modules/interactions/domain/communication_rules_test.ts",
+        "packages/backend/modules/interactions/domain/interaction_rules_test.ts",
+      ],
+      include: ["packages/backend/modules/interactions/domain"],
+    },
+  },
+  {
     id: "governance",
     unit: {
       tests: [
@@ -902,6 +935,7 @@ export const MODULES: readonly TaskModule[] = [
     unit: {
       tests: [
         "apps/api/gifts_test.ts",
+        "packages/backend/modules/gifts/domain/gift_rules_test.ts",
         "packages/backend/modules/gifts/gift_management_test.ts",
         "packages/contracts/gifts_test.ts",
       ],
@@ -911,12 +945,58 @@ export const MODULES: readonly TaskModule[] = [
       directory: "gifts",
       tests: [
         "apps/api/gifts_test.ts",
+        "packages/backend/modules/gifts/domain/gift_rules_test.ts",
         "packages/backend/modules/gifts/gift_management_test.ts",
       ],
       include: [
         "apps/api/gifts.ts",
         "packages/backend/modules/gifts/application/gift_management.ts",
+        "packages/backend/modules/gifts/application/gift_context.ts",
+        "packages/backend/modules/gifts/application/gift_listing.ts",
+        "packages/backend/modules/gifts/application/gift_writes.ts",
+        "packages/backend/modules/gifts/domain",
       ],
+    },
+  },
+  {
+    // The gifts domain is pure: what a gift and a debt are, where each status
+    // may move, and what an amount of money is. It is measured on its own at
+    // the bar the shared kernel keeps; the suite's unit home is `gifts`, and
+    // the wider `gifts` set sits at the repository floor because it measures
+    // the HTTP surface too, so this module declares coverage alone.
+    id: "gifts-domain",
+    coverage: {
+      directory: "gifts-domain",
+      threshold: 95,
+      tests: ["packages/backend/modules/gifts/domain/gift_rules_test.ts"],
+      include: ["packages/backend/modules/gifts/domain"],
+    },
+  },
+  {
+    // The files module's domain is pure: what may be uploaded, what a reader
+    // is allowed to see of a stored file, and the checksum recorded against
+    // the object so a later read can prove it fetched what was stored. It is
+    // measured on its own at the bar the shared kernel keeps, and the module's
+    // two suites, which used to live in the `api` unit set, live here too so
+    // each has exactly one unit home.
+    id: "files",
+    unit: {
+      tests: [
+        "packages/backend/modules/files/domain/file_rules_test.ts",
+        "packages/backend/modules/files/object_storage_test.ts",
+        "packages/backend/modules/files/person_files_test.ts",
+      ],
+      permissions: {
+        // The object-storage suite runs the S3 transport against a loopback
+        // HTTP server it starts itself.
+        net: ["127.0.0.1"],
+      },
+    },
+    coverage: {
+      directory: "files-domain",
+      threshold: 95,
+      tests: ["packages/backend/modules/files/domain/file_rules_test.ts"],
+      include: ["packages/backend/modules/files/domain"],
     },
   },
   {
@@ -942,6 +1022,7 @@ export const MODULES: readonly TaskModule[] = [
     unit: {
       tests: [
         "apps/api/journal_test.ts",
+        "packages/backend/modules/journal/domain/journal_rules_test.ts",
         "packages/backend/modules/journal/journal_management_test.ts",
         "packages/contracts/journal_test.ts",
       ],
@@ -956,13 +1037,30 @@ export const MODULES: readonly TaskModule[] = [
       directory: "journal",
       tests: [
         "apps/api/journal_test.ts",
+        "packages/backend/modules/journal/domain/journal_rules_test.ts",
         "packages/backend/modules/journal/journal_management_test.ts",
       ],
       include: [
         "apps/api/journal.ts",
         "packages/backend/modules/journal/application/journal_management.ts",
+        "packages/backend/modules/journal/domain",
         "packages/backend/read-models/journal-timeline/application/list_journal_timeline.ts",
       ],
+    },
+  },
+  {
+    // The journal domain is pure: what a post and a day rating have to say for
+    // themselves, and what counts as a day. It is measured on its own at the
+    // bar the shared kernel keeps; the suite's unit home is `journal`, and the
+    // wider `journal` set sits at the repository floor because it measures the
+    // HTTP surface and a read model too, so this module declares coverage
+    // alone.
+    id: "journal-domain",
+    coverage: {
+      directory: "journal-domain",
+      threshold: 95,
+      tests: ["packages/backend/modules/journal/domain/journal_rules_test.ts"],
+      include: ["packages/backend/modules/journal/domain"],
     },
   },
   {
@@ -1236,6 +1334,7 @@ export const TEST_AGGREGATE: readonly string[] = [
   "integrations",
   "planning",
   "relationships",
+  "interactions",
   "governance",
   "gifts",
   "journal",
@@ -1243,6 +1342,7 @@ export const TEST_AGGREGATE: readonly string[] = [
   "exports",
   "lifecycle",
   "workspace-lifecycle",
+  "files",
   "storage",
   "performance",
   "operations",
@@ -1264,10 +1364,14 @@ export const COVERAGE_AGGREGATE: readonly string[] = [
   "planning",
   "planning-domain",
   "relationships",
+  "interactions",
   "governance",
   "gifts",
+  "gifts-domain",
+  "files",
   "storage",
   "journal",
+  "journal-domain",
   "imports",
   "exports",
   "lifecycle",
