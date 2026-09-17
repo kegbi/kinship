@@ -1,100 +1,47 @@
+/**
+ * Recording a person, once.
+ *
+ * Two entry points create a person and they differ only in what makes them
+ * safe to retry. `create` is a member typing a name, so it looks for people
+ * who already carry that name and hands them back for a decision unless the
+ * member has already overridden the warning. `ensure` is a machine replaying a
+ * request — a DAV sync, an import — so it derives the person's identifier from
+ * the request instead of generating one, locks that identifier, and returns
+ * the person the first attempt created rather than a second copy.
+ *
+ * Every rule about the names themselves lives in `domain/person_identity.ts`.
+ * What is left here is the order of the steps: normalize, validate,
+ * revalidate the actor under lock, write, audit, and read both back before the
+ * transaction is allowed to commit.
+ */
+
 import type { Clock } from "../../../shared-kernel/clock.ts";
-import {
-  deterministicId,
-  type IdGenerator,
-} from "../../../shared-kernel/ids.ts";
+import type { IdGenerator } from "../../../shared-kernel/ids.ts";
 import type {
   Failure,
-  ValidationErrors,
   ValidationFailure,
 } from "../../../shared-kernel/result.ts";
-import { optionalText } from "../../../shared-kernel/validation.ts";
+import {
+  type CreatePersonInput,
+  derivePersonId,
+  normalizeCreatePersonInput,
+  type PersonIdentity,
+  personIdentityFrom,
+  type PossibleDuplicate,
+  sameIdentity,
+  validateCreatePersonInput,
+} from "../domain/person_identity.ts";
+import type { PersonCreatedAudit } from "../ports/audit.ts";
+import type {
+  PeopleActor,
+  PeopleTransaction,
+  PeopleTransactionRunner,
+} from "../ports/context.ts";
+import type {
+  PeopleRepository,
+  PersonIdentityLookup,
+} from "../ports/person_repository.ts";
 import type { ActorRevalidation } from "../../workspaces/public.ts";
-
-/** The namespace that makes a person creation idempotent across retries. */
-const PERSON_ID_NAMESPACE = "kinship.people.external-id.v1";
-
-export interface PeopleTransaction {
-  readonly opaque: unknown;
-}
-
-export interface PeopleActor {
-  readonly memberId: string;
-  readonly role: "admin" | "member" | "owner";
-  readonly userId: string;
-  readonly workspaceId: string;
-}
-
-export interface CreatePersonInput {
-  readonly duplicateOverride?: boolean;
-  readonly familyName?: string;
-  readonly givenName: string;
-  readonly isPartial: boolean;
-  readonly middleName?: string;
-  readonly nickname?: string;
-}
-
-export interface PersonIdentity {
-  readonly familyName?: string;
-  readonly givenName: string;
-  readonly id: string;
-  readonly isPartial: boolean;
-  readonly middleName?: string;
-  readonly nickname?: string;
-}
-
-export interface PossibleDuplicate {
-  readonly displayName: string;
-  readonly id: string;
-}
-
-export type PersonIdentityLookup =
-  | { readonly person: PersonIdentity; readonly status: "ready" }
-  | { readonly person: PersonIdentity; readonly status: "archived" }
-  | Failure<"forbidden" | "not-found">;
-
-export interface PeopleRepository {
-  lockRequest(command: {
-    readonly id: string;
-    readonly transaction: PeopleTransaction;
-  }): Promise<void>;
-  findPossibleDuplicates(
-    command: PeopleActor & CreatePersonInput & {
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<readonly PossibleDuplicate[]>;
-  getIdentity(
-    command: PeopleActor & {
-      readonly personId: string;
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<PersonIdentityLookup>;
-  create(
-    command: PeopleActor & PersonIdentity & {
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<PersonIdentity | undefined>;
-  assertCreatedPostcondition(
-    command: PeopleActor & PersonIdentity & {
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<void>;
-}
-
-export interface PersonCreatedAudit {
-  record(command: {
-    readonly actor: PeopleActor;
-    readonly occurredAt: Date;
-    readonly person: PersonIdentity;
-    readonly transaction: PeopleTransaction;
-  }): Promise<void>;
-  assertPostcondition(command: {
-    readonly actor: PeopleActor;
-    readonly occurredAt: Date;
-    readonly person: PersonIdentity;
-    readonly transaction: PeopleTransaction;
-  }): Promise<void>;
-}
 
 export interface PeopleManagementDependencies {
   readonly actors: ActorRevalidation;
@@ -102,11 +49,10 @@ export interface PeopleManagementDependencies {
   readonly clock: Clock;
   readonly ids: IdGenerator;
   readonly repository: PeopleRepository;
-  readonly transaction: {
-    run<T>(work: (transaction: PeopleTransaction) => Promise<T>): Promise<T>;
-  };
+  readonly transaction: PeopleTransactionRunner;
 }
 
+/** Creating a person inside a transaction somebody else opened. */
 export interface TransactionalPeopleCreation {
   createInTransaction(
     actor: PeopleActor,
@@ -129,53 +75,41 @@ export type EnsurePersonResult =
   | Failure<"forbidden", "idempotency-conflict">
   | { readonly person: PersonIdentity; readonly status: "ready" };
 
-function sameIdentity(left: PersonIdentity, right: CreatePersonInput): boolean {
-  return left.givenName === right.givenName &&
-    left.familyName === right.familyName &&
-    left.middleName === right.middleName && left.nickname === right.nickname &&
-    left.isPartial === right.isPartial;
-}
-
 export type GetPersonResult = PersonIdentityLookup;
-
-function normalize(input: CreatePersonInput): CreatePersonInput {
-  const familyName = optionalText(input.familyName);
-  const middleName = optionalText(input.middleName);
-  const nickname = optionalText(input.nickname);
-  return {
-    ...(input.duplicateOverride ? { duplicateOverride: true } : {}),
-    ...(familyName ? { familyName } : {}),
-    givenName: input.givenName.trim(),
-    isPartial: input.isPartial,
-    ...(middleName ? { middleName } : {}),
-    ...(nickname ? { nickname } : {}),
-  };
-}
-
-function validate(input: CreatePersonInput): ValidationErrors {
-  if (!input.givenName && !input.familyName && !input.nickname) {
-    return {
-      givenName: "Enter a given name, family name, or nickname.",
-    };
-  }
-  if (!input.givenName && !input.isPartial) {
-    return {
-      isPartial: "Mark the person as partial when their given name is unknown.",
-    };
-  }
-  return {};
-}
 
 export function createPeopleManagement(
   dependencies: PeopleManagementDependencies,
 ) {
+  /** Writes the person, records the event, and reads both back. */
+  const persist = async (
+    actor: PeopleActor,
+    person: PersonIdentity,
+    transaction: PeopleTransaction,
+  ): Promise<PersonIdentity | undefined> => {
+    const created = await dependencies.repository.create({
+      ...actor,
+      ...person,
+      transaction,
+    });
+    if (!created) return undefined;
+    const occurredAt = dependencies.clock.now();
+    const auditCommand = { actor, occurredAt, person: created, transaction };
+    await dependencies.audit.record(auditCommand);
+    await dependencies.repository.assertCreatedPostcondition({
+      ...actor,
+      ...created,
+      transaction,
+    });
+    await dependencies.audit.assertPostcondition(auditCommand);
+    return created;
+  };
   const createInTransaction = async (
     actor: PeopleActor,
     rawInput: CreatePersonInput,
     transaction: PeopleTransaction,
   ): Promise<CreatePersonResult> => {
-    const input = normalize(rawInput);
-    const errors = validate(input);
+    const input = normalizeCreatePersonInput(rawInput);
+    const errors = validateCreatePersonInput(input);
     if (Object.keys(errors).length > 0) {
       return { errors, status: "validation-error" };
     }
@@ -193,30 +127,14 @@ export function createPeopleManagement(
     if (duplicates.length > 0 && !input.duplicateOverride) {
       return { duplicates, status: "possible-duplicate" };
     }
-    const person: PersonIdentity = {
-      ...(input.familyName ? { familyName: input.familyName } : {}),
-      givenName: input.givenName,
-      id: dependencies.ids.create(),
-      isPartial: input.isPartial,
-      ...(input.middleName ? { middleName: input.middleName } : {}),
-      ...(input.nickname ? { nickname: input.nickname } : {}),
-    };
-    const created = await dependencies.repository.create({
-      ...actor,
-      ...person,
+    const created = await persist(
+      actor,
+      personIdentityFrom(dependencies.ids.create(), input),
       transaction,
-    });
-    if (!created) return { status: "forbidden" };
-    const occurredAt = dependencies.clock.now();
-    const auditCommand = { actor, occurredAt, person: created, transaction };
-    await dependencies.audit.record(auditCommand);
-    await dependencies.repository.assertCreatedPostcondition({
-      ...actor,
-      ...created,
-      transaction,
-    });
-    await dependencies.audit.assertPostcondition(auditCommand);
-    return { person: created, status: "created" };
+    );
+    return created
+      ? { person: created, status: "created" }
+      : { status: "forbidden" };
   };
   const ensureInTransaction = async (
     actor: PeopleActor,
@@ -224,15 +142,12 @@ export function createPeopleManagement(
     rawInput: CreatePersonInput,
     transaction: PeopleTransaction,
   ): Promise<EnsurePersonResult> => {
-    const input = normalize(rawInput);
-    const errors = validate(input);
+    const input = normalizeCreatePersonInput(rawInput);
+    const errors = validateCreatePersonInput(input);
     if (Object.keys(errors).length > 0) {
       return { errors, status: "validation-error" };
     }
-    const id = await deterministicId(PERSON_ID_NAMESPACE, [
-      actor.workspaceId,
-      requestId,
-    ]);
+    const id = await derivePersonId(actor.workspaceId, requestId);
     const standing = await dependencies.actors.revalidate({
       ...actor,
       lock: true,
@@ -251,23 +166,14 @@ export function createPeopleManagement(
         : { status: "idempotency-conflict" };
     }
     if (existing.status === "forbidden") return { status: "forbidden" };
-    const person: PersonIdentity = { id, ...input };
-    const created = await dependencies.repository.create({
-      ...actor,
-      ...person,
+    const created = await persist(
+      actor,
+      personIdentityFrom(id, input),
       transaction,
-    });
-    if (!created) return { status: "forbidden" };
-    const occurredAt = dependencies.clock.now();
-    const auditCommand = { actor, occurredAt, person: created, transaction };
-    await dependencies.audit.record(auditCommand);
-    await dependencies.repository.assertCreatedPostcondition({
-      ...actor,
-      ...created,
-      transaction,
-    });
-    await dependencies.audit.assertPostcondition(auditCommand);
-    return { person: created, status: "ready" };
+    );
+    return created
+      ? { person: created, status: "ready" }
+      : { status: "forbidden" };
   };
   return {
     createInTransaction,
@@ -285,8 +191,8 @@ export function createPeopleManagement(
       actor: PeopleActor,
       rawInput: CreatePersonInput,
     ): Promise<CreatePersonResult> => {
-      const input = normalize(rawInput);
-      const errors = validate(input);
+      const input = normalizeCreatePersonInput(rawInput);
+      const errors = validateCreatePersonInput(input);
       if (Object.keys(errors).length > 0) {
         return { errors, status: "validation-error" };
       }

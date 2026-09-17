@@ -1,5 +1,5 @@
 import type { Failure } from "../../../shared-kernel/result.ts";
-import type { PeopleActor, PeopleTransaction } from "./create_person.ts";
+import type { PeopleActor, PeopleTransaction } from "../ports/context.ts";
 
 export type RelationshipPersonInspection =
   | Failure<"not-found", "archived">

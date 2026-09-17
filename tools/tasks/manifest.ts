@@ -380,6 +380,42 @@ export const MODULES: readonly TaskModule[] = [
     },
   },
   {
+    // The people module's domain is pure: the rules a person, a remembered
+    // date, and a profile fact obey, with nothing behind them. It is measured
+    // on its own at the bar the shared kernel keeps, and the module's four
+    // use-case suites live here too so each one has exactly one unit home.
+    id: "people",
+    unit: {
+      tests: [
+        "packages/backend/modules/people/domain/important_dates/rules_test.ts",
+        "packages/backend/modules/people/domain/lifecycle_rules_test.ts",
+        "packages/backend/modules/people/domain/person_identity_test.ts",
+        "packages/backend/modules/people/domain/person_name_test.ts",
+        "packages/backend/modules/people/domain/profile_facts/cursors_test.ts",
+        "packages/backend/modules/people/domain/profile_facts/normalize_test.ts",
+        "packages/backend/modules/people/domain/profile_facts/validate_test.ts",
+        "packages/backend/modules/people/create_person_test.ts",
+        "packages/backend/modules/people/important_dates_test.ts",
+        "packages/backend/modules/people/profile_facts_test.ts",
+        "packages/backend/modules/people/lifecycle_person_test.ts",
+      ],
+    },
+    coverage: {
+      directory: "people-domain",
+      threshold: 95,
+      tests: [
+        "packages/backend/modules/people/domain/important_dates/rules_test.ts",
+        "packages/backend/modules/people/domain/lifecycle_rules_test.ts",
+        "packages/backend/modules/people/domain/person_identity_test.ts",
+        "packages/backend/modules/people/domain/person_name_test.ts",
+        "packages/backend/modules/people/domain/profile_facts/cursors_test.ts",
+        "packages/backend/modules/people/domain/profile_facts/normalize_test.ts",
+        "packages/backend/modules/people/domain/profile_facts/validate_test.ts",
+      ],
+      include: ["packages/backend/modules/people/domain"],
+    },
+  },
+  {
     id: "api",
     unit: {
       tests: [
@@ -413,10 +449,6 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/files/object_storage_test.ts",
         "packages/backend/modules/files/person_files_test.ts",
         "packages/backend/modules/interactions/record_interaction_test.ts",
-        "packages/backend/modules/people/create_person_test.ts",
-        "packages/backend/modules/people/important_dates_test.ts",
-        "packages/backend/modules/people/profile_facts_test.ts",
-        "packages/backend/modules/people/lifecycle_person_test.ts",
         "packages/backend/modules/relationships/relationships_test.ts",
         "packages/backend/read-models/activity-report/activity_report_test.ts",
         "packages/backend/read-models/audit-history/audit_history_test.ts",
@@ -555,6 +587,13 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/import-export/export_management_test.ts",
         "packages/backend/modules/interactions/record_interaction_test.ts",
         "packages/backend/modules/journal/journal_management_test.ts",
+        "packages/backend/modules/people/domain/important_dates/rules_test.ts",
+        "packages/backend/modules/people/domain/lifecycle_rules_test.ts",
+        "packages/backend/modules/people/domain/person_identity_test.ts",
+        "packages/backend/modules/people/domain/person_name_test.ts",
+        "packages/backend/modules/people/domain/profile_facts/cursors_test.ts",
+        "packages/backend/modules/people/domain/profile_facts/normalize_test.ts",
+        "packages/backend/modules/people/domain/profile_facts/validate_test.ts",
         "packages/backend/modules/people/create_person_test.ts",
         "packages/backend/modules/people/important_dates_test.ts",
         "packages/backend/modules/people/profile_facts_test.ts",
@@ -1116,6 +1155,7 @@ export const MODULES: readonly TaskModule[] = [
 export const TEST_AGGREGATE: readonly string[] = [
   "tasks",
   "shared-kernel",
+  "people",
   "api",
   "api-access",
   "integrations",
@@ -1141,6 +1181,7 @@ export const TEST_AGGREGATE: readonly string[] = [
  */
 export const COVERAGE_AGGREGATE: readonly string[] = [
   "shared-kernel",
+  "people",
   "api",
   "api-access",
   "integrations",

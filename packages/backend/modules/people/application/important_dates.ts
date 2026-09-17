@@ -1,140 +1,46 @@
+/**
+ * Keeping a person's remembered dates.
+ *
+ * Every write here follows the same order, and the order is the point: the
+ * value is normalized and validated before a transaction is opened at all, the
+ * actor is revalidated under lock, the person context is locked, the date row
+ * is locked and checked against the revision the caller expected, and only
+ * then is anything written. Afterwards the reminders the date implies are
+ * regenerated, the event is recorded, and both the row and the event are read
+ * back before the transaction may commit.
+ *
+ * Deleting is the one asymmetry: the reminders are regenerated before the row
+ * disappears, because the publisher needs to see what it is retiring.
+ *
+ * What a date may say lives in `domain/important_dates/rules.ts`.
+ */
+
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { IdGenerator } from "../../../shared-kernel/ids.ts";
-import {
-  componentShape,
-  type DatePrecision,
-  isRealCalendarDate,
-} from "../../../shared-kernel/partial_date.ts";
 import type {
   Failure,
-  ValidationErrors,
   ValidationFailure,
 } from "../../../shared-kernel/result.ts";
-import { isInstant, optionalText } from "../../../shared-kernel/validation.ts";
-import type { PeopleActor, PeopleTransaction } from "./create_person.ts";
+import { isInstant } from "../../../shared-kernel/validation.ts";
+import {
+  type ImportantDateAction,
+  type ImportantDateRecord,
+  type ImportantDateValue,
+  normalizeImportantDate,
+  validateImportantDate,
+} from "../domain/important_dates/rules.ts";
+import type { ImportantDateAudit } from "../ports/audit.ts";
+import type {
+  PeopleActor,
+  PeopleTransaction,
+  PeopleTransactionRunner,
+} from "../ports/context.ts";
+import type {
+  ImportantDateContextLock,
+  ImportantDatePublisher,
+  ImportantDateRepository,
+} from "../ports/important_date_repository.ts";
 import type { ActorRevalidation } from "../../workspaces/public.ts";
-
-export type ImportantDateKind =
-  | "birthday"
-  | "custom"
-  | "deceased"
-  | "first_met";
-/** The shared partial-date precision, named for this module's readers. */
-export type ImportantDatePrecision = DatePrecision;
-export type ImportantDateAction = "create" | "delete" | "update";
-
-export interface ImportantDateValue {
-  readonly day?: number;
-  readonly isAgeBased: boolean;
-  readonly isYearApproximate: boolean;
-  readonly kind: ImportantDateKind;
-  readonly label?: string;
-  readonly month?: number;
-  readonly notes?: string;
-  readonly precision: ImportantDatePrecision;
-  readonly year?: number;
-}
-
-export interface ImportantDateRecord extends ImportantDateValue {
-  readonly createdAt: string;
-  readonly id: string;
-  readonly personId: string;
-  readonly scheduling: "annual-reminder" | "not-schedulable";
-  readonly updatedAt: string;
-}
-
-export interface ImportantDateContextLock {
-  readonly status: "archived" | "forbidden" | "not-found" | "ready";
-}
-
-export type ImportantDateLock =
-  | { readonly date: ImportantDateRecord; readonly status: "ready" }
-  | Failure<"not-found">;
-
-interface ImportantDateMutationCommand extends PeopleActor {
-  readonly occurredAt: Date;
-  readonly personId: string;
-  readonly transaction: PeopleTransaction;
-}
-
-export interface ImportantDateRepository {
-  lockContext(
-    command: PeopleActor & {
-      readonly personId: string;
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<ImportantDateContextLock>;
-  lockDate(
-    command: PeopleActor & {
-      readonly dateId: string;
-      readonly personId: string;
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<ImportantDateLock>;
-  list(
-    command: PeopleActor & {
-      readonly personId: string;
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<readonly ImportantDateRecord[]>;
-  create(
-    command: ImportantDateMutationCommand & {
-      readonly id: string;
-      readonly value: ImportantDateValue;
-    },
-  ): Promise<ImportantDateRecord | undefined>;
-  update(
-    command: ImportantDateMutationCommand & {
-      readonly dateId: string;
-      readonly expectedUpdatedAt: string;
-      readonly value: ImportantDateValue;
-    },
-  ): Promise<ImportantDateRecord | undefined>;
-  delete(
-    command: ImportantDateMutationCommand & {
-      readonly dateId: string;
-      readonly expectedUpdatedAt: string;
-    },
-  ): Promise<boolean>;
-  assertPostcondition(
-    command: ImportantDateMutationCommand & {
-      readonly action: ImportantDateAction;
-      readonly after?: ImportantDateRecord;
-      readonly before?: ImportantDateRecord;
-    },
-  ): Promise<void>;
-}
-
-export interface ImportantDatePublisher {
-  regenerate(
-    command: PeopleActor & {
-      readonly after?: ImportantDateRecord;
-      readonly before?: ImportantDateRecord;
-      readonly occurredAt: Date;
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<void>;
-}
-
-export interface ImportantDateAudit {
-  record(command: {
-    readonly action: ImportantDateAction;
-    readonly actor: PeopleActor;
-    readonly after?: ImportantDateRecord;
-    readonly before?: ImportantDateRecord;
-    readonly occurredAt: Date;
-    readonly transaction: PeopleTransaction;
-  }): Promise<string>;
-  assertPostcondition(command: {
-    readonly action: ImportantDateAction;
-    readonly actor: PeopleActor;
-    readonly after?: ImportantDateRecord;
-    readonly auditId: string;
-    readonly before?: ImportantDateRecord;
-    readonly occurredAt: Date;
-    readonly transaction: PeopleTransaction;
-  }): Promise<void>;
-}
 
 export interface ImportantDateDependencies {
   readonly actors: ActorRevalidation;
@@ -143,9 +49,7 @@ export interface ImportantDateDependencies {
   readonly ids: IdGenerator;
   readonly publisher: ImportantDatePublisher;
   readonly repository: ImportantDateRepository;
-  readonly transaction: {
-    run<T>(work: (transaction: PeopleTransaction) => Promise<T>): Promise<T>;
-  };
+  readonly transaction: PeopleTransactionRunner;
 }
 
 export interface ImportantDateUpdateInput extends ImportantDateValue {
@@ -187,71 +91,6 @@ export type ImportantDateListResult =
     readonly dates: readonly ImportantDateRecord[];
     readonly status: "archived" | "ready";
   };
-
-function normalize(input: ImportantDateValue): ImportantDateValue {
-  const label = optionalText(input.label);
-  const notes = optionalText(input.notes);
-  return {
-    ...(input.day === undefined ? {} : { day: input.day }),
-    isAgeBased: input.isAgeBased,
-    isYearApproximate: input.isYearApproximate,
-    kind: input.kind,
-    ...(label ? { label } : {}),
-    ...(input.month === undefined ? {} : { month: input.month }),
-    ...(notes ? { notes } : {}),
-    precision: input.precision,
-    ...(input.year === undefined ? {} : { year: input.year }),
-  };
-}
-
-function validate(value: ImportantDateValue): ValidationErrors {
-  const errors: Record<string, string> = {};
-  const expected = componentShape[value.precision];
-  for (const component of ["year", "month", "day"] as const) {
-    const present = value[component] !== undefined;
-    if (present !== expected.includes(component)) {
-      errors[component] = present
-        ? `Remove ${component}; it contradicts ${value.precision} precision.`
-        : `Enter ${component} for ${value.precision} precision.`;
-    }
-  }
-  if (
-    value.year !== undefined &&
-    (!Number.isInteger(value.year) || value.year < 1 || value.year > 9999)
-  ) errors.year = "Enter a year from 1 through 9999.";
-  if (
-    value.month !== undefined &&
-    (!Number.isInteger(value.month) || value.month < 1 || value.month > 12)
-  ) errors.month = "Enter a month from 1 through 12.";
-  if (
-    value.day !== undefined &&
-    (!Number.isInteger(value.day) || value.day < 1 || value.day > 31)
-  ) errors.day = "Enter a day from 1 through 31.";
-  if (
-    value.month !== undefined && value.day !== undefined &&
-    !errors.month && !errors.day &&
-    !isRealCalendarDate(value.year ?? 2000, value.month, value.day)
-  ) errors.day = "Enter a real calendar date.";
-  if (value.isYearApproximate && value.year === undefined) {
-    errors.isYearApproximate = "An approximate year still needs a year value.";
-  }
-  if (value.isAgeBased && value.year === undefined) {
-    errors.isAgeBased = "Age display needs a known year.";
-  }
-  if (value.kind === "custom" && !value.label) {
-    errors.label = "Enter an honest label for this custom date.";
-  }
-  if (value.kind !== "custom" && value.label) {
-    errors.label = "Core dates use their standard label.";
-  }
-  if ((value.label?.length ?? 0) > 200) {
-    errors.label = "Use 200 characters or fewer.";
-  }
-  if ((value.notes?.length ?? 0) > 2_000) {
-    errors.notes = "Use 2,000 characters or fewer.";
-  }
-  return errors;
-}
 
 function contextFailure(context: ImportantDateContextLock) {
   if (context.status === "archived") {
@@ -351,8 +190,8 @@ export function createImportantDateManagement(
       personId: string,
       rawValue: ImportantDateValue,
     ): Promise<ImportantDateCreateResult> => {
-      const value = normalize(rawValue);
-      const errors = validate(value);
+      const value = normalizeImportantDate(rawValue);
+      const errors = validateImportantDate(value);
       if (Object.keys(errors).length > 0) {
         return { errors, status: "validation-error" };
       }
@@ -388,8 +227,8 @@ export function createImportantDateManagement(
       rawInput: ImportantDateUpdateInput,
     ): Promise<ImportantDateUpdateResult> => {
       const { expectedUpdatedAt, ...rawValue } = rawInput;
-      const value = normalize(rawValue);
-      const errors = validate(value);
+      const value = normalizeImportantDate(rawValue);
+      const errors = validateImportantDate(value);
       if (!isInstant(expectedUpdatedAt)) {
         return {
           errors: { expectedUpdatedAt: "Refresh this date before saving." },

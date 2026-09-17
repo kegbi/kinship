@@ -12,13 +12,13 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
-import type { PersonCreatedAudit } from "./create_person.ts";
-import type { ImportantDateAudit } from "./important_dates.ts";
+import type { PersonLifecycleAction } from "../domain/lifecycle_rules.ts";
 import type {
-  PersonLifecycleAction,
+  ImportantDateAudit,
+  PersonCreatedAudit,
   PersonLifecycleAudit,
-} from "./lifecycle_person.ts";
-import type { ProfileFactAudit } from "./profile_facts.ts";
+  ProfileFactAudit,
+} from "../ports/audit.ts";
 
 export function describePersonCreatedEvent(
   command: Parameters<PersonCreatedAudit["record"]>[0],
