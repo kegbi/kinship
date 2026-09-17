@@ -1,60 +1,75 @@
 export type {
   ReminderRulePersonalizationFacade,
 } from "./application/reminder_rule_personalization.ts";
-export { createTaskManagement } from "./application/task_management.ts";
-export {
-  createReminderManagement,
-  generateCalendarOccurrences,
-} from "./application/reminder_management.ts";
 export type {
   CadenceUnit,
-  CalendarOccurrence,
   CreateCadenceInput,
-  CreateReminderInput,
+  StayInTouchCadenceRecord,
+} from "./domain/cadence.ts";
+export type {
+  ClaimedReminderOccurrence,
+  ProviderDeliveryResult,
+  ReminderWorkerOptions,
+} from "./domain/delivery_rules.ts";
+export type { TaskCursorKeyset } from "./domain/cursors.ts";
+export { generateCalendarOccurrences } from "./domain/recurrence.ts";
+export type {
+  CalendarOccurrence,
   RecurrenceUnit,
-  ReminderAudit,
+} from "./domain/recurrence.ts";
+export type {
+  CreateReminderInput,
   ReminderDefinitionRecord,
-  ReminderManagement,
-  ReminderManagementDependencies,
-  ReminderMutationResult,
   ReminderOccurrenceRecord,
   ReminderOccurrenceStatus,
+} from "./domain/reminder_rules.ts";
+export type {
+  ChangeTaskInput,
+  CreateTaskInput,
+  StoredTask,
+  TaskAuditAction,
+  TaskRecord,
+  TaskStatus,
+} from "./domain/task_rules.ts";
+export type {
+  ReminderAudit,
+  ReminderDeliveryAudit,
+  TaskAudit,
+} from "./ports/audit.ts";
+export type { PlanningActor, PlanningTransaction } from "./ports/context.ts";
+export type {
+  InAppReminderEffectStore,
+  ReminderDeliveryProvider,
+  ReminderDeliveryRepository,
+} from "./ports/reminder_delivery.ts";
+export type {
   ReminderRecipients,
   ReminderRepository,
   ReminderWorkspaceBoundary,
-  StayInTouchCadenceRecord,
-} from "./application/reminder_management.ts";
-export {
-  createReminderDeliveryWorker,
-  InAppReminderDelivery,
-} from "./application/reminder_delivery.ts";
+} from "./ports/reminder_repository.ts";
+export type { TaskRepository } from "./ports/task_repository.ts";
+export { createTaskManagement } from "./application/task_management.ts";
+export type { TaskManagement } from "./application/task_management.ts";
 export type {
-  ClaimedReminderOccurrence,
-  InAppReminderEffectStore,
-  ProviderDeliveryResult,
-  ReminderDeliveryAudit,
-  ReminderDeliveryDependencies,
-  ReminderDeliveryProvider,
-  ReminderDeliveryRepository,
-  ReminderDeliveryWorker,
-  ReminderWorkerOptions,
-} from "./application/reminder_delivery.ts";
-export type {
-  ChangeTaskInput,
-  ChangeTaskResult,
-  CreateTaskInput,
-  CreateTaskResult,
-  ListTasksResult,
-  StoredTask,
-  TaskAudit,
-  TaskAuditAction,
   TaskFailure,
-  TaskManagement,
   TaskManagementDependencies,
-  TaskRecord,
-  TaskRepository,
-  TaskStatus,
-} from "./application/task_management.ts";
+} from "./application/task_context.ts";
+export type {
+  ChangeTaskResult,
+  CreateTaskResult,
+} from "./application/task_writes.ts";
+export type { ListTasksResult } from "./application/task_listing.ts";
+export { createReminderManagement } from "./application/reminder_management.ts";
+export type { ReminderManagement } from "./application/reminder_management.ts";
+export type {
+  ReminderManagementDependencies,
+  ReminderMutationResult,
+} from "./application/reminder_context.ts";
+export { createReminderDeliveryWorker } from "./application/reminder_delivery.ts";
+export type {
+  ReminderDeliveryDependencies,
+  ReminderDeliveryWorker,
+} from "./application/reminder_delivery.ts";
 export {
   reminderAuditFrom,
   reminderDeliveryAuditFrom,

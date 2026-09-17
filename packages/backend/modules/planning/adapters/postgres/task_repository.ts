@@ -2,11 +2,8 @@ import { sql } from "kysely";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
-import type {
-  StoredTask,
-  TaskRepository,
-  TaskStatus,
-} from "../../application/task_management.ts";
+import type { StoredTask, TaskStatus } from "../../domain/task_rules.ts";
+import type { TaskRepository } from "../../ports/task_repository.ts";
 
 interface TaskRow {
   readonly completed_at: string | null;

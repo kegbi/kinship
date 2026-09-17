@@ -449,7 +449,6 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/files/object_storage_test.ts",
         "packages/backend/modules/files/person_files_test.ts",
         "packages/backend/modules/interactions/record_interaction_test.ts",
-        "packages/backend/modules/relationships/relationships_test.ts",
         "packages/backend/read-models/activity-report/activity_report_test.ts",
         "packages/backend/read-models/audit-history/audit_history_test.ts",
         "packages/backend/read-models/people-directory/list_people_test.ts",
@@ -598,8 +597,16 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/people/important_dates_test.ts",
         "packages/backend/modules/people/profile_facts_test.ts",
         "packages/backend/modules/people/lifecycle_person_test.ts",
+        "packages/backend/modules/planning/domain/cadence_test.ts",
+        "packages/backend/modules/planning/domain/cursors_test.ts",
+        "packages/backend/modules/planning/domain/delivery_rules_test.ts",
+        "packages/backend/modules/planning/domain/recurrence_test.ts",
+        "packages/backend/modules/planning/domain/reminder_rules_test.ts",
+        "packages/backend/modules/planning/domain/task_rules_test.ts",
         "packages/backend/modules/planning/task_management_test.ts",
         "packages/backend/modules/planning/reminder_management_test.ts",
+        "packages/backend/modules/relationships/domain/cursors_test.ts",
+        "packages/backend/modules/relationships/domain/relationship_rules_test.ts",
         "packages/backend/modules/relationships/relationships_test.ts",
         "packages/backend/read-models/activity-report/activity_report_test.ts",
         "packages/backend/read-models/audit-history/audit_history_test.ts",
@@ -730,6 +737,12 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "apps/api/planning_test.ts",
         "apps/worker/composition_test.ts",
+        "packages/backend/modules/planning/domain/cadence_test.ts",
+        "packages/backend/modules/planning/domain/cursors_test.ts",
+        "packages/backend/modules/planning/domain/delivery_rules_test.ts",
+        "packages/backend/modules/planning/domain/recurrence_test.ts",
+        "packages/backend/modules/planning/domain/reminder_rules_test.ts",
+        "packages/backend/modules/planning/domain/task_rules_test.ts",
         "packages/backend/modules/planning/task_management_test.ts",
         "packages/backend/modules/planning/reminder_management_test.ts",
         "packages/backend/read-models/today/today_attention_test.ts",
@@ -768,6 +781,12 @@ export const MODULES: readonly TaskModule[] = [
       },
       tests: [
         "apps/api/planning_test.ts",
+        "packages/backend/modules/planning/domain/cadence_test.ts",
+        "packages/backend/modules/planning/domain/cursors_test.ts",
+        "packages/backend/modules/planning/domain/delivery_rules_test.ts",
+        "packages/backend/modules/planning/domain/recurrence_test.ts",
+        "packages/backend/modules/planning/domain/reminder_rules_test.ts",
+        "packages/backend/modules/planning/domain/task_rules_test.ts",
         "packages/backend/modules/planning/task_management_test.ts",
         "packages/backend/modules/planning/reminder_management_test.ts",
         "packages/backend/read-models/audit-history/audit_history_test.ts",
@@ -779,12 +798,20 @@ export const MODULES: readonly TaskModule[] = [
       ],
       include: [
         "apps/api/planning.ts",
+        "packages/backend/modules/planning/adapters/in_app/reminder_delivery.ts",
         "packages/backend/modules/planning/adapters/postgres/task_repository.ts",
         "packages/backend/modules/planning/adapters/postgres/reminder_repository.ts",
         "packages/backend/modules/planning/application/task_management.ts",
+        "packages/backend/modules/planning/application/task_context.ts",
+        "packages/backend/modules/planning/application/task_listing.ts",
+        "packages/backend/modules/planning/application/task_writes.ts",
         "packages/backend/modules/planning/application/reminder_management.ts",
+        "packages/backend/modules/planning/application/reminder_context.ts",
+        "packages/backend/modules/planning/application/reminder_definitions.ts",
+        "packages/backend/modules/planning/application/reminder_cadences.ts",
         "packages/backend/modules/planning/application/reminder_delivery.ts",
         "packages/backend/modules/planning/application/audit_events.ts",
+        "packages/backend/modules/planning/domain",
         "packages/backend/read-models/today/adapters/postgres/today_attention_repository.ts",
         "packages/backend/read-models/today/adapters/postgres/today_tasks_repository.ts",
         "packages/backend/read-models/today/adapters/postgres/today_reminders_repository.ts",
@@ -792,6 +819,53 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/read-models/today/application/get_today_tasks.ts",
         "packages/backend/read-models/today/application/get_today_reminders.ts",
       ],
+    },
+  },
+  {
+    // Planning's domain is pure: the calendar arithmetic a recurrence obeys,
+    // the cadence interval, the task and reminder rules, the signed task
+    // cursor, and what a provider's answer means. It is measured on its own at
+    // the bar the shared kernel keeps; the suites' unit home is `planning`, so
+    // this module declares coverage alone.
+    id: "planning-domain",
+    coverage: {
+      directory: "planning-domain",
+      threshold: 95,
+      tests: [
+        "packages/backend/modules/planning/domain/cadence_test.ts",
+        "packages/backend/modules/planning/domain/cursors_test.ts",
+        "packages/backend/modules/planning/domain/delivery_rules_test.ts",
+        "packages/backend/modules/planning/domain/recurrence_test.ts",
+        "packages/backend/modules/planning/domain/reminder_rules_test.ts",
+        "packages/backend/modules/planning/domain/task_rules_test.ts",
+      ],
+      include: ["packages/backend/modules/planning/domain"],
+    },
+  },
+  {
+    // The relationship graph's own suite, which used to live in the `api` unit
+    // set, and the domain the inverse-label and cursor rules moved into.
+    id: "relationships",
+    unit: {
+      tests: [
+        "packages/backend/modules/relationships/domain/cursors_test.ts",
+        "packages/backend/modules/relationships/domain/relationship_rules_test.ts",
+        "packages/backend/modules/relationships/relationships_test.ts",
+      ],
+      permissions: {
+        // The suite proves relationships and governance have no import edge by
+        // reading the module graph with `deno info`.
+        run: ["deno"],
+      },
+    },
+    coverage: {
+      directory: "relationships-domain",
+      threshold: 95,
+      tests: [
+        "packages/backend/modules/relationships/domain/cursors_test.ts",
+        "packages/backend/modules/relationships/domain/relationship_rules_test.ts",
+      ],
+      include: ["packages/backend/modules/relationships/domain"],
     },
   },
   {
@@ -1040,6 +1114,7 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "tools/tasks/manifest_test.ts",
         "tools/pipeline_contract_test.ts",
+        "tools/source_hygiene_test.ts",
         "tools/architecture/check_boundaries_test.ts",
       ],
       permissions: {
@@ -1160,6 +1235,7 @@ export const TEST_AGGREGATE: readonly string[] = [
   "api-access",
   "integrations",
   "planning",
+  "relationships",
   "governance",
   "gifts",
   "journal",
@@ -1186,6 +1262,8 @@ export const COVERAGE_AGGREGATE: readonly string[] = [
   "api-access",
   "integrations",
   "planning",
+  "planning-domain",
+  "relationships",
   "governance",
   "gifts",
   "storage",

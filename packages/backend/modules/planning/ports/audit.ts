@@ -1,0 +1,55 @@
+/**
+ * What the module promises to write into the audit history.
+ *
+ * The three ports differ in how much proof each write owes. A task write
+ * records an event and then reads it back, so `record` hands the identifier it
+ * wrote to `assertPostcondition` before the transaction is allowed to commit.
+ * A reminder write and a delivery write record only: their own repositories
+ * already assert their postconditions, and the delivery event travels with the
+ * claim the worker holds rather than being re-read from the reminder row.
+ *
+ * These are contracts, not descriptions — `application/audit_events.ts` holds
+ * the pure functions that turn each command into the row governance stores.
+ */
+
+import type { ClaimedReminderOccurrence } from "../domain/delivery_rules.ts";
+import type { ReminderAuditAction } from "../domain/reminder_rules.ts";
+import type { StoredTask, TaskAuditAction } from "../domain/task_rules.ts";
+import type { PlanningActor, PlanningTransaction } from "./context.ts";
+
+export interface TaskAudit {
+  record(command: {
+    readonly action: TaskAuditAction;
+    readonly actor: PlanningActor;
+    readonly occurredAt: Date;
+    readonly task: StoredTask;
+    readonly transaction: PlanningTransaction;
+  }): Promise<string>;
+  assertPostcondition(command: {
+    readonly action: TaskAuditAction;
+    readonly actor: PlanningActor;
+    readonly auditId: string;
+    readonly occurredAt: Date;
+    readonly task: StoredTask;
+    readonly transaction: PlanningTransaction;
+  }): Promise<void>;
+}
+
+export interface ReminderAudit {
+  record(command: {
+    readonly action: ReminderAuditAction;
+    readonly actor: PlanningActor;
+    readonly occurredAt: Date;
+    readonly subjectId: string;
+    readonly transaction: PlanningTransaction;
+  }): Promise<void>;
+}
+
+export interface ReminderDeliveryAudit {
+  record(command: {
+    readonly action: "delivered" | "failed";
+    readonly occurrence: ClaimedReminderOccurrence;
+    readonly occurredAt: Date;
+    readonly transaction: PlanningTransaction;
+  }): Promise<void>;
+}
