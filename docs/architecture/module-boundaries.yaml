@@ -17,9 +17,14 @@ sharedKernel:
     - vendor-clients
     - miscellaneous-utils
 
+# The files allowed to build adapters: the two deployables' roots and the
+# private-production preflight, which composes the SMTP transport to prove a
+# deployment's mail configuration before anything is served. Only these may
+# import a module's `composition.ts`.
 compositionRoots:
   - apps/api/composition.ts
   - apps/worker/composition.ts
+  - tools/operations/private_production_preflight.ts
 
 # The only cross-module table reads the manifest approves by name. Each entry
 # narrows `table-foreign-read` for exactly one adapter file and the tables it

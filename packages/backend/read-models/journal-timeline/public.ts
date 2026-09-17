@@ -5,4 +5,3 @@ export type {
   JournalTimelineItem,
   JournalTimelineRepository,
 } from "./application/list_journal_timeline.ts";
-export { PostgresJournalTimelineRepository } from "./adapters/postgres/journal_timeline_repository.ts";

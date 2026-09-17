@@ -588,10 +588,12 @@ Deno.test("[GAP-005] only declared composition roots import adapters", async () 
   }]);
   assert(root.length === 0, `unexpected: ${render(root)}`);
 
+  // A unit still reaches its own adapters freely. Since GAP-013 that happens
+  // in its `composition.ts`, not in `public.ts`, which rule 7 now guards.
   const ownModule = await fixture([{
-    path: "packages/backend/modules/gifts/public.ts",
+    path: "packages/backend/modules/gifts/composition.ts",
     text:
-      'export { Repository } from "./adapters/postgres/gift_repository.ts";',
+      'import { Repository } from "./adapters/postgres/gift_repository.ts";',
   }]);
   assert(ownModule.length === 0, `unexpected: ${render(ownModule)}`);
 });
@@ -769,6 +771,98 @@ Deno.test("[GAP-005] dependency cycles are reported", async () => {
     ),
     `expected an import cycle, got ${render(imports)}`,
   );
+});
+
+// --- Rule 6: per-module composition ---------------------------------------
+
+Deno.test("[GAP-013] only declared composition roots import a module's composition", async () => {
+  const violations = await fixture([
+    {
+      path: "apps/api/composition.ts",
+      text:
+        'import { composeGifts } from "../../packages/backend/modules/gifts/composition.ts";',
+    },
+    {
+      path: "apps/api/gifts.ts",
+      text:
+        'import { composeGifts } from "../../packages/backend/modules/gifts/composition.ts";',
+    },
+    {
+      path: "packages/backend/modules/files/composition.ts",
+      text: 'import { target } from "../gifts/composition.ts";',
+    },
+  ]);
+  const composition = violations.filter((violation) =>
+    violation.rule === "composition"
+  );
+  assert(
+    composition.length === 2,
+    `expected two composition violations, got ${render(violations)}`,
+  );
+  assert(
+    composition.every((violation) =>
+      violation.detail ===
+        "packages/backend/modules/gifts/composition.ts is gifts's composition file and this file is not a declared composition root"
+    ),
+    `unexpected detail: ${render(composition)}`,
+  );
+  assert(
+    composition.map((violation) => violation.subject).join(",") ===
+      "apps/api/gifts.ts,packages/backend/modules/files/composition.ts",
+    `unexpected subjects: ${render(composition)}`,
+  );
+});
+
+Deno.test("[GAP-013] a module composes itself and its neighbours' facades freely", async () => {
+  const violations = await fixture([
+    {
+      path: "packages/backend/modules/gifts/composition.ts",
+      text: [
+        'import { PostgresGiftRepository } from "./adapters/postgres/gifts.ts";',
+        'import type { GiftAttachmentBoundary } from "../files/public.ts";',
+      ].join("\n"),
+    },
+    {
+      path: "packages/backend/modules/gifts/adapters/postgres/gifts.ts",
+      text: 'import { shape } from "../../composition.ts";',
+    },
+  ]);
+  assert(violations.length === 0, `unexpected: ${render(violations)}`);
+});
+
+// --- Rule 7: the public surface -------------------------------------------
+
+Deno.test("[GAP-013] a public entry point may not re-export an adapter value", async () => {
+  const violations = await fixture([{
+    path: "packages/backend/modules/gifts/public.ts",
+    text: [
+      'export { createGiftManagement } from "./application/gift_management.ts";',
+      'export { PostgresGiftRepository } from "./adapters/postgres/gifts.ts";',
+      'export * from "./adapters/postgres/attachments.ts";',
+    ].join("\n"),
+  }]);
+  assert(
+    violations.length === 2 &&
+      violations.every((violation) => violation.rule === "public-surface"),
+    `expected two public-surface violations, got ${render(violations)}`,
+  );
+  assert(
+    violations.map((violation) => violation.detail).join(" | ") ===
+      "packages/backend/modules/gifts/adapters/postgres/attachments.ts is an adapter and a public entry point may re-export only its types | " +
+        "packages/backend/modules/gifts/adapters/postgres/gifts.ts is an adapter and a public entry point may re-export only its types",
+    `unexpected detail: ${render(violations)}`,
+  );
+});
+
+Deno.test("[GAP-013] a public entry point still re-exports an adapter's types", async () => {
+  const violations = await fixture([{
+    path: "packages/backend/modules/gifts/public.ts",
+    text: [
+      'export type { GiftKeyset } from "./adapters/crypto/keys.ts";',
+      'export { type GiftOptions, type GiftShape } from "./adapters/crypto/keys.ts";',
+    ].join("\n"),
+  }]);
+  assert(violations.length === 0, `unexpected: ${render(violations)}`);
 });
 
 // --- The baseline --------------------------------------------------------

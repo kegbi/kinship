@@ -7,7 +7,6 @@ export type {
   AuditTransaction,
   ConditionalAuditEventWrite,
 } from "../../shared-kernel/audit_event.ts";
-export { PostgresAuditEventRecorder } from "./adapters/postgres/audit_event_recorder.ts";
 export type {
   ImportAudit,
   ImportAuditAction,
@@ -27,5 +26,3 @@ export {
   type LegalDocument,
   type LegalTransaction,
 } from "./application/legal_acceptance.ts";
-export { PostgresLegalAcceptanceRepository } from "./adapters/postgres/legal_acceptance_repository.ts";
-export { PostgresGovernanceWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";

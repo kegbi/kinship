@@ -1,10 +1,7 @@
 import {
   createMemberUiStateManagement as createRevocableMemberUiState,
   createRecentPeopleManagement,
-  PostgresMemberUiStateRepository as RevocableMemberUiStateRepository,
-  PostgresRecentPeopleRepository,
 } from "../../packages/backend/modules/workspaces/public.ts";
-import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
@@ -13,10 +10,21 @@ import {
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import {
   createMemberUiStateManagement,
-  PostgresMemberUiStateRepository,
-  PostgresRegistrationTransaction,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import {
+  PostgresMemberUiStateRepository,
+  PostgresMemberUiStateRepository as RevocableMemberUiStateRepository,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/member_ui_state.ts";
+import {
+  PostgresRecentPeopleRepository,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/recent_people.ts";
+import {
+  PostgresActorRevalidation,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
+import {
+  PostgresRegistrationTransaction,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/registration_repository.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

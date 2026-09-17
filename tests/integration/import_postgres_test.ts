@@ -1,4 +1,3 @@
-import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
@@ -7,17 +6,28 @@ import {
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import {
   createImportManagement,
-  PostgresImportRepository,
-  PostgresImportTransaction,
 } from "../../packages/backend/modules/import-export/public.ts";
-import { PostgresPeopleImportBoundary } from "../../packages/backend/modules/people/public.ts";
-import { PostgresFileImportBoundary } from "../../packages/backend/modules/files/public.ts";
 import {
   type ImportAudit,
   importAuditFrom,
-  PostgresAuditEventRecorder,
 } from "../../packages/backend/modules/governance/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import {
+  PostgresActorRevalidation,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
+import {
+  PostgresImportRepository,
+  PostgresImportTransaction,
+} from "../../packages/backend/modules/import-export/adapters/postgres/import_repository.ts";
+import {
+  PostgresPeopleImportBoundary,
+} from "../../packages/backend/modules/people/adapters/postgres/import_people_boundary.ts";
+import {
+  PostgresFileImportBoundary,
+} from "../../packages/backend/modules/files/adapters/postgres/import_file_boundary.ts";
+import {
+  PostgresAuditEventRecorder,
+} from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

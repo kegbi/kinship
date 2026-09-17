@@ -39,6 +39,7 @@ packages/
           postgres/
         transport/
           http/
+        composition.ts
         public.ts
     read-models/
       <read-model-id>/
@@ -65,11 +66,18 @@ executable boundaries.
 ## Entry Points
 
 - `apps/api/main.ts` and `apps/worker/main.ts` are executable entry points.
-- Their adjacent `composition.ts` files are composition roots and may
-  instantiate concrete adapters.
+- Their adjacent `composition.ts` files are composition roots. The declared
+  roots are the list in `module-boundaries.yaml`, and they are the only files
+  that may instantiate concrete adapters.
 - Each backend module exposes exactly one code-level public entry point:
-  `packages/backend/modules/<module-id>/public.ts`.
-- Read models expose their own public entry point and remain query-only.
+  `packages/backend/modules/<module-id>/public.ts`. It carries types, use-case
+  factories, and pure helpers; it never re-exports a value from `adapters/`.
+- A module that owns adapters also has
+  `packages/backend/modules/<module-id>/composition.ts`. It builds that module's
+  adapters and returns the module's facades and outbound ports, and only a
+  declared composition root may import it.
+- Read models expose their own public entry point and remain query-only. One
+  with adapters composes them the same way.
 - `apps/web` consumes generated contracts. It never imports `packages/backend`.
 
 Tests may import private code only when testing that exact module. A test for

@@ -17,14 +17,6 @@ export type {
   VerificationTokens,
   WorkspaceRegistrationWriter,
 } from "./application/register_first_workspace.ts";
-export {
-  PostgresRegistrationTransaction,
-  PostgresWorkspaceRegistration,
-} from "./adapters/postgres/registration_repository.ts";
-export {
-  PostgresActiveWorkspaceResolver,
-  PostgresActorRevalidation,
-} from "./adapters/postgres/actor_revalidation.ts";
 export type {
   ActorContext,
   ActorRecipients,
@@ -69,11 +61,6 @@ export type {
   WorkspaceMemberSummary,
   WorkspaceRole,
 } from "./application/invite_member.ts";
-export { PostgresWorkspaceInvitations } from "./adapters/postgres/workspace_invitations.ts";
-export { PostgresWorkspaceSettings } from "./adapters/postgres/settings_management.ts";
-export { PostgresPersonalLifecycleMemberships } from "./adapters/postgres/personal_lifecycle.ts";
-export { PostgresWorkspaceLifecycleRepository } from "./adapters/postgres/workspace_lifecycle.ts";
-export { PostgresWorkspaceLifecycleSecurityAudit } from "./adapters/postgres/workspace_lifecycle.ts";
 export { createPersonalLifecycle } from "./application/personal_lifecycle.ts";
 export { createWorkspaceLifecycle } from "./application/workspace_lifecycle.ts";
 export { createWorkspaceCleanupReconciler } from "./application/workspace_lifecycle.ts";
@@ -100,8 +87,6 @@ export type {
   WorkspaceLifecycleTransaction,
   WorkspaceResetActivityAudit,
 } from "./application/workspace_lifecycle.ts";
-export { PostgresWorkspacePersonalization } from "./adapters/postgres/personalization.ts";
-export { PostgresWorkspaceCurrencyBoundary } from "./adapters/postgres/currency_boundary.ts";
 export type {
   CurrencyBoundaryTransaction,
   WorkspaceCurrencyBoundary,
@@ -125,8 +110,6 @@ export type {
   WorkspacePersonalizationDeleteCommand,
   WorkspacePersonalizationRepository,
 } from "./application/personalization.ts";
-export { PostgresProfileFactConfiguration } from "./adapters/postgres/profile_fact_configuration.ts";
-export { PostgresRelationshipWorkspaceBoundary } from "./adapters/postgres/relationship_workspace_boundary.ts";
 export type {
   RelationshipWorkspaceActor,
   RelationshipWorkspaceBoundary,
@@ -138,7 +121,6 @@ export type {
   WorkspaceRelationshipTypePage,
   WorkspaceRelationshipTypeRecord,
 } from "./application/relationship_workspace_boundary.ts";
-export { PostgresInteractionWorkspaceBoundary } from "./adapters/postgres/interaction_workspace_boundary.ts";
 export type {
   InteractionWorkspaceActor,
   InteractionWorkspaceBoundary,
@@ -152,7 +134,6 @@ export type {
   RecentPeopleRepository,
   RecentPeopleTransaction,
 } from "./application/recent_people.ts";
-export { PostgresRecentPeopleRepository } from "./adapters/postgres/recent_people.ts";
 export { createMemberUiStateManagement } from "./application/member_ui_state.ts";
 export type {
   MemberUiState,
@@ -162,7 +143,6 @@ export type {
   MemberUiStateTransaction,
   PersonWorkspaceView,
 } from "./application/member_ui_state.ts";
-export { PostgresMemberUiStateRepository } from "./adapters/postgres/member_ui_state.ts";
 export type {
   ActiveWorkspaceContext,
   ActiveWorkspaceResolver,

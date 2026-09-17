@@ -7,4 +7,3 @@ export type {
   AuditHistoryRepository,
   AuditHistoryRepositoryItem,
 } from "./application/list_audit_history.ts";
-export { PostgresAuditHistoryRepository } from "./adapters/postgres/audit_history_repository.ts";

@@ -1,20 +1,10 @@
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import {
   createExportManagement,
-  PostgresExportRepository,
-  PostgresExportTransaction,
 } from "../../packages/backend/modules/import-export/public.ts";
 import {
-  PostgresExportFileBoundary,
-  WebCryptoFileIdentifiers,
-  WebCryptoObjectKeys,
-} from "../../packages/backend/modules/files/public.ts";
-import { PostgresPeopleExportBoundary } from "../../packages/backend/modules/people/public.ts";
-import {
   exportAuditFrom,
-  PostgresAuditEventRecorder,
 } from "../../packages/backend/modules/governance/public.ts";
-import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
@@ -22,6 +12,26 @@ import {
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import type { ObjectStorage } from "../../packages/backend/modules/files/public.ts";
+import {
+  PostgresExportRepository,
+  PostgresExportTransaction,
+} from "../../packages/backend/modules/import-export/adapters/postgres/export_repository.ts";
+import {
+  PostgresExportFileBoundary,
+} from "../../packages/backend/modules/files/adapters/postgres/export_file_boundary.ts";
+import {
+  WebCryptoFileIdentifiers,
+  WebCryptoObjectKeys,
+} from "../../packages/backend/modules/files/adapters/crypto/file_identifiers.ts";
+import {
+  PostgresPeopleExportBoundary,
+} from "../../packages/backend/modules/people/adapters/postgres/export_people_boundary.ts";
+import {
+  PostgresAuditEventRecorder,
+} from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
+import {
+  PostgresActorRevalidation,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

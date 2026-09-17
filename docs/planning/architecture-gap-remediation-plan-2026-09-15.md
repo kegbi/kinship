@@ -565,7 +565,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     fmt:check, lint, check, check:architecture. One `tools/e2e_test.ts` Astro
     child start flake passed on rerun (REL-034).
 
-- [ ] **GAP-013 — Per-module composition and a thin composition root.** L.
+- [x] **GAP-013 — Per-module composition and a thin composition root.** L.
       Depends: 007.
   - Problem: `public.ts` conflates facade and adapter registry; the composition
     root is a 595-line function; `main.ts` builds an adapter.
@@ -581,6 +581,20 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     `composition.ts`.
   - Verify: `apps/api/app_test.ts`, worker composition test, all integration
     suites green; `check:architecture` green.
+  - Delivered 2026-09-17: every module and read model that owns adapters has a
+    `composition.ts` exporting `compose<Module>(shared, ports)`; the shared
+    context is one typed contract in `platform/composition.ts`; every
+    `public.ts` re-exports no adapter value (four adapter types remain);
+    `createConfiguredApiApp` went from 650 to 207 lines (file 1287 to 930),
+    `main.ts` from 102 to 35, the worker root from 104 to 87, and the runtime
+    assembly with SMTP construction moved into the API root; the production
+    preflight is a declared third composition root, so the two SMTP `layer`
+    entries left the baseline (16 to 14, nothing added); the checker gained the
+    `composition` and `public-surface` rules with four tests;
+    `personalization_repository.ts` became `personalization_router.ts`; 55 files
+    changed (+1135/-1509) plus 22 new files (1526 lines); unit 718 vitest plus
+    all sets green, integration 126/0, coverage api 86.4 branch, build and
+    contracts:check green; gates fmt:check, lint, check, check:architecture.
 
 - [ ] **GAP-014 — Backend and API test support package.** M. Depends: 006.
       Parallelizable with 008-013.

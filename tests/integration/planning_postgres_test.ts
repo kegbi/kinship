@@ -4,23 +4,14 @@ import {
   createConfiguredApiApp,
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
-import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import {
   type PeopleActor,
-  PostgresPeopleTransaction,
-  PostgresRelationshipPersonBoundary,
 } from "../../packages/backend/modules/people/public.ts";
-import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import {
   createReminderDeliveryWorker,
   createReminderManagement,
   createTaskManagement,
   InAppReminderDelivery,
-  PostgresInAppReminderEffectStore,
-  PostgresReminderDeliveryRepository,
-  PostgresReminderRepository,
-  PostgresReminderWorkspaceBoundary,
-  PostgresTaskRepository,
   reminderAuditFrom,
   reminderDeliveryAuditFrom,
   type ReminderDeliveryProvider,
@@ -28,6 +19,27 @@ import {
 } from "../../packages/backend/modules/planning/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import * as generatedPlanningClient from "../../packages/contracts/generated/auth-client.ts";
+import {
+  PostgresAuditEventRecorder,
+} from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
+import {
+  PostgresPeopleTransaction,
+} from "../../packages/backend/modules/people/adapters/postgres/people_repository.ts";
+import {
+  PostgresRelationshipPersonBoundary,
+} from "../../packages/backend/modules/people/adapters/postgres/relationship_person_boundary.ts";
+import {
+  PostgresActorRevalidation,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
+import {
+  PostgresInAppReminderEffectStore,
+  PostgresReminderDeliveryRepository,
+  PostgresReminderRepository,
+  PostgresReminderWorkspaceBoundary,
+} from "../../packages/backend/modules/planning/adapters/postgres/reminder_repository.ts";
+import {
+  PostgresTaskRepository,
+} from "../../packages/backend/modules/planning/adapters/postgres/task_repository.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

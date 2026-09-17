@@ -1,5 +1,5 @@
 import { browserSecurityPolicy } from "./security_config.ts";
-import { createApiRuntime } from "./main.ts";
+import { createApiRuntime } from "./composition.ts";
 import {
   createAuthenticationResponseEqualizer,
   resolveAuthenticationResponseFloor,

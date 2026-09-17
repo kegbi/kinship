@@ -1,4 +1,3 @@
-import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
@@ -10,12 +9,19 @@ import {
   type DavRemoteChange,
   type DavRemoteClient,
   DavRemoteFailure,
-  PostgresDavRepository,
 } from "../../packages/backend/modules/integrations/public.ts";
-import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import { databaseFromSession } from "../../packages/backend/platform/postgres/session.ts";
 import { sql as kyselySql } from "kysely";
+import {
+  PostgresActorRevalidation,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
+import {
+  PostgresDavRepository,
+} from "../../packages/backend/modules/integrations/adapters/postgres/dav_repository.ts";
+import {
+  PostgresAuditEventRecorder,
+} from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

@@ -31,9 +31,14 @@ Deno.test("APP-006B keeps interaction-to-planning coordination on public boundar
       "interactions bypassed the planning public coordination boundary",
     );
   }
+  // GAP-013 moved adapter construction out of `public.ts` into each module's
+  // `composition.ts`, which only a declared composition root may import. The
+  // worker is such a root, so that file is the boundary it reaches now; what
+  // stays forbidden is reaching past it into planning's adapters.
   assert(
-    worker.includes("modules/planning/public.ts") &&
+    worker.includes("modules/planning/composition.ts") &&
+      !worker.includes("modules/planning/adapters") &&
       !worker.includes("scheduled_job_runs"),
-    "the reminder worker bypassed planning public or repurposed observability",
+    "the reminder worker bypassed the planning module boundary or repurposed observability",
   );
 });

@@ -2,12 +2,12 @@ import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import { resolveObjectStorageConfiguration } from "../../apps/api/file_storage_config.ts";
 import { resolveAuthenticationResponseFloor } from "../../apps/api/authentication_response.ts";
 import { decodeAuthenticationSubjectKeyset } from "../../packages/backend/modules/api-access/public.ts";
-import { decodeMfaEncryptionKeyset } from "../../packages/backend/modules/identity/public.ts";
-import { decodeDavEncryptionKeyset } from "../../packages/backend/modules/integrations/public.ts";
+import { decodeMfaEncryptionKeyset } from "../../packages/backend/modules/identity/composition.ts";
+import { decodeDavEncryptionKeyset } from "../../packages/backend/modules/integrations/composition.ts";
 import {
+  composeVerificationMail,
   resolveSmtpVerificationMailOptions,
-  SmtpVerificationMail,
-} from "../../packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail.ts";
+} from "../../packages/backend/modules/workspaces/composition.ts";
 import { buildPostgresUrl } from "../../packages/backend/platform/postgres/config.ts";
 import {
   loadPrivateProductionProfile,
@@ -215,7 +215,7 @@ export function runPrivateProductionPreflight(
           options.security !== "tls" || !options.username ||
           !options.password || isLocalProviderHost(options.host)
         ) throw new Error("authenticated TLS required");
-        new SmtpVerificationMail(options);
+        composeVerificationMail(environment);
       },
       issue: {
         code: "smtp-configuration",

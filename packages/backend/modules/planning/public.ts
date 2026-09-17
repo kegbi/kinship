@@ -1,10 +1,7 @@
-export { PostgresPersonDateReminderPublisher } from "./adapters/postgres/person_date_reminders.ts";
-export { PostgresReminderRulePersonalization } from "./adapters/postgres/reminder_rule_personalization.ts";
 export type {
   ReminderRulePersonalizationFacade,
 } from "./application/reminder_rule_personalization.ts";
 export { createTaskManagement } from "./application/task_management.ts";
-export { PostgresTaskRepository } from "./adapters/postgres/task_repository.ts";
 export {
   createReminderManagement,
   generateCalendarOccurrences,
@@ -31,12 +28,6 @@ export {
   createReminderDeliveryWorker,
   InAppReminderDelivery,
 } from "./application/reminder_delivery.ts";
-export {
-  PostgresInAppReminderEffectStore,
-  PostgresReminderDeliveryRepository,
-  PostgresReminderRepository,
-  PostgresReminderWorkspaceBoundary,
-} from "./adapters/postgres/reminder_repository.ts";
 export type {
   ClaimedReminderOccurrence,
   InAppReminderEffectStore,
@@ -64,7 +55,6 @@ export type {
   TaskRepository,
   TaskStatus,
 } from "./application/task_management.ts";
-export { PostgresPlanningWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
 export {
   reminderAuditFrom,
   reminderDeliveryAuditFrom,

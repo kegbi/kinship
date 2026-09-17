@@ -1,8 +1,4 @@
 export { createImportManagement } from "./application/import_management.ts";
-export {
-  PostgresImportRepository,
-  PostgresImportTransaction,
-} from "./adapters/postgres/import_repository.ts";
 export type {
   ImportActor,
   ImportCommitResult,
@@ -31,8 +27,3 @@ export type {
 } from "./application/export_management.ts";
 export type { ExportFileBoundary } from "../files/public.ts";
 export type { PeopleExportBoundary } from "../people/public.ts";
-export {
-  PostgresExportRepository,
-  PostgresExportTransaction,
-} from "./adapters/postgres/export_repository.ts";
-export { PostgresImportExportWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";

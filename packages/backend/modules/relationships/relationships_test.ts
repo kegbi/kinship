@@ -1,14 +1,18 @@
 import { describeRelationshipEvent } from "./application/audit_events.ts";
 import {
   createRelationshipManagement,
-  PostgresRelationshipRepository,
   relationshipAuditFrom,
   type RelationshipDependencies,
   type RelationshipRecord,
 } from "./public.ts";
 import type { PeopleTransaction } from "../people/public.ts";
 import type { WorkspaceRelationshipTypeRecord } from "../workspaces/public.ts";
-import { PostgresAuditEventRecorder } from "../governance/public.ts";
+import {
+  PostgresRelationshipRepository,
+} from "./adapters/postgres/relationship_repository.ts";
+import {
+  PostgresAuditEventRecorder,
+} from "../governance/adapters/postgres/audit_event_recorder.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

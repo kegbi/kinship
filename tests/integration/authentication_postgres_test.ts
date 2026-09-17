@@ -9,26 +9,42 @@ import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import { createAuthenticationRoutes } from "../../apps/api/authentication.ts";
 import {
   AuthenticationSubjectDigester,
-  PostgresAuthenticationAttemptBudget,
 } from "../../packages/backend/modules/api-access/public.ts";
 import { authenticationAuditFrom } from "../../packages/backend/modules/workspaces/public.ts";
-import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
 import {
-  AesGcmMfaSecretBox,
-  Argon2idPasswordHasher,
-  generateTotp,
   type PasswordHasher,
-  PostgresIdentityAuthentication,
-  SecureTokenService,
-  WebCryptoRandomSource,
 } from "../../packages/backend/modules/identity/public.ts";
 import {
   createProtectedSessionCoordinator,
-  PostgresActiveWorkspaceResolver,
-  PostgresRegistrationTransaction,
   type ProtectedSessionTransaction,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import {
+  PostgresAuthenticationAttemptBudget,
+} from "../../packages/backend/modules/api-access/adapters/postgres/authentication_attempt_budget.ts";
+import {
+  PostgresAuditEventRecorder,
+} from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
+import {
+  AesGcmMfaSecretBox,
+  generateTotp,
+} from "../../packages/backend/modules/identity/adapters/crypto/totp.ts";
+import {
+  Argon2idPasswordHasher,
+} from "../../packages/backend/modules/identity/adapters/crypto/argon2id.ts";
+import {
+  PostgresIdentityAuthentication,
+} from "../../packages/backend/modules/identity/adapters/postgres/authentication.ts";
+import {
+  SecureTokenService,
+  WebCryptoRandomSource,
+} from "../../packages/backend/modules/identity/adapters/crypto/secure_tokens.ts";
+import {
+  PostgresActiveWorkspaceResolver,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
+import {
+  PostgresRegistrationTransaction,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/registration_repository.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

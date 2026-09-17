@@ -1,19 +1,27 @@
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import {
   createApiTokenManagement,
-  PostgresApiTokenRepository,
-  PostgresApiTokenTransaction,
-  WebCryptoApiTokenSecrets,
 } from "../../packages/backend/modules/api-access/public.ts";
 import { apiTokenAuditFrom } from "../../packages/backend/modules/api-access/public.ts";
-import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/public.ts";
-import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/public.ts";
 import postgres from "postgres";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
+import {
+  PostgresApiTokenRepository,
+  PostgresApiTokenTransaction,
+} from "../../packages/backend/modules/api-access/adapters/postgres/api_token_repository.ts";
+import {
+  WebCryptoApiTokenSecrets,
+} from "../../packages/backend/modules/api-access/adapters/crypto/api_token_secrets.ts";
+import {
+  PostgresAuditEventRecorder,
+} from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
+import {
+  PostgresActorRevalidation,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

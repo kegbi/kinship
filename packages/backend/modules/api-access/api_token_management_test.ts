@@ -3,8 +3,10 @@ import {
   type ApiTokenDependencies,
   type ApiTokenRecord,
   createApiTokenManagement,
-  WebCryptoApiTokenSecrets,
 } from "./public.ts";
+import {
+  WebCryptoApiTokenSecrets,
+} from "./adapters/crypto/api_token_secrets.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   const left = JSON.stringify(actual);
