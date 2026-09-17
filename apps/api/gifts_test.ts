@@ -490,3 +490,64 @@ Deno.test("GIFTS-001 HTTP returns a saved gift status privately and maps a refus
     "a refused debt status reports gifts_unavailable",
   );
 });
+
+Deno.test("GIFTS-001 HTTP forwards every optional gift and debt field it accepts", async () => {
+  const received: Record<string, unknown>[] = [];
+  const app = createGiftRoutes({
+    browserSecurity: { origin: "https://app.test", secureCookie: true },
+    gifts: {
+      createGift: (_actor: unknown, _personId: string, input: unknown) => {
+        received.push(input as Record<string, unknown>);
+        return Promise.resolve({ gift: { id }, status: "created" });
+      },
+      createDebt: (_actor: unknown, _personId: string, input: unknown) => {
+        received.push(input as Record<string, unknown>);
+        return Promise.resolve({ debt: { id }, status: "created" });
+      },
+    } as never,
+    protectedSessions: { resolve: () => Promise.resolve(actor) as never },
+  });
+  const headers = {
+    Cookie: "kinship_session=token",
+    Origin: "https://app.test",
+    "Content-Type": "application/json",
+  };
+  const gift = await app.request(`/api/v1/people/${id}/gifts`, {
+    body: JSON.stringify({
+      amount: "42.50",
+      attachmentFileId: giftId,
+      comment: "Wrapped already",
+      currencyCode: "EUR",
+      eventAt: "2026-09-01T10:00:00.000Z",
+      name: "Train tickets",
+      recipientPersonId: debtId,
+      status: "planned",
+      url: "https://example.test/tickets",
+    }),
+    headers,
+    method: "POST",
+  });
+  const debt = await app.request(`/api/v1/people/${id}/debts`, {
+    body: JSON.stringify({
+      amount: "2",
+      currencyCode: "EUR",
+      direction: "they_owe",
+      reason: "Concert ticket",
+      status: "open",
+    }),
+    headers,
+    method: "POST",
+  });
+
+  assertStatus(gift, 201);
+  assertStatus(debt, 201);
+  assert(
+    Object.keys(received[0] ?? {}).sort().join(",") ===
+      "amount,attachmentFileId,comment,currencyCode,eventAt,name,recipientPersonId,status,url",
+    "every optional gift field reached the use case",
+  );
+  assert(
+    (received[1] ?? {}).reason === "Concert ticket",
+    "an optional debt reason reached the use case",
+  );
+});

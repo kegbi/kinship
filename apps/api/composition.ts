@@ -13,9 +13,8 @@
  * `main.ts` serves.
  */
 
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { type Kysely, sql } from "kysely";
-import { HEALTH_RESPONSE } from "../../packages/contracts/health.ts";
 import {
   type ApplicationDatabase,
   connectDatabase,
@@ -155,6 +154,12 @@ import {
   createGovernanceRoutes,
   createLegalRequirementGuard,
 } from "./governance.ts";
+import { JSON_BODY_MAX_BYTES, requestBodyLimit } from "./http/body_limit.ts";
+import { sameOriginCors } from "./http/cors.ts";
+import { healthRoutes } from "./http/health.ts";
+import { type Logger, requestLogging, stderrLogger } from "./http/logging.ts";
+import { requestId, type RequestIdEnv } from "./http/request_id.ts";
+import { apiSecureHeaders } from "./http/secure_headers.ts";
 import { createImportRoutes } from "./imports.ts";
 import { createIntegrationRoutes } from "./integrations.ts";
 import { createInteractionRoutes } from "./interactions.ts";
@@ -225,6 +230,26 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly todayReminders?: TodayReminders;
   readonly todayRecentPeople?: TodayRecentPeople;
   readonly readiness?: () => Promise<boolean>;
+  /**
+   * Where the request log goes. A composition that passes none — every unit
+   * suite, and every integration suite — produces no log output at all.
+   */
+  readonly logger?: Logger;
+}
+
+/**
+ * The two routes that bound their own, larger request body: the person-file
+ * upload streams against a ten megabyte ceiling and the Monica import staging
+ * route refuses anything past its 1.5 MB envelope. The global cap stays out of
+ * their way so each keeps answering its own, more specific refusal.
+ */
+const SELF_BOUNDED_BODIES: readonly RegExp[] = [
+  /^\/api\/v1\/people\/[^/]+\/files$/,
+  /^\/api\/v1\/imports\/dry-runs$/,
+];
+
+function boundsItsOwnBody(context: Context): boolean {
+  return SELF_BOUNDED_BODIES.some((pattern) => pattern.test(context.req.path));
 }
 
 export class CapturedVerificationMail implements VerificationMail {
@@ -282,16 +307,34 @@ export class CapturedVerificationMail implements VerificationMail {
   }
 }
 
-export function createApiApp(services?: ApiServices): Hono {
-  const api = new Hono();
+export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
+  const api = new Hono<RequestIdEnv>();
 
-  api.get("/api/v1/health", async (context) => {
-    context.header("Cache-Control", "no-store");
-    if (services?.readiness && !(await services.readiness())) {
-      return context.json({ status: "healthy", readiness: "unavailable" }, 503);
-    }
-    return context.json(HEALTH_RESPONSE);
-  });
+  // The kit, in the one order it can run in: an identifier before the line
+  // that quotes it, the log around everything it reports on, the response
+  // headers around every answer including a refused one, the body cap before
+  // a handler reads a body, the probes before the guard that would otherwise
+  // ask a health check to accept a legal document, and the routes last. The
+  // origin rule is not here: it belongs to the write routes that take it, so
+  // a read is never asked for an `Origin` it never needed.
+  api.use(requestId());
+  if (services?.logger) api.use(requestLogging(services.logger));
+  api.use(apiSecureHeaders());
+  if (services) {
+    api.use("/api/v1/*", sameOriginCors(services.browserSecurity));
+  }
+  api.use(
+    "/api/v1/*",
+    requestBodyLimit({
+      exempt: boundsItsOwnBody,
+      maxBytes: JSON_BODY_MAX_BYTES,
+    }),
+  );
+
+  api.route(
+    "/",
+    healthRoutes(services?.readiness ? { readiness: services.readiness } : {}),
+  );
 
   if (services?.legal && services.protectedSessions) {
     api.use(
@@ -676,7 +719,11 @@ export function createConfiguredApiApp(
   davRemoteOverride?: DavRemoteClient,
   davKeysetOverride?: DavEncryptionKeyset,
   davEnabled = true,
-): { readonly app: Hono; readonly close: () => Promise<void> } {
+  logger?: Logger,
+): {
+  readonly app: Hono<RequestIdEnv>;
+  readonly close: () => Promise<void>;
+} {
   const environment = Deno.env.get("APP_ENV") ?? "development";
   const davKeyset = configuredKeyset<DavEncryptionKeyset>(
     environment,
@@ -844,6 +891,7 @@ export function createConfiguredApiApp(
     journal: journal.journal,
     journalTimeline: composeJournalTimeline(shared),
     legal: governance.legal,
+    ...(logger ? { logger } : {}),
     memberUiState: workspaces.memberUiState,
     passwordRecovery: identity.passwordRecovery,
     people: { ...people.people, ...people.lifecycle },
@@ -883,7 +931,7 @@ export function createApiRuntime(
   configure: typeof createConfiguredApiApp = createConfiguredApiApp,
 ):
   | ReturnType<typeof createConfiguredApiApp>
-  | { readonly app: Hono } {
+  | { readonly app: Hono<RequestIdEnv> } {
   const databaseUrl = resolveDatabaseUrl(environment);
   if (!databaseUrl) return { app: createApiApp() };
 
@@ -926,5 +974,6 @@ export function createApiRuntime(
     undefined,
     davKeysetValue ? decodeDavEncryptionKeyset(davKeysetValue) : undefined,
     davEnabled,
+    stderrLogger(),
   );
 }
