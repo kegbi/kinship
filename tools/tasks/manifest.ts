@@ -38,6 +38,12 @@ export interface CoverageSet extends TestSet {
   /** Production paths measured by this set. */
   readonly include: readonly string[];
   /**
+   * Source patterns the report leaves out, replacing Deno's own default
+   * rather than adding to it. A set declares this only when the tree it
+   * measures carries shared test scaffolding.
+   */
+  readonly exclude?: readonly string[];
+  /**
    * Minimum line, branch, and function percentage. Defaults to
    * `DEFAULT_COVERAGE_THRESHOLD`; a set raises it when its code carries a
    * higher obligation than the repository floor, as the shared kernel does.
@@ -47,6 +53,22 @@ export interface CoverageSet extends TestSet {
 
 /** The repository coverage floor every set meets unless it declares more. */
 export const DEFAULT_COVERAGE_THRESHOLD = 80;
+
+/**
+ * What a set whose tree holds shared test scaffolding leaves out.
+ *
+ * The first pattern is Deno's own default: a suite measures the code it
+ * exercises, not itself. `.test-helper.ts` is the same thing under the name
+ * this repository already gives scaffolding that is neither production nor a
+ * suite — `listProductionFiles` skips it and so does the architecture checker
+ * — but `deno coverage` cannot know that, so a set that carries helpers names
+ * both patterns. Passing `--exclude` replaces Deno's default, so the first
+ * entry has to be restated.
+ */
+export const COVERAGE_EXCLUDES_WITH_HELPERS = [
+  "test\\.(js|mjs|ts|jsx|tsx)$",
+  "\\.test-helper\\.ts$",
+] as const;
 
 export interface OnDemand {
   /** Why the set cannot belong to the aggregate gates. */
@@ -437,12 +459,29 @@ export const MODULES: readonly TaskModule[] = [
         "apps/api/http/session_test.ts",
         "apps/api/http/validate_test.ts",
         "apps/api/interactions_test.ts",
-        "apps/api/invitations_test.ts",
-        "apps/api/people_test.ts",
+        "apps/api/invitations/accept_test.ts",
+        "apps/api/invitations/create_test.ts",
+        "apps/api/invitations/register_test.ts",
+        "apps/api/invitations/routes_test.ts",
+        "apps/api/people/dates_test.ts",
+        "apps/api/people/directory_test.ts",
+        "apps/api/people/facts_test.ts",
+        "apps/api/people/identity_test.ts",
+        "apps/api/people/life_events_test.ts",
+        "apps/api/people/lifecycle_test.ts",
+        "apps/api/people/profile_test.ts",
+        "apps/api/people/recent_people_test.ts",
+        "apps/api/people/routes_test.ts",
+        "apps/api/people/tag_options_test.ts",
+        "apps/api/people/timeline_test.ts",
         "apps/api/registration_test.ts",
         "apps/api/relationships_test.ts",
         "apps/api/security_config_test.ts",
-        "apps/api/settings_test.ts",
+        "apps/api/settings/personalization_test.ts",
+        "apps/api/settings/preferences_test.ts",
+        "apps/api/settings/routes_test.ts",
+        "apps/api/settings/sessions_test.ts",
+        "apps/api/settings/ui_state_test.ts",
         // The test support package every backend and API suite imports. It
         // lives in this set because the same set measures all of
         // `packages/backend`, so its own suites keep it covered there.
@@ -498,11 +537,28 @@ export const MODULES: readonly TaskModule[] = [
       "apps/api/authentication_test.ts",
       "apps/api/files_test.ts",
       "apps/api/interactions_test.ts",
-      "apps/api/invitations_test.ts",
-      "apps/api/people_test.ts",
+      "apps/api/invitations/accept_test.ts",
+      "apps/api/invitations/create_test.ts",
+      "apps/api/invitations/register_test.ts",
+      "apps/api/invitations/routes_test.ts",
+      "apps/api/people/dates_test.ts",
+      "apps/api/people/directory_test.ts",
+      "apps/api/people/facts_test.ts",
+      "apps/api/people/identity_test.ts",
+      "apps/api/people/life_events_test.ts",
+      "apps/api/people/lifecycle_test.ts",
+      "apps/api/people/profile_test.ts",
+      "apps/api/people/recent_people_test.ts",
+      "apps/api/people/routes_test.ts",
+      "apps/api/people/tag_options_test.ts",
+      "apps/api/people/timeline_test.ts",
       "apps/api/registration_test.ts",
       "apps/api/relationships_test.ts",
-      "apps/api/settings_test.ts",
+      "apps/api/settings/personalization_test.ts",
+      "apps/api/settings/preferences_test.ts",
+      "apps/api/settings/routes_test.ts",
+      "apps/api/settings/sessions_test.ts",
+      "apps/api/settings/ui_state_test.ts",
       "packages/contracts/files_test.ts",
       "packages/contracts/health_test.ts",
       "tools/contracts/interactions_contract_test.ts",
@@ -530,6 +586,11 @@ export const MODULES: readonly TaskModule[] = [
         "tools/contracts",
         "tools/migrations",
       ],
+      // GAP-021 split the people, settings, and invitation suites into one
+      // file per concern, and what they share moved into `.test-helper.ts`
+      // modules beside them. Those are scaffolding, not the code this set
+      // measures.
+      exclude: [...COVERAGE_EXCLUDES_WITH_HELPERS],
       permissions: {
         read: [...API_CONFIGURATION_READS, ...SCHEMA_READS],
         run: ["deno", "powershell"],
@@ -559,15 +620,32 @@ export const MODULES: readonly TaskModule[] = [
         "apps/api/http/validate_test.ts",
         "apps/api/imports_test.ts",
         "apps/api/interactions_test.ts",
-        "apps/api/invitations_test.ts",
+        "apps/api/invitations/accept_test.ts",
+        "apps/api/invitations/create_test.ts",
+        "apps/api/invitations/register_test.ts",
+        "apps/api/invitations/routes_test.ts",
         "apps/api/journal_test.ts",
-        "apps/api/people_test.ts",
+        "apps/api/people/dates_test.ts",
+        "apps/api/people/directory_test.ts",
+        "apps/api/people/facts_test.ts",
+        "apps/api/people/identity_test.ts",
+        "apps/api/people/life_events_test.ts",
+        "apps/api/people/lifecycle_test.ts",
+        "apps/api/people/profile_test.ts",
+        "apps/api/people/recent_people_test.ts",
+        "apps/api/people/routes_test.ts",
+        "apps/api/people/tag_options_test.ts",
+        "apps/api/people/timeline_test.ts",
         "apps/api/personal_lifecycle_test.ts",
         "apps/api/planning_test.ts",
         "apps/api/registration_test.ts",
         "apps/api/relationships_test.ts",
         "apps/api/security_config_test.ts",
-        "apps/api/settings_test.ts",
+        "apps/api/settings/personalization_test.ts",
+        "apps/api/settings/preferences_test.ts",
+        "apps/api/settings/routes_test.ts",
+        "apps/api/settings/sessions_test.ts",
+        "apps/api/settings/ui_state_test.ts",
         "apps/api/workspace_lifecycle_test.ts",
         "apps/worker/composition_test.ts",
         // This set measures all of packages/backend, the shared kernel and the
@@ -720,7 +798,7 @@ export const MODULES: readonly TaskModule[] = [
       permissions: { env: "all", net: "all" },
       tests: [
         "apps/api/api_tokens_test.ts",
-        "apps/api/people_test.ts",
+        "apps/api/people/directory_test.ts",
         "packages/backend/modules/api-access/api_token_management_test.ts",
         "packages/backend/modules/api-access/domain/token_rules_test.ts",
         "tests/integration/api_tokens_postgres_test.ts",
@@ -1494,7 +1572,7 @@ export const MODULES: readonly TaskModule[] = [
           "playwright.config.ts",
           "tests/e2e/perf-001.spec.ts",
           "tests/integration/planning_postgres_test.ts",
-          "apps/api/people_test.ts",
+          "apps/api/people/directory_test.ts",
           "packages/backend/read-models/people-directory/list_people_test.ts",
           "packages/backend/modules/import-export/import_management_test.ts",
           "packages/backend/modules/import-export/export_management_test.ts",

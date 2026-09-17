@@ -1,0 +1,174 @@
+/**
+ * Archiving, restoring, and deleting a person.
+ *
+ * Four routes that change what a person is rather than what they are called.
+ * Each carries the version it was decided against, and deletion carries two
+ * things more: the impact preview it was decided from, and the exact
+ * confirmation that preview printed, so a person is never deleted from a
+ * stale idea of what goes with them.
+ *
+ * Archive and restore are one handler registered twice, because the two
+ * differ only in the use case they call.
+ */
+
+import { Hono } from "hono";
+import { z } from "zod";
+import { requireMatchingOrigin } from "../http/origin.ts";
+import { definedProblem, type ProblemDefinition } from "../http/problem.ts";
+import { type ActorEnv, requireActor, sessionActor } from "../http/session.ts";
+import { parseJsonBody, parseValue } from "../http/validate.ts";
+import {
+  lifecycleFailure,
+  lifecycleIdentity,
+  type PeopleHttpServices,
+  PERSON_ID_INVALID,
+  personIdSchema,
+  transitionSchema,
+} from "./shared.ts";
+
+/** What a person's lifecycle transitions are served from. */
+export type PersonLifecycleHttpServices = Pick<
+  PeopleHttpServices,
+  "browserSecurity" | "people" | "protectedSessions"
+>;
+
+const deletePersonSchema = transitionSchema.extend({
+  confirmation: z.string().min(1).max(500),
+});
+
+export const LIFECYCLE_REQUEST_INVALID: ProblemDefinition = {
+  code: "validation_failed",
+  detail: "Refresh this person before trying again.",
+  status: 400,
+  title: "Invalid lifecycle request",
+};
+export const PERSON_NOT_CHANGED: ProblemDefinition = {
+  code: "people_unavailable",
+  detail: "The person service is temporarily unavailable.",
+  status: 503,
+  title: "Person could not be changed",
+};
+export const DELETION_IMPACT_UNAVAILABLE: ProblemDefinition = {
+  code: "people_unavailable",
+  detail: "The person service is temporarily unavailable.",
+  status: 503,
+  title: "Deletion impact unavailable",
+};
+export const PERSON_DELETE_INVALID: ProblemDefinition = {
+  code: "validation_failed",
+  detail: "Use the current deletion impact preview and exact confirmation.",
+  status: 400,
+  title: "Invalid deletion request",
+};
+export const PERSON_NOT_DELETED: ProblemDefinition = {
+  code: "people_unavailable",
+  detail: "The person service is temporarily unavailable.",
+  status: 503,
+  title: "Person could not be deleted",
+};
+
+export function createLifecycleRoutes(
+  services: PersonLifecycleHttpServices,
+): Hono<ActorEnv> {
+  const routes = new Hono<ActorEnv>();
+  const session = sessionActor(services.protectedSessions);
+  const origin = requireMatchingOrigin(services.browserSecurity);
+
+  for (const action of ["archive", "restore"] as const) {
+    routes.post(
+      `/api/v1/people/:personId/${action}`,
+      origin,
+      session,
+      async (context) => {
+        const personId = parseValue(
+          personIdSchema,
+          context.req.param("personId"),
+        );
+        const input = await parseJsonBody(context, transitionSchema);
+        if ("errors" in personId || "errors" in input) {
+          return definedProblem(context, LIFECYCLE_REQUEST_INVALID);
+        }
+        const actor = await requireActor(context);
+        if (actor instanceof Response) return actor;
+        const result = await services.people[action](
+          actor,
+          personId.data,
+          input.data,
+        ).catch(() => undefined);
+        if (!result) return definedProblem(context, PERSON_NOT_CHANGED);
+        if (result.status !== "archived" && result.status !== "restored") {
+          return lifecycleFailure(context, result);
+        }
+        context.header("Cache-Control", "private, no-store");
+        return context.json({
+          person: lifecycleIdentity(result.person),
+          status: result.status,
+        });
+      },
+    );
+  }
+
+  routes.get(
+    "/api/v1/people/:personId/deletion-impact",
+    session,
+    async (context) => {
+      const personId = parseValue(
+        personIdSchema,
+        context.req.param("personId"),
+      );
+      if ("errors" in personId) {
+        return definedProblem(context, PERSON_ID_INVALID);
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.people.previewDeletion(
+        actor,
+        personId.data,
+      ).catch(() => undefined);
+      if (!result) return definedProblem(context, DELETION_IMPACT_UNAVAILABLE);
+      if (result.status !== "ready") return lifecycleFailure(context, result);
+      context.header("Cache-Control", "private, no-store");
+      return context.json({
+        impact: {
+          confirmation: result.impact.confirmation,
+          dependentRecordPolicy: result.impact.dependentRecordPolicy,
+          person: lifecycleIdentity(result.impact.person),
+        },
+        status: "ready",
+      });
+    },
+  );
+
+  routes.delete(
+    "/api/v1/people/:personId",
+    origin,
+    session,
+    async (context) => {
+      const personId = parseValue(
+        personIdSchema,
+        context.req.param("personId"),
+      );
+      const input = await parseJsonBody(context, deletePersonSchema);
+      if ("errors" in personId || "errors" in input) {
+        return definedProblem(context, PERSON_DELETE_INVALID);
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.people.delete(
+        actor,
+        personId.data,
+        input.data,
+      ).catch(() => undefined);
+      if (!result) return definedProblem(context, PERSON_NOT_DELETED);
+      if (result.status !== "deleted") return lifecycleFailure(context, result);
+      context.header("Cache-Control", "private, no-store");
+      return context.json({
+        next: "/app/people",
+        personId: result.personId,
+        status: "deleted",
+      });
+    },
+  );
+
+  return routes;
+}

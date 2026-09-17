@@ -820,7 +820,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     green, baseline 14 unchanged; gates fmt:check, lint, check,
     check:architecture.
 
-- [ ] **GAP-021 — Split people.ts, settings.ts, invitations.ts by concern.** M.
+- [x] **GAP-021 — Split people.ts, settings.ts, invitations.ts by concern.** M.
       Depends: 020.
   - Scope:
     `apps/api/people/{directory,profile,facts,dates,identity,lifecycle}.ts`,
@@ -828,6 +828,25 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     `apps/api/invitations/{create,accept,register}.ts`; tests split alongside;
     no file over 400 lines.
   - Verify: route tests and `people_postgres_test` green; OpenAPI unchanged.
+  - Delivered 2026-09-17: `apps/api/people/` holds directory (list, tag-options,
+    view, today recent-people), profile (read, life events, timeline), facts,
+    dates, identity (edit, create), and lifecycle concerns; `apps/api/settings/`
+    holds ui_state, profile, preferences, sessions, workspace, members, and
+    personalization; `apps/api/invitations/` holds create (with the
+    workspace-members list), register (with verification delivery), and accept
+    (authenticate, MFA, inspect, accept); shared schemas, presenters, and
+    failure tables sit in each domain's `shared.ts`, with three schema or
+    failure files split out only to stay under 400 lines; the three facades
+    (185, 131, and 100 lines) mount the concerns and re-export every name, so
+    `apps/api/composition.ts` and `apps/api/http/` did not change; all 48 tests
+    moved byte-identical into 20 per-concern suites plus six mount-order tests,
+    one of which proves the tag-options literal still beats the person-id
+    parameter; largest file 361 lines; the per-domain `*.test-helper.ts`
+    scaffolding is excluded from coverage by a new manifest `exclude` field; 9
+    files changed (+338/-6315) plus 45 new files (7564 lines); unit 718 vitest
+    plus all sets green, integration 126/0, api set 89.1 / 85.9 / 92.1,
+    contracts:check and build green, baseline 14 unchanged; gates fmt:check,
+    lint, check, check:architecture.
 
 - [ ] **GAP-022 — Contracts derived from Zod; retire the hand-written
       generator.** L. Depends: 020.
