@@ -2,6 +2,7 @@ import { sql } from "kysely";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
+import { schedulingFor } from "../../domain/important_dates/rules.ts";
 import type {
   ImportantDateRecord,
   ImportantDateRepository,
@@ -37,9 +38,7 @@ function record(row: ImportantDateRow): ImportantDateRecord {
     ...pickDefined({ notes: row.notes }),
     personId: row.person_id,
     precision: row.precision,
-    scheduling: row.month !== null && row.day !== null
-      ? "annual-reminder"
-      : "not-schedulable",
+    scheduling: schedulingFor(row.month ?? undefined, row.day ?? undefined),
     updatedAt: row.updated_at,
     ...(row.year === null ? {} : { year: row.year }),
   };

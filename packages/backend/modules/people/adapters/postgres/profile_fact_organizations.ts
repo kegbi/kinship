@@ -1,9 +1,7 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
-import type {
-  OccupationFact,
-  ProfileFactOrganizationBoundary,
-} from "../../application/profile_facts.ts";
+import type { OccupationFact } from "../../domain/profile_facts/values.ts";
+import type { ProfileFactOrganizationBoundary } from "../../ports/profile_fact_repository.ts";
 
 interface OrganizationRow {
   readonly id: string;

@@ -625,7 +625,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
 
 ### Phase 2 — Module internal structure (domain and ports)
 
-- [ ] **GAP-015 — Domain and ports extraction: people.** L. Depends: 006, 010.
+- [x] **GAP-015 — Domain and ports extraction: people.** L. Depends: 006, 010.
   - Scope: `modules/people/domain/` with pure modules and unit tests
     (`profile_facts/normalize.ts`, `profile_facts/validate.ts`,
     `important_dates/rules.ts`, `person_identity.ts`, `lifecycle_rules.ts`);
@@ -634,6 +634,23 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     Application files orchestrate only. Target: no application file over 400
     lines; domain has no I/O imports (enforced by GAP-005).
   - Verify: people unit + integration green; domain ≥ 95% coverage.
+  - Delivered 2026-09-17: `people/domain/` gained `person_identity.ts`,
+    `lifecycle_rules.ts` (with pure edit, transition, and deletion decisions),
+    `important_dates/rules.ts` (normalisation, validation, and the scheduling
+    rule the adapter now calls), and
+    `profile_facts/{values,normalize,
+    validate,cursors}.ts`, each with a
+    colocated suite and importing only same-module domain and the shared kernel;
+    `people/ports/` holds `context.ts` (actor, transaction, runner), four
+    repository and boundary files, and `audit.ts`; `profile_facts.ts` (995
+    lines) became a 30-line facade over `profile_fact_context.ts`,
+    `profile_fact_listing.ts` (291), and `profile_fact_writes.ts` (295), and the
+    largest application file is now 336 lines; every `public.ts` name is still
+    exported; domain coverage 100/100/100 in the new `people` manifest set, api
+    set up to 87.1 branch; 12 files changed (+327/-1583) plus 23 new files (3197
+    lines); unit 718 vitest plus all sets green, api integration 62/0,
+    contracts:check green, baseline 14 unchanged; gates fmt:check, lint, check,
+    check:architecture.
 
 - [ ] **GAP-016 — Domain and ports extraction: planning and relationships.** L.
       Depends: 015.

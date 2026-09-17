@@ -2,7 +2,7 @@ import {
   createPersonLifecycle,
   type PersonLifecycleDependencies,
   type PersonLifecycleRecord,
-} from "./application/lifecycle_person.ts";
+} from "./public.ts";
 import { assert } from "../../testing/assert.ts";
 import * as fixtures from "../../testing/fixtures.ts";
 import { fixedClock } from "../../testing/fakes.ts";

@@ -4,12 +4,14 @@ import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
 import { displayName } from "../../domain/person_name.ts";
 import type {
-  PeopleRepository,
-  PeopleTransaction,
   PersonIdentity,
-  PersonIdentityLookup,
   PossibleDuplicate,
-} from "../../application/create_person.ts";
+} from "../../domain/person_identity.ts";
+import type { PeopleTransaction } from "../../ports/context.ts";
+import type {
+  PeopleRepository,
+  PersonIdentityLookup,
+} from "../../ports/person_repository.ts";
 
 interface DuplicateRow {
   readonly family_name: string | null;

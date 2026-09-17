@@ -1,101 +1,54 @@
+/**
+ * Moving a person through their lifecycle.
+ *
+ * Editing, archiving, restoring, and deleting a person share one shape: lock
+ * the actor, lock the person, ask `domain/lifecycle_rules.ts` whether the
+ * action is allowed against the row that came back, then write, audit, and
+ * read both back. This file is that shape; the decisions are not here.
+ *
+ * Each use case is offered twice, once opening its own transaction and once
+ * taking one. The `…InTransaction` pair exists because a person can be edited
+ * or archived as part of somebody else's work — a DAV sync, a workspace-wide
+ * lifecycle change — and that work has to commit or roll back as a whole.
+ */
+
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type {
   Failure,
-  ValidationErrors,
   ValidationFailure,
 } from "../../../shared-kernel/result.ts";
-import { isInstant, optionalText } from "../../../shared-kernel/validation.ts";
-import { displayName } from "../domain/person_name.ts";
-import type { PeopleActor, PeopleTransaction } from "./create_person.ts";
+import {
+  type DeletePersonInput,
+  deletionConfirmation,
+  deletionDecision,
+  editDecision,
+  type EditPersonInput,
+  normalizeEditPersonInput,
+  type PersonLifecycleAction,
+  type PersonLifecycleRecord,
+  type PersonTransition,
+  type PersonTransitionInput,
+  transitionDecision,
+  transitionState,
+  validateEditPersonInput,
+} from "../domain/lifecycle_rules.ts";
+import type { PersonLifecycleAudit } from "../ports/audit.ts";
+import type {
+  PeopleActor,
+  PeopleTransaction,
+  PeopleTransactionRunner,
+} from "../ports/context.ts";
+import type {
+  PersonLifecycleLock,
+  PersonLifecycleRepository,
+} from "../ports/person_lifecycle_repository.ts";
 import type { ActorRevalidation } from "../../workspaces/public.ts";
 
-export type PersonLifecycleState = "active" | "archived" | "deleted";
-export type PersonLifecycleAction = "archive" | "delete" | "edit" | "restore";
-
-export interface PersonLifecycleRecord {
-  readonly familyName?: string;
-  readonly givenName: string;
-  readonly id: string;
-  readonly isPartial: boolean;
-  readonly lifecycle: PersonLifecycleState;
-  readonly middleName?: string;
-  readonly nickname?: string;
-  readonly updatedAt: string;
-}
-
-export type PersonLifecycleLock =
-  | Failure<"forbidden" | "not-found">
-  | { readonly person: PersonLifecycleRecord; readonly status: "ready" };
-
-export interface EditPersonInput {
-  readonly expectedUpdatedAt: string;
-  readonly familyName?: string;
-  readonly givenName: string;
-  readonly isPartial: boolean;
-  readonly middleName?: string;
-  readonly nickname?: string;
-}
-
-export interface PersonTransitionInput {
-  readonly expectedUpdatedAt: string;
-}
-
-export interface DeletePersonInput extends PersonTransitionInput {
-  readonly confirmation: string;
-}
-
+/** What deleting this person would cost, shown before it is confirmed. */
 export interface PersonDeletionImpact {
   readonly confirmation: string;
   readonly dependentRecordPolicy: "retained";
   readonly person: PersonLifecycleRecord;
-}
-
-export interface PersonLifecycleRepository {
-  lock(
-    command: PeopleActor & {
-      readonly action: PersonLifecycleAction;
-      readonly personId: string;
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<PersonLifecycleLock>;
-  mutate(
-    command: PeopleActor & {
-      readonly action: PersonLifecycleAction;
-      readonly expectedUpdatedAt: string;
-      readonly input?: Omit<EditPersonInput, "expectedUpdatedAt">;
-      readonly occurredAt: Date;
-      readonly personId: string;
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<PersonLifecycleRecord | undefined>;
-  assertPostcondition(
-    command: PeopleActor & {
-      readonly action: PersonLifecycleAction;
-      readonly before: PersonLifecycleRecord;
-      readonly person: PersonLifecycleRecord;
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<void>;
-}
-
-export interface PersonLifecycleAudit {
-  record(command: {
-    readonly action: PersonLifecycleAction;
-    readonly actor: PeopleActor;
-    readonly before: PersonLifecycleRecord;
-    readonly occurredAt: Date;
-    readonly person: PersonLifecycleRecord;
-    readonly transaction: PeopleTransaction;
-  }): Promise<string>;
-  assertPostcondition(command: {
-    readonly action: PersonLifecycleAction;
-    readonly actor: PeopleActor;
-    readonly auditId: string;
-    readonly before: PersonLifecycleRecord;
-    readonly occurredAt: Date;
-    readonly person: PersonLifecycleRecord;
-    readonly transaction: PeopleTransaction;
-  }): Promise<void>;
 }
 
 export interface PersonLifecycleDependencies {
@@ -103,9 +56,7 @@ export interface PersonLifecycleDependencies {
   readonly audit: PersonLifecycleAudit;
   readonly clock: Clock;
   readonly repository: PersonLifecycleRepository;
-  readonly transaction: {
-    run<T>(work: (transaction: PeopleTransaction) => Promise<T>): Promise<T>;
-  };
+  readonly transaction: PeopleTransactionRunner;
 }
 
 export type PersonLifecycleFailure = Failure<
@@ -132,39 +83,6 @@ export type DeletePersonResult =
   | PersonLifecycleFailure
   | { readonly status: "confirmation-required" }
   | { readonly personId: string; readonly status: "deleted" };
-
-function normalize(input: EditPersonInput): EditPersonInput {
-  const familyName = optionalText(input.familyName);
-  const middleName = optionalText(input.middleName);
-  const nickname = optionalText(input.nickname);
-  return {
-    expectedUpdatedAt: input.expectedUpdatedAt,
-    ...(familyName ? { familyName } : {}),
-    givenName: input.givenName.trim(),
-    isPartial: input.isPartial,
-    ...(middleName ? { middleName } : {}),
-    ...(nickname ? { nickname } : {}),
-  };
-}
-
-function validate(input: EditPersonInput): ValidationErrors {
-  if (!input.givenName && !input.familyName && !input.nickname) {
-    return { givenName: "Enter a given name, family name, or nickname." };
-  }
-  if (!input.givenName && !input.isPartial) {
-    return {
-      isPartial: "Mark the person as partial when their given name is unknown.",
-    };
-  }
-  if (!isInstant(input.expectedUpdatedAt)) {
-    return { expectedUpdatedAt: "Refresh this person before saving." };
-  }
-  return {};
-}
-
-function confirmation(person: PersonLifecycleRecord): string {
-  return `DELETE ${displayName(person)}`;
-}
 
 function failure(lock: Exclude<PersonLifecycleLock, { status: "ready" }>) {
   return lock.status === "forbidden"
@@ -250,20 +168,15 @@ export function createPersonLifecycle(
     rawInput: EditPersonInput,
     transaction: PeopleTransaction,
   ): Promise<EditPersonResult> => {
-    const input = normalize(rawInput);
-    const errors = validate(input);
+    const input = normalizeEditPersonInput(rawInput);
+    const errors = validateEditPersonInput(input);
     if (Object.keys(errors).length > 0) {
       return { errors, status: "validation-error" };
     }
     const locked = await lockPerson(actor, "edit", personId, transaction);
     if (locked.status !== "ready") return failure(locked);
-    if (locked.person.lifecycle === "deleted") return { status: "not-found" };
-    if (locked.person.lifecycle === "archived") {
-      return { status: "archived-write-rejected" };
-    }
-    if (locked.person.updatedAt !== input.expectedUpdatedAt) {
-      return { status: "stale" };
-    }
+    const decision = editDecision(locked.person, input.expectedUpdatedAt);
+    if (decision.status !== "proceed") return { status: decision.status };
     const { expectedUpdatedAt, ...identity } = input;
     const person = await change(
       actor,
@@ -279,24 +192,20 @@ export function createPersonLifecycle(
     actor: PeopleActor,
     personId: string,
     input: PersonTransitionInput,
-    action: "archive" | "restore",
+    action: PersonTransition,
     transaction: PeopleTransaction,
   ): Promise<TransitionPersonResult> => {
     const locked = await lockPerson(actor, action, personId, transaction);
     if (locked.status !== "ready") return failure(locked);
-    if (locked.person.lifecycle === "deleted") return { status: "not-found" };
-    if (
-      action === "archive" && locked.person.lifecycle === "archived" ||
-      action === "restore" && locked.person.lifecycle === "active"
-    ) {
-      return {
-        person: locked.person,
-        status: action === "archive" ? "archived" : "restored",
-      };
+    const decision = transitionDecision(
+      action,
+      locked.person,
+      input.expectedUpdatedAt,
+    );
+    if (decision.status === "unchanged") {
+      return { person: locked.person, status: transitionState(action) };
     }
-    if (locked.person.updatedAt !== input.expectedUpdatedAt) {
-      return { status: "stale" };
-    }
+    if (decision.status !== "proceed") return { status: decision.status };
     const person = await change(
       actor,
       action,
@@ -305,7 +214,7 @@ export function createPersonLifecycle(
       transaction,
     );
     return person
-      ? { person, status: action === "archive" ? "archived" : "restored" }
+      ? { person, status: transitionState(action) }
       : { status: "stale" };
   };
 
@@ -375,7 +284,7 @@ export function createPersonLifecycle(
         }
         return {
           impact: {
-            confirmation: confirmation(locked.person),
+            confirmation: deletionConfirmation(locked.person),
             dependentRecordPolicy: "retained",
             person: locked.person,
           },
@@ -395,15 +304,11 @@ export function createPersonLifecycle(
           transaction,
         );
         if (locked.status !== "ready") return failure(locked);
-        if (locked.person.lifecycle === "deleted") {
+        const decision = deletionDecision(locked.person, input);
+        if (decision.status === "already-deleted") {
           return { personId, status: "deleted" };
         }
-        if (input.confirmation !== confirmation(locked.person)) {
-          return { status: "confirmation-required" };
-        }
-        if (locked.person.updatedAt !== input.expectedUpdatedAt) {
-          return { status: "stale" };
-        }
+        if (decision.status !== "proceed") return { status: decision.status };
         const person = await change(
           actor,
           "delete",
