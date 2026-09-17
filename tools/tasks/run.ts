@@ -188,6 +188,7 @@ export function coverageReportArguments(set: CoverageSet): string[] {
   return [
     "coverage",
     ...set.include.map((path) => `--include=${path}`),
+    ...(set.exclude ?? []).map((pattern) => `--exclude=${pattern}`),
     `--threshold=${set.threshold ?? DEFAULT_COVERAGE_THRESHOLD}`,
     `.coverage/${set.directory}`,
   ];

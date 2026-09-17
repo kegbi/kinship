@@ -1,0 +1,353 @@
+/**
+ * One person's page, read on its canonical route.
+ *
+ * The identity header, the optional workspace summary, and the states the
+ * read can be refused in — archived included, which is a readable state
+ * rather than a missing person.
+ */
+
+import { createPeopleRoutes } from "../people.ts";
+import {
+  assert,
+  assertStatus,
+} from "../../../packages/backend/testing/assert.ts";
+import * as fixtures from "../../../packages/backend/testing/fixtures.ts";
+import { actor, headers, services } from "./people.test-helper.ts";
+
+Deno.test("PEOPLE-002 HTTP distinguishes an archived canonical identity", async () => {
+  const personId = fixtures.personId();
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      get: () =>
+        Promise.resolve({
+          dueInformation: {
+            detail: "0 open tasks.",
+            openTaskCount: 0,
+            status: "ready",
+          },
+          person: {
+            givenName: "Harriet",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            tagCount: 0,
+            tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
+          },
+          status: "archived",
+        }),
+    },
+  ));
+  const response = await app.request(
+    `http://localhost/api/v1/people/${personId}`,
+    { headers },
+  );
+  assert(
+    response.status === 200 &&
+      (await response.json() as { readonly status: string }).status ===
+        "archived",
+    "archived identity remains readable on its canonical route",
+  );
+});
+
+Deno.test("[APP-003C] HTTP opens the read-only person workspace summary", async () => {
+  const personId = fixtures.personId();
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      get: () =>
+        Promise.resolve({
+          dueInformation: {
+            detail: "2 open tasks; next reminder 2026-08-20T09:00:00.000Z.",
+            nextReminderAt: "2026-08-20T09:00:00.000Z",
+            openTaskCount: 2,
+            status: "ready",
+          },
+          person: {
+            description: "Mathematician and correspondent.",
+            familyName: "Lovelace",
+            givenName: "Ada",
+            id: personId,
+            isDeceased: true,
+            isPartial: false,
+            isSelf: false,
+            isStarred: true,
+            tagCount: 0,
+            tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
+          },
+          status: "ready",
+        }),
+    },
+  ));
+
+  const response = await app.request(
+    `http://localhost/api/v1/people/${personId}`,
+    { headers },
+  );
+  const body = await response.json() as {
+    readonly dueInformation?: { readonly status?: string };
+    readonly person?: {
+      readonly description?: string;
+      readonly isDeceased?: boolean;
+      readonly isStarred?: boolean;
+    };
+  };
+
+  assertStatus(response, 200, "person workspace summary is readable");
+  assert(
+    body.person?.description === "Mathematician and correspondent." &&
+      body.person.isStarred === true && body.person.isDeceased === true,
+    "identity orientation fields remain in the profile response",
+  );
+  assert(
+    body.dueInformation?.status === "ready",
+    "the shell returns the delivered due projection with orientation",
+  );
+});
+
+Deno.test("[UXD-013] HTTP includes person section counts when summary is requested", async () => {
+  const personId = fixtures.personId();
+  let includeSummary = false;
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      get: (_resolved, _id, options) => {
+        includeSummary = options?.includeSummary === true;
+        return Promise.resolve({
+          dueInformation: {
+            detail: "0 open tasks.",
+            openTaskCount: 0,
+            status: "ready",
+          },
+          person: {
+            givenName: "Ada",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            tagCount: 0,
+            tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
+          },
+          status: "ready",
+          summary: {
+            primaryContactMethods: [],
+            relationshipCounts: [],
+            sectionCounts: [
+              { count: 2, id: "activities", status: "ready" },
+              { count: 12, id: "notes", status: "ready" },
+              { count: 3, id: "tasks", status: "ready" },
+            ],
+          },
+        } as never);
+      },
+    },
+  ));
+
+  const response = await app.request(
+    `http://localhost/api/v1/people/${personId}?include=summary`,
+    { headers },
+  );
+  const body = await response.json() as {
+    readonly summary?: {
+      readonly sectionCounts?: readonly {
+        readonly count?: number;
+        readonly id?: string;
+      }[];
+    };
+  };
+
+  assertStatus(response, 200, "summary person response is readable");
+  assert(
+    includeSummary &&
+      JSON.stringify(body.summary?.sectionCounts) === JSON.stringify([
+          { count: 2, id: "activities", status: "ready" },
+          { count: 12, id: "notes", status: "ready" },
+          { count: 3, id: "tasks", status: "ready" },
+        ]),
+    "summary includes the requested per-section record counts",
+  );
+});
+
+Deno.test("[UXD-013] HTTP leaves the person response unchanged without include", async () => {
+  const personId = fixtures.personId();
+  let argumentCount = 0;
+  const dueInformation = {
+    detail: "0 open tasks.",
+    openTaskCount: 0,
+    status: "ready" as const,
+  };
+  const person = {
+    givenName: "Ada",
+    id: personId,
+    isDeceased: false,
+    isPartial: false,
+    isSelf: false,
+    isStarred: false,
+    tagCount: 0,
+    tags: [],
+    updatedAt: "2026-08-15T08:00:00.000Z",
+  };
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      get: (...args) => {
+        argumentCount = args.length;
+        return Promise.resolve({
+          dueInformation,
+          person,
+          status: "ready",
+          summary: {
+            primaryContactMethods: [],
+            relationshipCounts: [],
+            sectionCounts: [],
+          },
+        });
+      },
+    },
+  ));
+
+  const response = await app.request(
+    `http://localhost/api/v1/people/${personId}`,
+    { headers },
+  );
+
+  assertStatus(response, 200, "base person response is readable");
+  assert(
+    await response.text() === JSON.stringify({
+          dueInformation,
+          person,
+          status: "ready",
+        }) && argumentCount === 2,
+    "the absent include preserves bytes and does not request summary work",
+  );
+  const invalid = await app.request(
+    `http://localhost/api/v1/people/${personId}?include=everything`,
+    { headers },
+  );
+  assert(
+    invalid.status === 400 && argumentCount === 2,
+    "unsupported include values are rejected before summary work",
+  );
+});
+
+Deno.test("PEOPLE-001 HTTP reads canonical identity only in the resolved workspace", async () => {
+  const personId = fixtures.personId();
+  let received: unknown;
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      get: (resolved, id) => {
+        received = [resolved, id];
+        return Promise.resolve({
+          dueInformation: {
+            detail: "0 open tasks.",
+            openTaskCount: 0,
+            status: "ready",
+          },
+          person: {
+            familyName: "Lovelace",
+            givenName: "Ada",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            tagCount: 0,
+            tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
+          },
+          status: "ready",
+        });
+      },
+    },
+  ));
+  const response = await app.request(
+    `http://localhost/api/v1/people/${personId}`,
+    { headers },
+  );
+  const body = await response.json() as {
+    readonly person?: { readonly id: string };
+    readonly status?: string;
+  };
+  assertStatus(response, 200, "canonical person identity is readable");
+  assert(
+    body.status === "ready" && body.person?.id === personId,
+    "ready identity is returned",
+  );
+  assert(
+    (received as [typeof actor, string])?.[0].workspaceId ===
+        actor.workspaceId &&
+      (received as [typeof actor, string])?.[1] === personId,
+    "resolved actor and route ID reach the person-profile read model",
+  );
+  assert(
+    response.headers.get("cache-control") === "private, no-store",
+    "person identity response is private",
+  );
+});
+
+Deno.test("PEOPLE-001 HTTP maps canonical identity read states safely", async () => {
+  const personId = fixtures.personId();
+  for (
+    const scenario of [
+      { expected: 403, status: "forbidden" as const },
+      { expected: 404, status: "not-found" as const },
+    ]
+  ) {
+    const app = createPeopleRoutes(services(
+      { create: () => Promise.reject(new Error("must not create")) },
+      undefined,
+      undefined,
+      { get: () => Promise.resolve({ status: scenario.status }) },
+    ));
+    const response = await app.request(
+      `http://localhost/api/v1/people/${personId}`,
+      { headers },
+    );
+    assert(response.status === scenario.expected, "read state maps safely");
+    assert(
+      response.headers.get("content-type") === "application/problem+json",
+      "read failure uses problem details",
+    );
+  }
+
+  const unavailable = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      get: () => Promise.reject(new Error("private dependency detail")),
+    },
+  ));
+  const unavailableResponse = await unavailable.request(
+    `http://localhost/api/v1/people/${personId}`,
+    { headers },
+  );
+  assertStatus(unavailableResponse, 503, "read dependency failure retries");
+  assert(
+    !(await unavailableResponse.text()).includes("private dependency detail"),
+    "read dependency detail stays private",
+  );
+
+  const malformed = await unavailable.request(
+    "http://localhost/api/v1/people/not-a-uuid",
+    { headers },
+  );
+  assertStatus(malformed, 400, "malformed canonical ID is rejected");
+});
