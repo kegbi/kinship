@@ -1,0 +1,150 @@
+import { assertEquals } from "../../../testing/assert.ts";
+import {
+  calendarDate,
+  DAY_RATING_RANGE,
+  instant,
+  validateDayRating,
+  validateJournalPost,
+} from "./journal_rules.ts";
+
+Deno.test("[GAP-017] a point in time is the date the repository writes", () => {
+  assertEquals(
+    instant("2026-03-04T10:00:00.000Z")?.toISOString(),
+    "2026-03-04T10:00:00.000Z",
+  );
+  assertEquals(
+    instant("2026-03-04T11:00:00+01:00")?.toISOString(),
+    "2026-03-04T10:00:00.000Z",
+    "an offset is a spelling of the same instant",
+  );
+  assertEquals(instant("sometime"), undefined);
+  assertEquals(instant(""), undefined);
+});
+
+Deno.test("[GAP-017] a day that the calendar does not have is not a day", () => {
+  assertEquals(calendarDate("2026-03-04"), "2026-03-04");
+  assertEquals(
+    calendarDate("2024-02-29"),
+    "2024-02-29",
+    "a leap day is a day",
+  );
+  assertEquals(
+    calendarDate("2026-02-29"),
+    undefined,
+    "the same day in a year without one is not",
+  );
+  assertEquals(calendarDate("2026-02-31"), undefined);
+  assertEquals(calendarDate("2026-13-01"), undefined);
+  assertEquals(calendarDate("2026-3-4"), undefined, "the shape is fixed too");
+  assertEquals(calendarDate("not a day"), undefined);
+  assertEquals(calendarDate("9999-99-99"), undefined);
+});
+
+Deno.test("[GAP-017] a post needs a body and a time, and keeps a title only if one works", () => {
+  assertEquals(
+    validateJournalPost({
+      body: "  A quiet day  ",
+      occurredAt: "2026-03-04T10:00:00.000Z",
+    }),
+    { body: "A quiet day", occurredAt: new Date("2026-03-04T10:00:00.000Z") },
+  );
+  assertEquals(
+    validateJournalPost({
+      body: "A quiet day",
+      occurredAt: "2026-03-04T10:00:00.000Z",
+      title: "  Sunday  ",
+    }),
+    {
+      body: "A quiet day",
+      occurredAt: new Date("2026-03-04T10:00:00.000Z"),
+      title: "Sunday",
+    },
+  );
+  assertEquals(
+    validateJournalPost({
+      body: "   ",
+      occurredAt: "2026-03-04T10:00:00.000Z",
+    }),
+    undefined,
+    "a blank post is nothing to keep",
+  );
+  assertEquals(
+    validateJournalPost({
+      body: "x".repeat(50_001),
+      occurredAt: "2026-03-04T10:00:00.000Z",
+    }),
+    undefined,
+  );
+  assertEquals(
+    validateJournalPost({ body: "A quiet day", occurredAt: "sometime" }),
+    undefined,
+  );
+  assertEquals(
+    validateJournalPost({
+      body: "A quiet day",
+      occurredAt: "2026-03-04T10:00:00.000Z",
+      title: "   ",
+    }),
+    undefined,
+    "a title that was offered and cannot be used is a rejection",
+  );
+  assertEquals(
+    validateJournalPost({
+      body: "A quiet day",
+      occurredAt: "2026-03-04T10:00:00.000Z",
+      title: "x".repeat(501),
+    }),
+    undefined,
+  );
+});
+
+Deno.test("[GAP-017] a day rating falls inside the range and lands on a real day", () => {
+  assertEquals(DAY_RATING_RANGE, { maximum: 5, minimum: 1 });
+  assertEquals(
+    validateDayRating({ ratedOn: "2026-03-04", rating: 3 }),
+    { ratedOn: "2026-03-04", rating: 3 },
+  );
+  assertEquals(
+    validateDayRating({
+      comment: "  Good  ",
+      ratedOn: "2026-03-04",
+      rating: 5,
+    }),
+    { comment: "Good", ratedOn: "2026-03-04", rating: 5 },
+  );
+  assertEquals(
+    validateDayRating({ ratedOn: "2026-03-04", rating: 1 }),
+    { ratedOn: "2026-03-04", rating: 1 },
+    "the lowest rating is still a rating",
+  );
+  assertEquals(
+    validateDayRating({ ratedOn: "2026-03-04", rating: 0 }),
+    undefined,
+  );
+  assertEquals(
+    validateDayRating({ ratedOn: "2026-03-04", rating: 6 }),
+    undefined,
+  );
+  assertEquals(
+    validateDayRating({ ratedOn: "2026-03-04", rating: 3.5 }),
+    undefined,
+    "a day is rated in whole numbers",
+  );
+  assertEquals(
+    validateDayRating({ ratedOn: "2026-02-31", rating: 3 }),
+    undefined,
+  );
+  assertEquals(
+    validateDayRating({ comment: "   ", ratedOn: "2026-03-04", rating: 3 }),
+    undefined,
+    "a comment that was offered and cannot be used is a rejection",
+  );
+  assertEquals(
+    validateDayRating({
+      comment: "x".repeat(10_001),
+      ratedOn: "2026-03-04",
+      rating: 3,
+    }),
+    undefined,
+  );
+});

@@ -3,10 +3,10 @@ import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
-  JournalRepository,
   StoredDayRating,
   StoredJournalPost,
-} from "../../application/journal_management.ts";
+} from "../../domain/journal_rules.ts";
+import type { JournalRepository } from "../../ports/journal_repository.ts";
 
 interface PostRow {
   body: string;

@@ -11,7 +11,7 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
-import type { GiftAudit } from "./gift_management.ts";
+import type { GiftAudit } from "../ports/audit.ts";
 
 export function describeGiftEvent(
   command: Parameters<GiftAudit["record"]>[0],

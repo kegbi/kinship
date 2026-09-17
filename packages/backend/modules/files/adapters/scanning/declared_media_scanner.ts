@@ -1,4 +1,4 @@
-import type { FileScanner } from "../../application/person_files.ts";
+import type { FileScanner } from "../../ports/object_storage.ts";
 
 const startsWith = (bytes: Uint8Array, signature: readonly number[]) =>
   signature.every((value, index) => bytes[index] === value);

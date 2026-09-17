@@ -7,9 +7,9 @@ import {
 } from "../../../../platform/postgres/timestamps.ts";
 import type {
   ActivityRecord,
-  InteractionRepository,
   NoteRecord,
-} from "../../application/record_interaction.ts";
+} from "../../domain/interaction_rules.ts";
+import type { InteractionRepository } from "../../ports/interaction_repository.ts";
 
 export class PostgresInteractionRepository implements InteractionRepository {
   async lockRequest(

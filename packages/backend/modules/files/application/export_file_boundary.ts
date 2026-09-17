@@ -1,5 +1,5 @@
 import type { Failure } from "../../../shared-kernel/result.ts";
-import type { ObjectStorage } from "./person_files.ts";
+import type { ObjectStorage } from "../ports/object_storage.ts";
 
 export interface ExportFileActor {
   readonly memberId: string;

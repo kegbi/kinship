@@ -1,111 +1,32 @@
+/**
+ * The journal use case.
+ *
+ * Every mutation here has the same shape: check what the member wrote, open
+ * one transaction, re-establish their standing under lock inside it, do the
+ * work, and record the audit event beside it. What the member wrote is judged
+ * by `domain/journal_rules.ts` and the work itself is the repository's, so
+ * what is left in this file is the order of those steps and nothing else.
+ */
+
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
 import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
-import { boundedText, isInstant } from "../../../shared-kernel/validation.ts";
-import type { PeopleActor, PeopleTransaction } from "../../people/public.ts";
+import {
+  type DayRatingInput,
+  instant,
+  type JournalPostInput,
+  validateDayRating,
+  validateJournalPost,
+} from "../domain/journal_rules.ts";
+import type { JournalAudit } from "../ports/audit.ts";
+import type {
+  JournalActor,
+  JournalTransaction,
+  JournalTransactionRunner,
+} from "../ports/context.ts";
+import type { JournalRepository } from "../ports/journal_repository.ts";
 import type { JournalActivityReference } from "../../interactions/public.ts";
 import type { ActorRevalidation } from "../../workspaces/public.ts";
-
-export interface StoredJournalPost {
-  readonly body: string;
-  readonly createdAt: string;
-  readonly id: string;
-  readonly occurredAt: string;
-  readonly title?: string;
-  readonly updatedAt: string;
-}
-
-export interface StoredDayRating {
-  readonly comment?: string;
-  readonly createdAt: string;
-  readonly id: string;
-  readonly ratedOn: string;
-  readonly rating: number;
-  readonly updatedAt: string;
-}
-
-export interface JournalRepository {
-  createPost(
-    command: PeopleActor & {
-      readonly body: string;
-      readonly id: string;
-      readonly now: Date;
-      readonly occurredAt: Date;
-      readonly title?: string;
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<
-    | { readonly post: StoredJournalPost; readonly status: "created" }
-    | Failure<"forbidden">
-  >;
-  deleteItem(
-    command: PeopleActor & {
-      readonly itemId: string;
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<
-    | {
-      readonly itemType: "activity" | "day-rating" | "post";
-      readonly status: "deleted";
-    }
-    | Failure<"forbidden" | "not-found">
-  >;
-  linkActivity(
-    command: PeopleActor & {
-      readonly activityId: string;
-      readonly id: string;
-      readonly occurredAt: Date;
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<
-    {
-      readonly activityId: string;
-      readonly id: string;
-      readonly occurredAt: string;
-      readonly status: "created";
-    } | Failure<"forbidden" | "not-found">
-  >;
-  saveDayRating(
-    command: PeopleActor & {
-      readonly comment?: string;
-      readonly id: string;
-      readonly now: Date;
-      readonly ratedOn: string;
-      readonly rating: number;
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<
-    | {
-      readonly rating: StoredDayRating;
-      readonly status: "created" | "updated";
-    }
-    | Failure<"forbidden">
-  >;
-  updatePost(
-    command: PeopleActor & {
-      readonly body: string;
-      readonly now: Date;
-      readonly occurredAt: Date;
-      readonly postId: string;
-      readonly title?: string;
-      readonly transaction: PeopleTransaction;
-    },
-  ): Promise<
-    | { readonly post: StoredJournalPost; readonly status: "updated" }
-    | Failure<"forbidden" | "not-found">
-  >;
-}
-
-export interface JournalAudit {
-  record(command: {
-    readonly action: "created" | "deleted" | "updated";
-    readonly actor: PeopleActor;
-    readonly itemId: string;
-    readonly itemType: "activity" | "day-rating" | "post";
-    readonly occurredAt: Date;
-    readonly transaction: PeopleTransaction;
-  }): Promise<string>;
-}
 
 export interface JournalManagementDependencies {
   readonly activities: JournalActivityReference;
@@ -114,23 +35,7 @@ export interface JournalManagementDependencies {
   readonly clock: Clock;
   readonly ids: { next(): string };
   readonly repository: JournalRepository;
-  readonly transaction: {
-    run<T>(work: (transaction: PeopleTransaction) => Promise<T>): Promise<T>;
-  };
-}
-
-/** The point in time itself, because the repository writes a `Date`. */
-function instant(value: string): Date | undefined {
-  return isInstant(value) ? new Date(value) : undefined;
-}
-
-function date(value: string): string | undefined {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
-  const parsed = new Date(`${value}T00:00:00.000Z`);
-  return Number.isFinite(parsed.valueOf()) &&
-      parsed.toISOString().slice(0, 10) === value
-    ? value
-    : undefined;
+  readonly transaction: JournalTransactionRunner;
 }
 
 export function createJournalManagement(
@@ -142,8 +47,8 @@ export function createJournalManagement(
    * its own copy of that join and scopes by workspace alone.
    */
   const execute = <T>(
-    actor: PeopleActor,
-    work: (transaction: PeopleTransaction, now: Date) => Promise<T>,
+    actor: JournalActor,
+    work: (transaction: JournalTransaction, now: Date) => Promise<T>,
   ): Promise<T | Failure<"forbidden" | "unavailable">> => {
     const now = dependencies.clock.now();
     return runOrUnavailable(
@@ -161,28 +66,15 @@ export function createJournalManagement(
   };
 
   return {
-    createPost: async (
-      actor: PeopleActor,
-      input: {
-        readonly body: string;
-        readonly occurredAt: string;
-        readonly title?: string;
-      },
-    ) => {
-      const body = boundedText(input.body, 50_000);
-      const occurredAt = instant(input.occurredAt);
-      const title = boundedText(input.title, 500);
-      if (!body || !occurredAt || (input.title !== undefined && !title)) {
-        return { status: "validation-error" as const };
-      }
+    createPost: async (actor: JournalActor, input: JournalPostInput) => {
+      const values = validateJournalPost(input);
+      if (!values) return { status: "validation-error" as const };
       return await execute(actor, async (transaction, now) => {
         const result = await dependencies.repository.createPost({
           ...actor,
-          body,
+          ...values,
           id: dependencies.ids.next(),
           now,
-          occurredAt,
-          ...(title ? { title } : {}),
           transaction,
         });
         if (result.status === "created") {
@@ -199,7 +91,7 @@ export function createJournalManagement(
       });
     },
     deleteItem: async (
-      actor: PeopleActor,
+      actor: JournalActor,
       itemId: string,
     ) =>
       await execute(actor, async (transaction, now) => {
@@ -220,7 +112,7 @@ export function createJournalManagement(
         }
         return result;
       }),
-    linkActivity: async (actor: PeopleActor, activityId: string) =>
+    linkActivity: async (actor: JournalActor, activityId: string) =>
       await execute(actor, async (transaction, now) => {
         const activity = await dependencies.activities.inspect({
           ...actor,
@@ -249,28 +141,15 @@ export function createJournalManagement(
         }
         return result;
       }),
-    saveDayRating: async (
-      actor: PeopleActor,
-      input: {
-        readonly comment?: string;
-        readonly ratedOn: string;
-        readonly rating: number;
-      },
-    ) => {
-      const ratedOn = date(input.ratedOn);
-      const comment = boundedText(input.comment, 10_000);
-      if (
-        !ratedOn || !Number.isInteger(input.rating) || input.rating < 1 ||
-        input.rating > 5 || (input.comment !== undefined && !comment)
-      ) return { status: "validation-error" as const };
+    saveDayRating: async (actor: JournalActor, input: DayRatingInput) => {
+      const values = validateDayRating(input);
+      if (!values) return { status: "validation-error" as const };
       return await execute(actor, async (transaction, now) => {
         const result = await dependencies.repository.saveDayRating({
           ...actor,
-          ...(comment ? { comment } : {}),
+          ...values,
           id: dependencies.ids.next(),
           now,
-          ratedOn,
-          rating: input.rating,
           transaction,
         });
         if (result.status !== "forbidden") {
@@ -287,28 +166,18 @@ export function createJournalManagement(
       });
     },
     updatePost: async (
-      actor: PeopleActor,
+      actor: JournalActor,
       postId: string,
-      input: {
-        readonly body: string;
-        readonly occurredAt: string;
-        readonly title?: string;
-      },
+      input: JournalPostInput,
     ) => {
-      const body = boundedText(input.body, 50_000);
-      const occurredAt = instant(input.occurredAt);
-      const title = boundedText(input.title, 500);
-      if (!body || !occurredAt || (input.title !== undefined && !title)) {
-        return { status: "validation-error" as const };
-      }
+      const values = validateJournalPost(input);
+      if (!values) return { status: "validation-error" as const };
       return await execute(actor, async (transaction, now) => {
         const result = await dependencies.repository.updatePost({
           ...actor,
-          body,
+          ...values,
           now,
-          occurredAt,
           postId,
-          ...(title ? { title } : {}),
           transaction,
         });
         if (result.status === "updated") {

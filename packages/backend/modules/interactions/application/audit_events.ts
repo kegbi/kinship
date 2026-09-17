@@ -12,8 +12,7 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
-import type { CommunicationAudit } from "./record_communication.ts";
-import type { InteractionAudit } from "./record_interaction.ts";
+import type { CommunicationAudit, InteractionAudit } from "../ports/audit.ts";
 
 export function describeInteractionEvent(
   command: Parameters<InteractionAudit["record"]>[0],
