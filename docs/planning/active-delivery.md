@@ -29,6 +29,14 @@ prerequisite queues.
   `gifts` at 87.3% branch); the Chromium E2E project passed 53 of 57 flows and
   failed exactly the four tracked by `REL-032` and `REL-033`. Nothing new was
   parked. The CI workflow still has not run because nothing has been pushed.
+- Phase 2 of that plan (GAP-015 through GAP-018) is integrated at `1c050b5a`.
+  The Phase 2 checkpoint on `1c050b5a` passed root `check`, `contracts:check`,
+  `check:architecture` (14 baseline entries, unchanged since GAP-013), `test`,
+  and `test:coverage` (all 26 sets above their floors); the Chromium E2E project
+  passed 53 of 57 flows and failed exactly the four tracked by `REL-032` and
+  `REL-033`. Every backend module now has `domain/` and `ports/` directories
+  measured at the shared kernel's bar, and `REL-038` records the one
+  non-deterministic coverage measurement seen on the way.
 - User-directed follow-up: responsive person blocks, focus-border repair, then
   an evidence-backed application repair plan and execution in a clean task.
 - Remaining repair statuses and execution order belong to the
@@ -220,6 +228,20 @@ Playwright test carrying its stable flow ID.
       branches; `apps/api/gifts.ts` is at 92.2% branch and 100% line, the set at
       87.3% branch, and root `test:coverage` runs to completion again. No
       production file or threshold changed.
+- [ ] **REL-038 — The `lifecycle` coverage set is not perfectly deterministic.**
+      During the GAP-018 verification on 2026-09-17 one of four runs of
+      `deno task test:coverage --module=lifecycle` measured
+      `identity/adapters/postgres/personal_lifecycle.ts` at 83.3% branch and
+      85.7% line instead of 100% and 98.4%, taking the set to 84.5 / 92.5 / 93.2
+      against its usual 85.6 / 94.3 / 94.1, and the reviewer's own run saw 75.0%
+      branch on the same file. The set stayed above its 80% floor, so no gate
+      failed, but a reviewer comparing against the previous measurement sees a
+      spurious drop. The candidates touched nothing in that adapter; the
+      variance points at a timing-sensitive path in
+      `tests/integration/personal_lifecycle_postgres_test.ts` that sometimes
+      skips a branch. Reproduce by running the set several times and diffing the
+      per-file lines; fix by making the affected test deterministic, not by
+      widening the floor.
 
 ## Just-In-Time Technical Capabilities
 
