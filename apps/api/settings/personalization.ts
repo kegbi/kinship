@@ -5,7 +5,9 @@
  * reminder rules, and the rest. A section is a path parameter the
  * personalization use case validates, not an enum this file keeps, so the
  * route refuses an unknown one with a 404 on the link rather than a 400 on a
- * field.
+ * field. The descriptor publishes the accepted sections as an enum, which is
+ * what a reader of the document needs; the route still asks the use case, so
+ * an unknown section is still a link that leads nowhere.
  *
  * Deleting an option that records still point at is the one refusal that
  * counts: it names how many, so the page can offer a replacement rather than
@@ -13,16 +15,23 @@
  */
 
 import { type Context, Hono } from "hono";
-import { z } from "zod";
 import type { PersonalizationSection } from "../../../packages/backend/modules/workspaces/public.ts";
+import {
+  createPersonalizationEntry,
+  deletePersonalizationEntry,
+  deletePersonalizationEntryQuery,
+  listPersonalizationEntries,
+  updatePersonalizationEntry,
+} from "../../../packages/contracts/routes/settings.ts";
+import { uuid } from "../../../packages/contracts/schemas/shared.ts";
 import { failureResponder, type FailureTable } from "../http/failures.ts";
 import { requireMatchingOrigin } from "../http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "../http/problem.ts";
+import { mount } from "../http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "../http/session.ts";
 import { parseJsonBody, parseValue } from "../http/validate.ts";
 import {
   personalizationCreateSchema,
-  personalizationDeleteSchema,
   personalizationUpdateSchema,
 } from "./personalization_schemas.ts";
 import { privateJson, type SettingsHttpServices } from "./shared.ts";
@@ -32,8 +41,6 @@ export type PersonalizationHttpServices = Pick<
   SettingsHttpServices,
   "browserSecurity" | "personalization" | "protectedSessions"
 >;
-
-const personalizationId = z.string().uuid();
 
 /** What a refused personalization change says. */
 export const PERSONALIZATION_FAILURES: FailureTable = {
@@ -155,8 +162,9 @@ export function createPersonalizationRoutes(
       )
       : personalizationFailure(context, result);
 
-  routes.get(
-    "/api/v1/settings/personalization/:section",
+  mount(
+    routes,
+    listPersonalizationEntries,
     session,
     async (context) => {
       const selected = section(context);
@@ -177,8 +185,9 @@ export function createPersonalizationRoutes(
     },
   );
 
-  routes.post(
-    "/api/v1/settings/personalization/:section",
+  mount(
+    routes,
+    createPersonalizationEntry,
     origin,
     session,
     async (context) => {
@@ -218,13 +227,14 @@ export function createPersonalizationRoutes(
     },
   );
 
-  routes.patch(
-    "/api/v1/settings/personalization/:section/:id",
+  mount(
+    routes,
+    updatePersonalizationEntry,
     origin,
     session,
     async (context) => {
       const selected = section(context);
-      const id = parseValue(personalizationId, context.req.param("id"));
+      const id = parseValue(uuid, context.req.param("id"));
       const parsed = selected
         ? await parseJsonBody(context, personalizationUpdateSchema(selected))
         : undefined;
@@ -267,14 +277,15 @@ export function createPersonalizationRoutes(
     },
   );
 
-  routes.delete(
-    "/api/v1/settings/personalization/:section/:id",
+  mount(
+    routes,
+    deletePersonalizationEntry,
     origin,
     session,
     async (context) => {
       const selected = section(context);
-      const id = parseValue(personalizationId, context.req.param("id"));
-      const parsed = parseValue(personalizationDeleteSchema, {
+      const id = parseValue(uuid, context.req.param("id"));
+      const parsed = parseValue(deletePersonalizationEntryQuery, {
         expectedUpdatedAt: context.req.query("expectedUpdatedAt"),
         replacementId: context.req.query("replacementId"),
       });

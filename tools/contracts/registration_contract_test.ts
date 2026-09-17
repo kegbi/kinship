@@ -1,9 +1,25 @@
-import {
-  buildOpenApiDocument,
-  renderGeneratedClient,
-  renderInvitationClient,
-  renderSettingsClient,
-} from "./generate.ts";
+import { buildOpenApiDocument } from "./document.ts";
+
+const CLIENT = new URL("../../packages/contracts/client/", import.meta.url);
+
+/**
+ * The authored client surface, as text, for the assertions that read it.
+ *
+ * Whitespace is squeezed out so an assertion pins what the client says rather
+ * than how `deno fmt` happened to wrap it.
+ */
+function clientSource(...modules: readonly string[]): string {
+  return modules
+    .map((module) => Deno.readTextFileSync(new URL(`${module}.ts`, CLIENT)))
+    .join(" ")
+    .replace(/\s+/g, "")
+    .replace(/,\)/g, ")");
+}
+
+/** Whether the client says this, ignoring how it is wrapped. */
+function says(source: string, snippet: string): boolean {
+  return source.includes(snippet.replace(/\s+/g, "").replace(/,\)/g, ")"));
+}
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -47,9 +63,9 @@ Deno.test("APR-009 preferences have distinct strict writable and resolved read s
       "#/components/schemas/ResolvedMemberPreferences",
     "responses use the resolved shape",
   );
-  const client = renderSettingsClient();
+  const client = clientSource("settings");
   assert(
-    client.includes("updateMemberPreferences(input: MemberPreferences"),
+    says(client, "updateMemberPreferences(input: MemberPreferences"),
     "generated write input remains editable fields only",
   );
 });
@@ -59,7 +75,12 @@ Deno.test("AUTH-001/AUTH-002/AUTH-003 OpenAPI is deterministic and secret-safe",
   const second = JSON.stringify(buildOpenApiDocument(), null, 2) + "\n";
   assert(first === second, "OpenAPI generation must be byte stable");
   const document = buildOpenApiDocument();
-  const generatedClient = renderGeneratedClient() + renderInvitationClient();
+  const generatedClient = clientSource(
+    "registration",
+    "authentication",
+    "invitations",
+    "settings",
+  );
   assert(document.openapi === "3.1.0", "contract must use OpenAPI 3.1");
   assert(
     first.includes("application/problem+json"),
@@ -70,7 +91,7 @@ Deno.test("AUTH-001/AUTH-002/AUTH-003 OpenAPI is deterministic and secret-safe",
     "public contract must not expose secret fields",
   );
   assert(
-    generatedClient.includes("/api/v1/registrations"),
+    says(generatedClient, "/api/v1/registrations"),
     "generated client must consume registration contract",
   );
   const text = JSON.stringify(document);
@@ -114,7 +135,7 @@ Deno.test("AUTH-001/AUTH-002/AUTH-003 OpenAPI is deterministic and secret-safe",
   ) {
     assert(text.includes(JSON.stringify(path)), `${path} must be documented`);
     assert(
-      generatedClient.includes(path),
+      says(generatedClient, path),
       `${path} must have a generated frontend call`,
     );
   }
@@ -209,8 +230,8 @@ Deno.test("AUTH-001/AUTH-002/AUTH-003 OpenAPI is deterministic and secret-safe",
   );
   assert(
     text.includes('"InvitationToken"') && text.includes('"writeOnly":true') &&
-      generatedClient.includes("inspectWorkspaceInvitation(token?: string)") &&
-      generatedClient.includes("registerInvitedIdentity(input:"),
+      says(generatedClient, "inspectWorkspaceInvitation(token?: string)") &&
+      says(generatedClient, "registerInvitedIdentity(input:"),
     "invitation bearer material is request-only and never a response field",
   );
   assert(
@@ -300,12 +321,14 @@ Deno.test("UXD-002C3 OpenAPI publishes member UI state and optional session comp
     "session context composes UI state without making preference reads fatal",
   );
 
-  const client = renderGeneratedClient() + renderSettingsClient();
+  const client = clientSource("types", "settings");
   assert(
-    client.includes("export interface MemberUiState") &&
-      client.includes("getMemberUiState(") &&
-      client.includes("saveMemberUiState(") &&
-      client.includes("readonly uiState?: MemberUiState"),
-    "generated client exposes both operations and optional session UI state",
+    says(
+      client,
+      'export type MemberUiState = components["schemas"]["MemberUiState"];',
+    ) &&
+      says(client, "getMemberUiState(") &&
+      says(client, "saveMemberUiState("),
+    "the client exposes both operations and aliases the published UI state",
   );
 });

@@ -16,17 +16,24 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
 import type { ImportManagement } from "../../packages/backend/modules/import-export/public.ts";
 import {
   IMPORT_HTTP_ENVELOPE_MAX_BYTES,
   IMPORT_SOURCE_MAX_BYTES,
 } from "../../packages/contracts/imports.ts";
+import {
+  commitImport,
+  createImportDryRun,
+  getImportReport,
+  listImports,
+} from "../../packages/contracts/routes/imports.ts";
+import { uuid } from "../../packages/contracts/schemas/shared.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
 import { failureResponder, type FailureTable } from "./http/failures.ts";
 import { requireMatchingOrigin } from "./http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { mount } from "./http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "./http/session.ts";
 import { parseValue } from "./http/validate.ts";
 
@@ -36,8 +43,6 @@ export interface ImportHttpServices {
   readonly imports: ImportManagement;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
 }
-
-const uuid = z.uuid();
 
 const IMPORT_FORBIDDEN = {
   code: "import_forbidden",
@@ -141,7 +146,7 @@ export function createImportRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get("/api/v1/imports", session, async (context) => {
+  mount(routes, listImports, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.imports.list(actor);
@@ -150,7 +155,7 @@ export function createImportRoutes(
     return context.json({ imports: result.imports });
   });
 
-  routes.get("/api/v1/imports/:importId", session, async (context) => {
+  mount(routes, getImportReport, session, async (context) => {
     const importId = parseValue(uuid, context.req.param("importId"));
     if ("errors" in importId) {
       return definedProblem(context, IMPORT_NOT_FOUND);
@@ -163,7 +168,7 @@ export function createImportRoutes(
     return context.json(result.import);
   });
 
-  routes.post("/api/v1/imports/dry-runs", origin, session, async (context) => {
+  mount(routes, createImportDryRun, origin, session, async (context) => {
     const declared = Number(context.req.header("Content-Length") ?? 0);
     if (declared > IMPORT_HTTP_ENVELOPE_MAX_BYTES) {
       return definedProblem(context, IMPORT_TOO_LARGE);
@@ -196,8 +201,9 @@ export function createImportRoutes(
     return context.json(result, 201);
   });
 
-  routes.post(
-    "/api/v1/imports/:importId/commit",
+  mount(
+    routes,
+    commitImport,
     origin,
     session,
     async (context) => {

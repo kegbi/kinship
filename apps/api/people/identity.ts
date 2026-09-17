@@ -12,18 +12,25 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
+import {
+  createPerson,
+  editPerson,
+} from "../../../packages/contracts/routes/people.ts";
+import {
+  personEditInput,
+  personInput,
+} from "../../../packages/contracts/schemas/people.ts";
+import { uuid } from "../../../packages/contracts/schemas/shared.ts";
 import { requireMatchingOrigin } from "../http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "../http/problem.ts";
+import { mount } from "../http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "../http/session.ts";
 import { parseJsonBody, parseValue } from "../http/validate.ts";
 import {
-  expectedUpdatedAtSchema,
   identity,
   lifecycleFailure,
   lifecycleIdentity,
   type PeopleHttpServices,
-  personIdSchema,
 } from "./shared.ts";
 
 /** What creating and renaming a person is served from. */
@@ -31,18 +38,6 @@ export type PersonIdentityHttpServices = Pick<
   PeopleHttpServices,
   "browserSecurity" | "people" | "protectedSessions"
 >;
-
-const personSchema = z.object({
-  duplicateOverride: z.boolean().optional(),
-  familyName: z.string().trim().max(200).optional(),
-  givenName: z.string().trim().max(200),
-  isPartial: z.boolean(),
-  middleName: z.string().trim().max(200).optional(),
-  nickname: z.string().trim().max(200).optional(),
-}).strict();
-const editPersonSchema = personSchema.omit({ duplicateOverride: true }).extend({
-  expectedUpdatedAt: expectedUpdatedAtSchema,
-});
 
 export const PERSON_EDIT_INVALID: ProblemDefinition = {
   code: "validation_failed",
@@ -104,9 +99,9 @@ export function createIdentityRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.patch("/api/v1/people/:personId", origin, session, async (context) => {
-    const personId = parseValue(personIdSchema, context.req.param("personId"));
-    const input = await parseJsonBody(context, editPersonSchema);
+  mount(routes, editPerson, origin, session, async (context) => {
+    const personId = parseValue(uuid, context.req.param("personId"));
+    const input = await parseJsonBody(context, personEditInput);
     if ("errors" in personId || "errors" in input) {
       return definedProblem(context, PERSON_EDIT_INVALID);
     }
@@ -129,8 +124,8 @@ export function createIdentityRoutes(
     });
   });
 
-  routes.post("/api/v1/people", origin, session, async (context) => {
-    const parsed = await parseJsonBody(context, personSchema);
+  mount(routes, createPerson, origin, session, async (context) => {
+    const parsed = await parseJsonBody(context, personInput);
     if ("errors" in parsed) {
       return definedProblem(context, PERSON_CREATE_INVALID);
     }

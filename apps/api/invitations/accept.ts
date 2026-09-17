@@ -12,14 +12,28 @@
  * to the invitation routes. Accepting clears both of the temporary ones and
  * sets the established session at `/`, so a finished invitation leaves
  * nothing behind that could be replayed.
+ *
+ * The four paths and the shapes each step is asked for in came from
+ * `packages/contracts` (GAP-022).
  */
 
 import { type Context, Hono } from "hono";
-import { z } from "zod";
+import {
+  acceptWorkspaceInvitation,
+  authenticateWorkspaceInvitation,
+  completeWorkspaceInvitationMfa,
+  inspectWorkspaceInvitation,
+} from "../../../packages/contracts/routes/invitations.ts";
+import {
+  invitationAuthenticationInput,
+  invitationMfaInput,
+  optionalInvitationToken,
+} from "../../../packages/contracts/schemas/invitations.ts";
 import { clientAddress } from "../http/client_address.ts";
 import { cookieValue, SESSION_COOKIE, setCookie } from "../http/cookies.ts";
 import { requireMatchingOrigin } from "../http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "../http/problem.ts";
+import { mount } from "../http/route.ts";
 import { type ActorEnv, sessionActor, sessionOf } from "../http/session.ts";
 import { parseJsonBody } from "../http/validate.ts";
 import type { BrowserSecurityPolicy } from "../security_config.ts";
@@ -44,18 +58,6 @@ const MFA_COOKIE = "kinship_mfa";
 const MFA_PATH = "/api/v1/workspace-invitations/mfa";
 /** Five minutes for a pending factor. */
 const MFA_COOKIE_SECONDS = 5 * 60;
-
-const optionalTokenSchema = z.object({
-  token: z.string().min(32).max(256).optional(),
-}).strict();
-const invitationAuthenticationSchema = z.object({
-  email: z.string().trim().toLowerCase().email().max(254),
-  password: z.string().min(1).max(128),
-  token: z.string().min(32).max(256).optional(),
-}).strict();
-const invitationMfaSchema = z.object({
-  factor: z.string().trim().min(6).max(128),
-}).strict();
 
 export const INVALID_CREDENTIALS: ProblemDefinition = {
   code: "invalid_credentials",
@@ -156,10 +158,10 @@ export function createInvitationAcceptanceRoutes(
   const origin = requireMatchingOrigin(services.browserSecurity);
   const policy = services.browserSecurity;
 
-  routes.post(`${INVITATION_PATH}/authenticate`, origin, async (context) => {
+  mount(routes, authenticateWorkspaceInvitation, origin, async (context) => {
     const parsed = await parseJsonBody(
       context,
-      invitationAuthenticationSchema,
+      invitationAuthenticationInput,
     );
     const token = "errors" in parsed
       ? undefined
@@ -223,8 +225,8 @@ export function createInvitationAcceptanceRoutes(
     return signInFailure(context, result);
   });
 
-  routes.post(MFA_PATH, origin, async (context) => {
-    const parsed = await parseJsonBody(context, invitationMfaSchema);
+  mount(routes, completeWorkspaceInvitationMfa, origin, async (context) => {
+    const parsed = await parseJsonBody(context, invitationMfaInput);
     const token = invitationToken(context);
     const challengeToken = cookieValue(
       context.req.header("Cookie"),
@@ -275,8 +277,8 @@ export function createInvitationAcceptanceRoutes(
     return mfaFailure(context, result);
   });
 
-  routes.post(`${INVITATION_PATH}/inspect`, origin, async (context) => {
-    const parsed = await parseJsonBody(context, optionalTokenSchema);
+  mount(routes, inspectWorkspaceInvitation, origin, async (context) => {
+    const parsed = await parseJsonBody(context, optionalInvitationToken);
     const token = "errors" in parsed
       ? undefined
       : parsed.data.token ?? invitationToken(context);
@@ -292,12 +294,13 @@ export function createInvitationAcceptanceRoutes(
     return failure(context, result);
   });
 
-  routes.post(
-    `${INVITATION_PATH}/accept`,
+  mount(
+    routes,
+    acceptWorkspaceInvitation,
     origin,
     session,
     async (context) => {
-      const parsed = await parseJsonBody(context, optionalTokenSchema);
+      const parsed = await parseJsonBody(context, optionalInvitationToken);
       const token = "errors" in parsed
         ? undefined
         : parsed.data.token ?? invitationToken(context);

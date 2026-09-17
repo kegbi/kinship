@@ -1,4 +1,4 @@
-import { buildOpenApiDocument } from "./generate.ts";
+import { buildOpenApiDocument } from "./document.ts";
 import type {
   PersonalizationCreateInputBySection,
   PersonalizationUpdateInputBySection,
@@ -1390,11 +1390,9 @@ Deno.test("PEOPLE-006 OpenAPI exposes strict section-scoped profile facts", () =
     }[];
   };
   assert(
-    JSON.stringify(
-      listOperation.parameters?.find((parameter) =>
-        parameter.name === "includeOptions"
-      )?.schema?.enum,
-    ) === JSON.stringify([true]),
+    listOperation.parameters?.find((parameter) =>
+      parameter.name === "includeOptions"
+    )?.schema?.const === "true",
     "includeOptions documents only the literal true query semantic",
   );
   assert(

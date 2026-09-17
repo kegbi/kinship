@@ -16,15 +16,29 @@
  */
 
 import { type Context, Hono, type MiddlewareHandler } from "hono";
-import { z } from "zod";
 import type { AuditHistory } from "../../packages/backend/read-models/audit-history/public.ts";
 import type { LegalAcceptance } from "../../packages/backend/modules/governance/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
+import {
+  acceptLegalDocument,
+  getLegalRequirements,
+  getPublicLegalDocument,
+  listPersonAudit,
+  listPersonAuditQuery,
+  listWorkspaceAudit,
+  listWorkspaceAuditQuery,
+} from "../../packages/contracts/routes/governance.ts";
+import {
+  legalAcceptanceInput,
+  legalDocumentType,
+} from "../../packages/contracts/schemas/governance.ts";
+import { uuid } from "../../packages/contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
 import { trustedClientAddress } from "./http/client_address.ts";
 import { failureResponder, type FailureTable } from "./http/failures.ts";
 import { rejectForeignOrigin } from "./http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { mount } from "./http/route.ts";
 import {
   type ActorEnv,
   readActor,
@@ -46,29 +60,6 @@ export interface LegalRequirementGuardServices {
   readonly legal: LegalAcceptance;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
 }
-
-const id = z.uuid();
-const documentType = z.enum(["privacy", "terms"]);
-const acceptanceInput = z.object({ documentId: id }).strict();
-const query = z.object({
-  action: z.string().trim().min(1).max(200).optional(),
-  actorMemberId: id.optional(),
-  cursor: z.string().min(1).max(2_000).optional(),
-  from: z.iso.datetime({ offset: true }).optional(),
-  limit: z.coerce.number().int().min(1).max(50).default(20),
-  personId: id.optional(),
-  to: z.iso.datetime({ offset: true }).optional(),
-}).strict().superRefine((value, context) => {
-  if (
-    value.from && value.to && Date.parse(value.from) >= Date.parse(value.to)
-  ) {
-    context.addIssue({
-      code: "custom",
-      message: "The audit start must precede its end.",
-      path: ["from"],
-    });
-  }
-});
 
 /** What a refused audit search says. */
 export const AUDIT_FAILURES: FailureTable = {
@@ -243,16 +234,33 @@ export function createLegalRequirementGuard(
   };
 }
 
+/**
+ * The person a workspace-wide search names in its query string.
+ *
+ * The person route has no such parameter — its subject is the path — so this
+ * reads the member the two documented query strings do not share.
+ */
+function queriedPersonId(query: object): string | undefined {
+  return "personId" in query && typeof query.personId === "string"
+    ? query.personId
+    : undefined;
+}
+
 function auditRoute(services: GovernanceHttpServices, routePerson: boolean) {
   return async (context: Context<ActorEnv>) => {
-    const input = parseQuery(context, query);
+    // The person route takes its subject from the path, so its documented
+    // query string has no `personId` at all; the workspace one does.
+    const input = routePerson
+      ? parseQuery(context, listPersonAuditQuery)
+      : parseQuery(context, listWorkspaceAuditQuery);
     const personId = routePerson
-      ? parseValue(id, context.req.param("personId"))
+      ? parseValue(uuid, context.req.param("personId"))
       : undefined;
     if ("errors" in input) return definedProblem(context, AUDIT_QUERY_INVALID);
     if (personId && "errors" in personId) {
       return definedProblem(context, AUDIT_QUERY_INVALID);
     }
+    const queried = queriedPersonId(input.data);
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.auditHistory!.list(actor, {
@@ -265,8 +273,8 @@ function auditRoute(services: GovernanceHttpServices, routePerson: boolean) {
       limit: input.data.limit,
       ...(personId
         ? { personId: personId.data }
-        : input.data.personId
-        ? { personId: input.data.personId }
+        : queried
+        ? { personId: queried }
         : {}),
       ...(input.data.to ? { to: input.data.to } : {}),
     }).catch(() => undefined);
@@ -287,9 +295,9 @@ export function createGovernanceRoutes(
   const policy = services.browserSecurity;
   if (services.legal) {
     const legal = services.legal;
-    routes.get("/api/v1/legal-documents/:documentType", async (context) => {
+    mount(routes, getPublicLegalDocument, async (context) => {
       const parsed = parseValue(
-        documentType,
+        legalDocumentType,
         context.req.param("documentType"),
       );
       if ("errors" in parsed) {
@@ -305,7 +313,7 @@ export function createGovernanceRoutes(
       context.header("Cache-Control", "public, max-age=300");
       return context.json(result);
     });
-    routes.get("/api/v1/legal-requirements", session, async (context) => {
+    mount(routes, getLegalRequirements, session, async (context) => {
       const actor = await requireActor(context);
       if (actor instanceof Response) return actor;
       const result = await legal.requirements(actor);
@@ -318,10 +326,10 @@ export function createGovernanceRoutes(
       context.header("Cache-Control", "private, no-store");
       return context.json(result);
     });
-    routes.post("/api/v1/legal-acceptances", session, async (context) => {
+    mount(routes, acceptLegalDocument, session, async (context) => {
       const foreign = policy && rejectForeignOrigin(context, policy);
       if (foreign) return foreign;
-      const parsed = await parseJsonBody(context, acceptanceInput);
+      const parsed = await parseJsonBody(context, legalAcceptanceInput);
       if ("errors" in parsed) {
         return definedProblem(context, LEGAL_ACCEPTANCE_INVALID);
       }
@@ -346,9 +354,10 @@ export function createGovernanceRoutes(
     });
   }
   if (services.auditHistory) {
-    routes.get("/api/v1/audit-events", session, auditRoute(services, false));
-    routes.get(
-      "/api/v1/people/:personId/audit",
+    mount(routes, listWorkspaceAudit, session, auditRoute(services, false));
+    mount(
+      routes,
+      listPersonAudit,
       session,
       auditRoute(services, true),
     );

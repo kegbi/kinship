@@ -33,9 +33,10 @@ Deno.test("[JOURNAL-001] generated contract exposes journal routes and client", 
       }>;
     };
   };
-  const client = await Deno.readTextFile(
-    "packages/contracts/generated/auth-client.ts",
-  );
+  const client = [
+    await Deno.readTextFile("packages/contracts/client/journal.ts"),
+    await Deno.readTextFile("packages/contracts/client/types.ts"),
+  ].join(" ").replace(/\s+/g, "").replace(/,\)/g, ")");
   for (
     const path of [
       "/api/v1/journal",
@@ -159,15 +160,17 @@ Deno.test("[JOURNAL-001] generated contract exposes journal routes and client", 
     ]
   ) {
     assert(
-      client.includes(`function ${operation}`),
+      client.includes(`function${operation}`),
       `${operation} client missing`,
     );
   }
   assert(
-    client.includes("export type JournalTimelineItem =") &&
-      client.includes('readonly type: "activity"') &&
+    client.includes("exporttypeJournalTimelineItem=") &&
       client.includes(
-        "deleteJournalItem(itemId: string, workspaceId?: string)",
+        'exporttypeJournalItemType=JournalTimelineItem["type"]',
+      ) &&
+      client.includes(
+        "deleteJournalItem(itemId:string,workspaceId?:string)",
       ),
     "journal client does not preserve discriminated items and server-derived deletion",
   );

@@ -1,20 +1,24 @@
 /**
- * What more than one people concern needs: the bundle, the identifier, and
- * the two presenters a person's identity is written with.
+ * What more than one people concern needs: the bundle, the two presenters a
+ * person's identity is written with, and the words a refusal carries.
  *
- * GAP-021 split the people surface into one file per concern. Three things
- * could not follow a single concern. The canonical person identifier and the
- * version stamp every write carries are parsed by all six. The identity
- * presenter is what an edited, archived, previewed, deleted, and newly
- * created person are all answered with. And the refusal table for a person's
- * identity and lifecycle is read by the two concerns that change them.
+ * GAP-021 split the people surface into one file per concern, and two things
+ * could not follow a single one. The identity presenter is what an edited,
+ * archived, previewed, deleted, and newly created person are all answered
+ * with, and the refusal table for a person's identity and lifecycle is read by
+ * the two concerns that change them.
+ *
+ * The shapes the six concerns parse with were here too. GAP-022 moved them to
+ * `packages/contracts/schemas/people.ts`, where one Zod schema is both what
+ * the route validates with and what the published document advertises, so a
+ * concern now imports the canonical identifier and the version stamp from
+ * there rather than from its neighbour.
  *
  * `PeopleHttpServices` stays whole because `composition.ts` builds one bundle
  * for the mounted surface. Each concern narrows it with `Pick`, so a file can
  * reach only the services its own routes use.
  */
 
-import { z } from "zod";
 import type {
   ImportantDateManagement,
   PeopleManagement,
@@ -53,15 +57,6 @@ export interface PeopleHttpServices {
   readonly tagOptions: PeopleTagOptions;
   readonly todayRecentPeople?: TodayRecentPeople;
 }
-
-/** The canonical person identifier every people route parses. */
-export const personIdSchema = z.uuid();
-/** The version stamp every optimistic people write carries. */
-export const expectedUpdatedAtSchema = z.iso.datetime({ offset: true });
-/** A lifecycle action's body: the version it was decided against. */
-export const transitionSchema = z.object({
-  expectedUpdatedAt: expectedUpdatedAtSchema,
-}).strict();
 
 export function identity(person: PersonIdentity) {
   return {

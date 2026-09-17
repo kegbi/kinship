@@ -13,17 +13,26 @@
  */
 
 import { type Context, Hono } from "hono";
-import { z } from "zod";
 import type {
   createProtectedSessionCoordinator,
   PersonalLifecycle,
 } from "../../packages/backend/modules/workspaces/public.ts";
+import {
+  deletePersonalIdentity,
+  getPersonalLifecyclePreview,
+  leaveCurrentWorkspace,
+} from "../../packages/contracts/routes/personal_lifecycle.ts";
+import {
+  personalIdentityDeletionInput,
+  personalLifecycleConfirmation,
+} from "../../packages/contracts/schemas/personal_lifecycle.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
 import { clientAddress } from "./http/client_address.ts";
 import { SESSION_COOKIE, setCookie } from "./http/cookies.ts";
 import { failureResponder, type FailureTable } from "./http/failures.ts";
 import { requireMatchingOrigin } from "./http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { mount } from "./http/route.ts";
 import {
   type ActorEnv,
   requireSession,
@@ -39,13 +48,6 @@ export interface PersonalLifecycleHttpServices {
   readonly personalLifecycle: PersonalLifecycle;
   readonly protectedSessions: ProtectedSessions;
 }
-
-const confirmationSchema = z.object({
-  confirmation: z.string().min(1).max(300),
-}).strict();
-const deletionSchema = confirmationSchema.extend({
-  password: z.string().min(1).max(1024),
-}).strict();
 
 /** One workspace that keeps an account from being given up. */
 interface BlockingWorkspace {
@@ -180,8 +182,9 @@ export function createPersonalLifecycleRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get(
-    "/api/v1/settings/personal-lifecycle",
+  mount(
+    routes,
+    getPersonalLifecyclePreview,
     session,
     async (context) => {
       const actor = await requireSession(context);
@@ -219,12 +222,13 @@ export function createPersonalLifecycleRoutes(
     },
   );
 
-  routes.post(
-    "/api/v1/settings/personal-lifecycle/leave",
+  mount(
+    routes,
+    leaveCurrentWorkspace,
     origin,
     session,
     async (context) => {
-      const input = await parseJsonBody(context, deletionSchema);
+      const input = await parseJsonBody(context, personalLifecycleConfirmation);
       if ("errors" in input) {
         return definedProblem(context, LEAVE_VALIDATION_FAILED);
       }
@@ -255,12 +259,16 @@ export function createPersonalLifecycleRoutes(
     },
   );
 
-  routes.delete(
-    "/api/v1/settings/personal-lifecycle",
+  mount(
+    routes,
+    deletePersonalIdentity,
     origin,
     session,
     async (context) => {
-      const input = await parseJsonBody(context, deletionSchema);
+      const input = await parseJsonBody(
+        context,
+        personalIdentityDeletionInput,
+      );
       if ("errors" in input) {
         return definedProblem(context, DELETE_VALIDATION_FAILED);
       }

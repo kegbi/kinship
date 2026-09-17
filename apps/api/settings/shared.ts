@@ -1,19 +1,20 @@
 /**
  * What more than one settings concern needs.
  *
- * GAP-021 split the settings surface into one file per concern. Four things
+ * GAP-021 split the settings surface into one file per concern. Three things
  * could not follow a single concern: the service bundle `composition.ts`
- * builds once, the private-read helper every surface answers through, the
- * shape of a time zone and a locale — which the member's preferences and the
- * workspace's defaults both accept — and the two sentences a rejected zone or
- * currency is named with, which both of them print.
+ * builds once, the private-read helper every surface answers through, and the
+ * two sentences a rejected zone or currency is named with, which the member's
+ * preferences and the workspace's defaults both print. The shape of a zone
+ * and of a locale used to be here too; GAP-022 moved both to
+ * `packages/contracts/schemas/settings.ts`, beside the bodies that carry
+ * them.
  *
  * Each concern narrows `SettingsHttpServices` with `Pick`, so a file can
  * reach only the services its own routes use.
  */
 
 import { type Context } from "hono";
-import { z } from "zod";
 import type {
   createProtectedSessionCoordinator,
   MemberUiStateManagement,
@@ -31,18 +32,6 @@ export interface SettingsHttpServices {
   readonly protectedSessions: ProtectedSessions;
   readonly settings: SettingsManagement;
 }
-
-/**
- * The shape of a time zone, not its meaning.
- *
- * Whether the calendar can actually schedule in it is the settings use case's
- * question, because a stored zone decides when every reminder a member or
- * workspace owns comes due.
- */
-export const timezone = z.string().trim().min(1).max(100);
-export const locale = z.string().trim()
-  .regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/)
-  .max(35);
 
 /** The message a time zone the calendar cannot resolve is refused with. */
 export const INVALID_TIMEZONE_MESSAGE = "Enter a valid IANA time zone.";

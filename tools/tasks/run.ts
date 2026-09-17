@@ -227,10 +227,15 @@ async function runCoverage(requested: string | undefined): Promise<void> {
 }
 
 function contractsCheck(): Promise<void> {
+  // `openapi-typescript` reads its own configuration from the working
+  // directory and asks `process.env` for its colour settings, so the generator
+  // runs with the read and environment authority its dependencies need. It
+  // still writes nothing in `--check` mode.
   return deno([
     "run",
-    "--allow-read=packages/contracts",
-    "tools/contracts/generate.ts",
+    "--allow-env",
+    "--allow-read",
+    "tools/contracts/build.ts",
     "--check",
   ]);
 }

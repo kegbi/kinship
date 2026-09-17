@@ -8,22 +8,25 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
+import {
+  getMemberPreferences,
+  updateMemberPreferences,
+} from "../../../packages/contracts/routes/settings.ts";
+import { preferencesInput } from "../../../packages/contracts/schemas/settings.ts";
 import { requireMatchingOrigin } from "../http/origin.ts";
 import {
   definedProblem,
   type ProblemDefinition,
   type ProblemErrors,
 } from "../http/problem.ts";
+import { mount } from "../http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "../http/session.ts";
 import { parseJsonBody } from "../http/validate.ts";
 import {
   INVALID_CURRENCY_MESSAGE,
   INVALID_TIMEZONE_MESSAGE,
-  locale,
   privateJson,
   type SettingsHttpServices,
-  timezone,
 } from "./shared.ts";
 
 /** What a member's own preferences are served from. */
@@ -31,20 +34,6 @@ export type MemberPreferencesHttpServices = Pick<
   SettingsHttpServices,
   "browserSecurity" | "protectedSessions" | "settings"
 >;
-
-const preferencesSchema = z.object({
-  contactNameOrder: z.enum([
-    "given_family_nickname",
-    "family_given_nickname",
-  ]),
-  contactSortOrder: z.enum(["given_name_asc", "family_name_asc"]),
-  currencyCode: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/).optional(),
-  fluidLayout: z.boolean(),
-  locale,
-  measurementSystem: z.enum(["metric", "imperial"]),
-  temperatureScale: z.enum(["celsius", "fahrenheit"]),
-  timezone: timezone.optional(),
-}).strict();
 
 export const PREFERENCES_NOT_LOADED: ProblemDefinition = {
   code: "settings_unavailable",
@@ -72,7 +61,7 @@ export function createPreferencesRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get("/api/v1/settings/preferences", session, async (context) => {
+  mount(routes, getMemberPreferences, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const value = await services.settings.getPreferences(actor).catch(
@@ -83,12 +72,13 @@ export function createPreferencesRoutes(
       : definedProblem(context, PREFERENCES_NOT_LOADED);
   });
 
-  routes.put(
-    "/api/v1/settings/preferences",
+  mount(
+    routes,
+    updateMemberPreferences,
     origin,
     session,
     async (context) => {
-      const parsed = await parseJsonBody(context, preferencesSchema);
+      const parsed = await parseJsonBody(context, preferencesInput);
       if ("errors" in parsed) {
         return definedProblem(context, PREFERENCES_INVALID, parsed.errors);
       }

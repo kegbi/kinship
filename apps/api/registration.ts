@@ -3,7 +3,10 @@
  *
  * Four routes that run before anybody has a session, which is why this is the
  * one file with no actor in it at all. The problem responder, the cookie
- * composer, and the origin comparison came from `http/` (GAP-019, GAP-020).
+ * composer, and the origin comparison came from `http/` (GAP-019, GAP-020),
+ * and the four paths with the shapes they accept came from
+ * `packages/contracts` (GAP-022), so what this file mounts and what the
+ * document publishes are the one description.
  *
  * The three cookies are the substance. `kinship_entry` is a one-use handoff
  * scoped to the single route that consumes it, so a verified link cannot be
@@ -14,7 +17,6 @@
  */
 
 import { type Context, Hono } from "hono";
-import { z } from "zod";
 import type { PasswordHasher } from "../../packages/backend/modules/identity/public.ts";
 import type { EmailVerificationFacade } from "../../packages/backend/modules/identity/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
@@ -24,27 +26,23 @@ import {
   type ProtectedSessionResult,
   RegistrationError,
 } from "../../packages/backend/modules/workspaces/public.ts";
+import {
+  consumeApplicationEntry,
+  createFirstWorkspace,
+  retryVerificationDelivery,
+  verifyEmail,
+} from "../../packages/contracts/routes/registration.ts";
+import {
+  registrationInput,
+  verificationDeliveryInput,
+  verificationInput,
+} from "../../packages/contracts/schemas/registration.ts";
 import { cookieValue, SESSION_COOKIE, setCookie } from "./http/cookies.ts";
 import { failureResponder, type FailureTable } from "./http/failures.ts";
 import { matchingOrigin } from "./http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { mount } from "./http/route.ts";
 import { parseJsonBody } from "./http/validate.ts";
-
-const registrationSchema = z.object({
-  email: z.string().trim().toLowerCase().email().max(254),
-  firstName: z.string().trim().min(1).max(100),
-  lastName: z.string().trim().max(100),
-  password: z.string().min(12).max(128),
-  workspaceName: z.string().trim().min(2).max(120),
-}).strict();
-
-const verificationSchema = z.object({
-  token: z.string().min(32).max(256),
-}).strict();
-
-const verificationDeliverySchema = z.object({
-  email: z.string().trim().toLowerCase().email().max(254),
-}).strict();
 
 /** The cookie that carries a verified identity to the application entry. */
 const ENTRY_COOKIE = "kinship_entry";
@@ -216,8 +214,8 @@ export function createRegistrationRoutes(
 ): Hono {
   const routes = new Hono();
 
-  routes.post("/api/v1/registrations", async (context) => {
-    const parsed = await parseJsonBody(context, registrationSchema);
+  mount(routes, createFirstWorkspace, async (context) => {
+    const parsed = await parseJsonBody(context, registrationInput);
     if ("errors" in parsed) {
       return definedProblem(context, REGISTRATION_INVALID, parsed.errors);
     }
@@ -248,8 +246,8 @@ export function createRegistrationRoutes(
     }
   });
 
-  routes.post("/api/v1/email-verifications", async (context) => {
-    const parsed = await parseJsonBody(context, verificationSchema);
+  mount(routes, verifyEmail, async (context) => {
+    const parsed = await parseJsonBody(context, verificationInput);
     if ("errors" in parsed) {
       return definedProblem(context, VERIFICATION_LINK_INVALID);
     }
@@ -294,7 +292,7 @@ export function createRegistrationRoutes(
     });
   });
 
-  routes.post(ENTRY_PATH, async (context) => {
+  mount(routes, consumeApplicationEntry, async (context) => {
     if (!matchingOrigin(context, services.browserSecurity)) {
       return definedProblem(context, ENTRY_ORIGIN_INVALID);
     }
@@ -340,8 +338,8 @@ export function createRegistrationRoutes(
     });
   });
 
-  routes.post("/api/v1/email-verification-deliveries", async (context) => {
-    const parsed = await parseJsonBody(context, verificationDeliverySchema);
+  mount(routes, retryVerificationDelivery, async (context) => {
+    const parsed = await parseJsonBody(context, verificationDeliveryInput);
     if ("errors" in parsed) {
       return definedProblem(context, DELIVERY_REQUEST_INVALID);
     }

@@ -14,19 +14,29 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
 import {
   PERSON_FILE_MAX_BYTES,
   type PersonFileManagement,
   type StorageSettings,
 } from "../../packages/backend/modules/files/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
+import {
+  downloadPersonFile,
+  getStorageSettings,
+  getStorageSettingsQuery,
+  listPersonFiles,
+  removePersonFile,
+  uploadPersonFile,
+} from "../../packages/contracts/routes/files.ts";
+import { personFileKind } from "../../packages/contracts/schemas/files.ts";
+import { uuid } from "../../packages/contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
 import { fileDownload } from "./http/downloads.ts";
 import { failureResponder, type FailureTable } from "./http/failures.ts";
 import { requireMatchingOrigin } from "./http/origin.ts";
+import { mount } from "./http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "./http/session.ts";
-import { parseValue } from "./http/validate.ts";
+import { parseQuery, parseValue } from "./http/validate.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
@@ -36,10 +46,6 @@ export interface FileHttpServices {
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
   readonly storageSettings?: StorageSettings;
 }
-
-const uuid = z.uuid();
-const kind = z.enum(["document", "photo"]);
-const storageQuery = z.string().trim().max(100).optional();
 
 /**
  * What a refused file says.
@@ -192,16 +198,17 @@ export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get("/api/v1/settings/storage", session, async (context) => {
-    const query = parseValue(storageQuery, context.req.query("query"));
+  mount(routes, getStorageSettings, session, async (context) => {
+    const query = parseQuery(context, getStorageSettingsQuery);
     if ("errors" in query) {
       return storageFailure(context, "validation-error");
     }
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
-    const result = await services.storageSettings?.get(actor, query.data).catch(
-      () => ({ status: "unavailable" as const }),
-    );
+    const result = await services.storageSettings?.get(actor, query.data.query)
+      .catch(
+        () => ({ status: "unavailable" as const }),
+      );
     if (!result || result.status !== "ready") {
       return storageFailure(context, result ?? "unavailable");
     }
@@ -209,13 +216,17 @@ export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
     return context.json(result);
   });
 
-  routes.post(
-    "/api/v1/people/:personId/files",
+  mount(
+    routes,
+    uploadPersonFile,
     origin,
     session,
     async (context) => {
       const personId = parseValue(uuid, context.req.param("personId"));
-      const fileKind = parseValue(kind, context.req.header("X-File-Kind"));
+      const fileKind = parseValue(
+        personFileKind,
+        context.req.header("X-File-Kind"),
+      );
       const filename = decodedHeader(context.req.header("X-File-Name"));
       const title = decodedHeader(context.req.header("X-File-Title"));
       const mimeType = context.req.header("Content-Type")?.split(";", 1)[0]
@@ -241,7 +252,7 @@ export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
     },
   );
 
-  routes.get("/api/v1/people/:personId/files", session, async (context) => {
+  mount(routes, listPersonFiles, session, async (context) => {
     const personId = parseValue(uuid, context.req.param("personId"));
     if ("errors" in personId) return failure(context, "not-found");
     const actor = await requireActor(context);
@@ -254,8 +265,9 @@ export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
     return context.json({ files: result.files, status: "ready" });
   });
 
-  routes.get(
-    "/api/v1/people/:personId/files/:fileId/content",
+  mount(
+    routes,
+    downloadPersonFile,
     session,
     async (context) => {
       const personId = parseValue(uuid, context.req.param("personId"));
@@ -279,8 +291,9 @@ export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
     },
   );
 
-  routes.delete(
-    "/api/v1/people/:personId/files/:fileId",
+  mount(
+    routes,
+    removePersonFile,
     origin,
     session,
     async (context) => {

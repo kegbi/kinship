@@ -4,7 +4,10 @@
  * Six routes and one shared success: an authenticated result sets the session
  * cookie and answers the same body whichever round produced it. The problem
  * responder, the cookie composer, the origin check, the client address, and
- * the kernel status map came from `http/` (GAP-019, GAP-020).
+ * the kernel status map came from `http/` (GAP-019, GAP-020); the six paths
+ * with the shapes they accept came from `packages/contracts` (GAP-022), so
+ * what this file mounts and what the document publishes are the one
+ * description.
  *
  * The two failure tables mirror `protectedSessionHttpStatus`, which is where
  * the domain decides what each refusal is worth over HTTP; `http/failures_test`
@@ -18,7 +21,6 @@
  */
 
 import { type Context, Hono } from "hono";
-import { z } from "zod";
 import type { PasswordRecoveryFacade } from "../../packages/backend/modules/identity/public.ts";
 import type { LegalAcceptance } from "../../packages/backend/modules/governance/public.ts";
 import {
@@ -26,34 +28,29 @@ import {
   type MemberUiStateManagement,
   protectedSessionHttpStatus,
 } from "../../packages/backend/modules/workspaces/public.ts";
+import {
+  completeMfa,
+  getSession,
+  requestPasswordReset,
+  resetPassword,
+  signIn,
+  signOut,
+} from "../../packages/contracts/routes/authentication.ts";
+import {
+  mfaInput,
+  passwordResetInput,
+  recoveryRequestInput,
+  signInInput,
+} from "../../packages/contracts/schemas/authentication.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
 import { clientAddress } from "./http/client_address.ts";
 import { cookieValue, SESSION_COOKIE, setCookie } from "./http/cookies.ts";
 import { failureResponder, type FailureTable } from "./http/failures.ts";
 import { requireMatchingOrigin } from "./http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { mount } from "./http/route.ts";
 import { type ActorEnv, sessionActor, sessionOf } from "./http/session.ts";
 import { parseJsonBody } from "./http/validate.ts";
-
-const signInSchema = z.object({
-  email: z.string().trim().toLowerCase().email().max(254),
-  password: z.string().min(1).max(128),
-  workspaceId: z.string().uuid().optional(),
-}).strict();
-
-const mfaSchema = z.object({
-  factor: z.string().trim().min(6).max(128),
-  workspaceId: z.string().uuid().optional(),
-}).strict();
-
-const recoveryRequestSchema = z.object({
-  email: z.string().trim().toLowerCase().email().max(254),
-}).strict();
-
-const resetSchema = z.object({
-  password: z.string().min(12).max(128),
-  token: z.string().min(32).max(256),
-}).strict();
 
 /** The cookie a pending second factor is carried in, and its one route. */
 const MFA_COOKIE = "kinship_mfa";
@@ -296,8 +293,8 @@ export function createAuthenticationRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.post("/api/v1/sessions", origin, async (context) => {
-    const parsed = await parseJsonBody(context, signInSchema);
+  mount(routes, signIn, origin, async (context) => {
+    const parsed = await parseJsonBody(context, signInInput);
     if ("errors" in parsed) {
       return definedProblem(context, SIGN_IN_INVALID);
     }
@@ -343,8 +340,8 @@ export function createAuthenticationRoutes(
     return signInFailure(context, result);
   });
 
-  routes.post(MFA_PATH, origin, async (context) => {
-    const parsed = await parseJsonBody(context, mfaSchema);
+  mount(routes, completeMfa, origin, async (context) => {
+    const parsed = await parseJsonBody(context, mfaInput);
     const challengeToken = cookieValue(
       context.req.header("Cookie"),
       MFA_COOKIE,
@@ -388,8 +385,8 @@ export function createAuthenticationRoutes(
     return mfaFailure(context, result);
   });
 
-  routes.post("/api/v1/password-reset-requests", origin, async (context) => {
-    const parsed = await parseJsonBody(context, recoveryRequestSchema);
+  mount(routes, requestPasswordReset, origin, async (context) => {
+    const parsed = await parseJsonBody(context, recoveryRequestInput);
     if ("errors" in parsed) {
       return definedProblem(context, RECOVERY_REQUEST_INVALID);
     }
@@ -405,8 +402,8 @@ export function createAuthenticationRoutes(
     return context.json({ status: "accepted" }, 202);
   });
 
-  routes.post("/api/v1/password-resets", origin, async (context) => {
-    const parsed = await parseJsonBody(context, resetSchema);
+  mount(routes, resetPassword, origin, async (context) => {
+    const parsed = await parseJsonBody(context, passwordResetInput);
     if ("errors" in parsed) {
       return definedProblem(context, RESET_INVALID);
     }
@@ -432,7 +429,7 @@ export function createAuthenticationRoutes(
     return definedProblem(context, RESET_EXPIRED);
   });
 
-  routes.get("/api/v1/session", session, async (context) => {
+  mount(routes, getSession, session, async (context) => {
     const token = cookieValue(context.req.header("Cookie"), SESSION_COOKIE);
     if (!token) return definedProblem(context, SIGN_IN_REQUIRED);
     const resolved = await sessionOf(context);
@@ -472,7 +469,7 @@ export function createAuthenticationRoutes(
     });
   });
 
-  routes.post("/api/v1/sign-out", origin, async (context) => {
+  mount(routes, signOut, origin, async (context) => {
     const token = cookieValue(context.req.header("Cookie"), SESSION_COOKIE);
     if (token) {
       try {

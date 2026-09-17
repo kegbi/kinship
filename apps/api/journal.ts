@@ -4,17 +4,36 @@
  * The timeline is a read model and the posts, day ratings, and activity links
  * are the journal module's writes; this file is only the seven routes between
  * them and the browser. The problem responder, the session cookie, the origin
- * check, and the kernel status map came from `http/` (GAP-019).
+ * check, and the kernel status map came from `http/` (GAP-019). The routes are
+ * mounted from `packages/contracts/routes/journal.ts` (GAP-022), which is why
+ * the post update reads `itemId`: the document names that parameter on both
+ * `/journal/items/{itemId}` and `/journal/posts/{itemId}`, and this file used
+ * to write `:postId` out by hand on one of them.
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
 import type { JournalManagement } from "../../packages/backend/modules/journal/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import type { JournalTimeline } from "../../packages/backend/read-models/journal-timeline/public.ts";
+import {
+  createJournalPost,
+  deleteJournalItem,
+  getJournalItem,
+  linkJournalActivity,
+  listJournal,
+  saveJournalDayRating,
+  updateJournalPost,
+} from "../../packages/contracts/routes/journal.ts";
+import {
+  journalActivityInput,
+  journalDayRatingInput,
+  journalPostInput,
+} from "../../packages/contracts/schemas/journal.ts";
+import { uuid } from "../../packages/contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
 import { failureResponder, type FailureTable } from "./http/failures.ts";
 import { requireMatchingOrigin } from "./http/origin.ts";
+import { mount } from "./http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "./http/session.ts";
 import { parseJsonBody, parseValue } from "./http/validate.ts";
 
@@ -25,19 +44,6 @@ export interface JournalHttpServices {
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
   readonly timeline: JournalTimeline;
 }
-
-const uuid = z.uuid();
-const postInput = z.object({
-  body: z.string().trim().min(1).max(50_000),
-  occurredAt: z.iso.datetime({ offset: true }),
-  title: z.string().trim().min(1).max(500).optional(),
-}).strict();
-const ratingInput = z.object({
-  comment: z.string().trim().min(1).max(10_000).optional(),
-  ratedOn: z.iso.date(),
-  rating: z.number().int().min(1).max(5),
-}).strict();
-const activityInput = z.object({ activityId: uuid }).strict();
 
 /** What a refused journal item says. */
 export const JOURNAL_FAILURES: FailureTable = {
@@ -75,7 +81,7 @@ export function createJournalRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get("/api/v1/journal", session, async (context) => {
+  mount(routes, listJournal, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.timeline.list(actor);
@@ -83,7 +89,7 @@ export function createJournalRoutes(
     context.header("Cache-Control", "private, no-store");
     return context.json(result);
   });
-  routes.get("/api/v1/journal/items/:itemId", session, async (context) => {
+  mount(routes, getJournalItem, session, async (context) => {
     const itemId = parseValue(uuid, context.req.param("itemId"));
     if ("errors" in itemId) return failure(context, "not-found");
     const actor = await requireActor(context);
@@ -93,12 +99,13 @@ export function createJournalRoutes(
     context.header("Cache-Control", "private, no-store");
     return context.json(result);
   });
-  routes.post(
-    "/api/v1/journal/posts",
+  mount(
+    routes,
+    createJournalPost,
     origin,
     session,
     async (context) => {
-      const body = await parseJsonBody(context, postInput);
+      const body = await parseJsonBody(context, journalPostInput);
       if ("errors" in body) return failure(context, "validation-error");
       const actor = await requireActor(context);
       if (actor instanceof Response) return actor;
@@ -111,13 +118,14 @@ export function createJournalRoutes(
       return context.json(result, 201);
     },
   );
-  routes.put(
-    "/api/v1/journal/posts/:postId",
+  mount(
+    routes,
+    updateJournalPost,
     origin,
     session,
     async (context) => {
-      const postId = parseValue(uuid, context.req.param("postId"));
-      const body = await parseJsonBody(context, postInput);
+      const postId = parseValue(uuid, context.req.param("itemId"));
+      const body = await parseJsonBody(context, journalPostInput);
       if ("errors" in postId || "errors" in body) {
         return failure(context, "validation-error");
       }
@@ -132,12 +140,13 @@ export function createJournalRoutes(
       return context.json(result);
     },
   );
-  routes.put(
-    "/api/v1/journal/day-ratings",
+  mount(
+    routes,
+    saveJournalDayRating,
     origin,
     session,
     async (context) => {
-      const body = await parseJsonBody(context, ratingInput);
+      const body = await parseJsonBody(context, journalDayRatingInput);
       if ("errors" in body) return failure(context, "validation-error");
       const actor = await requireActor(context);
       if (actor instanceof Response) return actor;
@@ -152,12 +161,13 @@ export function createJournalRoutes(
       return context.json(result, result.status === "created" ? 201 : 200);
     },
   );
-  routes.post(
-    "/api/v1/journal/activities",
+  mount(
+    routes,
+    linkJournalActivity,
     origin,
     session,
     async (context) => {
-      const body = await parseJsonBody(context, activityInput);
+      const body = await parseJsonBody(context, journalActivityInput);
       if ("errors" in body) return failure(context, "validation-error");
       const actor = await requireActor(context);
       if (actor instanceof Response) return actor;
@@ -169,8 +179,9 @@ export function createJournalRoutes(
       return context.json(result, 201);
     },
   );
-  routes.delete(
-    "/api/v1/journal/items/:itemId",
+  mount(
+    routes,
+    deleteJournalItem,
     origin,
     session,
     async (context) => {

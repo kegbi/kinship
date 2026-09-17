@@ -16,6 +16,12 @@
 
 import { Hono } from "hono";
 import { HEALTH_RESPONSE } from "../../../packages/contracts/health.ts";
+import {
+  readHealth,
+  readLiveness,
+  readReadiness,
+} from "../../../packages/contracts/routes/health.ts";
+import { mount } from "./route.ts";
 
 /** What a deployment lends the probes. */
 export interface HealthServices {
@@ -40,7 +46,7 @@ export const HEALTH_UNAVAILABLE_RESPONSE = Object.freeze({
 export function healthRoutes(services: HealthServices = {}): Hono {
   const routes = new Hono();
 
-  routes.get("/api/v1/health", async (context) => {
+  mount(routes, readHealth, async (context) => {
     context.header("Cache-Control", "no-store");
     if (services.readiness && !(await services.readiness())) {
       return context.json(HEALTH_UNAVAILABLE_RESPONSE, 503);
@@ -48,12 +54,15 @@ export function healthRoutes(services: HealthServices = {}): Hono {
     return context.json(HEALTH_RESPONSE);
   });
 
-  routes.get("/livez", (context) => {
+  // Liveness is the one probe with nothing to wait for, and `mount` takes
+  // Hono's middleware handler, which answers with a promise; hence the
+  // already-resolved one rather than an `async` that never awaits.
+  mount(routes, readLiveness, (context) => {
     context.header("Cache-Control", "no-store");
-    return context.json(LIVENESS_RESPONSE);
+    return Promise.resolve(context.json(LIVENESS_RESPONSE));
   });
 
-  routes.get("/readyz", async (context) => {
+  mount(routes, readReadiness, async (context) => {
     context.header("Cache-Control", "no-store");
     if (services.readiness && !(await services.readiness())) {
       return context.json(UNAVAILABLE_RESPONSE, 503);

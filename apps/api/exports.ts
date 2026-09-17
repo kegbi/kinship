@@ -15,14 +15,24 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
 import type { ExportManagement } from "../../packages/backend/modules/import-export/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
+import {
+  createExportDownload,
+  createWorkspaceExport,
+  downloadExport,
+  downloadExportQuery,
+  exportPersonVCard,
+  exportPersonVCardQuery,
+  listExports,
+} from "../../packages/contracts/routes/exports.ts";
+import { uuid } from "../../packages/contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
 import { fileDownload } from "./http/downloads.ts";
 import { failureResponder, type FailureTable } from "./http/failures.ts";
 import { requireMatchingOrigin } from "./http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { mount } from "./http/route.ts";
 import {
   type ActorEnv,
   requireActor,
@@ -30,7 +40,7 @@ import {
   sessionActor,
   workspaceScopedActor,
 } from "./http/session.ts";
-import { parseValue } from "./http/validate.ts";
+import { parseQuery, parseValue } from "./http/validate.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface ExportHttpServices {
@@ -38,10 +48,6 @@ export interface ExportHttpServices {
   readonly exports: ExportManagement;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
 }
-
-const uuid = z.uuid();
-const optionalUuid = z.uuid().optional();
-const tokenSchema = z.string().min(1).max(200);
 
 const EXPORT_NOT_FOUND: ProblemDefinition = {
   code: "export_not_found",
@@ -134,7 +140,7 @@ export function createExportRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get("/api/v1/exports", session, async (context) => {
+  mount(routes, listExports, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.exports.list(actor).catch(unavailable);
@@ -146,7 +152,7 @@ export function createExportRoutes(
     return context.json({ exports: result.exports });
   });
 
-  routes.post("/api/v1/exports", origin, session, async (context) => {
+  mount(routes, createWorkspaceExport, origin, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.exports.createWorkspace(actor).catch(
@@ -162,8 +168,9 @@ export function createExportRoutes(
     return context.json(result, 201);
   });
 
-  routes.post(
-    "/api/v1/exports/:exportId/downloads",
+  mount(
+    routes,
+    createExportDownload,
     origin,
     session,
     async (context) => {
@@ -188,26 +195,22 @@ export function createExportRoutes(
     },
   );
 
-  routes.get("/api/v1/exports/:exportId/download", async (context) => {
+  mount(routes, downloadExport, async (context) => {
     const exportId = parseValue(uuid, context.req.param("exportId"));
-    const token = parseValue(tokenSchema, context.req.query("token"));
-    const workspaceId = parseValue(
-      optionalUuid,
-      context.req.query("workspaceId"),
-    );
+    const query = parseQuery(context, downloadExportQuery);
     if (
-      "errors" in exportId || "errors" in token || "errors" in workspaceId
+      "errors" in exportId || "errors" in query
     ) return definedProblem(context, EXPORT_NOT_FOUND);
     const actor = await workspaceScopedActor(
       context,
       services.protectedSessions,
-      workspaceId.data,
+      query.data.workspaceId,
     );
     if (!actor) return definedProblem(context, SESSION_INVALID);
     const result = await services.exports.download(
       actor,
       exportId.data,
-      token.data,
+      query.data.token,
     ).catch(unavailable);
     if (
       result.status === "forbidden" || result.status === "not-found" ||
@@ -219,19 +222,16 @@ export function createExportRoutes(
     return fileDownload(result);
   });
 
-  routes.get("/api/v1/people/:personId/vcard", async (context) => {
+  mount(routes, exportPersonVCard, async (context) => {
     const personId = parseValue(uuid, context.req.param("personId"));
-    const workspaceId = parseValue(
-      optionalUuid,
-      context.req.query("workspaceId"),
-    );
-    if ("errors" in personId || "errors" in workspaceId) {
+    const query = parseQuery(context, exportPersonVCardQuery);
+    if ("errors" in personId || "errors" in query) {
       return definedProblem(context, EXPORT_NOT_FOUND);
     }
     const actor = await workspaceScopedActor(
       context,
       services.protectedSessions,
-      workspaceId.data,
+      query.data.workspaceId,
     );
     if (!actor) return definedProblem(context, SESSION_INVALID);
     const result = await services.exports.exportVCard(actor, personId.data)

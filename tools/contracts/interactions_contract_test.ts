@@ -1,4 +1,4 @@
-import { buildOpenApiDocument } from "./generate.ts";
+import { buildOpenApiDocument } from "./document.ts";
 import type {
   ActivityReport,
   Interaction,

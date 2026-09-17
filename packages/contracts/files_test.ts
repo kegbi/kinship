@@ -1,4 +1,4 @@
-import { buildOpenApiDocument } from "../../tools/contracts/generate.ts";
+import { buildOpenApiDocument } from "../../tools/contracts/document.ts";
 import * as client from "./generated/auth-client.ts";
 
 function assert(condition: unknown, message: string): asserts condition {

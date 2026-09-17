@@ -8,9 +8,15 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
+import {
+  listManagedMembers,
+  updateManagedMember,
+} from "../../../packages/contracts/routes/settings.ts";
+import { memberUpdateInput } from "../../../packages/contracts/schemas/settings.ts";
+import { uuid } from "../../../packages/contracts/schemas/shared.ts";
 import { requireMatchingOrigin } from "../http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "../http/problem.ts";
+import { mount } from "../http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "../http/session.ts";
 import { parseJsonBody, parseValue } from "../http/validate.ts";
 import { privateJson, type SettingsHttpServices } from "./shared.ts";
@@ -20,12 +26,6 @@ export type WorkspaceMembersHttpServices = Pick<
   SettingsHttpServices,
   "browserSecurity" | "protectedSessions" | "settings"
 >;
-
-const memberSchema = z.object({
-  role: z.enum(["owner", "admin", "member"]),
-  status: z.enum(["active", "suspended"]),
-}).strict();
-const memberId = z.string().uuid();
 
 export const MEMBERS_FORBIDDEN: ProblemDefinition = {
   code: "members_forbidden",
@@ -77,7 +77,7 @@ export function createMembersRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get("/api/v1/settings/members", session, async (context) => {
+  mount(routes, listManagedMembers, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.settings.listMembers(actor).catch(
@@ -91,13 +91,14 @@ export function createMembersRoutes(
       : definedProblem(context, MEMBERS_NOT_LOADED);
   });
 
-  routes.patch(
-    "/api/v1/settings/members/:memberId",
+  mount(
+    routes,
+    updateManagedMember,
     origin,
     session,
     async (context) => {
-      const target = parseValue(memberId, context.req.param("memberId"));
-      const parsed = await parseJsonBody(context, memberSchema);
+      const target = parseValue(uuid, context.req.param("memberId"));
+      const parsed = await parseJsonBody(context, memberUpdateInput);
       if ("errors" in target || "errors" in parsed) {
         return definedProblem(context, MEMBER_UPDATE_INVALID);
       }
