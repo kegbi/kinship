@@ -81,8 +81,6 @@
     "ops": "DENO_NO_PACKAGE_JSON=1 deno run --allow-read --allow-run=deno,docker,pnpm tools/tasks/run.ts ops"
   },
   "imports": {
-    "@hono/standard-validator": "npm:@hono/standard-validator@0.4.0",
-    "@standard-schema/spec": "npm:@standard-schema/spec@1.1.0",
     "@std/yaml": "jsr:@std/yaml@1.2.0",
     "hono": "npm:hono@4.13.1",
     "kysely": "npm:kysely@0.29.4",

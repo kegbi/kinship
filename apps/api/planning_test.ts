@@ -463,3 +463,154 @@ Deno.test("PLANNING-002 HTTP preserves origin, archive, and independent outage b
     "reminder outage blanked another planning region",
   );
 });
+
+Deno.test("PLANNING-002 HTTP degrades each absent region without touching the others", async () => {
+  const app = createPlanningRoutes(services());
+  const writes = [
+    {
+      body: JSON.stringify({
+        anchorOn: "2026-10-25",
+        personId,
+        recurrenceInterval: 1,
+        recurrenceUnit: "year",
+        requestId: crypto.randomUUID(),
+        sendTime: "02:30",
+        title: "Birthday call",
+      }),
+      code: "reminders_unavailable",
+      detail: "Nothing was saved.",
+      method: "POST",
+      path: "http://localhost/api/v1/reminders",
+    },
+    {
+      body: JSON.stringify({
+        intervalCount: 1,
+        intervalUnit: "month",
+        personId,
+        requestId: crypto.randomUUID(),
+      }),
+      code: "reminders_unavailable",
+      detail: "Nothing was saved.",
+      method: "POST",
+      path: "http://localhost/api/v1/stay-in-touch-cadences",
+    },
+    {
+      body: JSON.stringify({ active: false }),
+      code: "reminders_unavailable",
+      detail: "Nothing was changed.",
+      method: "PUT",
+      path: `http://localhost/api/v1/reminders/${taskId}/active`,
+    },
+  ];
+  for (const write of writes) {
+    const response = await app.request(write.path, {
+      body: write.body,
+      headers,
+      method: write.method,
+    });
+    const body = await response.json() as {
+      readonly code: string;
+      readonly detail: string;
+    };
+    assertStatus(response, 503, `${write.method} ${write.path}`);
+    assert(
+      body.code === write.code && body.detail === write.detail,
+      `${write.method} ${write.path} says what was not saved`,
+    );
+    const foreign = await app.request(write.path, {
+      body: write.body,
+      headers: { ...headers, origin: "http://attacker.test" },
+      method: write.method,
+    });
+    assertStatus(
+      foreign,
+      503,
+      `${write.method} ${write.path} reports the outage before the origin`,
+    );
+  }
+
+  const listed = await app.request(
+    `http://localhost/api/v1/people/${personId}/reminders`,
+    { headers },
+  );
+  const badPerson = await app.request(
+    "http://localhost/api/v1/people/not-a-uuid/reminders",
+    { headers },
+  );
+  const todayReminders = await app.request(
+    "http://localhost/api/v1/today/reminders",
+    { headers },
+  );
+  const attention = await app.request(
+    "http://localhost/api/v1/today/attention",
+    { headers },
+  );
+  assertStatus(listed, 503, "the person reminder section degrades");
+  assert(
+    (await listed.json() as { readonly detail: string }).detail ===
+      "Other person sections remain available.",
+    "and says the rest of the person is still there",
+  );
+  assertStatus(badPerson, 503, "an outage outranks an unparsable person");
+  assertStatus(todayReminders, 503, "the Today reminder region degrades");
+  assertStatus(attention, 503, "the Today attention region degrades");
+  assertStatus(
+    await app.request("http://localhost/api/v1/tasks", { headers }),
+    200,
+    "and tasks are unaffected",
+  );
+});
+
+Deno.test("PLANNING-002 HTTP refuses a malformed reminder, cadence, and active state", async () => {
+  const reminders = {
+    createCadence: () => Promise.resolve({ status: "created" as const }),
+    createReminder: () => Promise.resolve({ status: "created" as const }),
+    interactionRecorded: () => Promise.resolve(),
+    listPerson: () => Promise.resolve({ status: "ready" as const }),
+    setActive: () => Promise.resolve({ status: "saved" as const }),
+  } as unknown as ReminderManagement;
+  const app = createPlanningRoutes({ ...services(), reminders });
+  const refusals = [
+    {
+      body: JSON.stringify({ title: "Birthday call" }),
+      code: "reminder_request_invalid",
+      method: "POST",
+      path: "http://localhost/api/v1/reminders",
+    },
+    {
+      body: JSON.stringify({ intervalUnit: "fortnight" }),
+      code: "cadence_request_invalid",
+      method: "POST",
+      path: "http://localhost/api/v1/stay-in-touch-cadences",
+    },
+    {
+      body: JSON.stringify({ active: "maybe" }),
+      code: "reminder_request_invalid",
+      method: "PUT",
+      path: `http://localhost/api/v1/reminders/${taskId}/active`,
+    },
+  ];
+  for (const refusal of refusals) {
+    const response = await app.request(refusal.path, {
+      body: refusal.body,
+      headers,
+      method: refusal.method,
+    });
+    const body = await response.json() as { readonly code: string };
+    assertStatus(response, 400, `${refusal.method} ${refusal.path}`);
+    assert(
+      body.code === refusal.code,
+      `${refusal.method} ${refusal.path} reports ${refusal.code}`,
+    );
+  }
+  const badPerson = await app.request(
+    "http://localhost/api/v1/people/not-a-uuid/reminders",
+    { headers },
+  );
+  assertStatus(badPerson, 400, "an unparsable person is a rejected query");
+  assert(
+    (await badPerson.json() as { readonly code: string }).code ===
+      "reminder_query_invalid",
+    "and says so",
+  );
+});

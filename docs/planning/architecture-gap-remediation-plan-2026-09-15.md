@@ -740,7 +740,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
 
 ### Phase 3 — API delivery layer
 
-- [ ] **GAP-019 — HTTP kit and middleware; migrate gifts, journal, planning.**
+- [x] **GAP-019 — HTTP kit and middleware; migrate gifts, journal, planning.**
       M-L. Depends: 006.
   - Scope: `apps/api/http/`: `problem.ts` (one RFC 9457 responder with optional
     `errors`), `session.ts` (Hono middleware that resolves the `kinship_session`
@@ -756,6 +756,34 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     `planning.ts` and their tests.
   - Verify: the three route tests plus integration suites green; grep shows zero
     `function problem(` outside `http/`.
+  - Delivered 2026-09-17: `apps/api/http/` holds twelve kit modules with a suite
+    each at 100/100/100: the one RFC 9457 `problem` responder, a `failures` map
+    from the kernel statuses to HTTP with per-domain `FailureTable` extension
+    resolved at composition time, a `session` middleware that memoises the
+    cookie-and-workspace actor with `requireActor` and the scope-checked bearer
+    variant, `origin` as both middleware and responder, `cookies` (value reader
+    and Set-Cookie composer), `validate` (Zod to problem with field errors),
+    `request_id`, `logging` through a `Logger` port (route pattern, status,
+    duration, request id; never a header, cookie, token, or body), a 1 MiB
+    `body_limit` with an upload exemption, `health` adding `/livez` and
+    `/readyz` beside the unchanged `/api/v1/health`, `secure_headers` adding
+    only what `gateway/security_headers.conf` does not (a test re-reads that
+    file), and a hand-written same-origin `cors` applied after `next()` because
+    Hono's built-in dropped a Set-Cookie appended to a built response; the root
+    mounts them in the order request id, logging, secure headers, CORS, body
+    limit, health, legal guard, routes; gifts, journal, and planning dropped
+    their scaffold (309 to 241, 240 to 187, 646 to 561 lines) with every
+    refusal's body byte-identical, `function problem(` now defined once with 15
+    copies left for GAP-020; `@hono/standard-validator` and
+    `@standard-schema/spec` removed from deno.json and the lockfile; gifts,
+    journal, planning, and api coverage sets up on branch (gifts line 96.8 to
+    96.4 only because the migrated file shrank); 10 files changed (+1098/-945)
+    plus 24 new files (2530 lines); unit 718 vitest plus all sets green,
+    integration 126/0, contracts:check, build, and test:repro:astro-readiness
+    green, baseline 14 unchanged; gates fmt:check, lint, check,
+    check:architecture. Decisions: the gateway stays the single owner of its six
+    browser headers; `/livez` and `/readyz` wait for the Phase 6 infrastructure
+    tickets to be referenced.
 
 - [ ] **GAP-020 — Migrate the remaining 15 route files to the HTTP kit.** M-L.
       Depends: 019.

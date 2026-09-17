@@ -299,3 +299,93 @@ Deno.test("[JOURNAL-001] journal HTTP failures preserve concealment and problem 
     )).status !== 503
   ) throw new Error("item outage not exposed as unavailable");
 });
+
+Deno.test("[JOURNAL-001] journal HTTP forwards optional prose and conceals unparsable items", async () => {
+  const received: Record<string, unknown>[] = [];
+  const session = { ...actor, workspaceName: "Journal" };
+  const app = createJournalRoutes({
+    browserSecurity: { origin: "http://localhost", secureCookie: false },
+    journal: {
+      createPost: (_actor: unknown, input: unknown) => {
+        received.push(input as Record<string, unknown>);
+        return Promise.resolve({ post: { id }, status: "created" });
+      },
+      updatePost: (_actor: unknown, _postId: string, input: unknown) => {
+        received.push(input as Record<string, unknown>);
+        return Promise.resolve({ post: { id }, status: "updated" });
+      },
+      saveDayRating: (_actor: unknown, input: unknown) => {
+        received.push(input as Record<string, unknown>);
+        return Promise.resolve({ rating: { id }, status: "updated" });
+      },
+    } as never,
+    protectedSessions: {
+      resolve: () =>
+        Promise.resolve({ ...session, accessibleWorkspaces: [session] }),
+    },
+    timeline: {} as never,
+  });
+  const headers = {
+    cookie: "kinship_session=valid",
+    "content-type": "application/json",
+    origin: "http://localhost",
+  };
+  const created = await app.request("http://localhost/api/v1/journal/posts", {
+    body: JSON.stringify({ body: "Entry", occurredAt: now, title: "A title" }),
+    headers,
+    method: "POST",
+  });
+  const updated = await app.request(
+    `http://localhost/api/v1/journal/posts/${id}`,
+    {
+      body: JSON.stringify({
+        body: "Edited",
+        occurredAt: now,
+        title: "Another title",
+      }),
+      headers,
+      method: "PUT",
+    },
+  );
+  const rated = await app.request(
+    "http://localhost/api/v1/journal/day-ratings",
+    {
+      body: JSON.stringify({
+        comment: "A good day",
+        ratedOn: "2026-08-23",
+        rating: 5,
+      }),
+      headers,
+      method: "PUT",
+    },
+  );
+  const unparsableRead = await app.request(
+    "http://localhost/api/v1/journal/items/not-a-uuid",
+    { headers },
+  );
+  const unparsableDelete = await app.request(
+    "http://localhost/api/v1/journal/items/not-a-uuid",
+    { headers, method: "DELETE" },
+  );
+
+  if (
+    created.status !== 201 || updated.status !== 200 || rated.status !== 200
+  ) {
+    throw new Error("an optional field was refused");
+  }
+  if (received[0]?.title !== "A title") {
+    throw new Error("a post title was not forwarded");
+  }
+  if (received[1]?.title !== "Another title") {
+    throw new Error("an edited post title was not forwarded");
+  }
+  if (received[2]?.comment !== "A good day") {
+    throw new Error("a day rating comment was not forwarded");
+  }
+  if (unparsableRead.status !== 404) {
+    throw new Error("an unparsable item identifier was not concealed");
+  }
+  if (unparsableDelete.status !== 400) {
+    throw new Error("an unparsable deletion was not rejected");
+  }
+});
