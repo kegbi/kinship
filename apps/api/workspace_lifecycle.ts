@@ -1,3 +1,16 @@
+/**
+ * The workspace danger zone over HTTP.
+ *
+ * One read that prices the damage and two writes that do it. The problem
+ * responder, the session cookie, the origin check, and the kernel status map
+ * came from `http/` (GAP-019, GAP-020), and the session cookie both writes
+ * clear is composed by `http/cookies.ts` rather than spelled out here.
+ *
+ * Both writes need the active workspace's name, not just the membership, so
+ * they take `requireSession` rather than `requireActor`: the impact preview is
+ * about a named workspace and the confirmation a member types is that name.
+ */
+
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import type {
@@ -5,6 +18,13 @@ import type {
   WorkspaceLifecycle,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
+import { clientAddress } from "./http/client_address.ts";
+import { SESSION_COOKIE, setCookie } from "./http/cookies.ts";
+import { failureResponder, type FailureTable } from "./http/failures.ts";
+import { requireMatchingOrigin } from "./http/origin.ts";
+import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { type ActorEnv, requireSession, sessionActor } from "./http/session.ts";
+import { parseJsonBody } from "./http/validate.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
@@ -20,234 +40,175 @@ const mutationSchema = z.object({
   password: z.string().min(1).max(1024),
 }).strict();
 
-function problem(
-  context: Context,
-  status: 400 | 401 | 403 | 409 | 429 | 503,
-  code: string,
-  title: string,
-  detail: string,
-): Response {
-  return context.body(
-    JSON.stringify({
-      code,
-      detail,
-      status,
-      title,
-      type: `https://kinship.test/problems/${code}`,
-    }),
-    status,
-    {
-      "Cache-Control": "no-store",
-      "Content-Type": "application/problem+json",
+/** What a refused danger-zone request says. */
+export const WORKSPACE_LIFECYCLE_FAILURES: FailureTable = {
+  fallback: {
+    code: "workspace_lifecycle_unavailable",
+    detail:
+      "Nothing was changed. Try again after the current impact can be revalidated.",
+    status: 503,
+    title: "Workspace lifecycle unavailable",
+  },
+  statuses: {
+    "confirmation-invalid": {
+      code: "confirmation_invalid",
+      detail: "Type the exact confirmation from the current impact preview.",
+      status: 400,
+      title: "Confirmation does not match",
     },
-  );
-}
+    forbidden: {
+      code: "workspace_owner_required",
+      detail: "Only an active workspace owner can use the danger zone.",
+      title: "Owner required",
+    },
+    "rate-limited": {
+      code: "authentication_rate_limited",
+      detail: "Too many recent password attempts. Wait before trying again.",
+      status: 429,
+      title: "Try again later",
+    },
+    "reauthentication-required": {
+      code: "reauthentication_required",
+      detail: "Enter your current password before continuing.",
+      status: 403,
+      title: "Recent authentication required",
+    },
+    "stale-impact": {
+      code: "stale_impact_preview",
+      detail: "Reload the current impact before confirming this action.",
+      status: 409,
+      title: "Impact changed",
+    },
+  },
+};
 
-function clientAddress(context: Context): string {
-  const suppliedAddress = context.req.header("X-Kinship-Client-Address");
-  return suppliedAddress && suppliedAddress.length <= 64 &&
-      /^[0-9A-Fa-f:.]+$/.test(suppliedAddress)
-    ? suppliedAddress
-    : "127.0.0.1";
-}
+const failure = failureResponder(WORKSPACE_LIFECYCLE_FAILURES);
 
-function cookieValue(header: string | undefined) {
-  return header?.split(";").map((item) => item.trim()).find((item) =>
-    item.startsWith("kinship_session=")
-  )?.slice("kinship_session=".length);
-}
+const VALIDATION_FAILED: ProblemDefinition = {
+  code: "validation_failed",
+  detail:
+    "Submit the current impact token, exact confirmation, and current password.",
+  status: 400,
+  title: "Current confirmation required",
+};
 
-async function actor(
+/** Every problem this file answers on its own, for the pinning suite. */
+export const WORKSPACE_LIFECYCLE_PROBLEMS: readonly ProblemDefinition[] = [
+  VALIDATION_FAILED,
+];
+
+/**
+ * The refusal, and the retry budget it came with.
+ *
+ * A throttled attempt is the only one that says when to come back, so the
+ * header is set here rather than inside the failure table, which knows only
+ * about prose.
+ */
+function refused(
   context: Context,
-  services: WorkspaceLifecycleHttpServices,
-) {
-  const token = cookieValue(context.req.header("Cookie"));
-  if (!token) return undefined;
-  const requestedWorkspaceId = context.req.header("X-Workspace-Id");
-  return await services.protectedSessions.resolve({
-    sessionToken: token,
-    ...(requestedWorkspaceId ? { requestedWorkspaceId } : {}),
-  }).catch(() => undefined);
-}
-
-function failure(
-  context: Context,
-  status: string,
-  retryAfterSeconds?: number,
+  result: { readonly retryAfterSeconds?: number; readonly status: string },
 ): Response {
-  if (status === "forbidden") {
-    return problem(
-      context,
-      403,
-      "workspace_owner_required",
-      "Owner required",
-      "Only an active workspace owner can use the danger zone.",
-    );
+  if (result.status === "rate-limited") {
+    context.header("Retry-After", String(result.retryAfterSeconds ?? 1));
   }
-  if (status === "reauthentication-required") {
-    return problem(
-      context,
-      403,
-      "reauthentication_required",
-      "Recent authentication required",
-      "Enter your current password before continuing.",
-    );
-  }
-  if (status === "confirmation-invalid") {
-    return problem(
-      context,
-      400,
-      "confirmation_invalid",
-      "Confirmation does not match",
-      "Type the exact confirmation from the current impact preview.",
-    );
-  }
-  if (status === "stale-impact") {
-    return problem(
-      context,
-      409,
-      "stale_impact_preview",
-      "Impact changed",
-      "Reload the current impact before confirming this action.",
-    );
-  }
-  if (status === "rate-limited") {
-    context.header("Retry-After", String(retryAfterSeconds ?? 1));
-    return problem(
-      context,
-      429,
-      "authentication_rate_limited",
-      "Try again later",
-      "Too many recent password attempts. Wait before trying again.",
-    );
-  }
-  return problem(
-    context,
-    503,
-    "workspace_lifecycle_unavailable",
-    "Workspace lifecycle unavailable",
-    "Nothing was changed. Try again after the current impact can be revalidated.",
-  );
-}
-
-function clearCookie(context: Context, policy: BrowserSecurityPolicy) {
-  context.header(
-    "Set-Cookie",
-    `kinship_session=; HttpOnly; SameSite=Strict; ${
-      policy.secureCookie ? "Secure; " : ""
-    }Max-Age=0; Path=/`,
-  );
+  return failure(context, result);
 }
 
 export function createWorkspaceLifecycleRoutes(
   services: WorkspaceLifecycleHttpServices,
-): Hono {
-  const routes = new Hono();
-  routes.get("/api/v1/settings/workspace-lifecycle", async (context) => {
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const preview = await services.workspaceLifecycle.preview(resolved).catch(
-      () => undefined,
-    );
-    if (preview?.status !== "ready") {
-      return failure(context, preview?.status ?? "unavailable");
-    }
-    return context.json(
-      {
-        activeSessionCount: preview.activeSessionCount,
-        confirmations: {
-          deleteWorkspace: preview.deleteConfirmation,
-          resetWorkspace: preview.resetConfirmation,
-        },
-        counts: preview.counts,
-        impactToken: preview.impactToken,
-        status: "ready",
-        workspace: { id: resolved.workspaceId, name: preview.workspaceName },
-      },
-      200,
-      { "Cache-Control": "private, no-store" },
-    );
-  });
+): Hono<ActorEnv> {
+  const routes = new Hono<ActorEnv>();
+  const session = sessionActor(services.protectedSessions);
+  const origin = requireMatchingOrigin(services.browserSecurity);
 
-  const mutate = (action: "delete" | "reset") => async (context: Context) => {
-    if (context.req.header("Origin") !== services.browserSecurity.origin) {
-      return problem(
-        context,
-        403,
-        "origin_invalid",
-        "Request forbidden",
-        "This request did not come from the configured application origin.",
+  routes.get(
+    "/api/v1/settings/workspace-lifecycle",
+    session,
+    async (context) => {
+      const actor = await requireSession(context);
+      if (actor instanceof Response) return actor;
+      const preview = await services.workspaceLifecycle.preview(actor).catch(
+        () => undefined,
       );
-    }
-    const input = mutationSchema.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    if (!input.success) {
-      return problem(
-        context,
-        400,
-        "validation_failed",
-        "Current confirmation required",
-        "Submit the current impact token, exact confirmation, and current password.",
-      );
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const result =
-      await (action === "reset"
-        ? services.workspaceLifecycle.resetWorkspace(resolved, input.data, {
-          clientAddress: clientAddress(context),
-        })
-        : services.workspaceLifecycle.deleteWorkspace(resolved, input.data, {
-          clientAddress: clientAddress(context),
-        })).catch(() => undefined);
-    if (!result || (result.status !== "reset" && result.status !== "deleted")) {
-      return failure(
-        context,
-        result?.status ?? "unavailable",
-        result && "retryAfterSeconds" in result
-          ? result.retryAfterSeconds
-          : undefined,
-      );
-    }
-    clearCookie(context, services.browserSecurity);
-    return context.json(
-      action === "reset"
-        ? {
-          cleanupStatus: "cleanupStatus" in result
-            ? result.cleanupStatus
-            : "pending",
-          next: "/auth/sign-in",
-          status: "reset",
-        }
-        : {
-          cleanupStatus: "cleanupStatus" in result
-            ? result.cleanupStatus
-            : "pending",
-          next: "/auth/sign-in",
-          status: "deleted",
+      if (preview?.status !== "ready") {
+        return refused(context, preview ?? { status: "unavailable" });
+      }
+      return context.json(
+        {
+          activeSessionCount: preview.activeSessionCount,
+          confirmations: {
+            deleteWorkspace: preview.deleteConfirmation,
+            resetWorkspace: preview.resetConfirmation,
+          },
+          counts: preview.counts,
+          impactToken: preview.impactToken,
+          status: "ready",
+          workspace: { id: actor.workspaceId, name: preview.workspaceName },
         },
-      200,
-      { "Cache-Control": "private, no-store" },
-    );
-  };
-  routes.post("/api/v1/settings/workspace-lifecycle/reset", mutate("reset"));
-  routes.delete("/api/v1/settings/workspace-lifecycle", mutate("delete"));
+        200,
+        { "Cache-Control": "private, no-store" },
+      );
+    },
+  );
+
+  const mutate =
+    (action: "delete" | "reset") => async (context: Context<ActorEnv>) => {
+      const input = await parseJsonBody(context, mutationSchema);
+      if ("errors" in input) {
+        return definedProblem(context, VALIDATION_FAILED);
+      }
+      const actor = await requireSession(context);
+      if (actor instanceof Response) return actor;
+      const request = { clientAddress: clientAddress(context) };
+      const result =
+        await (action === "reset"
+          ? services.workspaceLifecycle.resetWorkspace(
+            actor,
+            input.data,
+            request,
+          )
+          : services.workspaceLifecycle.deleteWorkspace(
+            actor,
+            input.data,
+            request,
+          )).catch(() => undefined);
+      if (
+        !result || (result.status !== "reset" && result.status !== "deleted")
+      ) {
+        return refused(context, result ?? { status: "unavailable" });
+      }
+      context.header(
+        "Set-Cookie",
+        setCookie(services.browserSecurity, {
+          maxAgeSeconds: 0,
+          name: SESSION_COOKIE,
+          path: "/",
+          value: "",
+        }),
+      );
+      return context.json(
+        {
+          cleanupStatus: "cleanupStatus" in result
+            ? result.cleanupStatus
+            : "pending",
+          next: "/auth/sign-in",
+          status: action === "reset" ? "reset" : "deleted",
+        },
+        200,
+        { "Cache-Control": "private, no-store" },
+      );
+    };
+  routes.post(
+    "/api/v1/settings/workspace-lifecycle/reset",
+    origin,
+    session,
+    mutate("reset"),
+  );
+  routes.delete(
+    "/api/v1/settings/workspace-lifecycle",
+    origin,
+    session,
+    mutate("delete"),
+  );
   return routes;
 }

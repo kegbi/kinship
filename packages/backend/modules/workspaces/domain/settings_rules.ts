@@ -124,3 +124,24 @@ export function workspaceScheduleChanged(
 
 /** The timezone reminders are scheduled in when the workspace named none. */
 export const FALLBACK_TIMEZONE = "UTC";
+
+/**
+ * Whether this text names a time zone the calendar can actually schedule in.
+ *
+ * A stored timezone is not decoration: planning reschedules every reminder a
+ * member or workspace owns against it, so a name the runtime cannot resolve
+ * would be found at delivery time rather than at the form that set it. The
+ * check is the runtime's own table rather than a list kept here, because the
+ * IANA database moves and the only answer worth having is the one the
+ * scheduler will get. It was written inside the settings route's Zod schema
+ * until GAP-020; a rule about what a workspace may be configured with belongs
+ * with the other rules about that.
+ */
+export function isSchedulableTimezone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: value }).format();
+    return true;
+  } catch {
+    return false;
+  }
+}

@@ -11,7 +11,8 @@
 
 import type {
   ImportCommitResult,
-  ImportSummary,
+  ImportListResult,
+  ImportReadResult,
 } from "../domain/import_rules.ts";
 import type { ImportActor } from "../ports/context.ts";
 import { createImportCommit } from "./import_commit.ts";
@@ -26,8 +27,8 @@ export interface ImportManagement {
     confirmed: boolean,
   ): Promise<ImportCommitResult>;
   dryRun(actor: ImportActor, source: unknown): Promise<DryRunResult>;
-  get(actor: ImportActor, importId: string): Promise<ImportSummary | undefined>;
-  list(actor: ImportActor): Promise<readonly ImportSummary[]>;
+  get(actor: ImportActor, importId: string): Promise<ImportReadResult>;
+  list(actor: ImportActor): Promise<ImportListResult>;
 }
 
 export function createImportManagement(

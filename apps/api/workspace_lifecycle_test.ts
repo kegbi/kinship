@@ -12,7 +12,7 @@ const headers = {
   "X-Workspace-Id": "00000000-0000-4000-8000-000000000101",
 };
 
-function fixture(status: string = "ready") {
+function fixture(status: string = "ready", resolved = true) {
   const lifecycle = {
     deleteWorkspace: () =>
       Promise.resolve(
@@ -83,13 +83,17 @@ function fixture(status: string = "ready") {
       },
       protectedSessions: {
         resolve: () =>
-          Promise.resolve({
-            memberId: "00000000-0000-4000-8000-000000000011",
-            role: "owner",
-            userId: "00000000-0000-4000-8000-000000000001",
-            workspaceId: "00000000-0000-4000-8000-000000000101",
-            workspaceName: "Family",
-          }),
+          Promise.resolve(
+            resolved
+              ? {
+                memberId: "00000000-0000-4000-8000-000000000011",
+                role: "owner",
+                userId: "00000000-0000-4000-8000-000000000001",
+                workspaceId: "00000000-0000-4000-8000-000000000101",
+                workspaceName: "Family",
+              }
+              : undefined,
+          ),
       },
       workspaceLifecycle: lifecycle,
     } as unknown as WorkspaceLifecycleHttpServices),
@@ -227,4 +231,39 @@ Deno.test("WORKSPACE-002 API maps lifecycle authorization and revalidation failu
   );
   assertStatus(limited, 429, "destructive password guessing is unbounded");
   assert(limited.headers.get("Retry-After") === "17", "retry delay is missing");
+});
+
+Deno.test("[GAP-020] every danger-zone route needs a session", async () => {
+  const anonymous = fixture("ready", false);
+  const body = JSON.stringify({
+    confirmation: "DELETE Family",
+    impactToken,
+    password: "correct",
+  });
+  const routes = [
+    {
+      body: undefined,
+      method: "GET",
+      path: "/api/v1/settings/workspace-lifecycle",
+    },
+    {
+      body,
+      method: "POST",
+      path: "/api/v1/settings/workspace-lifecycle/reset",
+    },
+    { body, method: "DELETE", path: "/api/v1/settings/workspace-lifecycle" },
+  ];
+
+  for (const route of routes) {
+    const response = await anonymous.request(route.path, {
+      ...(route.body ? { body: route.body } : {}),
+      headers,
+      method: route.method,
+    });
+    assertStatus(
+      response,
+      401,
+      `${route.method} ${route.path} needs a session`,
+    );
+  }
 });

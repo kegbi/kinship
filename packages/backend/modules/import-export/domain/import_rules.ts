@@ -121,6 +121,23 @@ export type PreparedImportCommit =
   }
   | Failure<"not-found">;
 
+/**
+ * Whether this role may import, or read what an import did.
+ *
+ * Only an owner or an administrator may. An import writes people into a
+ * workspace that already has some and an import run is an administrative
+ * record, so both halves are the same rule and it is written once. Every
+ * import path asks it first, before the source is even looked at, so an
+ * unauthorised caller learns nothing about what a file contained or whether a
+ * run exists. Two of the four paths asked it in the route file until GAP-020.
+ */
+export function mayImport(role: ImportRole): boolean {
+  return role !== "member";
+}
+
+/** The workspace roles an import path distinguishes. */
+export type ImportRole = "admin" | "member" | "owner";
+
 /** One import run, as a member sees it listed. */
 export interface ImportSummary {
   readonly completedAt?: string;
@@ -130,6 +147,22 @@ export interface ImportSummary {
   readonly sourceProfile: "json_export";
   readonly status: "completed" | "dry_run" | "failed";
 }
+
+/** What listing import runs answers with. */
+export type ImportListResult =
+  | {
+    readonly imports: readonly ImportSummary[];
+    readonly status: "ready";
+  }
+  | Failure<"forbidden">;
+
+/** What reading one import run answers with. */
+export type ImportReadResult =
+  | {
+    readonly import: ImportSummary;
+    readonly status: "ready";
+  }
+  | Failure<"forbidden" | "not-found">;
 
 /** How a commit ends. */
 export type ImportCommitResult =

@@ -1,8 +1,36 @@
-import { type Context, Hono } from "hono";
+/**
+ * Exporting a workspace, and one person's vCard, over HTTP.
+ *
+ * Five routes: the history, the two steps that turn it into a link, the link
+ * itself, and a single person's card. The problem responder, the session
+ * cookie, the origin check, the kernel status map, and the download response
+ * came from `http/` (GAP-019, GAP-020).
+ *
+ * The two routes that serve bytes are opened from a link, not from the
+ * application, so they take the workspace from the query string rather than
+ * from the header the rest of the API uses, and they resolve the session
+ * themselves for that reason. Every outage names what did not happen — history
+ * not loaded, artifact not completed, reference not issued, artifact not read
+ * — because each is a different thing to retry.
+ */
+
+import { Hono } from "hono";
 import { z } from "zod";
 import type { ExportManagement } from "../../packages/backend/modules/import-export/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
+import { fileDownload } from "./http/downloads.ts";
+import { failureResponder, type FailureTable } from "./http/failures.ts";
+import { requireMatchingOrigin } from "./http/origin.ts";
+import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import {
+  type ActorEnv,
+  requireActor,
+  SESSION_INVALID,
+  sessionActor,
+  workspaceScopedActor,
+} from "./http/session.ts";
+import { parseValue } from "./http/validate.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface ExportHttpServices {
@@ -12,290 +40,207 @@ export interface ExportHttpServices {
 }
 
 const uuid = z.uuid();
+const optionalUuid = z.uuid().optional();
 const tokenSchema = z.string().min(1).max(200);
 
-function problem(
-  context: Context,
-  status: 400 | 401 | 403 | 404 | 410 | 413 | 503,
-  code: string,
-  title: string,
-  detail: string,
-) {
-  return context.body(
-    JSON.stringify({
-      type: `https://kinship.test/problems/${code}`,
-      title,
-      status,
-      detail,
-      code,
-    }),
-    status,
-    {
-      "Cache-Control": "no-store",
-      "Content-Type": "application/problem+json",
-    },
-  );
-}
-function cookieValue(header: string | undefined, name: string) {
-  return header?.split(";").map((value) => value.trim()).find((value) =>
-    value.startsWith(`${name}=`)
-  )?.slice(name.length + 1);
-}
-async function actor(
-  context: Context,
-  services: ExportHttpServices,
-  workspaceOverride?: string,
-) {
-  const sessionToken = cookieValue(
-    context.req.header("Cookie"),
-    "kinship_session",
-  );
-  if (!sessionToken) return undefined;
-  const requestedWorkspaceId = workspaceOverride ??
-    context.req.header("X-Workspace-Id");
-  const resolved = await services.protectedSessions.resolve({
-    sessionToken,
-    ...(requestedWorkspaceId ? { requestedWorkspaceId } : {}),
-  }).catch(() => undefined);
-  return resolved
-    ? {
-      memberId: resolved.memberId,
-      role: resolved.role,
-      userId: resolved.userId,
-      workspaceId: resolved.workspaceId,
-    }
-    : undefined;
-}
-function requireOrigin(context: Context, policy: BrowserSecurityPolicy) {
-  return context.req.header("Origin") === policy.origin ? undefined : problem(
-    context,
-    403,
-    "origin_invalid",
-    "Request forbidden",
-    "This request did not come from the configured application origin.",
-  );
-}
-function forbidden(context: Context) {
-  return problem(
-    context,
-    403,
-    "export_forbidden",
-    "Export unavailable",
-    "Workspace export is available to owners and administrators only.",
-  );
-}
-function missing(context: Context) {
-  return problem(
-    context,
-    404,
-    "export_not_found",
-    "Export unavailable",
-    "This export does not exist in the active workspace.",
-  );
-}
-function attachmentFilename(filename: string): string {
-  const fallback = filename.replace(/[\r\n"\\]/g, "_").replace(
-    /[^\x20-\x7e]/g,
-    "_",
-  );
-  return `attachment; filename="${fallback}"; filename*=UTF-8''${
-    encodeURIComponent(filename)
-  }`;
-}
+const EXPORT_NOT_FOUND: ProblemDefinition = {
+  code: "export_not_found",
+  detail: "This export does not exist in the active workspace.",
+  status: 404,
+  title: "Export unavailable",
+};
 
-export function createExportRoutes(services: ExportHttpServices): Hono {
-  const routes = new Hono();
-  routes.get("/api/v1/exports", async (context) => {
-    const authenticated = await actor(context, services);
-    if (!authenticated) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const result = await services.exports.list(authenticated).catch(() => ({
-      status: "unavailable" as const,
-    }));
-    if (result.status === "forbidden") return forbidden(context);
+/** What a refused export says. */
+export const EXPORT_FAILURES: FailureTable = {
+  fallback: EXPORT_NOT_FOUND,
+  statuses: {
+    expired: {
+      code: "export_download_expired",
+      detail:
+        "Create a new short-lived download reference from export history.",
+      status: 410,
+      title: "Download expired",
+    },
+    forbidden: {
+      code: "export_forbidden",
+      detail:
+        "Workspace export is available to owners and administrators only.",
+      title: "Export unavailable",
+    },
+    "not-found": {
+      code: EXPORT_NOT_FOUND.code,
+      detail: EXPORT_NOT_FOUND.detail,
+      title: EXPORT_NOT_FOUND.title,
+    },
+    "too-large": {
+      code: "export_too_large",
+      detail: "This portable profile supports at most 500 people.",
+      status: 413,
+      title: "Export too large",
+    },
+  },
+};
+
+const failure = failureResponder(EXPORT_FAILURES);
+
+const EXPORT_HISTORY_UNAVAILABLE: ProblemDefinition = {
+  code: "exports_unavailable",
+  detail: "Export history could not be loaded.",
+  status: 503,
+  title: "Exports unavailable",
+};
+const EXPORT_NOT_COMPLETED: ProblemDefinition = {
+  code: "export_failed",
+  detail: "The export artifact could not be completed.",
+  status: 503,
+  title: "Export failed",
+};
+const DOWNLOAD_NOT_ISSUED: ProblemDefinition = {
+  code: "exports_unavailable",
+  detail: "A download reference could not be issued.",
+  status: 503,
+  title: "Exports unavailable",
+};
+const EXPORT_ARTIFACT_UNAVAILABLE: ProblemDefinition = {
+  code: "export_artifact_unavailable",
+  detail: "The export artifact could not be read.",
+  status: 503,
+  title: "Export unavailable",
+};
+const VCARD_UNAVAILABLE: ProblemDefinition = {
+  code: "vcard_unavailable",
+  detail: "This person could not be exported right now.",
+  status: 503,
+  title: "vCard unavailable",
+};
+
+/** Every problem this file answers on its own, for the pinning suite. */
+export const EXPORT_PROBLEMS: readonly ProblemDefinition[] = [
+  DOWNLOAD_NOT_ISSUED,
+  EXPORT_ARTIFACT_UNAVAILABLE,
+  EXPORT_HISTORY_UNAVAILABLE,
+  EXPORT_NOT_COMPLETED,
+  EXPORT_NOT_FOUND,
+  VCARD_UNAVAILABLE,
+];
+
+/** An outage, whichever shape the use case reported it in. */
+const unavailable = () => ({ status: "unavailable" as const });
+
+export function createExportRoutes(
+  services: ExportHttpServices,
+): Hono<ActorEnv> {
+  const routes = new Hono<ActorEnv>();
+  const session = sessionActor(services.protectedSessions);
+  const origin = requireMatchingOrigin(services.browserSecurity);
+
+  routes.get("/api/v1/exports", session, async (context) => {
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.exports.list(actor).catch(unavailable);
+    if (result.status === "forbidden") return failure(context, result);
     if (result.status !== "ready") {
-      return problem(
-        context,
-        503,
-        "exports_unavailable",
-        "Exports unavailable",
-        "Export history could not be loaded.",
-      );
+      return definedProblem(context, EXPORT_HISTORY_UNAVAILABLE);
     }
     context.header("Cache-Control", "private, no-store");
     return context.json({ exports: result.exports });
   });
-  routes.post("/api/v1/exports", async (context) => {
-    const origin = requireOrigin(context, services.browserSecurity);
-    if (origin) return origin;
-    const authenticated = await actor(context, services);
-    if (!authenticated) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const result = await services.exports.createWorkspace(authenticated).catch(
-      () => ({ status: "unavailable" as const }),
+
+  routes.post("/api/v1/exports", origin, session, async (context) => {
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.exports.createWorkspace(actor).catch(
+      unavailable,
     );
-    if (result.status === "forbidden") return forbidden(context);
-    if (result.status === "too-large") {
-      return problem(
-        context,
-        413,
-        "export_too_large",
-        "Export too large",
-        "This portable profile supports at most 500 people.",
-      );
+    if (result.status === "forbidden" || result.status === "too-large") {
+      return failure(context, result);
     }
     if (result.status !== "completed") {
-      return problem(
-        context,
-        503,
-        "export_failed",
-        "Export failed",
-        "The export artifact could not be completed.",
-      );
+      return definedProblem(context, EXPORT_NOT_COMPLETED);
     }
     context.header("Cache-Control", "private, no-store");
     return context.json(result, 201);
   });
-  routes.post("/api/v1/exports/:exportId/downloads", async (context) => {
-    const origin = requireOrigin(context, services.browserSecurity);
-    if (origin) return origin;
-    const exportId = uuid.safeParse(context.req.param("exportId"));
-    if (!exportId.success) return missing(context);
-    const authenticated = await actor(context, services);
-    if (!authenticated) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const result = await services.exports.createDownload(
-      authenticated,
-      exportId.data,
-    ).catch(() => ({ status: "unavailable" as const }));
-    if (result.status === "forbidden") return forbidden(context);
-    if (result.status === "not-found") return missing(context);
-    if (result.status !== "ready") {
-      return problem(
-        context,
-        503,
-        "exports_unavailable",
-        "Exports unavailable",
-        "A download reference could not be issued.",
-      );
-    }
-    context.header("Cache-Control", "private, no-store");
-    return context.json(result, 201);
-  });
+
+  routes.post(
+    "/api/v1/exports/:exportId/downloads",
+    origin,
+    session,
+    async (context) => {
+      const exportId = parseValue(uuid, context.req.param("exportId"));
+      if ("errors" in exportId) {
+        return definedProblem(context, EXPORT_NOT_FOUND);
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.exports.createDownload(
+        actor,
+        exportId.data,
+      ).catch(unavailable);
+      if (result.status === "forbidden" || result.status === "not-found") {
+        return failure(context, result);
+      }
+      if (result.status !== "ready") {
+        return definedProblem(context, DOWNLOAD_NOT_ISSUED);
+      }
+      context.header("Cache-Control", "private, no-store");
+      return context.json(result, 201);
+    },
+  );
+
   routes.get("/api/v1/exports/:exportId/download", async (context) => {
-    const exportId = uuid.safeParse(context.req.param("exportId"));
-    const token = tokenSchema.safeParse(context.req.query("token"));
-    const workspaceId = z.uuid().optional().safeParse(
+    const exportId = parseValue(uuid, context.req.param("exportId"));
+    const token = parseValue(tokenSchema, context.req.query("token"));
+    const workspaceId = parseValue(
+      optionalUuid,
       context.req.query("workspaceId"),
     );
-    if (!exportId.success || !token.success || !workspaceId.success) {
-      return missing(context);
-    }
-    const authenticated = await actor(context, services, workspaceId.data);
-    if (!authenticated) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
+    if (
+      "errors" in exportId || "errors" in token || "errors" in workspaceId
+    ) return definedProblem(context, EXPORT_NOT_FOUND);
+    const actor = await workspaceScopedActor(
+      context,
+      services.protectedSessions,
+      workspaceId.data,
+    );
+    if (!actor) return definedProblem(context, SESSION_INVALID);
     const result = await services.exports.download(
-      authenticated,
+      actor,
       exportId.data,
       token.data,
-    ).catch(() => ({ status: "unavailable" as const }));
-    if (result.status === "forbidden") return forbidden(context);
-    if (result.status === "not-found") return missing(context);
-    if (result.status === "expired") {
-      return problem(
-        context,
-        410,
-        "export_download_expired",
-        "Download expired",
-        "Create a new short-lived download reference from export history.",
-      );
-    }
+    ).catch(unavailable);
+    if (
+      result.status === "forbidden" || result.status === "not-found" ||
+      result.status === "expired"
+    ) return failure(context, result);
     if (result.status !== "ready") {
-      return problem(
-        context,
-        503,
-        "export_artifact_unavailable",
-        "Export unavailable",
-        "The export artifact could not be read.",
-      );
+      return definedProblem(context, EXPORT_ARTIFACT_UNAVAILABLE);
     }
-    return new Response(result.bytes.slice().buffer, {
-      headers: {
-        "Cache-Control": "private, no-store",
-        "Content-Disposition": attachmentFilename(result.filename),
-        "Content-Length": String(result.bytes.byteLength),
-        "Content-Type": result.mimeType,
-        "X-Content-Type-Options": "nosniff",
-      },
-    });
+    return fileDownload(result);
   });
+
   routes.get("/api/v1/people/:personId/vcard", async (context) => {
-    const personId = uuid.safeParse(context.req.param("personId"));
-    const workspaceId = z.uuid().optional().safeParse(
+    const personId = parseValue(uuid, context.req.param("personId"));
+    const workspaceId = parseValue(
+      optionalUuid,
       context.req.query("workspaceId"),
     );
-    if (!personId.success || !workspaceId.success) return missing(context);
-    const authenticated = await actor(context, services, workspaceId.data);
-    if (!authenticated) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
+    if ("errors" in personId || "errors" in workspaceId) {
+      return definedProblem(context, EXPORT_NOT_FOUND);
     }
-    const result = await services.exports.exportVCard(
-      authenticated,
-      personId.data,
-    ).catch(() => ({ status: "unavailable" as const }));
-    if (result.status === "not-found") return missing(context);
+    const actor = await workspaceScopedActor(
+      context,
+      services.protectedSessions,
+      workspaceId.data,
+    );
+    if (!actor) return definedProblem(context, SESSION_INVALID);
+    const result = await services.exports.exportVCard(actor, personId.data)
+      .catch(unavailable);
+    if (result.status === "not-found") return failure(context, result);
     if (result.status !== "ready") {
-      return problem(
-        context,
-        503,
-        "vcard_unavailable",
-        "vCard unavailable",
-        "This person could not be exported right now.",
-      );
+      return definedProblem(context, VCARD_UNAVAILABLE);
     }
-    return new Response(result.bytes.slice().buffer, {
-      headers: {
-        "Cache-Control": "private, no-store",
-        "Content-Disposition": attachmentFilename(result.filename),
-        "Content-Length": String(result.bytes.byteLength),
-        "Content-Type": result.mimeType,
-        "X-Content-Type-Options": "nosniff",
-      },
-    });
+    return fileDownload(result);
   });
   return routes;
 }

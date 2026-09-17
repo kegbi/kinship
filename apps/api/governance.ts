@@ -1,10 +1,37 @@
+/**
+ * Legal documents, acceptance, and the audit history, over HTTP.
+ *
+ * Two surfaces that share nothing but an actor: the legal documents every
+ * member has to accept, and the audit history only an administrator may read.
+ * The problem responder, the session cookie, the origin check, the client
+ * address, and the kernel status map came from `http/` (GAP-019, GAP-020).
+ *
+ * `createLegalRequirementGuard` is the reason this file resolves a session
+ * without the middleware. It runs in front of everything, before any route's
+ * own session handling, and it is the one place in the API that must tell
+ * "nobody is signed in" from "the session store is down": the first passes an
+ * anonymous request through to the route that will refuse it, and the second
+ * refuses everything, because a guard that cannot see whether a document is
+ * outstanding must not decide that none is.
+ */
+
 import { type Context, Hono, type MiddlewareHandler } from "hono";
-import { isIP } from "node:net";
 import { z } from "zod";
 import type { AuditHistory } from "../../packages/backend/read-models/audit-history/public.ts";
 import type { LegalAcceptance } from "../../packages/backend/modules/governance/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
+import { trustedClientAddress } from "./http/client_address.ts";
+import { failureResponder, type FailureTable } from "./http/failures.ts";
+import { rejectForeignOrigin } from "./http/origin.ts";
+import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import {
+  type ActorEnv,
+  readActor,
+  requireActor,
+  sessionActor,
+} from "./http/session.ts";
+import { parseJsonBody, parseQuery, parseValue } from "./http/validate.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
@@ -21,6 +48,7 @@ export interface LegalRequirementGuardServices {
 }
 
 const id = z.uuid();
+const documentType = z.enum(["privacy", "terms"]);
 const acceptanceInput = z.object({ documentId: id }).strict();
 const query = z.object({
   action: z.string().trim().min(1).max(200).optional(),
@@ -42,83 +70,128 @@ const query = z.object({
   }
 });
 
-function problem(
-  context: Context,
-  status: 400 | 401 | 403 | 404 | 409 | 503,
-  code: string,
-  title: string,
-  detail: string,
-) {
-  return context.json(
-    {
-      code,
-      detail,
-      status,
-      title,
-      type: `https://kinship.invalid/problems/${code}`,
+/** What a refused audit search says. */
+export const AUDIT_FAILURES: FailureTable = {
+  fallback: {
+    code: "audit_unavailable",
+    detail: "No historical data was changed. Try again.",
+    status: 503,
+    title: "Audit history unavailable",
+  },
+  statuses: {
+    forbidden: {
+      code: "audit_forbidden",
+      detail:
+        "Audit history requires an active owner or administrator membership.",
+      title: "Audit history unavailable",
     },
-    status,
-    {
-      "Cache-Control": "no-store",
-      "Content-Type": "application/problem+json",
+    "not-found": {
+      code: "audit_scope_not_found",
+      detail:
+        "The selected audit scope does not exist in the active workspace.",
+      title: "Audit history unavailable",
     },
-  );
-}
+    "stale-cursor": {
+      code: "audit_cursor_stale",
+      detail: "Restart this bounded audit search.",
+      status: 409,
+      title: "Audit page changed",
+    },
+  },
+};
 
-function requireOrigin(
-  context: Context,
-  policy: BrowserSecurityPolicy | undefined,
-) {
-  return policy && context.req.header("Origin") !== policy.origin
-    ? problem(
-      context,
-      403,
-      "origin_invalid",
-      "Request forbidden",
-      "This request did not come from the configured application origin.",
-    )
-    : undefined;
-}
+const auditFailure = failureResponder(AUDIT_FAILURES);
 
-function trustedClientAddress(context: Context): string | undefined {
-  const supplied = context.req.header("X-Kinship-Client-Address");
-  return supplied && supplied.length <= 64 && isIP(supplied) !== 0
-    ? supplied
-    : undefined;
-}
+const AUDIT_QUERY_INVALID: ProblemDefinition = {
+  code: "audit_query_invalid",
+  detail:
+    "Use canonical identifiers, an ordered time range, and a bounded page size.",
+  status: 400,
+  title: "Invalid audit search",
+};
+const LEGAL_UNAVAILABLE: ProblemDefinition = {
+  code: "legal_unavailable",
+  detail: "Required legal documents cannot be confirmed right now.",
+  status: 503,
+  title: "Legal review unavailable",
+};
+const LEGAL_SESSION_INVALID: ProblemDefinition = {
+  code: "session_invalid",
+  detail: "The session or workspace access is no longer active.",
+  status: 401,
+  title: "Authentication required",
+};
+const LEGAL_ACCEPTANCE_REQUIRED: ProblemDefinition = {
+  code: "legal_acceptance_required",
+  detail: "Review and accept the required legal document before continuing.",
+  status: 403,
+  title: "Legal acceptance required",
+};
+const LEGAL_DOCUMENT_NOT_FOUND: ProblemDefinition = {
+  code: "legal_document_not_found",
+  detail: "This legal document is not published.",
+  status: 404,
+  title: "Legal document unavailable",
+};
+const LEGAL_DOCUMENT_UNAVAILABLE: ProblemDefinition = {
+  code: "legal_document_unavailable",
+  detail: "The published document cannot be loaded right now.",
+  status: 503,
+  title: "Legal document unavailable",
+};
+const LEGAL_REVIEW_FORBIDDEN: ProblemDefinition = {
+  code: "legal_forbidden",
+  detail: "Your active workspace membership no longer permits this review.",
+  status: 403,
+  title: "Legal review unavailable",
+};
+const LEGAL_ACCEPTANCE_INVALID: ProblemDefinition = {
+  code: "legal_acceptance_invalid",
+  detail: "Accept one exact legal document version.",
+  status: 400,
+  title: "Invalid acceptance",
+};
+const LEGAL_ACCEPTANCE_FORBIDDEN: ProblemDefinition = {
+  code: "legal_forbidden",
+  detail: "Your active workspace membership no longer permits acceptance.",
+  status: 403,
+  title: "Acceptance forbidden",
+};
+const LEGAL_DOCUMENT_SUPERSEDED: ProblemDefinition = {
+  code: "legal_document_superseded",
+  detail: "Review the currently required version before continuing.",
+  status: 409,
+  title: "Document version changed",
+};
+const LEGAL_ACCEPTANCE_UNAVAILABLE: ProblemDefinition = {
+  code: "legal_unavailable",
+  detail: "No acceptance was recorded. Try again.",
+  status: 503,
+  title: "Acceptance unavailable",
+};
 
-function cookieValue(header: string | undefined, name: string) {
-  return header?.split(";").map((value) => value.trim()).find((value) =>
-    value.startsWith(`${name}=`)
-  )?.slice(name.length + 1);
-}
+/** Every problem this file answers on its own, for the pinning suite. */
+export const GOVERNANCE_PROBLEMS: readonly ProblemDefinition[] = [
+  AUDIT_QUERY_INVALID,
+  LEGAL_ACCEPTANCE_FORBIDDEN,
+  LEGAL_ACCEPTANCE_INVALID,
+  LEGAL_ACCEPTANCE_REQUIRED,
+  LEGAL_ACCEPTANCE_UNAVAILABLE,
+  LEGAL_DOCUMENT_NOT_FOUND,
+  LEGAL_DOCUMENT_SUPERSEDED,
+  LEGAL_DOCUMENT_UNAVAILABLE,
+  LEGAL_REVIEW_FORBIDDEN,
+  LEGAL_SESSION_INVALID,
+  LEGAL_UNAVAILABLE,
+];
 
-async function resolveActor(
-  context: Context,
-  services: GovernanceHttpServices,
-) {
-  const sessionToken = cookieValue(
-    context.req.header("Cookie"),
-    "kinship_session",
-  );
-  if (!sessionToken) return undefined;
-  const requestedWorkspaceId = context.req.header("X-Workspace-Id");
-  const resolved = await services.protectedSessions.resolve({
-    sessionToken,
-    ...(requestedWorkspaceId ? { requestedWorkspaceId } : {}),
-  });
-  return resolved && {
-    memberId: resolved.memberId,
-    role: resolved.role,
-    userId: resolved.userId,
-    workspaceId: resolved.workspaceId,
-  };
-}
-
-function actor(context: Context, services: GovernanceHttpServices) {
-  return resolveActor(context, services).catch(() => undefined);
-}
-
+/**
+ * The routes that may be reached with a legal document outstanding.
+ *
+ * Everything needed to read the document, accept it, sign in, sign out, or
+ * establish the session that will be asked to accept it. A route not named
+ * here is refused until the outstanding document is accepted.
+ */
 const legalGuardExemptions = new Set([
   "GET /api/v1/health",
   "GET /api/v1/legal-requirements",
@@ -147,113 +220,42 @@ export function createLegalRequirementGuard(
     ) {
       return next();
     }
-    const resolved = await resolveActor(context, services).catch(() =>
-      "unavailable" as const
+    const resolved = await readActor(context, services.protectedSessions).catch(
+      () => "unavailable" as const,
     );
     if (resolved === "unavailable") {
-      return problem(
-        context,
-        503,
-        "legal_unavailable",
-        "Legal review unavailable",
-        "Required legal documents cannot be confirmed right now.",
-      );
+      return definedProblem(context, LEGAL_UNAVAILABLE);
     }
     if (!resolved) {
       return next();
     }
     const requirements = await services.legal.requirements(resolved);
     if (requirements.status === "unavailable") {
-      return problem(
-        context,
-        503,
-        "legal_unavailable",
-        "Legal review unavailable",
-        "Required legal documents cannot be confirmed right now.",
-      );
+      return definedProblem(context, LEGAL_UNAVAILABLE);
     }
     if (requirements.status === "forbidden") {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "The session or workspace access is no longer active.",
-      );
+      return definedProblem(context, LEGAL_SESSION_INVALID);
     }
     if (requirements.documents.length > 0) {
-      return problem(
-        context,
-        403,
-        "legal_acceptance_required",
-        "Legal acceptance required",
-        "Review and accept the required legal document before continuing.",
-      );
+      return definedProblem(context, LEGAL_ACCEPTANCE_REQUIRED);
     }
     return next();
   };
 }
 
-function failure(
-  context: Context,
-  status: "forbidden" | "not-found" | "stale-cursor",
-) {
-  if (status === "forbidden") {
-    return problem(
-      context,
-      403,
-      "audit_forbidden",
-      "Audit history unavailable",
-      "Audit history requires an active owner or administrator membership.",
-    );
-  }
-  if (status === "not-found") {
-    return problem(
-      context,
-      404,
-      "audit_scope_not_found",
-      "Audit history unavailable",
-      "The selected audit scope does not exist in the active workspace.",
-    );
-  }
-  return problem(
-    context,
-    409,
-    "audit_cursor_stale",
-    "Audit page changed",
-    "Restart this bounded audit search.",
-  );
-}
-
-function auditRoute(
-  services: GovernanceHttpServices,
-  routePerson: boolean,
-) {
-  return async (context: Context) => {
-    const input = query.safeParse(context.req.query());
+function auditRoute(services: GovernanceHttpServices, routePerson: boolean) {
+  return async (context: Context<ActorEnv>) => {
+    const input = parseQuery(context, query);
     const personId = routePerson
-      ? id.safeParse(context.req.param("personId"))
+      ? parseValue(id, context.req.param("personId"))
       : undefined;
-    if (!input.success || (personId && !personId.success)) {
-      return problem(
-        context,
-        400,
-        "audit_query_invalid",
-        "Invalid audit search",
-        "Use canonical identifiers, an ordered time range, and a bounded page size.",
-      );
+    if ("errors" in input) return definedProblem(context, AUDIT_QUERY_INVALID);
+    if (personId && "errors" in personId) {
+      return definedProblem(context, AUDIT_QUERY_INVALID);
     }
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const result = await services.auditHistory!.list(resolved, {
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.auditHistory!.list(actor, {
       ...(input.data.action ? { action: input.data.action } : {}),
       ...(input.data.actorMemberId
         ? { actorMemberId: input.data.actorMemberId }
@@ -261,26 +263,17 @@ function auditRoute(
       ...(input.data.cursor ? { cursor: input.data.cursor } : {}),
       ...(input.data.from ? { from: input.data.from } : {}),
       limit: input.data.limit,
-      ...(personId?.success
+      ...(personId
         ? { personId: personId.data }
         : input.data.personId
         ? { personId: input.data.personId }
         : {}),
       ...(input.data.to ? { to: input.data.to } : {}),
     }).catch(() => undefined);
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "audit_unavailable",
-        "Audit history unavailable",
-        "No historical data was changed. Try again.",
-      );
-    }
     if (
-      result.status === "forbidden" || result.status === "not-found" ||
-      result.status === "stale-cursor"
-    ) return failure(context, result.status);
+      !result || result.status === "forbidden" ||
+      result.status === "not-found" || result.status === "stale-cursor"
+    ) return auditFailure(context, result ?? "unavailable");
     context.header("Cache-Control", "private, no-store");
     return context.json(result);
   };
@@ -288,142 +281,75 @@ function auditRoute(
 
 export function createGovernanceRoutes(
   services: GovernanceHttpServices,
-): Hono {
-  const routes = new Hono();
+): Hono<ActorEnv> {
+  const routes = new Hono<ActorEnv>();
+  const session = sessionActor(services.protectedSessions);
+  const policy = services.browserSecurity;
   if (services.legal) {
+    const legal = services.legal;
     routes.get("/api/v1/legal-documents/:documentType", async (context) => {
-      const parsed = z.enum(["privacy", "terms"]).safeParse(
+      const parsed = parseValue(
+        documentType,
         context.req.param("documentType"),
       );
-      if (!parsed.success) {
-        return problem(
-          context,
-          404,
-          "legal_document_not_found",
-          "Legal document unavailable",
-          "This legal document is not published.",
-        );
+      if ("errors" in parsed) {
+        return definedProblem(context, LEGAL_DOCUMENT_NOT_FOUND);
       }
-      const result = await services.legal!.publicDocument(parsed.data);
+      const result = await legal.publicDocument(parsed.data);
       if (result.status === "not-found") {
-        return problem(
-          context,
-          404,
-          "legal_document_not_found",
-          "Legal document unavailable",
-          "This legal document is not published.",
-        );
+        return definedProblem(context, LEGAL_DOCUMENT_NOT_FOUND);
       }
       if (result.status === "unavailable") {
-        return problem(
-          context,
-          503,
-          "legal_document_unavailable",
-          "Legal document unavailable",
-          "The published document cannot be loaded right now.",
-        );
+        return definedProblem(context, LEGAL_DOCUMENT_UNAVAILABLE);
       }
       context.header("Cache-Control", "public, max-age=300");
       return context.json(result);
     });
-    routes.get("/api/v1/legal-requirements", async (context) => {
-      const resolved = await actor(context, services);
-      if (!resolved) {
-        return problem(
-          context,
-          401,
-          "session_invalid",
-          "Authentication required",
-          "Sign in with an active workspace membership.",
-        );
-      }
-      const result = await services.legal!.requirements(resolved);
+    routes.get("/api/v1/legal-requirements", session, async (context) => {
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await legal.requirements(actor);
       if (result.status === "forbidden") {
-        return problem(
-          context,
-          403,
-          "legal_forbidden",
-          "Legal review unavailable",
-          "Your active workspace membership no longer permits this review.",
-        );
+        return definedProblem(context, LEGAL_REVIEW_FORBIDDEN);
       }
       if (result.status === "unavailable") {
-        return problem(
-          context,
-          503,
-          "legal_unavailable",
-          "Legal review unavailable",
-          "Required legal documents cannot be confirmed right now.",
-        );
+        return definedProblem(context, LEGAL_UNAVAILABLE);
       }
       context.header("Cache-Control", "private, no-store");
       return context.json(result);
     });
-    routes.post("/api/v1/legal-acceptances", async (context) => {
-      const origin = requireOrigin(context, services.browserSecurity);
-      if (origin) return origin;
-      const body = acceptanceInput.safeParse(
-        await context.req.json().catch(() => undefined),
-      );
-      if (!body.success) {
-        return problem(
-          context,
-          400,
-          "legal_acceptance_invalid",
-          "Invalid acceptance",
-          "Accept one exact legal document version.",
-        );
+    routes.post("/api/v1/legal-acceptances", session, async (context) => {
+      const foreign = policy && rejectForeignOrigin(context, policy);
+      if (foreign) return foreign;
+      const parsed = await parseJsonBody(context, acceptanceInput);
+      if ("errors" in parsed) {
+        return definedProblem(context, LEGAL_ACCEPTANCE_INVALID);
       }
-      const resolved = await actor(context, services);
-      if (!resolved) {
-        return problem(
-          context,
-          401,
-          "session_invalid",
-          "Authentication required",
-          "Sign in with an active workspace membership.",
-        );
-      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
       const ipAddress = trustedClientAddress(context);
-      const result = await services.legal!.accept(resolved, {
-        documentId: body.data.documentId,
+      const result = await legal.accept(actor, {
+        documentId: parsed.data.documentId,
         ...(ipAddress ? { ipAddress } : {}),
       });
       if (result.status === "forbidden") {
-        return problem(
-          context,
-          403,
-          "legal_forbidden",
-          "Acceptance forbidden",
-          "Your active workspace membership no longer permits acceptance.",
-        );
+        return definedProblem(context, LEGAL_ACCEPTANCE_FORBIDDEN);
       }
       if (result.status === "superseded-version") {
-        return problem(
-          context,
-          409,
-          "legal_document_superseded",
-          "Document version changed",
-          "Review the currently required version before continuing.",
-        );
+        return definedProblem(context, LEGAL_DOCUMENT_SUPERSEDED);
       }
       if (result.status === "unavailable") {
-        return problem(
-          context,
-          503,
-          "legal_unavailable",
-          "Acceptance unavailable",
-          "No acceptance was recorded. Try again.",
-        );
+        return definedProblem(context, LEGAL_ACCEPTANCE_UNAVAILABLE);
       }
       context.header("Cache-Control", "private, no-store");
       return context.json(result, result.status === "accepted" ? 201 : 200);
     });
   }
   if (services.auditHistory) {
-    routes.get("/api/v1/audit-events", auditRoute(services, false));
+    routes.get("/api/v1/audit-events", session, auditRoute(services, false));
     routes.get(
       "/api/v1/people/:personId/audit",
+      session,
       auditRoute(services, true),
     );
   }

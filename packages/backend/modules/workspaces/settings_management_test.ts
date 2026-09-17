@@ -381,6 +381,39 @@ Deno.test("PLANNING-002 workspace default reminder time regenerates inherited in
   );
 });
 
+Deno.test("[GAP-020] a time zone the calendar cannot resolve is refused before any write", async () => {
+  const { effects, service } = fixture();
+
+  const preferences = await service.updatePreferences(actor, {
+    contactNameOrder: "given_family_nickname",
+    contactSortOrder: "given_name_asc",
+    fluidLayout: false,
+    locale: "en",
+    measurementSystem: "metric",
+    temperatureScale: "celsius",
+    timezone: "Not/AZone",
+  });
+  const workspace = await service.updateWorkspace(actor, {
+    defaultLocale: "en",
+    defaultReminderTime: "09:00",
+    defaultTimezone: "Not/AZone",
+    name: "Trusted circle",
+  });
+
+  assert(
+    preferences.status === "invalid-timezone",
+    "a member's own unschedulable zone is refused",
+  );
+  assert(
+    workspace === "invalid-timezone",
+    "an unschedulable workspace default is refused",
+  );
+  assert(
+    effects.length === 0,
+    `neither refusal opened a transaction: ${effects.join(",")}`,
+  );
+});
+
 Deno.test("AUTH-004 changes the current identity and records governance atomically", async () => {
   const { effects, service } = fixture();
   const result = await service.updateProfile(actor, {

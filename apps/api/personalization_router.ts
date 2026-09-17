@@ -1,3 +1,24 @@
+/**
+ * The one place that knows which module answers for which personalization
+ * section.
+ *
+ * Personalization is a single settings page over seven owners: the workspace
+ * holds most vocabularies, people hold tags, planning holds reminder rules,
+ * and four modules each count and re-point the records that refer to an option
+ * they own. Routing that is a composition concern rather than any one module's,
+ * so it lives beside the composition root and behind the workspaces port, and
+ * no module learns that another exists.
+ *
+ * Every read is authorized by the workspace before it is routed, which is what
+ * the APP-004E boundary test pins: a member of another workspace must not
+ * reach a module's own repository through this.
+ *
+ * Reference counts are only attached where they mean something. Tags and
+ * reminder rules count their own, so their entries pass through untouched;
+ * every other section has its references counted by whichever module stores
+ * them, and `contact-method-types` is the one section two modules share.
+ */
+
 import type { InteractionPersonalizationReferences } from "../../packages/backend/modules/interactions/public.ts";
 import type { JournalPersonalizationReferences } from "../../packages/backend/modules/journal/public.ts";
 import type {
@@ -183,13 +204,12 @@ export class PersonalizationRouter implements PersonalizationRepository {
     if (repository === this.workspace && command.action === "delete") {
       const prepared = await this.workspace.prepareDelete(command);
       if (prepared.status !== "ready") return prepared;
-      const referenceCount = await this.count(command);
-      if (referenceCount > 0 && !command.replacementId) {
-        return {
-          referenceCount,
-          status: "replacement-required",
-        };
-      }
+      // A delete that arrives here either carries a replacement or was already
+      // shown to have nothing pointing at it: the use case inspects first, in
+      // this same transaction, and answers `replacement-required` itself. This
+      // file counted the references a second time and repeated that answer
+      // until GAP-020; the count was a duplicate query and the answer was
+      // unreachable.
       if (command.replacementId) {
         const replaced = await this.replaceReferences({
           ...command,

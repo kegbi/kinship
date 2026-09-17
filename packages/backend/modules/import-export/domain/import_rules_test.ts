@@ -7,6 +7,7 @@ import {
 import {
   importedPerson,
   importReport,
+  mayImport,
   sourceFingerprint,
   stageContacts,
   type StagedContact,
@@ -443,4 +444,10 @@ Deno.test("[GAP-018] a committed contact becomes a person under the settled iden
       isStarred: false,
     },
   );
+});
+
+Deno.test("[GAP-020] only an owner or an administrator may import or read one", () => {
+  assertEquals(mayImport("owner"), true, "an owner may import");
+  assertEquals(mayImport("admin"), true, "an administrator may import");
+  assertEquals(mayImport("member"), false, "a member may not");
 });

@@ -441,3 +441,142 @@ Deno.test("GOVERNANCE-001 guard leaves only resolution and bootstrap surfaces re
     assertStatus(response, 204, `${method} ${path} was blocked`);
   }
 });
+
+Deno.test("[GAP-020] every legal and audit route refuses without a session or a document", async () => {
+  const unavailable = {
+    accept: () => Promise.resolve({ status: "unavailable" as const }),
+    publicDocument: () => Promise.resolve({ status: "unavailable" as const }),
+    requirements: () => Promise.resolve({ status: "unavailable" as const }),
+  } as unknown as LegalAcceptance;
+  const forbidden = {
+    accept: () => Promise.resolve({ status: "forbidden" as const }),
+    publicDocument: () => Promise.resolve({ status: "unavailable" as const }),
+    requirements: () => Promise.resolve({ status: "forbidden" as const }),
+  } as unknown as LegalAcceptance;
+  const audit = () => Promise.resolve({ items: [], status: "ready" as const });
+  const anonymous = {
+    ...services(audit, "owner", unavailable),
+    protectedSessions: { resolve: () => Promise.resolve(undefined) },
+  };
+  const accepting = {
+    body: JSON.stringify({ documentId: ids.person }),
+    headers: {
+      "content-type": "application/json",
+      cookie: "kinship_session=test",
+      origin: "http://127.0.0.1:4321",
+    },
+    method: "POST",
+  };
+
+  const outages = createGovernanceRoutes(services(audit, "owner", unavailable));
+  const refusals = createGovernanceRoutes(services(audit, "owner", forbidden));
+  const signedOut = createGovernanceRoutes(anonymous);
+
+  for (
+    const scenario of [
+      {
+        app: outages,
+        expected: 503,
+        path: "/api/v1/legal-documents/terms",
+        request: {},
+      },
+      {
+        app: outages,
+        expected: 503,
+        path: "/api/v1/legal-requirements",
+        request: { headers: { cookie: "kinship_session=test" } },
+      },
+      {
+        app: refusals,
+        expected: 403,
+        path: "/api/v1/legal-requirements",
+        request: { headers: { cookie: "kinship_session=test" } },
+      },
+      {
+        app: signedOut,
+        expected: 401,
+        path: "/api/v1/legal-requirements",
+        request: { headers: { cookie: "kinship_session=test" } },
+      },
+      {
+        app: outages,
+        expected: 503,
+        path: "/api/v1/legal-acceptances",
+        request: accepting,
+      },
+      {
+        app: refusals,
+        expected: 403,
+        path: "/api/v1/legal-acceptances",
+        request: accepting,
+      },
+      {
+        app: signedOut,
+        expected: 401,
+        path: "/api/v1/legal-acceptances",
+        request: accepting,
+      },
+      {
+        app: signedOut,
+        expected: 401,
+        path: "/api/v1/audit-events",
+        request: { headers: { cookie: "kinship_session=test" } },
+      },
+      {
+        app: outages,
+        expected: 400,
+        path: "/api/v1/audit-events?limit=500",
+        request: { headers: { cookie: "kinship_session=test" } },
+      },
+      {
+        app: outages,
+        expected: 400,
+        path: `/api/v1/people/not-a-uuid/audit`,
+        request: { headers: { cookie: "kinship_session=test" } },
+      },
+    ]
+  ) {
+    const response = await scenario.app.request(
+      `http://localhost${scenario.path}`,
+      scenario.request,
+    );
+    assertStatus(
+      response,
+      scenario.expected,
+      `${scenario.path} answered the wrong refusal`,
+    );
+  }
+});
+
+Deno.test("[GAP-020] the legal guard refuses everything while it cannot see", async () => {
+  const legal = {
+    accept: () => Promise.resolve({ status: "unavailable" as const }),
+    publicDocument: () => Promise.resolve({ status: "not-found" as const }),
+    requirements: () =>
+      Promise.resolve({ documents: [], status: "ready" as const }),
+  } as unknown as LegalAcceptance;
+  const guard = (resolve: () => Promise<unknown>) => {
+    const app = new Hono();
+    app.use(
+      "/api/v1/*",
+      createLegalRequirementGuard({
+        legal,
+        protectedSessions: {
+          resolve,
+        } as ReturnType<typeof services>["protectedSessions"],
+      }),
+    );
+    app.get("/api/v1/people", (context) => context.body(null, 204));
+    return app;
+  };
+  const headers = { cookie: "kinship_session=test" };
+
+  const outage = await guard(() => Promise.reject(new Error("offline")))
+    .request("http://localhost/api/v1/people", { headers });
+  const anonymous = await guard(() => Promise.resolve(undefined)).request(
+    "http://localhost/api/v1/people",
+  );
+
+  assertStatus(outage, 503, "a session store that will not answer blocks");
+  assertStatus(anonymous, 204, "nobody is passed on to the route that refuses");
+});

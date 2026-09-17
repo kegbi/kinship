@@ -1,3 +1,18 @@
+/**
+ * Registering, verifying an address, and entering the application, over HTTP.
+ *
+ * Four routes that run before anybody has a session, which is why this is the
+ * one file with no actor in it at all. The problem responder, the cookie
+ * composer, and the origin comparison came from `http/` (GAP-019, GAP-020).
+ *
+ * The three cookies are the substance. `kinship_entry` is a one-use handoff
+ * scoped to the single route that consumes it, so a verified link cannot be
+ * replayed anywhere else; `kinship_invitation_pending` is scoped to the
+ * verification route alone and is cleared the moment it is read, which is what
+ * makes a verified invitee land on the invitation rather than the application;
+ * and `kinship_session` is only ever set once the entry handoff has been spent.
+ */
+
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import type { PasswordHasher } from "../../packages/backend/modules/identity/public.ts";
@@ -9,6 +24,11 @@ import {
   type ProtectedSessionResult,
   RegistrationError,
 } from "../../packages/backend/modules/workspaces/public.ts";
+import { cookieValue, SESSION_COOKIE, setCookie } from "./http/cookies.ts";
+import { failureResponder, type FailureTable } from "./http/failures.ts";
+import { matchingOrigin } from "./http/origin.ts";
+import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { parseJsonBody } from "./http/validate.ts";
 
 const registrationSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(254),
@@ -26,6 +46,19 @@ const verificationDeliverySchema = z.object({
   email: z.string().trim().toLowerCase().email().max(254),
 }).strict();
 
+/** The cookie that carries a verified identity to the application entry. */
+const ENTRY_COOKIE = "kinship_entry";
+/** The cookie that says a verification belongs to an invitation. */
+const INVITATION_PENDING_COOKIE = "kinship_invitation_pending";
+/** The one route the entry handoff may be spent on. */
+const ENTRY_PATH = "/api/v1/application-entry";
+/** The route a verified invitee is sent to instead. */
+const INVITATION_PATH = "/api/v1/workspace-invitations";
+/** The route the pending-invitation marker is scoped to. */
+const VERIFICATION_PATH = "/api/v1/email-verifications";
+/** How long a verified identity has to enter the application. */
+const ENTRY_COOKIE_SECONDS = 600;
+
 export interface RegistrationHttpServices {
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly hasher: PasswordHasher;
@@ -41,66 +74,141 @@ export interface RegistrationHttpServices {
   }) => Promise<ProtectedSessionResult>;
 }
 
-function sessionCookie(
-  value: string,
-  policy: BrowserSecurityPolicy,
-  maxAge: number,
-): string {
-  return [
-    `kinship_session=${value}`,
-    "HttpOnly",
-    "SameSite=Strict",
-    policy.secureCookie ? "Secure" : undefined,
-    `Max-Age=${Math.max(0, Math.floor(maxAge))}`,
-    "Path=/",
-  ].filter(Boolean).join("; ");
-}
+/**
+ * What a verification link that cannot be used says.
+ *
+ * All three say the same sentence on purpose: a caller learns that the link is
+ * spent, and the `code` tells the page which of "expired", "already used", or
+ * "not a link at all" to explain.
+ */
+export const VERIFICATION_FAILURES: FailureTable = {
+  fallback: {
+    code: "invalid_verification",
+    detail: "This verification link cannot be used.",
+    status: 409,
+    title: "Email not verified",
+  },
+  statuses: {
+    expired: {
+      code: "verification_expired",
+      detail: "This verification link cannot be used.",
+      status: 410,
+      title: "Email not verified",
+    },
+    replayed: {
+      code: "verification_replayed",
+      detail: "This verification link cannot be used.",
+      status: 409,
+      title: "Email not verified",
+    },
+  },
+};
 
-function problem(
-  context: Context,
-  status: 400 | 403 | 409 | 410 | 503,
-  code: string,
-  title: string,
-  detail: string,
-  errors?: Record<string, string>,
-): Response {
-  const body = {
-    type: `https://kinship.test/problems/${code}`,
-    title,
-    status,
-    detail,
-    code,
-    ...(errors ? { errors } : {}),
-  };
-  return context.body(JSON.stringify(body), status, {
-    "Cache-Control": "no-store",
-    "Content-Type": "application/problem+json",
-  });
-}
+const verificationFailure = failureResponder(VERIFICATION_FAILURES);
 
+const REGISTRATION_INVALID: ProblemDefinition = {
+  code: "validation_failed",
+  detail: "Check the highlighted fields.",
+  status: 400,
+  title: "Invalid registration",
+};
+const DUPLICATE_EMAIL: ProblemDefinition = {
+  code: "duplicate_email",
+  detail: "An account already uses that email address.",
+  status: 409,
+  title: "Registration unavailable",
+};
+const VERIFICATION_DELIVERY_FAILED: ProblemDefinition = {
+  code: "verification_delivery_failed",
+  detail:
+    "Your account was created with its workspace, but the verification email could not be delivered. Retry delivery.",
+  status: 503,
+  title: "Verification email delayed",
+};
+const REGISTRATION_FAILED: ProblemDefinition = {
+  code: "registration_failed",
+  detail: "Nothing was created. Please try again.",
+  status: 503,
+  title: "Registration unavailable",
+};
+const VERIFICATION_LINK_INVALID: ProblemDefinition = {
+  code: "invalid_verification",
+  detail: "Request a new verification link.",
+  status: 400,
+  title: "Verification link invalid",
+};
+const VERIFICATION_UNAVAILABLE: ProblemDefinition = {
+  code: "verification_unavailable",
+  detail: "Email verification is temporarily unavailable. Please try again.",
+  status: 503,
+  title: "Verification unavailable",
+};
+const ENTRY_ORIGIN_INVALID: ProblemDefinition = {
+  code: "origin_invalid",
+  detail: "This request did not come from the configured application origin.",
+  status: 403,
+  title: "Application entry forbidden",
+};
+const ENTRY_HANDOFF_MISSING: ProblemDefinition = {
+  code: "entry_handoff_invalid",
+  detail: "Use the link from a completed verification.",
+  status: 409,
+  title: "Application entry unavailable",
+};
+const ENTRY_HANDOFF_UNAVAILABLE: ProblemDefinition = {
+  code: "entry_handoff_unavailable",
+  detail: "Application entry is temporarily unavailable. Please try again.",
+  status: 503,
+  title: "Application entry unavailable",
+};
+const ENTRY_HANDOFF_SPENT: ProblemDefinition = {
+  code: "entry_handoff_invalid",
+  detail: "This application-entry handoff cannot be used.",
+  status: 409,
+  title: "Application entry unavailable",
+};
+const ENTRY_WORKSPACE_INACTIVE: ProblemDefinition = {
+  code: "entry_handoff_invalid",
+  detail: "Workspace access is no longer active.",
+  status: 409,
+  title: "Application entry unavailable",
+};
+const DELIVERY_REQUEST_INVALID: ProblemDefinition = {
+  code: "validation_failed",
+  detail: "Provide a valid email address.",
+  status: 400,
+  title: "Invalid delivery request",
+};
+
+/** Every problem this file answers on its own, for the pinning suite. */
+export const REGISTRATION_PROBLEMS: readonly ProblemDefinition[] = [
+  DELIVERY_REQUEST_INVALID,
+  DUPLICATE_EMAIL,
+  ENTRY_HANDOFF_MISSING,
+  ENTRY_HANDOFF_SPENT,
+  ENTRY_HANDOFF_UNAVAILABLE,
+  ENTRY_ORIGIN_INVALID,
+  ENTRY_WORKSPACE_INACTIVE,
+  REGISTRATION_FAILED,
+  REGISTRATION_INVALID,
+  VERIFICATION_DELIVERY_FAILED,
+  VERIFICATION_LINK_INVALID,
+  VERIFICATION_UNAVAILABLE,
+];
+
+/** The entry handoff cookie, scoped to the one route that may spend it. */
 function entryCookie(
-  value: string,
   policy: BrowserSecurityPolicy,
-  maxAge: number,
-  path = "/api/v1/application-entry",
+  value: string,
+  maxAgeSeconds: number,
+  path: string = ENTRY_PATH,
 ): string {
-  return [
-    `kinship_entry=${value}`,
-    "HttpOnly",
-    "SameSite=Strict",
-    policy.secureCookie ? "Secure" : undefined,
-    `Max-Age=${maxAge}`,
-    `Path=${path}`,
-  ].filter(Boolean).join("; ");
-}
-
-function cookieValue(
-  header: string | undefined,
-  name: string,
-): string | undefined {
-  return header?.split(";").map((value) => value.trim()).find((value) =>
-    value.startsWith(`${name}=`)
-  )?.slice(name.length + 1);
+  return setCookie(policy, {
+    maxAgeSeconds,
+    name: ENTRY_COOKIE,
+    path,
+    value,
+  });
 }
 
 export function createRegistrationRoutes(
@@ -109,23 +217,9 @@ export function createRegistrationRoutes(
   const routes = new Hono();
 
   routes.post("/api/v1/registrations", async (context) => {
-    const parsed = registrationSchema.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    if (!parsed.success) {
-      const errors: Record<string, string> = {};
-      for (const issue of parsed.error.issues) {
-        const key = String(issue.path[0] ?? "body");
-        errors[key] ??= issue.message;
-      }
-      return problem(
-        context,
-        400,
-        "validation_failed",
-        "Invalid registration",
-        "Check the highlighted fields.",
-        errors,
-      );
+    const parsed = await parseJsonBody(context, registrationSchema);
+    if ("errors" in parsed) {
+      return definedProblem(context, REGISTRATION_INVALID, parsed.errors);
     }
     try {
       const passwordHash = await services.hasher.hash(parsed.data.password);
@@ -142,103 +236,55 @@ export function createRegistrationRoutes(
       if (
         error instanceof RegistrationError && error.code === "duplicate_email"
       ) {
-        return problem(
-          context,
-          409,
-          "duplicate_email",
-          "Registration unavailable",
-          "An account already uses that email address.",
-        );
+        return definedProblem(context, DUPLICATE_EMAIL);
       }
       if (
         typeof error === "object" && error !== null && "code" in error &&
         error.code === "verification_delivery_failed"
       ) {
-        return problem(
-          context,
-          503,
-          "verification_delivery_failed",
-          "Verification email delayed",
-          "Your account was created with its workspace, but the verification email could not be delivered. Retry delivery.",
-        );
+        return definedProblem(context, VERIFICATION_DELIVERY_FAILED);
       }
-      return problem(
-        context,
-        503,
-        "registration_failed",
-        "Registration unavailable",
-        "Nothing was created. Please try again.",
-      );
+      return definedProblem(context, REGISTRATION_FAILED);
     }
   });
 
   routes.post("/api/v1/email-verifications", async (context) => {
-    const parsed = verificationSchema.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    if (!parsed.success) {
-      return problem(
-        context,
-        400,
-        "invalid_verification",
-        "Verification link invalid",
-        "Request a new verification link.",
-      );
+    const parsed = await parseJsonBody(context, verificationSchema);
+    if ("errors" in parsed) {
+      return definedProblem(context, VERIFICATION_LINK_INVALID);
     }
     let result;
     try {
       result = await services.verification.verify(parsed.data.token);
     } catch {
-      return problem(
-        context,
-        503,
-        "verification_unavailable",
-        "Verification unavailable",
-        "Email verification is temporarily unavailable. Please try again.",
-      );
+      return definedProblem(context, VERIFICATION_UNAVAILABLE);
     }
     if (result.status !== "verified") {
-      const status = result.status === "expired" ? 410 : 409;
-      const code = result.status === "expired"
-        ? "verification_expired"
-        : result.status === "replayed"
-        ? "verification_replayed"
-        : "invalid_verification";
-      return problem(
-        context,
-        status,
-        code,
-        "Email not verified",
-        "This verification link cannot be used.",
-      );
+      return verificationFailure(context, result);
     }
     const hasInvitation = cookieValue(
       context.req.header("Cookie"),
-      "kinship_invitation_pending",
+      INVITATION_PENDING_COOKIE,
     ) !== undefined;
     context.header(
       "Set-Cookie",
       entryCookie(
-        result.entryToken,
         services.browserSecurity,
-        600,
-        hasInvitation
-          ? "/api/v1/workspace-invitations"
-          : "/api/v1/application-entry",
+        result.entryToken,
+        ENTRY_COOKIE_SECONDS,
+        hasInvitation ? INVITATION_PATH : ENTRY_PATH,
       ),
     );
     context.header("Cache-Control", "no-store");
     if (hasInvitation) {
       context.header(
         "Set-Cookie",
-        [
-          "kinship_invitation_pending=",
-          "HttpOnly",
-          "SameSite=Strict",
-          services.browserSecurity.secureCookie ? "Secure" : undefined,
-          "Max-Age=0",
-          "Path=/api/v1/email-verifications",
-        ].filter(Boolean).join("; "),
+        setCookie(services.browserSecurity, {
+          maxAgeSeconds: 0,
+          name: INVITATION_PENDING_COOKIE,
+          path: VERIFICATION_PATH,
+          value: "",
+        }),
         { append: true },
       );
     }
@@ -248,96 +294,38 @@ export function createRegistrationRoutes(
     });
   });
 
-  routes.post("/api/v1/application-entry", async (context) => {
-    if (context.req.header("Origin") !== services.browserSecurity.origin) {
-      return problem(
-        context,
-        403,
-        "origin_invalid",
-        "Application entry forbidden",
-        "This request did not come from the configured application origin.",
-      );
+  routes.post(ENTRY_PATH, async (context) => {
+    if (!matchingOrigin(context, services.browserSecurity)) {
+      return definedProblem(context, ENTRY_ORIGIN_INVALID);
     }
-    const entryToken = cookieValue(
-      context.req.header("Cookie"),
-      "kinship_entry",
-    );
+    const entryToken = cookieValue(context.req.header("Cookie"), ENTRY_COOKIE);
     if (!entryToken) {
-      return problem(
-        context,
-        409,
-        "entry_handoff_invalid",
-        "Application entry unavailable",
-        "Use the link from a completed verification.",
-      );
+      return definedProblem(context, ENTRY_HANDOFF_MISSING);
     }
     let applicationContext;
     try {
       applicationContext = await services.verification
         .consumeApplicationEntry(entryToken);
     } catch {
-      return problem(
-        context,
-        503,
-        "entry_handoff_unavailable",
-        "Application entry unavailable",
-        "Application entry is temporarily unavailable. Please try again.",
-      );
+      return definedProblem(context, ENTRY_HANDOFF_UNAVAILABLE);
     }
     context.header(
       "Set-Cookie",
-      entryCookie("", services.browserSecurity, 0),
+      entryCookie(services.browserSecurity, "", 0),
     );
     context.header("Cache-Control", "private, no-store");
     if (!applicationContext) {
-      return problem(
-        context,
-        409,
-        "entry_handoff_invalid",
-        "Application entry unavailable",
-        "This application-entry handoff cannot be used.",
-      );
+      return definedProblem(context, ENTRY_HANDOFF_SPENT);
     }
-    if (services.establishVerifiedEntry) {
-      let session;
-      try {
-        const previousSessionToken = cookieValue(
-          context.req.header("Cookie"),
-          "kinship_session",
-        );
-        const userAgent = context.req.header("User-Agent")?.slice(0, 1_000);
-        session = await services.establishVerifiedEntry({
-          ...(previousSessionToken ? { previousSessionToken } : {}),
-          ...(userAgent ? { userAgent } : {}),
-          userId: applicationContext.userId,
-        });
-      } catch {
-        return problem(
-          context,
-          503,
-          "entry_handoff_unavailable",
-          "Application entry unavailable",
-          "Application entry is temporarily unavailable. Please try again.",
-        );
-      }
-      if (session.status !== "authenticated") {
-        return problem(
-          context,
-          409,
-          "entry_handoff_invalid",
-          "Application entry unavailable",
-          "Workspace access is no longer active.",
-        );
-      }
-      context.header(
-        "Set-Cookie",
-        sessionCookie(
-          session.sessionToken,
-          services.browserSecurity,
-          (session.expiresAt.getTime() - Date.now()) / 1_000,
-        ),
-        { append: true },
+    const establish = services.establishVerifiedEntry;
+    if (establish) {
+      const refused = await establishSession(
+        context,
+        services.browserSecurity,
+        establish,
+        applicationContext.userId,
       );
+      if (refused) return refused;
     }
     return context.json({
       status: "ready",
@@ -353,17 +341,9 @@ export function createRegistrationRoutes(
   });
 
   routes.post("/api/v1/email-verification-deliveries", async (context) => {
-    const parsed = verificationDeliverySchema.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    if (!parsed.success) {
-      return problem(
-        context,
-        400,
-        "validation_failed",
-        "Invalid delivery request",
-        "Provide a valid email address.",
-      );
+    const parsed = await parseJsonBody(context, verificationDeliverySchema);
+    if ("errors" in parsed) {
+      return definedProblem(context, DELIVERY_REQUEST_INVALID);
     }
     await services.retryVerificationDelivery?.(parsed.data.email).catch(() =>
       undefined
@@ -373,4 +353,47 @@ export function createRegistrationRoutes(
   });
 
   return routes;
+}
+
+/**
+ * The session a spent entry handoff establishes, or the refusal instead.
+ *
+ * The cookie is appended rather than set, because the cleared entry cookie is
+ * already on the response by the time this runs.
+ */
+async function establishSession(
+  context: Context,
+  policy: BrowserSecurityPolicy,
+  establish: NonNullable<RegistrationHttpServices["establishVerifiedEntry"]>,
+  userId: string,
+): Promise<Response | undefined> {
+  let session;
+  try {
+    const previousSessionToken = cookieValue(
+      context.req.header("Cookie"),
+      SESSION_COOKIE,
+    );
+    const userAgent = context.req.header("User-Agent")?.slice(0, 1_000);
+    session = await establish({
+      ...(previousSessionToken ? { previousSessionToken } : {}),
+      ...(userAgent ? { userAgent } : {}),
+      userId,
+    });
+  } catch {
+    return definedProblem(context, ENTRY_HANDOFF_UNAVAILABLE);
+  }
+  if (session.status !== "authenticated") {
+    return definedProblem(context, ENTRY_WORKSPACE_INACTIVE);
+  }
+  context.header(
+    "Set-Cookie",
+    setCookie(policy, {
+      maxAgeSeconds: (session.expiresAt.getTime() - Date.now()) / 1_000,
+      name: SESSION_COOKIE,
+      path: "/",
+      value: session.sessionToken,
+    }),
+    { append: true },
+  );
+  return undefined;
 }

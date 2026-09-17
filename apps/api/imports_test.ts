@@ -191,8 +191,8 @@ Deno.test("[IMPORT-001] import HTTP maps lost authority and missing reports", as
     imports: {
       commit: () => Promise.resolve({ status: "not-found" }),
       dryRun: () => Promise.resolve({ status: "forbidden" }),
-      get: () => Promise.resolve(undefined),
-      list: () => Promise.resolve([]),
+      get: () => Promise.resolve({ status: "not-found" }),
+      list: () => Promise.resolve({ imports: [], status: "ready" }),
     },
     protectedSessions: {
       resolve: () =>

@@ -18,6 +18,7 @@ import { parseMonicaSource } from "../domain/formats/monica_source.ts";
 import {
   type ImportReport,
   importReport,
+  mayImport,
   sourceFingerprint,
   stageContacts,
 } from "../domain/import_rules.ts";
@@ -42,7 +43,7 @@ export function createImportStaging(
       actor: ImportActor,
       source: unknown,
     ): Promise<DryRunResult> => {
-      if (actor.role === "member") return { status: "forbidden" };
+      if (!mayImport(actor.role)) return { status: "forbidden" };
       const parsed = parseMonicaSource(source, {
         maxAttachmentBytes: PERSON_FILE_MAX_BYTES,
       });

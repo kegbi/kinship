@@ -1,3 +1,20 @@
+/**
+ * Member and workspace settings over HTTP.
+ *
+ * Six surfaces on one page — the member's profile, their preferences, their
+ * sessions, the workspace's configuration, its members, and its
+ * personalization — and eighteen routes over them. The problem responder, the
+ * session cookie, the origin check, and the kernel status map came from
+ * `http/` (GAP-019, GAP-020), and the rule about which time zones the calendar
+ * can actually schedule in moved into the settings use case, so this file
+ * parses shape and nothing else (GAP-020).
+ *
+ * The member UI state routes keep their own `member_ui_state_*` codes for
+ * every refusal, including the session and the origin. They are read by a
+ * script that runs on every page rather than by a form, and the codes are what
+ * let it stay quiet about a refusal that every other surface would show.
+ */
+
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import type {
@@ -9,6 +26,21 @@ import type {
   SettingsManagement,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
+import { cookieValue, SESSION_COOKIE, setCookie } from "./http/cookies.ts";
+import { failureResponder, type FailureTable } from "./http/failures.ts";
+import { matchingOrigin, requireMatchingOrigin } from "./http/origin.ts";
+import {
+  definedProblem,
+  type ProblemDefinition,
+  type ProblemErrors,
+} from "./http/problem.ts";
+import {
+  type ActorEnv,
+  actorOf,
+  requireActor,
+  sessionActor,
+} from "./http/session.ts";
+import { parseJsonBody, parseValue } from "./http/validate.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
@@ -38,14 +70,14 @@ const memberUiStateSchema = z.object({
     value.personWorkspaceView !== undefined || value.theme !== undefined,
 );
 
-const timezone = z.string().trim().min(1).max(100).refine((value) => {
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: value }).format();
-    return true;
-  } catch {
-    return false;
-  }
-}, { message: "Enter a valid IANA time zone." });
+/**
+ * The shape of a time zone, not its meaning.
+ *
+ * Whether the calendar can actually schedule in it is the settings use case's
+ * question, because a stored zone decides when every reminder a member or
+ * workspace owns comes due.
+ */
+const timezone = z.string().trim().min(1).max(100);
 const locale = z.string().trim().regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/)
   .max(35);
 const preferencesSchema = z.object({
@@ -149,272 +181,423 @@ const personalizationDeleteSchema = z.object({
   replacementId: z.string().uuid().optional(),
 }).strict();
 
-function problem(
-  context: Context,
-  status: 400 | 401 | 403 | 404 | 409 | 503,
-  code: string,
-  title: string,
-  detail: string,
-  errors?: Readonly<Record<string, string>>,
-): Response {
-  return context.body(
-    JSON.stringify({
-      type: `https://kinship.test/problems/${code}`,
-      title,
-      status,
-      detail,
-      code,
-      ...(errors ? { errors } : {}),
-    }),
-    status,
-    {
-      "Cache-Control": "no-store",
-      "Content-Type": "application/problem+json",
+const sessionId = z.string().uuid();
+const memberId = z.string().uuid();
+const personalizationId = z.string().uuid();
+
+/** The message a time zone the calendar cannot resolve is refused with. */
+const INVALID_TIMEZONE_MESSAGE = "Enter a valid IANA time zone.";
+/** The message an unsupported currency is refused with. */
+const INVALID_CURRENCY_MESSAGE = "Choose a supported currency.";
+
+/** What a refused personalization change says. */
+export const PERSONALIZATION_FAILURES: FailureTable = {
+  fallback: {
+    code: "personalization_unavailable",
+    detail: "Personalization could not be updated.",
+    status: 503,
+    title: "Personalization unavailable",
+  },
+  statuses: {
+    conflict: {
+      code: "personalization_duplicate",
+      detail: "Choose a unique name in this workspace.",
+      title: "Name already used",
     },
-  );
+    forbidden: {
+      code: "personalization_forbidden",
+      detail:
+        "Only an active workspace owner or admin may manage personalization.",
+      title: "Personalization forbidden",
+    },
+    invalid: {
+      code: "validation_failed",
+      detail: "That change is not supported by this section.",
+      status: 400,
+      title: "Invalid personalization change",
+    },
+    "not-found": {
+      code: "personalization_not_found",
+      detail: "That option does not belong to this active workspace.",
+      title: "Option unavailable",
+    },
+    "replacement-conflict": {
+      code: "personalization_replacement_conflict",
+      detail:
+        "Some records already use both the source and replacement options. Resolve the duplicate primary or relationship history before replacing this option.",
+      status: 409,
+      title: "Replacement conflicts with existing history",
+    },
+    "required-default": {
+      code: "personalization_required_default",
+      detail:
+        "This required or seeded option can be disabled where supported, but cannot be deleted.",
+      status: 409,
+      title: "Required option",
+    },
+    stale: {
+      code: "personalization_stale",
+      detail: "Reload this section before applying another change.",
+      status: 409,
+      title: "Option changed",
+    },
+  },
+};
+
+const personalizationFailure = failureResponder(PERSONALIZATION_FAILURES);
+
+/** The conflict that names how many records still point at an option. */
+export function replacementRequired(
+  referenceCount: number,
+): ProblemDefinition {
+  return {
+    code: "personalization_replacement_required",
+    detail:
+      `${referenceCount} references must be moved before this option can be deleted.`,
+    status: 409,
+    title: "Replacement required",
+  };
 }
 
-function validationErrors(error: z.ZodError): Readonly<Record<string, string>> {
-  const errors: Record<string, string> = {};
-  for (const issue of error.issues) {
-    const field = issue.path[0];
-    if (typeof field === "string" && !(field in errors)) {
-      errors[field] = issue.message;
-    }
-  }
-  return errors;
+const UI_STATE_SESSION_INVALID: ProblemDefinition = {
+  code: "member_ui_state_session_invalid",
+  detail: "Sign in with an active workspace membership.",
+  status: 401,
+  title: "Authentication required",
+};
+const UI_STATE_ORIGIN_INVALID: ProblemDefinition = {
+  code: "member_ui_state_origin_invalid",
+  detail: "This request did not come from the configured application origin.",
+  status: 403,
+  title: "Request forbidden",
+};
+const UI_STATE_INVALID: ProblemDefinition = {
+  code: "member_ui_state_validation_failed",
+  detail: "Choose at least one recognised UI setting.",
+  status: 400,
+  title: "Invalid UI state",
+};
+const UI_STATE_FORBIDDEN: ProblemDefinition = {
+  code: "member_ui_state_forbidden",
+  detail: "The requested member UI state is not available in this workspace.",
+  status: 403,
+  title: "UI state unavailable",
+};
+const UI_STATE_NOT_LOADED: ProblemDefinition = {
+  code: "member_ui_state_unavailable",
+  detail: "Your member UI state could not be loaded.",
+  status: 503,
+  title: "UI state unavailable",
+};
+const UI_STATE_NOT_SAVED: ProblemDefinition = {
+  code: "member_ui_state_unavailable",
+  detail: "Your member UI state could not be saved.",
+  status: 503,
+  title: "UI state unavailable",
+};
+const PROFILE_NOT_LOADED: ProblemDefinition = {
+  code: "settings_unavailable",
+  detail: "Your profile could not be loaded.",
+  status: 503,
+  title: "Profile unavailable",
+};
+const PROFILE_NOT_SAVED: ProblemDefinition = {
+  code: "settings_unavailable",
+  detail: "Your profile could not be saved.",
+  status: 503,
+  title: "Profile unavailable",
+};
+const PROFILE_INVALID: ProblemDefinition = {
+  code: "validation_failed",
+  detail: "Provide a first name and valid profile values.",
+  status: 400,
+  title: "Invalid profile",
+};
+const PREFERENCES_NOT_LOADED: ProblemDefinition = {
+  code: "settings_unavailable",
+  detail: "Your preferences could not be loaded.",
+  status: 503,
+  title: "Preferences unavailable",
+};
+const PREFERENCES_NOT_SAVED: ProblemDefinition = {
+  code: "settings_unavailable",
+  detail: "Your preferences could not be saved.",
+  status: 503,
+  title: "Preferences unavailable",
+};
+const PREFERENCES_INVALID: ProblemDefinition = {
+  code: "validation_failed",
+  detail: "Review the locale, time zone, regional, and display values.",
+  status: 400,
+  title: "Invalid preferences",
+};
+const SESSIONS_NOT_LOADED: ProblemDefinition = {
+  code: "settings_unavailable",
+  detail: "Your sessions could not be loaded.",
+  status: 503,
+  title: "Sessions unavailable",
+};
+const SESSION_STALE: ProblemDefinition = {
+  code: "session_stale",
+  detail: "That session is no longer active.",
+  status: 404,
+  title: "Session unavailable",
+};
+const SESSION_FORBIDDEN: ProblemDefinition = {
+  code: "session_forbidden",
+  detail: "You can revoke only your own sessions.",
+  status: 403,
+  title: "Session forbidden",
+};
+const SESSION_NOT_REVOKED: ProblemDefinition = {
+  code: "settings_unavailable",
+  detail: "That session could not be revoked.",
+  status: 503,
+  title: "Session unavailable",
+};
+const WORKSPACE_FORBIDDEN: ProblemDefinition = {
+  code: "workspace_forbidden",
+  detail:
+    "Only an active workspace owner or admin may manage workspace settings.",
+  status: 403,
+  title: "Workspace settings forbidden",
+};
+const WORKSPACE_NOT_LOADED: ProblemDefinition = {
+  code: "settings_unavailable",
+  detail: "Workspace settings could not be loaded.",
+  status: 503,
+  title: "Workspace unavailable",
+};
+const WORKSPACE_NOT_SAVED: ProblemDefinition = {
+  code: "settings_unavailable",
+  detail: "Workspace settings could not be saved.",
+  status: 503,
+  title: "Workspace unavailable",
+};
+const WORKSPACE_INVALID: ProblemDefinition = {
+  code: "validation_failed",
+  detail: "Review the workspace identity and default values.",
+  status: 400,
+  title: "Invalid workspace settings",
+};
+const WORKSPACE_SLUG_CONFLICT: ProblemDefinition = {
+  code: "workspace_slug_conflict",
+  detail: "Choose another workspace slug.",
+  status: 409,
+  title: "Workspace slug unavailable",
+};
+const MEMBERS_FORBIDDEN: ProblemDefinition = {
+  code: "members_forbidden",
+  detail: "Only an active workspace owner or admin may manage members.",
+  status: 403,
+  title: "Members forbidden",
+};
+const MEMBERS_NOT_LOADED: ProblemDefinition = {
+  code: "settings_unavailable",
+  detail: "Workspace members could not be loaded.",
+  status: 503,
+  title: "Members unavailable",
+};
+const MEMBER_UPDATE_INVALID: ProblemDefinition = {
+  code: "validation_failed",
+  detail: "Choose a valid member role and active state.",
+  status: 400,
+  title: "Invalid member update",
+};
+const MEMBER_FORBIDDEN: ProblemDefinition = {
+  code: "member_forbidden",
+  detail: "Your role cannot apply that member change.",
+  status: 403,
+  title: "Member update forbidden",
+};
+const LAST_OWNER: ProblemDefinition = {
+  code: "last_owner",
+  detail: "At least one active workspace owner must remain.",
+  status: 409,
+  title: "Last owner protected",
+};
+const MEMBER_NOT_FOUND: ProblemDefinition = {
+  code: "member_not_found",
+  detail: "That member does not belong to this workspace.",
+  status: 404,
+  title: "Member unavailable",
+};
+const MEMBER_NOT_UPDATED: ProblemDefinition = {
+  code: "settings_unavailable",
+  detail: "That member could not be updated.",
+  status: 503,
+  title: "Member unavailable",
+};
+const SECTION_NOT_FOUND: ProblemDefinition = {
+  code: "personalization_section_not_found",
+  detail: "Use an accepted personalization section link.",
+  status: 404,
+  title: "Section unavailable",
+};
+const PERSONALIZATION_CREATE_INVALID: ProblemDefinition = {
+  code: "validation_failed",
+  detail: "Provide an accepted section, unique name, and valid order.",
+  status: 400,
+  title: "Invalid personalization option",
+};
+const PERSONALIZATION_UPDATE_INVALID: ProblemDefinition = {
+  code: "validation_failed",
+  detail: "Reload the option and provide valid values.",
+  status: 400,
+  title: "Invalid personalization option",
+};
+const PERSONALIZATION_DELETE_INVALID: ProblemDefinition = {
+  code: "validation_failed",
+  detail: "Reload the option and choose a valid replacement when required.",
+  status: 400,
+  title: "Invalid personalization deletion",
+};
+
+/** Every problem this file answers on its own, for the pinning suite. */
+export const SETTINGS_PROBLEMS: readonly ProblemDefinition[] = [
+  LAST_OWNER,
+  MEMBER_FORBIDDEN,
+  MEMBER_NOT_FOUND,
+  MEMBER_NOT_UPDATED,
+  MEMBER_UPDATE_INVALID,
+  MEMBERS_FORBIDDEN,
+  MEMBERS_NOT_LOADED,
+  PERSONALIZATION_CREATE_INVALID,
+  PERSONALIZATION_DELETE_INVALID,
+  PERSONALIZATION_UPDATE_INVALID,
+  PREFERENCES_INVALID,
+  PREFERENCES_NOT_LOADED,
+  PREFERENCES_NOT_SAVED,
+  PROFILE_INVALID,
+  PROFILE_NOT_LOADED,
+  PROFILE_NOT_SAVED,
+  SECTION_NOT_FOUND,
+  SESSION_FORBIDDEN,
+  SESSION_NOT_REVOKED,
+  SESSION_STALE,
+  SESSIONS_NOT_LOADED,
+  UI_STATE_FORBIDDEN,
+  UI_STATE_INVALID,
+  UI_STATE_NOT_LOADED,
+  UI_STATE_NOT_SAVED,
+  UI_STATE_ORIGIN_INVALID,
+  UI_STATE_SESSION_INVALID,
+  WORKSPACE_FORBIDDEN,
+  WORKSPACE_INVALID,
+  WORKSPACE_NOT_LOADED,
+  WORKSPACE_NOT_SAVED,
+  WORKSPACE_SLUG_CONFLICT,
+];
+
+/**
+ * The session token this request carries.
+ *
+ * Only the two session routes need it, and both have already required an
+ * actor, which is only resolved from a cookie that is present.
+ */
+function currentSessionToken(context: Context): string {
+  return cookieValue(context.req.header("Cookie"), SESSION_COOKIE) ?? "";
 }
 
-function cookieValue(header: string | undefined, name: string) {
-  return header?.split(";").map((value) => value.trim()).find((value) =>
-    value.startsWith(`${name}=`)
-  )?.slice(name.length + 1);
-}
-
-function requireOrigin(
-  context: Context,
-  policy: BrowserSecurityPolicy,
-): Response | undefined {
-  return context.req.header("Origin") === policy.origin ? undefined : problem(
-    context,
-    403,
-    "origin_invalid",
-    "Request forbidden",
-    "This request did not come from the configured application origin.",
-  );
-}
-
-async function actor(context: Context, services: SettingsHttpServices) {
-  const currentToken = cookieValue(
-    context.req.header("Cookie"),
-    "kinship_session",
-  );
-  if (!currentToken) return undefined;
-  const requestedWorkspaceId = context.req.header("X-Workspace-Id");
-  const resolved = await services.protectedSessions.resolve({
-    sessionToken: currentToken,
-    ...(requestedWorkspaceId ? { requestedWorkspaceId } : {}),
-  }).catch(() => undefined);
-  return resolved
-    ? {
-      actor: {
-        memberId: resolved.memberId,
-        role: resolved.role,
-        userId: resolved.userId,
-        workspaceId: resolved.workspaceId,
-      },
-      currentToken,
-    }
-    : undefined;
-}
-
-function authenticationRequired(context: Context): Response {
-  return problem(
-    context,
-    401,
-    "session_invalid",
-    "Authentication required",
-    "Sign in with an active workspace membership.",
-  );
-}
-
+/** A private read, which is never cached anywhere. */
 function privateJson(context: Context, value: unknown): Response {
   context.header("Cache-Control", "private, no-store");
   return context.json(value);
 }
 
-export function createSettingsRoutes(services: SettingsHttpServices): Hono {
-  const routes = new Hono();
-  routes.get("/api/v1/member/ui-state", async (context) => {
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "member_ui_state_session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const result = await services.memberUiState.read(resolved.actor).catch(
+export function createSettingsRoutes(
+  services: SettingsHttpServices,
+): Hono<ActorEnv> {
+  const routes = new Hono<ActorEnv>();
+  const session = sessionActor(services.protectedSessions);
+  const origin = requireMatchingOrigin(services.browserSecurity);
+
+  routes.get("/api/v1/member/ui-state", session, async (context) => {
+    const actor = await actorOf(context);
+    if (!actor) return definedProblem(context, UI_STATE_SESSION_INVALID);
+    const result = await services.memberUiState.read(actor).catch(
       () => undefined,
     );
     if (result?.status === "ready") return privateJson(context, result);
-    return result?.status === "forbidden"
-      ? problem(
-        context,
-        403,
-        "member_ui_state_forbidden",
-        "UI state unavailable",
-        "The requested member UI state is not available in this workspace.",
-      )
-      : problem(
-        context,
-        503,
-        "member_ui_state_unavailable",
-        "UI state unavailable",
-        "Your member UI state could not be loaded.",
-      );
-  });
-  routes.patch("/api/v1/member/ui-state", async (context) => {
-    if (context.req.header("Origin") !== services.browserSecurity.origin) {
-      return problem(
-        context,
-        403,
-        "member_ui_state_origin_invalid",
-        "Request forbidden",
-        "This request did not come from the configured application origin.",
-      );
-    }
-    const parsed = memberUiStateSchema.safeParse(
-      await context.req.json().catch(() => undefined),
+    return definedProblem(
+      context,
+      result?.status === "forbidden" ? UI_STATE_FORBIDDEN : UI_STATE_NOT_LOADED,
     );
-    if (!parsed.success) {
-      return problem(
-        context,
-        400,
-        "member_ui_state_validation_failed",
-        "Invalid UI state",
-        "Choose at least one recognised UI setting.",
-      );
+  });
+
+  routes.patch("/api/v1/member/ui-state", session, async (context) => {
+    if (!matchingOrigin(context, services.browserSecurity)) {
+      return definedProblem(context, UI_STATE_ORIGIN_INVALID);
     }
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "member_ui_state_session_invalid",
-        "Authentication required",
-        "Sign in with an active workspace membership.",
-      );
+    const parsed = await parseJsonBody(context, memberUiStateSchema);
+    if ("errors" in parsed) {
+      return definedProblem(context, UI_STATE_INVALID);
     }
+    const actor = await actorOf(context);
+    if (!actor) return definedProblem(context, UI_STATE_SESSION_INVALID);
     const input: MemberUiState = {
       ...(parsed.data.personWorkspaceView === undefined
         ? {}
         : { personWorkspaceView: parsed.data.personWorkspaceView }),
       ...(parsed.data.theme === undefined ? {} : { theme: parsed.data.theme }),
     };
-    const result = await services.memberUiState.save(resolved.actor, input)
+    const result = await services.memberUiState.save(actor, input)
       .catch(() => undefined);
     if (result?.status === "ready") return privateJson(context, result);
-    return result?.status === "forbidden"
-      ? problem(
-        context,
-        403,
-        "member_ui_state_forbidden",
-        "UI state unavailable",
-        "The requested member UI state is not available in this workspace.",
-      )
-      : problem(
-        context,
-        503,
-        "member_ui_state_unavailable",
-        "UI state unavailable",
-        "Your member UI state could not be saved.",
-      );
+    return definedProblem(
+      context,
+      result?.status === "forbidden" ? UI_STATE_FORBIDDEN : UI_STATE_NOT_SAVED,
+    );
   });
-  routes.get("/api/v1/settings/profile", async (context) => {
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const profile = await services.settings.getProfile(resolved.actor).catch(
+
+  routes.get("/api/v1/settings/profile", session, async (context) => {
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const profile = await services.settings.getProfile(actor).catch(
       () => undefined,
     );
     return profile
       ? privateJson(context, { profile, status: "ready" })
-      : problem(
-        context,
-        503,
-        "settings_unavailable",
-        "Profile unavailable",
-        "Your profile could not be loaded.",
-      );
+      : definedProblem(context, PROFILE_NOT_LOADED);
   });
-  routes.put("/api/v1/settings/profile", async (context) => {
-    const forbidden = requireOrigin(context, services.browserSecurity);
-    if (forbidden) return forbidden;
-    const parsed = profileSchema.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    if (!parsed.success) {
-      return problem(
-        context,
-        400,
-        "validation_failed",
-        "Invalid profile",
-        "Provide a first name and valid profile values.",
-      );
+
+  routes.put("/api/v1/settings/profile", origin, session, async (context) => {
+    const parsed = await parseJsonBody(context, profileSchema);
+    if ("errors" in parsed) {
+      return definedProblem(context, PROFILE_INVALID);
     }
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const result = await services.settings.updateProfile(
-      resolved.actor,
-      parsed.data,
-    ).catch(() => undefined);
-    return result?.status === "ready" ? privateJson(context, result) : problem(
-      context,
-      503,
-      "settings_unavailable",
-      "Profile unavailable",
-      "Your profile could not be saved.",
-    );
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.settings.updateProfile(actor, parsed.data)
+      .catch(() => undefined);
+    return result?.status === "ready"
+      ? privateJson(context, result)
+      : definedProblem(context, PROFILE_NOT_SAVED);
   });
-  routes.get("/api/v1/settings/preferences", async (context) => {
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const value = await services.settings.getPreferences(resolved.actor).catch(
+
+  routes.get("/api/v1/settings/preferences", session, async (context) => {
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const value = await services.settings.getPreferences(actor).catch(
       () => undefined,
     );
     return value
       ? privateJson(context, { preferences: value, status: "ready" })
-      : problem(
-        context,
-        503,
-        "settings_unavailable",
-        "Preferences unavailable",
-        "Your preferences could not be loaded.",
-      );
+      : definedProblem(context, PREFERENCES_NOT_LOADED);
   });
-  routes.put("/api/v1/settings/preferences", async (context) => {
-    const forbidden = requireOrigin(context, services.browserSecurity);
-    if (forbidden) return forbidden;
-    const parsed = preferencesSchema.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    if (!parsed.success) {
-      return problem(
-        context,
-        400,
-        "validation_failed",
-        "Invalid preferences",
-        "Review the locale, time zone, regional, and display values.",
-        validationErrors(parsed.error),
-      );
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const result = await services.settings.updatePreferences(
-      resolved.actor,
-      {
+
+  routes.put(
+    "/api/v1/settings/preferences",
+    origin,
+    session,
+    async (context) => {
+      const parsed = await parseJsonBody(context, preferencesSchema);
+      if ("errors" in parsed) {
+        return definedProblem(context, PREFERENCES_INVALID, parsed.errors);
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.settings.updatePreferences(actor, {
         contactNameOrder: parsed.data.contactNameOrder,
         contactSortOrder: parsed.data.contactSortOrder,
         ...(parsed.data.currencyCode
@@ -425,436 +608,231 @@ export function createSettingsRoutes(services: SettingsHttpServices): Hono {
         measurementSystem: parsed.data.measurementSystem,
         temperatureScale: parsed.data.temperatureScale,
         ...(parsed.data.timezone ? { timezone: parsed.data.timezone } : {}),
-      },
-    ).catch(() => undefined);
-    if (result?.status === "invalid-currency") {
-      return problem(
-        context,
-        400,
-        "validation_failed",
-        "Invalid preferences",
-        "Review the locale, time zone, regional, and display values.",
-        { currencyCode: "Choose a supported currency." },
-      );
-    }
-    return result?.status === "ready" ? privateJson(context, result) : problem(
-      context,
-      503,
-      "settings_unavailable",
-      "Preferences unavailable",
-      "Your preferences could not be saved.",
-    );
-  });
-  routes.get("/api/v1/settings/sessions", async (context) => {
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
+      }).catch(() => undefined);
+      const rejected = rejectedPreference(result?.status);
+      if (rejected) {
+        return definedProblem(context, PREFERENCES_INVALID, rejected);
+      }
+      return result?.status === "ready"
+        ? privateJson(context, result)
+        : definedProblem(context, PREFERENCES_NOT_SAVED);
+    },
+  );
+
+  routes.get("/api/v1/settings/sessions", session, async (context) => {
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
     const sessions = await services.settings.listSessions(
-      resolved.actor,
-      resolved.currentToken,
+      actor,
+      currentSessionToken(context),
     ).catch(() => undefined);
     return sessions
       ? privateJson(context, {
-        sessions: sessions.map((session) => ({
-          ...session,
-          createdAt: session.createdAt.toISOString(),
-          expiresAt: session.expiresAt.toISOString(),
-          lastSeenAt: session.lastSeenAt.toISOString(),
+        sessions: sessions.map((item) => ({
+          ...item,
+          createdAt: item.createdAt.toISOString(),
+          expiresAt: item.expiresAt.toISOString(),
+          lastSeenAt: item.lastSeenAt.toISOString(),
         })),
         status: "ready",
       })
-      : problem(
-        context,
-        503,
-        "settings_unavailable",
-        "Sessions unavailable",
-        "Your sessions could not be loaded.",
-      );
+      : definedProblem(context, SESSIONS_NOT_LOADED);
   });
-  routes.delete("/api/v1/settings/sessions/:sessionId", async (context) => {
-    const forbidden = requireOrigin(context, services.browserSecurity);
-    if (forbidden) return forbidden;
-    const parsedId = z.string().uuid().safeParse(
-      context.req.param("sessionId"),
-    );
-    if (!parsedId.success) {
-      return problem(
-        context,
-        404,
-        "session_stale",
-        "Session unavailable",
-        "That session is no longer active.",
-      );
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const result = await services.settings.revokeSession(
-      resolved.actor,
-      resolved.currentToken,
-      parsedId.data,
-    ).catch(() => undefined);
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "settings_unavailable",
-        "Session unavailable",
-        "That session could not be revoked.",
-      );
-    }
-    if (result.status !== "revoked") {
-      return result.status === "forbidden"
-        ? problem(
+
+  routes.delete(
+    "/api/v1/settings/sessions/:sessionId",
+    origin,
+    session,
+    async (context) => {
+      const parsedId = parseValue(sessionId, context.req.param("sessionId"));
+      if ("errors" in parsedId) {
+        return definedProblem(context, SESSION_STALE);
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.settings.revokeSession(
+        actor,
+        currentSessionToken(context),
+        parsedId.data,
+      ).catch(() => undefined);
+      if (!result) return definedProblem(context, SESSION_NOT_REVOKED);
+      if (result.status !== "revoked") {
+        return definedProblem(
           context,
-          403,
-          "session_forbidden",
-          "Session forbidden",
-          "You can revoke only your own sessions.",
-        )
-        : problem(
-          context,
-          404,
-          "session_stale",
-          "Session unavailable",
-          "That session is no longer active.",
+          result.status === "forbidden" ? SESSION_FORBIDDEN : SESSION_STALE,
         );
-    }
-    if (result.current) {
-      context.header(
-        "Set-Cookie",
-        `kinship_session=; HttpOnly; SameSite=Strict; ${
-          services.browserSecurity.secureCookie ? "Secure; " : ""
-        }Max-Age=0; Path=/`,
-      );
-    }
-    return privateJson(context, {
-      current: result.current,
-      status: "revoked",
-    });
-  });
-  routes.get("/api/v1/settings/workspace", async (context) => {
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const result = await services.settings.getWorkspace(resolved.actor).catch(
+      }
+      if (result.current) {
+        context.header(
+          "Set-Cookie",
+          setCookie(services.browserSecurity, {
+            maxAgeSeconds: 0,
+            name: SESSION_COOKIE,
+            path: "/",
+            value: "",
+          }),
+        );
+      }
+      return privateJson(context, {
+        current: result.current,
+        status: "revoked",
+      });
+    },
+  );
+
+  routes.get("/api/v1/settings/workspace", session, async (context) => {
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.settings.getWorkspace(actor).catch(
       () => undefined,
     );
     if (result === "forbidden") {
-      return problem(
-        context,
-        403,
-        "workspace_forbidden",
-        "Workspace settings forbidden",
-        "Only an active workspace owner or admin may manage workspace settings.",
-      );
+      return definedProblem(context, WORKSPACE_FORBIDDEN);
     }
     return result
       ? privateJson(context, { status: "ready", workspace: result })
-      : problem(
-        context,
-        503,
-        "settings_unavailable",
-        "Workspace unavailable",
-        "Workspace settings could not be loaded.",
-      );
+      : definedProblem(context, WORKSPACE_NOT_LOADED);
   });
-  routes.put("/api/v1/settings/workspace", async (context) => {
-    const forbidden = requireOrigin(context, services.browserSecurity);
-    if (forbidden) return forbidden;
-    const parsed = workspaceSchema.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    if (!parsed.success) {
-      return problem(
-        context,
-        400,
-        "validation_failed",
-        "Invalid workspace settings",
-        "Review the workspace identity and default values.",
-        validationErrors(parsed.error),
-      );
+
+  routes.put("/api/v1/settings/workspace", origin, session, async (context) => {
+    const parsed = await parseJsonBody(context, workspaceSchema);
+    if ("errors" in parsed) {
+      return definedProblem(context, WORKSPACE_INVALID, parsed.errors);
     }
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const result = await services.settings.updateWorkspace(
-      resolved.actor,
-      {
-        ...(parsed.data.defaultCurrencyCode
-          ? { defaultCurrencyCode: parsed.data.defaultCurrencyCode }
-          : {}),
-        defaultLocale: parsed.data.defaultLocale,
-        defaultReminderTime: parsed.data.defaultReminderTime,
-        ...(parsed.data.defaultTimezone
-          ? { defaultTimezone: parsed.data.defaultTimezone }
-          : {}),
-        name: parsed.data.name,
-        ...(parsed.data.slug ? { slug: parsed.data.slug } : {}),
-      },
-    ).catch(() => undefined);
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.settings.updateWorkspace(actor, {
+      ...(parsed.data.defaultCurrencyCode
+        ? { defaultCurrencyCode: parsed.data.defaultCurrencyCode }
+        : {}),
+      defaultLocale: parsed.data.defaultLocale,
+      defaultReminderTime: parsed.data.defaultReminderTime,
+      ...(parsed.data.defaultTimezone
+        ? { defaultTimezone: parsed.data.defaultTimezone }
+        : {}),
+      name: parsed.data.name,
+      ...(parsed.data.slug ? { slug: parsed.data.slug } : {}),
+    }).catch(() => undefined);
     if (result === "forbidden") {
-      return problem(
-        context,
-        403,
-        "workspace_forbidden",
-        "Workspace settings forbidden",
-        "Only an active workspace owner or admin may manage workspace settings.",
-      );
+      return definedProblem(context, WORKSPACE_FORBIDDEN);
     }
     if (result === "conflict") {
-      return problem(
-        context,
-        409,
-        "workspace_slug_conflict",
-        "Workspace slug unavailable",
-        "Choose another workspace slug.",
-      );
+      return definedProblem(context, WORKSPACE_SLUG_CONFLICT);
     }
-    if (result === "invalid-currency") {
-      return problem(
-        context,
-        400,
-        "validation_failed",
-        "Invalid workspace settings",
-        "Review the workspace identity and default values.",
-        { defaultCurrencyCode: "Choose a supported currency." },
-      );
+    const rejected = rejectedWorkspaceDefault(result);
+    if (rejected) {
+      return definedProblem(context, WORKSPACE_INVALID, rejected);
     }
     return result
       ? privateJson(context, { status: "ready", workspace: result })
-      : problem(
-        context,
-        503,
-        "settings_unavailable",
-        "Workspace unavailable",
-        "Workspace settings could not be saved.",
-      );
+      : definedProblem(context, WORKSPACE_NOT_SAVED);
   });
-  routes.get("/api/v1/settings/members", async (context) => {
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const result = await services.settings.listMembers(resolved.actor).catch(
+
+  routes.get("/api/v1/settings/members", session, async (context) => {
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.settings.listMembers(actor).catch(
       () => undefined,
     );
     if (result === "forbidden") {
-      return problem(
-        context,
-        403,
-        "members_forbidden",
-        "Members forbidden",
-        "Only an active workspace owner or admin may manage members.",
-      );
+      return definedProblem(context, MEMBERS_FORBIDDEN);
     }
     return result
       ? privateJson(context, { members: result, status: "ready" })
-      : problem(
-        context,
-        503,
-        "settings_unavailable",
-        "Members unavailable",
-        "Workspace members could not be loaded.",
-      );
+      : definedProblem(context, MEMBERS_NOT_LOADED);
   });
-  routes.patch("/api/v1/settings/members/:memberId", async (context) => {
-    const forbidden = requireOrigin(context, services.browserSecurity);
-    if (forbidden) return forbidden;
-    const memberId = z.string().uuid().safeParse(context.req.param("memberId"));
-    const parsed = memberSchema.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    if (!memberId.success || !parsed.success) {
-      return problem(
-        context,
-        400,
-        "validation_failed",
-        "Invalid member update",
-        "Choose a valid member role and active state.",
-      );
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const result = await services.settings.updateMember(
-      resolved.actor,
-      memberId.data,
-      parsed.data,
-    ).catch(() => undefined);
-    if (result === "forbidden") {
-      return problem(
-        context,
-        403,
-        "member_forbidden",
-        "Member update forbidden",
-        "Your role cannot apply that member change.",
-      );
-    }
-    if (result === "last-owner") {
-      return problem(
-        context,
-        409,
-        "last_owner",
-        "Last owner protected",
-        "At least one active workspace owner must remain.",
-      );
-    }
-    if (result === "not-found") {
-      return problem(
-        context,
-        404,
-        "member_not_found",
-        "Member unavailable",
-        "That member does not belong to this workspace.",
-      );
-    }
-    return result
-      ? privateJson(context, { member: result, status: "ready" })
-      : problem(
-        context,
-        503,
-        "settings_unavailable",
-        "Member unavailable",
-        "That member could not be updated.",
-      );
-  });
-  const section = (context: Context) => {
+
+  routes.patch(
+    "/api/v1/settings/members/:memberId",
+    origin,
+    session,
+    async (context) => {
+      const target = parseValue(memberId, context.req.param("memberId"));
+      const parsed = await parseJsonBody(context, memberSchema);
+      if ("errors" in target || "errors" in parsed) {
+        return definedProblem(context, MEMBER_UPDATE_INVALID);
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.settings.updateMember(
+        actor,
+        target.data,
+        parsed.data,
+      ).catch(() => undefined);
+      if (result === "forbidden") {
+        return definedProblem(context, MEMBER_FORBIDDEN);
+      }
+      if (result === "last-owner") return definedProblem(context, LAST_OWNER);
+      if (result === "not-found") {
+        return definedProblem(context, MEMBER_NOT_FOUND);
+      }
+      return result
+        ? privateJson(context, { member: result, status: "ready" })
+        : definedProblem(context, MEMBER_NOT_UPDATED);
+    },
+  );
+
+  const section = (context: Context): PersonalizationSection | undefined => {
     const value = context.req.param("section");
     return value && services.personalization.isSection(value)
       ? value
       : undefined;
   };
-  const personalizationProblem = (
+  const refusedPersonalization = (
     context: Context,
-    result: { readonly status: string; readonly referenceCount?: number },
-  ): Response => {
-    switch (result.status) {
-      case "forbidden":
-        return problem(
-          context,
-          403,
-          "personalization_forbidden",
-          "Personalization forbidden",
-          "Only an active workspace owner or admin may manage personalization.",
-        );
-      case "not-found":
-        return problem(
-          context,
-          404,
-          "personalization_not_found",
-          "Option unavailable",
-          "That option does not belong to this active workspace.",
-        );
-      case "stale":
-        return problem(
-          context,
-          409,
-          "personalization_stale",
-          "Option changed",
-          "Reload this section before applying another change.",
-        );
-      case "conflict":
-        return problem(
-          context,
-          409,
-          "personalization_duplicate",
-          "Name already used",
-          "Choose a unique name in this workspace.",
-        );
-      case "replacement-required":
-        return problem(
-          context,
-          409,
-          "personalization_replacement_required",
-          "Replacement required",
-          `${
-            result.referenceCount ?? 0
-          } references must be moved before this option can be deleted.`,
-        );
-      case "replacement-conflict":
-        return problem(
-          context,
-          409,
-          "personalization_replacement_conflict",
-          "Replacement conflicts with existing history",
-          "Some records already use both the source and replacement options. Resolve the duplicate primary or relationship history before replacing this option.",
-        );
-      case "required-default":
-        return problem(
-          context,
-          409,
-          "personalization_required_default",
-          "Required option",
-          "This required or seeded option can be disabled where supported, but cannot be deleted.",
-        );
-      case "invalid":
-        return problem(
-          context,
-          400,
-          "validation_failed",
-          "Invalid personalization change",
-          "That change is not supported by this section.",
-        );
-      default:
-        return problem(
-          context,
-          503,
-          "personalization_unavailable",
-          "Personalization unavailable",
-          "Personalization could not be updated.",
-        );
-    }
-  };
-  routes.get("/api/v1/settings/personalization/:section", async (context) => {
-    const selected = section(context);
-    if (!selected) {
-      return problem(
+    result: { readonly referenceCount?: number; readonly status: string },
+  ): Response =>
+    result.status === "replacement-required"
+      ? definedProblem(
         context,
-        404,
-        "personalization_section_not_found",
-        "Section unavailable",
-        "Use an accepted personalization section link.",
-      );
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const result = await services.personalization.list(resolved.actor, selected)
-      .catch(() => undefined);
-    return result?.status === "ready"
-      ? privateJson(context, {
-        capabilities: result.capabilities,
-        entries: result.entries,
-        readOnly: result.readOnly,
-        section: selected,
-        status: "ready",
-      })
-      : personalizationProblem(context, result ?? { status: "unavailable" });
-  });
-  routes.post("/api/v1/settings/personalization/:section", async (context) => {
-    const forbidden = requireOrigin(context, services.browserSecurity);
-    if (forbidden) return forbidden;
-    const selected = section(context);
-    const parsed = selected
-      ? personalizationCreateSchema(selected).safeParse(
-        await context.req.json().catch(() => undefined),
+        replacementRequired(result.referenceCount ?? 0),
       )
-      : undefined;
-    if (!selected || !parsed?.success) {
-      return problem(
-        context,
-        400,
-        "validation_failed",
-        "Invalid personalization option",
-        "Provide an accepted section, unique name, and valid order.",
-      );
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) return authenticationRequired(context);
-    const data = parsed.data as {
-      readonly daysBefore?: number;
-      readonly forwardLabel?: string;
-      readonly name?: string;
-      readonly reverseLabel?: string;
-      readonly sortOrder?: number;
-    };
-    const result = await services.personalization.mutate(
-      resolved.actor,
-      selected,
-      {
+      : personalizationFailure(context, result);
+
+  routes.get(
+    "/api/v1/settings/personalization/:section",
+    session,
+    async (context) => {
+      const selected = section(context);
+      if (!selected) return definedProblem(context, SECTION_NOT_FOUND);
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.personalization.list(actor, selected)
+        .catch(() => undefined);
+      return result?.status === "ready"
+        ? privateJson(context, {
+          capabilities: result.capabilities,
+          entries: result.entries,
+          readOnly: result.readOnly,
+          section: selected,
+          status: "ready",
+        })
+        : refusedPersonalization(context, result ?? { status: "unavailable" });
+    },
+  );
+
+  routes.post(
+    "/api/v1/settings/personalization/:section",
+    origin,
+    session,
+    async (context) => {
+      const selected = section(context);
+      const parsed = selected
+        ? await parseJsonBody(context, personalizationCreateSchema(selected))
+        : undefined;
+      if (!selected || !parsed || "errors" in parsed) {
+        return definedProblem(context, PERSONALIZATION_CREATE_INVALID);
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const data = parsed.data as {
+        readonly daysBefore?: number;
+        readonly forwardLabel?: string;
+        readonly name?: string;
+        readonly reverseLabel?: string;
+        readonly sortOrder?: number;
+      };
+      const result = await services.personalization.mutate(actor, selected, {
         action: "create",
         ...(data.daysBefore === undefined
           ? {}
@@ -867,35 +845,28 @@ export function createSettingsRoutes(services: SettingsHttpServices): Hono {
           ? {}
           : { reverseLabel: data.reverseLabel }),
         sortOrder: data.sortOrder ?? 0,
-      },
-    ).catch(() => undefined);
-    return result?.status === "saved"
-      ? privateJson(context, result)
-      : personalizationProblem(context, result ?? { status: "unavailable" });
-  });
+      }).catch(() => undefined);
+      return result?.status === "saved"
+        ? privateJson(context, result)
+        : refusedPersonalization(context, result ?? { status: "unavailable" });
+    },
+  );
+
   routes.patch(
     "/api/v1/settings/personalization/:section/:id",
+    origin,
+    session,
     async (context) => {
-      const forbidden = requireOrigin(context, services.browserSecurity);
-      if (forbidden) return forbidden;
       const selected = section(context);
-      const id = z.string().uuid().safeParse(context.req.param("id"));
+      const id = parseValue(personalizationId, context.req.param("id"));
       const parsed = selected
-        ? personalizationUpdateSchema(selected).safeParse(
-          await context.req.json().catch(() => undefined),
-        )
+        ? await parseJsonBody(context, personalizationUpdateSchema(selected))
         : undefined;
-      if (!selected || !id.success || !parsed?.success) {
-        return problem(
-          context,
-          400,
-          "validation_failed",
-          "Invalid personalization option",
-          "Reload the option and provide valid values.",
-        );
+      if (!selected || "errors" in id || !parsed || "errors" in parsed) {
+        return definedProblem(context, PERSONALIZATION_UPDATE_INVALID);
       }
-      const resolved = await actor(context, services);
-      if (!resolved) return authenticationRequired(context);
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
       const data = parsed.data as {
         readonly daysBefore?: number;
         readonly expectedUpdatedAt: string;
@@ -906,75 +877,82 @@ export function createSettingsRoutes(services: SettingsHttpServices): Hono {
         readonly reverseLabel?: string;
         readonly sortOrder?: number;
       };
-      const result = await services.personalization.mutate(
-        resolved.actor,
-        selected,
-        {
-          action: "update",
-          expectedUpdatedAt: data.expectedUpdatedAt,
-          id: id.data,
-          ...(data.isActive === undefined ? {} : { isActive: data.isActive }),
-          ...(data.isDefault === undefined
-            ? {}
-            : { isDefault: data.isDefault }),
-          ...(data.name === undefined ? {} : { name: data.name }),
-          ...(data.daysBefore === undefined
-            ? {}
-            : { daysBefore: data.daysBefore }),
-          ...(data.forwardLabel === undefined
-            ? {}
-            : { forwardLabel: data.forwardLabel }),
-          ...(data.reverseLabel === undefined
-            ? {}
-            : { reverseLabel: data.reverseLabel }),
-          ...(data.sortOrder === undefined
-            ? {}
-            : { sortOrder: data.sortOrder }),
-        },
-      ).catch(() => undefined);
+      const result = await services.personalization.mutate(actor, selected, {
+        action: "update",
+        expectedUpdatedAt: data.expectedUpdatedAt,
+        id: id.data,
+        ...(data.isActive === undefined ? {} : { isActive: data.isActive }),
+        ...(data.isDefault === undefined ? {} : { isDefault: data.isDefault }),
+        ...(data.name === undefined ? {} : { name: data.name }),
+        ...(data.daysBefore === undefined
+          ? {}
+          : { daysBefore: data.daysBefore }),
+        ...(data.forwardLabel === undefined
+          ? {}
+          : { forwardLabel: data.forwardLabel }),
+        ...(data.reverseLabel === undefined
+          ? {}
+          : { reverseLabel: data.reverseLabel }),
+        ...(data.sortOrder === undefined ? {} : { sortOrder: data.sortOrder }),
+      }).catch(() => undefined);
       return result?.status === "saved"
         ? privateJson(context, result)
-        : personalizationProblem(context, result ?? { status: "unavailable" });
+        : refusedPersonalization(context, result ?? { status: "unavailable" });
     },
   );
+
   routes.delete(
     "/api/v1/settings/personalization/:section/:id",
+    origin,
+    session,
     async (context) => {
-      const forbidden = requireOrigin(context, services.browserSecurity);
-      if (forbidden) return forbidden;
       const selected = section(context);
-      const id = z.string().uuid().safeParse(context.req.param("id"));
-      const parsed = personalizationDeleteSchema.safeParse({
+      const id = parseValue(personalizationId, context.req.param("id"));
+      const parsed = parseValue(personalizationDeleteSchema, {
         expectedUpdatedAt: context.req.query("expectedUpdatedAt"),
         replacementId: context.req.query("replacementId"),
       });
-      if (!selected || !id.success || !parsed.success) {
-        return problem(
-          context,
-          400,
-          "validation_failed",
-          "Invalid personalization deletion",
-          "Reload the option and choose a valid replacement when required.",
-        );
+      if (!selected || "errors" in id || "errors" in parsed) {
+        return definedProblem(context, PERSONALIZATION_DELETE_INVALID);
       }
-      const resolved = await actor(context, services);
-      if (!resolved) return authenticationRequired(context);
-      const result = await services.personalization.mutate(
-        resolved.actor,
-        selected,
-        {
-          action: "delete",
-          expectedUpdatedAt: parsed.data.expectedUpdatedAt,
-          id: id.data,
-          ...(parsed.data.replacementId
-            ? { replacementId: parsed.data.replacementId }
-            : {}),
-        },
-      ).catch(() => undefined);
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.personalization.mutate(actor, selected, {
+        action: "delete",
+        expectedUpdatedAt: parsed.data.expectedUpdatedAt,
+        id: id.data,
+        ...(parsed.data.replacementId
+          ? { replacementId: parsed.data.replacementId }
+          : {}),
+      }).catch(() => undefined);
       return result?.status === "deleted"
         ? privateJson(context, result)
-        : personalizationProblem(context, result ?? { status: "unavailable" });
+        : refusedPersonalization(context, result ?? { status: "unavailable" });
     },
   );
   return routes;
+}
+
+/** The field a refused preferences save names, if it named one. */
+function rejectedPreference(
+  status: string | undefined,
+): ProblemErrors | undefined {
+  if (status === "invalid-currency") {
+    return { currencyCode: INVALID_CURRENCY_MESSAGE };
+  }
+  return status === "invalid-timezone"
+    ? { timezone: INVALID_TIMEZONE_MESSAGE }
+    : undefined;
+}
+
+/** The same, for the workspace defaults. */
+function rejectedWorkspaceDefault(
+  result: unknown,
+): ProblemErrors | undefined {
+  if (result === "invalid-currency") {
+    return { defaultCurrencyCode: INVALID_CURRENCY_MESSAGE };
+  }
+  return result === "invalid-timezone"
+    ? { defaultTimezone: INVALID_TIMEZONE_MESSAGE }
+    : undefined;
 }

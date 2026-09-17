@@ -1,3 +1,17 @@
+/**
+ * CardDAV and CalDAV subscriptions over HTTP.
+ *
+ * Four routes over one settings page. The problem responder, the session
+ * cookie, the origin comparison, and the kernel status map came from `http/`
+ * (GAP-019, GAP-020).
+ *
+ * Every refusal here is titled "DAV unavailable", including the ones that are
+ * not outages at all: the page shows one section, and a caller who is told
+ * their URL is wrong has already been told which section is talking. The
+ * origin refusal keeps its own shorter sentence rather than the kit's, because
+ * it is the sentence this page's tests and its readers already have.
+ */
+
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import {
@@ -6,6 +20,11 @@ import {
 } from "../../packages/backend/modules/integrations/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
+import { failureResponder, type FailureTable } from "./http/failures.ts";
+import { matchingOrigin } from "./http/origin.ts";
+import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { type ActorEnv, requireActor, sessionActor } from "./http/session.ts";
+import { parseJsonBody, parseValue } from "./http/validate.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface IntegrationHttpServices {
@@ -14,6 +33,7 @@ export interface IntegrationHttpServices {
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
 }
 
+const uuid = z.uuid();
 const configureSchema = z.object({
   name: z.string().trim().min(1).max(100),
   password: z.string().min(1).max(4096),
@@ -24,243 +44,188 @@ const configureSchema = z.object({
   username: z.string().trim().max(255).optional(),
 }).strict();
 
-function problem(
-  context: Context,
-  status: 400 | 401 | 403 | 404 | 409 | 503,
-  code: string,
-  detail: string,
-) {
-  return context.body(
-    JSON.stringify({
-      code,
-      detail,
-      status,
-      title: status === 401 ? "Authentication required" : "DAV unavailable",
-      type: `https://kinship.test/problems/${code}`,
-    }),
-    status,
-    {
-      "Cache-Control": "no-store",
-      "Content-Type": "application/problem+json",
+const INTEGRATIONS_NOT_LOADED: ProblemDefinition = {
+  code: "integrations_unavailable",
+  detail: "Integrations could not be loaded.",
+  status: 503,
+  title: "DAV unavailable",
+};
+
+/** What a refused DAV read or write says. */
+export const INTEGRATION_FAILURES: FailureTable = {
+  fallback: INTEGRATIONS_NOT_LOADED,
+  statuses: {
+    busy: {
+      code: "integration_busy",
+      detail: "Synchronization is already running. Retry after it finishes.",
+      status: 409,
+      title: "DAV unavailable",
     },
-  );
+    forbidden: {
+      code: "integrations_forbidden",
+      detail:
+        "Only an active workspace owner or administrator may manage integrations.",
+      title: "DAV unavailable",
+    },
+    invalid: {
+      code: "integration_invalid",
+      detail: "Use a public HTTPS DAV URL and valid credentials.",
+      status: 400,
+      title: "DAV unavailable",
+    },
+    "not-found": {
+      code: "integration_not_found",
+      detail: "That integration does not exist in this workspace.",
+      title: "DAV unavailable",
+    },
+  },
+};
+
+const failure = failureResponder(INTEGRATION_FAILURES);
+
+const DAV_ORIGIN_INVALID: ProblemDefinition = {
+  code: "origin_invalid",
+  detail: "Request origin is not allowed.",
+  status: 403,
+  title: "DAV unavailable",
+};
+const INTEGRATION_ID_INVALID: ProblemDefinition = {
+  code: "integration_not_found",
+  detail: "That integration does not exist.",
+  status: 404,
+  title: "DAV unavailable",
+};
+const INTEGRATION_REQUEST_INVALID: ProblemDefinition = {
+  code: "integration_invalid",
+  detail: "Enter a name, public HTTPS URL, username, and secret.",
+  status: 400,
+  title: "DAV unavailable",
+};
+const INTEGRATION_NOT_CONFIGURED: ProblemDefinition = {
+  code: "integrations_unavailable",
+  detail: "The integration could not be configured.",
+  status: 503,
+  title: "DAV unavailable",
+};
+const SYNCHRONIZATION_UNFINISHED: ProblemDefinition = {
+  code: "integrations_unavailable",
+  detail: "Synchronization could not finish.",
+  status: 503,
+  title: "DAV unavailable",
+};
+const INTEGRATION_NOT_DISABLED: ProblemDefinition = {
+  code: "integrations_unavailable",
+  detail: "The integration could not be disabled.",
+  status: 503,
+  title: "DAV unavailable",
+};
+
+/** The 403 a foreign-origin write answers with, in this page's words. */
+function rejectDavOrigin(
+  context: Context,
+  policy: BrowserSecurityPolicy,
+): Response | undefined {
+  return matchingOrigin(context, policy)
+    ? undefined
+    : definedProblem(context, DAV_ORIGIN_INVALID);
 }
 
-function cookie(header: string | undefined): string | undefined {
-  return header?.split(";").map((item) => item.trim()).find((item) =>
-    item.startsWith("kinship_session=")
-  )?.slice("kinship_session=".length);
-}
+/** Every problem this file answers on its own, for the pinning suite. */
+export const INTEGRATION_PROBLEMS: readonly ProblemDefinition[] = [
+  DAV_ORIGIN_INVALID,
+  INTEGRATION_ID_INVALID,
+  INTEGRATION_NOT_CONFIGURED,
+  INTEGRATION_NOT_DISABLED,
+  INTEGRATION_REQUEST_INVALID,
+  INTEGRATIONS_NOT_LOADED,
+  SYNCHRONIZATION_UNFINISHED,
+];
 
-async function actor(context: Context, services: IntegrationHttpServices) {
-  const token = cookie(context.req.header("Cookie"));
-  if (!token) return undefined;
-  const requestedWorkspaceId = context.req.header("X-Workspace-Id");
-  return await services.protectedSessions.resolve({
-    sessionToken: token,
-    ...(requestedWorkspaceId ? { requestedWorkspaceId } : {}),
-  }).catch(() => undefined);
-}
+export function createIntegrationRoutes(
+  services: IntegrationHttpServices,
+): Hono<ActorEnv> {
+  const routes = new Hono<ActorEnv>();
+  const session = sessionActor(services.protectedSessions);
 
-function origin(context: Context, services: IntegrationHttpServices) {
-  return context.req.header("Origin") === services.browserSecurity.origin;
-}
-
-function failure(context: Context, status: string) {
-  if (status === "forbidden") {
-    return problem(
-      context,
-      403,
-      "integrations_forbidden",
-      "Only an active workspace owner or administrator may manage integrations.",
-    );
-  }
-  if (status === "not-found") {
-    return problem(
-      context,
-      404,
-      "integration_not_found",
-      "That integration does not exist in this workspace.",
-    );
-  }
-  if (status === "busy") {
-    return problem(
-      context,
-      409,
-      "integration_busy",
-      "Synchronization is already running. Retry after it finishes.",
-    );
-  }
-  if (status === "invalid") {
-    return problem(
-      context,
-      400,
-      "integration_invalid",
-      "Use a public HTTPS DAV URL and valid credentials.",
-    );
-  }
-  return undefined;
-}
-
-export function createIntegrationRoutes(services: IntegrationHttpServices) {
-  const routes = new Hono();
-  routes.get("/api/v1/settings/integrations/dav", async (context) => {
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const result = await services.dav.list(resolved).catch(() => undefined);
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "integrations_unavailable",
-        "Integrations could not be loaded.",
-      );
-    }
-    const rejected = failure(context, result.status);
-    if (rejected) return rejected;
+  routes.get("/api/v1/settings/integrations/dav", session, async (context) => {
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.dav.list(actor).catch(() => undefined);
+    if (!result) return definedProblem(context, INTEGRATIONS_NOT_LOADED);
+    if (result.status !== "ready") return failure(context, result);
     context.header("Cache-Control", "private, no-store");
     return context.json(result);
   });
-  routes.post("/api/v1/settings/integrations/dav", async (context) => {
-    if (!origin(context, services)) {
-      return problem(
-        context,
-        403,
-        "origin_invalid",
-        "Request origin is not allowed.",
-      );
+
+  routes.post("/api/v1/settings/integrations/dav", session, async (context) => {
+    const refused = rejectDavOrigin(context, services.browserSecurity);
+    if (refused) return refused;
+    const body = await parseJsonBody(context, configureSchema);
+    if ("errors" in body) {
+      return definedProblem(context, INTEGRATION_REQUEST_INVALID);
     }
-    const parsed = configureSchema.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    if (!parsed.success) {
-      return problem(
-        context,
-        400,
-        "integration_invalid",
-        "Enter a name, public HTTPS URL, username, and secret.",
-      );
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const result = await services.dav.configure(resolved, {
-      name: parsed.data.name,
-      password: parsed.data.password,
-      remoteUrl: parsed.data.remoteUrl,
-      ...(parsed.data.username ? { username: parsed.data.username } : {}),
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.dav.configure(actor, {
+      name: body.data.name,
+      password: body.data.password,
+      remoteUrl: body.data.remoteUrl,
+      ...(body.data.username ? { username: body.data.username } : {}),
     }).catch(() => undefined);
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "integrations_unavailable",
-        "The integration could not be configured.",
-      );
-    }
-    const rejected = failure(context, result.status);
-    if (rejected) return rejected;
+    if (!result) return definedProblem(context, INTEGRATION_NOT_CONFIGURED);
+    if (result.status !== "configured") return failure(context, result);
     context.header("Cache-Control", "private, no-store");
     return context.json(result, 201);
   });
-  routes.post("/api/v1/settings/integrations/dav/:id/sync", async (context) => {
-    if (!origin(context, services)) {
-      return problem(
-        context,
-        403,
-        "origin_invalid",
-        "Request origin is not allowed.",
+
+  routes.post(
+    "/api/v1/settings/integrations/dav/:id/sync",
+    session,
+    async (context) => {
+      const refused = rejectDavOrigin(context, services.browserSecurity);
+      if (refused) return refused;
+      const id = parseValue(uuid, context.req.param("id"));
+      if ("errors" in id) {
+        return definedProblem(context, INTEGRATION_ID_INVALID);
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.dav.synchronize(actor, id.data).catch(() =>
+        undefined
       );
-    }
-    const id = z.uuid().safeParse(context.req.param("id"));
-    if (!id.success) {
-      return problem(
-        context,
-        404,
-        "integration_not_found",
-        "That integration does not exist.",
+      if (!result) return definedProblem(context, SYNCHRONIZATION_UNFINISHED);
+      // A run that reached the remote reports how it went in its body, at 200:
+      // an authentication failure, a token conflict, and a partial pass are
+      // states of the subscription, not refusals of this request.
+      if (
+        result.status === "busy" || result.status === "forbidden" ||
+        result.status === "not-found"
+      ) return failure(context, result);
+      context.header("Cache-Control", "private, no-store");
+      return context.json(result);
+    },
+  );
+
+  routes.delete(
+    "/api/v1/settings/integrations/dav/:id",
+    session,
+    async (context) => {
+      const refused = rejectDavOrigin(context, services.browserSecurity);
+      if (refused) return refused;
+      const id = parseValue(uuid, context.req.param("id"));
+      if ("errors" in id) {
+        return definedProblem(context, INTEGRATION_ID_INVALID);
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.dav.disable(actor, id.data).catch(() =>
+        undefined
       );
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const result = await services.dav.synchronize(resolved, id.data).catch(() =>
-      undefined
-    );
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "integrations_unavailable",
-        "Synchronization could not finish.",
-      );
-    }
-    const rejected = failure(context, result.status);
-    if (rejected) return rejected;
-    context.header("Cache-Control", "private, no-store");
-    return context.json(result);
-  });
-  routes.delete("/api/v1/settings/integrations/dav/:id", async (context) => {
-    if (!origin(context, services)) {
-      return problem(
-        context,
-        403,
-        "origin_invalid",
-        "Request origin is not allowed.",
-      );
-    }
-    const id = z.uuid().safeParse(context.req.param("id"));
-    if (!id.success) {
-      return problem(
-        context,
-        404,
-        "integration_not_found",
-        "That integration does not exist.",
-      );
-    }
-    const resolved = await actor(context, services);
-    if (!resolved) {
-      return problem(
-        context,
-        401,
-        "session_invalid",
-        "Sign in with an active workspace membership.",
-      );
-    }
-    const result = await services.dav.disable(resolved, id.data).catch(() =>
-      undefined
-    );
-    if (!result) {
-      return problem(
-        context,
-        503,
-        "integrations_unavailable",
-        "The integration could not be disabled.",
-      );
-    }
-    const rejected = failure(context, result.status);
-    if (rejected) return rejected;
-    context.header("Cache-Control", "private, no-store");
-    return context.json(result);
-  });
+      if (!result) return definedProblem(context, INTEGRATION_NOT_DISABLED);
+      if (result.status !== "disabled") return failure(context, result);
+      context.header("Cache-Control", "private, no-store");
+      return context.json(result);
+    },
+  );
   return routes;
 }
