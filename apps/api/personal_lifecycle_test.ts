@@ -3,10 +3,7 @@ import {
   createPersonalLifecycleRoutes,
   type PersonalLifecycleHttpServices,
 } from "./personal_lifecycle.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
 
 function fixture(overrides: {
   readonly deleteResult?: unknown;
@@ -85,7 +82,7 @@ Deno.test("AUTH-005 preview returns private current impact", async () => {
     { headers },
   );
   const body = await response.json();
-  assert(response.status === 200, "preview status");
+  assertStatus(response, 200, "preview status");
   assert(
     response.headers.get("Cache-Control") === "private, no-store",
     "private cache",
@@ -111,7 +108,7 @@ Deno.test("AUTH-005 leave returns next workspace without clearing a valid sessio
     },
   );
   const body = await response.json();
-  assert(response.status === 200, "leave status");
+  assertStatus(response, 200, "leave status");
   assert(body.next === "/app", "next route");
   assert(body.nextWorkspaceId.endsWith("102"), "next workspace");
   assert(response.headers.get("Set-Cookie") === null, "session remains active");
@@ -125,7 +122,7 @@ Deno.test("AUTH-005 last membership leave and identity deletion expire the sessi
     headers,
     body: JSON.stringify({ confirmation: "LEAVE Family", password: "correct" }),
   });
-  assert(leave.status === 200, "signed-out leave status");
+  assertStatus(leave, 200, "signed-out leave status");
   assert(
     leave.headers.get("Set-Cookie")?.includes("Max-Age=0"),
     "leave cookie expiry",
@@ -158,7 +155,7 @@ Deno.test("AUTH-005 rejects missing session, origin, and malformed confirmation"
   const unauthenticated = await app.request(
     "/api/v1/settings/personal-lifecycle",
   );
-  assert(unauthenticated.status === 401, "missing session");
+  assertStatus(unauthenticated, 401, "missing session");
   const crossOrigin = await app.request(
     "/api/v1/settings/personal-lifecycle/leave",
     {
@@ -167,12 +164,12 @@ Deno.test("AUTH-005 rejects missing session, origin, and malformed confirmation"
       body: JSON.stringify({ confirmation: "LEAVE Family" }),
     },
   );
-  assert(crossOrigin.status === 403, "cross origin");
+  assertStatus(crossOrigin, 403, "cross origin");
   const invalid = await app.request(
     "/api/v1/settings/personal-lifecycle/leave",
     { method: "POST", headers, body: "{}" },
   );
-  assert(invalid.status === 400, "invalid confirmation");
+  assertStatus(invalid, 400, "invalid confirmation");
 });
 
 Deno.test("AUTH-005 maps reauthentication and final-owner safeguards", async () => {
@@ -183,7 +180,7 @@ Deno.test("AUTH-005 maps reauthentication and final-owner safeguards", async () 
     headers,
     body: JSON.stringify({ confirmation: "LEAVE Family", password: "wrong" }),
   });
-  assert(leaveReauth.status === 403, "leave reauth status");
+  assertStatus(leaveReauth, 403, "leave reauth status");
 
   const reauth = await fixture({
     deleteResult: { status: "reauthentication-required" },
@@ -195,7 +192,7 @@ Deno.test("AUTH-005 maps reauthentication and final-owner safeguards", async () 
       password: "wrong",
     }),
   });
-  assert(reauth.status === 403, "reauth status");
+  assertStatus(reauth, 403, "reauth status");
 
   const finalOwner = await fixture({
     leaveResult: {
@@ -211,7 +208,7 @@ Deno.test("AUTH-005 maps reauthentication and final-owner safeguards", async () 
     body: JSON.stringify({ confirmation: "LEAVE Family", password: "correct" }),
   });
   const problem = await finalOwner.json();
-  assert(finalOwner.status === 409, "final owner status");
+  assertStatus(finalOwner, 409, "final owner status");
   assert(problem.blockingWorkspaces[0].name === "Family", "blocking workspace");
   assert(problem.detail.includes("Transfer ownership"), "truthful alternative");
 });
@@ -225,7 +222,7 @@ Deno.test("AUTH-005 exposes retryable bounded step-up rate limits", async () => 
     body: JSON.stringify({ confirmation: "LEAVE Family", password: "wrong" }),
   });
   const problem = await limited.json();
-  assert(limited.status === 429, "rate-limit status");
+  assertStatus(limited, 429, "rate-limit status");
   assert(limited.headers.get("Retry-After") === "47", "retry interval");
   assert(problem.code === "authentication_rate_limited", "bounded policy code");
 });

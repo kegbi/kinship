@@ -6,10 +6,8 @@ import {
   RegistrationError,
   type RegistrationTransaction,
 } from "./public.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
 Deno.test("verification delivery retries preserve links and bound provider work", async () => {
   const { deps, effects } = fakeDependencies("mail");
@@ -49,7 +47,7 @@ function fakeDependencies(failAt?: string): {
   return {
     effects,
     deps: {
-      clock: { now: () => new Date("2026-08-14T12:00:00.000Z") },
+      clock: fixedClock("2026-08-14T12:00:00.000Z"),
       ids: {
         create: () =>
           `00000000-0000-4000-8000-${

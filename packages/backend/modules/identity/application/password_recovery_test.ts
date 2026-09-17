@@ -1,8 +1,6 @@
 import { createPasswordRecovery } from "./password_recovery.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../../testing/assert.ts";
+import { fixedClock } from "../../../testing/fakes.ts";
 
 function recoveryFixture(options: {
   readonly deliveryEmail?: string;
@@ -13,7 +11,7 @@ function recoveryFixture(options: {
     releaseWindow = resolve;
   });
   const recovery = createPasswordRecovery({
-    clock: { now: () => new Date("2026-08-14T12:00:00.000Z") },
+    clock: fixedClock("2026-08-14T12:00:00.000Z"),
     deliveryWindowMilliseconds: 750,
     delay: () => window,
     hasher: {

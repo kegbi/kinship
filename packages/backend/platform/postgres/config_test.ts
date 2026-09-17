@@ -1,8 +1,5 @@
 import { buildPostgresUrl, resolveDatabaseUrl } from "./config.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
 
 function environment(
   values: Readonly<Record<string, string>>,

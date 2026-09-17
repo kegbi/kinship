@@ -1,16 +1,13 @@
 import type { DavSyncManagement } from "../../packages/backend/modules/integrations/public.ts";
 import { createIntegrationRoutes } from "./integrations.ts";
+import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
+import * as fixtures from "../../packages/backend/testing/fixtures.ts";
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
-
-const actor = {
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "admin" as const,
-  userId: "00000000-0000-4000-8000-000000000003",
-  workspaceId: "00000000-0000-4000-8000-000000000001",
-};
+const actor = fixtures.actor({
+  role: "admin",
+  userId: fixtures.uuid(3),
+  workspaceId: fixtures.uuid(1),
+});
 const id = "00000000-0000-4000-8000-000000000010";
 const subscription = {
   id,
@@ -75,7 +72,7 @@ Deno.test("DAV HTTP surface configures, lists, syncs, and disables without expos
     headers,
     method: "POST",
   });
-  assert(configured.status === 201, "expected configured response");
+  assertStatus(configured, 201, "expected configured response");
   assert(
     !(await configured.text()).includes("remote-secret"),
     "secret must not be returned",
@@ -83,17 +80,17 @@ Deno.test("DAV HTTP surface configures, lists, syncs, and disables without expos
   const listed = await routes.request("/api/v1/settings/integrations/dav", {
     headers,
   });
-  assert(listed.status === 200, "expected list response");
+  assertStatus(listed, 200, "expected list response");
   const synced = await routes.request(
     `/api/v1/settings/integrations/dav/${id}/sync`,
     { headers, method: "POST" },
   );
-  assert(synced.status === 200, "expected sync response");
+  assertStatus(synced, 200, "expected sync response");
   const disabled = await routes.request(
     `/api/v1/settings/integrations/dav/${id}`,
     { headers, method: "DELETE" },
   );
-  assert(disabled.status === 200, "expected disable response");
+  assertStatus(disabled, 200, "expected disable response");
 });
 
 Deno.test("DAV HTTP mutations reject another origin and concurrent sync", async () => {
@@ -105,12 +102,12 @@ Deno.test("DAV HTTP mutations reject another origin and concurrent sync", async 
     headers: { ...headers, Origin: "https://evil.example" },
     method: "POST",
   });
-  assert(rejected.status === 403, "expected origin rejection");
+  assertStatus(rejected, 403, "expected origin rejection");
   const busy = await routes.request(
     `/api/v1/settings/integrations/dav/${id}/sync`,
     { headers, method: "POST" },
   );
-  assert(busy.status === 409, "expected serialized sync conflict");
+  assertStatus(busy, 409, "expected serialized sync conflict");
 });
 
 Deno.test("DAV HTTP maps authentication, validation, authorization, lookup, and outages", async () => {

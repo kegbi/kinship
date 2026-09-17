@@ -4,24 +4,15 @@ import {
   type PersonalLifecycleMembership,
   type PersonalLifecycleTransaction,
 } from "./application/personal_lifecycle.ts";
+import { assertEquals } from "../../testing/assert.ts";
+import * as fixtures from "../../testing/fixtures.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
-function assertEquals<T>(actual: T, expected: T, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, got ${
-        JSON.stringify(actual)
-      }`,
-    );
-  }
-}
-
-const actor = {
-  memberId: "00000000-0000-4000-8000-000000000011",
-  role: "owner" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000101",
-  workspaceName: "Family",
-};
+const actor = fixtures.workspaceActor({
+  memberId: fixtures.uuid(11),
+  role: "owner",
+  workspaceId: fixtures.uuid(101),
+});
 const request = { clientAddress: "203.0.113.10" };
 const current: PersonalLifecycleMembership = {
   finalOwner: false,
@@ -76,7 +67,7 @@ function fixture(options: {
         return Promise.resolve(crypto.randomUUID());
       },
     },
-    clock: { now: () => new Date("2026-08-23T12:00:00.000Z") },
+    clock: fixedClock("2026-08-23T12:00:00.000Z"),
     identity: {
       deleteIdentity() {
         effects.push("identity-delete");

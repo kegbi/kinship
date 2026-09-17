@@ -1,4 +1,5 @@
 import { createGiftRoutes } from "./gifts.ts";
+import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
 
 const id = "10000000-0000-4000-8000-000000000001";
 const actor = {
@@ -7,10 +8,6 @@ const actor = {
   userId: id,
   workspaceId: id,
 };
-
-function assert(condition: boolean, message: string) {
-  if (!condition) throw new Error(message);
-}
 
 Deno.test("GIFTS-001 HTTP creates an unknown-amount idea and rejects an invalid transition", async () => {
   const calls: string[] = [];
@@ -48,7 +45,7 @@ Deno.test("GIFTS-001 HTTP creates an unknown-amount idea and rejects an invalid 
     },
     method: "POST",
   });
-  assert(created.status === 201, `expected 201, got ${created.status}`);
+  assertStatus(created, 201);
   assert(calls.length === 1, "expected create call");
   const changed = await app.request(`/api/v1/people/${id}/gifts/${id}/status`, {
     body: JSON.stringify({ status: "idea" }),
@@ -59,7 +56,7 @@ Deno.test("GIFTS-001 HTTP creates an unknown-amount idea and rejects an invalid 
     },
     method: "PATCH",
   });
-  assert(changed.status === 409, `expected 409, got ${changed.status}`);
+  assertStatus(changed, 409);
 });
 
 Deno.test("GIFTS-001 HTTP lists gifts and debts without an Origin header", async () => {
@@ -79,7 +76,7 @@ Deno.test("GIFTS-001 HTTP lists gifts and debts without an Origin header", async
   const response = await app.request(`/api/v1/people/${id}/gifts`, {
     headers: { Cookie: "kinship_session=token" },
   });
-  assert(response.status === 200, `expected 200, got ${response.status}`);
+  assertStatus(response, 200);
   assert(
     response.headers.get("Cache-Control") === "private, no-store",
     "expected private no-store",

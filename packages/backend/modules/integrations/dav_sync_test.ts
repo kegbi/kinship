@@ -5,19 +5,15 @@ import {
   type DavRepository,
   type DavSubscription,
 } from "./application/dav_sync.ts";
+import { assertEquals } from "../../testing/assert.ts";
+import * as fixtures from "../../testing/fixtures.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
-function assertEquals(actual: unknown, expected: unknown): void {
-  const left = JSON.stringify(actual);
-  const right = JSON.stringify(expected);
-  if (left !== right) throw new Error(`Expected ${right}, received ${left}`);
-}
-
-const actor = {
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "admin" as const,
-  userId: "00000000-0000-4000-8000-000000000003",
-  workspaceId: "00000000-0000-4000-8000-000000000001",
-};
+const actor = fixtures.actor({
+  role: "admin",
+  userId: fixtures.uuid(3),
+  workspaceId: fixtures.uuid(1),
+});
 
 function fixture(overrides: {
   readonly changes?:
@@ -106,7 +102,7 @@ function fixture(overrides: {
     },
   };
   const management = createDavSyncManagement({
-    clock: { now: () => new Date("2026-08-24T12:00:00.000Z") },
+    clock: fixedClock("2026-08-24T12:00:00.000Z"),
     ids: {
       create: () => "00000000-0000-4000-8000-000000000099",
       fromRemote: () => "00000000-0000-4000-8000-000000000098",
@@ -198,7 +194,7 @@ Deno.test("DAV sync retains the prior token on partial failure and disables with
   if (created.status !== "configured") throw new Error("fixture setup failed");
 
   const failing = createDavSyncManagement({
-    clock: { now: () => new Date("2026-08-24T12:00:00.000Z") },
+    clock: fixedClock("2026-08-24T12:00:00.000Z"),
     ids: {
       create: () => crypto.randomUUID(),
       fromRemote: () => crypto.randomUUID(),

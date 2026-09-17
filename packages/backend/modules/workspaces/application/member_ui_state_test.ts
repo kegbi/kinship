@@ -2,17 +2,10 @@ import {
   createMemberUiStateManagement,
   type MemberUiStateRepository,
 } from "./member_ui_state.ts";
+import { assert } from "../../../testing/assert.ts";
+import * as fixtures from "../../../testing/fixtures.ts";
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
-
-const actor = {
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "member" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-};
+const actor = fixtures.actor();
 const transaction = { opaque: {} };
 
 function management(repository: MemberUiStateRepository) {

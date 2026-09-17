@@ -8,10 +8,7 @@ import {
   type QueryResult,
 } from "kysely";
 import { workspaceLifecycleImpact } from "./lifecycle_impact.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
 
 const WORKSPACE = "00000000-0000-4000-8000-000000000001";
 

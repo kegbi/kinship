@@ -3,24 +3,15 @@ import {
   createRelationshipRoutes,
   type RelationshipHttpServices,
 } from "./relationships.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
+import * as fixtures from "../../packages/backend/testing/fixtures.ts";
 
 const sourceId = "00000000-0000-4000-8000-000000000100";
 const targetId = "00000000-0000-4000-8000-000000000101";
 const typeId = "00000000-0000-4000-8000-000000000200";
 const relationshipId = "00000000-0000-4000-8000-000000000300";
 const updatedAt = "2026-08-16T12:00:00.000000Z";
-const actor = {
-  accessibleWorkspaces: [],
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "member" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-  workspaceName: "Circle",
-};
+const actor = fixtures.sessionActor({ workspaceName: "Circle" });
 
 function services(
   overrides: Partial<RelationshipManagement> = {},
@@ -143,7 +134,7 @@ Deno.test("RELATIONSHIP-001 HTTP exposes strict directional create, update, list
       method: "POST",
     },
   );
-  assert(created.status === 201, `create returned ${created.status}`);
+  assertStatus(created, 201);
   assert((await created.json()).inverse.label === "child", "inverse missing");
   const related = await app.request(
     `http://localhost/api/v1/people/${sourceId}/relationships/related-person`,
@@ -164,7 +155,7 @@ Deno.test("RELATIONSHIP-001 HTTP exposes strict directional create, update, list
     `http://localhost/api/v1/people/${targetId}/relationships?limit=7&cursor=opaque`,
     { headers },
   );
-  assert(listed.status === 200, "list failed");
+  assertStatus(listed, 200, "list failed");
   assert(
     listInput.limit === 7 && listInput.cursor === "opaque",
     "bounded cursor query was not forwarded",
@@ -193,7 +184,7 @@ Deno.test("RELATIONSHIP-001 HTTP exposes strict directional create, update, list
       method: "PATCH",
     },
   );
-  assert(changed.status === 200, "update failed");
+  assertStatus(changed, 200, "update failed");
   const removed = await app.request(
     `http://localhost/api/v1/people/${sourceId}/relationships/${relationshipId}`,
     {
@@ -202,7 +193,7 @@ Deno.test("RELATIONSHIP-001 HTTP exposes strict directional create, update, list
       method: "DELETE",
     },
   );
-  assert(removed.status === 200, "unlink failed");
+  assertStatus(removed, 200, "unlink failed");
   const extra = await app.request(
     `http://localhost/api/v1/people/${sourceId}/relationships`,
     {
@@ -215,7 +206,7 @@ Deno.test("RELATIONSHIP-001 HTTP exposes strict directional create, update, list
       method: "POST",
     },
   );
-  assert(extra.status === 400, "unknown romantic metadata was accepted");
+  assertStatus(extra, 400, "unknown romantic metadata was accepted");
 });
 
 Deno.test("RELATIONSHIP-001 HTTP maps invalid, stale, missing, forbidden, and outage reads and writes", async () => {
@@ -410,7 +401,7 @@ Deno.test("RELATIONSHIP-001 HTTP enforces session, origin, tenant concealment, a
       method: "POST",
     },
   );
-  assert(noSession.status === 401, "missing session accepted");
+  assertStatus(noSession, 401, "missing session accepted");
   const badOrigin = await app.request(
     `http://localhost/api/v1/people/${sourceId}/relationships`,
     {
@@ -422,5 +413,5 @@ Deno.test("RELATIONSHIP-001 HTTP enforces session, origin, tenant concealment, a
       method: "POST",
     },
   );
-  assert(badOrigin.status === 403, "cross-origin mutation accepted");
+  assertStatus(badOrigin, 403, "cross-origin mutation accepted");
 });

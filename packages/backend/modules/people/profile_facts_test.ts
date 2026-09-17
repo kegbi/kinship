@@ -6,10 +6,8 @@ import {
   type ProfileFactRepository,
   type ProfileFactWorkspaceBoundary,
 } from "./public.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
 const actor = {
   memberId: "10000000-0000-4000-8000-000000000001",
@@ -87,7 +85,7 @@ Deno.test("PEOPLE-006 separates create from locked update targets", async () => 
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve(crypto.randomUUID()),
     },
-    clock: { now: () => new Date("2026-08-16T12:00:00Z") },
+    clock: fixedClock("2026-08-16T12:00:00Z"),
     ids: { create: () => "10000000-0000-4000-8000-000000000006" },
     repository,
     transaction: { run: (work) => work(transaction) },
@@ -143,7 +141,7 @@ Deno.test("PEOPLE-006 clears food preferences with revision and audit", async ()
         return Promise.resolve(crypto.randomUUID());
       },
     },
-    clock: { now: () => new Date("2026-08-16T12:00:00Z") },
+    clock: fixedClock("2026-08-16T12:00:00Z"),
     ids: { create: () => crypto.randomUUID() },
     repository,
     transaction: { run: (work) => work(transaction) },
@@ -260,7 +258,7 @@ Deno.test("PEOPLE-006 hidden profile facts retain data and do not audit a write"
   };
   const facts = createTestProfileFactManagement({
     audit,
-    clock: { now: () => new Date("2026-08-16T12:00:00Z") },
+    clock: fixedClock("2026-08-16T12:00:00Z"),
     ids: { create: () => crypto.randomUUID() },
     repository,
     transaction: { run: (work) => work(transaction) },
@@ -321,7 +319,7 @@ Deno.test("PEOPLE-006 advances one shared person revision across fact mutations"
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve(crypto.randomUUID()),
     },
-    clock: { now: () => new Date("2026-08-16T12:00:00Z") },
+    clock: fixedClock("2026-08-16T12:00:00Z"),
     ids: { create: () => crypto.randomUUID() },
     repository,
     transaction: { run: (work) => work(transaction) },
@@ -380,7 +378,7 @@ Deno.test("PEOPLE-006 validates work ranges and introducers before persistence",
       assertPostcondition: () => Promise.resolve(),
       record: () => Promise.resolve(crypto.randomUUID()),
     },
-    clock: { now: () => new Date("2026-08-16T12:00:00Z") },
+    clock: fixedClock("2026-08-16T12:00:00Z"),
     ids: { create: () => crypto.randomUUID() },
     repository,
     transaction: { run: (work) => work(transaction) },

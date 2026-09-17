@@ -3,10 +3,7 @@ import {
   createConfiguredReminderWorker,
   runReminderWorkerLoop,
 } from "./composition.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../packages/backend/testing/assert.ts";
 
 class CountingAbortSignal {
   aborted = false;

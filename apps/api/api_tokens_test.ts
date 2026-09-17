@@ -1,18 +1,14 @@
 import { createApiTokenRoutes } from "./api_tokens.ts";
 import type { ApiTokenHttpServices } from "./api_tokens.ts";
+import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
+import * as fixtures from "../../packages/backend/testing/fixtures.ts";
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
-
-const owner = {
-  accessibleWorkspaces: [],
-  memberId: "00000000-0000-4000-8000-000000000001",
-  role: "owner" as const,
-  userId: "00000000-0000-4000-8000-000000000002",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
+const owner = fixtures.sessionActor({
+  memberId: fixtures.uuid(1),
+  role: "owner",
+  userId: fixtures.uuid(2),
   workspaceName: "Circle",
-};
+});
 
 function fixture(role: "owner" | "member" = "owner") {
   const calls: string[] = [];
@@ -101,7 +97,7 @@ Deno.test("API-001 HTTP requires origin, accepted scopes, and admin membership",
       method: "POST",
     },
   );
-  assert(created.status === 201, "valid token created");
+  assertStatus(created, 201, "valid token created");
   assert(
     (await created.text()).includes("kin_pat_secret"),
     "secret returned at creation",

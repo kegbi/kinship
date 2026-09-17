@@ -8,10 +8,9 @@ import {
   createMemberUiStateManagement,
   type MemberUiStateRepository,
 } from "./public.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
+import * as fixtures from "../../testing/fixtures.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
 const actor = {
   memberId: "member-a",
@@ -20,12 +19,7 @@ const actor = {
   workspaceId: "workspace-a",
 };
 
-const uiStateActor = {
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "member" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-};
+const uiStateActor = fixtures.actor();
 const uiStateTransaction = { opaque: {} };
 const uiStateTransactionRunner = {
   run<T>(work: (value: typeof uiStateTransaction) => Promise<T>) {
@@ -229,7 +223,7 @@ function fixture(
         return Promise.resolve();
       },
     },
-    clock: { now: () => new Date("2026-08-15T10:00:00.000Z") },
+    clock: fixedClock("2026-08-15T10:00:00.000Z"),
     identity: {
       getProfile() {
         return Promise.resolve({

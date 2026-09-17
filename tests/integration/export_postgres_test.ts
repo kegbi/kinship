@@ -32,10 +32,8 @@ import {
 import {
   PostgresActorRevalidation,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
+import { assert } from "../../packages/backend/testing/assert.ts";
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
 class CapturedStorage implements ObjectStorage {
   readonly bucket = "export-test";
   readonly provider = "captured";

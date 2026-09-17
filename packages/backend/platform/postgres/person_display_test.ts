@@ -1,9 +1,6 @@
 import { displayName, UNNAMED_PERSON } from "../../modules/people/public.ts";
 import { personDisplayNameSql } from "./person_display.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
 
 /**
  * The SQL fragment evaluated the way PostgreSQL would evaluate it.

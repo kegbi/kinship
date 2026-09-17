@@ -13,10 +13,9 @@ import {
 import {
   PostgresAuditEventRecorder,
 } from "../governance/adapters/postgres/audit_event_recorder.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
+import * as fixtures from "../../testing/fixtures.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
 Deno.test("relationship adapter reads and writes only relationships-owned storage", () => {
   const source = Object.getOwnPropertyNames(
@@ -104,12 +103,7 @@ Deno.test("API composition can inject governance audit structurally", () => {
   );
 });
 
-const actor = {
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "member" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-};
+const actor = fixtures.actor();
 const sourceId = "00000000-0000-4000-8000-000000000100";
 const targetId = "00000000-0000-4000-8000-000000000101";
 const typeId = "00000000-0000-4000-8000-000000000200";
@@ -148,7 +142,7 @@ function fixture(
         return Promise.resolve();
       },
     },
-    clock: { now: () => new Date("2026-08-16T12:00:00.000Z") },
+    clock: fixedClock("2026-08-16T12:00:00.000Z"),
     ids: { create: () => relationshipId },
     people: {
       inspect(

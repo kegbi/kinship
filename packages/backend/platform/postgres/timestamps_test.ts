@@ -5,10 +5,7 @@ import {
   MILLISECOND_INSTANT_FORMAT,
   millisecondInstantColumn,
 } from "./timestamps.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
 
 function rendered(builder: { toOperationNode(): unknown }): string {
   const node = builder.toOperationNode() as RawNode;

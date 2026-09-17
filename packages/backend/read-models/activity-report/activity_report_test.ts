@@ -2,10 +2,7 @@ import {
   type ActivityReportRepository,
   createActivityReport,
 } from "./public.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
 
 Deno.test("INTERACTION-001 activity report scopes one person and bounds its page", async () => {
   let calls = 0;

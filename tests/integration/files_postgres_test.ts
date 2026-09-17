@@ -36,10 +36,7 @@ import {
   createObjectStorageRequestTransport,
   S3CompatibleObjectStorage,
 } from "../../packages/backend/modules/files/adapters/object_storage/s3_compatible_object_storage.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../packages/backend/testing/assert.ts";
 
 class CapturedObjectStorage implements ObjectStorage {
   readonly bucket = "captured-files";

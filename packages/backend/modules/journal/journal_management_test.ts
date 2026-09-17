@@ -4,17 +4,18 @@ import {
   type StoredDayRating,
   type StoredJournalPost,
 } from "./public.ts";
+import * as fixtures from "../../testing/fixtures.ts";
+import {
+  fixedClock,
+  inMemoryRepository,
+  sequentialIds,
+} from "../../testing/fakes.ts";
 
-const actor = {
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "member" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-};
+const actor = fixtures.actor();
 
 Deno.test("[JOURNAL-001] posts and same-day ratings remain one ordered journal", async () => {
-  const posts = new Map<string, StoredJournalPost>();
-  const ratings = new Map<string, StoredDayRating>();
+  const posts = inMemoryRepository<StoredJournalPost>((post) => post.id);
+  const ratings = inMemoryRepository<StoredDayRating>((rating) => rating.id);
   const repository: JournalRepository = {
     createPost: (command) => {
       const post = {
@@ -25,7 +26,7 @@ Deno.test("[JOURNAL-001] posts and same-day ratings remain one ordered journal",
         ...(command.title ? { title: command.title } : {}),
         updatedAt: command.now.toISOString(),
       };
-      posts.set(post.id, post);
+      posts.save(post);
       return Promise.resolve({ post, status: "created" });
     },
     deleteItem: (command) => {
@@ -42,7 +43,7 @@ Deno.test("[JOURNAL-001] posts and same-day ratings remain one ordered journal",
     },
     linkActivity: () => Promise.resolve({ status: "not-found" }),
     saveDayRating: (command) => {
-      const existing = [...ratings.values()].find((value) =>
+      const existing = ratings.list().find((value) =>
         value.ratedOn === command.ratedOn
       );
       const rating = {
@@ -53,14 +54,14 @@ Deno.test("[JOURNAL-001] posts and same-day ratings remain one ordered journal",
         ...(command.comment ? { comment: command.comment } : {}),
         updatedAt: command.now.toISOString(),
       };
-      ratings.set(rating.id, rating);
+      ratings.save(rating);
       return Promise.resolve({
         rating,
         status: existing ? "updated" : "created",
       });
     },
     updatePost: (command) => {
-      const existing = posts.get(command.postId);
+      const existing = posts.find(command.postId);
       if (!existing) return Promise.resolve({ status: "not-found" });
       const post = {
         ...existing,
@@ -69,19 +70,16 @@ Deno.test("[JOURNAL-001] posts and same-day ratings remain one ordered journal",
         ...(command.title ? { title: command.title } : {}),
         updatedAt: command.now.toISOString(),
       };
-      posts.set(post.id, post);
+      posts.save(post);
       return Promise.resolve({ post, status: "updated" });
     },
   };
-  let id = 0;
   const journal = createJournalManagement({
     actors: { revalidate: () => Promise.resolve("active" as const) },
     activities: { inspect: () => Promise.resolve({ status: "not-found" }) },
     audit: { record: () => Promise.resolve("audit-id") },
-    clock: { now: () => new Date("2026-08-23T10:00:00.000Z") },
-    ids: {
-      next: () => `00000000-0000-4000-8000-${String(++id).padStart(12, "0")}`,
-    },
+    clock: fixedClock("2026-08-23T10:00:00.000Z"),
+    ids: sequentialIds(),
     repository,
     transaction: { run: (work) => work({ opaque: {} }) },
   });
@@ -126,7 +124,7 @@ Deno.test("[JOURNAL-001] journal validation and dependency failures do not write
     actors: { revalidate: () => Promise.resolve("active" as const) },
     activities: { inspect: () => Promise.resolve({ status: "not-found" }) },
     audit: { record: () => Promise.resolve("audit") },
-    clock: { now: () => new Date("2026-08-23T10:00:00.000Z") },
+    clock: fixedClock("2026-08-23T10:00:00.000Z"),
     ids: { next: () => "00000000-0000-4000-8000-000000000099" },
     repository,
     transaction: { run: (work) => work({ opaque: {} }) },
@@ -175,7 +173,7 @@ Deno.test("[JOURNAL-001] deletion audit uses the stored journal item type", asyn
         return Promise.resolve("audit");
       },
     },
-    clock: { now: () => new Date("2026-08-23T10:00:00.000Z") },
+    clock: fixedClock("2026-08-23T10:00:00.000Z"),
     ids: { next: () => "00000000-0000-4000-8000-000000000099" },
     repository,
     transaction: { run: (work) => work({ opaque: {} }) },

@@ -11,10 +11,7 @@ import {
   WebCryptoFileIdentifiers,
   WebCryptoObjectKeys,
 } from "./adapters/crypto/file_identifiers.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
 
 class FakeS3Client {
   bucket = false;

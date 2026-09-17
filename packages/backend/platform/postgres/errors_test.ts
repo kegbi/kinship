@@ -3,10 +3,7 @@ import {
   postgresErrorCode,
   postgresFailureStatus,
 } from "./errors.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../../testing/assert.ts";
 
 Deno.test("[GAP-010] each translated SQLSTATE maps to one kernel status", () => {
   const expected: readonly (readonly [string, string])[] = [

@@ -6,10 +6,7 @@ import {
   smtpTimeouts,
   SmtpVerificationMail,
 } from "./smtp_verification_mail.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertThrows } from "../../../../testing/assert.ts";
 
 Deno.test("verification email contains only a safe single-use browser URL", () => {
   const mail = buildVerificationMessage(
@@ -100,13 +97,9 @@ Deno.test("SMTP operations require positive bounded timeouts", () => {
     "SMTP operations have bounded defaults",
   );
   for (const invalid of [0, -1, 30_001, Number.NaN]) {
-    let rejected = false;
-    try {
+    assertThrows(() => {
       smtpTimeouts({ connectTimeoutMs: invalid });
-    } catch {
-      rejected = true;
-    }
-    assert(rejected, `invalid timeout ${invalid} must fail configuration`);
+    }, `invalid timeout ${invalid} must fail configuration`);
   }
 });
 
@@ -127,13 +120,9 @@ Deno.test("plain SMTP is restricted to explicit local capture environments", () 
       ["development", "smtp.example.com"],
     ] as const
   ) {
-    let failed = false;
-    try {
+    assertThrows(() => {
       plainSmtpPolicy(rejected[0], rejected[1]);
-    } catch {
-      failed = true;
-    }
-    assert(failed, `${rejected.join("/")} must fail closed`);
+    }, `${rejected.join("/")} must fail closed`);
   }
 });
 

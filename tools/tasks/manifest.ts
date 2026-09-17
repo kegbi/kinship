@@ -393,6 +393,12 @@ export const MODULES: readonly TaskModule[] = [
         "apps/api/relationships_test.ts",
         "apps/api/security_config_test.ts",
         "apps/api/settings_test.ts",
+        // The test support package every backend and API suite imports. It
+        // lives in this set because the same set measures all of
+        // `packages/backend`, so its own suites keep it covered there.
+        "packages/backend/testing/assert_test.ts",
+        "packages/backend/testing/fakes_test.ts",
+        "packages/backend/testing/fixtures_test.ts",
         "packages/backend/platform/postgres/config_test.ts",
         "packages/backend/platform/postgres/errors_test.ts",
         "packages/backend/platform/postgres/lifecycle_impact_test.ts",
@@ -518,8 +524,12 @@ export const MODULES: readonly TaskModule[] = [
         "apps/api/settings_test.ts",
         "apps/api/workspace_lifecycle_test.ts",
         "apps/worker/composition_test.ts",
-        // This set measures all of packages/backend, the shared kernel
-        // included, so it runs the suites that exercise the kernel too.
+        // This set measures all of packages/backend, the shared kernel and the
+        // test support package included, so it runs the suites that exercise
+        // them too.
+        "packages/backend/testing/assert_test.ts",
+        "packages/backend/testing/fakes_test.ts",
+        "packages/backend/testing/fixtures_test.ts",
         "packages/backend/shared-kernel/clock_test.ts",
         "packages/backend/shared-kernel/ids_test.ts",
         "packages/backend/shared-kernel/pagination_test.ts",

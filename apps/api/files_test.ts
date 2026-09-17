@@ -5,10 +5,7 @@ import type {
 } from "../../packages/backend/modules/files/public.ts";
 import { browserSecurityPolicy } from "./security_config.ts";
 import { resolveObjectStorageConfiguration } from "./file_storage_config.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
 
 const workspaceId = "00000000-0000-4000-8000-000000000001";
 const personId = "00000000-0000-4000-8000-000000000002";
@@ -99,7 +96,7 @@ Deno.test("[FILES-001] storage settings HTTP boundary returns only safe admin di
       },
     },
   );
-  assert(response.status === 200, "admin diagnostics ready");
+  assertStatus(response, 200, "admin diagnostics ready");
   const body = await response.json();
   assert(requestedQuery === "care", "bounded query reaches facade");
   assert(!JSON.stringify(body).includes("storageKey"), "object keys concealed");
@@ -164,7 +161,7 @@ Deno.test("[FILES-001] file HTTP flow uploads, lists, downloads, and removes wit
       method: "POST",
     },
   );
-  assert(uploaded.status === 201, "upload created");
+  assertStatus(uploaded, 201, "upload created");
   assert(
     !JSON.stringify(await uploaded.json()).includes("storage"),
     "storage key is private",
@@ -174,12 +171,12 @@ Deno.test("[FILES-001] file HTTP flow uploads, lists, downloads, and removes wit
     `http://localhost/api/v1/people/${personId}/files`,
     { headers },
   );
-  assert(listed.status === 200, "files list ready");
+  assertStatus(listed, 200, "files list ready");
   const downloaded = await routes.request(
     `http://localhost/api/v1/people/${personId}/files/${fileId}/content`,
     { headers },
   );
-  assert(downloaded.status === 200, "download ready");
+  assertStatus(downloaded, 200, "download ready");
   assert(
     downloaded.headers.get("content-disposition")?.includes("attachment"),
     "download is an attachment",
@@ -189,7 +186,7 @@ Deno.test("[FILES-001] file HTTP flow uploads, lists, downloads, and removes wit
     `http://localhost/api/v1/people/${personId}/files/${fileId}`,
     { headers, method: "DELETE" },
   );
-  assert(removed.status === 200, "remove succeeds");
+  assertStatus(removed, 200, "remove succeeds");
   assert(
     actions.join(",") === "upload,list,download,remove",
     "one facade owns flow",
@@ -314,7 +311,7 @@ Deno.test("[FILES-001] file mutations require the configured browser origin", as
       method: "POST",
     },
   );
-  assert(response.status === 403, "cross-origin upload is rejected");
+  assertStatus(response, 403, "cross-origin upload is rejected");
 });
 
 Deno.test("[FILES-001] production object storage fails closed without credentials", () => {

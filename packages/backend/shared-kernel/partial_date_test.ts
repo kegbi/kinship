@@ -4,10 +4,7 @@ import {
   type DatePrecision,
   isRealCalendarDate,
 } from "./partial_date.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "../testing/assert.ts";
 
 Deno.test("[GAP-006] one precision vocabulary describes every partial date", () => {
   assert(

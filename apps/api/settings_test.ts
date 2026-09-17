@@ -5,19 +5,10 @@ import type {
 } from "../../packages/backend/modules/workspaces/public.ts";
 import { browserSecurityPolicy } from "./security_config.ts";
 import { createSettingsRoutes, type SettingsHttpServices } from "./settings.ts";
+import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
+import * as fixtures from "../../packages/backend/testing/fixtures.ts";
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
-
-const actor = {
-  accessibleWorkspaces: [],
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "owner" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-  workspaceName: "Circle",
-};
+const actor = fixtures.sessionActor({ role: "owner", workspaceName: "Circle" });
 
 function settings(
   overrides: Partial<SettingsManagement> = {},
@@ -152,7 +143,7 @@ Deno.test("APR-009 member preference response exposes resolved timezone as read-
       body: JSON.stringify(body.preferences),
     },
   );
-  assert(rejected.status === 400, "read-only resolved field cannot be written");
+  assertStatus(rejected, 400, "read-only resolved field cannot be written");
   const { effectiveTimezone: _resolved, ...input } = body.preferences;
   const saved = await app.request(
     "http://localhost/api/v1/settings/preferences",
@@ -187,7 +178,7 @@ Deno.test("UXD-002C3 HTTP reads and saves private member UI state", async () => 
   const read = await app.request("http://localhost/api/v1/member/ui-state", {
     headers,
   });
-  assert(read.status === 200, "member UI state reads");
+  assertStatus(read, 200, "member UI state reads");
   assert(
     read.headers.get("cache-control") === "private, no-store",
     "member UI state read is private and uncached",
@@ -205,7 +196,7 @@ Deno.test("UXD-002C3 HTTP reads and saves private member UI state", async () => 
       method: "PATCH",
     },
   );
-  assert(saved.status === 200, "member UI state saves");
+  assertStatus(saved, 200, "member UI state saves");
   assert(
     saved.headers.get("cache-control") === "private, no-store",
     "member UI state write is private and uncached",
@@ -223,7 +214,7 @@ Deno.test("UXD-002C3 HTTP reads and saves private member UI state", async () => 
       method: "PATCH",
     },
   );
-  assert(themed.status === 200, "theme UI state saves");
+  assertStatus(themed, 200, "theme UI state saves");
   assert(
     (await themed.json()).uiState.theme === "dark",
     "theme write response returns saved state",
@@ -242,7 +233,7 @@ Deno.test("UXD-002C3 HTTP validates and attributes every member UI-state problem
       method: "PATCH",
     },
   );
-  assert(invalid.status === 400, "unknown body key is rejected");
+  assertStatus(invalid, 400, "unknown body key is rejected");
 
   for (const body of [{}, { theme: "sepia" }] as const) {
     const rejected = await createSettingsRoutes(services()).request(
@@ -253,7 +244,7 @@ Deno.test("UXD-002C3 HTTP validates and attributes every member UI-state problem
         method: "PATCH",
       },
     );
-    assert(rejected.status === 400, "empty or invalid theme is rejected");
+    assertStatus(rejected, 400, "empty or invalid theme is rejected");
   }
 
   const unauthenticatedServices = services();
@@ -264,7 +255,7 @@ Deno.test("UXD-002C3 HTTP validates and attributes every member UI-state problem
       resolve: () => Promise.resolve(undefined),
     },
   }).request("http://localhost/api/v1/member/ui-state", { headers });
-  assert(unauthenticated.status === 401, "missing actor is unauthenticated");
+  assertStatus(unauthenticated, 401, "missing actor is unauthenticated");
 
   const forbidden = await createSettingsRoutes(
     services(
@@ -275,7 +266,7 @@ Deno.test("UXD-002C3 HTTP validates and attributes every member UI-state problem
       }),
     ),
   ).request("http://localhost/api/v1/member/ui-state", { headers });
-  assert(forbidden.status === 403, "facade denial is forbidden");
+  assertStatus(forbidden, 403, "facade denial is forbidden");
 
   const unavailable = await createSettingsRoutes(
     services(
@@ -285,7 +276,7 @@ Deno.test("UXD-002C3 HTTP validates and attributes every member UI-state problem
       }),
     ),
   ).request("http://localhost/api/v1/member/ui-state", { headers });
-  assert(unavailable.status === 503, "dependency failure is retryable");
+  assertStatus(unavailable, 503, "dependency failure is retryable");
 
   const badOrigin = await createSettingsRoutes(services()).request(
     "http://localhost/api/v1/member/ui-state",
@@ -295,7 +286,7 @@ Deno.test("UXD-002C3 HTTP validates and attributes every member UI-state problem
       method: "PATCH",
     },
   );
-  assert(badOrigin.status === 403, "write requires the configured origin");
+  assertStatus(badOrigin, 403, "write requires the configured origin");
 
   const unresolvedServices = services();
   const unresolvedWrite = await createSettingsRoutes({
@@ -309,7 +300,7 @@ Deno.test("UXD-002C3 HTTP validates and attributes every member UI-state problem
     headers,
     method: "PATCH",
   });
-  assert(unresolvedWrite.status === 401, "write requires an active actor");
+  assertStatus(unresolvedWrite, 401, "write requires an active actor");
 
   const forbiddenWrite = await createSettingsRoutes(
     services(
@@ -323,7 +314,7 @@ Deno.test("UXD-002C3 HTTP validates and attributes every member UI-state problem
     headers,
     method: "PATCH",
   });
-  assert(forbiddenWrite.status === 403, "write denial is forbidden");
+  assertStatus(forbiddenWrite, 403, "write denial is forbidden");
 
   const unavailableWrite = await createSettingsRoutes(
     services(
@@ -337,7 +328,7 @@ Deno.test("UXD-002C3 HTTP validates and attributes every member UI-state problem
     headers,
     method: "PATCH",
   });
-  assert(unavailableWrite.status === 503, "write outage is retryable");
+  assertStatus(unavailableWrite, 503, "write outage is retryable");
 
   for (
     const response of [
@@ -370,7 +361,7 @@ Deno.test("AUTH-004 HTTP lists ISO sessions and clears only a revoked current co
   const body = await listed.json() as {
     readonly sessions?: readonly { readonly createdAt?: string }[];
   };
-  assert(listed.status === 200, "owned sessions list");
+  assertStatus(listed, 200, "owned sessions list");
   assert(
     body.sessions?.[0]?.createdAt === "2026-08-15T08:00:00.000Z",
     "dates are RFC3339",
@@ -379,7 +370,7 @@ Deno.test("AUTH-004 HTTP lists ISO sessions and clears only a revoked current co
     "http://localhost/api/v1/settings/sessions/00000000-0000-4000-8000-000000000010",
     { method: "DELETE", headers },
   );
-  assert(revoked.status === 200, "current session revokes");
+  assertStatus(revoked, 200, "current session revokes");
   assert(
     revoked.headers.get("set-cookie")?.includes("Max-Age=0"),
     "current credential clears",
@@ -417,7 +408,7 @@ Deno.test("WORKSPACE-001 HTTP enforces role outcomes, origin, and validation", a
     "http://localhost/api/v1/settings/workspace",
     { headers },
   );
-  assert(forbidden.status === 403, "member workspace access forbidden");
+  assertStatus(forbidden, 403, "member workspace access forbidden");
   const lastOwner = await app.request(
     "http://localhost/api/v1/settings/members/00000000-0000-4000-8000-000000000002",
     {
@@ -426,7 +417,7 @@ Deno.test("WORKSPACE-001 HTTP enforces role outcomes, origin, and validation", a
       body: JSON.stringify({ role: "member", status: "active" }),
     },
   );
-  assert(lastOwner.status === 409, "last owner protected");
+  assertStatus(lastOwner, 409, "last owner protected");
   const invalidOrigin = await app.request(
     "http://localhost/api/v1/settings/profile",
     {
@@ -435,7 +426,7 @@ Deno.test("WORKSPACE-001 HTTP enforces role outcomes, origin, and validation", a
       body: JSON.stringify({ firstName: "Ada", lastName: "" }),
     },
   );
-  assert(invalidOrigin.status === 403, "mutations require exact origin");
+  assertStatus(invalidOrigin, 403, "mutations require exact origin");
   const invalidTimezone = await app.request(
     "http://localhost/api/v1/settings/preferences",
     {
@@ -452,7 +443,7 @@ Deno.test("WORKSPACE-001 HTTP enforces role outcomes, origin, and validation", a
       }),
     },
   );
-  assert(invalidTimezone.status === 400, "invalid time zone rejected");
+  assertStatus(invalidTimezone, 400, "invalid time zone rejected");
   const invalidTimezoneProblem = await invalidTimezone.json() as {
     readonly errors?: Readonly<Record<string, string>>;
   };
@@ -501,7 +492,7 @@ Deno.test("WORKSPACE-001 HTTP enforces role outcomes, origin, and validation", a
     const body = await response.json() as {
       readonly errors?: Readonly<Record<string, string>>;
     };
-    assert(response.status === 400, "unsupported currency is invalid input");
+    assertStatus(response, 400, "unsupported currency is invalid input");
     assert(
       body.errors?.[scenario.field] === "Choose a supported currency.",
       "unsupported currency identifies its responsible field",
@@ -549,7 +540,7 @@ Deno.test("WORKSPACE-003 HTTP keeps personalization private and maps lifecycle o
     "http://localhost/api/v1/settings/personalization/tags",
     { headers },
   );
-  assert(listed.status === 200, "accepted section loads");
+  assertStatus(listed, 200, "accepted section loads");
   assert(
     listed.headers.get("cache-control") === "private, no-store",
     "workspace vocabulary is never shared-cached",
@@ -580,7 +571,7 @@ Deno.test("WORKSPACE-003 HTTP keeps personalization private and maps lifecycle o
       method: "POST",
     },
   );
-  assert(duplicate.status === 409, "duplicate name remains distinct");
+  assertStatus(duplicate, 409, "duplicate name remains distinct");
   assert(
     (await duplicate.json()).code === "personalization_duplicate",
     "safe problem code is stable",
@@ -599,10 +590,7 @@ Deno.test("WORKSPACE-003 HTTP keeps personalization private and maps lifecycle o
     "http://localhost/api/v1/settings/personalization/relationship-types/00000000-0000-4000-8000-000000000020?expectedUpdatedAt=2026-08-16T10%3A00%3A00.000Z&replacementId=00000000-0000-4000-8000-000000000021",
     { headers, method: "DELETE" },
   );
-  assert(
-    collision.status === 409,
-    "relationship replacement collision is stable",
-  );
+  assertStatus(collision, 409, "relationship replacement collision is stable");
   const collisionBody = await collision.json() as {
     readonly code: string;
     readonly detail: string;
@@ -616,7 +604,7 @@ Deno.test("WORKSPACE-003 HTTP keeps personalization private and maps lifecycle o
     "http://localhost/api/v1/settings/personalization/not-a-section",
     { headers },
   );
-  assert(unknown.status === 404, "uncataloged section is not a route surface");
+  assertStatus(unknown, 404, "uncataloged section is not a route surface");
 });
 
 Deno.test("WORKSPACE-003 HTTP rejects fields unsupported by the selected section", async () => {
@@ -667,7 +655,7 @@ Deno.test("WORKSPACE-003 HTTP rejects fields unsupported by the selected section
         method: "PATCH",
       },
     );
-    assert(response.status === 400, `${attempt.section} input is strict`);
+    assertStatus(response, 400, `${attempt.section} input is strict`);
   }
   assert(mutations === 0, "invalid section fields never enter the application");
 });

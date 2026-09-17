@@ -3,10 +3,8 @@ import type {
   ExportManagement,
   ExportManifest,
 } from "../../packages/backend/modules/import-export/public.ts";
+import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
 const exportId = "00000000-0000-4000-8000-000000000004";
 const personId = "00000000-0000-4000-8000-000000000006";
 const manifest: ExportManifest = {
@@ -116,7 +114,7 @@ Deno.test("[EXPORT-001] export HTTP creates history and short-lived downloads", 
     target,
     `/api/v1/exports/${exportId}/download?token=secret`,
   );
-  assert(download.status === 200, "download succeeds");
+  assertStatus(download, 200, "download succeeds");
   assert(
     download.headers.get("content-disposition")?.includes("kinship.json"),
     "safe attachment response",

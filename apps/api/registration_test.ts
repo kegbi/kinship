@@ -1,10 +1,7 @@
 import { createApiApp } from "./composition.ts";
 import type { RegistrationHttpServices } from "./registration.ts";
 import { RegistrationError } from "../../packages/backend/modules/workspaces/public.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
 
 function resolved<T>(value: T): Promise<T> {
   return Promise.resolve(value);
@@ -47,7 +44,7 @@ Deno.test("registration transport validates input and never returns password/tok
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ email: "bad", password: "short" }),
   });
-  assert(invalid.status === 400, "invalid input must be 400");
+  assertStatus(invalid, 400, "invalid input must be 400");
   assert(
     invalid.headers.get("content-type")?.startsWith("application/problem+json"),
     "validation must use RFC 9457",
@@ -128,7 +125,7 @@ Deno.test("verified email returns only a one-time HttpOnly application handoff",
     },
   );
   const body = await verified.text();
-  assert(verified.status === 200, "verification succeeds");
+  assertStatus(verified, 200, "verification succeeds");
   assert(
     verified.headers.get("set-cookie")?.includes("HttpOnly") &&
       verified.headers.get("set-cookie")?.includes("SameSite=Strict"),
@@ -166,7 +163,7 @@ Deno.test("application entry requires POST and exact browser origin before consu
       headers: { cookie: "kinship_entry=entry-secret" },
     },
   );
-  assert(missing.status === 403, "missing origin must be forbidden safely");
+  assertStatus(missing, 403, "missing origin must be forbidden safely");
   const wrong = await app.request("http://localhost/api/v1/application-entry", {
     method: "POST",
     headers: {
@@ -174,7 +171,7 @@ Deno.test("application entry requires POST and exact browser origin before consu
       origin: "https://attacker.example",
     },
   });
-  assert(wrong.status === 403, "wrong origin must be forbidden safely");
+  assertStatus(wrong, 403, "wrong origin must be forbidden safely");
   assert(consumed === 0, "invalid origins must not consume or revoke entry");
 });
 
@@ -228,7 +225,7 @@ Deno.test("verification and entry dependency failures map to safe 503 problems",
       }),
     },
   );
-  assert(verification.status === 503, "verification dependency failure is 503");
+  assertStatus(verification, 503, "verification dependency failure is 503");
   assert(
     !(await verification.text()).includes("database details"),
     "details stay redacted",
@@ -240,7 +237,7 @@ Deno.test("verification and entry dependency failures map to safe 503 problems",
       origin: "http://localhost",
     },
   });
-  assert(entry.status === 503, "entry dependency failure is 503");
+  assertStatus(entry, 503, "entry dependency failure is 503");
   assert(
     !(await entry.text()).includes("database details"),
     "entry details stay redacted",
@@ -266,7 +263,7 @@ Deno.test("a post-commit mail failure reports created state truthfully", async (
     }),
   });
   const body = await response.text();
-  assert(response.status === 503, "mail failure is retryable service failure");
+  assertStatus(response, 503, "mail failure is retryable service failure");
   assert(
     body.includes("was created"),
     "response must not claim rollback after commit",

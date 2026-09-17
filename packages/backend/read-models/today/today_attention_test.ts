@@ -4,24 +4,18 @@ import {
   type TodayAttentionRepository,
   todayAttentionWindow,
 } from "./public.ts";
+import { assert } from "../../testing/assert.ts";
+import * as fixtures from "../../testing/fixtures.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
-
-const actor = {
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "member" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-};
+const actor = fixtures.actor();
 
 Deno.test("TODAY-001 groups and bounds attention in the member timezone", async () => {
   let query: Parameters<TodayAttentionRepository["getSnapshot"]>[0] | undefined;
   const projection = createTodayAttention({
     actors: { revalidate: () => Promise.resolve("active" as const) },
     transaction: { run: (work) => work({ opaque: undefined }) },
-    clock: { now: () => new Date("2026-03-29T00:30:00.000Z") },
+    clock: fixedClock("2026-03-29T00:30:00.000Z"),
     repository: {
       getSnapshot(command) {
         query = command;
@@ -144,7 +138,7 @@ Deno.test("TODAY-001 uses kind for stable bounded ties and deterministic dedupli
   const projection = createTodayAttention({
     actors: { revalidate: () => Promise.resolve("active" as const) },
     transaction: { run: (work) => work({ opaque: undefined }) },
-    clock: { now: () => new Date("2026-08-18T12:00:00.000Z") },
+    clock: fixedClock("2026-08-18T12:00:00.000Z"),
     repository: {
       getSnapshot: () =>
         Promise.resolve({ items, status: "ready", timezone: "UTC" }),

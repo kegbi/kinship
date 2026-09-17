@@ -9,10 +9,7 @@ import {
 import {
   PostgresWorkspaceSettings,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/settings_management.ts";
-
-function assert(value: unknown, message: string): asserts value {
-  if (!value) throw new Error(message);
-}
+import { assert } from "../../packages/backend/testing/assert.ts";
 
 Deno.test("APR-009 settings resolve member, workspace, and UTC timezone without granting admin access", async () => {
   const url = Deno.env.get("DATABASE_URL")!;

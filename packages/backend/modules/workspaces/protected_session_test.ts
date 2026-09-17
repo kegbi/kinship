@@ -3,23 +3,19 @@ import {
   type ProtectedSessionDependencies,
   protectedSessionHttpStatus,
 } from "./public.ts";
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert, assertRejects } from "../../testing/assert.ts";
+import * as fixtures from "../../testing/fixtures.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
 function dependencies(
   primary: "invalid" | "known-invalid" | "mfa" | "verified" = "verified",
   membership: "active" | "suspended" = "active",
 ): { deps: ProtectedSessionDependencies; effects: string[] } {
   const effects: string[] = [];
-  const context = {
-    memberId: "00000000-0000-4000-8000-000000000002",
-    role: "owner" as const,
-    userId: "00000000-0000-4000-8000-000000000001",
-    workspaceId: "00000000-0000-4000-8000-000000000003",
+  const context = fixtures.workspaceActor({
+    role: "owner",
     workspaceName: "Ada's circle",
-  };
+  });
   return {
     effects,
     deps: {
@@ -47,7 +43,7 @@ function dependencies(
           return Promise.resolve();
         },
       },
-      clock: { now: () => new Date("2026-08-14T12:00:00.000Z") },
+      clock: fixedClock("2026-08-14T12:00:00.000Z"),
       audit: {
         record(command) {
           effects.push(`audit.${command.outcome}`);
@@ -200,13 +196,10 @@ function dependencies(
 
 Deno.test("protected session resolution lists only accessible workspaces", async () => {
   const fixture = dependencies();
-  const active = {
-    memberId: "00000000-0000-4000-8000-000000000002",
-    role: "owner" as const,
-    userId: "00000000-0000-4000-8000-000000000001",
-    workspaceId: "00000000-0000-4000-8000-000000000003",
+  const active = fixtures.workspaceActor({
+    role: "owner",
     workspaceName: "Ada's circle",
-  };
+  });
   const second = {
     ...active,
     memberId: "00000000-0000-4000-8000-000000000004",
@@ -673,17 +666,13 @@ Deno.test("failed rate-limit audit finalizes the exact pending row unavailable",
       },
     },
   });
-  let rejected = false;
-  try {
+  await assertRejects(async () => {
     await coordinator.signIn({
       email: "owner@example.test",
       ipAddress: "127.0.0.1",
       password: "must-not-be-verified",
     });
-  } catch {
-    rejected = true;
-  }
-  assert(rejected, "required rate-limit audit failure propagates");
+  }, "required rate-limit audit failure propagates");
   assert(
     !limited.effects.includes("identity.password"),
     "rejected budget never invokes the password verifier",
@@ -718,17 +707,13 @@ Deno.test("transactional request-log failure aborts authenticated establishment"
       },
     },
   });
-  let rejected = false;
-  try {
+  await assertRejects(async () => {
     await coordinator.signIn({
       email: "owner@example.test",
       ipAddress: "127.0.0.1",
       password: "correct horse battery staple",
     });
-  } catch {
-    rejected = true;
-  }
-  assert(rejected, "transactional finalization failure propagates");
+  }, "transactional finalization failure propagates");
   assert(
     !failed.effects.includes("transaction.commit"),
     "session transaction cannot commit without its exact 200 request row",
@@ -752,17 +737,13 @@ Deno.test("post-factor establishment failure finalizes the exact request as unav
       },
     },
   });
-  let rejected = false;
-  try {
+  await assertRejects(async () => {
     await coordinator.completeMfa({
       challengeToken: "challenge-token",
       factor: "123456",
       ipAddress: "127.0.0.1",
     });
-  } catch {
-    rejected = true;
-  }
-  assert(rejected, "establishment failure remains unavailable to transport");
+  }, "establishment failure remains unavailable to transport");
   assert(
     failed.effects.at(-1) === "budget.mfa-reservation.finalize.503",
     `exact reservation must finalize 503: ${failed.effects.join(",")}`,

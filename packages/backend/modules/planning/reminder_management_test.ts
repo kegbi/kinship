@@ -1,4 +1,5 @@
 import * as planning from "./public.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
 Deno.test("PLANNING-002 exposes calendar reminder management", () => {
   const publicPlanning = planning as unknown as Record<string, unknown>;
@@ -104,7 +105,7 @@ Deno.test("PLANNING-002 worker replenishes a bounded rolling occurrence window b
   } as unknown as planning.ReminderDeliveryRepository;
   const worker = planning.createReminderDeliveryWorker({
     audit: { record: () => Promise.resolve() },
-    clock: { now: () => new Date("2026-10-20T00:30:00Z") },
+    clock: fixedClock("2026-10-20T00:30:00Z"),
     provider: {
       deliver: () =>
         Promise.resolve({ receipt: "unused", status: "confirmed" }),
@@ -291,7 +292,7 @@ Deno.test("PLANNING-002 delivery exhausts bounded failures and ignores stale cla
         return Promise.resolve();
       },
     },
-    clock: { now: () => new Date("2026-08-18T10:00:00Z") },
+    clock: fixedClock("2026-08-18T10:00:00Z"),
     provider: {
       deliver({ occurrenceId }) {
         return Promise.resolve(
@@ -346,7 +347,7 @@ Deno.test("PLANNING-002 ambiguous reconciliation never redelivers and exhausts t
   let delivered = 0;
   const worker = planning.createReminderDeliveryWorker({
     audit: { record: () => Promise.resolve() },
-    clock: { now: () => new Date("2026-08-18T10:00:00Z") },
+    clock: fixedClock("2026-08-18T10:00:00Z"),
     provider: {
       deliver: () => {
         delivered += 1;
@@ -411,7 +412,7 @@ Deno.test("APP-006D worker isolates a failed claimed item from the rest of its b
   const finalized: string[] = [];
   const worker = planning.createReminderDeliveryWorker({
     audit: { record: () => Promise.resolve() },
-    clock: { now: () => new Date("2026-08-23T10:00:00Z") },
+    clock: fixedClock("2026-08-23T10:00:00Z"),
     provider: {
       deliver: ({ occurrenceId }) =>
         Promise.resolve({
@@ -504,7 +505,7 @@ Deno.test("PLANNING-002 management preserves validation, authorization, replay, 
         return Promise.resolve();
       },
     },
-    clock: { now: () => new Date("2026-08-18T10:00:00.000Z") },
+    clock: fixedClock("2026-08-18T10:00:00.000Z"),
     people: {
       inspect: () => Promise.resolve({ status: personStatus }),
       summarize: () => Promise.resolve([]),

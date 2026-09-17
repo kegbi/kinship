@@ -22,10 +22,8 @@ import {
 import {
   PostgresAuditEventRecorder,
 } from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
+import { assert } from "../../packages/backend/testing/assert.ts";
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((ready) => resolve = ready);

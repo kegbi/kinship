@@ -43,6 +43,7 @@ packages/
         public.ts
     read-models/
       <read-model-id>/
+    testing/
   contracts/
     openapi/
     generated/
@@ -156,3 +157,29 @@ Browser workflows live under `tests/e2e` and carry IDs from
 [`docs/product/user-flows.yaml`](../product/user-flows.yaml).
 
 No test-only barrel may expose private production internals across modules.
+
+### The backend test support package
+
+`packages/backend/testing/` is the one shared test-support package for the
+backend and the API. It holds assertions (`assert.ts`), deterministic identities
+(`fixtures.ts`), and generic test doubles (`fakes.ts`): a stopped clock,
+sequential identifiers, a recording audit port, a `Map`-backed repository, mail,
+and object storage.
+
+It is bound by the same boundaries as production code, and by three more:
+
+- Only test modules import it. No production file may, and nothing in it runs at
+  service start.
+- Its own files are typed against the shared kernel and against public types
+  only. It never imports a unit's `domain/`, `application/`, `ports/`,
+  `adapters/`, `transport/`, or `composition.ts`, and it re-exports nothing from
+  them, so it cannot become the cross-module back door the rule above forbids.
+  Today it imports the shared kernel's contracts and nothing else: the actor,
+  mail, and object-storage shapes are declared structurally, so the package adds
+  no module to a test's runtime graph.
+- It carries no behaviour a single test owns. A double that needs a failure
+  toggle, an assertion inside itself, or a module-specific rule stays in the
+  test that needs it.
+
+`tools/architecture/check_boundaries.ts` skips `_test.ts` files but scans every
+other file here, so the second rule is enforced rather than merely stated.

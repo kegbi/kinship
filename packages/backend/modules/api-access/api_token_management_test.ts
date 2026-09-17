@@ -7,12 +7,12 @@ import {
 import {
   WebCryptoApiTokenSecrets,
 } from "./adapters/crypto/api_token_secrets.ts";
-
-function assertEquals(actual: unknown, expected: unknown): void {
-  const left = JSON.stringify(actual);
-  const right = JSON.stringify(expected);
-  if (left !== right) throw new Error(`Expected ${right}, received ${left}`);
-}
+import { assertEquals } from "../../testing/assert.ts";
+import {
+  fixedClock,
+  inMemoryRepository,
+  recordingAudit,
+} from "../../testing/fakes.ts";
 
 const owner = {
   memberId: "10000000-0000-4000-8000-000000000001",
@@ -22,19 +22,14 @@ const owner = {
 };
 
 function fixture() {
-  const records = new Map<string, ApiTokenRecord>();
-  const audits: string[] = [];
+  const records = inMemoryRepository<ApiTokenRecord>((record) => record.id);
+  const audit = recordingAudit<{ readonly action: string }, void>();
   const rawSecret = "first-secret-with-enough-entropy";
   const dependencies: ApiTokenDependencies = {
     actorContext: { describe: () => Promise.resolve(owner) },
     actors: { revalidate: () => Promise.resolve("active" as const) },
-    audit: {
-      record: (command) => {
-        audits.push(command.action);
-        return Promise.resolve();
-      },
-    },
-    clock: { now: () => new Date("2026-08-24T10:00:00.000Z") },
+    audit,
+    clock: fixedClock("2026-08-24T10:00:00.000Z"),
     ids: { next: () => "10000000-0000-4000-8000-000000000004" },
     repository: {
       create: (command) => {
@@ -47,11 +42,11 @@ function fixture() {
           name: command.name,
           scopes: command.scopes,
         };
-        records.set(record.id, record);
+        records.save(record);
         return Promise.resolve({ record, status: "created" });
       },
       findForAuthentication: ({ id }) => {
-        const record = records.get(id);
+        const record = records.find(id);
         return Promise.resolve(
           record
             ? {
@@ -64,15 +59,15 @@ function fixture() {
             : { status: "not-found" as const },
         );
       },
-      list: () => Promise.resolve([...records.values()]),
+      list: () => Promise.resolve(records.list()),
       markUsed: () => Promise.resolve(true),
       revoke: ({ id, occurredAt }) => {
-        const current = records.get(id);
+        const current = records.find(id);
         if (!current || current.revokedAt) {
           return Promise.resolve({ status: "not-found" as const });
         }
         const record = { ...current, revokedAt: occurredAt.toISOString() };
-        records.set(id, record);
+        records.save(record);
         return Promise.resolve({ record, status: "revoked" as const });
       },
     },
@@ -84,9 +79,9 @@ function fixture() {
     transaction: { run: (work) => work({} as never) },
   };
   return {
-    audits,
+    audit,
     management: createApiTokenManagement(dependencies),
-    records,
+    records: records.entries,
   };
 }
 
@@ -119,7 +114,7 @@ Deno.test("API tokens reveal a scoped secret once and expose metadata afterward"
     }],
     status: "ready",
   });
-  assertEquals(state.audits, ["created"]);
+  assertEquals(state.audit.actions, ["created"]);
 });
 
 Deno.test("API token authorization fails closed for malformed, expired, missing-scope, and inactive use", async () => {
@@ -238,5 +233,5 @@ Deno.test("API tokens reject invalid grants and stop authenticating after revoca
   assertEquals(await state.management.authenticate(secret, "people:read"), {
     status: "invalid",
   });
-  assertEquals(state.audits, ["created", "revoked"]);
+  assertEquals(state.audit.actions, ["created", "revoked"]);
 });

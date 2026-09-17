@@ -2,17 +2,11 @@ import {
   createLegalAcceptance,
   type LegalAcceptanceRepository,
 } from "./public.ts";
+import { assert } from "../../testing/assert.ts";
+import * as fixtures from "../../testing/fixtures.ts";
+import { fixedClock } from "../../testing/fakes.ts";
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
-
-const actor = {
-  memberId: "00000000-0000-4000-8000-000000000002",
-  role: "member" as const,
-  userId: "00000000-0000-4000-8000-000000000001",
-  workspaceId: "00000000-0000-4000-8000-000000000003",
-};
+const actor = fixtures.actor();
 
 Deno.test("GOVERNANCE-001 accepts one exact required version and makes replay immutable", async () => {
   const accepted: string[] = [];
@@ -46,7 +40,7 @@ Deno.test("GOVERNANCE-001 accepts one exact required version and makes replay im
   };
   const legal = createLegalAcceptance({
     actors: { revalidate: () => Promise.resolve("active" as const) },
-    clock: { now: () => new Date("2026-08-23T10:00:00.000Z") },
+    clock: fixedClock("2026-08-23T10:00:00.000Z"),
     ids: { next: () => "00000000-0000-4000-8000-000000000901" },
     repository,
     transaction: { run: (work) => work({ opaque: undefined }) },
@@ -71,7 +65,7 @@ Deno.test("GOVERNANCE-001 contains requirement, public review, and acceptance ou
   let mode: "accept" | "none" | "public" | "requirements" = "requirements";
   const legal = createLegalAcceptance({
     actors: { revalidate: () => Promise.resolve("active" as const) },
-    clock: { now: () => new Date("2026-08-23T10:00:00.000Z") },
+    clock: fixedClock("2026-08-23T10:00:00.000Z"),
     ids: { next: () => "00000000-0000-4000-8000-000000000901" },
     transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
