@@ -4,7 +4,7 @@ import type {
   RelationshipWorkspaceBoundary,
   WorkspaceRelationshipType,
 } from "../../public.ts";
-import { DEFAULT_RELATIONSHIP_TYPE_VOCABULARY } from "../../application/register_first_workspace.ts";
+import { DEFAULT_RELATIONSHIP_TYPE_VOCABULARY } from "../../domain/registration_rules.ts";
 
 function option(row: {
   readonly forward_label: string;

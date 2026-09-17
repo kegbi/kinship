@@ -1,6 +1,6 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
-import type { PasswordRecoveryRepository } from "../../application/password_recovery.ts";
+import type { PasswordRecoveryRepository } from "../../ports/password_recovery.ts";
 
 export class PostgresPasswordRecoveryRepository
   implements PasswordRecoveryRepository {

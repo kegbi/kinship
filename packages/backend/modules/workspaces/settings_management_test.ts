@@ -2,8 +2,8 @@ import type { Failure } from "../../shared-kernel/result.ts";
 import {
   createSettingsManagement,
   type SettingsManagementDependencies,
-  type SettingsTransaction,
 } from "./application/settings_management.ts";
+import type { SettingsTransaction } from "./ports/context.ts";
 import {
   createMemberUiStateManagement,
   type MemberUiStateRepository,

@@ -1,12 +1,12 @@
 export type { Argon2idParameters } from "./adapters/crypto/argon2id.ts";
 export type { MfaEncryptionKeyset } from "./adapters/crypto/totp.ts";
+export { IdentityConflictError } from "./domain/identity_rules.ts";
+export type { IdentityTransaction } from "./ports/context.ts";
 export type {
   CreatePendingUserCommand,
   IdentityRegistrationFacade,
-  IdentityTransaction,
   PendingUser,
-} from "./application/contracts.ts";
-export { IdentityConflictError } from "./application/contracts.ts";
+} from "./ports/registration.ts";
 export type { PasswordHasher, RandomSource } from "./ports/security.ts";
 export type {
   AuthenticatedSession,
@@ -16,14 +16,14 @@ export type {
   MfaAuthenticationResult,
   PasswordAuthenticationResult,
   SessionPrincipal,
-} from "./application/authentication.ts";
+} from "./ports/authentication.ts";
 export { createPasswordRecovery } from "./application/password_recovery.ts";
 export type {
   PasswordRecoveryFacade,
   PasswordRecoveryMail,
   PasswordRecoveryRepository,
   PasswordRecoveryTransactionRunner,
-} from "./application/password_recovery.ts";
+} from "./ports/password_recovery.ts";
 export type {
   ApplicationEntryContext,
   ApplicationEntryWorkspaces,
@@ -33,17 +33,17 @@ export type {
   VerifiedIdentityEntry,
   VerifiedIdentityEntryAuthority,
   VerifiedIdentityEntryFacade,
-} from "./application/email_verification.ts";
+} from "./ports/email_verification.ts";
 export type {
   InvitationIdentityDisplaySummary,
   InvitationIdentityFacade,
-} from "./application/invitation_identity.ts";
+} from "./ports/invitation_identity.ts";
 export type {
   IdentityAccountSettingsFacade,
   IdentityProfile,
   IdentitySessionSummary,
-} from "./application/account_settings.ts";
+} from "./ports/account_settings.ts";
 export type {
   IdentityPersonalLifecycleFacade,
   IdentityPersonalLifecycleInspection,
-} from "./application/personal_lifecycle.ts";
+} from "./ports/personal_lifecycle.ts";

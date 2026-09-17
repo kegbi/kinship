@@ -9,8 +9,8 @@ import type {
   MfaAuthenticationResult,
   PasswordAuthenticationResult,
   SessionPrincipal,
-} from "../../application/authentication.ts";
-import type { IdentityTransaction } from "../../application/contracts.ts";
+} from "../../ports/authentication.ts";
+import type { IdentityTransaction } from "../../ports/context.ts";
 import type { PasswordHasher } from "../../ports/security.ts";
 import { SecureTokenService } from "../crypto/secure_tokens.ts";
 import { AesGcmMfaSecretBox, verifyTotp } from "../crypto/totp.ts";

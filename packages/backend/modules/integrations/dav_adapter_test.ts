@@ -1,4 +1,4 @@
-import { DavRemoteFailure } from "./application/dav_sync.ts";
+import { DavRemoteFailure } from "./domain/dav_rules.ts";
 import { HttpDavClient } from "./adapters/dav/http_dav_client.ts";
 import { AesGcmDavSecretBox } from "./adapters/crypto/dav_secret_box.ts";
 import { decodeDavEncryptionKeyset } from "./adapters/crypto/dav_secret_box.ts";

@@ -7,11 +7,9 @@ import type {
   ActorStanding,
   EligibleRecipient,
   RevalidatedActor,
-} from "../../application/actor_revalidation.ts";
-import type {
-  ActiveWorkspaceContext,
-  ActiveWorkspaceResolver,
-} from "../../application/protected_session.ts";
+} from "../../ports/actors.ts";
+import type { ActiveWorkspaceContext } from "../../ports/context.ts";
+import type { ActiveWorkspaceResolver } from "../../ports/session.ts";
 
 /**
  * The single approved actor-context read, declared in

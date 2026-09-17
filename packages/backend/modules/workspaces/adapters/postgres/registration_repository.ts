@@ -4,8 +4,8 @@ import { PostgresTransactionRunner } from "../../../../platform/postgres/transac
 import type {
   RegistrationTransaction,
   RegistrationTransactionRunner,
-  WorkspaceRegistrationWriter,
-} from "../../application/register_first_workspace.ts";
+} from "../../ports/context.ts";
+import type { WorkspaceRegistrationWriter } from "../../ports/registration_repository.ts";
 
 export class PostgresRegistrationTransaction
   extends PostgresTransactionRunner<RegistrationTransaction>

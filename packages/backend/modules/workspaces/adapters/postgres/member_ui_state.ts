@@ -1,6 +1,6 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
-import type { MemberUiStateRepository } from "../../application/member_ui_state.ts";
+import type { MemberUiStateRepository } from "../../ports/ui_state_repository.ts";
 
 /**
  * The actor's standing is established by `ActorRevalidation` before any of

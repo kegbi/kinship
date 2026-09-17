@@ -12,7 +12,7 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
-import type { ApiTokenAudit } from "./api_token_management.ts";
+import type { ApiTokenAudit } from "../ports/audit.ts";
 
 export function describeApiTokenEvent(
   command: Parameters<ApiTokenAudit["record"]>[0],

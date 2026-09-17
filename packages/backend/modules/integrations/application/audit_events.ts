@@ -10,20 +10,8 @@
 import type {
   AuditEvent,
   AuditEventRecorder,
-  AuditTransaction,
 } from "../../../shared-kernel/audit_event.ts";
-import type { DavActor, DavAuditEvent } from "./dav_sync.ts";
-
-export interface DavAuditCommand {
-  readonly actor: DavActor;
-  readonly event: DavAuditEvent;
-  readonly transaction: AuditTransaction;
-}
-
-/** The port the DAV repository writes its own outcomes through. */
-export interface DavAudit {
-  record(command: DavAuditCommand): Promise<void>;
-}
+import type { DavAudit, DavAuditCommand } from "../ports/audit.ts";
 
 export function describeDavEvent(command: DavAuditCommand): AuditEvent {
   return {

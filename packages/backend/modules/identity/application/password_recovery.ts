@@ -1,52 +1,34 @@
+/**
+ * The password recovery use case.
+ *
+ * Requesting a reset is written the way it is for one reason: the endpoint
+ * must take the same observable time whether or not the address belongs to
+ * anybody. The window opens before the outcome is known and is awaited on
+ * every path, including the one where there is nobody to write to, and the
+ * provider's own answer races the window rather than replacing it — so a slow
+ * mail provider reports `timed-out` and still answers on time.
+ *
+ * Resetting hashes the new password and the presented token in parallel and
+ * hands both to one repository call, so the token is spent and the password
+ * replaced together and a link cannot be used twice.
+ */
+
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { IdGenerator } from "../../../shared-kernel/ids.ts";
-import type { IdentityTransaction } from "./contracts.ts";
+import {
+  deliveryWindow,
+  passwordResetExpiry,
+} from "../domain/identity_rules.ts";
+import type {
+  IdentityTokenService,
+  PasswordRecoveryFacade,
+  PasswordRecoveryMail,
+  PasswordRecoveryRepository,
+  PasswordRecoveryTransactionRunner,
+} from "../ports/password_recovery.ts";
 import type { PasswordHasher } from "../ports/security.ts";
 
-export interface PasswordRecoveryTransactionRunner {
-  run<T>(work: (transaction: IdentityTransaction) => Promise<T>): Promise<T>;
-}
-
-export interface PasswordRecoveryRepository {
-  createRequest(command: {
-    readonly email: string;
-    readonly expiresAt: Date;
-    readonly id: string;
-    readonly ipAddress?: string;
-    readonly now: Date;
-    readonly tokenHash: string;
-    readonly transaction: IdentityTransaction;
-  }): Promise<{ readonly deliveryEmail?: string }>;
-  resetPassword(command: {
-    readonly newPasswordHash: string;
-    readonly now: Date;
-    readonly tokenHash: string;
-    readonly transaction: IdentityTransaction;
-  }): Promise<"expired" | "invalid" | "reset">;
-}
-
-export interface PasswordRecoveryMail {
-  sendPasswordReset(message: {
-    readonly email: string;
-    readonly expiresAt: Date;
-    readonly token: string;
-  }): Promise<void>;
-}
-
-export interface PasswordRecoveryFacade {
-  request(command: {
-    readonly email: string;
-    readonly ipAddress?: string;
-  }): Promise<{
-    readonly delivery: "delivered" | "failed" | "not-applicable" | "timed-out";
-  }>;
-  reset(command: {
-    readonly password: string;
-    readonly token: string;
-  }): Promise<"expired" | "invalid" | "reset">;
-}
-
-export function createPasswordRecovery(dependencies: {
+export interface PasswordRecoveryDependencies {
   readonly clock: Clock;
   readonly delay?: (milliseconds: number) => Promise<void>;
   readonly deliveryWindowMilliseconds?: number;
@@ -54,27 +36,23 @@ export function createPasswordRecovery(dependencies: {
   readonly ids: IdGenerator;
   readonly mail: PasswordRecoveryMail;
   readonly repository: PasswordRecoveryRepository;
-  readonly tokens: {
-    create(): Promise<{ readonly hash: string; readonly raw: string }>;
-    hash(raw: string): Promise<string>;
-  };
+  readonly tokens: IdentityTokenService;
   readonly transaction: PasswordRecoveryTransactionRunner;
-}): PasswordRecoveryFacade {
-  const deliveryWindowMilliseconds = dependencies.deliveryWindowMilliseconds ??
-    1_500;
-  if (
-    !Number.isFinite(deliveryWindowMilliseconds) ||
-    deliveryWindowMilliseconds < 100 || deliveryWindowMilliseconds > 5_000
-  ) {
-    throw new Error("Password recovery delivery window must be 100-5000ms.");
-  }
+}
+
+export function createPasswordRecovery(
+  dependencies: PasswordRecoveryDependencies,
+): PasswordRecoveryFacade {
+  const windowMilliseconds = deliveryWindow(
+    dependencies.deliveryWindowMilliseconds,
+  );
   const delay = dependencies.delay ??
     ((milliseconds: number) =>
       new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
   return {
     async request(command) {
       const now = dependencies.clock.now();
-      const expiresAt = new Date(now.getTime() + 60 * 60_000);
+      const expiresAt = passwordResetExpiry(now);
       const token = await dependencies.tokens.create();
       const delivery = await dependencies.transaction.run((transaction) =>
         dependencies.repository.createRequest({
@@ -87,7 +65,7 @@ export function createPasswordRecovery(dependencies: {
           transaction,
         })
       );
-      const publicWindow = delay(deliveryWindowMilliseconds);
+      const publicWindow = delay(windowMilliseconds);
       if (!delivery.deliveryEmail) {
         await publicWindow;
         return { delivery: "not-applicable" };

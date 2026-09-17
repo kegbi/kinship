@@ -444,8 +444,6 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/platform/postgres/timestamps_test.ts",
         "packages/backend/platform/postgres/transactions_test.ts",
         "packages/backend/modules/api-access/authentication_subject_test.ts",
-        "packages/backend/modules/identity/identity_test.ts",
-        "packages/backend/modules/identity/application/password_recovery_test.ts",
         "packages/backend/read-models/activity-report/activity_report_test.ts",
         "packages/backend/read-models/audit-history/audit_history_test.ts",
         "packages/backend/read-models/people-directory/list_people_test.ts",
@@ -453,14 +451,6 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/read-models/person-profile/person_profile_test.ts",
         "packages/backend/read-models/today/today_interactions_test.ts",
         "packages/backend/read-models/today/today_recent_people_test.ts",
-        "packages/backend/modules/workspaces/recent_people_test.ts",
-        "packages/backend/modules/workspaces/register_first_workspace_test.ts",
-        "packages/backend/modules/workspaces/protected_session_test.ts",
-        "packages/backend/modules/workspaces/invite_member_test.ts",
-        "packages/backend/modules/workspaces/application/member_ui_state_test.ts",
-        "packages/backend/modules/workspaces/settings_management_test.ts",
-        "packages/backend/modules/workspaces/personalization_test.ts",
-        "packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail_test.ts",
         "packages/contracts/files_test.ts",
         "packages/contracts/health_test.ts",
         "tools/architecture/APP-004E/personalization_boundary_test.ts",
@@ -574,13 +564,23 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/platform/postgres/timestamps_test.ts",
         "packages/backend/platform/postgres/transactions_test.ts",
         "packages/backend/modules/api-access/authentication_subject_test.ts",
+        "packages/backend/modules/api-access/domain/token_rules_test.ts",
+        "packages/backend/modules/governance/domain/legal_rules_test.ts",
+        "packages/backend/modules/identity/domain/identity_rules_test.ts",
         "packages/backend/modules/identity/identity_test.ts",
         "packages/backend/modules/identity/application/password_recovery_test.ts",
+        "packages/backend/modules/integrations/domain/dav_rules_test.ts",
         "packages/backend/modules/files/domain/file_rules_test.ts",
         "packages/backend/modules/files/object_storage_test.ts",
         "packages/backend/modules/files/person_files_test.ts",
         "packages/backend/modules/gifts/domain/gift_rules_test.ts",
         "packages/backend/modules/gifts/gift_management_test.ts",
+        "packages/backend/modules/import-export/domain/export_rules_test.ts",
+        "packages/backend/modules/import-export/domain/formats/canonical_test.ts",
+        "packages/backend/modules/import-export/domain/formats/monica_source_test.ts",
+        "packages/backend/modules/import-export/domain/formats/portable_json_test.ts",
+        "packages/backend/modules/import-export/domain/formats/vcard_test.ts",
+        "packages/backend/modules/import-export/domain/import_rules_test.ts",
         "packages/backend/modules/import-export/import_management_test.ts",
         "packages/backend/modules/import-export/export_management_test.ts",
         "packages/backend/modules/interactions/domain/communication_rules_test.ts",
@@ -619,6 +619,15 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/read-models/today/today_recent_people_test.ts",
         "packages/backend/read-models/today/today_reminders_test.ts",
         "packages/backend/read-models/today/today_tasks_test.ts",
+        "packages/backend/modules/workspaces/domain/invitation_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/personal_lifecycle_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/personalization_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/registration_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/roles_test.ts",
+        "packages/backend/modules/workspaces/domain/session_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/settings_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/ui_state_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/workspace_lifecycle_rules_test.ts",
         "packages/backend/modules/workspaces/recent_people_test.ts",
         "packages/backend/modules/workspaces/register_first_workspace_test.ts",
         "packages/backend/modules/workspaces/protected_session_test.ts",
@@ -671,6 +680,7 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "apps/api/api_tokens_test.ts",
         "packages/backend/modules/api-access/api_token_management_test.ts",
+        "packages/backend/modules/api-access/domain/token_rules_test.ts",
         "packages/contracts/api_tokens_test.ts",
       ],
       permissions: { env: ["READABLE_STREAM"] },
@@ -684,6 +694,7 @@ export const MODULES: readonly TaskModule[] = [
         "apps/api/api_tokens_test.ts",
         "apps/api/people_test.ts",
         "packages/backend/modules/api-access/api_token_management_test.ts",
+        "packages/backend/modules/api-access/domain/token_rules_test.ts",
         "tests/integration/api_tokens_postgres_test.ts",
       ],
       include: [
@@ -692,7 +703,23 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/api-access/adapters/postgres/api_token_repository.ts",
         "packages/backend/modules/api-access/application/api_token_management.ts",
         "packages/backend/modules/api-access/application/audit_events.ts",
+        "packages/backend/modules/api-access/domain",
       ],
+    },
+  },
+  {
+    // The api-access domain is pure: what a personal access token's text is,
+    // which permissions exist, and everything about a presented one that can
+    // be decided before its secret is hashed. It is measured on its own at the
+    // bar the shared kernel keeps; the suite's unit home is `api-access`, and
+    // the wider set sits at the repository floor because it measures the HTTP
+    // surface and the adapters too, so this module declares coverage alone.
+    id: "api-access-domain",
+    coverage: {
+      directory: "api-access-domain",
+      threshold: 95,
+      tests: ["packages/backend/modules/api-access/domain/token_rules_test.ts"],
+      include: ["packages/backend/modules/api-access/domain"],
     },
   },
   {
@@ -700,6 +727,7 @@ export const MODULES: readonly TaskModule[] = [
     unit: {
       tests: [
         "apps/api/integrations_test.ts",
+        "packages/backend/modules/integrations/domain/dav_rules_test.ts",
         "packages/backend/modules/integrations/dav_sync_test.ts",
         "packages/backend/modules/integrations/dav_adapter_test.ts",
         "packages/contracts/integrations_test.ts",
@@ -712,6 +740,7 @@ export const MODULES: readonly TaskModule[] = [
       permissions: { env: "all", net: "all" },
       tests: [
         "apps/api/integrations_test.ts",
+        "packages/backend/modules/integrations/domain/dav_rules_test.ts",
         "packages/backend/modules/integrations/dav_sync_test.ts",
         "packages/backend/modules/integrations/dav_adapter_test.ts",
         "packages/backend/modules/people/create_person_test.ts",
@@ -726,11 +755,33 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/integrations/adapters/dav/http_dav_client.ts",
         "packages/backend/modules/integrations/adapters/postgres/dav_repository.ts",
         "packages/backend/modules/integrations/application/dav_sync.ts",
+        "packages/backend/modules/integrations/application/dav_context.ts",
+        "packages/backend/modules/integrations/application/dav_subscriptions.ts",
+        "packages/backend/modules/integrations/application/dav_synchronize.ts",
         "packages/backend/modules/integrations/application/audit_events.ts",
+        "packages/backend/modules/integrations/domain",
         "packages/backend/modules/people/application/create_person.ts",
         "packages/backend/modules/people/application/lifecycle_person.ts",
         "packages/backend/modules/planning/application/task_management.ts",
       ],
+    },
+  },
+  {
+    // The integrations domain is pure: what a DAV subscription may point at,
+    // the identity a remote object keeps across runs, and what a member is
+    // told when somebody else's server refuses. It is measured on its own at
+    // the bar the shared kernel keeps; the suite's unit home is
+    // `integrations`, and the wider set sits at the repository floor because
+    // it measures the HTTP surface, the transport, and two other modules'
+    // boundaries too, so this module declares coverage alone.
+    id: "integrations-domain",
+    coverage: {
+      directory: "integrations-domain",
+      threshold: 95,
+      tests: [
+        "packages/backend/modules/integrations/domain/dav_rules_test.ts",
+      ],
+      include: ["packages/backend/modules/integrations/domain"],
     },
   },
   {
@@ -906,6 +957,7 @@ export const MODULES: readonly TaskModule[] = [
     unit: {
       tests: [
         "apps/api/governance_test.ts",
+        "packages/backend/modules/governance/domain/legal_rules_test.ts",
         "packages/backend/modules/governance/legal_acceptance_test.ts",
         "tools/contracts/governance_contract_test.ts",
       ],
@@ -921,13 +973,31 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "apps/api/authentication_test.ts",
         "apps/api/governance_test.ts",
+        "packages/backend/modules/governance/domain/legal_rules_test.ts",
         "packages/backend/modules/governance/legal_acceptance_test.ts",
         "tools/contracts/governance_contract_test.ts",
       ],
       include: [
         "apps/api/governance.ts",
         "packages/backend/modules/governance/application/legal_acceptance.ts",
+        "packages/backend/modules/governance/domain",
       ],
+    },
+  },
+  {
+    // Governance keeps deliberately little in its domain: the two documents a
+    // visitor may read, and the fact that an acceptance records the address it
+    // was made from only when there is one. Which documents a member still
+    // owes is a question about rows, and the repository answers it. What is
+    // here is measured on its own at the bar the shared kernel keeps; the
+    // suite's unit home is `governance`, whose wider set measures the HTTP
+    // surface too, so this module declares coverage alone.
+    id: "governance-domain",
+    coverage: {
+      directory: "governance-domain",
+      threshold: 95,
+      tests: ["packages/backend/modules/governance/domain/legal_rules_test.ts"],
+      include: ["packages/backend/modules/governance/domain"],
     },
   },
   {
@@ -1089,12 +1159,25 @@ export const MODULES: readonly TaskModule[] = [
       },
       tests: [
         "apps/api/imports_test.ts",
+        "packages/backend/modules/import-export/domain/formats/canonical_test.ts",
+        "packages/backend/modules/import-export/domain/formats/monica_source_test.ts",
+        "packages/backend/modules/import-export/domain/import_rules_test.ts",
         "packages/backend/modules/import-export/import_management_test.ts",
         "tools/architecture/APP-009A/import_ownership_boundary_test.ts",
       ],
       include: [
         "apps/api/imports.ts",
+        // The source profile and the staging rules the use case delegates to.
+        // The whole domain has its own set at the shared kernel's bar; this
+        // one measures the import half beside the HTTP surface that uses it.
+        "packages/backend/modules/import-export/domain/formats/canonical.ts",
+        "packages/backend/modules/import-export/domain/formats/monica_source.ts",
+        "packages/backend/modules/import-export/domain/import_rules.ts",
         "packages/backend/modules/import-export/application/import_management.ts",
+        "packages/backend/modules/import-export/application/import_commit.ts",
+        "packages/backend/modules/import-export/application/import_context.ts",
+        "packages/backend/modules/import-export/application/import_reads.ts",
+        "packages/backend/modules/import-export/application/import_staging.ts",
       ],
     },
   },
@@ -1112,12 +1195,57 @@ export const MODULES: readonly TaskModule[] = [
       directory: "exports",
       tests: [
         "apps/api/exports_test.ts",
+        "packages/backend/modules/import-export/domain/export_rules_test.ts",
+        "packages/backend/modules/import-export/domain/formats/portable_json_test.ts",
+        "packages/backend/modules/import-export/domain/formats/vcard_test.ts",
         "packages/backend/modules/import-export/export_management_test.ts",
       ],
       include: [
         "apps/api/exports.ts",
+        // The two output formats and the export records. `formats/canonical.ts`
+        // is measured by the `imports` set, and the whole domain has its own
+        // set at the shared kernel's bar.
+        "packages/backend/modules/import-export/domain/export_rules.ts",
+        "packages/backend/modules/import-export/domain/formats/portable_json.ts",
+        "packages/backend/modules/import-export/domain/formats/vcard.ts",
         "packages/backend/modules/import-export/application/export_management.ts",
+        "packages/backend/modules/import-export/application/export_artifact.ts",
+        "packages/backend/modules/import-export/application/export_context.ts",
+        "packages/backend/modules/import-export/application/export_downloads.ts",
       ],
+    },
+  },
+  {
+    // The import-export domain is where the ticket's named work landed: the
+    // Monica JSON source profile, the portable JSON and vCard export formats,
+    // the canonical rendering both halves sign their work with, and the
+    // staging and acceptance rules around them. GAP-050 adds vCard and CSV
+    // siblings under `domain/formats/`, so this set is declared to measure the
+    // whole directory rather than a list of files, and the two use-case suites
+    // keep their homes in `imports` and `exports`.
+    id: "import-export",
+    unit: {
+      tests: [
+        "packages/backend/modules/import-export/domain/export_rules_test.ts",
+        "packages/backend/modules/import-export/domain/formats/canonical_test.ts",
+        "packages/backend/modules/import-export/domain/formats/monica_source_test.ts",
+        "packages/backend/modules/import-export/domain/formats/portable_json_test.ts",
+        "packages/backend/modules/import-export/domain/formats/vcard_test.ts",
+        "packages/backend/modules/import-export/domain/import_rules_test.ts",
+      ],
+    },
+    coverage: {
+      directory: "import-export-domain",
+      threshold: 95,
+      tests: [
+        "packages/backend/modules/import-export/domain/export_rules_test.ts",
+        "packages/backend/modules/import-export/domain/formats/canonical_test.ts",
+        "packages/backend/modules/import-export/domain/formats/monica_source_test.ts",
+        "packages/backend/modules/import-export/domain/formats/portable_json_test.ts",
+        "packages/backend/modules/import-export/domain/formats/vcard_test.ts",
+        "packages/backend/modules/import-export/domain/import_rules_test.ts",
+      ],
+      include: ["packages/backend/modules/import-export/domain"],
     },
   },
   {
@@ -1141,6 +1269,7 @@ export const MODULES: readonly TaskModule[] = [
       },
       tests: [
         "apps/api/personal_lifecycle_test.ts",
+        "packages/backend/modules/workspaces/domain/personal_lifecycle_rules_test.ts",
         "packages/backend/modules/workspaces/personal_lifecycle_test.ts",
         "packages/contracts/personal_lifecycle_test.ts",
         "tests/integration/personal_lifecycle_postgres_test.ts",
@@ -1149,6 +1278,7 @@ export const MODULES: readonly TaskModule[] = [
         "apps/api/personal_lifecycle.ts",
         "packages/backend/modules/identity/adapters/postgres/personal_lifecycle.ts",
         "packages/backend/modules/workspaces/application/personal_lifecycle.ts",
+        "packages/backend/modules/workspaces/domain/personal_lifecycle_rules.ts",
         "packages/backend/modules/workspaces/adapters/postgres/personal_lifecycle.ts",
         "packages/backend/modules/workspaces/application/audit_events.ts",
       ],
@@ -1173,6 +1303,7 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "apps/api/workspace_lifecycle_test.ts",
         "apps/worker/composition_test.ts",
+        "packages/backend/modules/workspaces/domain/workspace_lifecycle_rules_test.ts",
         "packages/backend/modules/workspaces/workspace_lifecycle_test.ts",
         "packages/contracts/workspace_lifecycle_test.ts",
       ],
@@ -1182,7 +1313,94 @@ export const MODULES: readonly TaskModule[] = [
         // to the same measured surface, so no worker file escapes coverage.
         "apps/worker",
         "packages/backend/modules/workspaces/application/workspace_lifecycle.ts",
+        "packages/backend/modules/workspaces/application/workspace_lifecycle_context.ts",
+        "packages/backend/modules/workspaces/domain/workspace_lifecycle_rules.ts",
       ],
+    },
+  },
+  {
+    // The identity domain is deliberately small, and the file says why: almost
+    // everything identity knows is enforced by a unique index or by a
+    // cryptographic adapter, and a second opinion about a credential is a way
+    // to be wrong. What is here — what a conflict is called, how long a reset
+    // link lives, and the constant-time window that stops the request endpoint
+    // revealing whether an address is registered — is measured at the bar the
+    // shared kernel keeps, and the module's two suites, which used to live in
+    // the `api` unit set, live here too so each has exactly one unit home.
+    id: "identity",
+    unit: {
+      tests: [
+        "packages/backend/modules/identity/domain/identity_rules_test.ts",
+        "packages/backend/modules/identity/identity_test.ts",
+        "packages/backend/modules/identity/application/password_recovery_test.ts",
+      ],
+    },
+    coverage: {
+      directory: "identity-domain",
+      threshold: 95,
+      tests: [
+        "packages/backend/modules/identity/domain/identity_rules_test.ts",
+      ],
+      include: ["packages/backend/modules/identity/domain"],
+    },
+  },
+  {
+    // The workspaces domain is the largest in the repository, because this is
+    // the module that decides who anybody is: the three roles, how a sign-in
+    // ends and what that means to the throttle, what a new workspace starts
+    // with, what an invitation and a member list are, what may be
+    // personalized, what destroying a workspace would cost and how that is
+    // proved not to have changed, what stops somebody leaving, and how a
+    // member's own interface state is read back defensively. It is measured on
+    // its own at the bar the shared kernel keeps, and the module's eight
+    // suites, which used to live in the `api` unit set, live here too so each
+    // has exactly one unit home. `personal_lifecycle_test.ts` and
+    // `workspace_lifecycle_test.ts` keep theirs in `lifecycle` and
+    // `workspace-lifecycle`.
+    id: "workspaces",
+    unit: {
+      tests: [
+        "packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail_test.ts",
+        "packages/backend/modules/workspaces/application/member_ui_state_test.ts",
+        "packages/backend/modules/workspaces/domain/invitation_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/personal_lifecycle_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/personalization_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/registration_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/roles_test.ts",
+        "packages/backend/modules/workspaces/domain/session_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/settings_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/ui_state_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/workspace_lifecycle_rules_test.ts",
+        "packages/backend/modules/workspaces/invite_member_test.ts",
+        "packages/backend/modules/workspaces/personalization_test.ts",
+        "packages/backend/modules/workspaces/protected_session_test.ts",
+        "packages/backend/modules/workspaces/recent_people_test.ts",
+        "packages/backend/modules/workspaces/register_first_workspace_test.ts",
+        "packages/backend/modules/workspaces/settings_management_test.ts",
+      ],
+      permissions: {
+        // Two suites read an adapter back to prove it does not reach into
+        // another module's tables, and the SMTP suite runs its transport
+        // against a loopback server it starts itself.
+        read: ["packages/backend/modules/workspaces/adapters"],
+        net: ["127.0.0.1"],
+      },
+    },
+    coverage: {
+      directory: "workspaces-domain",
+      threshold: 95,
+      tests: [
+        "packages/backend/modules/workspaces/domain/invitation_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/personal_lifecycle_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/personalization_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/registration_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/roles_test.ts",
+        "packages/backend/modules/workspaces/domain/session_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/settings_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/ui_state_rules_test.ts",
+        "packages/backend/modules/workspaces/domain/workspace_lifecycle_rules_test.ts",
+      ],
+      include: ["packages/backend/modules/workspaces/domain"],
     },
   },
   {
@@ -1340,8 +1558,11 @@ export const TEST_AGGREGATE: readonly string[] = [
   "journal",
   "imports",
   "exports",
+  "import-export",
   "lifecycle",
   "workspace-lifecycle",
+  "identity",
+  "workspaces",
   "files",
   "storage",
   "performance",
@@ -1360,12 +1581,15 @@ export const COVERAGE_AGGREGATE: readonly string[] = [
   "people",
   "api",
   "api-access",
+  "api-access-domain",
   "integrations",
+  "integrations-domain",
   "planning",
   "planning-domain",
   "relationships",
   "interactions",
   "governance",
+  "governance-domain",
   "gifts",
   "gifts-domain",
   "files",
@@ -1374,6 +1598,9 @@ export const COVERAGE_AGGREGATE: readonly string[] = [
   "journal-domain",
   "imports",
   "exports",
+  "import-export",
+  "identity",
+  "workspaces",
   "lifecycle",
   "workspace-lifecycle",
   "web",

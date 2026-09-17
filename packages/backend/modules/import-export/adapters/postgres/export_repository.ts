@@ -3,13 +3,12 @@ import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
 import type {
-  ExportActor,
   ExportManifest,
-  ExportRepository,
   ExportSummary,
-  ExportTransaction,
   StoredExport,
-} from "../../application/export_management.ts";
+} from "../../domain/export_rules.ts";
+import type { ExportActor, ExportTransaction } from "../../ports/context.ts";
+import type { ExportRepository } from "../../ports/export_repository.ts";
 
 interface ExportRow {
   readonly completed_at: Date | null;

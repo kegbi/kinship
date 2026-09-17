@@ -3,10 +3,8 @@ import type { Clock } from "../../../../shared-kernel/clock.ts";
 import type { IdGenerator } from "../../../../shared-kernel/ids.ts";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
-import type { IdentityTransaction } from "../../application/contracts.ts";
-import type {
-  ExactCredentialVersion,
-} from "../../application/authentication.ts";
+import type { IdentityTransaction } from "../../ports/context.ts";
+import type { ExactCredentialVersion } from "../../ports/authentication.ts";
 import type {
   ApplicationEntryContext,
   ApplicationEntryWorkspaces,
@@ -15,7 +13,7 @@ import type {
   VerifiedIdentityEntry,
   VerifiedIdentityEntryAuthority,
   VerifiedIdentityEntryFacade,
-} from "../../application/email_verification.ts";
+} from "../../ports/email_verification.ts";
 import { SecureTokenService } from "../crypto/secure_tokens.ts";
 
 interface VerificationRow {

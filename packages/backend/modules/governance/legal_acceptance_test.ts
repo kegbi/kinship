@@ -112,3 +112,46 @@ Deno.test("GOVERNANCE-001 contains requirement, public review, and acceptance ou
     "non-outage outcomes were changed",
   );
 });
+
+Deno.test("GOVERNANCE-001 a revoked member neither reads requirements nor accepts", async () => {
+  const legal = createLegalAcceptance({
+    actors: { revalidate: () => Promise.resolve("revoked" as const) },
+    clock: fixedClock("2026-08-23T10:00:00.000Z"),
+    ids: { next: () => "00000000-0000-4000-8000-000000000901" },
+    transaction: { run: (work) => work({ opaque: undefined }) },
+    repository: {
+      accept() {
+        throw new Error("a revoked member reached the repository");
+      },
+      publicDocument() {
+        return Promise.resolve({
+          document: {
+            content: "…",
+            documentType: "terms",
+            id: "00000000-0000-4000-8000-000000000101",
+            version: "1",
+          },
+          status: "ready",
+        });
+      },
+      requirements() {
+        throw new Error("a revoked member reached the repository");
+      },
+    },
+  });
+
+  assert(
+    (await legal.requirements(actor)).status === "forbidden",
+    "a revoked member was shown what they still owe",
+  );
+  assert(
+    (await legal.accept(actor, {
+      documentId: "00000000-0000-4000-8000-000000000101",
+    })).status === "forbidden",
+    "a revoked member accepted on a workspace's behalf",
+  );
+  assert(
+    (await legal.publicDocument("terms")).status === "ready",
+    "the public documents stay readable without a membership",
+  );
+});

@@ -12,12 +12,12 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
-import type { InvitationAudit } from "./invite_member.ts";
-import type { PersonalLifecycleAudit } from "./personal_lifecycle.ts";
-import type { AuthenticationAudit } from "./protected_session.ts";
-import type { RegistrationAudit } from "./register_first_workspace.ts";
-import type { SettingsAudit } from "./settings_management.ts";
-import type { WorkspaceResetActivityAudit } from "./workspace_lifecycle.ts";
+import type { InvitationAudit } from "../ports/invitation_repository.ts";
+import type { PersonalLifecycleAudit } from "../ports/personal_lifecycle.ts";
+import type { AuthenticationAudit } from "../ports/session.ts";
+import type { RegistrationAudit } from "../ports/registration_repository.ts";
+import type { SettingsAudit } from "../ports/settings_repository.ts";
+import type { WorkspaceResetActivityAudit } from "../ports/workspace_lifecycle_repository.ts";
 
 export function describeWorkspaceCreatedEvent(
   command: Parameters<RegistrationAudit["recordWorkspaceCreated"]>[0],

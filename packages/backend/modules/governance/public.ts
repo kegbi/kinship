@@ -17,12 +17,15 @@ export type {
   ExportAuditAction,
 } from "./application/export_audit.ts";
 export { exportAuditFrom } from "./application/export_audit.ts";
+export type {
+  LegalDocument,
+  PublicLegalDocumentType,
+} from "./domain/legal_rules.ts";
+export { PUBLIC_LEGAL_DOCUMENT_TYPES } from "./domain/legal_rules.ts";
+export type { LegalActor, LegalTransaction } from "./ports/context.ts";
+export type { LegalAcceptanceRepository } from "./ports/legal_acceptance_repository.ts";
 export {
   createLegalAcceptance,
   type LegalAcceptance,
   type LegalAcceptanceDependencies,
-  type LegalAcceptanceRepository,
-  type LegalActor,
-  type LegalDocument,
-  type LegalTransaction,
 } from "./application/legal_acceptance.ts";

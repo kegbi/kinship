@@ -1,213 +1,45 @@
-import type { Clock } from "../../../shared-kernel/clock.ts";
-import type { IdGenerator } from "../../../shared-kernel/ids.ts";
-import type {
-  ActiveWorkspaceContext,
-  AuthenticationAttemptBudget,
-  AuthenticationAudit,
-} from "./protected_session.ts";
-
-export interface WorkspaceLifecycleTransaction {
-  readonly opaque: unknown;
-}
-
-export interface WorkspaceLifecycleActor extends ActiveWorkspaceContext {}
-
-export interface WorkspaceLifecycleCounts {
-  readonly activities: number;
-  readonly auditEvents: number;
-  readonly calls: number;
-  readonly debts: number;
-  readonly exports: number;
-  readonly files: number;
-  readonly imports: number;
-  readonly integrations: number;
-  readonly journalPosts: number;
-  readonly gifts: number;
-  readonly lifeEvents: number;
-  readonly members: number;
-  readonly people: number;
-  readonly messages: number;
-  readonly notes: number;
-  readonly operations: number;
-  readonly relationships: number;
-  readonly reminders: number;
-  readonly tasks: number;
-}
-
-export interface WorkspaceLifecycleImpactContribution {
-  readonly counts: Readonly<Record<string, number>>;
-  readonly objectKeys?: readonly string[];
-  readonly revision: string;
-}
-
-export interface WorkspaceLifecycleCascadeParticipant {
-  inspectBeforeCascade(command: {
-    readonly transaction: WorkspaceLifecycleTransaction;
-    readonly workspaceId: string;
-  }): Promise<WorkspaceLifecycleImpactContribution>;
-}
-
-export interface WorkspaceLifecycleCascadeParticipants {
-  readonly files: WorkspaceLifecycleCascadeParticipant;
-  readonly gifts: WorkspaceLifecycleCascadeParticipant;
-  readonly governance: WorkspaceLifecycleCascadeParticipant;
-  readonly importExport: WorkspaceLifecycleCascadeParticipant;
-  readonly integrations: WorkspaceLifecycleCascadeParticipant;
-  readonly interactions: WorkspaceLifecycleCascadeParticipant;
-  readonly journal: WorkspaceLifecycleCascadeParticipant;
-  readonly operations: WorkspaceLifecycleCascadeParticipant;
-  readonly people: WorkspaceLifecycleCascadeParticipant;
-  readonly planning: WorkspaceLifecycleCascadeParticipant;
-  readonly relationships: WorkspaceLifecycleCascadeParticipant;
-}
-
-export type WorkspaceLifecycleOutcome =
-  | "confirmation-invalid"
-  | "forbidden"
-  | "rate-limited"
-  | "reauthentication-required"
-  | "stale-impact"
-  | "transactional-failure";
-
-export interface WorkspaceLifecycleSecurityAudit {
-  record(
-    command: WorkspaceLifecycleActor & {
-      readonly action: "delete" | "reset";
-      readonly occurredAt: Date;
-      readonly outcome: WorkspaceLifecycleOutcome;
-      readonly transaction: WorkspaceLifecycleTransaction;
-    },
-  ): Promise<void>;
-}
-
 /**
- * The dashboard-visible record of a reset. `governance` owns `audit_events`
- * and `workspaces` may not read it, so the write is a port the composition
- * root fills with governance's adapter.
+ * Resetting and deleting a workspace.
+ *
+ * Both are the same sequence, and every step of it is a chance to refuse:
+ * only an owner may ask, the throttle has to admit the attempt, the password
+ * has to be re-entered, the confirmation phrase has to name the workspace, and
+ * the impact token has to still match what the member was shown. Each refusal
+ * is recorded against the actor before it is returned, so the audit history
+ * shows the attempts as well as the one that worked.
+ *
+ * The order of the last two checks is deliberate: the confirmation is what the
+ * member typed and the token is what the page held, so a mistyped phrase is
+ * reported as a mistyped phrase even when the workspace has also moved on.
+ *
+ * Everything up to the commit is one transaction; the stored objects are not,
+ * because they are not in the database. The rows commit first and the objects
+ * are removed afterwards, so a failure in between leaves a cleanup to retry
+ * rather than rows pointing at objects that are already gone.
+ *
+ * The `catch` is the careful part. A reservation that is never finalized would
+ * hold a slot against the member, so it is finalized as 503; and an attempt
+ * that authenticated but did not commit is recorded as a transactional failure
+ * in a fresh transaction, because the one it was in has unwound. Both are
+ * best-effort and neither is allowed to replace the original error.
  */
-export interface WorkspaceResetActivityAudit {
-  recordReset(
-    command: WorkspaceLifecycleActor & {
-      readonly occurredAt: Date;
-      readonly transaction: WorkspaceLifecycleTransaction;
-    },
-  ): Promise<void>;
-}
 
-export interface WorkspaceLifecycleSnapshot {
-  readonly activeSessionCount: number;
-  readonly counts: WorkspaceLifecycleCounts;
-  readonly impactToken: string;
-  readonly objectKeys: readonly string[];
-  readonly workspaceName: string;
-}
+import {
+  lifecycleConfirmation,
+  type WorkspaceLifecycleOutcome,
+} from "../domain/workspace_lifecycle_rules.ts";
+import { owner } from "../domain/roles.ts";
+import type {
+  WorkspaceLifecycleActor,
+  WorkspaceLifecycleTransaction,
+} from "../ports/context.ts";
+import {
+  createWorkspaceCleanupReconciler,
+  inspectImpact,
+  type WorkspaceLifecycleDependencies,
+} from "./workspace_lifecycle_context.ts";
 
-export interface WorkspaceLifecycleRepository {
-  inspect(
-    command: WorkspaceLifecycleActor & {
-      readonly lock?: boolean;
-      readonly transaction: WorkspaceLifecycleTransaction;
-    },
-  ): Promise<WorkspaceLifecycleSnapshot | undefined>;
-  resetWorkspace(
-    command: WorkspaceLifecycleActor & {
-      readonly counts: WorkspaceLifecycleCounts;
-      readonly objectKeys: readonly string[];
-      readonly occurredAt: Date;
-      readonly recordId: string;
-      readonly transaction: WorkspaceLifecycleTransaction;
-    },
-  ): Promise<void>;
-  deleteWorkspace(
-    command: WorkspaceLifecycleActor & {
-      readonly counts: WorkspaceLifecycleCounts;
-      readonly objectKeys: readonly string[];
-      readonly occurredAt: Date;
-      readonly recordId: string;
-      readonly transaction: WorkspaceLifecycleTransaction;
-    },
-  ): Promise<void>;
-  listPendingCleanups(command: { readonly limit: number }): Promise<
-    readonly {
-      readonly objectKeys: readonly string[];
-      readonly recordId: string;
-    }[]
-  >;
-  completeCleanup(command: {
-    readonly completedAt: Date;
-    readonly recordId: string;
-  }): Promise<void>;
-}
-
-export interface WorkspaceLifecycleDependencies {
-  readonly attemptBudget: AuthenticationAttemptBudget;
-  readonly activityAudit: WorkspaceResetActivityAudit;
-  readonly audit: WorkspaceLifecycleSecurityAudit;
-  readonly authenticationAudit: AuthenticationAudit;
-  readonly clock: Clock;
-  readonly identity: {
-    verifyPassword(command: {
-      readonly password: string;
-      readonly transaction: WorkspaceLifecycleTransaction;
-      readonly userId: string;
-    }): Promise<boolean>;
-  };
-  readonly ids: IdGenerator;
-  readonly impact: WorkspaceLifecycleCascadeParticipants;
-  readonly repository: WorkspaceLifecycleRepository;
-  readonly storage: {
-    remove(command: { readonly key: string }): Promise<void>;
-  };
-  readonly transaction: {
-    run<T>(
-      work: (transaction: WorkspaceLifecycleTransaction) => Promise<T>,
-    ): Promise<T>;
-  };
-}
-
-export function createWorkspaceCleanupReconciler(
-  dependencies: Pick<
-    WorkspaceLifecycleDependencies,
-    "clock" | "repository" | "storage"
-  >,
-) {
-  const cleanup = async (recordId: string, objectKeys: readonly string[]) => {
-    let failed = false;
-    for (const key of objectKeys) {
-      try {
-        await dependencies.storage.remove({ key });
-      } catch {
-        failed = true;
-      }
-    }
-    if (!failed) {
-      try {
-        await dependencies.repository.completeCleanup({
-          completedAt: dependencies.clock.now(),
-          recordId,
-        });
-      } catch {
-        failed = true;
-      }
-    }
-    return failed ? "pending" as const : "complete" as const;
-  };
-  return {
-    cleanup,
-    reconcilePendingCleanup: async (limit = 20) => {
-      const pending = await dependencies.repository.listPendingCleanups({
-        limit,
-      });
-      let completed = 0;
-      for (const item of pending) {
-        if (await cleanup(item.recordId, item.objectKeys) === "complete") {
-          completed++;
-        }
-      }
-      return { completed, inspected: pending.length };
-    },
-  };
-}
+export { createWorkspaceCleanupReconciler };
 
 type LifecycleInput = {
   readonly confirmation: string;
@@ -233,69 +65,15 @@ type WorkspaceLifecycleTransactionResult =
     readonly status: "deleted" | "reset";
   };
 
-async function hashImpact(value: unknown): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(JSON.stringify(value)),
-  );
-  return Array.from(
-    new Uint8Array(digest),
-    (byte) => byte.toString(16).padStart(2, "0"),
-  ).join("");
-}
-
 export function createWorkspaceLifecycle(
   dependencies: WorkspaceLifecycleDependencies,
 ) {
   const reconciler = createWorkspaceCleanupReconciler(dependencies);
-  const inspect = async (
+  const inspect = (
     actor: WorkspaceLifecycleActor,
     transaction: WorkspaceLifecycleTransaction,
     lock = false,
-  ): Promise<WorkspaceLifecycleSnapshot | undefined> => {
-    const snapshot = await dependencies.repository.inspect({
-      ...actor,
-      lock,
-      transaction,
-    });
-    if (!snapshot) return undefined;
-    const command = { transaction, workspaceId: actor.workspaceId };
-    const contributions = [
-      await dependencies.impact.people.inspectBeforeCascade(command),
-      await dependencies.impact.relationships.inspectBeforeCascade(command),
-      await dependencies.impact.interactions.inspectBeforeCascade(command),
-      await dependencies.impact.journal.inspectBeforeCascade(command),
-      await dependencies.impact.planning.inspectBeforeCascade(command),
-      await dependencies.impact.files.inspectBeforeCascade(command),
-      await dependencies.impact.gifts.inspectBeforeCascade(command),
-      await dependencies.impact.integrations.inspectBeforeCascade(command),
-      await dependencies.impact.importExport.inspectBeforeCascade(command),
-      await dependencies.impact.governance.inspectBeforeCascade(command),
-      await dependencies.impact.operations.inspectBeforeCascade(command),
-    ];
-    const counts = Object.assign(
-      {},
-      snapshot.counts,
-      ...contributions.map((item) => item.counts),
-    ) as WorkspaceLifecycleCounts;
-    const objectKeys = [
-      ...new Set([
-        ...snapshot.objectKeys,
-        ...contributions.flatMap((item) => item.objectKeys ?? []),
-      ]),
-    ].sort();
-    return {
-      ...snapshot,
-      counts,
-      impactToken: await hashImpact({
-        base: snapshot.impactToken,
-        contributions: contributions.map((item) => item.revision),
-        counts,
-        objectKeys,
-      }),
-      objectKeys,
-    };
-  };
+  ) => inspectImpact(dependencies, actor, transaction, lock);
 
   const mutate = async (
     action: "delete" | "reset",
@@ -318,12 +96,31 @@ export function createWorkspaceLifecycle(
         outcome,
         transaction,
       });
+    const recordAuthenticationFailure = async (
+      occurredAt: Date,
+      transaction: WorkspaceLifecycleTransaction,
+    ) => {
+      const auditEventId = await dependencies.authenticationAudit
+        .recordFailure({
+          actorMemberId: null,
+          context: actor,
+          occurredAt,
+          transaction,
+        });
+      await dependencies.authenticationAudit.assertFailurePostcondition({
+        actorMemberId: null,
+        ...(auditEventId ? { auditEventId } : {}),
+        context: actor,
+        occurredAt,
+        transaction,
+      });
+    };
     try {
       const result = await dependencies.transaction.run<
         WorkspaceLifecycleTransactionResult
       >(async (transaction) => {
         const occurredAt = dependencies.clock.now();
-        if (actor.role !== "owner") {
+        if (!owner(actor)) {
           await record("forbidden", occurredAt, transaction);
           return { status: "forbidden" as const };
         }
@@ -335,20 +132,7 @@ export function createWorkspaceLifecycle(
         });
         reservationId = admission.reservationId;
         if (admission.status === "rate-limited") {
-          const auditEventId = await dependencies.authenticationAudit
-            .recordFailure({
-              actorMemberId: null,
-              context: actor,
-              occurredAt,
-              transaction,
-            });
-          await dependencies.authenticationAudit.assertFailurePostcondition({
-            actorMemberId: null,
-            ...(auditEventId ? { auditEventId } : {}),
-            context: actor,
-            occurredAt,
-            transaction,
-          });
+          await recordAuthenticationFailure(occurredAt, transaction);
           await record("rate-limited", occurredAt, transaction);
           await dependencies.attemptBudget.finalize({
             reservationId: admission.reservationId,
@@ -367,20 +151,7 @@ export function createWorkspaceLifecycle(
             userId: actor.userId,
           })
         ) {
-          const auditEventId = await dependencies.authenticationAudit
-            .recordFailure({
-              actorMemberId: null,
-              context: actor,
-              occurredAt,
-              transaction,
-            });
-          await dependencies.authenticationAudit.assertFailurePostcondition({
-            actorMemberId: null,
-            ...(auditEventId ? { auditEventId } : {}),
-            context: actor,
-            occurredAt,
-            transaction,
-          });
+          await recordAuthenticationFailure(occurredAt, transaction);
           await record("reauthentication-required", occurredAt, transaction);
           await dependencies.attemptBudget.finalize({
             reservationId: admission.reservationId,
@@ -401,10 +172,10 @@ export function createWorkspaceLifecycle(
           await record("forbidden", occurredAt, transaction);
           return { status: "forbidden" as const };
         }
-        const confirmation = `${
-          action === "reset" ? "RESET" : "DELETE"
-        } ${current.workspaceName}`;
-        if (input.confirmation !== confirmation) {
+        if (
+          input.confirmation !==
+            lifecycleConfirmation(action, current.workspaceName)
+        ) {
           await record("confirmation-invalid", occurredAt, transaction);
           return { status: "confirmation-invalid" as const };
         }
@@ -472,14 +243,20 @@ export function createWorkspaceLifecycle(
 
   return {
     preview: async (actor: WorkspaceLifecycleActor) => {
-      if (actor.role !== "owner") return { status: "forbidden" as const };
+      if (!owner(actor)) return { status: "forbidden" as const };
       return await dependencies.transaction.run(async (transaction) => {
         const snapshot = await inspect(actor, transaction);
         return snapshot
           ? {
             ...snapshot,
-            deleteConfirmation: `DELETE ${snapshot.workspaceName}`,
-            resetConfirmation: `RESET ${snapshot.workspaceName}`,
+            deleteConfirmation: lifecycleConfirmation(
+              "delete",
+              snapshot.workspaceName,
+            ),
+            resetConfirmation: lifecycleConfirmation(
+              "reset",
+              snapshot.workspaceName,
+            ),
             status: "ready" as const,
           }
           : { status: "forbidden" as const };

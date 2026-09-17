@@ -5,10 +5,10 @@ import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
 import type {
   ApiTokenRecord,
-  ApiTokenRepository,
   ApiTokenScope,
-  ApiTokenTransaction,
-} from "../../application/api_token_management.ts";
+} from "../../domain/token_rules.ts";
+import type { ApiTokenRepository } from "../../ports/api_token_repository.ts";
+import type { ApiTokenTransaction } from "../../ports/context.ts";
 
 interface TokenRow {
   readonly created_at: string;

@@ -1,6 +1,6 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
-import type { WorkspaceCurrencyBoundary } from "../../application/currency_boundary.ts";
+import type { WorkspaceCurrencyBoundary } from "../../ports/currency_boundary.ts";
 
 export class PostgresWorkspaceCurrencyBoundary
   implements WorkspaceCurrencyBoundary {

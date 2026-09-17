@@ -1,9 +1,7 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
-import type {
-  PersonalLifecycleMembership,
-  PersonalLifecycleMemberships,
-} from "../../application/personal_lifecycle.ts";
+import type { PersonalLifecycleMembership } from "../../domain/personal_lifecycle_rules.ts";
+import type { PersonalLifecycleMemberships } from "../../ports/personal_lifecycle.ts";
 
 interface MembershipRow {
   readonly activeOwnerCount: number;

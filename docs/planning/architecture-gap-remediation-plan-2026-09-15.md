@@ -708,12 +708,35 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     unit 718 vitest plus all sets green, integration 126/0, contracts:check
     green, baseline 14 unchanged; gates fmt:check, lint, check,
     check:architecture.
-- [ ] **GAP-018 — Domain and ports extraction: workspaces, identity, governance,
+- [x] **GAP-018 — Domain and ports extraction: workspaces, identity, governance,
       import-export, integrations, api-access.** M-L. Depends: 015.
   - Both: same pattern; identity keeps `ports/security.ts`; import-export
     isolates format parsing into `domain/formats/` (prepares GAP-050).
   - Verify: all backend gates green; `check:architecture` layer rules extended
     to `domain/` and `ports/`.
+  - Delivered 2026-09-17: import-export gained `domain/formats/` with
+    `canonical.ts` (one canonical JSON and SHA-256 pair), `monica_source.ts`
+    (the whole Monica import profile), `portable_json.ts`, and `vcard.ts`, plus
+    `import_rules.ts` and `export_rules.ts`, every fingerprint, canonical text,
+    digest, and vCard line pinned by fixed vectors and proven equivalent to main
+    over about 200 inputs, so GAP-050 adds CSV and vCard sources as siblings;
+    workspaces gained nine domain modules (roles, session, registration,
+    invitation, settings, personalization, workspace and personal lifecycle, UI
+    state rules) and thirteen port files; identity keeps `ports/security.ts`
+    beside eight more port files and a deliberately small domain; governance,
+    integrations, and api-access each gained a domain module and ports; the
+    eleven largest application files are facades or orchestration under 400
+    lines (largest `invite_member.ts` at 372); nine application contract files
+    moved into `ports/`; every previous `public.ts` name is still exported; the
+    six domain sets measure 100/100/100 except import-export at 99.0 branch,
+    every wider set is above its floor after three real coverage gaps were
+    closed with tests, api set up to 88.5 branch; the checker already covered
+    `domain/` and `ports/`, so `module-boundaries.yaml` and the 14-entry
+    baseline are untouched; 69 files changed (+1487/-4755) plus 87 new files
+    (9232 lines); unit 718 vitest plus all sets green, integration 126/0,
+    contracts:check and build green; gates fmt:check, lint, check,
+    check:architecture. The `lifecycle` coverage set flapped once in four runs
+    on a pre-existing timing sensitivity (see REL-038).
 
 ### Phase 3 — API delivery layer
 
