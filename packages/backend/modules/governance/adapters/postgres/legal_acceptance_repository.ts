@@ -3,10 +3,8 @@ import type { ApplicationDatabase } from "../../../../platform/postgres/database
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
-import type {
-  LegalAcceptanceRepository,
-  LegalDocument,
-} from "../../application/legal_acceptance.ts";
+import type { LegalDocument } from "../../domain/legal_rules.ts";
+import type { LegalAcceptanceRepository } from "../../ports/legal_acceptance_repository.ts";
 
 interface DocumentRow {
   readonly content: string;

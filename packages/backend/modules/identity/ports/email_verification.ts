@@ -1,3 +1,19 @@
+/**
+ * How an address is proved, and where the person lands afterwards.
+ *
+ * A verification can fail three ways and they are kept apart on purpose:
+ * `invalid` is a token that was never issued, `expired` is one that was, and
+ * `replayed` is one that already worked. Only the last two tell the holder
+ * anything, and only the holder of the mailbox can see them.
+ *
+ * The entry token is a single-use handoff, not a session: verifying issues one
+ * and the application entry consumes it, both against the address that was
+ * verified, so a token that leaked cannot be spent for somebody else.
+ */
+
+import type { ExactCredentialVersion } from "./authentication.ts";
+import type { IdentityTransaction } from "./context.ts";
+
 export type VerificationFailure = "expired" | "invalid" | "replayed";
 
 export type VerificationResult =
@@ -63,5 +79,3 @@ export interface VerifiedIdentityEntryFacade {
     readonly transaction: IdentityTransaction;
   }): Promise<VerifiedIdentityEntry | undefined>;
 }
-import type { IdentityTransaction } from "./contracts.ts";
-import type { ExactCredentialVersion } from "./authentication.ts";

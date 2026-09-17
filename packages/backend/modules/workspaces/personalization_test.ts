@@ -1,9 +1,9 @@
 import {
   createPersonalizationManagement,
   type PersonalizationDependencies,
-  type PersonalizationMutation,
-  type PersonalizationTransaction,
 } from "./application/personalization.ts";
+import type { PersonalizationMutation } from "./domain/personalization_rules.ts";
+import type { PersonalizationTransaction } from "./ports/context.ts";
 import { assert } from "../../testing/assert.ts";
 import { fixedClock } from "../../testing/fakes.ts";
 

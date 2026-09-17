@@ -4,9 +4,9 @@ import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import {
   type DavRemoteChange,
-  type DavRemoteClient,
   DavRemoteFailure,
-} from "../../application/dav_sync.ts";
+} from "../../domain/dav_rules.ts";
+import type { DavRemoteClient } from "../../ports/dav_remote.ts";
 
 type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 interface TransportResponse {

@@ -5,8 +5,8 @@ import type {
   ResolvedMemberPreferences,
   WorkspaceConfiguration,
   WorkspaceMemberRecord,
-  WorkspaceSettingsRepository,
-} from "../../application/settings_management.ts";
+} from "../../domain/settings_rules.ts";
+import type { WorkspaceSettingsRepository } from "../../ports/settings_repository.ts";
 
 interface PreferenceRow {
   readonly effectiveTimezone: string;

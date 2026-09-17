@@ -3,10 +3,12 @@ import type { ApplicationDatabase } from "../../../../platform/postgres/database
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type {
   WorkspaceLifecycleCounts,
+  WorkspaceLifecycleSnapshot,
+} from "../../domain/workspace_lifecycle_rules.ts";
+import type {
   WorkspaceLifecycleRepository,
   WorkspaceLifecycleSecurityAudit,
-  WorkspaceLifecycleSnapshot,
-} from "../../application/workspace_lifecycle.ts";
+} from "../../ports/workspace_lifecycle_repository.ts";
 
 interface SnapshotRow extends WorkspaceLifecycleCounts {
   readonly activeSessionCount: number;

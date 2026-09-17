@@ -6,11 +6,13 @@ import {
 } from "../../../../platform/postgres/transactions.ts";
 import type {
   PersonalizationEntry,
-  PersonalizationRepository,
   PersonalizationSection,
+} from "../../domain/personalization_rules.ts";
+import type {
+  PersonalizationRepository,
   WorkspacePersonalizationDeleteCommand,
   WorkspacePersonalizationRepository,
-} from "../../application/personalization.ts";
+} from "../../ports/personalization_repository.ts";
 
 interface Row {
   readonly canDelete: boolean;

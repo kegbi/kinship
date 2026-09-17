@@ -1,12 +1,12 @@
 import { sql } from "kysely";
 import { isUniqueViolation } from "../../../../platform/postgres/errors.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
-import {
-  type CreatePendingUserCommand,
-  IdentityConflictError,
-  type IdentityRegistrationFacade,
-  type PendingUser,
-} from "../../application/contracts.ts";
+import { IdentityConflictError } from "../../domain/identity_rules.ts";
+import type {
+  CreatePendingUserCommand,
+  IdentityRegistrationFacade,
+  PendingUser,
+} from "../../ports/registration.ts";
 
 export class PostgresIdentityRegistration
   implements IdentityRegistrationFacade {

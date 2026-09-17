@@ -1,91 +1,44 @@
+/**
+ * The personal access token use case.
+ *
+ * Three of the four paths have the same shape: refuse a member outright, open
+ * one transaction, re-establish the caller's standing inside it, do the work,
+ * and record the audit event beside it. Only the listing takes no lock, so a
+ * page of tokens cannot block one being minted.
+ *
+ * `authenticate` is the fourth and reads the other way round. Nobody has
+ * established an actor yet — all that has arrived is a string somebody pasted
+ * into a program — so the token is parsed, the row is found by the identifier
+ * inside it, and `workspaces` is asked whether the user and workspace it names
+ * still add up to somebody. Only then is the secret compared, because that is
+ * the one expensive step and everything cheaper has already had its chance to
+ * refuse. `markUsed` is what makes the acceptance visible to its owner.
+ */
+
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
+import {
+  type ApiTokenInput,
+  type ApiTokenRecord,
+  type ApiTokenScope,
+  parseToken,
+  privileged,
+  renderToken,
+  usable,
+  validateApiToken,
+} from "../domain/token_rules.ts";
+import type { ApiTokenAudit } from "../ports/audit.ts";
+import type { ApiTokenRepository } from "../ports/api_token_repository.ts";
+import type {
+  ApiTokenActor,
+  ApiTokenTransaction,
+  ApiTokenTransactionRunner,
+} from "../ports/context.ts";
+import type { ApiTokenSecrets } from "../ports/secrets.ts";
 import type {
   ActorContext,
   ActorRevalidation,
 } from "../../workspaces/public.ts";
-
-export const API_TOKEN_SCOPES = ["people:read"] as const;
-export type ApiTokenScope = typeof API_TOKEN_SCOPES[number];
-
-export interface ApiTokenActor {
-  readonly memberId: string;
-  readonly role: "owner" | "admin" | "member";
-  readonly userId: string;
-  readonly workspaceId: string;
-}
-
-export interface ApiTokenRecord {
-  readonly createdAt: string;
-  readonly expiresAt?: string;
-  readonly id: string;
-  readonly lastUsedAt?: string;
-  readonly name: string;
-  readonly revokedAt?: string;
-  readonly scopes: readonly ApiTokenScope[];
-}
-
-export interface ApiTokenTransaction {
-  readonly opaque: unknown;
-}
-
-export interface ApiTokenRepository {
-  create(
-    command: ApiTokenActor & {
-      readonly expiresAt?: Date;
-      readonly hash: string;
-      readonly id: string;
-      readonly name: string;
-      readonly occurredAt: Date;
-      readonly scopes: readonly ApiTokenScope[];
-      readonly transaction: ApiTokenTransaction;
-    },
-  ): Promise<
-    | { readonly record: ApiTokenRecord; readonly status: "created" }
-    | Failure<"forbidden">
-  >;
-  findForAuthentication(command: {
-    readonly id: string;
-    readonly transaction: ApiTokenTransaction;
-  }): Promise<
-    | {
-      readonly hash: string;
-      readonly record: ApiTokenRecord;
-      readonly status: "found";
-      readonly userId: string;
-      readonly workspaceId: string;
-    }
-    | Failure<"not-found">
-  >;
-  list(
-    command: ApiTokenActor & { readonly transaction: ApiTokenTransaction },
-  ): Promise<readonly ApiTokenRecord[]>;
-  markUsed(command: {
-    readonly id: string;
-    readonly occurredAt: Date;
-    readonly transaction: ApiTokenTransaction;
-  }): Promise<boolean>;
-  revoke(
-    command: ApiTokenActor & {
-      readonly id: string;
-      readonly occurredAt: Date;
-      readonly transaction: ApiTokenTransaction;
-    },
-  ): Promise<
-    | { readonly record: ApiTokenRecord; readonly status: "revoked" }
-    | Failure<"forbidden" | "not-found">
-  >;
-}
-
-export interface ApiTokenAudit {
-  record(command: {
-    readonly action: "created" | "revoked";
-    readonly actor: ApiTokenActor;
-    readonly occurredAt: Date;
-    readonly record: ApiTokenRecord;
-    readonly transaction: ApiTokenTransaction;
-  }): Promise<void>;
-}
 
 export interface ApiTokenDependencies {
   readonly actorContext: ActorContext;
@@ -94,13 +47,8 @@ export interface ApiTokenDependencies {
   readonly clock: Clock;
   readonly ids: { next(): string };
   readonly repository: ApiTokenRepository;
-  readonly secrets: {
-    create(): Promise<{ readonly hash: string; readonly raw: string }>;
-    matches(raw: string, hash: string): Promise<boolean>;
-  };
-  readonly transaction: {
-    run<T>(work: (transaction: ApiTokenTransaction) => Promise<T>): Promise<T>;
-  };
+  readonly secrets: ApiTokenSecrets;
+  readonly transaction: ApiTokenTransactionRunner;
 }
 
 export interface ApiTokenManagement {
@@ -112,11 +60,7 @@ export interface ApiTokenManagement {
     | { readonly actor: ApiTokenActor; readonly status: "authenticated" }
     | { readonly status: "invalid" }
   >;
-  create(actor: ApiTokenActor, input: {
-    readonly expiresAt?: string;
-    readonly name: string;
-    readonly scopes: readonly ApiTokenScope[];
-  }): Promise<
+  create(actor: ApiTokenActor, input: ApiTokenInput): Promise<
     | {
       readonly record: ApiTokenRecord;
       readonly secret: string;
@@ -132,13 +76,6 @@ export interface ApiTokenManagement {
     | { readonly record: ApiTokenRecord; readonly status: "revoked" }
     | Failure<"forbidden" | "not-found">
   >;
-}
-
-const tokenPattern =
-  /^kin_pat_([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.([A-Za-z0-9_-]{16,128})$/i;
-
-function privileged(actor: ApiTokenActor): boolean {
-  return actor.role === "owner" || actor.role === "admin";
 }
 
 export function createApiTokenManagement(
@@ -158,13 +95,11 @@ export function createApiTokenManagement(
 
   return {
     authenticate: async (rawToken, requiredScope, requestedWorkspaceId) => {
-      const matched = tokenPattern.exec(rawToken);
-      if (!matched?.[1] || !matched[2]) return { status: "invalid" };
-      const id = matched[1];
-      const rawSecret = matched[2];
+      const presented = parseToken(rawToken);
+      if (!presented) return { status: "invalid" };
       return await dependencies.transaction.run(async (transaction) => {
         const found = await dependencies.repository.findForAuthentication({
-          id,
+          id: presented.id,
           transaction,
         });
         if (found.status !== "found") return { status: "invalid" };
@@ -177,13 +112,13 @@ export function createApiTokenManagement(
         });
         if (!actor) return { status: "invalid" };
         const now = dependencies.clock.now();
-        const valid = !found.record.revokedAt &&
-          (!found.record.expiresAt ||
-            Date.parse(found.record.expiresAt) > now.getTime()) &&
-          found.record.scopes.includes(requiredScope) &&
-          (!requestedWorkspaceId ||
-            actor.workspaceId === requestedWorkspaceId) &&
-          await dependencies.secrets.matches(rawSecret, found.hash);
+        const valid = usable({
+          now,
+          record: found.record,
+          ...(requestedWorkspaceId ? { requestedWorkspaceId } : {}),
+          requiredScope,
+          workspaceId: actor.workspaceId,
+        }) && await dependencies.secrets.matches(presented.secret, found.hash);
         if (!valid) return { status: "invalid" };
         if (
           !await dependencies.repository.markUsed({
@@ -197,17 +132,9 @@ export function createApiTokenManagement(
     },
     create: async (actor, input) => {
       if (!privileged(actor)) return { status: "forbidden" };
-      const name = input.name.trim();
-      const scopes = [...new Set(input.scopes)];
       const now = dependencies.clock.now();
-      const expiresAt = input.expiresAt ? new Date(input.expiresAt) : undefined;
-      if (
-        name.length < 1 || name.length > 100 || scopes.length < 1 ||
-        scopes.length !== input.scopes.length ||
-        scopes.some((scope) => !API_TOKEN_SCOPES.includes(scope)) ||
-        (expiresAt &&
-          (!Number.isFinite(expiresAt.getTime()) || expiresAt <= now))
-      ) return { status: "invalid" };
+      const values = validateApiToken(input, now);
+      if (!values) return { status: "invalid" };
       const id = dependencies.ids.next();
       const secret = await dependencies.secrets.create();
       return await dependencies.transaction.run(async (transaction) => {
@@ -216,12 +143,10 @@ export function createApiTokenManagement(
         }
         const created = await dependencies.repository.create({
           ...actor,
-          ...(expiresAt ? { expiresAt } : {}),
+          ...values,
           hash: secret.hash,
           id,
-          name,
           occurredAt: now,
-          scopes,
           transaction,
         });
         if (created.status !== "created") return created;
@@ -234,7 +159,7 @@ export function createApiTokenManagement(
         });
         return {
           record: created.record,
-          secret: `kin_pat_${id}.${secret.raw}`,
+          secret: renderToken(id, secret.raw),
           status: "created" as const,
         };
       });

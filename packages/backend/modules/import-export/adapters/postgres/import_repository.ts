@@ -5,14 +5,15 @@ import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
 import type {
-  ImportActor,
   ImportReport,
-  ImportRepository,
   ImportSummary,
-  ImportTransaction,
   PreparedImportCommit,
+} from "../../domain/import_rules.ts";
+import type { ImportActor, ImportTransaction } from "../../ports/context.ts";
+import type {
+  ImportRepository,
   StageImportCommand,
-} from "../../application/import_management.ts";
+} from "../../ports/import_repository.ts";
 
 export class PostgresImportTransaction
   extends PostgresTransactionRunner<ImportTransaction> {}

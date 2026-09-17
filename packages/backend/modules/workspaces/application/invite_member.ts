@@ -1,6 +1,56 @@
+/**
+ * The workspace invitation coordinator.
+ *
+ * Six paths, and the one thing they all do first is hash the token the caller
+ * presented, because everything downstream is keyed by the digest and the raw
+ * link never goes anywhere near the database. Everything else is ordering.
+ *
+ * `completeAcceptance` is the part worth reading. Joining a workspace is the
+ * write that hands somebody else's data to a new person, so the audit event,
+ * the membership, and the invitation are all asserted back inside the
+ * transaction that created them: a half-written acceptance unwinds rather than
+ * leaving a membership nobody invited.
+ *
+ * Two paths deal with somebody who does not have an account yet.
+ * `registerInvitee` creates a pending identity against the invited address —
+ * and only that address, so an invitation cannot be spent to register a
+ * different mailbox — and `acceptVerifiedEntry` is the other end: somebody who
+ * has just proved that address hands back the entry token, joins, and is
+ * signed in, all in one transaction.
+ *
+ * Delivery is always outside the transaction. A workspace that committed an
+ * invitation and then could not send the email reports `delivery-failed`; it
+ * does not roll the invitation back, because the invitation is real and can be
+ * re-sent.
+ */
+
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { IdGenerator } from "../../../shared-kernel/ids.ts";
-import type { Failure } from "../../../shared-kernel/result.ts";
+import {
+  type InvitationAcceptance,
+  invitationExpiry,
+  type InvitationInspection,
+  type InvitationRegistrationResult,
+  invitationSummary,
+  type InvitationVerificationDeliveryResult,
+  memberDirectory,
+  sameMailbox,
+  type VerifiedEntryAcceptance,
+  type WorkspaceInvitationList,
+} from "../domain/invitation_rules.ts";
+import { privileged } from "../domain/roles.ts";
+import type { InvitationRole } from "../domain/roles.ts";
+import { verificationExpiry } from "../domain/registration_rules.ts";
+import type {
+  InvitationActor,
+  RegistrationTransactionRunner,
+} from "../ports/context.ts";
+import type {
+  InvitationAudit,
+  InvitationMail,
+  InvitationTokens,
+  WorkspaceInvitationRepository,
+} from "../ports/invitation_repository.ts";
 import type {
   IdentityAuthenticationFacade,
   IdentityRegistrationFacade,
@@ -8,174 +58,7 @@ import type {
   VerifiedIdentityEntryFacade,
 } from "../../identity/public.ts";
 import { IdentityConflictError } from "../../identity/public.ts";
-import type {
-  RegistrationTransaction,
-  RegistrationTransactionRunner,
-} from "./register_first_workspace.ts";
-
-export type WorkspaceRole = "admin" | "member" | "owner";
-export type InvitationRole = Exclude<WorkspaceRole, "owner">;
-
-export interface InvitationActor {
-  readonly memberId: string;
-  readonly role: WorkspaceRole;
-  readonly userId: string;
-  readonly workspaceId: string;
-}
-
-export interface InvitationSummary {
-  readonly createdAt: string;
-  readonly email: string;
-  readonly expiresAt: string;
-  readonly id: string;
-  readonly role: InvitationRole;
-  readonly status: "pending";
-}
-
-export interface WorkspaceMemberSummary {
-  readonly email: string;
-  readonly id: string;
-  readonly name: string;
-  readonly role: WorkspaceRole;
-  readonly status: "active";
-}
-
-export interface WorkspaceInvitationRecord {
-  readonly createdAt: Date;
-  readonly email: string;
-  readonly expiresAt: Date;
-  readonly id: string;
-  readonly role: InvitationRole;
-  readonly status: "pending";
-}
-
-export interface WorkspaceMemberRecord {
-  readonly id: string;
-  readonly role: WorkspaceRole;
-  readonly status: "active";
-  readonly userId: string;
-}
-
-export type WorkspaceInvitationList =
-  | Failure<"forbidden">
-  | {
-    readonly invitations: readonly InvitationSummary[];
-    readonly members: readonly WorkspaceMemberSummary[];
-    readonly status: "ready";
-  };
-
-export interface WorkspaceInvitationRepository {
-  create(command: {
-    readonly actor: InvitationActor;
-    readonly email: string;
-    readonly existingUserId?: string;
-    readonly expiresAt: Date;
-    readonly invitationId: string;
-    readonly role: InvitationRole;
-    readonly tokenHash: string;
-    readonly transaction: RegistrationTransaction;
-  }): Promise<"created" | "already-member" | "forbidden">;
-  list(command: {
-    readonly actor: InvitationActor;
-    readonly now: Date;
-    readonly transaction: RegistrationTransaction;
-  }): Promise<
-    | Failure<"forbidden">
-    | {
-      readonly invitations: readonly WorkspaceInvitationRecord[];
-      readonly members: readonly WorkspaceMemberRecord[];
-      readonly status: "ready";
-    }
-  >;
-  inspect(command: {
-    readonly now: Date;
-    readonly tokenHash: string;
-    readonly transaction: RegistrationTransaction;
-  }): Promise<InvitationInspection>;
-  accept(command: {
-    readonly memberId: string;
-    readonly now: Date;
-    readonly tokenHash: string;
-    readonly transaction: RegistrationTransaction;
-    readonly userId: string;
-  }): Promise<InvitationAcceptance>;
-  assertAcceptancePostcondition(command: {
-    readonly acceptedAt: Date;
-    readonly invitationId: string;
-    readonly invitedByMemberId: string | null;
-    readonly memberId: string;
-    readonly role: InvitationRole;
-    readonly tokenHash: string;
-    readonly transaction: RegistrationTransaction;
-    readonly userId: string;
-    readonly workspaceId: string;
-  }): Promise<void>;
-}
-
-export interface InvitationAudit {
-  recordMemberJoined(command: {
-    readonly actorMemberId: string;
-    readonly memberId: string;
-    readonly occurredAt: Date;
-    readonly transaction: RegistrationTransaction;
-    readonly workspaceId: string;
-  }): Promise<void>;
-  assertMemberJoinedPostcondition(command: {
-    readonly actorMemberId: string;
-    readonly memberId: string;
-    readonly occurredAt: Date;
-    readonly transaction: RegistrationTransaction;
-    readonly workspaceId: string;
-  }): Promise<void>;
-}
-
-export interface InvitationMail {
-  sendInvitation(message: {
-    readonly email: string;
-    readonly expiresAt: Date;
-    readonly token: string;
-    readonly workspaceName: string;
-  }): Promise<void>;
-  sendVerification(message: {
-    readonly email: string;
-    readonly expiresAt: Date;
-    readonly token: string;
-  }): Promise<void>;
-}
-
-export interface InvitationTokens {
-  create(): Promise<{ readonly hash: string; readonly raw: string }>;
-  hash(raw: string): Promise<string>;
-}
-
-export type InvitationInspection =
-  | {
-    readonly email: string;
-    readonly role: InvitationRole;
-    readonly status: "pending";
-    readonly workspaceName: string;
-  }
-  | { readonly status: "expired" | "invalid" | "revoked" | "used" };
-
-export type InvitationAcceptance =
-  | {
-    readonly invitationId: string;
-    readonly invitedByMemberId: string | null;
-    readonly memberId: string;
-    readonly role: InvitationRole;
-    readonly status: "accepted";
-    readonly workspaceId: string;
-    readonly workspaceName: string;
-  }
-  | {
-    readonly status:
-      | "already-member"
-      | "expired"
-      | "invalid"
-      | "revoked"
-      | "used"
-      | "wrong-user";
-  };
+import { completeAcceptance } from "./invitation_acceptance.ts";
 
 export interface WorkspaceInvitationDependencies {
   readonly audit: InvitationAudit;
@@ -194,38 +77,6 @@ export interface WorkspaceInvitationDependencies {
   readonly tokens: InvitationTokens;
   readonly transaction: RegistrationTransactionRunner;
 }
-
-export type InvitationRegistrationResult =
-  | "delivery-failed"
-  | "expired"
-  | "identity-unavailable"
-  | "invalid"
-  | "revoked"
-  | "used"
-  | "verification-required"
-  | "wrong-user";
-
-export type InvitationVerificationDeliveryResult =
-  | "delivery-failed"
-  | "expired"
-  | "invalid"
-  | "rate-limited"
-  | "revoked"
-  | "sent"
-  | "used";
-
-export type VerifiedEntryAcceptance = InvitationAcceptance | {
-  readonly expiresAt: Date;
-  readonly invitationId: string;
-  readonly invitedByMemberId: string | null;
-  readonly memberId: string;
-  readonly role: InvitationRole;
-  readonly sessionToken: string;
-  readonly status: "accepted";
-  readonly userId: string;
-  readonly workspaceId: string;
-  readonly workspaceName: string;
-};
 
 export function createWorkspaceInvitationCoordinator(
   dependencies: WorkspaceInvitationDependencies,
@@ -261,45 +112,12 @@ export function createWorkspaceInvitationCoordinator(
     invitationToken: string,
   ): Promise<InvitationVerificationDeliveryResult>;
 } {
-  const completeAcceptance = async (
-    transaction: RegistrationTransaction,
-    result: Extract<InvitationAcceptance, { readonly status: "accepted" }>,
-    userId: string,
-    now: Date,
-    tokenHash: string,
-  ): Promise<void> => {
-    await dependencies.audit.recordMemberJoined({
-      actorMemberId: result.memberId,
-      memberId: result.memberId,
-      occurredAt: now,
-      transaction,
-      workspaceId: result.workspaceId,
-    });
-    await dependencies.repository.assertAcceptancePostcondition({
-      acceptedAt: now,
-      invitationId: result.invitationId,
-      invitedByMemberId: result.invitedByMemberId,
-      memberId: result.memberId,
-      role: result.role,
-      tokenHash,
-      transaction,
-      userId,
-      workspaceId: result.workspaceId,
-    });
-    await dependencies.audit.assertMemberJoinedPostcondition({
-      actorMemberId: result.memberId,
-      memberId: result.memberId,
-      occurredAt: now,
-      transaction,
-      workspaceId: result.workspaceId,
-    });
-  };
   return {
     async registerInvitee(command) {
       const tokenHash = await dependencies.tokens.hash(command.token);
       const verificationToken = await dependencies.tokens.create();
       const now = dependencies.clock.now();
-      const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1_000);
+      const expiresAt = verificationExpiry(now);
       try {
         const delivery = await dependencies.transaction.run(
           async (transaction) => {
@@ -309,9 +127,7 @@ export function createWorkspaceInvitationCoordinator(
               transaction,
             });
             if (invitation.status !== "pending") return invitation.status;
-            if (
-              invitation.email.toLowerCase() !== command.email.toLowerCase()
-            ) {
+            if (!sameMailbox(invitation.email, command.email)) {
               return "wrong-user" as const;
             }
             const userId = dependencies.ids.create();
@@ -365,7 +181,7 @@ export function createWorkspaceInvitationCoordinator(
       );
       const verificationToken = await dependencies.tokens.create();
       const now = dependencies.clock.now();
-      const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1_000);
+      const expiresAt = verificationExpiry(now);
       const delivery = await dependencies.transaction.run(
         async (transaction) => {
           const invitation = await dependencies.repository.inspect({
@@ -429,13 +245,13 @@ export function createWorkspaceInvitationCoordinator(
           userId: identity.userId,
         });
         if (result.status !== "accepted") return result;
-        await completeAcceptance(
-          transaction,
-          result,
-          identity.userId,
+        await completeAcceptance(dependencies, {
           now,
+          result,
           tokenHash,
-        );
+          transaction,
+          userId: identity.userId,
+        });
         const session = await dependencies.identity.issueSession({
           ...(command.ipAddress ? { ipAddress: command.ipAddress } : {}),
           transaction,
@@ -457,13 +273,9 @@ export function createWorkspaceInvitationCoordinator(
       });
     },
     async create(command) {
-      if (command.actor.role !== "owner" && command.actor.role !== "admin") {
-        return "forbidden";
-      }
+      if (!privileged(command.actor)) return "forbidden";
       const token = await dependencies.tokens.create();
-      const expiresAt = new Date(
-        dependencies.clock.now().getTime() + 7 * 24 * 60 * 60 * 1_000,
-      );
+      const expiresAt = invitationExpiry(dependencies.clock.now());
       const result = await dependencies.transaction.run(async (transaction) => {
         const existingUserId = await dependencies.identity
           .findIdentityIdByEmail({ email: command.email, transaction });
@@ -504,32 +316,9 @@ export function createWorkspaceInvitationCoordinator(
             transaction,
             userIds: listed.members.map((member) => member.userId),
           });
-        const identityById = new Map(
-          identities.map((identity) => [identity.userId, identity]),
-        );
-        const members = listed.members.flatMap((member) => {
-          const identity = identityById.get(member.userId);
-          return identity
-            ? [{
-              email: identity.email,
-              id: member.id,
-              name: identity.name,
-              role: member.role,
-              status: member.status,
-            }]
-            : [];
-        }).sort((left, right) =>
-          left.email.localeCompare(right.email, undefined, {
-            sensitivity: "base",
-          }) || left.id.localeCompare(right.id)
-        );
         return {
-          invitations: listed.invitations.map((invitation) => ({
-            ...invitation,
-            createdAt: invitation.createdAt.toISOString(),
-            expiresAt: invitation.expiresAt.toISOString(),
-          })),
-          members,
+          invitations: listed.invitations.map(invitationSummary),
+          members: memberDirectory(listed.members, identities),
           status: "ready",
         };
       });
@@ -569,13 +358,13 @@ export function createWorkspaceInvitationCoordinator(
           userId: command.userId,
         });
         if (result.status !== "accepted") return result;
-        await completeAcceptance(
-          transaction,
-          result,
-          command.userId,
+        await completeAcceptance(dependencies, {
           now,
+          result,
           tokenHash,
-        );
+          transaction,
+          userId: command.userId,
+        });
         return result;
       });
     },

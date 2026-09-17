@@ -1,62 +1,45 @@
+/**
+ * Leaving a workspace, and deleting an account.
+ *
+ * Both are guarded by `withStepUp`, which is the same shape the workspace
+ * lifecycle uses: reserve against the throttle, re-enter the password, and
+ * only then do the work — all inside one transaction, so the membership read
+ * under lock and the write that follows it cannot be separated. A stolen
+ * session is not enough to delete somebody's account.
+ *
+ * The rule the work itself enforces is that a workspace is never left without
+ * an owner. Somebody who is the last owner of one is blocked, the attempt is
+ * recorded against every workspace in the way, and the blocking workspaces are
+ * named so the page can say which ones and not merely how many.
+ *
+ * Leaving ends one of two ways: into the next workspace this person is still
+ * an active member of, or, when there is none, signed out entirely — every
+ * session revoked in the same transaction, because an account with no
+ * memberships has nothing to be signed in to.
+ */
+
 import type { Clock } from "../../../shared-kernel/clock.ts";
+import {
+  blockingWorkspaces,
+  claimedMembership,
+  deleteIdentityConfirmation,
+  leaveWorkspaceConfirmation,
+  nextMembership,
+} from "../domain/personal_lifecycle_rules.ts";
 import type {
-  IdentityPersonalLifecycleFacade,
-  IdentityTransaction,
-} from "../../identity/public.ts";
+  PersonalLifecycleActor,
+  PersonalLifecycleTransaction,
+  PersonalLifecycleTransactionRunner,
+} from "../ports/context.ts";
 import type {
-  ActiveWorkspaceContext,
+  PersonalLifecycleAudit,
+  PersonalLifecycleMemberships,
+} from "../ports/personal_lifecycle.ts";
+import type {
   AuthenticationAttemptBudget,
   AuthenticationAudit,
-} from "./protected_session.ts";
-
-export interface PersonalLifecycleTransaction extends IdentityTransaction {
-  readonly opaque: unknown;
-}
-
-export interface PersonalLifecycleActor extends ActiveWorkspaceContext {}
-
-export interface PersonalLifecycleMembership {
-  readonly finalOwner: boolean;
-  readonly memberId: string;
-  readonly role: PersonalLifecycleActor["role"];
-  readonly status: "active" | "suspended";
-  readonly workspaceId: string;
-  readonly workspaceName: string;
-}
-
-export interface PersonalLifecycleMemberships {
-  inspect(command: {
-    readonly lock?: boolean;
-    readonly transaction: PersonalLifecycleTransaction;
-    readonly userId: string;
-  }): Promise<{
-    readonly memberships: readonly PersonalLifecycleMembership[];
-  }>;
-  leaveCurrent(
-    command: PersonalLifecycleActor & {
-      readonly leftAt: Date;
-      readonly transaction: PersonalLifecycleTransaction;
-    },
-  ): Promise<void>;
-  leaveAll(command: {
-    readonly leftAt: Date;
-    readonly transaction: PersonalLifecycleTransaction;
-    readonly userId: string;
-  }): Promise<void>;
-}
-
-export interface PersonalLifecycleAudit {
-  record(command: {
-    readonly action: string;
-    readonly actorMemberId: string;
-    readonly occurredAt: Date;
-    readonly payload: Readonly<Record<string, unknown>>;
-    readonly subjectId: string;
-    readonly subjectType: string;
-    readonly transaction: PersonalLifecycleTransaction;
-    readonly workspaceId: string;
-  }): Promise<void>;
-}
+} from "../ports/session.ts";
+import type { IdentityPersonalLifecycleFacade } from "../../identity/public.ts";
 
 export interface PersonalLifecycleDependencies {
   readonly attemptBudget: AuthenticationAttemptBudget;
@@ -68,22 +51,8 @@ export interface PersonalLifecycleDependencies {
   readonly clock: Clock;
   readonly identity: IdentityPersonalLifecycleFacade;
   readonly memberships: PersonalLifecycleMemberships;
-  readonly transaction: {
-    run<T>(
-      work: (transaction: PersonalLifecycleTransaction) => Promise<T>,
-    ): Promise<T>;
-  };
+  readonly transaction: PersonalLifecycleTransactionRunner;
 }
-
-const blockingWorkspaces = (
-  memberships: readonly PersonalLifecycleMembership[],
-) =>
-  memberships.filter((membership) => membership.finalOwner).map(
-    (membership) => ({
-      id: membership.workspaceId,
-      name: membership.workspaceName,
-    }),
-  );
 
 export function createPersonalLifecycle(
   dependencies: PersonalLifecycleDependencies,
@@ -185,16 +154,13 @@ export function createPersonalLifecycle(
           userId: actor.userId,
         });
         if (!identity) return { status: "not-found" as const };
-        const current = snapshot.memberships.find((membership) =>
-          membership.memberId === actor.memberId &&
-          membership.workspaceId === actor.workspaceId
-        );
+        const current = claimedMembership(snapshot.memberships, actor);
         if (!current) return { status: "not-found" as const };
         return {
           activeSessionCount: identity.activeSessionCount,
           blockingWorkspaces: blockingWorkspaces(snapshot.memberships),
-          deleteConfirmation: `DELETE ${identity.email}`,
-          leaveConfirmation: `LEAVE ${current.workspaceName}`,
+          deleteConfirmation: deleteIdentityConfirmation(identity.email),
+          leaveConfirmation: leaveWorkspaceConfirmation(current.workspaceName),
           memberships: snapshot.memberships,
           retainedLegalRecords: true,
           status: "ready" as const,
@@ -211,12 +177,12 @@ export function createPersonalLifecycle(
           transaction,
           userId: actor.userId,
         });
-        const current = snapshot.memberships.find((membership) =>
-          membership.memberId === actor.memberId &&
-          membership.workspaceId === actor.workspaceId
-        );
+        const current = claimedMembership(snapshot.memberships, actor);
         if (!current) return { status: "not-found" as const };
-        if (input.confirmation !== `LEAVE ${current.workspaceName}`) {
+        if (
+          input.confirmation !==
+            leaveWorkspaceConfirmation(current.workspaceName)
+        ) {
           return { status: "confirmation-invalid" as const };
         }
         if (current.finalOwner) {
@@ -254,10 +220,7 @@ export function createPersonalLifecycle(
           transaction,
           workspaceId: current.workspaceId,
         });
-        const next = snapshot.memberships.find((membership) =>
-          membership.memberId !== current.memberId &&
-          membership.status === "active"
-        );
+        const next = nextMembership(snapshot.memberships, current);
         if (!next) {
           await dependencies.identity.revokeSessions({
             revokedAt: occurredAt,
@@ -283,7 +246,7 @@ export function createPersonalLifecycle(
           userId: actor.userId,
         });
         if (!identity) return { status: "not-found" as const };
-        if (input.confirmation !== `DELETE ${identity.email}`) {
+        if (input.confirmation !== deleteIdentityConfirmation(identity.email)) {
           return { status: "confirmation-invalid" as const };
         }
         const snapshot = await dependencies.memberships.inspect({

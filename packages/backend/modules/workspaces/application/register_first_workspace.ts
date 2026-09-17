@@ -1,136 +1,41 @@
+/**
+ * Registering the first workspace, and re-sending the link that proves it.
+ *
+ * The whole of registration is one transaction: the pending identity, the
+ * workspace, the owner's membership, their preferences, the workspace
+ * settings, the default relationship vocabulary, and the audit event, followed
+ * by three assertions that read all of it back. There is nothing to fall back
+ * on here — the person has no account yet — so a partial write unwinds rather
+ * than leaving somebody with something they cannot use.
+ *
+ * Only after that commits is the email sent, and a failure there is a
+ * different error from a failed registration: the account exists, so the
+ * person has to be told to ask for another link, not to register again.
+ *
+ * The retry is deliberately quiet. It never says whether the address is
+ * registered, whether a link was actually issued, or whether the email went
+ * out, because the answer to all three belongs to whoever holds the mailbox.
+ */
+
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { IdGenerator } from "../../../shared-kernel/ids.ts";
+import {
+  DEFAULT_RELATIONSHIP_TYPE_VOCABULARY,
+  type FirstWorkspaceRegistrationCommand,
+  type FirstWorkspaceRegistrationResult,
+  RegistrationError,
+  VerificationDeliveryError,
+  verificationExpiry,
+} from "../domain/registration_rules.ts";
+import type { RegistrationTransactionRunner } from "../ports/context.ts";
 import type {
-  IdentityRegistrationFacade,
-  IdentityTransaction,
-} from "../../identity/public.ts";
+  RegistrationAudit,
+  VerificationMail,
+  VerificationTokens,
+  WorkspaceRegistrationWriter,
+} from "../ports/registration_repository.ts";
+import type { IdentityRegistrationFacade } from "../../identity/public.ts";
 import { IdentityConflictError } from "../../identity/public.ts";
-
-export interface RegistrationTransaction extends IdentityTransaction {
-  readonly opaque: unknown;
-}
-
-export interface VerificationTokens {
-  create(): Promise<{ readonly hash: string; readonly raw: string }>;
-}
-
-export interface RegistrationTransactionRunner {
-  run<T>(
-    work: (transaction: RegistrationTransaction) => Promise<T>,
-  ): Promise<T>;
-}
-
-export const DEFAULT_RELATIONSHIP_TYPE_VOCABULARY = {
-  version: 1,
-  types: [
-    ["partner", "partner"],
-    ["spouse", "spouse"],
-    ["date", "date"],
-    ["lover", "lover"],
-    ["inlovewith", "lovedby"],
-    ["lovedby", "inlovewith"],
-    ["ex", "ex"],
-    ["parent", "child"],
-    ["child", "parent"],
-    ["sibling", "sibling"],
-    ["grandparent", "grandchild"],
-    ["grandchild", "grandparent"],
-    ["uncle", "nephew"],
-    ["nephew", "uncle"],
-    ["cousin", "cousin"],
-    ["godfather", "godson"],
-    ["godson", "godfather"],
-    ["stepparent", "stepchild"],
-    ["stepchild", "stepparent"],
-    ["friend", "friend"],
-    ["bestfriend", "bestfriend"],
-    ["colleague", "colleague"],
-    ["boss", "subordinate"],
-    ["subordinate", "boss"],
-    ["mentor", "protege"],
-    ["protege", "mentor"],
-  ].map(([forwardLabel, reverseLabel], sortOrder) => ({
-    forwardLabel: forwardLabel!,
-    reverseLabel: reverseLabel!,
-    sortOrder,
-  })),
-} as const;
-
-export type DefaultRelationshipType =
-  (typeof DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types)[number];
-
-export interface WorkspaceRegistrationWriter {
-  createWorkspace(command: {
-    readonly createdByUserId: string;
-    readonly name: string;
-    readonly transaction: RegistrationTransaction;
-    readonly workspaceId: string;
-  }): Promise<{ readonly workspaceId: string }>;
-  createOwnerMembership(command: {
-    readonly joinedAt: Date;
-    readonly memberId: string;
-    readonly transaction: RegistrationTransaction;
-    readonly userId: string;
-    readonly workspaceId: string;
-  }): Promise<{ readonly memberId: string }>;
-  createMemberPreferences(command: {
-    readonly memberId: string;
-    readonly transaction: RegistrationTransaction;
-  }): Promise<void>;
-  createWorkspaceSettings(command: {
-    readonly transaction: RegistrationTransaction;
-    readonly workspaceId: string;
-  }): Promise<void>;
-  provisionDefaultRelationshipTypes(command: {
-    readonly transaction: RegistrationTransaction;
-    readonly types: readonly DefaultRelationshipType[];
-    readonly version: number;
-    readonly workspaceId: string;
-  }): Promise<void>;
-  assertFirstWorkspacePostconditions(command: {
-    readonly joinedAt: Date;
-    readonly memberId: string;
-    readonly name: string;
-    readonly transaction: RegistrationTransaction;
-    readonly relationshipTypes: readonly DefaultRelationshipType[];
-    readonly userId: string;
-    readonly workspaceId: string;
-  }): Promise<void>;
-}
-
-export interface RegistrationAudit {
-  recordWorkspaceCreated(command: {
-    readonly memberId: string;
-    readonly occurredAt: Date;
-    readonly transaction: RegistrationTransaction;
-    readonly workspaceId: string;
-  }): Promise<void>;
-  assertWorkspaceCreatedPostcondition(command: {
-    readonly memberId: string;
-    readonly occurredAt: Date;
-    readonly transaction: RegistrationTransaction;
-    readonly workspaceId: string;
-  }): Promise<void>;
-}
-
-export interface VerificationMail {
-  sendVerification(message: {
-    readonly email: string;
-    readonly expiresAt: Date;
-    readonly token: string;
-  }): Promise<void>;
-  sendPasswordReset?(message: {
-    readonly email: string;
-    readonly expiresAt: Date;
-    readonly token: string;
-  }): Promise<void>;
-  sendInvitation?(message: {
-    readonly email: string;
-    readonly expiresAt: Date;
-    readonly token: string;
-    readonly workspaceName: string;
-  }): Promise<void>;
-}
 
 export interface RegistrationDependencies {
   readonly audit: RegistrationAudit;
@@ -141,43 +46,6 @@ export interface RegistrationDependencies {
   readonly tokens: VerificationTokens;
   readonly transaction: RegistrationTransactionRunner;
   readonly workspace: WorkspaceRegistrationWriter;
-}
-
-export interface FirstWorkspaceRegistrationCommand {
-  readonly email: string;
-  readonly firstName: string;
-  readonly lastName: string;
-  readonly passwordHash: string;
-  readonly workspaceName: string;
-}
-
-export interface FirstWorkspaceRegistrationResult {
-  readonly status: "verification-required";
-}
-
-export class RegistrationError extends Error {
-  readonly code: "duplicate_email" | "registration_failed";
-
-  constructor(
-    code: "duplicate_email" | "registration_failed" = "registration_failed",
-  ) {
-    super(
-      code === "duplicate_email"
-        ? "Email is already registered."
-        : "Registration could not be completed.",
-    );
-    this.name = "RegistrationError";
-    this.code = code;
-  }
-}
-
-export class VerificationDeliveryError extends Error {
-  readonly code = "verification_delivery_failed";
-
-  constructor() {
-    super("Verification delivery failed after registration committed.");
-    this.name = "VerificationDeliveryError";
-  }
 }
 
 export function createFirstWorkspaceRegistration(
@@ -194,7 +62,7 @@ export function createFirstWorkspaceRegistration(
     try {
       delivery = await dependencies.transaction.run(async (transaction) => {
         const now = dependencies.clock.now();
-        const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1_000);
+        const expiresAt = verificationExpiry(now);
         const verificationToken = await dependencies.tokens.create();
         const userId = dependencies.ids.create();
         const verificationTokenId = dependencies.ids.create();
@@ -293,7 +161,7 @@ export function createVerificationDeliveryRetry(
 ): (email: string) => Promise<void> {
   return async (email) => {
     const now = dependencies.clock.now();
-    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1_000);
+    const expiresAt = verificationExpiry(now);
     const token = await dependencies.tokens.create();
     const delivery = await dependencies.transaction.run((transaction) =>
       dependencies.identity.createRetryVerificationToken({

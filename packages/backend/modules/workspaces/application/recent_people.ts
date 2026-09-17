@@ -1,74 +1,36 @@
-import type { Failure } from "../../../shared-kernel/result.ts";
-import type { ActorRevalidation } from "./actor_revalidation.ts";
+/**
+ * Remembering which people a member last looked at.
+ *
+ * One write, and the whole of it is a read-modify-write of one JSON column, so
+ * it takes the actor's lock and then the row's: two tabs recording two people
+ * at once would otherwise each write back the list they read, and one of them
+ * would lose.
+ *
+ * The identifier is canonicalised before anything is written, and a value that
+ * is not one is refused rather than dropped — recording a person nobody can
+ * name would put a row in the list that no page can render.
+ */
 
-export interface RecentPeopleActor {
-  readonly memberId: string;
-  readonly role: "admin" | "member" | "owner";
-  readonly userId: string;
-  readonly workspaceId: string;
-}
+import {
+  canonicalPersonId,
+  withRecentPerson,
+} from "../domain/ui_state_rules.ts";
+import type { ActorRevalidation } from "../ports/actors.ts";
+import type {
+  RecentPeopleActor,
+  RecentPeopleTransactionRunner,
+} from "../ports/context.ts";
+import type { RecentPeopleRepository } from "../ports/ui_state_repository.ts";
 
-export interface RecentPeopleTransaction {
-  readonly opaque: unknown;
-}
-
-export interface RecentPeopleRepository {
-  lock(
-    command: RecentPeopleActor & {
-      readonly transaction: RecentPeopleTransaction;
-    },
-  ): Promise<
-    | Failure<"forbidden">
-    | { readonly status: "ready"; readonly uiState: unknown }
-  >;
-  save(
-    command: RecentPeopleActor & {
-      readonly transaction: RecentPeopleTransaction;
-      readonly uiState: Readonly<Record<string, unknown>>;
-    },
-  ): Promise<boolean>;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function decoded(value: unknown): unknown {
-  if (typeof value !== "string") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return undefined;
-  }
-}
-
-const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function recentIds(value: unknown): readonly string[] {
-  if (!Array.isArray(value)) return [];
-  const seen = new Set<string>();
-  const ids: string[] = [];
-  for (let index = 0; index < value.length && ids.length < 8; index++) {
-    const candidate = value[index];
-    if (typeof candidate !== "string" || !UUID.test(candidate)) continue;
-    const id = candidate.toLowerCase();
-    if (seen.has(id)) continue;
-    seen.add(id);
-    ids.push(id);
-  }
-  return ids;
-}
-
-export function createRecentPeopleManagement(dependencies: {
+export interface RecentPeopleDependencies {
   readonly actors: ActorRevalidation;
   readonly repository: RecentPeopleRepository;
-  readonly transaction: {
-    run<T>(
-      work: (transaction: RecentPeopleTransaction) => Promise<T>,
-    ): Promise<T>;
-  };
-}) {
+  readonly transaction: RecentPeopleTransactionRunner;
+}
+
+export function createRecentPeopleManagement(
+  dependencies: RecentPeopleDependencies,
+) {
   return {
     async record(
       actor: RecentPeopleActor,
@@ -86,25 +48,12 @@ export function createRecentPeopleManagement(dependencies: {
           transaction,
         });
         if (locked.status !== "ready") return locked;
-        const stored = decoded(locked.uiState);
-        const base = isRecord(stored) ? stored : {};
-        const canonicalPersonId = UUID.test(personId)
-          ? personId.toLowerCase()
-          : undefined;
-        if (!canonicalPersonId) return { status: "forbidden" as const };
-        const uiState = {
-          ...base,
-          recentPersonIds: [
-            canonicalPersonId,
-            ...recentIds(base.recentPersonIds).filter((id) =>
-              id !== canonicalPersonId
-            ),
-          ].slice(0, 8),
-        };
+        const canonical = canonicalPersonId(personId);
+        if (!canonical) return { status: "forbidden" as const };
         return await dependencies.repository.save({
             ...actor,
             transaction,
-            uiState,
+            uiState: withRecentPerson(locked.uiState, canonical),
           })
           ? { status: "recorded" as const }
           : { status: "forbidden" as const };

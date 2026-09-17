@@ -26,7 +26,7 @@ import { PostgresInvitationIdentity } from "./adapters/postgres/invitation_ident
 import { PostgresPasswordRecoveryRepository } from "./adapters/postgres/password_recovery.ts";
 import { createPasswordRecovery } from "./public.ts";
 import type { MfaEncryptionKeyset } from "./adapters/crypto/totp.ts";
-import type { PasswordRecoveryMail } from "./application/password_recovery.ts";
+import type { PasswordRecoveryMail } from "./ports/password_recovery.ts";
 
 export { decodeMfaEncryptionKeyset } from "./adapters/crypto/totp.ts";
 

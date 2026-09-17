@@ -4,9 +4,9 @@ import type {
   InvitationAcceptance,
   InvitationInspection,
   WorkspaceInvitationRecord,
-  WorkspaceInvitationRepository,
   WorkspaceMemberRecord,
-} from "../../application/invite_member.ts";
+} from "../../domain/invitation_rules.ts";
+import type { WorkspaceInvitationRepository } from "../../ports/invitation_repository.ts";
 
 export class PostgresWorkspaceInvitations
   implements WorkspaceInvitationRepository {

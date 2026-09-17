@@ -1,11 +1,11 @@
-import {
-  createDavSyncManagement,
-  type DavAuditEvent,
-  type DavObjectCheckpoint,
-  type DavRepository,
-  type DavSubscription,
-} from "./application/dav_sync.ts";
-import { assertEquals } from "../../testing/assert.ts";
+import { createDavSyncManagement } from "./application/dav_sync.ts";
+import type {
+  DavAuditEvent,
+  DavObjectCheckpoint,
+  DavSubscription,
+} from "./domain/dav_rules.ts";
+import type { DavRepository } from "./ports/dav_repository.ts";
+import { assertEquals, assertRejects } from "../../testing/assert.ts";
 import * as fixtures from "../../testing/fixtures.ts";
 import { fixedClock } from "../../testing/fakes.ts";
 
@@ -16,8 +16,7 @@ const actor = fixtures.actor({
 });
 
 function fixture(overrides: {
-  readonly changes?:
-    readonly import("./application/dav_sync.ts").DavRemoteChange[];
+  readonly changes?: readonly import("./domain/dav_rules.ts").DavRemoteChange[];
   readonly loseClaimAfterCheckpointRead?: boolean;
   readonly objects?:
     readonly (DavObjectCheckpoint & { readonly href: string })[];
@@ -306,7 +305,7 @@ Deno.test("DAV configuration rejects unsafe remote URLs and members", async () =
 Deno.test("DAV lost claim cannot perform a core mutation", async () => {
   for (const changeType of ["create", "update", "delete"] as const) {
     let coreEffects = 0;
-    const change: import("./application/dav_sync.ts").DavRemoteChange =
+    const change: import("./domain/dav_rules.ts").DavRemoteChange =
       changeType === "delete"
         ? {
           changeType,
@@ -580,4 +579,154 @@ Deno.test("DAV applies remote updates and tombstones through owning facades", as
     "task-reopen",
     "task-update",
   ]);
+});
+
+Deno.test("DAV configure records a failure it could not commit, and refuses a member", async () => {
+  const audits: DavAuditEvent[] = [];
+  const configuration = {
+    name: "Personal DAV",
+    password: "dav-secret",
+    remoteUrl: "https://dav.example.test/addressbooks/me/contacts/",
+  };
+  const build = (
+    create: DavRepository["create"],
+  ) =>
+    createDavSyncManagement({
+      clock: fixedClock("2026-08-24T12:00:00.000Z"),
+      ids: {
+        create: () => "00000000-0000-4000-8000-000000000099",
+        fromRemote: () => "00000000-0000-4000-8000-000000000098",
+      },
+      people: {
+        ensure: () => Promise.reject(new Error("unused")),
+        archive: () => Promise.reject(new Error("unused")),
+        restore: () => Promise.reject(new Error("unused")),
+        update: () => Promise.reject(new Error("unused")),
+      },
+      remote: { pull: () => Promise.reject(new Error("unused")) },
+      repository: {
+        authorize: ({ role }) => Promise.resolve(role !== "member"),
+        claim: () => Promise.resolve(undefined),
+        create,
+        disable: () => Promise.resolve(undefined),
+        list: () => Promise.resolve([]),
+        recordAudit: (_actor, event) => {
+          audits.push(event);
+          return Promise.resolve(true);
+        },
+        recordOutcome: () => Promise.resolve(undefined),
+        withClaimedObject: () => Promise.resolve("claim-lost" as const),
+      },
+      secrets: {
+        open: () => Promise.resolve("dav-secret"),
+        seal: () => Promise.resolve("encrypted:dav-secret"),
+      },
+      tasks: {
+        create: () => Promise.reject(new Error("unused")),
+        complete: () => Promise.reject(new Error("unused")),
+        reopen: () => Promise.reject(new Error("unused")),
+        update: () => Promise.reject(new Error("unused")),
+      },
+    });
+
+  const refused = build(() => Promise.resolve(undefined));
+  assertEquals(
+    (await refused.configure(actor, configuration)).status,
+    "forbidden",
+  );
+  assertEquals(audits.length, 1);
+  assertEquals(audits[0]?.action, "configure");
+  assertEquals(audits[0]?.outcome, "failure");
+  assertEquals(audits[0]?.code, "dav_sync_failed");
+
+  const broken = build(() => {
+    throw new Error("the subscriptions table is unavailable");
+  });
+  await assertRejects(
+    () => broken.configure(actor, configuration),
+    "a repository failure must not be swallowed",
+  );
+  assertEquals(audits.length, 2, "and it is still recorded");
+
+  const member = fixtures.actor({ role: "member" });
+  assertEquals(
+    (await refused.configure(member, configuration)).status,
+    "forbidden",
+  );
+  assertEquals(
+    (await refused.disable(member, "00000000-0000-4000-8000-000000000010"))
+      .status,
+    "forbidden",
+  );
+  assertEquals(
+    (await refused.synchronize(member, "00000000-0000-4000-8000-000000000010"))
+      .status,
+    "forbidden",
+  );
+  assertEquals(audits.length, 2, "a member leaves no trail to read");
+});
+
+Deno.test("DAV synchronize tells a held claim, a disabled subscription, and an unknown one apart", async () => {
+  const subscriptionId = "00000000-0000-4000-8000-000000000010";
+  let listed: DavSubscription | undefined;
+  const management = createDavSyncManagement({
+    clock: fixedClock("2026-08-24T12:00:00.000Z"),
+    ids: {
+      create: () => "00000000-0000-4000-8000-000000000099",
+      fromRemote: () => "00000000-0000-4000-8000-000000000098",
+    },
+    people: {
+      ensure: () => Promise.reject(new Error("unused")),
+      archive: () => Promise.reject(new Error("unused")),
+      restore: () => Promise.reject(new Error("unused")),
+      update: () => Promise.reject(new Error("unused")),
+    },
+    remote: { pull: () => Promise.reject(new Error("unused")) },
+    repository: {
+      authorize: () => Promise.resolve(true),
+      // Another run is already holding it, whatever else is true.
+      claim: () => Promise.resolve(undefined),
+      create: () => Promise.resolve(undefined),
+      disable: () => Promise.resolve(undefined),
+      list: () => Promise.resolve(listed ? [listed] : []),
+      recordAudit: () => Promise.resolve(true),
+      recordOutcome: () => Promise.resolve(undefined),
+      withClaimedObject: () => Promise.resolve("claim-lost" as const),
+    },
+    secrets: {
+      open: () => Promise.resolve("dav-secret"),
+      seal: () => Promise.resolve("encrypted:dav-secret"),
+    },
+    tasks: {
+      create: () => Promise.reject(new Error("unused")),
+      complete: () => Promise.reject(new Error("unused")),
+      reopen: () => Promise.reject(new Error("unused")),
+      update: () => Promise.reject(new Error("unused")),
+    },
+  });
+
+  assertEquals(
+    (await management.synchronize(actor, subscriptionId)).status,
+    "not-found",
+    "a subscription this workspace cannot see is not one",
+  );
+
+  listed = {
+    id: subscriptionId,
+    isActive: true,
+    lastOutcome: "never",
+    name: "Personal DAV",
+    remoteUrl: "https://dav.example.test/",
+  };
+  assertEquals(
+    (await management.synchronize(actor, subscriptionId)).status,
+    "busy",
+    "an active subscription somebody else is running is busy",
+  );
+
+  listed = { ...listed, isActive: false };
+  assertEquals(
+    (await management.synchronize(actor, subscriptionId)).status,
+    "disabled",
+  );
 });

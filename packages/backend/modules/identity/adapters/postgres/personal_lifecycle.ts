@@ -3,7 +3,7 @@ import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type {
   IdentityPersonalLifecycleFacade,
   IdentityPersonalLifecycleInspection,
-} from "../../application/personal_lifecycle.ts";
+} from "../../ports/personal_lifecycle.ts";
 import type { PasswordHasher } from "../../ports/security.ts";
 
 export class PostgresIdentityPersonalLifecycle

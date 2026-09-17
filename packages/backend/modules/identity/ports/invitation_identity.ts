@@ -1,4 +1,15 @@
-import type { IdentityTransaction } from "./contracts.ts";
+/**
+ * The identity side of inviting somebody into a workspace.
+ *
+ * `workspaces` owns invitations and may not read identity's tables, so the
+ * three questions it has to ask are declared here and answered by an adapter.
+ * All three are narrow on purpose: whether an address already has an identity,
+ * whether a given identity has proved that exact address, and the names to
+ * show beside the members a workspace already has. Nothing here hands back a
+ * credential, a session, or an address the caller did not already name.
+ */
+
+import type { IdentityTransaction } from "./context.ts";
 
 export interface InvitationIdentityDisplaySummary {
   readonly email: string;

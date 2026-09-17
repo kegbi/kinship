@@ -12,7 +12,7 @@ import { HttpDavClient } from "./adapters/dav/http_dav_client.ts";
 import { PostgresDavRepository } from "./adapters/postgres/dav_repository.ts";
 import { PostgresIntegrationWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
 import type { DavEncryptionKeyset } from "./adapters/crypto/dav_secret_box.ts";
-import type { DavSyncDependencies } from "./application/dav_sync.ts";
+import type { DavSyncDependencies } from "./application/dav_context.ts";
 import {
   createDavSyncManagement,
   davAuditFrom,

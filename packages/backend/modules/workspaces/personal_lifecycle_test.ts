@@ -1,9 +1,9 @@
 import {
   createPersonalLifecycle,
   type PersonalLifecycleDependencies,
-  type PersonalLifecycleMembership,
-  type PersonalLifecycleTransaction,
 } from "./application/personal_lifecycle.ts";
+import type { PersonalLifecycleMembership } from "./domain/personal_lifecycle_rules.ts";
+import type { PersonalLifecycleTransaction } from "./ports/context.ts";
 import { assertEquals } from "../../testing/assert.ts";
 import * as fixtures from "../../testing/fixtures.ts";
 import { fixedClock } from "../../testing/fakes.ts";
@@ -288,4 +288,107 @@ Deno.test("personal lifecycle rejects mistyped and final-owner leave requests", 
     "memberships-locked",
     "audit:workspace.member-leave-attempted:blocked-final-owner",
   ], "blocked leave is audited without mutation");
+});
+
+Deno.test("personal lifecycle step-up reports the throttle and releases a reservation it could not use", async () => {
+  const effects: string[] = [];
+  const build = (options: {
+    readonly admitted: boolean;
+    readonly inspectThrows?: boolean;
+  }) =>
+    createPersonalLifecycle({
+      attemptBudget: {
+        finalize(command) {
+          effects.push(`finalize:${command.statusCode}`);
+          return Promise.resolve();
+        },
+        reserve() {
+          return Promise.resolve(
+            options.admitted
+              ? { reservationId: "reservation", status: "admitted" as const }
+              : {
+                reservationId: "reservation",
+                retryAfterSeconds: 45,
+                status: "rate-limited" as const,
+              },
+          );
+        },
+      },
+      audit: {
+        record() {
+          return Promise.resolve();
+        },
+      },
+      authenticationAudit: {
+        assertFailurePostcondition(command) {
+          effects.push(
+            `assert:${command.auditEventId === undefined ? "none" : "event"}`,
+          );
+          return Promise.resolve();
+        },
+        // Governance may decline to record an event it cannot attribute, and
+        // the step-up has to carry on without one.
+        recordFailure() {
+          return Promise.resolve(undefined);
+        },
+      },
+      clock: fixedClock("2026-08-23T12:00:00.000Z"),
+      identity: {
+        deleteIdentity: () => Promise.resolve(),
+        inspectIdentity: () =>
+          Promise.resolve({
+            activeSessionCount: 1,
+            email: "owner@example.test",
+          }),
+        revokeSessions: () => Promise.resolve(),
+        verifyPassword: () => Promise.resolve(true),
+      },
+      memberships: {
+        inspect() {
+          if (options.inspectThrows) {
+            throw new Error("the memberships table is unavailable");
+          }
+          return Promise.resolve({ memberships: [current, next] });
+        },
+        leaveAll: () => Promise.resolve(),
+        leaveCurrent: () => Promise.resolve(),
+      },
+      transaction: { run: (work) => work({ opaque: {} }) },
+    });
+
+  assertEquals(
+    await build({ admitted: false }).leaveWorkspace(
+      actor,
+      { confirmation: "LEAVE Family", password: "correct horse" },
+      request,
+    ),
+    { retryAfterSeconds: 45, status: "rate-limited" },
+  );
+  assertEquals(
+    effects,
+    ["assert:none", "finalize:429"],
+    "a throttled attempt is recorded without an event and finalized as 429",
+  );
+
+  effects.length = 0;
+  let thrown: unknown;
+  try {
+    await build({ admitted: true, inspectThrows: true }).deleteIdentity(
+      actor,
+      { confirmation: "DELETE owner@example.test", password: "correct horse" },
+      request,
+    );
+  } catch (error) {
+    thrown = error;
+  }
+  assertEquals(
+    thrown instanceof Error ? thrown.message : String(thrown),
+    "the memberships table is unavailable",
+    "the primary failure is not swallowed",
+  );
+  assertEquals(
+    effects,
+    ["finalize:200", "finalize:503"],
+    "and the reservation it could not use is released",
+  );
 });

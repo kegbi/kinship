@@ -5,7 +5,7 @@ import type {
   IdentityAccountSettingsFacade,
   IdentityProfile,
   IdentitySessionSummary,
-} from "../../application/account_settings.ts";
+} from "../../ports/account_settings.ts";
 import { SecureTokenService } from "../crypto/secure_tokens.ts";
 
 export class PostgresIdentityAccountSettings

@@ -1,16 +1,12 @@
-export {
-  API_TOKEN_SCOPES,
-  createApiTokenManagement,
-} from "./application/api_token_management.ts";
+export type { ApiTokenRecord, ApiTokenScope } from "./domain/token_rules.ts";
+export { API_TOKEN_SCOPES } from "./domain/token_rules.ts";
+export type { ApiTokenAudit } from "./ports/audit.ts";
+export type { ApiTokenRepository } from "./ports/api_token_repository.ts";
+export type { ApiTokenActor, ApiTokenTransaction } from "./ports/context.ts";
+export { createApiTokenManagement } from "./application/api_token_management.ts";
 export type {
-  ApiTokenActor,
-  ApiTokenAudit,
   ApiTokenDependencies,
   ApiTokenManagement,
-  ApiTokenRecord,
-  ApiTokenRepository,
-  ApiTokenScope,
-  ApiTokenTransaction,
 } from "./application/api_token_management.ts";
 export {
   AuthenticationSubjectDigester,

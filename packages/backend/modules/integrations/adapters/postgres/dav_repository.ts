@@ -1,16 +1,15 @@
 import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
-import type { DavAudit } from "../../application/audit_events.ts";
 import type {
-  DavActor,
-  DavActorRevalidation,
   DavAuditEvent,
   DavOutcome,
-  DavRepository,
   DavSubscription,
   StoredDavSubscription,
-} from "../../application/dav_sync.ts";
+} from "../../domain/dav_rules.ts";
+import type { DavAudit } from "../../ports/audit.ts";
+import type { DavActor, DavActorRevalidation } from "../../ports/context.ts";
+import type { DavRepository } from "../../ports/dav_repository.ts";
 
 interface SubscriptionRow {
   readonly capabilities: unknown;

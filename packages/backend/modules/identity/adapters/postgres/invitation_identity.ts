@@ -3,7 +3,7 @@ import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type {
   InvitationIdentityDisplaySummary,
   InvitationIdentityFacade,
-} from "../../application/invitation_identity.ts";
+} from "../../ports/invitation_identity.ts";
 
 export class PostgresInvitationIdentity implements InvitationIdentityFacade {
   async findIdentityIdByEmail(

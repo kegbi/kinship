@@ -3,7 +3,7 @@ import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type {
   InteractionWorkspaceBoundary,
   WorkspaceInteractionOption,
-} from "../../application/interaction_workspace_boundary.ts";
+} from "../../ports/interaction_boundary.ts";
 
 interface OptionRow {
   readonly id: string;

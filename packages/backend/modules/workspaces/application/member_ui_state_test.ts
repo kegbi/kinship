@@ -1,7 +1,5 @@
-import {
-  createMemberUiStateManagement,
-  type MemberUiStateRepository,
-} from "./member_ui_state.ts";
+import { createMemberUiStateManagement } from "./member_ui_state.ts";
+import type { MemberUiStateRepository } from "../ports/ui_state_repository.ts";
 import { assert } from "../../../testing/assert.ts";
 import * as fixtures from "../../../testing/fixtures.ts";
 
