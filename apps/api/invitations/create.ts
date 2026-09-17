@@ -8,30 +8,33 @@
  *
  * An email that already has a membership record is a conflict rather than a
  * second invitation, because a membership's lifecycle is managed explicitly.
+ *
+ * Both paths and the shape an invitation is asked for in came from
+ * `packages/contracts` (GAP-022).
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
+import {
+  createWorkspaceInvitation,
+  listWorkspaceMembers,
+} from "../../../packages/contracts/routes/invitations.ts";
+import { invitationInput } from "../../../packages/contracts/schemas/invitations.ts";
 import { requireMatchingOrigin } from "../http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "../http/problem.ts";
+import { mount } from "../http/route.ts";
 import {
   type ActorEnv,
   requireSession,
   sessionActor,
 } from "../http/session.ts";
 import { parseJsonBody } from "../http/validate.ts";
-import { INVITATION_PATH, type InvitationHttpServices } from "./shared.ts";
+import type { InvitationHttpServices } from "./shared.ts";
 
 /** What inviting a member and listing the invited is served from. */
 export type InvitationCreationHttpServices = Pick<
   InvitationHttpServices,
   "browserSecurity" | "invitations" | "protectedSessions"
 >;
-
-const createSchema = z.object({
-  email: z.string().trim().toLowerCase().email().max(254),
-  role: z.enum(["admin", "member"]),
-}).strict();
 
 export const INVITATION_REQUEST_INVALID: ProblemDefinition = {
   code: "validation_failed",
@@ -85,8 +88,8 @@ export function createInvitationCreationRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.post(INVITATION_PATH, origin, session, async (context) => {
-    const parsed = await parseJsonBody(context, createSchema);
+  mount(routes, createWorkspaceInvitation, origin, session, async (context) => {
+    const parsed = await parseJsonBody(context, invitationInput);
     if ("errors" in parsed) {
       return definedProblem(context, INVITATION_REQUEST_INVALID);
     }
@@ -121,7 +124,7 @@ export function createInvitationCreationRoutes(
     );
   });
 
-  routes.get("/api/v1/workspace-members", session, async (context) => {
+  mount(routes, listWorkspaceMembers, session, async (context) => {
     const actor = await requireSession(context);
     if (actor instanceof Response) return actor;
     const result = await services.invitations.list({

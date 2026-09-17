@@ -11,15 +11,22 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
+import {
+  getPerson,
+  getPersonQuery,
+  listPersonLifeEvents,
+  listPersonTimeline,
+  listPersonTimelineQuery,
+} from "../../../packages/contracts/routes/people.ts";
+import { uuid } from "../../../packages/contracts/schemas/shared.ts";
 import { definedProblem, type ProblemDefinition } from "../http/problem.ts";
+import { mount } from "../http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "../http/session.ts";
 import { parseQuery, parseValue } from "../http/validate.ts";
 import {
   type PeopleHttpServices,
   PERSON_FORBIDDEN,
   PERSON_ID_INVALID,
-  personIdSchema,
 } from "./shared.ts";
 
 /** What one person's read-only page is served from. */
@@ -27,21 +34,6 @@ export type PersonProfileHttpServices = Pick<
   PeopleHttpServices,
   "profile" | "protectedSessions"
 >;
-
-const personReadQuerySchema = z.object({
-  include: z.literal("summary").optional(),
-}).strict();
-const personTimelineQuerySchema = z.object({
-  cursor: z.string().max(2_000).optional(),
-  kind: z.enum([
-    "activity",
-    "call",
-    "conversation",
-    "life-event",
-    "note",
-  ]).optional(),
-  limit: z.coerce.number().int().min(1).max(50).default(20),
-}).strict();
 
 export const LIFE_EVENTS_UNAVAILABLE: ProblemDefinition = {
   code: "person_life_events_unavailable",
@@ -118,11 +110,12 @@ export function createProfileRoutes(
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services.protectedSessions);
 
-  routes.get(
-    "/api/v1/people/:personId/life-events",
+  mount(
+    routes,
+    listPersonLifeEvents,
     session,
     async (context) => {
-      const parsed = parseValue(personIdSchema, context.req.param("personId"));
+      const parsed = parseValue(uuid, context.req.param("personId"));
       if ("errors" in parsed) {
         return definedProblem(context, PERSON_ID_INVALID);
       }
@@ -142,9 +135,9 @@ export function createProfileRoutes(
     },
   );
 
-  routes.get("/api/v1/people/:personId/timeline", session, async (context) => {
-    const personId = parseValue(personIdSchema, context.req.param("personId"));
-    const input = parseQuery(context, personTimelineQuerySchema);
+  mount(routes, listPersonTimeline, session, async (context) => {
+    const personId = parseValue(uuid, context.req.param("personId"));
+    const input = parseQuery(context, listPersonTimelineQuery);
     if ("errors" in personId || "errors" in input) {
       return definedProblem(context, TIMELINE_QUERY_INVALID);
     }
@@ -175,12 +168,12 @@ export function createProfileRoutes(
     return context.json(result);
   });
 
-  routes.get("/api/v1/people/:personId", session, async (context) => {
-    const parsed = parseValue(personIdSchema, context.req.param("personId"));
+  mount(routes, getPerson, session, async (context) => {
+    const parsed = parseValue(uuid, context.req.param("personId"));
     if ("errors" in parsed) {
       return definedProblem(context, PERSON_ID_INVALID);
     }
-    const query = parseQuery(context, personReadQuerySchema);
+    const query = parseQuery(context, getPersonQuery);
     if ("errors" in query) {
       return definedProblem(context, PERSON_QUERY_INVALID);
     }

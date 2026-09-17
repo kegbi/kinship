@@ -12,9 +12,20 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
+import {
+  archivePerson,
+  deletePerson,
+  getPersonDeletionImpact,
+  restorePerson,
+} from "../../../packages/contracts/routes/people.ts";
+import {
+  personDeleteInput,
+  personTransitionInput,
+} from "../../../packages/contracts/schemas/people.ts";
+import { uuid } from "../../../packages/contracts/schemas/shared.ts";
 import { requireMatchingOrigin } from "../http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "../http/problem.ts";
+import { mount } from "../http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "../http/session.ts";
 import { parseJsonBody, parseValue } from "../http/validate.ts";
 import {
@@ -22,8 +33,6 @@ import {
   lifecycleIdentity,
   type PeopleHttpServices,
   PERSON_ID_INVALID,
-  personIdSchema,
-  transitionSchema,
 } from "./shared.ts";
 
 /** What a person's lifecycle transitions are served from. */
@@ -31,10 +40,6 @@ export type PersonLifecycleHttpServices = Pick<
   PeopleHttpServices,
   "browserSecurity" | "people" | "protectedSessions"
 >;
-
-const deletePersonSchema = transitionSchema.extend({
-  confirmation: z.string().min(1).max(500),
-});
 
 export const LIFECYCLE_REQUEST_INVALID: ProblemDefinition = {
   code: "validation_failed",
@@ -74,17 +79,20 @@ export function createLifecycleRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  for (const action of ["archive", "restore"] as const) {
-    routes.post(
-      `/api/v1/people/:personId/${action}`,
+  for (
+    const [action, route] of [
+      ["archive", archivePerson],
+      ["restore", restorePerson],
+    ] as const
+  ) {
+    mount(
+      routes,
+      route,
       origin,
       session,
       async (context) => {
-        const personId = parseValue(
-          personIdSchema,
-          context.req.param("personId"),
-        );
-        const input = await parseJsonBody(context, transitionSchema);
+        const personId = parseValue(uuid, context.req.param("personId"));
+        const input = await parseJsonBody(context, personTransitionInput);
         if ("errors" in personId || "errors" in input) {
           return definedProblem(context, LIFECYCLE_REQUEST_INVALID);
         }
@@ -108,14 +116,12 @@ export function createLifecycleRoutes(
     );
   }
 
-  routes.get(
-    "/api/v1/people/:personId/deletion-impact",
+  mount(
+    routes,
+    getPersonDeletionImpact,
     session,
     async (context) => {
-      const personId = parseValue(
-        personIdSchema,
-        context.req.param("personId"),
-      );
+      const personId = parseValue(uuid, context.req.param("personId"));
       if ("errors" in personId) {
         return definedProblem(context, PERSON_ID_INVALID);
       }
@@ -139,16 +145,14 @@ export function createLifecycleRoutes(
     },
   );
 
-  routes.delete(
-    "/api/v1/people/:personId",
+  mount(
+    routes,
+    deletePerson,
     origin,
     session,
     async (context) => {
-      const personId = parseValue(
-        personIdSchema,
-        context.req.param("personId"),
-      );
-      const input = await parseJsonBody(context, deletePersonSchema);
+      const personId = parseValue(uuid, context.req.param("personId"));
+      const input = await parseJsonBody(context, personDeleteInput);
       if ("errors" in personId || "errors" in input) {
         return definedProblem(context, PERSON_DELETE_INVALID);
       }

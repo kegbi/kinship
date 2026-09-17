@@ -12,10 +12,15 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
 import type { MemberUiState } from "../../../packages/backend/modules/workspaces/public.ts";
+import {
+  getMemberUiState,
+  saveMemberUiState,
+} from "../../../packages/contracts/routes/settings.ts";
+import { memberUiStateInput } from "../../../packages/contracts/schemas/settings.ts";
 import { matchingOrigin } from "../http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "../http/problem.ts";
+import { mount } from "../http/route.ts";
 import { type ActorEnv, actorOf, sessionActor } from "../http/session.ts";
 import { parseJsonBody } from "../http/validate.ts";
 import { privateJson, type SettingsHttpServices } from "./shared.ts";
@@ -25,20 +30,6 @@ export type MemberUiStateHttpServices = Pick<
   SettingsHttpServices,
   "browserSecurity" | "memberUiState" | "protectedSessions"
 >;
-
-const memberUiStateSchema = z.object({
-  personWorkspaceView: z.enum([
-    "all",
-    "timeline",
-    "planning",
-    "things",
-    "admin",
-  ]).optional(),
-  theme: z.enum(["system", "light", "dark"]).optional(),
-}).strict().refine(
-  (value) =>
-    value.personWorkspaceView !== undefined || value.theme !== undefined,
-);
 
 export const UI_STATE_SESSION_INVALID: ProblemDefinition = {
   code: "member_ui_state_session_invalid",
@@ -83,7 +74,7 @@ export function createUiStateRoutes(
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services.protectedSessions);
 
-  routes.get("/api/v1/member/ui-state", session, async (context) => {
+  mount(routes, getMemberUiState, session, async (context) => {
     const actor = await actorOf(context);
     if (!actor) return definedProblem(context, UI_STATE_SESSION_INVALID);
     const result = await services.memberUiState.read(actor).catch(
@@ -96,11 +87,11 @@ export function createUiStateRoutes(
     );
   });
 
-  routes.patch("/api/v1/member/ui-state", session, async (context) => {
+  mount(routes, saveMemberUiState, session, async (context) => {
     if (!matchingOrigin(context, services.browserSecurity)) {
       return definedProblem(context, UI_STATE_ORIGIN_INVALID);
     }
-    const parsed = await parseJsonBody(context, memberUiStateSchema);
+    const parsed = await parseJsonBody(context, memberUiStateInput);
     if ("errors" in parsed) {
       return definedProblem(context, UI_STATE_INVALID);
     }

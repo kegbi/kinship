@@ -7,9 +7,14 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
+import {
+  getSettingsProfile,
+  updateSettingsProfile,
+} from "../../../packages/contracts/routes/settings.ts";
+import { profileInput } from "../../../packages/contracts/schemas/settings.ts";
 import { requireMatchingOrigin } from "../http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "../http/problem.ts";
+import { mount } from "../http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "../http/session.ts";
 import { parseJsonBody } from "../http/validate.ts";
 import { privateJson, type SettingsHttpServices } from "./shared.ts";
@@ -19,11 +24,6 @@ export type MemberProfileHttpServices = Pick<
   SettingsHttpServices,
   "browserSecurity" | "protectedSessions" | "settings"
 >;
-
-const profileSchema = z.object({
-  firstName: z.string().trim().min(1).max(100),
-  lastName: z.string().trim().max(100),
-}).strict();
 
 export const PROFILE_NOT_LOADED: ProblemDefinition = {
   code: "settings_unavailable",
@@ -51,7 +51,7 @@ export function createProfileRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get("/api/v1/settings/profile", session, async (context) => {
+  mount(routes, getSettingsProfile, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const profile = await services.settings.getProfile(actor).catch(
@@ -62,8 +62,8 @@ export function createProfileRoutes(
       : definedProblem(context, PROFILE_NOT_LOADED);
   });
 
-  routes.put("/api/v1/settings/profile", origin, session, async (context) => {
-    const parsed = await parseJsonBody(context, profileSchema);
+  mount(routes, updateSettingsProfile, origin, session, async (context) => {
+    const parsed = await parseJsonBody(context, profileInput);
     if ("errors" in parsed) {
       return definedProblem(context, PROFILE_INVALID);
     }

@@ -16,20 +16,30 @@ import type {
   ProfileFactCreateInput,
   ProfileFactUpdateInput,
 } from "../../../packages/backend/modules/people/public.ts";
+import {
+  createProfileFact,
+  deleteProfileFact,
+  listProfileFacts,
+  listProfileFactsQuery,
+  updateProfileFact,
+} from "../../../packages/contracts/routes/people.ts";
+import {
+  profileFactDeleteInput,
+  profileFactSectionId,
+} from "../../../packages/contracts/schemas/people.ts";
+import { uuid } from "../../../packages/contracts/schemas/shared.ts";
 import { failureResponder, type FailureTable } from "../http/failures.ts";
 import { requireMatchingOrigin } from "../http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "../http/problem.ts";
+import { mount } from "../http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "../http/session.ts";
 import { parseJsonBody, parseQuery, parseValue } from "../http/validate.ts";
 import {
   profileFactCreateSchemas,
-  profileFactDeleteSchema,
-  profileFactListQuerySchema,
-  profileFactSectionSchema,
   profileFactUpdateSchemas,
   publicProfileFact,
 } from "./fact_schemas.ts";
-import { type PeopleHttpServices, personIdSchema } from "./shared.ts";
+import type { PeopleHttpServices } from "./shared.ts";
 
 /** What the profile sections of a person's page are served from. */
 export type ProfileFactHttpServices = Pick<
@@ -166,19 +176,17 @@ export function createFactsRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get(
-    "/api/v1/people/:personId/facts/:section",
+  mount(
+    routes,
+    listProfileFacts,
     session,
     async (context) => {
-      const personId = parseValue(
-        personIdSchema,
-        context.req.param("personId"),
-      );
+      const personId = parseValue(uuid, context.req.param("personId"));
       const section = parseValue(
-        profileFactSectionSchema,
+        profileFactSectionId,
         context.req.param("section"),
       );
-      const query = parseQuery(context, profileFactListQuerySchema);
+      const query = parseQuery(context, listProfileFactsQuery);
       if (
         "errors" in personId || "errors" in section || "errors" in query
       ) return definedProblem(context, PROFILE_SECTION_INVALID);
@@ -217,17 +225,15 @@ export function createFactsRoutes(
     },
   );
 
-  routes.post(
-    "/api/v1/people/:personId/facts/:section",
+  mount(
+    routes,
+    createProfileFact,
     origin,
     session,
     async (context) => {
-      const personId = parseValue(
-        personIdSchema,
-        context.req.param("personId"),
-      );
+      const personId = parseValue(uuid, context.req.param("personId"));
       const section = parseValue(
-        profileFactSectionSchema,
+        profileFactSectionId,
         context.req.param("section"),
       );
       if ("errors" in personId || "errors" in section) {
@@ -259,18 +265,16 @@ export function createFactsRoutes(
     },
   );
 
-  routes.put(
-    "/api/v1/people/:personId/facts/:section/:factId",
+  mount(
+    routes,
+    updateProfileFact,
     origin,
     session,
     async (context) => {
-      const personId = parseValue(
-        personIdSchema,
-        context.req.param("personId"),
-      );
-      const factId = parseValue(personIdSchema, context.req.param("factId"));
+      const personId = parseValue(uuid, context.req.param("personId"));
+      const factId = parseValue(uuid, context.req.param("factId"));
       const section = parseValue(
-        profileFactSectionSchema,
+        profileFactSectionId,
         context.req.param("section"),
       );
       if (
@@ -303,21 +307,19 @@ export function createFactsRoutes(
     },
   );
 
-  routes.delete(
-    "/api/v1/people/:personId/facts/:section/:factId",
+  mount(
+    routes,
+    deleteProfileFact,
     origin,
     session,
     async (context) => {
-      const personId = parseValue(
-        personIdSchema,
-        context.req.param("personId"),
-      );
-      const factId = parseValue(personIdSchema, context.req.param("factId"));
+      const personId = parseValue(uuid, context.req.param("personId"));
+      const factId = parseValue(uuid, context.req.param("factId"));
       const section = parseValue(
-        profileFactSectionSchema,
+        profileFactSectionId,
         context.req.param("section"),
       );
-      const input = await parseJsonBody(context, profileFactDeleteSchema);
+      const input = await parseJsonBody(context, profileFactDeleteInput);
       if (
         "errors" in personId || "errors" in factId || "errors" in section ||
         "errors" in input || input.data.section !== section.data

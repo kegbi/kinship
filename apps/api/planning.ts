@@ -16,7 +16,6 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
 import type {
   ChangeTaskInput,
   ReminderManagement,
@@ -28,10 +27,34 @@ import type {
   TodayTasks,
 } from "../../packages/backend/read-models/today/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
+import {
+  changeTask,
+  createReminder,
+  createStayInTouchCadence,
+  createTask,
+  getTodayAttention,
+  getTodayReminders,
+  getTodayTasks,
+  listPersonReminders,
+  listTasks,
+  listTasksQuery,
+  setReminderActive,
+  setTaskCompletion,
+} from "../../packages/contracts/routes/planning.ts";
+import {
+  cadenceCreateInput,
+  reminderActiveInput,
+  reminderCreateInput,
+  taskChangeInput,
+  taskCompletionInput,
+  taskCreateInput,
+} from "../../packages/contracts/schemas/planning.ts";
+import { uuid } from "../../packages/contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
 import { failureResponder, type FailureTable } from "./http/failures.ts";
 import { rejectForeignOrigin, requireMatchingOrigin } from "./http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { mount } from "./http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "./http/session.ts";
 import { parseJsonBody, parseQuery, parseValue } from "./http/validate.ts";
 
@@ -46,52 +69,6 @@ export interface PlanningHttpServices {
   readonly todayTasks: TodayTasks;
   readonly todayReminders?: TodayReminders;
 }
-
-const id = z.uuid();
-const createSchema = z.object({
-  description: z.string().trim().min(1).max(10_000).optional(),
-  dueAt: z.iso.datetime({ offset: true }).optional(),
-  personId: id.optional(),
-  requestId: id,
-  title: z.string().trim().min(1).max(500),
-}).strict();
-const changeSchema = z.object({
-  description: z.string().trim().min(1).max(10_000).nullable().optional(),
-  dueAt: z.iso.datetime({ offset: true }).nullable().optional(),
-  expectedUpdatedAt: z.iso.datetime({ offset: true }),
-  personId: id.nullable().optional(),
-  status: z.enum(["cancelled", "open"]).optional(),
-  title: z.string().trim().min(1).max(500).optional(),
-}).strict().refine(
-  (value) =>
-    value.description !== undefined || value.dueAt !== undefined ||
-    value.personId !== undefined || value.status !== undefined ||
-    value.title !== undefined,
-  { message: "At least one task field must change." },
-);
-const completionSchema = z.object({ completed: z.boolean() }).strict();
-const listSchema = z.object({
-  cursor: z.string().max(2_000).optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(100),
-  personId: id.optional(),
-  status: z.enum(["cancelled", "completed", "open"]).optional(),
-}).strict();
-const reminderSchema = z.object({
-  anchorOn: z.iso.date(),
-  personId: id,
-  recurrenceInterval: z.number().int().min(1).max(100),
-  recurrenceUnit: z.enum(["none", "day", "week", "month", "year"]),
-  requestId: id,
-  sendTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/),
-  title: z.string().trim().min(1).max(500),
-}).strict();
-const cadenceSchema = z.object({
-  intervalCount: z.number().int().min(1).max(100),
-  intervalUnit: z.enum(["day", "week", "month", "year"]),
-  personId: id,
-  requestId: id,
-}).strict();
-const activeSchema = z.object({ active: z.boolean() }).strict();
 
 /** A task write or projection that the domain refused. */
 export const TASK_FAILURES: FailureTable = {
@@ -315,7 +292,7 @@ export function createPlanningRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get("/api/v1/today/attention", session, async (context) => {
+  mount(routes, getTodayAttention, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.todayAttention?.get(actor).catch(() =>
@@ -329,15 +306,16 @@ export function createPlanningRoutes(
     return context.json(result);
   });
 
-  routes.get(
-    "/api/v1/people/:personId/reminders",
+  mount(
+    routes,
+    listPersonReminders,
     session,
     async (context) => {
       const reminders = services.reminders;
       if (!reminders) {
         return definedProblem(context, REMINDERS_SECTION_UNAVAILABLE);
       }
-      const personId = parseValue(id, context.req.param("personId"));
+      const personId = parseValue(uuid, context.req.param("personId"));
       if ("errors" in personId) {
         return definedProblem(context, REMINDER_QUERY_INVALID);
       }
@@ -354,14 +332,14 @@ export function createPlanningRoutes(
     },
   );
 
-  routes.post("/api/v1/reminders", session, async (context) => {
+  mount(routes, createReminder, session, async (context) => {
     const reminders = services.reminders;
     if (!reminders) {
       return definedProblem(context, REMINDERS_NOTHING_SAVED);
     }
     const foreign = rejectForeignOrigin(context, services.browserSecurity);
     if (foreign) return foreign;
-    const input = await parseJsonBody(context, reminderSchema);
+    const input = await parseJsonBody(context, reminderCreateInput);
     if ("errors" in input) {
       return definedProblem(context, REMINDER_CALENDAR_INVALID);
     }
@@ -377,14 +355,14 @@ export function createPlanningRoutes(
     return context.json(result, 201);
   });
 
-  routes.post("/api/v1/stay-in-touch-cadences", session, async (context) => {
+  mount(routes, createStayInTouchCadence, session, async (context) => {
     const reminders = services.reminders;
     if (!reminders) {
       return definedProblem(context, REMINDERS_NOTHING_SAVED);
     }
     const foreign = rejectForeignOrigin(context, services.browserSecurity);
     if (foreign) return foreign;
-    const input = await parseJsonBody(context, cadenceSchema);
+    const input = await parseJsonBody(context, cadenceCreateInput);
     if ("errors" in input) {
       return definedProblem(context, CADENCE_REQUEST_INVALID);
     }
@@ -400,8 +378,9 @@ export function createPlanningRoutes(
     return context.json(result, 201);
   });
 
-  routes.put(
-    "/api/v1/reminders/:reminderId/active",
+  mount(
+    routes,
+    setReminderActive,
     session,
     async (context) => {
       const reminders = services.reminders;
@@ -410,8 +389,8 @@ export function createPlanningRoutes(
       }
       const foreign = rejectForeignOrigin(context, services.browserSecurity);
       if (foreign) return foreign;
-      const reminderId = parseValue(id, context.req.param("reminderId"));
-      const input = await parseJsonBody(context, activeSchema);
+      const reminderId = parseValue(uuid, context.req.param("reminderId"));
+      const input = await parseJsonBody(context, reminderActiveInput);
       if ("errors" in reminderId || "errors" in input) {
         return definedProblem(context, REMINDER_ACTIVE_INVALID);
       }
@@ -431,7 +410,7 @@ export function createPlanningRoutes(
     },
   );
 
-  routes.get("/api/v1/today/reminders", session, async (context) => {
+  mount(routes, getTodayReminders, session, async (context) => {
     const todayReminders = services.todayReminders;
     if (!todayReminders) {
       return definedProblem(context, TODAY_REMINDERS_UNAVAILABLE);
@@ -447,8 +426,8 @@ export function createPlanningRoutes(
     return context.json(result);
   });
 
-  routes.get("/api/v1/tasks", session, async (context) => {
-    const input = parseQuery(context, listSchema);
+  mount(routes, listTasks, session, async (context) => {
+    const input = parseQuery(context, listTasksQuery);
     if ("errors" in input) {
       return definedProblem(context, TASK_QUERY_INVALID);
     }
@@ -468,8 +447,8 @@ export function createPlanningRoutes(
     return context.json(result);
   });
 
-  routes.post("/api/v1/tasks", origin, session, async (context) => {
-    const input = await parseJsonBody(context, createSchema);
+  mount(routes, createTask, origin, session, async (context) => {
+    const input = await parseJsonBody(context, taskCreateInput);
     if ("errors" in input) {
       return definedProblem(context, TASK_FIELDS_INVALID);
     }
@@ -492,9 +471,9 @@ export function createPlanningRoutes(
     return context.json(result, 201);
   });
 
-  routes.patch("/api/v1/tasks/:taskId", origin, session, async (context) => {
-    const taskId = parseValue(id, context.req.param("taskId"));
-    const input = await parseJsonBody(context, changeSchema);
+  mount(routes, changeTask, origin, session, async (context) => {
+    const taskId = parseValue(uuid, context.req.param("taskId"));
+    const input = await parseJsonBody(context, taskChangeInput);
     if ("errors" in taskId || "errors" in input) {
       return definedProblem(context, TASK_CHANGE_INVALID);
     }
@@ -515,13 +494,14 @@ export function createPlanningRoutes(
     return context.json(result);
   });
 
-  routes.put(
-    "/api/v1/tasks/:taskId/completion",
+  mount(
+    routes,
+    setTaskCompletion,
     origin,
     session,
     async (context) => {
-      const taskId = parseValue(id, context.req.param("taskId"));
-      const input = await parseJsonBody(context, completionSchema);
+      const taskId = parseValue(uuid, context.req.param("taskId"));
+      const input = await parseJsonBody(context, taskCompletionInput);
       if ("errors" in taskId || "errors" in input) {
         return definedProblem(context, TASK_COMPLETION_INVALID);
       }
@@ -543,7 +523,7 @@ export function createPlanningRoutes(
     },
   );
 
-  routes.get("/api/v1/today/tasks", session, async (context) => {
+  mount(routes, getTodayTasks, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.todayTasks.getDueTasks(actor).catch(() =>

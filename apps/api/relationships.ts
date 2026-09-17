@@ -12,13 +12,30 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
 import type { RelationshipManagement } from "../../packages/backend/modules/relationships/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
+import {
+  createRelatedPersonRelationship,
+  createRelationship,
+  deleteRelationship,
+  listRelationships,
+  listRelationshipsQuery,
+  listRelationshipTypes,
+  listRelationshipTypesQuery,
+  updateRelationship,
+} from "../../packages/contracts/routes/relationships.ts";
+import { personTransitionInput } from "../../packages/contracts/schemas/people.ts";
+import {
+  relatedPersonRelationshipInput,
+  relationshipCreateInput,
+  relationshipUpdateInput,
+} from "../../packages/contracts/schemas/relationships.ts";
+import { uuid } from "../../packages/contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
 import { failureResponder, type FailureTable } from "./http/failures.ts";
 import { requireMatchingOrigin } from "./http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { mount } from "./http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "./http/session.ts";
 import { parseJsonBody, parseQuery, parseValue } from "./http/validate.ts";
 
@@ -29,40 +46,6 @@ export interface RelationshipHttpServices {
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
   readonly relationships: RelationshipManagement;
 }
-
-const id = z.uuid();
-const createSchema = z.object({
-  relationshipTypeId: id,
-  targetPersonId: id,
-}).strict();
-const relatedPersonSchema = z.object({
-  person: z.object({
-    duplicateOverride: z.boolean().optional(),
-    familyName: z.string().trim().max(200).optional(),
-    givenName: z.string().trim().max(200),
-    isPartial: z.boolean(),
-    middleName: z.string().trim().max(200).optional(),
-    nickname: z.string().trim().max(200).optional(),
-  }).strict(),
-  relationshipTypeId: id,
-}).strict();
-const updateSchema = z.object({
-  expectedUpdatedAt: z.iso.datetime({ offset: true }),
-  relationshipTypeId: id,
-}).strict();
-const deleteSchema = z.object({
-  expectedUpdatedAt: z.iso.datetime({ offset: true }),
-}).strict();
-const typesQuery = z.object({
-  cursor: z.string().max(2_000).optional(),
-  search: z.string().trim().max(200).optional(),
-  selected: z.string().max(2_000).transform((value) => value.split(","))
-    .pipe(z.array(id).max(20)).optional(),
-}).strict();
-const listQuery = z.object({
-  cursor: z.string().max(2_000).optional(),
-  limit: z.coerce.number().int().min(1).max(20).default(20),
-}).strict();
 
 /** What a refused relationship write says. */
 export const RELATIONSHIP_FAILURES: FailureTable = {
@@ -235,8 +218,17 @@ export function createRelationshipRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get("/api/v1/relationship-types", session, async (context) => {
-    const parsed = parseQuery(context, typesQuery);
+  mount(routes, listRelationshipTypes, session, async (context) => {
+    // `selected` travels as one comma-separated value, which is what
+    // `style: form, explode: false` means; splitting it here keeps the
+    // documented schema an array of identifiers rather than a string.
+    const query = context.req.query();
+    const parsed = parseValue(listRelationshipTypesQuery, {
+      ...query,
+      ...(query.selected === undefined
+        ? {}
+        : { selected: query.selected.split(",") }),
+    });
     if ("errors" in parsed) {
       return definedProblem(context, TYPES_QUERY_INVALID);
     }
@@ -257,12 +249,13 @@ export function createRelationshipRoutes(
     return context.json(result);
   });
 
-  routes.get(
-    "/api/v1/people/:personId/relationships",
+  mount(
+    routes,
+    listRelationships,
     session,
     async (context) => {
-      const personId = parseValue(id, context.req.param("personId"));
-      const query = parseQuery(context, listQuery);
+      const personId = parseValue(uuid, context.req.param("personId"));
+      const query = parseQuery(context, listRelationshipsQuery);
       if ("errors" in personId || "errors" in query) {
         return definedProblem(context, SECTION_REQUEST_INVALID);
       }
@@ -282,13 +275,14 @@ export function createRelationshipRoutes(
     },
   );
 
-  routes.post(
-    "/api/v1/people/:personId/relationships",
+  mount(
+    routes,
+    createRelationship,
     origin,
     session,
     async (context) => {
-      const personId = parseValue(id, context.req.param("personId"));
-      const input = await parseJsonBody(context, createSchema);
+      const personId = parseValue(uuid, context.req.param("personId"));
+      const input = await parseJsonBody(context, relationshipCreateInput);
       if ("errors" in personId || "errors" in input) {
         return definedProblem(context, CREATE_REQUEST_INVALID);
       }
@@ -307,13 +301,17 @@ export function createRelationshipRoutes(
     },
   );
 
-  routes.post(
-    "/api/v1/people/:personId/relationships/related-person",
+  mount(
+    routes,
+    createRelatedPersonRelationship,
     origin,
     session,
     async (context) => {
-      const personId = parseValue(id, context.req.param("personId"));
-      const input = await parseJsonBody(context, relatedPersonSchema);
+      const personId = parseValue(uuid, context.req.param("personId"));
+      const input = await parseJsonBody(
+        context,
+        relatedPersonRelationshipInput,
+      );
       if ("errors" in personId || "errors" in input) {
         return definedProblem(context, RELATED_PERSON_INVALID);
       }
@@ -349,17 +347,18 @@ export function createRelationshipRoutes(
     },
   );
 
-  routes.patch(
-    "/api/v1/people/:personId/relationships/:relationshipId",
+  mount(
+    routes,
+    updateRelationship,
     origin,
     session,
     async (context) => {
-      const personId = parseValue(id, context.req.param("personId"));
+      const personId = parseValue(uuid, context.req.param("personId"));
       const relationshipId = parseValue(
-        id,
+        uuid,
         context.req.param("relationshipId"),
       );
-      const input = await parseJsonBody(context, updateSchema);
+      const input = await parseJsonBody(context, relationshipUpdateInput);
       if (
         "errors" in personId || "errors" in relationshipId || "errors" in input
       ) return definedProblem(context, VERSIONED_REQUEST_INVALID);
@@ -378,17 +377,18 @@ export function createRelationshipRoutes(
     },
   );
 
-  routes.delete(
-    "/api/v1/people/:personId/relationships/:relationshipId",
+  mount(
+    routes,
+    deleteRelationship,
     origin,
     session,
     async (context) => {
-      const personId = parseValue(id, context.req.param("personId"));
+      const personId = parseValue(uuid, context.req.param("personId"));
       const relationshipId = parseValue(
-        id,
+        uuid,
         context.req.param("relationshipId"),
       );
-      const input = await parseJsonBody(context, deleteSchema);
+      const input = await parseJsonBody(context, personTransitionInput);
       if (
         "errors" in personId || "errors" in relationshipId || "errors" in input
       ) return definedProblem(context, VERSIONED_REQUEST_INVALID);

@@ -848,7 +848,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     contracts:check and build green, baseline 14 unchanged; gates fmt:check,
     lint, check, check:architecture.
 
-- [ ] **GAP-022 — Contracts derived from Zod; retire the hand-written
+- [x] **GAP-022 — Contracts derived from Zod; retire the hand-written
       generator.** L. Depends: 020.
   - Problem: three hand-maintained copies of every schema and a drift check that
     cannot see drift.
@@ -866,6 +866,31 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     OpenAPI document.
   - Verify: `contracts:check`, `packages/contracts/*_test.ts`, web unit tests,
     and Chromium E2E green.
+  - Delivered 2026-09-17: `packages/contracts/schemas/<domain>.ts` (19 modules)
+    hold every request and response schema as Zod with 258 components named by
+    `meta`, `packages/contracts/routes/<domain>.ts` hold one `defineRoute`
+    descriptor per operation (126 routes, 123 documented, the three probes
+    marked undocumented) validated at module load, and `apps/api/http/route.ts`
+    `mount` derives Hono's path from the same descriptor so mounting and
+    documenting share one source; `apps/api/routes_test.ts` asserts the mounted
+    app equals the registry; `tools/contracts/build.ts` (518 lines across three
+    files) renders `openapi.json` with `zod-openapi` 6.0.2 and the types with
+    `openapi-typescript` 7.13.0, and generates the compatibility barrel from the
+    authored `packages/contracts/client/<domain>.ts` wrapper, whose 124 function
+    names and 155 type names a contracts test pins (111 types are now aliases
+    into the generated types); `tools/contracts/generate.ts` (9904 lines) is
+    deleted; `contracts:check` proves the three artefacts current and the
+    mounted and documented surfaces equal without Postgres; the document keeps
+    99 paths, 123 operations, and 254 components (two named where a deep pointer
+    was), with 117 ordering, naming, and explicit-default differences and no
+    shape change; three real drifts surfaced and were fixed (two path parameter
+    names and twelve path-level parameters), and one undocumented query
+    parameter on the person audit route is now refused; `deps:audit` unchanged
+    at the five parked moderates; 51 files changed (+11423/-22917) plus 71 new
+    files (24359 lines); unit 718 vitest plus all sets green, integration 126/0,
+    api set function coverage 86.0 to 94.0, build green, Chromium E2E 53 passed
+    with only the four parked failures; gates fmt:check, lint, check,
+    check:architecture.
 
 - [ ] **GAP-023 — Pagination and response conventions.** M. Depends: 022.
   - Scope: cursor pagination (`limit` 1-50, `cursor`, `nextCursor`) for tasks,

@@ -1,9 +1,10 @@
 /**
  * Personal API tokens over HTTP.
  *
- * Three routes, the shape a token is created from, and the prose each refusal
- * carries. The problem responder, the session cookie, the origin check, and
- * the kernel status map came from `http/` (GAP-019, GAP-020).
+ * Three routes and the prose each refusal carries. The problem responder, the
+ * session cookie, the origin check, and the kernel status map came from
+ * `http/` (GAP-019, GAP-020); the paths these routes answer on and the shape a
+ * token is created from come from `packages/contracts` (GAP-022).
  *
  * The three outages are named separately rather than shared, because a caller
  * needs to know whether nothing was loaded, nothing was created, or nothing
@@ -12,16 +13,23 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
 import {
   API_TOKEN_SCOPES,
   type ApiTokenManagement,
 } from "../../packages/backend/modules/api-access/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
+import {
+  createApiToken,
+  getApiTokens,
+  revokeApiToken,
+} from "../../packages/contracts/routes/api_tokens.ts";
+import { apiTokenCreateInput } from "../../packages/contracts/schemas/api_tokens.ts";
+import { uuid } from "../../packages/contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
 import { failureResponder, type FailureTable } from "./http/failures.ts";
 import { requireMatchingOrigin } from "./http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { mount } from "./http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "./http/session.ts";
 import { parseJsonBody, parseValue } from "./http/validate.ts";
 
@@ -31,13 +39,6 @@ export interface ApiTokenHttpServices {
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
 }
-
-const uuid = z.uuid();
-const createSchema = z.object({
-  expiresAt: z.iso.datetime({ offset: true }).optional(),
-  name: z.string().trim().min(1).max(100),
-  scopes: z.array(z.enum(API_TOKEN_SCOPES)).min(1).max(API_TOKEN_SCOPES.length),
-}).strict();
 
 const TOKENS_NOT_LOADED: ProblemDefinition = {
   code: "api_tokens_unavailable",
@@ -113,7 +114,7 @@ export function createApiTokenRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get("/api/v1/settings/api-tokens", session, async (context) => {
+  mount(routes, getApiTokens, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.apiTokens.list(actor).catch(() => undefined);
@@ -127,10 +128,10 @@ export function createApiTokenRoutes(
     });
   });
 
-  routes.post("/api/v1/settings/api-tokens", origin, session, async (
+  mount(routes, createApiToken, origin, session, async (
     context,
   ) => {
-    const body = await parseJsonBody(context, createSchema);
+    const body = await parseJsonBody(context, apiTokenCreateInput);
     if ("errors" in body) {
       return definedProblem(context, TOKEN_REQUEST_INVALID);
     }
@@ -147,8 +148,9 @@ export function createApiTokenRoutes(
     return context.json(result, 201);
   });
 
-  routes.delete(
-    "/api/v1/settings/api-tokens/:tokenId",
+  mount(
+    routes,
+    revokeApiToken,
     origin,
     session,
     async (context) => {

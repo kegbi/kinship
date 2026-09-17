@@ -1,4 +1,4 @@
-import { buildOpenApiDocument } from "../../tools/contracts/generate.ts";
+import { buildOpenApiDocument } from "../../tools/contracts/document.ts";
 import {
   createApiToken,
   getApiTokens,

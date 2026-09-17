@@ -12,13 +12,21 @@
  *
  * A registration that commits but cannot send its email says so truthfully
  * and keeps both cookies, because the retry route is the invitee's way out.
+ *
+ * Both paths and the shape a registration is asked for in came from
+ * `packages/contracts` (GAP-022).
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
+import {
+  registerInvitedIdentity,
+  retryInvitedVerificationDelivery,
+} from "../../../packages/contracts/routes/invitations.ts";
+import { invitationRegistrationInput } from "../../../packages/contracts/schemas/invitations.ts";
 import { setCookie } from "../http/cookies.ts";
 import { requireMatchingOrigin } from "../http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "../http/problem.ts";
+import { mount } from "../http/route.ts";
 import type { ActorEnv } from "../http/session.ts";
 import { parseJsonBody } from "../http/validate.ts";
 import { deliveryFailure, registrationFailure } from "./failures.ts";
@@ -39,14 +47,6 @@ export type InvitationRegistrationHttpServices = Pick<
 /** The cookie that marks a verification the invitee is still waiting for. */
 const PENDING_COOKIE = "kinship_invitation_pending";
 const VERIFICATION_PATH = "/api/v1/email-verifications";
-
-const invitationRegistrationSchema = z.object({
-  email: z.string().trim().toLowerCase().email().max(254),
-  firstName: z.string().trim().min(1).max(100),
-  lastName: z.string().trim().max(100),
-  password: z.string().min(12).max(128),
-  token: z.string().min(32).max(256),
-}).strict();
 
 export const REGISTRATION_REQUEST_INVALID: ProblemDefinition = {
   code: "validation_failed",
@@ -88,8 +88,8 @@ export function createInvitationRegistrationRoutes(
   const origin = requireMatchingOrigin(services.browserSecurity);
   const policy = services.browserSecurity;
 
-  routes.post(`${INVITATION_PATH}/register`, origin, async (context) => {
-    const parsed = await parseJsonBody(context, invitationRegistrationSchema);
+  mount(routes, registerInvitedIdentity, origin, async (context) => {
+    const parsed = await parseJsonBody(context, invitationRegistrationInput);
     if ("errors" in parsed) {
       return definedProblem(context, REGISTRATION_REQUEST_INVALID);
     }
@@ -130,8 +130,9 @@ export function createInvitationRegistrationRoutes(
     return registrationFailure(context, result);
   });
 
-  routes.post(
-    `${INVITATION_PATH}/verification-delivery`,
+  mount(
+    routes,
+    retryInvitedVerificationDelivery,
     origin,
     async (context) => {
       const token = invitationToken(context);

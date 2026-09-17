@@ -17,9 +17,18 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
+import {
+  getTodayRecentPeople,
+  listPeople,
+  listPeopleQuery,
+  listPeopleTagOptions,
+  listPeopleTagOptionsQuery,
+  recordPersonView,
+} from "../../../packages/contracts/routes/people.ts";
+import { uuid } from "../../../packages/contracts/schemas/shared.ts";
 import { requireMatchingOrigin } from "../http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "../http/problem.ts";
+import { mount } from "../http/route.ts";
 import {
   type ActorEnv,
   requireActor,
@@ -28,11 +37,7 @@ import {
   tokenOrSessionActor,
 } from "../http/session.ts";
 import { parseQuery, parseValue } from "../http/validate.ts";
-import {
-  type PeopleHttpServices,
-  PERSON_FORBIDDEN,
-  personIdSchema,
-} from "./shared.ts";
+import { type PeopleHttpServices, PERSON_FORBIDDEN } from "./shared.ts";
 
 /** What the directory, its tag options, and the recent list are served from. */
 export type PeopleDirectoryHttpServices = Pick<
@@ -49,24 +54,6 @@ export type PeopleDirectoryHttpServices = Pick<
 
 /** The scope an API token needs to read the people directory. */
 const DIRECTORY_SCOPE = "people:read";
-
-const directoryQuerySchema = z.object({
-  cursor: z.string().max(2_000).optional(),
-  excludePersonId: z.uuid().optional(),
-  lifecycle: z.enum(["active", "archived"]).default("active"),
-  limit: z.coerce.number().int().min(1).max(50).default(20),
-  search: z.string().trim().max(200).optional(),
-  selectedPersonId: z.uuid().optional(),
-  sort: z.enum(["given-name", "family-name", "recently-added"]).default(
-    "given-name",
-  ),
-  tag: z.uuid().optional(),
-}).strict();
-const tagOptionsQuerySchema = z.object({
-  cursor: z.string().max(2_000).optional(),
-  search: z.string().trim().max(200).optional(),
-  selected: z.uuid().optional(),
-}).strict();
 
 export const PEOPLE_QUERY_INVALID: ProblemDefinition = {
   code: "people_query_invalid",
@@ -161,8 +148,8 @@ export function createDirectoryRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get("/api/v1/people", session, async (context) => {
-    const parsed = parseQuery(context, directoryQuerySchema);
+  mount(routes, listPeople, session, async (context) => {
+    const parsed = parseQuery(context, listPeopleQuery);
     if ("errors" in parsed) {
       return definedProblem(context, PEOPLE_QUERY_INVALID);
     }
@@ -202,8 +189,8 @@ export function createDirectoryRoutes(
     });
   });
 
-  routes.get("/api/v1/people/tag-options", session, async (context) => {
-    const parsed = parseQuery(context, tagOptionsQuerySchema);
+  mount(routes, listPeopleTagOptions, session, async (context) => {
+    const parsed = parseQuery(context, listPeopleTagOptionsQuery);
     if ("errors" in parsed) {
       return definedProblem(context, TAG_OPTIONS_QUERY_INVALID);
     }
@@ -230,12 +217,13 @@ export function createDirectoryRoutes(
     });
   });
 
-  routes.post(
-    "/api/v1/people/:personId/view",
+  mount(
+    routes,
+    recordPersonView,
     origin,
     session,
     async (context) => {
-      const parsed = parseValue(personIdSchema, context.req.param("personId"));
+      const parsed = parseValue(uuid, context.req.param("personId"));
       const body = await context.req.text().catch(() => undefined);
       if ("errors" in parsed || body !== "") {
         return definedProblem(context, PERSON_VIEW_INVALID);
@@ -263,7 +251,7 @@ export function createDirectoryRoutes(
     },
   );
 
-  routes.get("/api/v1/today/recent-people", session, async (context) => {
+  mount(routes, getTodayRecentPeople, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.todayRecentPeople?.get(actor).catch(() =>

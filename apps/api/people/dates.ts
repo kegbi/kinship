@@ -13,50 +13,35 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
+import type { z } from "zod";
 import type { ImportantDateRecord } from "../../../packages/backend/modules/people/public.ts";
+import {
+  createImportantDate,
+  deleteImportantDate,
+  listImportantDates,
+  updateImportantDate,
+} from "../../../packages/contracts/routes/people.ts";
+import {
+  // The presenter below already owns the name `importantDateInput` for the
+  // command it builds; this is the body that command is built from.
+  importantDateInput as importantDateValueSchema,
+  importantDateUpdateInput,
+  personTransitionInput,
+} from "../../../packages/contracts/schemas/people.ts";
+import { uuid } from "../../../packages/contracts/schemas/shared.ts";
 import { failureResponder, type FailureTable } from "../http/failures.ts";
 import { requireMatchingOrigin } from "../http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "../http/problem.ts";
+import { mount } from "../http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "../http/session.ts";
 import { parseJsonBody, parseValue } from "../http/validate.ts";
-import {
-  expectedUpdatedAtSchema,
-  type PeopleHttpServices,
-  PERSON_ID_INVALID,
-  personIdSchema,
-  transitionSchema,
-} from "./shared.ts";
+import { type PeopleHttpServices, PERSON_ID_INVALID } from "./shared.ts";
 
 /** What the important dates of a person's page are served from. */
 export type ImportantDateHttpServices = Pick<
   PeopleHttpServices,
   "browserSecurity" | "importantDates" | "protectedSessions"
 >;
-
-const importantDateValueSchema = z.object({
-  day: z.number().int().min(1).max(31).optional(),
-  isAgeBased: z.boolean(),
-  isYearApproximate: z.boolean(),
-  kind: z.enum(["birthday", "custom", "deceased", "first_met"]),
-  label: z.string().trim().max(200).optional(),
-  month: z.number().int().min(1).max(12).optional(),
-  notes: z.string().trim().max(2_000).optional(),
-  precision: z.enum([
-    "day",
-    "full",
-    "month",
-    "month_day",
-    "unknown",
-    "year",
-    "year_month",
-  ]),
-  year: z.number().int().min(1).max(9999).optional(),
-}).strict();
-const importantDateUpdateSchema = importantDateValueSchema.extend({
-  expectedUpdatedAt: expectedUpdatedAtSchema,
-});
-const importantDateDeleteSchema = transitionSchema;
 
 function importantDateInput(input: z.infer<typeof importantDateValueSchema>) {
   return {
@@ -189,8 +174,8 @@ export function createDatesRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get("/api/v1/people/:personId/dates", session, async (context) => {
-    const personId = parseValue(personIdSchema, context.req.param("personId"));
+  mount(routes, listImportantDates, session, async (context) => {
+    const personId = parseValue(uuid, context.req.param("personId"));
     if ("errors" in personId) {
       return definedProblem(context, PERSON_ID_INVALID);
     }
@@ -212,15 +197,13 @@ export function createDatesRoutes(
     });
   });
 
-  routes.post(
-    "/api/v1/people/:personId/dates",
+  mount(
+    routes,
+    createImportantDate,
     origin,
     session,
     async (context) => {
-      const personId = parseValue(
-        personIdSchema,
-        context.req.param("personId"),
-      );
+      const personId = parseValue(uuid, context.req.param("personId"));
       const input = await parseJsonBody(context, importantDateValueSchema);
       if ("errors" in personId || "errors" in input) {
         return definedProblem(context, IMPORTANT_DATE_CREATE_INVALID);
@@ -242,17 +225,15 @@ export function createDatesRoutes(
     },
   );
 
-  routes.patch(
-    "/api/v1/people/:personId/dates/:dateId",
+  mount(
+    routes,
+    updateImportantDate,
     origin,
     session,
     async (context) => {
-      const personId = parseValue(
-        personIdSchema,
-        context.req.param("personId"),
-      );
-      const dateId = parseValue(personIdSchema, context.req.param("dateId"));
-      const input = await parseJsonBody(context, importantDateUpdateSchema);
+      const personId = parseValue(uuid, context.req.param("personId"));
+      const dateId = parseValue(uuid, context.req.param("dateId"));
+      const input = await parseJsonBody(context, importantDateUpdateInput);
       if ("errors" in personId || "errors" in dateId || "errors" in input) {
         return definedProblem(context, IMPORTANT_DATE_UPDATE_INVALID);
       }
@@ -275,17 +256,15 @@ export function createDatesRoutes(
     },
   );
 
-  routes.delete(
-    "/api/v1/people/:personId/dates/:dateId",
+  mount(
+    routes,
+    deleteImportantDate,
     origin,
     session,
     async (context) => {
-      const personId = parseValue(
-        personIdSchema,
-        context.req.param("personId"),
-      );
-      const dateId = parseValue(personIdSchema, context.req.param("dateId"));
-      const input = await parseJsonBody(context, importantDateDeleteSchema);
+      const personId = parseValue(uuid, context.req.param("personId"));
+      const dateId = parseValue(uuid, context.req.param("dateId"));
+      const input = await parseJsonBody(context, personTransitionInput);
       if ("errors" in personId || "errors" in dateId || "errors" in input) {
         return definedProblem(context, IMPORTANT_DATE_DELETE_INVALID);
       }

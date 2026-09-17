@@ -93,7 +93,7 @@ Deno.test("GOVERNANCE-002 contract publishes only bounded redacted audit reads",
     "generated client omitted an authorized audit surface",
   );
 });
-import { buildOpenApiDocument } from "./generate.ts";
+import { buildOpenApiDocument } from "./document.ts";
 import {
   acceptLegalDocument,
   getLegalRequirements,

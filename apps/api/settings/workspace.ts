@@ -10,22 +10,25 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
+import {
+  getWorkspaceSettings,
+  updateWorkspaceSettings,
+} from "../../../packages/contracts/routes/settings.ts";
+import { workspaceSettingsInput } from "../../../packages/contracts/schemas/settings.ts";
 import { requireMatchingOrigin } from "../http/origin.ts";
 import {
   definedProblem,
   type ProblemDefinition,
   type ProblemErrors,
 } from "../http/problem.ts";
+import { mount } from "../http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "../http/session.ts";
 import { parseJsonBody } from "../http/validate.ts";
 import {
   INVALID_CURRENCY_MESSAGE,
   INVALID_TIMEZONE_MESSAGE,
-  locale,
   privateJson,
   type SettingsHttpServices,
-  timezone,
 } from "./shared.ts";
 
 /** What the workspace's own settings are served from. */
@@ -33,17 +36,6 @@ export type WorkspaceSettingsHttpServices = Pick<
   SettingsHttpServices,
   "browserSecurity" | "protectedSessions" | "settings"
 >;
-
-const workspaceSchema = z.object({
-  defaultCurrencyCode: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/)
-    .optional(),
-  defaultLocale: locale,
-  defaultReminderTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
-  defaultTimezone: timezone.optional(),
-  name: z.string().trim().min(1).max(200),
-  slug: z.string().trim().toLowerCase().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-    .max(100).optional(),
-}).strict();
 
 export const WORKSPACE_FORBIDDEN: ProblemDefinition = {
   code: "workspace_forbidden",
@@ -84,7 +76,7 @@ export function createWorkspaceRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get("/api/v1/settings/workspace", session, async (context) => {
+  mount(routes, getWorkspaceSettings, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.settings.getWorkspace(actor).catch(
@@ -98,8 +90,8 @@ export function createWorkspaceRoutes(
       : definedProblem(context, WORKSPACE_NOT_LOADED);
   });
 
-  routes.put("/api/v1/settings/workspace", origin, session, async (context) => {
-    const parsed = await parseJsonBody(context, workspaceSchema);
+  mount(routes, updateWorkspaceSettings, origin, session, async (context) => {
+    const parsed = await parseJsonBody(context, workspaceSettingsInput);
     if ("errors" in parsed) {
       return definedProblem(context, WORKSPACE_INVALID, parsed.errors);
     }

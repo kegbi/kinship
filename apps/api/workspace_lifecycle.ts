@@ -12,17 +12,23 @@
  */
 
 import { type Context, Hono } from "hono";
-import { z } from "zod";
 import type {
   createProtectedSessionCoordinator,
   WorkspaceLifecycle,
 } from "../../packages/backend/modules/workspaces/public.ts";
+import {
+  deleteWorkspace,
+  getWorkspaceLifecyclePreview,
+  resetWorkspace,
+} from "../../packages/contracts/routes/workspace_lifecycle.ts";
+import { workspaceLifecycleConfirmation } from "../../packages/contracts/schemas/workspace_lifecycle.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
 import { clientAddress } from "./http/client_address.ts";
 import { SESSION_COOKIE, setCookie } from "./http/cookies.ts";
 import { failureResponder, type FailureTable } from "./http/failures.ts";
 import { requireMatchingOrigin } from "./http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { mount } from "./http/route.ts";
 import { type ActorEnv, requireSession, sessionActor } from "./http/session.ts";
 import { parseJsonBody } from "./http/validate.ts";
 
@@ -33,12 +39,6 @@ export interface WorkspaceLifecycleHttpServices {
   readonly protectedSessions: ProtectedSessions;
   readonly workspaceLifecycle: WorkspaceLifecycle;
 }
-
-const mutationSchema = z.object({
-  confirmation: z.string().min(1).max(300),
-  impactToken: z.string().regex(/^[0-9a-f]{64}$/),
-  password: z.string().min(1).max(1024),
-}).strict();
 
 /** What a refused danger-zone request says. */
 export const WORKSPACE_LIFECYCLE_FAILURES: FailureTable = {
@@ -121,8 +121,9 @@ export function createWorkspaceLifecycleRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get(
-    "/api/v1/settings/workspace-lifecycle",
+  mount(
+    routes,
+    getWorkspaceLifecyclePreview,
     session,
     async (context) => {
       const actor = await requireSession(context);
@@ -153,7 +154,10 @@ export function createWorkspaceLifecycleRoutes(
 
   const mutate =
     (action: "delete" | "reset") => async (context: Context<ActorEnv>) => {
-      const input = await parseJsonBody(context, mutationSchema);
+      const input = await parseJsonBody(
+        context,
+        workspaceLifecycleConfirmation,
+      );
       if ("errors" in input) {
         return definedProblem(context, VALIDATION_FAILED);
       }
@@ -198,14 +202,16 @@ export function createWorkspaceLifecycleRoutes(
         { "Cache-Control": "private, no-store" },
       );
     };
-  routes.post(
-    "/api/v1/settings/workspace-lifecycle/reset",
+  mount(
+    routes,
+    resetWorkspace,
     origin,
     session,
     mutate("reset"),
   );
-  routes.delete(
-    "/api/v1/settings/workspace-lifecycle",
+  mount(
+    routes,
+    deleteWorkspace,
     origin,
     session,
     mutate("delete"),

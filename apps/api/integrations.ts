@@ -13,16 +13,21 @@
  */
 
 import { type Context, Hono } from "hono";
-import { z } from "zod";
-import {
-  DAV_REMOTE_URL_MAX_BYTES,
-  type DavSyncManagement,
-} from "../../packages/backend/modules/integrations/public.ts";
+import type { DavSyncManagement } from "../../packages/backend/modules/integrations/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
+import {
+  createDavSubscription,
+  disableDavSubscription,
+  getDavSubscriptions,
+  synchronizeDavSubscription,
+} from "../../packages/contracts/routes/integrations.ts";
+import { davSubscriptionInput } from "../../packages/contracts/schemas/integrations.ts";
+import { uuid } from "../../packages/contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
 import { failureResponder, type FailureTable } from "./http/failures.ts";
 import { matchingOrigin } from "./http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { mount } from "./http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "./http/session.ts";
 import { parseJsonBody, parseValue } from "./http/validate.ts";
 
@@ -32,17 +37,6 @@ export interface IntegrationHttpServices {
   readonly dav: DavSyncManagement;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
 }
-
-const uuid = z.uuid();
-const configureSchema = z.object({
-  name: z.string().trim().min(1).max(100),
-  password: z.string().min(1).max(4096),
-  remoteUrl: z.url().max(DAV_REMOTE_URL_MAX_BYTES).refine(
-    (value) =>
-      new TextEncoder().encode(value).length <= DAV_REMOTE_URL_MAX_BYTES,
-  ),
-  username: z.string().trim().max(255).optional(),
-}).strict();
 
 const INTEGRATIONS_NOT_LOADED: ProblemDefinition = {
   code: "integrations_unavailable",
@@ -147,7 +141,7 @@ export function createIntegrationRoutes(
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services.protectedSessions);
 
-  routes.get("/api/v1/settings/integrations/dav", session, async (context) => {
+  mount(routes, getDavSubscriptions, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.dav.list(actor).catch(() => undefined);
@@ -157,10 +151,10 @@ export function createIntegrationRoutes(
     return context.json(result);
   });
 
-  routes.post("/api/v1/settings/integrations/dav", session, async (context) => {
+  mount(routes, createDavSubscription, session, async (context) => {
     const refused = rejectDavOrigin(context, services.browserSecurity);
     if (refused) return refused;
-    const body = await parseJsonBody(context, configureSchema);
+    const body = await parseJsonBody(context, davSubscriptionInput);
     if ("errors" in body) {
       return definedProblem(context, INTEGRATION_REQUEST_INVALID);
     }
@@ -178,13 +172,14 @@ export function createIntegrationRoutes(
     return context.json(result, 201);
   });
 
-  routes.post(
-    "/api/v1/settings/integrations/dav/:id/sync",
+  mount(
+    routes,
+    synchronizeDavSubscription,
     session,
     async (context) => {
       const refused = rejectDavOrigin(context, services.browserSecurity);
       if (refused) return refused;
-      const id = parseValue(uuid, context.req.param("id"));
+      const id = parseValue(uuid, context.req.param("subscriptionId"));
       if ("errors" in id) {
         return definedProblem(context, INTEGRATION_ID_INVALID);
       }
@@ -206,13 +201,14 @@ export function createIntegrationRoutes(
     },
   );
 
-  routes.delete(
-    "/api/v1/settings/integrations/dav/:id",
+  mount(
+    routes,
+    disableDavSubscription,
     session,
     async (context) => {
       const refused = rejectDavOrigin(context, services.browserSecurity);
       if (refused) return refused;
-      const id = parseValue(uuid, context.req.param("id"));
+      const id = parseValue(uuid, context.req.param("subscriptionId"));
       if ("errors" in id) {
         return definedProblem(context, INTEGRATION_ID_INVALID);
       }

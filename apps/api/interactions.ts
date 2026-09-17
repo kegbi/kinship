@@ -12,7 +12,6 @@
  */
 
 import { Hono } from "hono";
-import { z } from "zod";
 import type {
   CommunicationManagement,
   InteractionManagement,
@@ -22,10 +21,24 @@ import type {
 import type { ActivityReport } from "../../packages/backend/read-models/activity-report/public.ts";
 import type { TodayInteractions } from "../../packages/backend/read-models/today/public.ts";
 import type { createProtectedSessionCoordinator } from "../../packages/backend/modules/workspaces/public.ts";
+import {
+  getActivityReport,
+  getActivityReportQuery,
+  getTodayFavoriteNotes,
+  getTodayRecentActivity,
+  listCommunicationOptions,
+  listInteractionOptions,
+  listInteractionOptionsQuery,
+  listPersonCommunications,
+  recordInteraction,
+} from "../../packages/contracts/routes/interactions.ts";
+import { interactionInput } from "../../packages/contracts/schemas/interactions.ts";
+import { uuid } from "../../packages/contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "./security_config.ts";
 import { failureResponder, type FailureTable } from "./http/failures.ts";
 import { requireMatchingOrigin } from "./http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "./http/problem.ts";
+import { mount } from "./http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "./http/session.ts";
 import { parseJsonBody, parseQuery, parseValue } from "./http/validate.ts";
 
@@ -38,68 +51,6 @@ export interface InteractionHttpServices {
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
   readonly today: TodayInteractions;
 }
-
-const id = z.uuid();
-const activitySchema = z.object({
-  activityTypeId: id.optional(),
-  description: z.string().trim().min(1).max(10_000).optional(),
-  emotionIds: z.array(id).max(20).optional(),
-  happenedAt: z.iso.datetime({ offset: true }),
-  kind: z.literal("activity"),
-  participantIds: z.array(id).min(1).max(50),
-  requestId: id,
-  summary: z.string().trim().min(1).max(500),
-}).strict();
-const noteSchema = z.object({
-  body: z.string().trim().min(1).max(10_000),
-  isFavorited: z.boolean().optional(),
-  kind: z.literal("note"),
-  personId: id,
-  requestId: id,
-}).strict();
-const callSchema = z.object({
-  calledAt: z.iso.datetime({ offset: true }),
-  contactWasCaller: z.boolean(),
-  content: z.string().trim().min(1).max(10_000).optional(),
-  emotionIds: z.array(id).max(20).optional(),
-  kind: z.literal("call"),
-  personId: id,
-  requestId: id,
-}).strict();
-const messageSchema = z.object({
-  content: z.string().trim().min(1).max(10_000),
-  direction: z.enum(["inbound", "outbound"]),
-  writtenAt: z.iso.datetime({ offset: true }),
-}).strict();
-const conversationSchema = z.object({
-  channelTypeId: id,
-  contactMethodId: id.optional(),
-  happenedAt: z.iso.datetime({ offset: true }),
-  kind: z.literal("conversation"),
-  messages: z.array(messageSchema).max(50).optional(),
-  personId: id,
-  requestId: id,
-  title: z.string().trim().min(1).max(500).optional(),
-}).strict();
-const inputSchema = z.discriminatedUnion("kind", [
-  activitySchema,
-  noteSchema,
-  callSchema,
-  conversationSchema,
-]);
-const reportQuery = z.object({
-  cursor: z.string().max(2_000).optional(),
-  kind: z.enum(["activity", "note"]).optional(),
-  limit: z.coerce.number().int().min(1).max(50).default(20),
-  year: z.coerce.number().int().min(1).max(9999).optional(),
-}).strict();
-const optionsQuery = z.object({
-  activityTypeCursor: z.string().max(2_000).optional(),
-  activityTypeSearch: z.string().trim().max(100).optional(),
-  emotionCursor: z.string().max(2_000).optional(),
-  emotionSearch: z.string().trim().max(100).optional(),
-  limit: z.coerce.number().int().min(1).max(20).default(20),
-}).strict();
 
 /** What a refused interaction or communication says. */
 export const INTERACTION_FAILURES: FailureTable = {
@@ -241,8 +192,8 @@ export function createInteractionRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.post("/api/v1/interactions", origin, session, async (context) => {
-    const input = await parseJsonBody(context, inputSchema);
+  mount(routes, recordInteraction, origin, session, async (context) => {
+    const input = await parseJsonBody(context, interactionInput);
     if ("errors" in input) {
       return definedProblem(context, INTERACTION_REQUEST_INVALID);
     }
@@ -312,7 +263,7 @@ export function createInteractionRoutes(
     return context.json(result, 201);
   });
 
-  routes.get("/api/v1/communication-options", session, async (context) => {
+  mount(routes, listCommunicationOptions, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.interactions.communicationOptions(actor)
@@ -325,11 +276,12 @@ export function createInteractionRoutes(
     return context.json(result);
   });
 
-  routes.get(
-    "/api/v1/people/:personId/communications",
+  mount(
+    routes,
+    listPersonCommunications,
     session,
     async (context) => {
-      const personId = parseValue(id, context.req.param("personId"));
+      const personId = parseValue(uuid, context.req.param("personId"));
       if ("errors" in personId) {
         return definedProblem(context, COMMUNICATION_QUERY_INVALID);
       }
@@ -348,8 +300,8 @@ export function createInteractionRoutes(
     },
   );
 
-  routes.get("/api/v1/interaction-options", session, async (context) => {
-    const input = parseQuery(context, optionsQuery);
+  mount(routes, listInteractionOptions, session, async (context) => {
+    const input = parseQuery(context, listInteractionOptionsQuery);
     if ("errors" in input) {
       return definedProblem(context, OPTIONS_QUERY_INVALID);
     }
@@ -376,12 +328,13 @@ export function createInteractionRoutes(
     return context.json(result);
   });
 
-  routes.get(
-    "/api/v1/people/:personId/activity-report",
+  mount(
+    routes,
+    getActivityReport,
     session,
     async (context) => {
-      const personId = parseValue(id, context.req.param("personId"));
-      const input = parseQuery(context, reportQuery);
+      const personId = parseValue(uuid, context.req.param("personId"));
+      const input = parseQuery(context, getActivityReportQuery);
       if ("errors" in personId || "errors" in input) {
         return definedProblem(context, ACTIVITY_REPORT_QUERY_INVALID);
       }
@@ -409,7 +362,7 @@ export function createInteractionRoutes(
     },
   );
 
-  routes.get("/api/v1/today/favorite-notes", session, async (context) => {
+  mount(routes, getTodayFavoriteNotes, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.today.getFavoriteNotes(actor).catch(() =>
@@ -421,7 +374,7 @@ export function createInteractionRoutes(
     return context.json(result);
   });
 
-  routes.get("/api/v1/today/recent-activity", session, async (context) => {
+  mount(routes, getTodayRecentActivity, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.today.getRecentActivity(actor).catch(() =>

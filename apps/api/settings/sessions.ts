@@ -9,10 +9,15 @@
 
 import { Hono } from "hono";
 import { type Context } from "hono";
-import { z } from "zod";
+import {
+  listMemberSessions,
+  revokeMemberSession,
+} from "../../../packages/contracts/routes/settings.ts";
+import { uuid } from "../../../packages/contracts/schemas/shared.ts";
 import { cookieValue, SESSION_COOKIE, setCookie } from "../http/cookies.ts";
 import { requireMatchingOrigin } from "../http/origin.ts";
 import { definedProblem, type ProblemDefinition } from "../http/problem.ts";
+import { mount } from "../http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "../http/session.ts";
 import { parseValue } from "../http/validate.ts";
 import { privateJson, type SettingsHttpServices } from "./shared.ts";
@@ -22,8 +27,6 @@ export type MemberSessionsHttpServices = Pick<
   SettingsHttpServices,
   "browserSecurity" | "protectedSessions" | "settings"
 >;
-
-const sessionId = z.string().uuid();
 
 export const SESSIONS_NOT_LOADED: ProblemDefinition = {
   code: "settings_unavailable",
@@ -67,7 +70,7 @@ export function createSessionsRoutes(
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
-  routes.get("/api/v1/settings/sessions", session, async (context) => {
+  mount(routes, listMemberSessions, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const sessions = await services.settings.listSessions(
@@ -87,12 +90,13 @@ export function createSessionsRoutes(
       : definedProblem(context, SESSIONS_NOT_LOADED);
   });
 
-  routes.delete(
-    "/api/v1/settings/sessions/:sessionId",
+  mount(
+    routes,
+    revokeMemberSession,
     origin,
     session,
     async (context) => {
-      const parsedId = parseValue(sessionId, context.req.param("sessionId"));
+      const parsedId = parseValue(uuid, context.req.param("sessionId"));
       if ("errors" in parsedId) {
         return definedProblem(context, SESSION_STALE);
       }
