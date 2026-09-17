@@ -21,6 +21,14 @@ prerequisite queues.
   flows, tracked by `REL-032` and `REL-033`; none is caused by Phase 0. The
   GAP-004 GitHub Actions workflow has not run on a branch yet because nothing
   has been pushed.
+- Phase 1 of that plan (GAP-006 through GAP-014) is integrated at `59a2298d`,
+  and `REL-037` closed at `faead934`. The Phase 1 checkpoint on `faead934`
+  passed root `check`, `contracts:check`, `check:architecture` (14 baseline
+  entries, all declared-dependency table reads), `test` (718 vitest, every Deno
+  set, integration 126/0), and `test:coverage` (every set above its floor,
+  `gifts` at 87.3% branch); the Chromium E2E project passed 53 of 57 flows and
+  failed exactly the four tracked by `REL-032` and `REL-033`. Nothing new was
+  parked. The CI workflow still has not run because nothing has been pushed.
 - User-directed follow-up: responsive person blocks, focus-border repair, then
   an evidence-backed application repair plan and execution in a clean task.
 - Remaining repair statuses and execution order belong to the
