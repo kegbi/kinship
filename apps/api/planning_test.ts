@@ -614,3 +614,77 @@ Deno.test("PLANNING-002 HTTP refuses a malformed reminder, cadence, and active s
     "and says so",
   );
 });
+
+Deno.test("[GAP-023] HTTP pages a person's reminders and bounds every list", async () => {
+  const received: unknown[] = [];
+  const reminders = {
+    listPerson: (_actor: unknown, _personId: string, input: unknown) => {
+      received.push(input);
+      return Promise.resolve(
+        (input as { readonly cursor?: string }).cursor === "foreign"
+          ? { status: "validation-error" as const }
+          : {
+            cadences: [],
+            nextCursor: "next-reminder-page",
+            reminders: [],
+            status: "ready" as const,
+          },
+      );
+    },
+  } as unknown as ReminderManagement;
+  const app = createPlanningRoutes({ ...services(), reminders });
+  const path = `http://localhost/api/v1/people/${personId}/reminders`;
+  const first = await app.request(path, { headers });
+  const body = await first.json() as { readonly nextCursor?: string };
+  assert(
+    first.status === 200 && body.nextCursor === "next-reminder-page",
+    "the reminder continuation was not published",
+  );
+  const second = await app.request(`${path}?limit=4&cursor=resume`, {
+    headers,
+  });
+  assert(second.status === 200, "a continued reminder page was refused");
+  assert(
+    JSON.stringify(received) ===
+      JSON.stringify([{ limit: 20 }, { cursor: "resume", limit: 4 }]),
+    "the default and the requested page reached the use case",
+  );
+  for (const query of ["limit=0", "limit=51", "cursor=foreign"]) {
+    const refused = await app.request(`${path}?${query}`, { headers });
+    assert(
+      refused.status === 400 &&
+        (await refused.json() as { readonly code?: string }).code ===
+          "reminder_query_invalid",
+      `${query} was not refused as a reminder query`,
+    );
+  }
+  const taskInputs: unknown[] = [];
+  const tasks = createPlanningRoutes(services({
+    list: ((_actor, input) => {
+      taskInputs.push(input);
+      return Promise.resolve({ items: [], status: "ready" });
+    }) as TaskManagement["list"],
+  }));
+  const defaulted = await tasks.request("http://localhost/api/v1/tasks", {
+    headers,
+  });
+  const widest = await tasks.request("http://localhost/api/v1/tasks?limit=50", {
+    headers,
+  });
+  const tooWide = await tasks.request(
+    "http://localhost/api/v1/tasks?limit=51",
+    { headers },
+  );
+  assert(
+    defaulted.status === 200 && widest.status === 200 &&
+      (taskInputs[0] as { readonly limit?: number }).limit === 20 &&
+      (taskInputs[1] as { readonly limit?: number }).limit === 50,
+    "the task page did not default to twenty and accept fifty",
+  );
+  assert(
+    tooWide.status === 400 &&
+      (await tooWide.json() as { readonly code?: string }).code ===
+        "task_query_invalid",
+    "a task page beyond fifty was accepted",
+  );
+});

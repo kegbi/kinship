@@ -15,6 +15,7 @@ import {
   type PeopleDirectoryPerson,
   type PersonFile,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import { mountLoadMore } from "./load-more.ts";
 interface Surface {
   readonly add: HTMLButtonElement;
   readonly badge: HTMLElement;
@@ -214,8 +215,18 @@ export async function mountPersonGifts(options: {
   if (mounted.length !== 2) return;
   let archived = options.archived;
   for (const surface of mounted) surface.add.hidden = archived;
-  let gifts: readonly Gift[] = [];
-  let debts: readonly Debt[] = [];
+  let gifts: Gift[] = [];
+  let debts: Debt[] = [];
+  // Each loader is looked up when its control is pressed, by which time
+  // `refresh` below exists.
+  const moreGifts = mountLoadMore(
+    "gifts",
+    (giftCursor) => refresh({ giftCursor }),
+  );
+  const moreDebts = mountLoadMore(
+    "debts",
+    (debtCursor) => refresh({ debtCursor }),
+  );
   let mutating = false;
   let editorOptionsReady = false;
   let editorOptionsPromise: Promise<boolean> | undefined;
@@ -226,9 +237,8 @@ export async function mountPersonGifts(options: {
     editorOptionsPromise = (async () => {
       const [people, files] = await Promise.all([
         listPeople({ limit: 50 }, options.workspaceId).catch(() => undefined),
-        listPersonFiles(options.personId, options.workspaceId).catch(() =>
-          undefined
-        ),
+        listPersonFiles(options.personId, options.workspaceId, { limit: 50 })
+          .catch(() => undefined),
       ]);
       if (!people?.ok || !files?.ok) {
         editorOptionsPromise = undefined;
@@ -260,10 +270,18 @@ export async function mountPersonGifts(options: {
       : `${count} ${surface.type}${count === 1 ? "" : "s"} saved.`;
   };
 
-  const refresh = async (): Promise<boolean> => {
-    const records = await listPersonGifts(options.personId, options.workspaceId)
-      .catch(() => undefined);
+  const refresh = async (
+    continued: { readonly debtCursor?: string; readonly giftCursor?: string } =
+      {},
+  ): Promise<boolean> => {
+    const records = await listPersonGifts(
+      options.personId,
+      options.workspaceId,
+      continued,
+    ).catch(() => undefined);
     if (!records?.ok) {
+      moreGifts.present(undefined);
+      moreDebts.present(undefined);
       const detail = records && !records.ok
         ? records.problem.detail
         : "Gifts and debts are temporarily unavailable.";
@@ -276,8 +294,15 @@ export async function mountPersonGifts(options: {
       return false;
     }
     const value = records.value;
-    gifts = value.gifts;
-    debts = value.debts;
+    // Each half continues on its own. One answer always carries both, so
+    // extending the gift card appends its page and leaves the debts exactly as
+    // they were rather than replacing them with their first page again.
+    if (continued.giftCursor) gifts = [...gifts, ...value.gifts];
+    else if (!continued.debtCursor) gifts = [...value.gifts];
+    if (continued.debtCursor) debts = [...debts, ...value.debts];
+    else if (!continued.giftCursor) debts = [...value.debts];
+    if (!continued.debtCursor) moreGifts.present(value.nextGiftCursor);
+    if (!continued.giftCursor) moreDebts.present(value.nextDebtCursor);
     populateCurrencyOptions(mounted, value.supportedCurrencyCodes);
     for (const surface of mounted) {
       surface.retry.hidden = true;

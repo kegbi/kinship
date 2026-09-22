@@ -24,6 +24,9 @@ function markup() {
     <section data-person-gifts="${type}">
       <span data-gift-badge></span><p data-gift-state></p>
       <button data-gift-retry hidden></button><ul data-gift-list></ul>
+      <button data-load-more="${
+    type === "gift" ? "gifts" : "debts"
+  }" hidden>Load more</button>
       <button data-gift-add>Add</button><form data-gift-form hidden>
         ${
     type === "gift"
@@ -38,6 +41,131 @@ function markup() {
 afterEach(() => {
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
+});
+
+describe("GAP-023 gift and debt paging", () => {
+  it("extends one card without disturbing the other", async () => {
+    markup();
+    const gift = {
+      createdAt: "2026-08-23T08:00:00.000Z",
+      id: giftId,
+      name: "First gift",
+      personId,
+      status: "idea",
+      updatedAt: "2026-08-23T08:00:00.000Z",
+    };
+    const debt = {
+      amount: "5.0000",
+      createdAt: "2026-08-23T08:00:00.000Z",
+      direction: "they_owe",
+      id: "00000000-0000-4000-8000-000000000008",
+      personId,
+      reason: "Lunch",
+      status: "open",
+      updatedAt: "2026-08-23T08:00:00.000Z",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({
+        debts: [debt],
+        gifts: [gift],
+        nextGiftCursor: "gift-cursor",
+        status: "ready",
+        supportedCurrencyCodes: ["EUR"],
+      }))
+      .mockResolvedValueOnce(response({
+        debts: [],
+        gifts: [{
+          ...gift,
+          id: "00000000-0000-4000-8000-000000000007",
+          name: "Second gift",
+        }],
+        status: "ready",
+        supportedCurrencyCodes: ["EUR"],
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    await mountPersonGifts({ archived: false, personId, workspaceId });
+    const moreGifts = document.querySelector<HTMLButtonElement>(
+      '[data-load-more="gifts"]',
+    )!;
+    const moreDebts = document.querySelector<HTMLButtonElement>(
+      '[data-load-more="debts"]',
+    )!;
+    expect(moreGifts.hidden).toBe(false);
+    expect(moreDebts.hidden).toBe(true);
+    moreGifts.click();
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain("Second gift")
+    );
+    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toContain(
+      "giftCursor=gift-cursor",
+    );
+    expect(document.body.textContent).toContain("First gift");
+    // The debt card keeps the page it already had rather than being replaced.
+    expect(document.body.textContent).toContain("Lunch");
+    expect(moreGifts.hidden).toBe(true);
+  });
+
+  it("extends the debt card and leaves the gift card and its control alone", async () => {
+    markup();
+    const gift = {
+      createdAt: "2026-08-23T08:00:00.000Z",
+      id: giftId,
+      name: "Only gift",
+      personId,
+      status: "idea",
+      updatedAt: "2026-08-23T08:00:00.000Z",
+    };
+    const debt = {
+      amount: "5.0000",
+      createdAt: "2026-08-23T08:00:00.000Z",
+      direction: "they_owe",
+      id: "00000000-0000-4000-8000-000000000008",
+      personId,
+      reason: "Lunch",
+      status: "open",
+      updatedAt: "2026-08-23T08:00:00.000Z",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({
+        debts: [debt],
+        gifts: [gift],
+        nextDebtCursor: "debt-cursor",
+        nextGiftCursor: "gift-cursor",
+        status: "ready",
+        supportedCurrencyCodes: ["EUR"],
+      }))
+      .mockResolvedValueOnce(response({
+        debts: [{
+          ...debt,
+          id: "00000000-0000-4000-8000-000000000009",
+          reason: "Dinner",
+        }],
+        gifts: [gift],
+        nextGiftCursor: "gift-cursor",
+        status: "ready",
+        supportedCurrencyCodes: ["EUR"],
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    await mountPersonGifts({ archived: false, personId, workspaceId });
+    const moreGifts = document.querySelector<HTMLButtonElement>(
+      '[data-load-more="gifts"]',
+    )!;
+    const moreDebts = document.querySelector<HTMLButtonElement>(
+      '[data-load-more="debts"]',
+    )!;
+    moreDebts.click();
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain("Dinner")
+    );
+    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toContain(
+      "debtCursor=debt-cursor",
+    );
+    expect(document.body.textContent).toContain("Lunch");
+    // The gift page that came back with the debts is not appended again.
+    expect(document.body.textContent?.split("Only gift").length).toBe(2);
+    expect(moreDebts.hidden).toBe(true);
+    expect(moreGifts.hidden).toBe(false);
+  });
 });
 
 describe("GIFTS-001 person gifts and debts", () => {

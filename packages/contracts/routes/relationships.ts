@@ -25,13 +25,15 @@ import {
   relationshipTypeList,
   relationshipUpdateInput,
 } from "../schemas/relationships.ts";
-import { uuid } from "../schemas/shared.ts";
+import { pageQuery, uuid } from "../schemas/shared.ts";
 
-/** What `listRelationships` accepts in the query string. */
-export const listRelationshipsQuery = z.strictObject({
-  cursor: z.string().max(2000).optional(),
-  limit: z.coerce.number().int().min(1).max(20).default(20),
-});
+/**
+ * What `listRelationships` accepts in the query string.
+ *
+ * GAP-023 raised its ceiling to the shared fifty; the page it serves without
+ * one is still twenty.
+ */
+export const listRelationshipsQuery = pageQuery;
 
 export const listRelationships = defineRoute({
   method: "get",

@@ -1,8 +1,12 @@
 import { assert, assertEquals } from "../../../testing/assert.ts";
-import { signCursor } from "../../../shared-kernel/pagination.ts";
+import { encodeCursor, signCursor } from "../../../shared-kernel/pagination.ts";
 import {
+  decodeReminderCursor,
   decodeTaskCursor,
+  encodeReminderCursor,
   encodeTaskCursor,
+  REMINDER_CURSOR_VERSION,
+  type ReminderPageAnchor,
   TASK_CURSOR_DOMAIN,
   type TaskCursorKeyset,
   type TaskCursorScope,
@@ -178,4 +182,80 @@ Deno.test("[GAP-016] a signed body carrying a broken anchor is still refused", a
     ) !== undefined,
     "the unbroken body is the control",
   );
+});
+
+const personId = "10000000-0000-4000-8000-000000000002";
+const reminderAnchor: ReminderPageAnchor = {
+  id: "10000000-0000-4000-8000-000000000005",
+  isActive: false,
+  updatedAt: "2026-02-01T00:00:00.000000Z",
+};
+
+Deno.test("[GAP-023] a reminder cursor round trips through its own codec", () => {
+  assertEquals(REMINDER_CURSOR_VERSION, 1);
+  const cursor = encodeReminderCursor(reminderAnchor, workspaceId, personId);
+  assertEquals(
+    cursor,
+    encodeCursor({
+      id: reminderAnchor.id,
+      isActive: false,
+      personId,
+      updatedAt: reminderAnchor.updatedAt,
+      version: 1,
+      workspaceId,
+    }),
+    "the body is minted verbatim",
+  );
+  assertEquals(
+    decodeReminderCursor(cursor, workspaceId, personId),
+    reminderAnchor,
+  );
+});
+
+Deno.test("[GAP-023] a reminder cursor minted for another question is refused", () => {
+  const cursor = encodeReminderCursor(reminderAnchor, workspaceId, personId);
+  const elsewhere = "10000000-0000-4000-8000-00000000000f";
+  assertEquals(
+    decodeReminderCursor(cursor, elsewhere, personId),
+    undefined,
+    "another workspace's reminders stay out of reach",
+  );
+  assertEquals(
+    decodeReminderCursor(cursor, workspaceId, elsewhere),
+    undefined,
+    "another person's reminders stay out of reach",
+  );
+});
+
+Deno.test("[GAP-023] a forged or broken reminder cursor reads as nothing", () => {
+  assertEquals(
+    decodeReminderCursor("forged", workspaceId, personId),
+    undefined,
+  );
+  assertEquals(
+    decodeReminderCursor(encodeCursor(null), workspaceId, personId),
+    undefined,
+  );
+  const valid = {
+    id: reminderAnchor.id,
+    isActive: true,
+    personId,
+    updatedAt: reminderAnchor.updatedAt,
+    version: 1,
+    workspaceId,
+  };
+  for (
+    const body of [
+      { ...valid, version: 2 },
+      { ...valid, id: "not-a-uuid" },
+      { ...valid, isActive: "yes" },
+      { ...valid, updatedAt: "never" },
+    ]
+  ) {
+    assertEquals(
+      decodeReminderCursor(encodeCursor(body), workspaceId, personId),
+      undefined,
+      `${JSON.stringify(body)} is not a usable anchor`,
+    );
+  }
 });

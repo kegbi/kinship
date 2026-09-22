@@ -36,6 +36,7 @@ import {
   getTodayReminders,
   getTodayTasks,
   listPersonReminders,
+  listPersonRemindersQuery,
   listTasks,
   listTasksQuery,
   setReminderActive,
@@ -199,7 +200,8 @@ const REMINDERS_NOTHING_CHANGED: ProblemDefinition = {
 };
 const REMINDER_QUERY_INVALID: ProblemDefinition = {
   code: "reminder_query_invalid",
-  detail: "Use a canonical person identifier.",
+  detail:
+    "Use a canonical person identifier, a current page cursor, and a bounded limit.",
   status: 400,
   title: "Invalid reminder query",
 };
@@ -316,15 +318,21 @@ export function createPlanningRoutes(
         return definedProblem(context, REMINDERS_SECTION_UNAVAILABLE);
       }
       const personId = parseValue(uuid, context.req.param("personId"));
-      if ("errors" in personId) {
+      const query = parseQuery(context, listPersonRemindersQuery);
+      if ("errors" in personId || "errors" in query) {
         return definedProblem(context, REMINDER_QUERY_INVALID);
       }
       const actor = await requireActor(context);
       if (actor instanceof Response) return actor;
-      const result = await reminders.listPerson(actor, personId.data)
-        .catch(() => undefined);
+      const result = await reminders.listPerson(actor, personId.data, {
+        ...(query.data.cursor ? { cursor: query.data.cursor } : {}),
+        limit: query.data.limit,
+      }).catch(() => undefined);
       if (!result) {
         return definedProblem(context, REMINDERS_SECTION_UNAVAILABLE);
+      }
+      if (result.status === "validation-error") {
+        return definedProblem(context, REMINDER_QUERY_INVALID);
       }
       if (result.status !== "ready") return reminderFailure(context, result);
       context.header("Cache-Control", "private, no-store");

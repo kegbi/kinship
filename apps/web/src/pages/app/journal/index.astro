@@ -1,5 +1,6 @@
 ---
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
+import LoadMore from "../../../components/LoadMore.astro";
 export const prerender = true;
 ---
 
@@ -21,7 +22,8 @@ export const prerender = true;
       <p data-journal-form-state class="section-state" role="status" aria-live="polite"></p>
       <div class="form-actions"><button class="button-primary" type="submit">Save item</button><button data-journal-cancel type="button">Cancel</button></div>
     </form>
-    <ol data-journal-list class="journal-list" aria-label="Journal timeline"></ol>
+    <ol id="journal-timeline" data-journal-list class="journal-list" aria-label="Journal timeline"></ol>
+    <LoadMore list="journal" label="Load more journal items" controls="journal-timeline" />
   </main>
 </ApplicationLayout>
 

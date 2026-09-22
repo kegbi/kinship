@@ -26,7 +26,10 @@ import {
   journalPostUpdated,
   journalTimelineList,
 } from "../schemas/journal.ts";
-import { uuid } from "../schemas/shared.ts";
+import { pageQuery, uuid } from "../schemas/shared.ts";
+
+/** What `listJournal` accepts in the query string. */
+export const listJournalQuery = pageQuery;
 
 export const listJournal = defineRoute({
   method: "get",
@@ -34,6 +37,7 @@ export const listJournal = defineRoute({
   operationId: "listJournal",
   security: [{ kinship_session: [] }],
   request: {
+    query: listJournalQuery,
     headers: workspaceHeaders,
   },
   responses: {
@@ -43,7 +47,7 @@ export const listJournal = defineRoute({
         "application/json": journalTimelineList,
       },
     },
-    ...problemResponses(401, 403, 503),
+    ...problemResponses(400, 401, 403, 503),
   },
 });
 

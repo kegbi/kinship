@@ -1232,13 +1232,31 @@ Deno.test("PLANNING-001 PostgreSQL hydrates every person across a 51-task page",
     }
   });
 
-  const global = await request(fixture, "/api/v1/tasks?limit=100");
-  const globalBody = await global.json() as {
-    readonly items: readonly {
-      readonly id: string;
-      readonly person?: { readonly archived: boolean; readonly id: string };
-    }[];
-  };
+  // A page holds at most fifty tasks since GAP-023, so the 52 are read as
+  // the pages a client would follow.
+  const globalPages: Response[] = [];
+  const globalItems: {
+    readonly id: string;
+    readonly person?: { readonly archived: boolean; readonly id: string };
+  }[] = [];
+  let globalCursor: string | undefined;
+  do {
+    const page = await request(
+      fixture,
+      `/api/v1/tasks?limit=50${
+        globalCursor ? `&cursor=${encodeURIComponent(globalCursor)}` : ""
+      }`,
+    );
+    const pageBody = await page.json() as {
+      readonly items: typeof globalItems;
+      readonly nextCursor?: string;
+    };
+    globalPages.push(page);
+    globalItems.push(...pageBody.items);
+    globalCursor = pageBody.nextCursor;
+  } while (globalCursor && globalPages.length < 5);
+  const global = globalPages[0]!;
+  const globalBody = { items: globalItems };
   const person = await request(
     fixture,
     `/api/v1/tasks?personId=${archived.personId}`,
@@ -1256,7 +1274,9 @@ Deno.test("PLANNING-001 PostgreSQL hydrates every person across a 51-task page",
     { completed: true },
   );
   assert(
-    global.status === 200 && globalBody.items.length === 52 &&
+    globalPages.length === 2 &&
+      globalPages.every((page) => page.status === 200) &&
+      global.status === 200 && globalBody.items.length === 52 &&
       globalBody.items.every((item) => item.person) &&
       globalBody.items.find((item) => item.id === archived.taskId)?.person
           ?.archived === true,
@@ -1338,19 +1358,21 @@ Deno.test("PLANNING-001 PostgreSQL continuation reaches task 101 and binds filte
       `;
     }
   });
-  const first = await request(fixture, "/api/v1/tasks?limit=100&status=open");
+  const tooWide = await request(fixture, "/api/v1/tasks?limit=100&status=open");
+  assert(tooWide.status === 400, "a task page beyond fifty was served");
+  const first = await request(fixture, "/api/v1/tasks?limit=50&status=open");
   const firstBody = await first.json() as {
     readonly items: readonly { readonly id: string }[];
     readonly nextCursor?: string;
   };
   assert(
-    first.status === 200 && firstBody.items.length === 100 &&
+    first.status === 200 && firstBody.items.length === 50 &&
       firstBody.nextCursor,
     "bounded task page omitted continuation",
   );
   const second = await request(
     fixture,
-    `/api/v1/tasks?limit=100&status=open&cursor=${
+    `/api/v1/tasks?limit=50&status=open&cursor=${
       encodeURIComponent(firstBody.nextCursor)
     }`,
   );
@@ -1359,21 +1381,40 @@ Deno.test("PLANNING-001 PostgreSQL continuation reaches task 101 and binds filte
     readonly nextCursor?: string;
   };
   assert(
-    second.status === 200 && secondBody.items.length === 1 &&
-      !secondBody.nextCursor &&
-      new Set([...firstBody.items, ...secondBody.items].map((item) => item.id))
+    second.status === 200 && secondBody.items.length === 50 &&
+      secondBody.nextCursor,
+    "the second full task page omitted its continuation",
+  );
+  const third = await request(
+    fixture,
+    `/api/v1/tasks?limit=50&status=open&cursor=${
+      encodeURIComponent(secondBody.nextCursor)
+    }`,
+  );
+  const thirdBody = await third.json() as {
+    readonly items: readonly { readonly id: string }[];
+    readonly nextCursor?: string;
+  };
+  assert(
+    third.status === 200 && thirdBody.items.length === 1 &&
+      !thirdBody.nextCursor &&
+      new Set(
+          [...firstBody.items, ...secondBody.items, ...thirdBody.items].map((
+            item,
+          ) => item.id),
+        )
           .size === 101,
     "task 101 was unreachable or duplicated",
   );
   const filterMismatch = await request(
     fixture,
-    `/api/v1/tasks?limit=100&status=completed&cursor=${
+    `/api/v1/tasks?limit=50&status=completed&cursor=${
       encodeURIComponent(firstBody.nextCursor)
     }`,
   );
   const tampered = await request(
     fixture,
-    `/api/v1/tasks?limit=100&status=open&cursor=${
+    `/api/v1/tasks?limit=50&status=open&cursor=${
       encodeURIComponent(`${firstBody.nextCursor}x`)
     }`,
   );
@@ -1389,7 +1430,7 @@ Deno.test("PLANNING-001 PostgreSQL continuation reaches task 101 and binds filte
   `;
   const stale = await request(
     fixture,
-    `/api/v1/tasks?limit=100&status=open&cursor=${
+    `/api/v1/tasks?limit=50&status=open&cursor=${
       encodeURIComponent(firstBody.nextCursor)
     }`,
   );
@@ -4257,6 +4298,87 @@ Deno.test({
       `a revoked member changed planning rows: ${JSON.stringify(proof)}`,
     );
   },
+});
+
+Deno.test("[GAP-023] PostgreSQL pages a person's reminders behind a bound cursor", async () => {
+  const suffix = crypto.randomUUID();
+  const fixture = await register(
+    `reminder-page-${suffix}@example.test`,
+    "Reminder pages",
+  );
+  const foreign = await register(
+    `reminder-page-foreign-${suffix}@example.test`,
+    "Reminder pages foreign",
+  );
+  const personId = await createPerson(fixture, "Paged reminder person");
+  const otherPersonId = await createPerson(fixture, "Other paged person");
+  const foreignPersonId = await createPerson(foreign, "Foreign paged person");
+  const created = [
+    await createReminder(fixture, personId, "Paged one"),
+    await createReminder(fixture, personId, "Paged two"),
+    await createReminder(fixture, personId, "Paged three"),
+  ];
+  const disabled = created[0]!;
+  assert(
+    (await request(
+      fixture,
+      `/api/v1/reminders/${disabled.id}/active`,
+      "PUT",
+      { active: false },
+    )).status === 200,
+    "a paged reminder was disabled",
+  );
+  // Every definition shares one instant, so the page boundary is decided by
+  // the active state first and then by the identifier.
+  await sql`
+    update crm.reminders set updated_at = '2026-08-18T10:00:00Z'
+    where person_id = ${personId}::uuid
+  `;
+  const active = created.slice(1).map((reminder) => reminder.id).sort();
+  interface Page {
+    readonly reminders: readonly {
+      readonly id: string;
+      readonly isActive: boolean;
+    }[];
+    readonly nextCursor?: string;
+  }
+  const path = `/api/v1/people/${personId}/reminders`;
+  const first = await request(fixture, `${path}?limit=2`);
+  const firstBody = await first.json() as Page;
+  assert(
+    first.status === 200 &&
+      JSON.stringify(firstBody.reminders.map((item) => item.id)) ===
+        JSON.stringify(active) &&
+      firstBody.nextCursor,
+    "the first reminder page did not lead with the active reminders",
+  );
+  const cursor = encodeURIComponent(firstBody.nextCursor!);
+  const second = await request(fixture, `${path}?limit=2&cursor=${cursor}`);
+  const secondBody = await second.json() as Page;
+  assert(
+    second.status === 200 && secondBody.reminders.length === 1 &&
+      secondBody.reminders[0]?.id === disabled.id &&
+      secondBody.reminders[0].isActive === false && !secondBody.nextCursor,
+    "the reminder continuation dropped, repeated, or reordered a reminder",
+  );
+  for (
+    const [caller, subject, query] of [
+      [fixture, otherPersonId, `cursor=${cursor}`],
+      [foreign, foreignPersonId, `cursor=${cursor}`],
+      [fixture, personId, "cursor=not-a-cursor"],
+      [fixture, personId, "limit=51"],
+    ] as const
+  ) {
+    const refused = await request(
+      caller,
+      `/api/v1/people/${subject}/reminders?${query}`,
+    );
+    const problem = await refused.json() as { readonly code?: string };
+    assert(
+      refused.status === 400 && problem.code === "reminder_query_invalid",
+      `${query} against another reminder listing was answered: ${refused.status}`,
+    );
+  }
 });
 
 Deno.test({

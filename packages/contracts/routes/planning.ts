@@ -32,7 +32,10 @@ import {
   todayReminders,
   todayTasks,
 } from "../schemas/planning.ts";
-import { uuid } from "../schemas/shared.ts";
+import { pageQuery, uuid } from "../schemas/shared.ts";
+
+/** What `listPersonReminders` accepts in the query string. */
+export const listPersonRemindersQuery = pageQuery;
 
 export const listPersonReminders = defineRoute({
   method: "get",
@@ -43,6 +46,7 @@ export const listPersonReminders = defineRoute({
     params: z.object({
       personId: uuid,
     }),
+    query: listPersonRemindersQuery,
     headers: workspaceHeaders,
   },
   responses: {
@@ -135,12 +139,16 @@ export const createStayInTouchCadence = defineRoute({
   },
 });
 
-/** What `listTasks` accepts in the query string. */
-export const listTasksQuery = z.strictObject({
-  cursor: z.string().max(2000).optional(),
+/**
+ * What `listTasks` accepts in the query string.
+ *
+ * GAP-023 replaced its own `limit` with the shared one, so the page a task
+ * listing serves is bounded the way every other list is: one to fifty, twenty
+ * by default, where it used to accept and default to a hundred.
+ */
+export const listTasksQuery = pageQuery.extend({
   personId: z.uuid().optional(),
   status: z.enum(["cancelled", "completed", "open"]).optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(100),
 });
 
 export const listTasks = defineRoute({

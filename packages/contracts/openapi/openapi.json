@@ -1513,6 +1513,26 @@
         ],
         "parameters": [
           {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "required": false
+          },
+          {
             "in": "header",
             "name": "X-Workspace-Id",
             "schema": {
@@ -1530,6 +1550,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/JournalTimelineList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -5488,6 +5518,26 @@
             "required": true
           },
           {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "required": false
+          },
+          {
             "in": "header",
             "name": "X-Workspace-Id",
             "schema": {
@@ -5505,6 +5555,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PersonFileList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -6038,6 +6098,35 @@
             "required": true
           },
           {
+            "in": "query",
+            "name": "debtCursor",
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "giftCursor",
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "required": false
+          },
+          {
             "in": "header",
             "name": "X-Workspace-Id",
             "schema": {
@@ -6055,6 +6144,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GiftDebtList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -6482,7 +6581,7 @@
               "default": 20,
               "type": "integer",
               "minimum": 1,
-              "maximum": 20
+              "maximum": 50
             },
             "required": false
           },
@@ -7104,6 +7203,26 @@
               "format": "uuid"
             },
             "required": true
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "required": false
           },
           {
             "in": "header",
@@ -10989,6 +11108,17 @@
           },
           {
             "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "required": false
+          },
+          {
+            "in": "query",
             "name": "personId",
             "schema": {
               "type": "string",
@@ -11006,17 +11136,6 @@
                 "completed",
                 "open"
               ]
-            },
-            "required": false
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "default": 100,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100
             },
             "required": false
           },
@@ -15017,16 +15136,24 @@
         "type": "object",
         "properties": {
           "debts": {
+            "maxItems": 50,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Debt"
             }
           },
           "gifts": {
+            "maxItems": 50,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Gift"
             }
+          },
+          "nextDebtCursor": {
+            "type": "string"
+          },
+          "nextGiftCursor": {
+            "type": "string"
           },
           "status": {
             "const": "ready"
@@ -16175,16 +16302,21 @@
         "type": "object",
         "properties": {
           "activities": {
+            "maxItems": 50,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/JournalLinkableActivity"
             }
           },
           "items": {
+            "maxItems": 50,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/JournalTimelineItem"
             }
+          },
+          "nextCursor": {
+            "type": "string"
           },
           "status": {
             "const": "ready"
@@ -17121,10 +17253,14 @@
         "type": "object",
         "properties": {
           "files": {
+            "maxItems": 50,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PersonFile"
             }
+          },
+          "nextCursor": {
+            "type": "string"
           },
           "status": {
             "const": "ready"
@@ -17633,8 +17769,11 @@
               "$ref": "#/components/schemas/StayInTouchCadence"
             }
           },
+          "nextCursor": {
+            "type": "string"
+          },
           "reminders": {
-            "maxItems": 100,
+            "maxItems": 50,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Reminder"
@@ -19384,7 +19523,7 @@
             "type": "string"
           },
           "relationships": {
-            "maxItems": 20,
+            "maxItems": 50,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/RelationshipWithDisplay"
@@ -20459,7 +20598,7 @@
         "type": "object",
         "properties": {
           "items": {
-            "maxItems": 100,
+            "maxItems": 50,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Task"

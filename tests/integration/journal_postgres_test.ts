@@ -327,6 +327,72 @@ Deno.test({
     }
   },
 });
+Deno.test("[GAP-023] PostgreSQL pages the journal behind a workspace-bound cursor", async () => {
+  const suffix = crypto.randomUUID();
+  const primary = await register(`journal-page-${suffix}@example.test`);
+  const foreign = await register(`journal-page-foreign-${suffix}@example.test`);
+  for (const body of ["One", "Two", "Three"]) {
+    assert(
+      (await request(primary, "/api/v1/journal/posts", "POST", {
+        body,
+        occurredAt: "2026-08-23T18:30:00.000Z",
+      })).status === 201,
+      `${body} journal post created`,
+    );
+  }
+  // Every item shares one moment and one creation instant, so only the
+  // identifier can order a page boundary.
+  await sql`
+    update crm.journal_items set created_at = '2026-08-23T18:30:00Z'
+    where workspace_id = ${primary.workspaceId}::uuid
+  `;
+  const ids = (await sql<{ readonly id: string }[]>`
+    select id::text from crm.journal_items
+    where workspace_id = ${primary.workspaceId}::uuid
+    order by id desc
+  `).map((row) => row.id);
+  interface Page {
+    readonly items: readonly { readonly id: string }[];
+    readonly nextCursor?: string;
+  }
+  const first = await request(primary, "/api/v1/journal?limit=2", "GET");
+  const firstBody = await first.json() as Page;
+  assert(
+    first.status === 200 && firstBody.items.length === 2 &&
+      firstBody.nextCursor,
+    "a first journal page of two did not continue",
+  );
+  const cursor = encodeURIComponent(firstBody.nextCursor!);
+  const second = await request(
+    primary,
+    `/api/v1/journal?limit=2&cursor=${cursor}`,
+    "GET",
+  );
+  const secondBody = await second.json() as Page;
+  assert(
+    second.status === 200 && secondBody.items.length === 1 &&
+      !secondBody.nextCursor &&
+      JSON.stringify(
+          [...firstBody.items, ...secondBody.items].map((item) => item.id),
+        ) === JSON.stringify(ids),
+    "the journal continuation dropped, repeated, or reordered an item",
+  );
+  for (
+    const [fixture, query] of [
+      [foreign, `cursor=${cursor}`],
+      [primary, "cursor=not-a-cursor"],
+      [primary, "limit=51"],
+    ] as const
+  ) {
+    const refused = await request(fixture, `/api/v1/journal?${query}`, "GET");
+    const problem = await refused.json() as { readonly code?: string };
+    assert(
+      refused.status === 400 && problem.code === "journal_query_invalid",
+      `${query} against another journal was answered: ${refused.status}`,
+    );
+  }
+});
+
 Deno.test({
   name: "JOURNAL-001 PostgreSQL resources close",
   sanitizeOps: false,

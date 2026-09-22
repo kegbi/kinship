@@ -5,6 +5,12 @@ export type {
   StoredDayRating,
   StoredJournalPost,
 } from "./domain/journal_rules.ts";
+export {
+  decodeJournalCursor,
+  encodeJournalCursor,
+  JOURNAL_CURSOR_VERSION,
+} from "./domain/cursors.ts";
+export type { JournalPageAnchor } from "./domain/cursors.ts";
 export type { JournalAudit } from "./ports/audit.ts";
 export type { JournalActor, JournalTransaction } from "./ports/context.ts";
 export type {

@@ -29,8 +29,10 @@ import {
 
 /** How many types one page shows, and how many are read to know there is more. */
 const TYPE_PAGE_SIZE = 20;
-/** How many relationships one page shows at most. */
-const RELATIONSHIP_PAGE_SIZE = 20;
+/** How many relationships one page shows at most, as the contract publishes it. */
+export const RELATIONSHIP_PAGE_LIMIT_MAXIMUM = 50;
+/** How many it shows when the caller names no size. */
+export const RELATIONSHIP_PAGE_LIMIT_DEFAULT = 20;
 
 export interface ListRelationshipTypesInput {
   readonly cursor?: string;
@@ -141,8 +143,8 @@ export function createRelationshipListing(
         const limit = Math.max(
           1,
           Math.min(
-            RELATIONSHIP_PAGE_SIZE,
-            Math.trunc(input.limit ?? RELATIONSHIP_PAGE_SIZE),
+            RELATIONSHIP_PAGE_LIMIT_MAXIMUM,
+            Math.trunc(input.limit ?? RELATIONSHIP_PAGE_LIMIT_DEFAULT),
           ),
         );
         const after = input.cursor

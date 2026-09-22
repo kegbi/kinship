@@ -60,6 +60,7 @@ export type {
 } from "./ports/session.ts";
 export { createSettingsManagement } from "./application/settings_management.ts";
 export type {
+  MemberSessionSummary,
   SettingsManagement,
   SettingsManagementDependencies,
 } from "./application/settings_management.ts";

@@ -77,11 +77,11 @@ Deno.test("[JOURNAL-001] journal HTTP routes protect and expose the complete CRU
     actors: { revalidate: () => Promise.resolve("active" as const) },
     transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
-      read: (_actor, itemId) =>
+      read: (_actor, query) =>
         Promise.resolve({
           activities: [{ happenedAt: now, id, summary: "Shared a walk" }],
           items: [{
-            id: itemId ?? id,
+            id: query.itemId ?? id,
             occurredAt: now,
             post: { body: "Entry", id, updatedAt: now },
             type: "post",
@@ -195,9 +195,9 @@ Deno.test("[JOURNAL-001] journal HTTP failures preserve concealment and problem 
     actors: { revalidate: () => Promise.resolve("active" as const) },
     transaction: { run: (work) => work({ opaque: undefined }) },
     repository: {
-      read: (_actor, itemId) =>
+      read: (_actor, query) =>
         Promise.resolve(
-          itemId ? { status: "not-found" } : { status: "forbidden" },
+          query.itemId ? { status: "not-found" } : { status: "forbidden" },
         ),
     },
   });
@@ -387,5 +387,105 @@ Deno.test("[JOURNAL-001] journal HTTP forwards optional prose and conceals unpar
   }
   if (unparsableDelete.status !== 400) {
     throw new Error("an unparsable deletion was not rejected");
+  }
+});
+
+Deno.test("[GAP-023] journal HTTP forwards one page and refuses a malformed query", async () => {
+  const received: unknown[] = [];
+  const session = { ...actor, workspaceName: "Journal" };
+  const app = createJournalRoutes({
+    browserSecurity: { origin: "http://localhost", secureCookie: false },
+    journal: {} as never,
+    protectedSessions: {
+      resolve: () =>
+        Promise.resolve({ ...session, accessibleWorkspaces: [session] }),
+    },
+    timeline: {
+      list: (_actor: unknown, input: unknown) => {
+        received.push(input);
+        return Promise.resolve(
+          (input as { readonly cursor?: string }).cursor === "foreign"
+            ? { status: "validation-error" }
+            : {
+              activities: [],
+              items: [],
+              nextCursor: "next-journal-page",
+              status: "ready",
+            },
+        );
+      },
+    } as never,
+  });
+  const headers = { cookie: "kinship_session=valid" };
+  const first = await app.request("http://localhost/api/v1/journal", {
+    headers,
+  });
+  const body = await first.json() as { readonly nextCursor?: string };
+  if (first.status !== 200 || body.nextCursor !== "next-journal-page") {
+    throw new Error("the journal continuation was not published");
+  }
+  const second = await app.request(
+    "http://localhost/api/v1/journal?limit=7&cursor=resume",
+    { headers },
+  );
+  if (second.status !== 200) throw new Error("a continued page was refused");
+  if (
+    JSON.stringify(received) !==
+      JSON.stringify([{ limit: 20 }, { cursor: "resume", limit: 7 }])
+  ) throw new Error("the page did not reach the read model");
+  for (const query of ["limit=0", "limit=51", "extra=1", "cursor=foreign"]) {
+    const refused = await app.request(
+      `http://localhost/api/v1/journal?${query}`,
+      { headers },
+    );
+    const problem = await refused.json() as { readonly code?: string };
+    if (refused.status !== 400 || problem.code !== "journal_query_invalid") {
+      throw new Error(`${query} was not refused as a journal query`);
+    }
+  }
+});
+
+Deno.test("[GAP-023] the journal timeline pages behind a workspace-bound cursor", async () => {
+  const anchor = {
+    createdAt: now,
+    id,
+    occurredAt: now,
+  };
+  const asked: string[] = [];
+  const timeline = createJournalTimeline({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
+    repository: {
+      read: (_actor, query) => {
+        asked.push(`${query.after?.id ?? "-"} ${query.limit}`);
+        return Promise.resolve({
+          activities: [],
+          items: [],
+          ...(query.after ? {} : { next: anchor }),
+          status: "ready",
+        });
+      },
+    },
+  });
+  const first = await timeline.list(actor);
+  if (first.status !== "ready" || !("nextCursor" in first)) {
+    throw new Error("a page with more items did not publish its continuation");
+  }
+  const cursor = first.nextCursor as string;
+  const second = await timeline.list(actor, { cursor, limit: 500 });
+  if (second.status !== "ready" || "nextCursor" in second) {
+    throw new Error("the last page published a continuation");
+  }
+  const foreign = await timeline.list(
+    { ...actor, workspaceId: "00000000-0000-4000-8000-0000000000ff" },
+    { cursor },
+  );
+  const forged = await timeline.list(actor, { cursor: "forged" });
+  if (
+    foreign.status !== "validation-error" ||
+    forged.status !== "validation-error"
+  ) throw new Error("a foreign or malformed journal cursor was answered");
+  if (asked.join(",") !== `- 20,${id} 50`) {
+    throw new Error(`the timeline was asked for ${asked.join(",")}`);
   }
 });

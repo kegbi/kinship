@@ -551,3 +551,69 @@ Deno.test("GIFTS-001 HTTP forwards every optional gift and debt field it accepts
     "an optional debt reason reached the use case",
   );
 });
+
+Deno.test("[GAP-023] HTTP pages gifts and debts independently and refuses a malformed query", async () => {
+  const received: unknown[] = [];
+  const app = createGiftRoutes({
+    browserSecurity: { origin: "https://app.test", secureCookie: true },
+    gifts: {
+      list: (_actor: unknown, _personId: string, input: {
+        readonly debtCursor?: string;
+        readonly giftCursor?: string;
+        readonly limit?: number;
+      }) => {
+        received.push(input);
+        return Promise.resolve(
+          input.giftCursor === "foreign" ? { status: "validation-error" } : {
+            debts: [],
+            gifts: [],
+            ...(input.giftCursor ? {} : { nextGiftCursor: "next-gifts" }),
+            status: "ready",
+            supportedCurrencyCodes: ["EUR"],
+          },
+        );
+      },
+    } as never,
+    protectedSessions: { resolve: () => Promise.resolve(actor) as never },
+  });
+  const headers = { Cookie: "kinship_session=token" };
+  const first = await app.request(`/api/v1/people/${id}/gifts`, { headers });
+  assertStatus(first, 200);
+  const firstBody = await first.json() as Record<string, unknown>;
+  assert(
+    firstBody.nextGiftCursor === "next-gifts" &&
+      !("nextDebtCursor" in firstBody),
+    "only the collection with more rows publishes a continuation",
+  );
+  const continued = await app.request(
+    `/api/v1/people/${id}/gifts?giftCursor=g1&debtCursor=d1&limit=3`,
+    { headers },
+  );
+  assertStatus(continued, 200);
+  assert(
+    JSON.stringify(received) ===
+      JSON.stringify([{ limit: 20 }, {
+        debtCursor: "d1",
+        giftCursor: "g1",
+        limit: 3,
+      }]),
+    "the default and each named cursor reached the use case",
+  );
+  for (
+    const query of [
+      "limit=0",
+      "limit=51",
+      "cursor=shared",
+      "giftCursor=foreign",
+    ]
+  ) {
+    const refused = await app.request(`/api/v1/people/${id}/gifts?${query}`, {
+      headers,
+    });
+    assertStatus(refused, 400);
+    assert(
+      await problemCode(refused) === "gift_query_invalid",
+      `${query} names the gift query`,
+    );
+  }
+});

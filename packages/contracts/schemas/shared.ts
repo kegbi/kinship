@@ -6,6 +6,11 @@
  * in a domain file because a refusal belongs to no one domain, and because the
  * generator has to be able to name it once.
  *
+ * `pageQuery` is the third: GAP-023 gave every list endpoint one spelling of
+ * "how many" and "from where", so a client learns the rule once and a new list
+ * cannot invent its own bounds. A list that carries filters of its own extends
+ * it rather than restating them.
+ *
  * `oneOf` is the other shared thing: Zod has a single union and `zod-openapi`
  * renders it as `anyOf`, which says "at least one of these" where every union
  * in this package means "exactly one". Rather than teach twelve schemas to
@@ -33,6 +38,35 @@ export const EXACTLY_ONE = "x-exactly-one";
  * cannot advertise a format the route does not enforce.
  */
 export const uuid = z.uuid();
+
+/**
+ * The continuation token a list resumes from.
+ *
+ * It is opaque: what it carries is the paging module's business, and the only
+ * thing the transport says about it is that it is text a caller echoes back
+ * unchanged. The ceiling is the same one every cursor parameter already
+ * published, so a caller cannot make a listing read an unbounded string.
+ */
+export const pageCursor = z.string().max(2000);
+
+/**
+ * How many rows one page carries.
+ *
+ * One to fifty, twenty by default. A list whose own page is smaller keeps its
+ * smaller bound; nothing raises the ceiling.
+ */
+export const pageLimit = z.coerce.number().int().min(1).max(50).default(20);
+
+/**
+ * What every list endpoint accepts.
+ *
+ * `cursor` is absent on a first page, and `limit` defaults rather than being
+ * required, so `GET /api/v1/…` with no query is always a valid first page.
+ */
+export const pageQuery = z.strictObject({
+  cursor: pageCursor.optional(),
+  limit: pageLimit,
+});
 
 /** A union of disjoint options, rendered as `oneOf`. */
 export function oneOf<

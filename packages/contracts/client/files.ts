@@ -6,8 +6,8 @@
  */
 
 import type { ApiResult } from "./request.ts";
-import { request, workspaceHeader } from "./request.ts";
-import type { PersonFile, StorageSettings } from "./types.ts";
+import { pageQuery, request, workspaceHeader } from "./request.ts";
+import type { PageInput, PersonFile, StorageSettings } from "./types.ts";
 
 export function getStorageSettings(
   query?: string,
@@ -19,15 +19,29 @@ export function getStorageSettings(
   });
 }
 
+/**
+ * One page of a person's files.
+ *
+ * The page argument trails the workspace so the two-argument call every
+ * caller already made keeps its meaning; a first page names neither.
+ */
 export function listPersonFiles(
   personId: string,
   workspaceId?: string,
+  input: PageInput = {},
 ): Promise<
-  ApiResult<{ readonly files: readonly PersonFile[]; readonly status: "ready" }>
+  ApiResult<
+    {
+      readonly files: readonly PersonFile[];
+      readonly nextCursor?: string;
+      readonly status: "ready";
+    }
+  >
 > {
-  return request(`/api/v1/people/${encodeURIComponent(personId)}/files`, {
-    headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
-  });
+  return request(
+    `/api/v1/people/${encodeURIComponent(personId)}/files${pageQuery(input)}`,
+    { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined },
+  );
 }
 
 export function uploadPersonFile(

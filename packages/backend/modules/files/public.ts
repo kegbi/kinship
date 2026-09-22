@@ -6,6 +6,13 @@ export type {
   PersonFileUploadInput,
   StoredPersonFile,
 } from "./domain/file_rules.ts";
+export {
+  decodePersonFileCursor,
+  encodePersonFileCursor,
+  PERSON_FILE_CURSOR_VERSION,
+  personFileKindRank,
+} from "./domain/cursors.ts";
+export type { PersonFilePageAnchor } from "./domain/cursors.ts";
 export type { FileAudit } from "./ports/audit.ts";
 export type {
   PersonFileActor,
@@ -27,6 +34,7 @@ export type { PersonFileManagement } from "./application/person_files.ts";
 export type { PersonFileManagementDependencies } from "./application/person_file_context.ts";
 export type {
   DownloadPersonFileResult,
+  ListPersonFilesInput,
   ListPersonFilesResult,
 } from "./application/person_file_reads.ts";
 export type {

@@ -25,7 +25,7 @@ import {
   giftSaved,
   giftStatusInput,
 } from "../schemas/gifts.ts";
-import { uuid } from "../schemas/shared.ts";
+import { pageCursor, pageLimit, uuid } from "../schemas/shared.ts";
 
 export const createDebt = defineRoute({
   method: "post",
@@ -84,6 +84,20 @@ export const changeDebtStatus = defineRoute({
   },
 });
 
+/**
+ * What `listPersonGiftsAndDebts` accepts in the query string.
+ *
+ * One answer carries two collections, so it takes one continuation for each
+ * and the single shared `limit` the convention publishes. Continuing gifts
+ * leaves the debt cursor absent, and the answer still carries the first page
+ * of debts, which is what keeps the two profile cards independent.
+ */
+export const listPersonGiftsAndDebtsQuery = z.strictObject({
+  debtCursor: pageCursor.optional(),
+  giftCursor: pageCursor.optional(),
+  limit: pageLimit,
+});
+
 export const listPersonGiftsAndDebts = defineRoute({
   method: "get",
   path: "/api/v1/people/{personId}/gifts",
@@ -93,6 +107,7 @@ export const listPersonGiftsAndDebts = defineRoute({
     params: z.object({
       personId: uuid,
     }),
+    query: listPersonGiftsAndDebtsQuery,
     headers: workspaceHeaders,
   },
   responses: {
@@ -102,7 +117,7 @@ export const listPersonGiftsAndDebts = defineRoute({
         "application/json": giftDebtList,
       },
     },
-    ...problemResponses(401, 403, 404, 503),
+    ...problemResponses(400, 401, 403, 404, 503),
   },
 });
 

@@ -521,15 +521,41 @@ export class PostgresReminderRepository implements ReminderRepository {
 
   async listPerson(command: Parameters<ReminderRepository["listPerson"]>[0]) {
     const database = databaseFromSession(command.transaction);
-    const [reminders, occurrences, cadences] = await Promise.all([
+    const after = command.after;
+    const [reminders, cadences] = await Promise.all([
       sql<ReminderRow>`select ${reminderColumns} from crm.reminders reminder
         where reminder.workspace_id = ${command.workspaceId}::uuid
           and reminder.person_id = ${command.personId}::uuid and reminder.deleted_at is null
-        order by reminder.is_active desc, reminder.updated_at desc, reminder.id limit 100`
+          ${
+        after
+          ? sql`and (reminder.is_active < ${after.isActive}
+          or (reminder.is_active = ${after.isActive} and (
+            reminder.updated_at < ${after.updatedAt}::timestamptz
+            or (reminder.updated_at = ${after.updatedAt}::timestamptz
+              and reminder.id > ${after.id}::uuid))))`
+          : sql``
+      }
+        order by reminder.is_active desc, reminder.updated_at desc, reminder.id
+        limit ${command.limit + 1}`
         .execute(database),
       sql<
-        (OccurrenceRow & { readonly reminder_id: string })
-      >`select occurrence.reminder_id::text, ${occurrenceColumns}
+        CadenceRow
+      >`select cadence.id::text, cadence.person_id::text, cadence.interval_count,
+        cadence.interval_unit, cadence.is_active,
+        ${instantColumn("cadence.last_contacted_at")} as last_contacted_at,
+        ${instantColumn("cadence.next_due_at")} as next_due_at,
+        ${instantColumn("cadence.updated_at")} as updated_at
+        from crm.stay_in_touch_cadences cadence join crm.people person on person.id = cadence.person_id
+        where person.workspace_id = ${command.workspaceId}::uuid and cadence.person_id = ${command.personId}::uuid
+        order by cadence.updated_at desc limit 1`.execute(database),
+    ]);
+    const page = reminders.rows.slice(0, command.limit);
+    // The occurrence lookup follows the page rather than the person, so a
+    // second page of reminders keeps its delivery states instead of falling
+    // off the end of a fixed cap.
+    const occurrences = await sql<
+      OccurrenceRow & { readonly reminder_id: string }
+    >`select occurrence.reminder_id::text, ${occurrenceColumns}
         from crm.reminders reminder
         cross join lateral (
           select candidate.* from crm.reminder_occurrences candidate
@@ -549,30 +575,28 @@ export class PostgresReminderRepository implements ReminderRepository {
             candidate.deliver_at desc, candidate.id
           limit 1
         ) occurrence
-        where reminder.workspace_id = ${command.workspaceId}::uuid and reminder.person_id = ${command.personId}::uuid
-        order by reminder.updated_at desc, reminder.id limit 100`.execute(
-        database,
-      ),
-      sql<
-        CadenceRow
-      >`select cadence.id::text, cadence.person_id::text, cadence.interval_count,
-        cadence.interval_unit, cadence.is_active,
-        ${instantColumn("cadence.last_contacted_at")} as last_contacted_at,
-        ${instantColumn("cadence.next_due_at")} as next_due_at,
-        ${instantColumn("cadence.updated_at")} as updated_at
-        from crm.stay_in_touch_cadences cadence join crm.people person on person.id = cadence.person_id
-        where person.workspace_id = ${command.workspaceId}::uuid and cadence.person_id = ${command.personId}::uuid
-        order by cadence.updated_at desc limit 1`.execute(database),
-    ]);
+        where reminder.workspace_id = ${command.workspaceId}::uuid
+          and reminder.id = any(${page.map((row) => row.id)}::uuid[])
+        order by reminder.updated_at desc, reminder.id`.execute(database);
     const nextByReminder = new Map<string, ReminderOccurrenceRecord>();
     for (const row of occurrences.rows) {
       if (!nextByReminder.has(row.reminder_id)) {
         nextByReminder.set(row.reminder_id, occurrence(row));
       }
     }
+    const final = page.at(-1);
     return {
       cadences: cadences.rows.map(cadence),
-      reminders: reminders.rows.map((row) => ({
+      ...(reminders.rows.length > command.limit && final
+        ? {
+          next: {
+            id: final.id,
+            isActive: final.is_active,
+            updatedAt: final.updated_at,
+          },
+        }
+        : {}),
+      reminders: page.map((row) => ({
         ...reminder(row),
         ...(nextByReminder.get(row.id)
           ? { nextOccurrence: nextByReminder.get(row.id)! }

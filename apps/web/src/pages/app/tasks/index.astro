@@ -1,5 +1,6 @@
 ---
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
+import LoadMore from "../../../components/LoadMore.astro";
 export const prerender = true;
 ---
 
@@ -35,7 +36,7 @@ export const prerender = true;
       <section aria-labelledby="open-tasks-heading"><h2 id="open-tasks-heading">Open</h2><ul data-task-open-list class="task-list" aria-label="Open tasks"></ul></section>
       <section aria-labelledby="completed-tasks-heading"><h2 id="completed-tasks-heading">Completed</h2><ul data-task-completed-list class="task-list" aria-label="Completed tasks"></ul></section>
       <section aria-labelledby="cancelled-tasks-heading"><h2 id="cancelled-tasks-heading">Cancelled</h2><ul data-task-cancelled-list class="task-list" aria-label="Cancelled tasks"></ul></section>
-      <button data-task-more class="button-secondary" type="button" hidden>Load more tasks</button>
+      <LoadMore list="tasks" label="Load more tasks" />
     </div>
   </main>
 </ApplicationLayout>

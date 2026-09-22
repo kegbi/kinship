@@ -11,7 +11,7 @@ export type {
   ProviderDeliveryResult,
   ReminderWorkerOptions,
 } from "./domain/delivery_rules.ts";
-export type { TaskCursorKeyset } from "./domain/cursors.ts";
+export type { ReminderPageAnchor, TaskCursorKeyset } from "./domain/cursors.ts";
 export { generateCalendarOccurrences } from "./domain/recurrence.ts";
 export type {
   CalendarOccurrence,
@@ -59,6 +59,7 @@ export type {
   CreateTaskResult,
 } from "./application/task_writes.ts";
 export type { ListTasksResult } from "./application/task_listing.ts";
+export type { ListPersonRemindersInput } from "./application/reminder_definitions.ts";
 export { createReminderManagement } from "./application/reminder_management.ts";
 export type { ReminderManagement } from "./application/reminder_management.ts";
 export type {

@@ -39,3 +39,23 @@ export async function request<T>(
 export function workspaceHeader(workspaceId?: string): HeadersInit | undefined {
   return workspaceId ? { "X-Workspace-Id": workspaceId } : undefined;
 }
+
+/**
+ * The `?cursor=…&limit=…` suffix every list call appends.
+ *
+ * A first page names neither, so the suffix is empty and the URL is the plain
+ * collection path — which is what keeps the calls that never paged spelled the
+ * way they always were.
+ */
+export function pageQuery(
+  input: { readonly cursor?: string; readonly limit?: number } = {},
+  extra: Readonly<Record<string, string | undefined>> = {},
+): string {
+  const query = new URLSearchParams();
+  for (const [name, value] of Object.entries(extra)) {
+    if (value) query.set(name, value);
+  }
+  if (input.cursor) query.set("cursor", input.cursor);
+  if (input.limit) query.set("limit", String(input.limit));
+  return query.size > 0 ? `?${query.toString()}` : "";
+}

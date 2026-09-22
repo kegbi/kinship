@@ -492,6 +492,128 @@ Deno.test({
     }
   },
 });
+Deno.test("[GAP-023] PostgreSQL pages gifts and debts independently behind bound cursors", async () => {
+  const suffix = crypto.randomUUID();
+  const primary = await register(
+    `gifts-page-${suffix}@example.test`,
+    "Gift pages",
+  );
+  const foreign = await register(
+    `gifts-page-foreign-${suffix}@example.test`,
+    "Gift pages foreign",
+  );
+  const ada = await createPerson(primary, "Ada");
+  const grace = await createPerson(primary, "Grace");
+  const outsider = await createPerson(foreign, "Outsider");
+  for (const name of ["First", "Second", "Third"]) {
+    assert(
+      (await request(primary, `/api/v1/people/${ada}/gifts`, "POST", {
+        name,
+        status: "idea",
+      })).status === 201,
+      `${name} gift created`,
+    );
+    assert(
+      (await request(primary, `/api/v1/people/${ada}/debts`, "POST", {
+        amount: "1",
+        currencyCode: "EUR",
+        direction: "i_owe",
+        reason: name,
+        status: "open",
+      })).status === 201,
+      `${name} debt created`,
+    );
+  }
+  // Every row shares one instant, so only the identifier can order a page
+  // boundary: the keyset has to carry it or a row is dropped or repeated.
+  await sql`
+    update crm.gifts set updated_at = '2026-08-23T10:00:00Z'
+    where person_id = ${ada}::uuid
+  `;
+  await sql`
+    update crm.debts set updated_at = '2026-08-23T10:00:00Z'
+    where person_id = ${ada}::uuid
+  `;
+  interface Page {
+    readonly debts: readonly { readonly id: string }[];
+    readonly gifts: readonly { readonly id: string }[];
+    readonly nextDebtCursor?: string;
+    readonly nextGiftCursor?: string;
+  }
+  const read = async (fixture: Fixture, person: string, query: string) => {
+    const response = await request(
+      fixture,
+      `/api/v1/people/${person}/gifts?${query}`,
+      "GET",
+    );
+    return { body: await response.json() as Page, status: response.status };
+  };
+  const first = await read(primary, ada, "limit=2");
+  assert(
+    first.status === 200 && first.body.gifts.length === 2 &&
+      first.body.debts.length === 2 && first.body.nextGiftCursor &&
+      first.body.nextDebtCursor,
+    "a first page of two did not continue both collections",
+  );
+  const giftCursor = first.body.nextGiftCursor!;
+  const debtCursor = first.body.nextDebtCursor!;
+  const gifts = await read(
+    primary,
+    ada,
+    `limit=2&giftCursor=${encodeURIComponent(giftCursor)}`,
+  );
+  assert(
+    gifts.status === 200 && gifts.body.gifts.length === 1 &&
+      !gifts.body.nextGiftCursor &&
+      new Set([...first.body.gifts, ...gifts.body.gifts].map((row) => row.id))
+          .size === 3,
+    "the gift continuation dropped or repeated a gift",
+  );
+  assert(
+    JSON.stringify(gifts.body.debts) === JSON.stringify(first.body.debts) &&
+      gifts.body.nextDebtCursor !== undefined,
+    "continuing gifts disturbed the first page of debts",
+  );
+  const debts = await read(
+    primary,
+    ada,
+    `limit=2&debtCursor=${encodeURIComponent(debtCursor)}`,
+  );
+  assert(
+    debts.status === 200 && debts.body.debts.length === 1 &&
+      !debts.body.nextDebtCursor &&
+      new Set([...first.body.debts, ...debts.body.debts].map((row) => row.id))
+          .size === 3,
+    "the debt continuation dropped or repeated a debt",
+  );
+  const everything = await read(primary, ada, "limit=50");
+  assert(
+    everything.body.gifts.length === 3 && everything.body.debts.length === 3 &&
+      !everything.body.nextGiftCursor && !everything.body.nextDebtCursor,
+    "a page larger than the collection still offered a continuation",
+  );
+  for (
+    const [fixture, person, query] of [
+      [primary, grace, `giftCursor=${encodeURIComponent(giftCursor)}`],
+      [foreign, outsider, `giftCursor=${encodeURIComponent(giftCursor)}`],
+      [primary, ada, `debtCursor=${encodeURIComponent(giftCursor)}`],
+      [primary, ada, "giftCursor=not-a-cursor"],
+      [primary, ada, "limit=51"],
+    ] as const
+  ) {
+    const refused = await request(
+      fixture,
+      `/api/v1/people/${person}/gifts?${query}`,
+      "GET",
+    );
+    const problem = await refused.json() as { readonly code?: string };
+    assert(
+      refused.status === 400 && problem.code === "gift_query_invalid",
+      `${query} against another listing was answered: ${refused.status}`,
+    );
+  }
+});
+
 Deno.test({
   name: "GIFTS-001 PostgreSQL resources close",
   sanitizeOps: false,

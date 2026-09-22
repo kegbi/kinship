@@ -56,11 +56,11 @@ export function settings(
       }),
     listSessions: () =>
       Promise.resolve([{
-        createdAt: new Date("2026-08-15T08:00:00Z"),
+        createdAt: "2026-08-15T08:00:00.000Z",
         current: true,
-        expiresAt: new Date("2026-08-15T20:00:00Z"),
+        expiresAt: "2026-08-15T20:00:00.000Z",
         id: "00000000-0000-4000-8000-000000000010",
-        lastSeenAt: new Date("2026-08-15T10:00:00Z"),
+        lastSeenAt: "2026-08-15T10:00:00.000Z",
       }]),
     revokeSession: () => Promise.resolve({ current: true, status: "revoked" }),
     getWorkspace: () =>

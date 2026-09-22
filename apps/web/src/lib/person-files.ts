@@ -1,3 +1,4 @@
+import { mountLoadMore } from "./load-more.ts";
 import {
   listPersonFiles,
   type PersonFile,
@@ -117,7 +118,10 @@ export async function mountPersonFiles(options: {
   const mounted = sections();
   if (mounted.length === 0) return;
   let archived = options.archived;
-  let files: readonly PersonFile[] = [];
+  let files: PersonFile[] = [];
+  // The loader is looked up when the control is pressed, by which time
+  // `refresh` below exists.
+  const more = mountLoadMore("files", (cursor) => refresh(cursor));
   let mutating = false;
 
   const announce = (message: string): void => {
@@ -126,10 +130,14 @@ export async function mountPersonFiles(options: {
   const repaint = (): void => {
     for (const section of mounted) render(section, files, archived);
   };
-  const refresh = async (): Promise<boolean> => {
-    const result = await listPersonFiles(options.personId, options.workspaceId)
-      .catch(() => undefined);
+  const refresh = async (cursor?: string): Promise<boolean> => {
+    const result = await listPersonFiles(
+      options.personId,
+      options.workspaceId,
+      cursor ? { cursor } : {},
+    ).catch(() => undefined);
     if (!result?.ok) {
+      more.present(undefined);
       announce(
         result && !result.ok
           ? result.problem.detail
@@ -142,7 +150,10 @@ export async function mountPersonFiles(options: {
       for (const section of mounted) section.retry.hidden = false;
       return false;
     }
-    files = result.value.files;
+    files = cursor
+      ? [...files, ...result.value.files]
+      : [...result.value.files];
+    more.present(result.value.nextCursor);
     for (const section of mounted) section.retry.hidden = true;
     repaint();
     return true;

@@ -251,9 +251,12 @@ Deno.test("[GAP-016] a completion toggle names its target status and its audit a
 });
 
 Deno.test("[GAP-016] a listing clamps its page and canonicalizes its due-before bound", () => {
-  assertEquals(taskPageLimit(undefined), 100);
+  // GAP-023 aligned the page with every other list: twenty by default and
+  // never more than fifty.
+  assertEquals(taskPageLimit(undefined), 20);
   assertEquals(taskPageLimit(0), 1);
-  assertEquals(taskPageLimit(101), 100);
+  assertEquals(taskPageLimit(50), 50);
+  assertEquals(taskPageLimit(101), 50);
   assertEquals(taskPageLimit(20.9), 20);
   assertEquals(
     dueBeforeFilter("2026-05-04T09:00:00+02:00"),

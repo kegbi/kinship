@@ -21,6 +21,7 @@ import {
   getJournalItem,
   linkJournalActivity,
   listJournal,
+  listJournalQuery,
   saveJournalDayRating,
   updateJournalPost,
 } from "../../packages/contracts/routes/journal.ts";
@@ -35,7 +36,7 @@ import { failureResponder, type FailureTable } from "./http/failures.ts";
 import { requireMatchingOrigin } from "./http/origin.ts";
 import { mount } from "./http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "./http/session.ts";
-import { parseJsonBody, parseValue } from "./http/validate.ts";
+import { parseJsonBody, parseQuery, parseValue } from "./http/validate.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface JournalHttpServices {
@@ -64,6 +65,12 @@ export const JOURNAL_FAILURES: FailureTable = {
       detail: "This item does not exist in the active workspace.",
       title: "Journal item unavailable",
     },
+    "query-invalid": {
+      code: "journal_query_invalid",
+      detail: "Reload the first page of the journal before continuing.",
+      status: 400,
+      title: "Invalid journal query",
+    },
     "validation-error": {
       code: "journal_invalid",
       detail: "Review the date, rating, title, and content.",
@@ -82,9 +89,17 @@ export function createJournalRoutes(
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, listJournal, session, async (context) => {
+    const query = parseQuery(context, listJournalQuery);
+    if ("errors" in query) return failure(context, "query-invalid");
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
-    const result = await services.timeline.list(actor);
+    const result = await services.timeline.list(actor, {
+      ...(query.data.cursor ? { cursor: query.data.cursor } : {}),
+      limit: query.data.limit,
+    });
+    if (result.status === "validation-error") {
+      return failure(context, "query-invalid");
+    }
     if (result.status !== "ready") return failure(context, result.status);
     context.header("Cache-Control", "private, no-store");
     return context.json(result);

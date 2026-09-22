@@ -5,6 +5,7 @@ import {
   type FileMetadataRepository,
   type ObjectStorage,
   type PersonFileActor,
+  type PersonFilePageAnchor,
   type PersonFileRecord,
 } from "./public.ts";
 import type { PeopleTransaction } from "../people/public.ts";
@@ -60,6 +61,10 @@ class MemoryFiles implements FileMetadataRepository {
   failFinalizeRemoval = false;
   failReserve = false;
   markedMissing: string[] = [];
+  /** Every page the use case asked for, as `after id | limit`. */
+  listed: string[] = [];
+  /** The anchor the next page would resume from, when a test sets one. */
+  nextPage: PersonFilePageAnchor | undefined;
 
   authorizeUpload(): Promise<
     | { readonly status: "authorized" }
@@ -119,10 +124,12 @@ class MemoryFiles implements FileMetadataRepository {
   }
 
   list(command: Parameters<FileMetadataRepository["list"]>[0]) {
+    this.listed.push(`${command.after?.fileId ?? "-"} | ${command.limit}`);
     return Promise.resolve({
       files: [...this.records.values()].filter((file) =>
         file.personId === command.personId
       ),
+      ...(this.nextPage && !command.after ? { next: this.nextPage } : {}),
       status: "ready" as const,
     });
   }
@@ -457,5 +464,52 @@ Deno.test("[FILES-001] concurrent remove loser never resurrects winner bytes", a
   assert(
     context.storage.objects.size === 0,
     "loser does not restore deleted bytes",
+  );
+});
+
+Deno.test("[GAP-023] a person's files page behind a cursor bound to the workspace and the person", async () => {
+  const context = management();
+  context.repository.nextPage = {
+    createdAt: "2026-08-23T08:00:00.000000Z",
+    fileId,
+    kind: "photo",
+    sortOrder: 0,
+  };
+  const first = await context.files.list(actor, personId);
+  assert(
+    first.status === "ready" && first.nextCursor !== undefined,
+    "a page with more rows publishes its continuation",
+  );
+  const cursor = first.nextCursor;
+  const second = await context.files.list(actor, personId, {
+    cursor,
+    limit: 500,
+  });
+  assert(
+    second.status === "ready" && second.nextCursor === undefined,
+    "the last page carries no continuation",
+  );
+  const otherWorkspace = await context.files.list(
+    { ...actor, workspaceId: "00000000-0000-4000-8000-0000000000ff" },
+    personId,
+    { cursor },
+  );
+  const otherPerson = await context.files.list(
+    actor,
+    "00000000-0000-4000-8000-0000000000fe",
+    { cursor },
+  );
+  const forged = await context.files.list(actor, personId, {
+    cursor: "forged",
+  });
+  assert(
+    [otherWorkspace, otherPerson, forged].every((result) =>
+      result.status === "validation-error"
+    ),
+    "a foreign or malformed cursor is a rejected query",
+  );
+  assert(
+    context.repository.listed.join(",") === `- | 20,${fileId} | 50`,
+    "the default page, the clamped page, and nothing for a refused cursor",
   );
 });

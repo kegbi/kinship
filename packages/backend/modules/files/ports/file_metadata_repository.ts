@@ -14,6 +14,7 @@
  */
 
 import type { Failure } from "../../../shared-kernel/result.ts";
+import type { PersonFilePageAnchor } from "../domain/cursors.ts";
 import type { PersonFileKind, StoredPersonFile } from "../domain/file_rules.ts";
 import type { PersonFileActor, PersonFileTransaction } from "./context.ts";
 
@@ -69,13 +70,26 @@ export interface FileMetadataRepository {
     | { readonly file: StoredPersonFile; readonly status: "found" }
     | Failure<"forbidden" | "not-found">
   >;
+  /**
+   * One page of a person's files.
+   *
+   * The query reads `limit` rows and answers with the anchor of the page after
+   * it when one exists, so "is there more" costs the same query rather than a
+   * second count.
+   */
   list(
     command: PersonFileActor & {
+      readonly after?: PersonFilePageAnchor;
+      readonly limit: number;
       readonly personId: string;
       readonly transaction: PersonFileTransaction;
     },
   ): Promise<
-    | { readonly files: readonly StoredPersonFile[]; readonly status: "ready" }
+    | {
+      readonly files: readonly StoredPersonFile[];
+      readonly next?: PersonFilePageAnchor;
+      readonly status: "ready";
+    }
     | Failure<"forbidden" | "not-found">
   >;
   markMissing(

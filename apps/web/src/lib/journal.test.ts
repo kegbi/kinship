@@ -65,7 +65,8 @@ function markup(): void {
     <form data-journal-form hidden><select name="type"><option value="post">Post</option><option value="day-rating">Rating</option><option value="activity">Activity</option></select>
     <label data-journal-post><input name="occurredAt" type="datetime-local"></label><label data-journal-post><input name="title"></label><label data-journal-post><textarea name="body"></textarea></label>
     <label data-journal-rating hidden><input name="ratedOn" type="date"></label><label data-journal-rating hidden><select name="rating"><option value="5">5</option></select></label><label data-journal-rating hidden><textarea name="comment"></textarea></label>
-    <label data-journal-activity hidden><select name="activityId"></select></label><p data-journal-form-state></p><button type="submit">Save</button><button data-journal-cancel type="button">Cancel</button></form><ol data-journal-list></ol>`;
+    <label data-journal-activity hidden><select name="activityId"></select></label><p data-journal-form-state></p><button type="submit">Save</button><button data-journal-cancel type="button">Cancel</button></form><ol data-journal-list></ol>
+    <button data-load-more="journal" hidden>Load more journal items</button>`;
 }
 
 afterEach(() => {
@@ -74,6 +75,41 @@ afterEach(() => {
 });
 
 describe("JOURNAL-001 browser behavior", () => {
+  it("GAP-023 appends the next journal page and retires the control", async () => {
+    markup();
+    const later = {
+      ...item,
+      id: "00000000-0000-4000-8000-000000000011",
+      post: { ...item.post, title: "Yesterday" },
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        response({
+          items: [item],
+          nextCursor: "journal-cursor",
+          status: "ready",
+        }),
+      )
+      .mockResolvedValueOnce(response({ items: [later], status: "ready" }));
+    vi.stubGlobal("fetch", fetchMock);
+    await mountJournal();
+    const more = document.querySelector<HTMLButtonElement>(
+      '[data-load-more="journal"]',
+    )!;
+    expect(more.hidden).toBe(false);
+    more.click();
+    await vi.waitFor(() =>
+      expect(document.querySelector("[data-journal-list]")?.textContent)
+        .toContain("Yesterday")
+    );
+    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toContain(
+      "cursor=journal-cursor",
+    );
+    expect(document.querySelector("[data-journal-list]")?.textContent)
+      .toContain("Today");
+    expect(more.hidden).toBe(true);
+  });
+
   it("does nothing when the journal surface is absent", async () => {
     document.body.innerHTML = "<p>Other page</p>";
     await mountJournal();

@@ -41,7 +41,8 @@ export const personFileCreated = z.strictObject({
 }).meta({ id: "PersonFileCreated" });
 
 export const personFileList = z.strictObject({
-  files: z.array(personFile),
+  files: z.array(personFile).max(50),
+  nextCursor: z.string().optional(),
   status: z.literal("ready"),
 }).meta({ id: "PersonFileList" });
 

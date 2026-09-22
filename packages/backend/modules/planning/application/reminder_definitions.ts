@@ -15,9 +15,18 @@
  * The two time-zone entry points are events, not requests: a member or a
  * workspace changed zone, and the occurrences already minted have to be
  * recomputed inside whichever transaction carried that change.
+ *
+ * Reading a person's reminders pages: the section serves one page of
+ * definitions and the person's single cadence, and a cursor that does not
+ * decode for this workspace and this person is a rejected query rather than an
+ * empty page.
  */
 
 import { deterministicId } from "../../../shared-kernel/ids.ts";
+import {
+  decodeReminderCursor,
+  encodeReminderCursor,
+} from "../domain/cursors.ts";
 import {
   type CreateReminderInput,
   REMINDER_ID_NAMESPACE,
@@ -32,6 +41,28 @@ import {
   type ReminderMutationResult,
   writablePerson,
 } from "./reminder_context.ts";
+
+/** The largest reminder page this section serves. */
+export const REMINDER_PAGE_LIMIT_MAXIMUM = 50;
+/** The page it serves when the caller names no size. */
+export const REMINDER_PAGE_LIMIT_DEFAULT = 20;
+
+/** Where a caller asked the section to resume, and how many rows. */
+export interface ListPersonRemindersInput {
+  readonly cursor?: string;
+  readonly limit?: number;
+}
+
+/** The page size this section accepts, clamped to what it will serve. */
+export function reminderPageLimit(limit: number | undefined): number {
+  return Math.max(
+    1,
+    Math.min(
+      REMINDER_PAGE_LIMIT_MAXIMUM,
+      Math.trunc(limit ?? REMINDER_PAGE_LIMIT_DEFAULT),
+    ),
+  );
+}
 
 export function createReminderDefinitions(
   dependencies: ReminderManagementDependencies,
@@ -166,18 +197,44 @@ export function createReminderDefinitions(
         }
         return { reminder, status: "saved" as const };
       }),
-    listPerson: async (actor: PlanningActor, personId: string) =>
-      await dependencies.transaction.run(async (transaction) => {
+    listPerson: async (
+      actor: PlanningActor,
+      personId: string,
+      input: ListPersonRemindersInput = {},
+    ) => {
+      const subject = personId.toLowerCase();
+      const after = input.cursor
+        ? decodeReminderCursor(input.cursor, actor.workspaceId, subject)
+        : undefined;
+      if (input.cursor && !after) {
+        return { status: "validation-error" as const };
+      }
+      return await dependencies.transaction.run(async (transaction) => {
         if (!await actorIsActive(dependencies, actor, transaction)) {
           return { status: "forbidden" as const };
         }
-        const result = await dependencies.repository.listPerson({
+        const { next, ...result } = await dependencies.repository.listPerson({
           ...actor,
-          personId: personId.toLowerCase(),
+          ...(after ? { after } : {}),
+          limit: reminderPageLimit(input.limit),
+          personId: subject,
           transaction,
         });
-        return { ...result, status: "ready" as const };
-      }),
+        return {
+          ...result,
+          ...(next
+            ? {
+              nextCursor: encodeReminderCursor(
+                next,
+                actor.workspaceId,
+                subject,
+              ),
+            }
+            : {}),
+          status: "ready" as const,
+        };
+      });
+    },
     timezoneChanged: async (
       actor: PlanningActor,
       transaction: PlanningTransaction,

@@ -5,6 +5,10 @@
  * the response clears the cookie as well, so the browser that asked to be
  * signed out is signed out rather than left holding a token the server has
  * already forgotten.
+ *
+ * The list is handed through untouched. It used to render each session's three
+ * instants here; GAP-023 moved that into the settings use case, which is where
+ * a timestamp the transport publishes is produced.
  */
 
 import { Hono } from "hono";
@@ -78,15 +82,7 @@ export function createSessionsRoutes(
       currentSessionToken(context),
     ).catch(() => undefined);
     return sessions
-      ? privateJson(context, {
-        sessions: sessions.map((item) => ({
-          ...item,
-          createdAt: item.createdAt.toISOString(),
-          expiresAt: item.expiresAt.toISOString(),
-          lastSeenAt: item.lastSeenAt.toISOString(),
-        })),
-        status: "ready",
-      })
+      ? privateJson(context, { sessions, status: "ready" })
       : definedProblem(context, SESSIONS_NOT_LOADED);
   });
 

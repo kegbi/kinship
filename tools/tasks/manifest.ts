@@ -689,9 +689,11 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/identity/identity_test.ts",
         "packages/backend/modules/identity/application/password_recovery_test.ts",
         "packages/backend/modules/integrations/domain/dav_rules_test.ts",
+        "packages/backend/modules/files/domain/cursors_test.ts",
         "packages/backend/modules/files/domain/file_rules_test.ts",
         "packages/backend/modules/files/object_storage_test.ts",
         "packages/backend/modules/files/person_files_test.ts",
+        "packages/backend/modules/gifts/domain/cursors_test.ts",
         "packages/backend/modules/gifts/domain/gift_rules_test.ts",
         "packages/backend/modules/gifts/gift_management_test.ts",
         "packages/backend/modules/import-export/domain/export_rules_test.ts",
@@ -705,6 +707,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/interactions/domain/communication_rules_test.ts",
         "packages/backend/modules/interactions/domain/interaction_rules_test.ts",
         "packages/backend/modules/interactions/record_interaction_test.ts",
+        "packages/backend/modules/journal/domain/cursors_test.ts",
         "packages/backend/modules/journal/domain/journal_rules_test.ts",
         "packages/backend/modules/journal/journal_management_test.ts",
         "packages/backend/modules/people/domain/important_dates/rules_test.ts",
@@ -1127,6 +1130,7 @@ export const MODULES: readonly TaskModule[] = [
     unit: {
       tests: [
         "apps/api/gifts_test.ts",
+        "packages/backend/modules/gifts/domain/cursors_test.ts",
         "packages/backend/modules/gifts/domain/gift_rules_test.ts",
         "packages/backend/modules/gifts/gift_management_test.ts",
         "packages/contracts/gifts_test.ts",
@@ -1137,6 +1141,7 @@ export const MODULES: readonly TaskModule[] = [
       directory: "gifts",
       tests: [
         "apps/api/gifts_test.ts",
+        "packages/backend/modules/gifts/domain/cursors_test.ts",
         "packages/backend/modules/gifts/domain/gift_rules_test.ts",
         "packages/backend/modules/gifts/gift_management_test.ts",
       ],
@@ -1160,7 +1165,10 @@ export const MODULES: readonly TaskModule[] = [
     coverage: {
       directory: "gifts-domain",
       threshold: 95,
-      tests: ["packages/backend/modules/gifts/domain/gift_rules_test.ts"],
+      tests: [
+        "packages/backend/modules/gifts/domain/cursors_test.ts",
+        "packages/backend/modules/gifts/domain/gift_rules_test.ts",
+      ],
       include: ["packages/backend/modules/gifts/domain"],
     },
   },
@@ -1174,6 +1182,7 @@ export const MODULES: readonly TaskModule[] = [
     id: "files",
     unit: {
       tests: [
+        "packages/backend/modules/files/domain/cursors_test.ts",
         "packages/backend/modules/files/domain/file_rules_test.ts",
         "packages/backend/modules/files/object_storage_test.ts",
         "packages/backend/modules/files/person_files_test.ts",
@@ -1187,7 +1196,10 @@ export const MODULES: readonly TaskModule[] = [
     coverage: {
       directory: "files-domain",
       threshold: 95,
-      tests: ["packages/backend/modules/files/domain/file_rules_test.ts"],
+      tests: [
+        "packages/backend/modules/files/domain/cursors_test.ts",
+        "packages/backend/modules/files/domain/file_rules_test.ts",
+      ],
       include: ["packages/backend/modules/files/domain"],
     },
   },
@@ -1214,6 +1226,7 @@ export const MODULES: readonly TaskModule[] = [
     unit: {
       tests: [
         "apps/api/journal_test.ts",
+        "packages/backend/modules/journal/domain/cursors_test.ts",
         "packages/backend/modules/journal/domain/journal_rules_test.ts",
         "packages/backend/modules/journal/journal_management_test.ts",
         "packages/contracts/journal_test.ts",
@@ -1229,6 +1242,7 @@ export const MODULES: readonly TaskModule[] = [
       directory: "journal",
       tests: [
         "apps/api/journal_test.ts",
+        "packages/backend/modules/journal/domain/cursors_test.ts",
         "packages/backend/modules/journal/domain/journal_rules_test.ts",
         "packages/backend/modules/journal/journal_management_test.ts",
       ],
@@ -1251,7 +1265,10 @@ export const MODULES: readonly TaskModule[] = [
     coverage: {
       directory: "journal-domain",
       threshold: 95,
-      tests: ["packages/backend/modules/journal/domain/journal_rules_test.ts"],
+      tests: [
+        "packages/backend/modules/journal/domain/cursors_test.ts",
+        "packages/backend/modules/journal/domain/journal_rules_test.ts",
+      ],
       include: ["packages/backend/modules/journal/domain"],
     },
   },

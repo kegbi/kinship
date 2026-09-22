@@ -35,6 +35,7 @@ function personMarkup(): void {
     <span data-person-vital-value="next-reminder">Not recorded</span>
     <section data-profile-section="reminders">
       <p data-reminder-state></p><ul data-reminder-list></ul>
+      <button data-load-more="reminders" hidden>Load more reminders</button>
       <button data-reminder-add type="button" hidden>Add reminder</button>
       <form data-reminder-form hidden><input name="title"><input name="anchorOn"><input name="sendTime"><select name="recurrenceUnit"><option value="month">month</option></select><input name="recurrenceInterval"><button type="submit">Save</button><button data-reminder-cancel type="button">Cancel</button></form>
     </section>
@@ -390,8 +391,9 @@ describe("PLANNING-002 reminder browser behavior", () => {
       "fetch",
       vi.fn().mockResolvedValue(response({
         cadences: [],
+        nextCursor: "reminder-cursor",
         reminders: Array.from(
-          { length: 100 },
+          { length: 50 },
           (_, index) => ({ ...reminder, id: `reminder-${index}` }),
         ),
         status: "ready",
@@ -404,10 +406,55 @@ describe("PLANNING-002 reminder browser behavior", () => {
       workspaceId,
     });
     expect(document.querySelector("[data-reminder-state]")?.textContent).toBe(
-      "Showing first 100 reminders.",
+      "Showing first 50 reminders.",
     );
+    expect(
+      document.querySelector<HTMLButtonElement>('[data-load-more="reminders"]')
+        ?.hidden,
+    ).toBe(false);
     expect(document.querySelector("#person-profile-due-state")?.textContent)
       .toBe("Not set");
+  });
+
+  it("GAP-023 appends the next reminder page and retires the control", async () => {
+    personMarkup();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({
+        cadences: [],
+        nextCursor: "reminder-cursor",
+        reminders: [{ ...reminder, id: "reminder-1", title: "First page" }],
+        status: "ready",
+      }))
+      .mockResolvedValueOnce(response({
+        cadences: [],
+        reminders: [{ ...reminder, id: "reminder-2", title: "Second page" }],
+        status: "ready",
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    await mountPersonReminders({
+      timePreferences: { locale: "en", effectiveTimezone: "UTC" },
+      archived: false,
+      personId,
+      workspaceId,
+    });
+    const more = document.querySelector<HTMLButtonElement>(
+      '[data-load-more="reminders"]',
+    )!;
+    expect(more.hidden).toBe(false);
+    more.click();
+    await vi.waitFor(() =>
+      expect(document.querySelector("[data-reminder-list]")?.textContent)
+        .toContain("Second page")
+    );
+    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toContain(
+      "cursor=reminder-cursor",
+    );
+    expect(document.querySelector("[data-reminder-list]")?.textContent)
+      .toContain("First page");
+    expect(document.querySelector("[data-reminder-state]")?.textContent).toBe(
+      "2 reminders.",
+    );
+    expect(more.hidden).toBe(true);
   });
   it.each([true, false])(
     "APR-006 shows an active cadence or unset hero when active=%s",

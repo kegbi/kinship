@@ -4,6 +4,7 @@ import {
   loadTimePreferences,
   type TimePreferences,
 } from "./time-presentation.ts";
+import { mountLoadMore } from "./load-more.ts";
 import { markFormSaved, saveWithLockedForm } from "./unsaved-changes.ts";
 import {
   changeTask,
@@ -20,6 +21,8 @@ import {
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 
 export const TASK_CHANGED_EVENT = "kinship:task-changed";
+/** The largest page the task contract serves, which is what this surface asks for. */
+const TASK_PAGE_SIZE = 50;
 let surfaceAbort: AbortController | undefined;
 let todayAbort: AbortController | undefined;
 type CompletionOwner = {
@@ -154,7 +157,6 @@ export async function mountTaskSurface(options: {
     "[data-task-cancel]",
   );
   const retry = document.querySelector<HTMLButtonElement>("[data-task-retry]");
-  const more = document.querySelector<HTMLButtonElement>("[data-task-more]");
   const peopleMore = document.querySelector<HTMLButtonElement>(
     "[data-task-people-more]",
   );
@@ -185,7 +187,11 @@ export async function mountTaskSurface(options: {
   let editingStatus: Task["status"] | undefined;
   let generation = 0;
   let loadedTasks: Task[] = [];
-  let taskCursor: string | undefined;
+  // The loader is looked up when the control is pressed, by which time
+  // `load` below exists.
+  const more = mountLoadMore("tasks", (cursor) => load(false, cursor), {
+    signal: abort.signal,
+  });
   let peopleCursor: string | undefined;
   let submitting = false;
   let workspaceId = options.workspaceId;
@@ -253,18 +259,18 @@ export async function mountTaskSurface(options: {
     }
   };
   setMutable();
-  const load = async (reset = true) => {
+  const load = async (reset = true, cursor?: string) => {
     const current = ++generation;
     if (reset) {
-      taskCursor = undefined;
+      more.present(undefined);
       loadedTasks = [];
     }
     state.textContent = "Loading tasks…";
     if (region) region.dataset.sectionState = "loading";
     if (retry) retry.hidden = true;
     const result = await listTasks({
-      ...(!reset && taskCursor ? { cursor: taskCursor } : {}),
-      limit: 100,
+      ...(!reset && cursor ? { cursor } : {}),
+      limit: TASK_PAGE_SIZE,
       ...(options.personId
         ? { personId: options.personId }
         : filterPerson?.value
@@ -288,8 +294,7 @@ export async function mountTaskSurface(options: {
         !loadedTasks.some((existing) => existing.id === candidate.id)
       ),
     ];
-    taskCursor = result.value.nextCursor;
-    if (more) more.hidden = !taskCursor;
+    more.present(result.value.nextCursor);
     if (filterPerson) {
       for (const task of result.value.items) {
         if (task.person) {
@@ -438,9 +443,6 @@ export async function mountTaskSurface(options: {
   retry?.addEventListener("click", () => void load(true), {
     signal: abort.signal,
   });
-  more?.addEventListener("click", () => {
-    if (taskCursor) void load(false);
-  }, { signal: abort.signal });
   peopleMore?.addEventListener("click", () => {
     if (peopleCursor) void loadPeople(peopleCursor);
   }, { signal: abort.signal });
