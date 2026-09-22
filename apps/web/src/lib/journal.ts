@@ -1,3 +1,4 @@
+import { mountLoadMore } from "./load-more.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 import {
   formatCalendarDate,
@@ -210,8 +211,11 @@ export async function mountJournal(): Promise<void> {
   const surface = elements();
   if (!surface) return;
   let workspaceId: string | undefined;
-  let items: readonly JournalTimelineItem[] = [];
-  const refresh = async () => {
+  let items: JournalTimelineItem[] = [];
+  // The loader is looked up when the control is pressed, by which time
+  // `refresh` below exists.
+  const more = mountLoadMore("journal", (cursor) => refresh(cursor));
+  const refresh = async (cursor?: string) => {
     surface.state.textContent = "Loading journal…";
     surface.retry.hidden = true;
     const detail = document.querySelector<HTMLElement>("[data-journal-detail]");
@@ -231,14 +235,21 @@ export async function mountJournal(): Promise<void> {
     const timePreferences = await loadTimePreferences(workspaceId);
     const result = itemId
       ? await getJournalItem(itemId, workspaceId)
-      : await listJournal(workspaceId);
+      : await listJournal(workspaceId, cursor ? { cursor } : {});
     if (!result.ok) {
       surface.state.textContent = result.problem.detail;
       surface.retry.hidden = false;
       surface.list.replaceChildren();
+      more.present(undefined);
       return;
     }
-    items = "item" in result.value ? [result.value.item] : result.value.items;
+    const page = "item" in result.value
+      ? [result.value.item]
+      : result.value.items;
+    items = cursor ? [...items, ...page] : [...page];
+    more.present(
+      "item" in result.value ? undefined : result.value.nextCursor,
+    );
     if (surface.form && "activities" in result.value) {
       renderActivityOptions(
         timePreferences,

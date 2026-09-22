@@ -18,6 +18,17 @@
 
 import type { components } from "../generated/api-types.ts";
 
+/**
+ * What every list call accepts beyond its own filters.
+ *
+ * The document publishes the same two query parameters on every collection,
+ * so the client names them once rather than restating them per function.
+ */
+export interface PageInput {
+  readonly cursor?: string;
+  readonly limit?: number;
+}
+
 export type RegistrationInput = components["schemas"]["RegistrationInput"];
 
 export type ApplicationEntry = components["schemas"]["ApplicationEntry"];

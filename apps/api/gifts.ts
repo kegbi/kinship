@@ -17,6 +17,7 @@ import {
   createDebt,
   createGift,
   listPersonGiftsAndDebts,
+  listPersonGiftsAndDebtsQuery,
 } from "../../packages/contracts/routes/gifts.ts";
 import {
   debtCreateInput,
@@ -30,7 +31,7 @@ import { failureResponder, type FailureTable } from "./http/failures.ts";
 import { requireMatchingOrigin } from "./http/origin.ts";
 import { mount } from "./http/route.ts";
 import { type ActorEnv, requireActor, sessionActor } from "./http/session.ts";
-import { parseJsonBody, parseValue } from "./http/validate.ts";
+import { parseJsonBody, parseQuery, parseValue } from "./http/validate.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
@@ -77,6 +78,12 @@ export const GIFT_FAILURES: FailureTable = {
         "The person, recipient, attachment, gift, or debt does not exist in the active workspace.",
       title: "Record unavailable",
     },
+    "query-invalid": {
+      code: "gift_query_invalid",
+      detail: "Reload the first page of gifts and debts before continuing.",
+      status: 400,
+      title: "Invalid gift query",
+    },
     "validation-error": {
       code: "gift_invalid",
       detail:
@@ -96,9 +103,18 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
   mount(routes, listPersonGiftsAndDebts, session, async (context) => {
     const personId = parseValue(uuid, context.req.param("personId"));
     if ("errors" in personId) return failure(context, "not-found");
+    const query = parseQuery(context, listPersonGiftsAndDebtsQuery);
+    if ("errors" in query) return failure(context, "query-invalid");
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
-    const result = await services.gifts.list(actor, personId.data);
+    const result = await services.gifts.list(actor, personId.data, {
+      ...(query.data.debtCursor ? { debtCursor: query.data.debtCursor } : {}),
+      ...(query.data.giftCursor ? { giftCursor: query.data.giftCursor } : {}),
+      limit: query.data.limit,
+    });
+    if (result.status === "validation-error") {
+      return failure(context, "query-invalid");
+    }
     if (result.status !== "ready") return failure(context, result.status);
     context.header("Cache-Control", "private, no-store");
     return context.json(result);

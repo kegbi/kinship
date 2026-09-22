@@ -230,6 +230,62 @@ browser sessions. Keep API tokens separate and never store browser session
 credentials in `localStorage`. Apply CSRF protection to cookie-authenticated
 mutations and explicit origin/CORS rules at the gateway and API.
 
+## Pagination
+
+Every list endpoint pages the same way, so a client learns the rule once.
+`packages/contracts/schemas/shared.ts` publishes the query as `pageQuery`, and a
+list that carries extra filters extends it rather than restating the bounds.
+
+- **Request.** `limit` is an integer between 1 and 50 and defaults to 20; a page
+  smaller than 20 keeps its own smaller default. `cursor` is an opaque string of
+  at most 2,000 characters. Neither is required, and a first page asks for
+  neither. An endpoint that pages two independent collections in one answer
+  names one cursor per collection (`giftCursor` and `debtCursor`) and shares the
+  one `limit`.
+- **Response.** A page answers with its items and, when more rows exist,
+  `nextCursor` — one `next…Cursor` per paged collection. The member is absent
+  when the page is the last one, so "is there more" is a property of the body
+  rather than something a client infers from a full page. The page is produced
+  by reading `limit + 1` rows in the adapter and serving `limit` of them, never
+  by a second `count(*)`.
+- **Order.** A paged listing orders by a stable key pair whose last component is
+  the row identifier — `updated_at desc, id`, `created_at, id`, and so on — so
+  the anchor names exactly one row and a page boundary cannot drop or repeat a
+  row when a neighbour changes.
+- **Cursors.** A cursor carries the keyset anchor it resumes from and the
+  question it was minted for, never an offset, and it is encoded with the
+  shared-kernel codec in `packages/backend/shared-kernel/pagination.ts`. Each
+  module owns its own codec in `<module>/domain/cursors.ts`, because minting and
+  reading one is arithmetic over the anchor rather than a database concern. The
+  workspace, and the person where the listing hangs off one, are part of the
+  encoded body and re-checked on the way in, so a cursor replayed against
+  another tenant's listing is refused rather than answered. A listing whose
+  filters travel inside the cursor signs it, because a forged body would widen
+  the query; a listing whose anchor is re-validated against rows the caller may
+  already see needs only the opaque encoding.
+- **Refusal.** Decoding never throws. A malformed, foreign, or stale cursor is a
+  rejected request: the surface answers `400` with its own `*_query_invalid`
+  code unless it already distinguishes staleness, in which case it keeps that
+  answer (tasks answer `409 task_cursor_stale`, relationship listings answer
+  their own `stale-cursor` problem). Every paged endpoint therefore documents a
+  `400`.
+
+## Response and Timestamp Conventions
+
+- A read answers `{ …collection, status: "ready" }` and a write answers
+  `{ …subject, status: "created" | "saved" | "unchanged" | … }`. `status` is a
+  literal the document publishes, so a client branches on it rather than on a
+  status code.
+- Every transport shape is closed (`additionalProperties: false`) and every
+  array is bounded by the page size it can hold.
+- Timestamps crossing the boundary are ISO 8601 in UTC, produced by the use case
+  that owns the value. A route never formats one: it passes through what the use
+  case returned. Adapters render `timestamptz` with
+  `packages/backend/platform/postgres/timestamps.ts` so the precision is the
+  column's, not the driver's.
+- A calendar date stays a `YYYY-MM-DD` string and is never widened into an
+  instant.
+
 ## Background Work
 
 The worker calls the same public application use cases as HTTP adapters. It does

@@ -1,0 +1,32 @@
+---
+/**
+ * The control every paged list extends itself with.
+ *
+ * GAP-023 gave the API one pagination convention; this is its one control. It
+ * renders hidden, because a first page has not been answered yet and a button
+ * that offers a page nobody knows exists is a lie — `mountLoadMore` in
+ * `apps/web/src/lib/load-more.ts` shows it only while the last answer carried a
+ * `nextCursor`, and hides it again when it did not.
+ *
+ * `list` is the name the surface looks the control up by, and `controls` names
+ * the element the button extends so a screen reader is told what grows. The
+ * label is written out per list rather than derived, because "Load more gifts"
+ * and "Load more journal items" are the surface's words, not this file's.
+ */
+interface Props {
+  /** The `data-load-more` name the surface queries for. */
+  readonly list: string;
+  readonly label: string;
+  /** The id of the list this button appends to, when it has one. */
+  readonly controls?: string;
+}
+
+const { controls, label, list } = Astro.props;
+---
+
+<button
+  class="button-secondary load-more"
+  data-load-more={list}
+  type="button"
+  aria-controls={controls}
+  hidden>{label}</button>

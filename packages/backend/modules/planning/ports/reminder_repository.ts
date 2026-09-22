@@ -16,6 +16,7 @@ import type {
   CadenceUnit,
   StayInTouchCadenceRecord,
 } from "../domain/cadence.ts";
+import type { ReminderPageAnchor } from "../domain/cursors.ts";
 import type {
   CalendarOccurrence,
   RecurrenceUnit,
@@ -60,9 +61,16 @@ export interface ReminderWorkspaceBoundary {
   >;
 }
 
-/** What a reminder and its cadences look like for one person. */
+/**
+ * What a reminder and its cadences look like for one person.
+ *
+ * `next` is the anchor of the reminder page after this one, present only when
+ * the query read one more row than it served. The cadence is not paged: a
+ * person keeps at most one.
+ */
 export interface PersonReminders {
   readonly cadences: readonly StayInTouchCadenceRecord[];
+  readonly next?: ReminderPageAnchor;
   readonly reminders: readonly ReminderDefinitionRecord[];
 }
 
@@ -168,6 +176,8 @@ export interface ReminderRepository {
   ): Promise<void>;
   listPerson(
     command: PlanningActor & {
+      readonly after?: ReminderPageAnchor;
+      readonly limit: number;
       readonly personId: string;
       readonly transaction: PlanningTransaction;
     },

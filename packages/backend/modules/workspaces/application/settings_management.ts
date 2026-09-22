@@ -50,6 +50,34 @@ import type {
   IdentitySessionSummary,
 } from "../../identity/public.ts";
 
+/**
+ * One signed-in browser, as the transport carries it.
+ *
+ * The identity facade hands back `Date`s because that is what a timestamp
+ * column is to it; what a caller is owed is ISO 8601 in UTC. GAP-023 moved
+ * that rendering here from `apps/api/settings/sessions.ts`, so a route passes
+ * this through rather than formatting anything of its own.
+ */
+export interface MemberSessionSummary extends
+  Omit<
+    IdentitySessionSummary,
+    "createdAt" | "expiresAt" | "lastSeenAt"
+  > {
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly lastSeenAt: string;
+}
+
+/** The same session with its three instants rendered, and nothing reordered. */
+function memberSession(session: IdentitySessionSummary): MemberSessionSummary {
+  return {
+    ...session,
+    createdAt: session.createdAt.toISOString(),
+    expiresAt: session.expiresAt.toISOString(),
+    lastSeenAt: session.lastSeenAt.toISOString(),
+  };
+}
+
 export interface SettingsManagementDependencies {
   readonly audit: SettingsAudit;
   readonly clock: Clock;
@@ -156,18 +184,20 @@ export function createSettingsManagement(
         return { preferences, status: "ready" as const };
       });
     },
-    listSessions: (
+    listSessions: async (
       actor: SettingsActor,
       currentToken: string,
-    ): Promise<readonly IdentitySessionSummary[]> =>
-      dependencies.transaction.run((transaction) =>
+    ): Promise<readonly MemberSessionSummary[]> => {
+      const sessions = await dependencies.transaction.run((transaction) =>
         dependencies.identity.listSessions({
           currentToken,
           now: dependencies.clock.now(),
           transaction,
           userId: actor.userId,
         })
-      ),
+      );
+      return sessions.map(memberSession);
+    },
     revokeSession: (
       actor: SettingsActor,
       currentToken: string,

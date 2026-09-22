@@ -85,7 +85,7 @@ export const relationshipWithDisplay = z.strictObject({
 
 export const relationshipList = z.strictObject({
   nextCursor: z.string().optional(),
-  relationships: z.array(relationshipWithDisplay).max(20),
+  relationships: z.array(relationshipWithDisplay).max(50),
   status: z.enum(["archived", "hidden", "ready"]),
 }).meta({ id: "RelationshipList" });
 

@@ -179,6 +179,7 @@ const TYPES: readonly string[] = [
   "Gift",
   "GiftCreateInput",
   "GiftDebtList",
+  "GiftDebtPageInput",
   "GiftStatus",
   "ImportReport",
   "ImportSummary",
@@ -204,6 +205,7 @@ const TYPES: readonly string[] = [
   "MemberSession",
   "MemberUiState",
   "OccupationFact",
+  "PageInput",
   "PeopleDirectoryInput",
   "PeopleDirectoryLifecycle",
   "PeopleDirectoryPage",
@@ -490,3 +492,57 @@ function template(path: string): string {
   }
   return path;
 }
+
+Deno.test("[GAP-023] a list call keeps its old spelling and pages only when asked", async () => {
+  const original = globalThis.fetch;
+  const asked: { url: URL; workspace: string | null }[] = [];
+  globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+    asked.push({
+      url: new URL(String(input), "http://kinship.test"),
+      workspace: new Headers(init?.headers).get("X-Workspace-Id"),
+    });
+    return Promise.resolve(
+      new Response(JSON.stringify({ status: "ready" }), {
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  }) as typeof fetch;
+  const WORKSPACE = "00000000-0000-4000-8000-000000000001";
+  try {
+    await client.listPersonFiles(UUID, WORKSPACE);
+    await client.listPersonFiles(UUID, WORKSPACE, { cursor: "f", limit: 5 });
+    await client.listPersonGifts(UUID, WORKSPACE);
+    await client.listPersonGifts(UUID, undefined, {
+      debtCursor: "d",
+      giftCursor: "g",
+      limit: 3,
+    });
+    await client.listJournal(WORKSPACE);
+    await client.listJournal(undefined, { cursor: "j" });
+    await client.listPersonReminders(UUID, WORKSPACE);
+    await client.listPersonReminders(UUID, WORKSPACE, { limit: 2 });
+    await client.listTasks({ cursor: "t", limit: 50, status: "open" });
+    await client.listRelationships(UUID, { cursor: "r" });
+  } finally {
+    globalThis.fetch = original;
+  }
+  const spelled = asked.map(({ url, workspace }) =>
+    `${url.pathname}${url.search} ${workspace ?? "-"}`
+  );
+  const expected = [
+    `/api/v1/people/${UUID}/files ${WORKSPACE}`,
+    `/api/v1/people/${UUID}/files?cursor=f&limit=5 ${WORKSPACE}`,
+    `/api/v1/people/${UUID}/gifts ${WORKSPACE}`,
+    `/api/v1/people/${UUID}/gifts?debtCursor=d&giftCursor=g&limit=3 -`,
+    `/api/v1/journal ${WORKSPACE}`,
+    "/api/v1/journal?cursor=j -",
+    `/api/v1/people/${UUID}/reminders ${WORKSPACE}`,
+    `/api/v1/people/${UUID}/reminders?limit=2 ${WORKSPACE}`,
+    "/api/v1/tasks?status=open&cursor=t&limit=50 -",
+    `/api/v1/people/${UUID}/relationships?cursor=r -`,
+  ];
+  assert(
+    JSON.stringify(spelled) === JSON.stringify(expected),
+    `the list calls asked for ${JSON.stringify(spelled)}`,
+  );
+});

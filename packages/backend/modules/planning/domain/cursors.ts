@@ -1,5 +1,5 @@
 /**
- * How a task listing is paged.
+ * How a task listing and a person's reminder section are paged.
  *
  * The cursor carries the keyset anchor the next page resumes from and the
  * question it was minted for: the workspace, the person filter, the status
@@ -7,15 +7,26 @@
  * a forged one would widen the query the caller is served — which is why this
  * codec signs rather than merely encodes, using the kernel's HMAC pair.
  *
+ * The reminder cursor below is the plain pair instead. A person's reminders
+ * are read with no filter beyond the person, the anchor is re-validated
+ * against rows the caller is already allowed to see, and the workspace and the
+ * person travel in the body and are checked on the way in — so there is
+ * nothing a forged one could widen.
+ *
  * Minting and reading a cursor is arithmetic over the anchor, not a database
- * concern, so both sides live beside the tasks they page. Reading never
- * throws: a cursor that is unreadable, signed for another listing, or minted
- * for a different question is `undefined`, which the use case reports as a
- * stale cursor.
+ * concern, so both sides live beside the work they page. Reading never throws:
+ * a cursor that is unreadable, signed for another listing, or minted for a
+ * different question is `undefined`, which the use case reports as a stale
+ * cursor or a rejected query.
  */
 
 import type { CursorKeyset } from "../../../shared-kernel/pagination.ts";
-import { signCursor, verifyCursor } from "../../../shared-kernel/pagination.ts";
+import {
+  decodeCursor,
+  encodeCursor,
+  signCursor,
+  verifyCursor,
+} from "../../../shared-kernel/pagination.ts";
 import { isInstant, uuid } from "../../../shared-kernel/validation.ts";
 import type { TaskListAnchor, TaskStatus } from "./task_rules.ts";
 
@@ -90,5 +101,66 @@ export async function decodeTaskCursor(
     id,
     status: body.status as TaskStatus,
     updatedAt: body.updatedAt,
+  };
+}
+
+/** The cursor body shape a reminder page currently mints. */
+export const REMINDER_CURSOR_VERSION = 1;
+
+/**
+ * Where a page of one person's reminders resumes.
+ *
+ * Active reminders sort ahead of disabled ones, so the anchor carries that
+ * state as well as the `updated_at desc, id` pair underneath it.
+ */
+export interface ReminderPageAnchor {
+  readonly id: string;
+  readonly isActive: boolean;
+  readonly updatedAt: string;
+}
+
+interface EncodedReminderCursor extends ReminderPageAnchor {
+  readonly personId: string;
+  readonly version: 1;
+  readonly workspaceId: string;
+}
+
+/** The cursor that resumes this person's reminders after the given anchor. */
+export function encodeReminderCursor(
+  anchor: ReminderPageAnchor,
+  workspaceId: string,
+  personId: string,
+): string {
+  return encodeCursor(
+    {
+      id: anchor.id,
+      isActive: anchor.isActive,
+      personId,
+      updatedAt: anchor.updatedAt,
+      version: REMINDER_CURSOR_VERSION,
+      workspaceId,
+    } satisfies EncodedReminderCursor,
+  );
+}
+
+/** The anchor a reminder cursor decodes to, or `undefined`. */
+export function decodeReminderCursor(
+  value: string,
+  workspaceId: string,
+  personId: string,
+): ReminderPageAnchor | undefined {
+  const parsed = decodeCursor(value) as
+    | Partial<EncodedReminderCursor>
+    | undefined;
+  if (
+    parsed?.version !== REMINDER_CURSOR_VERSION ||
+    parsed.workspaceId !== workspaceId || parsed.personId !== personId ||
+    uuid(parsed.id) === undefined || typeof parsed.isActive !== "boolean" ||
+    !isInstant(parsed.updatedAt)
+  ) return undefined;
+  return {
+    id: parsed.id!,
+    isActive: parsed.isActive,
+    updatedAt: parsed.updatedAt,
   };
 }

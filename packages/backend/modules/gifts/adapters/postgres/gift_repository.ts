@@ -1,7 +1,8 @@
-import { sql } from "kysely";
+import { type RawBuilder, sql } from "kysely";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
+import type { GiftPageAnchor } from "../../domain/cursors.ts";
 import type { StoredDebt, StoredGift } from "../../domain/gift_rules.ts";
 import type { GiftRepository } from "../../ports/gift_repository.ts";
 
@@ -74,6 +75,35 @@ function debt(row: DebtRow): StoredDebt {
     status: row.status,
     updatedAt: row.updated_at,
   };
+}
+
+/**
+ * Where the caller resumes, written out rather than as a row comparison
+ * because the order mixes directions: newer rows first, and ties broken by an
+ * ascending identifier.
+ */
+function resumeAfter(
+  table: "debt" | "gift",
+  after: GiftPageAnchor | undefined,
+): RawBuilder<unknown> {
+  if (!after) return sql``;
+  const updatedAt = sql.raw(`${table}.updated_at`);
+  const id = sql.raw(`${table}.id`);
+  return sql`and (${updatedAt} < ${after.updatedAt}::timestamptz
+    or (${updatedAt} = ${after.updatedAt}::timestamptz
+      and ${id} > ${after.id}::uuid))`;
+}
+
+/** The anchor of the page after this one, when one more row was read. */
+function anchorOf(
+  rows: readonly { readonly id: string; readonly updated_at: string }[],
+  page: readonly { readonly id: string; readonly updated_at: string }[],
+  limit: number,
+): GiftPageAnchor | undefined {
+  const final = page.at(-1);
+  return rows.length > limit && final
+    ? { id: final.id, updatedAt: final.updated_at }
+    : undefined;
 }
 
 /**
@@ -222,18 +252,28 @@ export class PostgresGiftRepository implements GiftRepository {
       from crm.gifts gift
       where gift.workspace_id = ${command.workspaceId}::uuid
         and gift.person_id = ${command.personId}::uuid
+        ${resumeAfter("gift", command.giftAfter)}
       order by gift.updated_at desc, gift.id
+      limit ${command.limit + 1}
     `.execute(database);
     const debts = await sql<DebtRow>`
       select ${debtColumns}
       from crm.debts debt
       where debt.workspace_id = ${command.workspaceId}::uuid
         and debt.person_id = ${command.personId}::uuid
+        ${resumeAfter("debt", command.debtAfter)}
       order by debt.updated_at desc, debt.id
+      limit ${command.limit + 1}
     `.execute(database);
+    const giftPage = gifts.rows.slice(0, command.limit);
+    const debtPage = debts.rows.slice(0, command.limit);
     return {
-      debts: debts.rows.map(debt),
-      gifts: gifts.rows.map(gift),
+      debts: debtPage.map(debt),
+      gifts: giftPage.map(gift),
+      ...pickDefined({
+        nextDebt: anchorOf(debts.rows, debtPage, command.limit),
+        nextGift: anchorOf(gifts.rows, giftPage, command.limit),
+      }),
       status: "ready",
     };
   }

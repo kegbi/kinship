@@ -6,7 +6,7 @@
  */
 
 import type { ApiResult } from "./request.ts";
-import { request } from "./request.ts";
+import { pageQuery, request } from "./request.ts";
 import type {
   Debt,
   DebtCreateInput,
@@ -17,13 +17,37 @@ import type {
   GiftStatus,
 } from "./types.ts";
 
+/**
+ * Where each half of the answer resumes, and how many rows each page carries.
+ *
+ * Gifts and debts continue independently, so a caller extending one sends only
+ * that cursor and still receives the first page of the other.
+ */
+export interface GiftDebtPageInput {
+  readonly debtCursor?: string;
+  readonly giftCursor?: string;
+  readonly limit?: number;
+}
+
+/**
+ * One page of a person's gifts and one of their debts.
+ *
+ * The page argument trails the workspace so the two-argument call every
+ * caller already made keeps its meaning; a first page names neither cursor.
+ */
 export function listPersonGifts(
   personId: string,
   workspaceId?: string,
+  input: GiftDebtPageInput = {},
 ): Promise<ApiResult<GiftDebtList>> {
-  return request(`/api/v1/people/${encodeURIComponent(personId)}/gifts`, {
-    headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
-  });
+  const suffix = pageQuery(
+    input.limit === undefined ? {} : { limit: input.limit },
+    { debtCursor: input.debtCursor, giftCursor: input.giftCursor },
+  );
+  return request(
+    `/api/v1/people/${encodeURIComponent(personId)}/gifts${suffix}`,
+    { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined },
+  );
 }
 
 export function createGift(

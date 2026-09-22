@@ -200,9 +200,20 @@ export function dueBeforeFilter(value: string | undefined): string | undefined {
   return isInstant(value) ? new Date(value).toISOString() : undefined;
 }
 
+/** The largest page a task listing will serve, as the contract publishes it. */
+export const TASK_PAGE_LIMIT_MAXIMUM = 50;
+/** The page a task listing serves when the caller names no size. */
+export const TASK_PAGE_LIMIT_DEFAULT = 20;
+
 /** The page size a task listing accepts, clamped to what it will serve. */
 export function taskPageLimit(limit: number | undefined): number {
-  return Math.max(1, Math.min(100, Math.trunc(limit ?? 100)));
+  return Math.max(
+    1,
+    Math.min(
+      TASK_PAGE_LIMIT_MAXIMUM,
+      Math.trunc(limit ?? TASK_PAGE_LIMIT_DEFAULT),
+    ),
+  );
 }
 
 /**

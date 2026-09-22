@@ -375,3 +375,52 @@ Deno.test("[FILES-001] production object storage fails closed without credential
     values.delete(key);
   }
 });
+
+Deno.test("[GAP-023] file listing forwards one page and refuses a malformed query", async () => {
+  const received: unknown[] = [];
+  const routes = app({
+    list: (_actor, _personId, input) => {
+      received.push(input);
+      return Promise.resolve(
+        input?.cursor === "foreign"
+          ? { status: "validation-error" as const }
+          : {
+            files: [visibleFile],
+            ...(input?.cursor ? {} : { nextCursor: "next-file-page" }),
+            status: "ready" as const,
+          },
+      );
+    },
+  });
+  const headers = {
+    cookie: "kinship_session=session",
+    "X-Workspace-Id": workspaceId,
+  };
+  const path = `http://localhost/api/v1/people/${personId}/files`;
+  const first = await routes.request(path, { headers });
+  assertStatus(first, 200, "first page served");
+  const firstBody = await first.json() as { readonly nextCursor?: string };
+  assert(firstBody.nextCursor === "next-file-page", "continuation published");
+  const second = await routes.request(`${path}?limit=5&cursor=resume`, {
+    headers,
+  });
+  assertStatus(second, 200, "second page served");
+  assert(
+    !("nextCursor" in (await second.json() as Record<string, unknown>)),
+    "the last page carries no continuation",
+  );
+  assert(
+    JSON.stringify(received) ===
+      JSON.stringify([{ limit: 20 }, { cursor: "resume", limit: 5 }]),
+    "the default and the requested page reached the use case",
+  );
+  for (const query of ["limit=0", "limit=51", "limit=many", "cursor=foreign"]) {
+    const refused = await routes.request(`${path}?${query}`, { headers });
+    assertStatus(refused, 400, `${query} refused`);
+    assert(
+      (await refused.json() as { readonly code?: string }).code ===
+        "file_query_invalid",
+      `${query} names the file query`,
+    );
+  }
+});

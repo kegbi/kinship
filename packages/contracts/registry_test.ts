@@ -21,6 +21,7 @@ import {
 } from "./registry.ts";
 import { assert, assertThrows } from "../backend/testing/assert.ts";
 import { uuid } from "./schemas/shared.ts";
+import document from "./openapi/openapi.json" with { type: "json" };
 
 const answered = {
   200: { description: "ok" },
@@ -121,4 +122,113 @@ Deno.test("[GAP-022] two routes may not claim one name or one address", () => {
     () => collectRoutes([[first], [second]]),
     "two routes may not answer the same method and path",
   );
+});
+
+/** A schema as far as the paging convention cares about it. */
+interface PagedSchema {
+  readonly $ref?: string;
+  readonly default?: unknown;
+  readonly maxItems?: number;
+  readonly maxLength?: number;
+  readonly maximum?: number;
+  readonly minimum?: number;
+  readonly properties?: Readonly<Record<string, PagedSchema>>;
+  readonly required?: readonly string[];
+  readonly type?: string;
+}
+
+interface PagedOperation {
+  readonly parameters?: readonly {
+    readonly in: string;
+    readonly name: string;
+    readonly required?: boolean;
+    readonly schema: PagedSchema;
+  }[];
+  readonly responses: Readonly<
+    Record<string, {
+      readonly content?: Readonly<
+        Record<string, { readonly schema: PagedSchema }>
+      >;
+    }>
+  >;
+}
+
+/**
+ * Every list GAP-023 put under the one convention: the path, the cursor
+ * parameters it accepts, the collections it pages, and the continuation each
+ * collection answers with.
+ */
+const PAGED_LISTS = [
+  ["/api/v1/tasks", ["cursor"], [["items", "nextCursor"]]],
+  [
+    "/api/v1/people/{personId}/relationships",
+    ["cursor"],
+    [["relationships", "nextCursor"]],
+  ],
+  [
+    "/api/v1/people/{personId}/gifts",
+    ["giftCursor", "debtCursor"],
+    [["gifts", "nextGiftCursor"], ["debts", "nextDebtCursor"]],
+  ],
+  ["/api/v1/people/{personId}/files", ["cursor"], [["files", "nextCursor"]]],
+  [
+    "/api/v1/people/{personId}/reminders",
+    ["cursor"],
+    [["reminders", "nextCursor"]],
+  ],
+  ["/api/v1/journal", ["cursor"], [["items", "nextCursor"]]],
+] as const;
+
+Deno.test("[GAP-023] every paged list publishes the one page convention", () => {
+  const published = document as unknown as {
+    readonly components: {
+      readonly schemas: Readonly<Record<string, PagedSchema>>;
+    };
+    readonly paths: Readonly<Record<string, { readonly get: PagedOperation }>>;
+  };
+  for (const [path, cursors, collections] of PAGED_LISTS) {
+    const operation = published.paths[path]?.get;
+    assert(operation !== undefined, `${path} is not documented`);
+    const query = new Map(
+      (operation.parameters ?? [])
+        .filter((parameter) => parameter.in === "query")
+        .map((parameter) => [parameter.name, parameter]),
+    );
+    const limit = query.get("limit");
+    assert(
+      limit !== undefined && limit.required !== true &&
+        limit.schema.type === "integer" && limit.schema.minimum === 1 &&
+        limit.schema.maximum === 50 && limit.schema.default === 20,
+      `${path} does not publish limit as 1-50, default 20`,
+    );
+    for (const name of cursors) {
+      const cursor = query.get(name);
+      assert(
+        cursor !== undefined && cursor.required !== true &&
+          cursor.schema.type === "string" && cursor.schema.maxLength === 2000,
+        `${path} does not publish an optional bounded ${name}`,
+      );
+    }
+    assert(
+      operation.responses["400"] !== undefined,
+      `${path} does not document the refusal of a malformed cursor`,
+    );
+    const reference = operation.responses["200"]?.content?.["application/json"]
+      ?.schema.$ref;
+    const answer = published.components.schemas[
+      reference?.replace("#/components/schemas/", "") ?? ""
+    ];
+    assert(answer !== undefined, `${path} answers no named page`);
+    for (const [collection, continuation] of collections) {
+      assert(
+        answer.properties?.[collection]?.maxItems === 50,
+        `${path} does not bound ${collection} by the page`,
+      );
+      assert(
+        answer.properties?.[continuation]?.type === "string" &&
+          !(answer.required ?? []).includes(continuation),
+        `${path} does not publish ${continuation} as present only with more rows`,
+      );
+    }
+  }
 });

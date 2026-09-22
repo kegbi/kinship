@@ -2261,6 +2261,8 @@ export interface components {
         readonly GiftDebtList: {
             readonly debts: readonly components["schemas"]["Debt"][];
             readonly gifts: readonly components["schemas"]["Gift"][];
+            readonly nextDebtCursor?: string;
+            readonly nextGiftCursor?: string;
             /** @constant */
             readonly status: "ready";
             readonly supportedCurrencyCodes: readonly string[];
@@ -2575,6 +2577,7 @@ export interface components {
         readonly JournalTimelineList: {
             readonly activities: readonly components["schemas"]["JournalLinkableActivity"][];
             readonly items: readonly components["schemas"]["JournalTimelineItem"][];
+            readonly nextCursor?: string;
             /** @constant */
             readonly status: "ready";
         };
@@ -2862,6 +2865,7 @@ export interface components {
         };
         readonly PersonFileList: {
             readonly files: readonly components["schemas"]["PersonFile"][];
+            readonly nextCursor?: string;
             /** @constant */
             readonly status: "ready";
         };
@@ -2991,6 +2995,7 @@ export interface components {
         };
         readonly PersonReminders: {
             readonly cadences: readonly components["schemas"]["StayInTouchCadence"][];
+            readonly nextCursor?: string;
             readonly reminders: readonly components["schemas"]["Reminder"][];
             /** @constant */
             readonly status: "ready";
@@ -4994,7 +4999,10 @@ export interface operations {
     };
     readonly listJournal: {
         readonly parameters: {
-            readonly query?: never;
+            readonly query?: {
+                readonly cursor?: string;
+                readonly limit?: number;
+            };
             readonly header?: {
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
@@ -5011,6 +5019,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["JournalTimelineList"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -7659,7 +7676,10 @@ export interface operations {
     };
     readonly listPersonFiles: {
         readonly parameters: {
-            readonly query?: never;
+            readonly query?: {
+                readonly cursor?: string;
+                readonly limit?: number;
+            };
             readonly header?: {
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
@@ -7678,6 +7698,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["PersonFileList"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -7985,7 +8014,11 @@ export interface operations {
     };
     readonly listPersonGiftsAndDebts: {
         readonly parameters: {
-            readonly query?: never;
+            readonly query?: {
+                readonly debtCursor?: string;
+                readonly giftCursor?: string;
+                readonly limit?: number;
+            };
             readonly header?: {
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
@@ -8004,6 +8037,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["GiftDebtList"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -8720,7 +8762,10 @@ export interface operations {
     };
     readonly listPersonReminders: {
         readonly parameters: {
-            readonly query?: never;
+            readonly query?: {
+                readonly cursor?: string;
+                readonly limit?: number;
+            };
             readonly header?: {
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
@@ -11473,9 +11518,9 @@ export interface operations {
         readonly parameters: {
             readonly query?: {
                 readonly cursor?: string;
+                readonly limit?: number;
                 readonly personId?: string;
                 readonly status?: "cancelled" | "completed" | "open";
-                readonly limit?: number;
             };
             readonly header?: {
                 /** @description Optional requested workspace; validated against active membership. */

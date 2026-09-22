@@ -20,7 +20,10 @@ import {
   personFileList,
   storageSettings,
 } from "../schemas/files.ts";
-import { uuid } from "../schemas/shared.ts";
+import { pageQuery, uuid } from "../schemas/shared.ts";
+
+/** What `listPersonFiles` accepts in the query string. */
+export const listPersonFilesQuery = pageQuery;
 
 export const listPersonFiles = defineRoute({
   method: "get",
@@ -31,6 +34,7 @@ export const listPersonFiles = defineRoute({
     params: z.object({
       personId: uuid,
     }),
+    query: listPersonFilesQuery,
     headers: workspaceHeaders,
   },
   responses: {
@@ -40,7 +44,7 @@ export const listPersonFiles = defineRoute({
         "application/json": personFileList,
       },
     },
-    ...problemResponses(401, 403, 404, 503),
+    ...problemResponses(400, 401, 403, 404, 503),
   },
 });
 

@@ -6,7 +6,7 @@
  */
 
 import type { ApiResult } from "./request.ts";
-import { request } from "./request.ts";
+import { pageQuery, request } from "./request.ts";
 import type {
   PersonTransitionInput,
   RelatedPersonRelationshipChanged,
@@ -49,12 +49,10 @@ export function listRelationships(
   input: RelationshipListInput = {},
   workspaceId?: string,
 ): Promise<ApiResult<RelationshipListPage>> {
-  const query = new URLSearchParams();
-  if (input.cursor) query.set("cursor", input.cursor);
-  if (input.limit) query.set("limit", String(input.limit));
-  const suffix = query.size ? `?${query.toString()}` : "";
   return request(
-    `/api/v1/people/${encodeURIComponent(personId)}/relationships${suffix}`,
+    `/api/v1/people/${encodeURIComponent(personId)}/relationships${
+      pageQuery(input)
+    }`,
     { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined },
   );
 }

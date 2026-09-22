@@ -85,7 +85,8 @@ export const reminder = z.strictObject({
 
 export const personReminders = z.strictObject({
   cadences: z.array(stayInTouchCadence).max(1),
-  reminders: z.array(reminder).max(100),
+  nextCursor: z.string().optional(),
+  reminders: z.array(reminder).max(50),
   status: z.literal("ready"),
 }).meta({ id: "PersonReminders" });
 
@@ -169,7 +170,7 @@ export const taskCreated = z.strictObject({
 }).meta({ id: "TaskCreated" });
 
 export const taskList = z.strictObject({
-  items: z.array(task).max(100),
+  items: z.array(task).max(50),
   nextCursor: z.string().optional(),
   status: z.literal("ready"),
 }).meta({ id: "TaskList" });

@@ -58,7 +58,7 @@ Deno.test("PLANNING-001 OpenAPI keeps task mutation and projection boundaries st
     );
   }
   assert(
-    document.components.schemas.TaskList?.properties?.items?.maxItems === 100 &&
+    document.components.schemas.TaskList?.properties?.items?.maxItems === 50 &&
       document.components.schemas.TaskList?.properties?.nextCursor?.type ===
         "string" &&
       document.components.schemas.TodayTasks?.properties?.items?.maxItems ===

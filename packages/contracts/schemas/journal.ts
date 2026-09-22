@@ -144,7 +144,8 @@ export const journalPostUpdated = z.strictObject({
 }).meta({ id: "JournalPostUpdated" });
 
 export const journalTimelineList = z.strictObject({
-  activities: z.array(journalLinkableActivity),
-  items: z.array(journalTimelineItem),
+  activities: z.array(journalLinkableActivity).max(50),
+  items: z.array(journalTimelineItem).max(50),
+  nextCursor: z.string().optional(),
   status: z.literal("ready"),
 }).meta({ id: "JournalTimelineList" });

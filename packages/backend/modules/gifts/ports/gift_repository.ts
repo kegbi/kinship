@@ -13,6 +13,7 @@
  */
 
 import type { Failure } from "../../../shared-kernel/result.ts";
+import type { GiftPageAnchor } from "../domain/cursors.ts";
 import type {
   DebtDirection,
   DebtStatus,
@@ -79,8 +80,18 @@ export interface GiftRepository {
     | { readonly debt: StoredDebt; readonly status: "found" }
     | Failure<"archived-write-rejected" | "not-found">
   >;
+  /**
+   * One page of each collection.
+   *
+   * Both halves are asked for `limit` rows and told where they resume, and
+   * each answers with the anchor of the page after it when one exists — so
+   * "is there more" costs the same query rather than a second count.
+   */
   list(
     command: GiftActor & {
+      readonly debtAfter?: GiftPageAnchor;
+      readonly giftAfter?: GiftPageAnchor;
+      readonly limit: number;
       readonly personId: string;
       readonly transaction: GiftTransaction;
     },
@@ -88,6 +99,8 @@ export interface GiftRepository {
     | {
       readonly debts: readonly StoredDebt[];
       readonly gifts: readonly StoredGift[];
+      readonly nextDebt?: GiftPageAnchor;
+      readonly nextGift?: GiftPageAnchor;
       readonly status: "ready";
     }
     | Failure<"forbidden" | "not-found">

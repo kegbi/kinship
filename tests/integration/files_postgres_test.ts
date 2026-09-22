@@ -721,6 +721,91 @@ Deno.test({
     }
   },
 });
+Deno.test("[GAP-023] PostgreSQL pages a person's files behind a bound cursor", async () => {
+  const suffix = crypto.randomUUID();
+  const primary = await register(
+    `files-page-${suffix}@example.test`,
+    "Files pages",
+  );
+  const foreign = await register(
+    `files-page-foreign-${suffix}@example.test`,
+    "Files pages foreign",
+  );
+  const ada = await person(primary, "Ada");
+  const grace = await person(primary, "Grace");
+  const outsider = await person(foreign, "Outsider");
+  const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]);
+  const uploaded: string[] = [];
+  for (let index = 0; index < 3; index += 1) {
+    const response = await request(
+      primary,
+      `/api/v1/people/${ada}/files`,
+      "POST",
+      pdf,
+    );
+    const body = await response.json() as {
+      readonly file: { readonly fileId: string };
+    };
+    assert(response.status === 201, "a paged file uploads");
+    uploaded.push(body.file.fileId);
+  }
+  // One photo sorts ahead of the documents, and every row shares one instant,
+  // so the page boundary is decided by the kind and then by the identifier.
+  const photo = uploaded.at(-1)!;
+  await sql`
+    update crm.person_file_links set kind = 'photo'
+    where person_id = ${ada}::uuid and file_id = ${photo}::uuid
+  `;
+  await sql`
+    update crm.files set created_at = '2026-08-23T10:00:00Z'
+    where id = any(${uploaded}::uuid[])
+  `;
+  interface Page {
+    readonly files: readonly { readonly fileId: string }[];
+    readonly nextCursor?: string;
+  }
+  const first = await request(primary, `/api/v1/people/${ada}/files?limit=2`);
+  const firstBody = await first.json() as Page;
+  assert(
+    first.status === 200 && firstBody.files.length === 2 &&
+      firstBody.files[0]?.fileId === photo && firstBody.nextCursor,
+    "the first page did not lead with the photo and continue",
+  );
+  const cursor = encodeURIComponent(firstBody.nextCursor!);
+  const second = await request(
+    primary,
+    `/api/v1/people/${ada}/files?limit=2&cursor=${cursor}`,
+  );
+  const secondBody = await second.json() as Page;
+  const documents = uploaded.filter((id) => id !== photo).sort();
+  assert(
+    second.status === 200 && secondBody.files.length === 1 &&
+      !secondBody.nextCursor &&
+      JSON.stringify(
+          [...firstBody.files, ...secondBody.files].map((file) => file.fileId),
+        ) === JSON.stringify([photo, ...documents]),
+    "the file continuation dropped, repeated, or reordered a file",
+  );
+  for (
+    const [fixture, subject, query] of [
+      [primary, grace, `cursor=${cursor}`],
+      [foreign, outsider, `cursor=${cursor}`],
+      [primary, ada, "cursor=not-a-cursor"],
+      [primary, ada, "limit=0"],
+    ] as const
+  ) {
+    const refused = await request(
+      fixture,
+      `/api/v1/people/${subject}/files?${query}`,
+    );
+    const problem = await refused.json() as { readonly code?: string };
+    assert(
+      refused.status === 400 && problem.code === "file_query_invalid",
+      `${query} against another listing was answered: ${refused.status}`,
+    );
+  }
+});
+
 Deno.test({
   name: "FILES-001 PostgreSQL resources close",
   sanitizeOps: false,

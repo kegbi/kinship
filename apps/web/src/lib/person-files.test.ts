@@ -21,6 +21,7 @@ function markup(): void {
       <p data-file-state></p>
       <button data-file-refresh type="button" hidden>Retry loading</button>
       <ul data-file-list></ul>
+      <button data-load-more="files" hidden>Load more files</button>
       <button data-file-add hidden>Add</button>
       <form data-file-form hidden>
         <input name="title" />
@@ -35,6 +36,86 @@ function markup(): void {
 afterEach(() => {
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
+});
+
+function storedFile(overrides: Record<string, unknown> = {}) {
+  return {
+    byteSize: 20,
+    createdAt: "2026-08-23T08:00:00.000Z",
+    fileId,
+    filename: "care.pdf",
+    kind: "document",
+    mimeType: "application/pdf",
+    personId,
+    status: "available",
+    title: "Care plan",
+    ...overrides,
+  };
+}
+
+describe("GAP-023 person file paging", () => {
+  it("appends the next page and retires the control when the last one answers", async () => {
+    markup();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({
+        files: [storedFile({ title: "First page" })],
+        nextCursor: "file-cursor",
+        status: "ready",
+      }))
+      .mockResolvedValueOnce(response({
+        files: [
+          storedFile({
+            fileId: "00000000-0000-4000-8000-000000000009",
+            title: "Second page",
+          }),
+        ],
+        status: "ready",
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    await mountPersonFiles({ archived: false, personId, workspaceId });
+    const more = document.querySelector<HTMLButtonElement>(
+      '[data-load-more="files"]',
+    )!;
+    expect(more.hidden).toBe(false);
+    more.click();
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain("Second page")
+    );
+    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toContain(
+      "cursor=file-cursor",
+    );
+    expect(document.body.textContent).toContain("First page");
+    expect(more.hidden).toBe(true);
+  });
+
+  it("hides the control when a continued page fails", async () => {
+    markup();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({
+        files: [storedFile()],
+        nextCursor: "file-cursor",
+        status: "ready",
+      }))
+      .mockResolvedValueOnce(
+        response({
+          code: "file_query_invalid",
+          detail: "Reload the first page of files before continuing.",
+          status: 400,
+          title: "Invalid file query",
+          type: "problem",
+        }, 400),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    await mountPersonFiles({ archived: false, personId, workspaceId });
+    const more = document.querySelector<HTMLButtonElement>(
+      '[data-load-more="files"]',
+    )!;
+    more.click();
+    await vi.waitFor(() => expect(more.hidden).toBe(true));
+    expect(document.body.textContent).toContain(
+      "Reload the first page of files before continuing.",
+    );
+  });
 });
 
 describe("FILES-001 person profile files", () => {

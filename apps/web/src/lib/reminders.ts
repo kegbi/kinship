@@ -3,6 +3,7 @@ import {
   loadTimePreferences,
   type TimePreferences,
 } from "./time-presentation.ts";
+import { mountLoadMore } from "./load-more.ts";
 import { markFormSaved, saveWithLockedForm } from "./unsaved-changes.ts";
 import {
   createReminder,
@@ -70,6 +71,9 @@ function reminderItem(
   return item;
 }
 
+/** The reminders already on screen, which a continued page appends to. */
+type ReminderRow = Parameters<typeof reminderItem>[0];
+
 export async function mountPersonReminders(options: {
   readonly timePreferences?: TimePreferences | undefined;
   readonly archived: boolean;
@@ -133,6 +137,10 @@ export async function mountPersonReminders(options: {
     "[type=submit]",
   );
   let lifecycleArchived = options.archived;
+  let loadedReminders: ReminderRow[] = [];
+  // The loader is looked up when the control is pressed, by which time
+  // `load` below exists.
+  const more = mountLoadMore("reminders", (cursor) => load(false, cursor));
   let reminderRequestId: string | undefined;
   let cadenceRequestId: string | undefined;
   let busy = false;
@@ -157,7 +165,7 @@ export async function mountPersonReminders(options: {
     setBusy(true);
     return true;
   };
-  const load = async (refreshSummary = false) => {
+  const load = async (refreshSummary = false, cursor?: string) => {
     reminderAdd?.setAttribute("hidden", "");
     cadenceAdd?.setAttribute("hidden", "");
     if (reminderSection) reminderSection.dataset.sectionState = "loading";
@@ -170,9 +178,11 @@ export async function mountPersonReminders(options: {
     }
     setRailEmpty("stay-in-touch", false);
     const [result, summary] = await Promise.all([
-      listPersonReminders(options.personId, options.workspaceId).catch(() =>
-        undefined
-      ),
+      listPersonReminders(
+        options.personId,
+        options.workspaceId,
+        cursor ? { cursor } : {},
+      ).catch(() => undefined),
       // The list is bounded and includes delivery history; only the profile
       // summary knows the next pending reminder across all records.
       refreshSummary
@@ -192,6 +202,7 @@ export async function mountPersonReminders(options: {
         : "Unavailable";
     }
     if (!result?.ok) {
+      more.present(undefined);
       if (cadenceHero) cadenceHero.textContent = "Unavailable";
       if (reminderSection) reminderSection.dataset.sectionState = "error";
       if (cadenceSection) cadenceSection.dataset.sectionState = "error";
@@ -217,8 +228,12 @@ export async function mountPersonReminders(options: {
         setBusy(false);
       }
     };
+    loadedReminders = cursor
+      ? [...loadedReminders, ...result.value.reminders]
+      : [...result.value.reminders];
+    more.present(result.value.nextCursor);
     reminderList.replaceChildren(
-      ...result.value.reminders.map((item) =>
+      ...loadedReminders.map((item) =>
         reminderItem(
           item,
           !lifecycleArchived,
@@ -227,15 +242,15 @@ export async function mountPersonReminders(options: {
         )
       ),
     );
-    reminderState.textContent = result.value.reminders.length >= 100
-      ? `Showing first ${result.value.reminders.length} reminders.`
-      : result.value.reminders.length
-      ? `${result.value.reminders.length} reminder${
-        result.value.reminders.length === 1 ? "" : "s"
+    reminderState.textContent = result.value.nextCursor
+      ? `Showing first ${loadedReminders.length} reminders.`
+      : loadedReminders.length
+      ? `${loadedReminders.length} reminder${
+        loadedReminders.length === 1 ? "" : "s"
       }.`
       : "No reminders yet.";
     if (reminderSection) {
-      reminderSection.dataset.sectionState = result.value.reminders.length === 0
+      reminderSection.dataset.sectionState = loadedReminders.length === 0
         ? "empty"
         : "ready";
     }

@@ -25,6 +25,7 @@ import {
   getStorageSettings,
   getStorageSettingsQuery,
   listPersonFiles,
+  listPersonFilesQuery,
   removePersonFile,
   uploadPersonFile,
 } from "../../packages/contracts/routes/files.ts";
@@ -98,6 +99,12 @@ export const FILE_FAILURES: FailureTable = {
       detail: "This file cannot be opened while it is quarantined.",
       status: 423,
       title: "File quarantined",
+    },
+    "query-invalid": {
+      code: "file_query_invalid",
+      detail: "Reload the first page of files before continuing.",
+      status: 400,
+      title: "Invalid file query",
     },
     "rejected-media": {
       code: "file_media_rejected",
@@ -255,14 +262,26 @@ export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
   mount(routes, listPersonFiles, session, async (context) => {
     const personId = parseValue(uuid, context.req.param("personId"));
     if ("errors" in personId) return failure(context, "not-found");
+    const query = parseQuery(context, listPersonFilesQuery);
+    if ("errors" in query) return failure(context, "query-invalid");
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
-    const result = await services.files.list(actor, personId.data).catch(
+    const result = await services.files.list(actor, personId.data, {
+      ...(query.data.cursor ? { cursor: query.data.cursor } : {}),
+      limit: query.data.limit,
+    }).catch(
       () => ({ status: "unavailable" as const }),
     );
+    if (result.status === "validation-error") {
+      return failure(context, "query-invalid");
+    }
     if (result.status !== "ready") return failure(context, result);
     context.header("Cache-Control", "private, no-store");
-    return context.json({ files: result.files, status: "ready" });
+    return context.json({
+      files: result.files,
+      ...(result.nextCursor ? { nextCursor: result.nextCursor } : {}),
+      status: "ready",
+    });
   });
 
   mount(

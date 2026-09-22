@@ -12,6 +12,7 @@ interface Row {
   activity_summary: string | null;
   body: string | null;
   comment: string | null;
+  created_at: string;
   day_rating_id: string | null;
   id: string;
   journal_post_id: string | null;
@@ -34,11 +35,14 @@ export class PostgresJournalTimelineRepository
 
   async read(
     actor: Parameters<JournalTimelineRepository["read"]>[0],
-    itemId?: string,
+    query: Parameters<JournalTimelineRepository["read"]>[1],
   ): Promise<Awaited<ReturnType<JournalTimelineRepository["read"]>>> {
+    const itemId = query.itemId;
+    const after = query.after;
     const result = await sql<Row>`
       select item.id::text,
         ${instantColumn("item.occurred_at")} as occurred_at,
+        ${instantColumn("item.created_at")} as created_at,
         item.activity_id::text, activity.summary as activity_summary,
         item.journal_post_id::text, post.title, post.body,
         ${instantColumn("post.updated_at")} as updated_at,
@@ -51,10 +55,19 @@ export class PostgresJournalTimelineRepository
         and (${itemId ?? null}::uuid is null or item.id = ${
       itemId ?? null
     }::uuid)
+        ${
+      after
+        ? sql`and (item.occurred_at, item.created_at, item.id)
+          < (${after.occurredAt}::timestamptz, ${after.createdAt}::timestamptz,
+            ${after.id}::uuid)`
+        : sql``
+    }
       order by item.occurred_at desc, item.created_at desc, item.id desc
-      limit ${itemId ? 1 : 200}
+      limit ${itemId ? 1 : query.limit + 1}
     `.execute(this.database);
     if (itemId && !result.rows[0]) return { status: "not-found" };
+    const page = itemId ? result.rows : result.rows.slice(0, query.limit);
+    const final = page.at(-1);
     const activities = itemId ? [] : (await sql<ActivityRow>`
         select activity.id::text, activity.summary,
           ${instantColumn("activity.happened_at")} as happened_at
@@ -74,7 +87,16 @@ export class PostgresJournalTimelineRepository
     }));
     return {
       activities,
-      items: result.rows.map((row): JournalTimelineItem => {
+      ...(!itemId && result.rows.length > query.limit && final
+        ? {
+          next: {
+            createdAt: final.created_at,
+            id: final.id,
+            occurredAt: final.occurred_at,
+          },
+        }
+        : {}),
+      items: page.map((row): JournalTimelineItem => {
         if (row.journal_post_id && row.body && row.updated_at) {
           return {
             id: row.id,

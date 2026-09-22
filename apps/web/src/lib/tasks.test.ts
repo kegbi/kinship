@@ -64,7 +64,7 @@ function surfaceMarkup(global = false): void {
       <select name="status"><option value="open">Open</option><option value="cancelled">Cancelled</option></select>
       <p data-task-form-state></p><button type="submit">Save</button><button data-task-cancel type="button">Cancel</button>
     </form>
-    <ul data-task-open-list></ul><ul data-task-completed-list></ul><ul data-task-cancelled-list></ul><button data-task-more>Load more tasks</button>`;
+    <ul data-task-open-list></ul><ul data-task-completed-list></ul><ul data-task-cancelled-list></ul><button data-load-more="tasks" hidden>Load more tasks</button>`;
 }
 
 function todayMarkup(): void {
@@ -508,7 +508,11 @@ describe("PLANNING-001 task browser behavior", () => {
       .mockResolvedValueOnce(response({ items: [later], status: "ready" }));
     vi.stubGlobal("fetch", fetchMock);
     await mountTaskSurface({ workspaceId });
-    document.querySelector<HTMLButtonElement>("[data-task-more]")!.click();
+    const more = document.querySelector<HTMLButtonElement>(
+      '[data-load-more="tasks"]',
+    )!;
+    expect(more.hidden).toBe(false);
+    more.click();
     await vi.waitFor(() =>
       expect(document.querySelector("[data-task-open-list]")?.textContent)
         .toContain("Task 101")

@@ -2,6 +2,10 @@ import { sql } from "kysely";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
+import {
+  personFileKindRank,
+  type PersonFilePageAnchor,
+} from "../../domain/cursors.ts";
 import type {
   PersonFileKind,
   PersonFileStatus,
@@ -23,6 +27,11 @@ interface FileRow {
   readonly title: string;
 }
 
+/** The list projection, which also reads the member's own ordering. */
+interface ListedFileRow extends FileRow {
+  readonly sort_order: number | string;
+}
+
 function file(row: FileRow): StoredPersonFile {
   return {
     byteSize: Number(row.byte_size),
@@ -38,6 +47,9 @@ function file(row: FileRow): StoredPersonFile {
     title: row.title,
   };
 }
+
+/** Photos before documents, written once for the filter and the order. */
+const kindRank = sql`case link.kind when 'photo' then 0 else 1 end`;
 
 const selectedColumns = sql`
   stored.id::text as file_id, link.person_id::text,
@@ -171,17 +183,48 @@ export class PostgresFileMetadataRepository implements FileMetadataRepository {
       where ${ownedPerson(command)} and person.deleted_at is null
     `.execute(database);
     if (!authorized.rows[0]) return { status: "not-found" };
-    const result = await sql<FileRow>`
-      select ${selectedColumns}
+    const after = command.after;
+    const anchorRank = after ? personFileKindRank(after.kind) : 0;
+    const result = await sql<ListedFileRow>`
+      select ${selectedColumns}, link.sort_order
       from crm.person_file_links link
       join crm.files stored on stored.id = link.file_id
         and stored.workspace_id = ${command.workspaceId}::uuid
       where link.person_id = ${command.personId}::uuid
         and stored.deleted_at is null and stored.status <> 'deleted'
-      order by case link.kind when 'photo' then 0 else 1 end,
+        ${
+      after
+        ? sql`and (
+          ${kindRank} > ${anchorRank}
+          or (${kindRank} = ${anchorRank} and (
+            link.sort_order > ${after.sortOrder}
+            or (link.sort_order = ${after.sortOrder} and (
+              stored.created_at < ${after.createdAt}::timestamptz
+              or (stored.created_at = ${after.createdAt}::timestamptz
+                and stored.id > ${after.fileId}::uuid)))))
+        )`
+        : sql``
+    }
+      order by ${kindRank},
         link.sort_order, stored.created_at desc, stored.id
+      limit ${command.limit + 1}
     `.execute(database);
-    return { files: result.rows.map(file), status: "ready" };
+    const page = result.rows.slice(0, command.limit);
+    const final = page.at(-1);
+    return {
+      files: page.map(file),
+      ...(result.rows.length > command.limit && final
+        ? {
+          next: {
+            createdAt: final.created_at,
+            fileId: final.file_id,
+            kind: final.kind,
+            sortOrder: Number(final.sort_order),
+          } satisfies PersonFilePageAnchor,
+        }
+        : {}),
+      status: "ready",
+    };
   }
 
   async markMissing(

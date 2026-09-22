@@ -6,7 +6,7 @@
  */
 
 import type { ApiResult } from "./request.ts";
-import { request } from "./request.ts";
+import { pageQuery, request } from "./request.ts";
 import type {
   JournalDayRatingInput,
   JournalItemType,
@@ -15,20 +15,29 @@ import type {
   JournalStoredDayRating,
   JournalStoredPost,
   JournalTimelineItem,
+  PageInput,
 } from "./types.ts";
 
+/**
+ * One page of the journal.
+ *
+ * The page argument trails the workspace so the one-argument call every
+ * caller already made keeps its meaning; a first page names neither.
+ */
 export function listJournal(
   workspaceId?: string,
+  input: PageInput = {},
 ): Promise<
   ApiResult<
     {
       readonly activities: readonly JournalLinkableActivity[];
       readonly items: readonly JournalTimelineItem[];
+      readonly nextCursor?: string;
       readonly status: "ready";
     }
   >
 > {
-  return request("/api/v1/journal", {
+  return request(`/api/v1/journal${pageQuery(input)}`, {
     headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
   });
 }

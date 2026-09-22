@@ -1,5 +1,6 @@
 ---
 import ApplicationLayout from "../../layouts/ApplicationLayout.astro";
+import LoadMore from "../../components/LoadMore.astro";
 import SectionIcon, { type SectionIconName } from "../../components/SectionIcon.astro";
 
 export const prerender = true;
@@ -639,7 +640,7 @@ const railSections = [
                   <div><h4>Open</h4><ul data-task-open-list class="task-list" aria-label="Open person tasks"></ul></div>
                   <div><h4>Completed</h4><ul data-task-completed-list class="task-list" aria-label="Completed person tasks"></ul></div>
                   <div><h4>Cancelled</h4><ul data-task-cancelled-list class="task-list" aria-label="Cancelled person tasks"></ul></div>
-                  <button data-task-more class="button-secondary" type="button" hidden>Load more tasks</button>
+                  <LoadMore list="tasks" label="Load more tasks" />
                 </div>
               </section>
             )
@@ -659,7 +660,8 @@ const railSections = [
                   <button data-reminder-add class="button-primary profile-section-cta" type="button" hidden>Add reminder</button>
                 </header>
                 <p data-reminder-state class="section-state"><span class="sr-only">Loading reminders…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
-                <ul data-reminder-list class="task-list reminder-list" aria-label="Person reminders"></ul>
+                <ul id="person-reminder-list" data-reminder-list class="task-list reminder-list" aria-label="Person reminders"></ul>
+                <LoadMore list="reminders" label="Load more reminders" controls="person-reminder-list" />
                 <form data-reminder-form class="profile-fact-form" hidden novalidate>
                   <label>Title <input name="title" maxlength="500" required /></label>
                   <label>First date <input name="anchorOn" type="date" required /></label>
@@ -699,7 +701,8 @@ const railSections = [
                 </header>
                 <p data-gift-state class="section-state"><span class="sr-only">Loading {title.toLowerCase()}…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
                 <button data-gift-retry class="button-secondary" type="button" hidden>Retry loading</button>
-                <ul data-gift-list class="person-file-list" aria-label={`Saved ${title.toLowerCase()}`}></ul>
+                <ul id={`${id}-list`} data-gift-list class="person-file-list" aria-label={`Saved ${title.toLowerCase()}`}></ul>
+                <LoadMore list={id} label={`Load more ${title.toLowerCase()}`} controls={`${id}-list`} />
                 <form data-gift-form class="profile-fact-form" hidden novalidate>
                   {id === "gifts"
                     ? (
@@ -774,7 +777,8 @@ const railSections = [
                 </header>
                 <p data-file-state class="section-state"><span class="sr-only">Loading {title.toLowerCase()}…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
                 <button data-file-refresh class="button-secondary" type="button" hidden>Retry loading</button>
-                <ul data-file-list class="person-file-list" aria-label={`Saved ${title.toLowerCase()}`}></ul>
+                <ul id={`${id}-list`} data-file-list class="person-file-list" aria-label={`Saved ${title.toLowerCase()}`}></ul>
+                <LoadMore list="files" label="Load more files" controls={`${id}-list`} />
                 <form data-file-form class="profile-fact-form" hidden novalidate>
                   <label>Title <input name="title" maxlength="500" required /></label>
                   <label>

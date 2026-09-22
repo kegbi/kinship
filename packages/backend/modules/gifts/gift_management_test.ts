@@ -2,6 +2,7 @@ import { describeGiftEvent } from "./application/audit_events.ts";
 import {
   createGiftManagement,
   type GiftManagementDependencies,
+  type GiftRepository,
   type StoredDebt,
   type StoredGift,
 } from "./public.ts";
@@ -22,7 +23,12 @@ const personId = "10000000-0000-4000-8000-000000000004";
 const recipientPersonId = "10000000-0000-4000-8000-000000000005";
 const fileId = "10000000-0000-4000-8000-000000000006";
 
-function fixture(options: { readonly attachmentDisappears?: boolean } = {}) {
+function fixture(
+  options: {
+    readonly attachmentDisappears?: boolean;
+    readonly list?: GiftRepository["list"];
+  } = {},
+) {
   const gifts = new Map<string, StoredGift>();
   const debts = new Map<string, StoredDebt>();
   const attachments: string[] = [];
@@ -123,12 +129,12 @@ function fixture(options: { readonly attachmentDisappears?: boolean } = {}) {
           gift ? { gift, status: "found" } : { status: "not-found" },
         );
       },
-      list: () =>
+      list: options.list ?? (() =>
         Promise.resolve({
           debts: [...debts.values()],
           gifts: [...gifts.values()],
           status: "ready",
-        }),
+        })),
       saveDebt: (command) => {
         const current = debts.get(command.id)!;
         const debt = {
@@ -515,4 +521,68 @@ Deno.test("GIFTS-006 the gift event pins the row governance writes", () => {
     visibleOnDashboard: true,
     workspaceId: actor.workspaceId,
   });
+});
+
+Deno.test("[GAP-023] gifts and debts page independently behind bound cursors", async () => {
+  const anchor = {
+    id: "10000000-0000-4000-8000-0000000000aa",
+    updatedAt: "2026-08-23T10:00:00.000000Z",
+  };
+  const asked: string[] = [];
+  const { management } = fixture({
+    list: (command) => {
+      asked.push(
+        `${command.giftAfter?.id ?? "-"} ${
+          command.debtAfter?.id ?? "-"
+        } ${command.limit}`,
+      );
+      return Promise.resolve({
+        debts: [],
+        gifts: [],
+        ...(command.debtAfter ? {} : { nextDebt: anchor }),
+        ...(command.giftAfter ? {} : { nextGift: anchor }),
+        status: "ready",
+      });
+    },
+  });
+  const first = await management.list(actor, personId);
+  if (
+    first.status !== "ready" || !first.nextGiftCursor || !first.nextDebtCursor
+  ) throw new Error("both collections should publish a continuation");
+  const gifts = await management.list(actor, personId, {
+    giftCursor: first.nextGiftCursor,
+    limit: 500,
+  });
+  assertEquals(
+    gifts.status === "ready" &&
+      [gifts.nextGiftCursor === undefined, gifts.nextDebtCursor !== undefined],
+    [true, true],
+  );
+  const debts = await management.list(actor, personId, {
+    debtCursor: first.nextDebtCursor,
+    limit: 3,
+  });
+  assertEquals(debts.status, "ready");
+  for (
+    const [who, subject, input] of [
+      [actor, personId, { giftCursor: first.nextDebtCursor }],
+      [actor, personId, { debtCursor: first.nextGiftCursor }],
+      [actor, personId, { giftCursor: "forged" }],
+      [actor, recipientPersonId, { giftCursor: first.nextGiftCursor }],
+      [
+        { ...actor, workspaceId: "10000000-0000-4000-8000-0000000000ff" },
+        personId,
+        { debtCursor: first.nextDebtCursor },
+      ],
+    ] as const
+  ) {
+    assertEquals(await management.list(who, subject, input), {
+      status: "validation-error",
+    });
+  }
+  assertEquals(asked, [
+    "- - 20",
+    `${anchor.id} - 50`,
+    `- ${anchor.id} 3`,
+  ]);
 });

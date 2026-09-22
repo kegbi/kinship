@@ -943,9 +943,9 @@ Deno.test("collection parameters are unique and publish exact runtime limits", (
     peopleLimit?.maximum === 50 &&
       acceptsProperty(document.components.schemas, peopleLimit, 50) &&
       !acceptsProperty(document.components.schemas, peopleLimit, 51) &&
-      limit?.maximum === 20 &&
-      acceptsProperty(document.components.schemas, limit, 20) &&
-      !acceptsProperty(document.components.schemas, limit, 21),
+      limit?.maximum === 50 &&
+      acceptsProperty(document.components.schemas, limit, 50) &&
+      !acceptsProperty(document.components.schemas, limit, 51),
     "people and relationship list limits diverge from runtime",
   );
 });

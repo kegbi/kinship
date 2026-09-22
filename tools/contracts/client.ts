@@ -52,11 +52,12 @@ const DECLARATION =
 /**
  * What the client modules share with each other but not with a caller.
  *
- * `request` and `workspaceHeader` have to be exported for the surface modules
- * to use them, and they were never part of the client's published surface. The
- * barrel leaves them out so `apps/web` sees exactly the names it saw before.
+ * `request`, `workspaceHeader`, and `pageQuery` have to be exported for the
+ * surface modules to use them, and none of them was ever part of the client's
+ * published surface. The barrel leaves them out so `apps/web` sees exactly the
+ * names it saw before.
  */
-const INTERNAL = new Set(["request", "workspaceHeader"]);
+const INTERNAL = new Set(["pageQuery", "request", "workspaceHeader"]);
 
 /** What one client module exports, split into what survives to runtime and what does not. */
 export interface ModuleExports {

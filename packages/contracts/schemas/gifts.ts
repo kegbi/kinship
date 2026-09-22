@@ -81,9 +81,20 @@ export const giftCreated = z.strictObject({
   status: z.literal("created"),
 }).meta({ id: "GiftCreated" });
 
+/**
+ * One person's gifts and debts.
+ *
+ * The two collections page independently inside one answer, which is what the
+ * profile page needs: the gift section and the debt section are separate cards
+ * that extend separately, and neither should have to refetch the other to grow.
+ * Each therefore carries its own continuation, present only while that
+ * collection has more rows.
+ */
 export const giftDebtList = z.strictObject({
-  debts: z.array(debt),
-  gifts: z.array(gift),
+  debts: z.array(debt).max(50),
+  gifts: z.array(gift).max(50),
+  nextDebtCursor: z.string().optional(),
+  nextGiftCursor: z.string().optional(),
   status: z.literal("ready"),
   supportedCurrencyCodes: z.array(z.string().regex(/^[A-Z]{3}$/)),
 }).meta({ id: "GiftDebtList" });

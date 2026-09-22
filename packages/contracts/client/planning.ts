@@ -6,10 +6,11 @@
  */
 
 import type { ApiResult } from "./request.ts";
-import { request } from "./request.ts";
+import { pageQuery, request } from "./request.ts";
 import { parseTodayAttention, parseTodayReminders } from "./today.ts";
 import type {
   CadenceCreateInput,
+  PageInput,
   PersonReminders,
   Reminder,
   ReminderCreateInput,
@@ -31,12 +32,10 @@ export function listTasks(
   } = {},
   workspaceId?: string,
 ): Promise<ApiResult<TaskList>> {
-  const query = new URLSearchParams();
-  if (input.cursor) query.set("cursor", input.cursor);
-  if (input.limit) query.set("limit", String(input.limit));
-  if (input.personId) query.set("personId", input.personId);
-  if (input.status) query.set("status", input.status);
-  const suffix = query.size ? `?${query.toString()}` : "";
+  const suffix = pageQuery(input, {
+    personId: input.personId,
+    status: input.status,
+  });
   return request(`/api/v1/tasks${suffix}`, {
     headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
   });
@@ -89,13 +88,23 @@ export function getTodayTasks(
   });
 }
 
+/**
+ * One page of a person's reminders, with the person's cadence.
+ *
+ * The page argument trails the workspace so the two-argument call every
+ * caller already made keeps its meaning; a first page names neither.
+ */
 export function listPersonReminders(
   personId: string,
   workspaceId?: string,
+  input: PageInput = {},
 ): Promise<ApiResult<PersonReminders>> {
-  return request(`/api/v1/people/${encodeURIComponent(personId)}/reminders`, {
-    headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
-  });
+  return request(
+    `/api/v1/people/${encodeURIComponent(personId)}/reminders${
+      pageQuery(input)
+    }`,
+    { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined },
+  );
 }
 
 export function createReminder(

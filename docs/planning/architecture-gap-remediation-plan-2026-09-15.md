@@ -892,7 +892,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     with only the four parked failures; gates fmt:check, lint, check,
     check:architecture.
 
-- [ ] **GAP-023 — Pagination and response conventions.** M. Depends: 022.
+- [x] **GAP-023 — Pagination and response conventions.** M. Depends: 022.
   - Scope: cursor pagination (`limit` 1-50, `cursor`, `nextCursor`) for tasks,
     gifts, debts, relationships, files, reminders, journal lists using the
     kernel codec; document response and timestamp conventions in
@@ -901,6 +901,32 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     control via the core kit (GAP-026 may land first; otherwise a minimal
     control).
   - Verify: contract tests updated; E2E for tasks and profile sections green.
+  - Delivered 2026-09-23: `docs/architecture/backend-architecture.md` gains
+    `## Pagination` (`limit` 1-50 default 20, opaque `cursor` of at most 2,000
+    characters, `next…Cursor` only when more rows exist, `limit + 1` reads, a
+    stable key pair ending in the row id, workspace and person bound into the
+    cursor, 400 `*_query_invalid` for a malformed or foreign cursor while tasks
+    keep 409 `task_cursor_stale`) and `## Response and Timestamp Conventions`;
+    `packages/contracts/schemas/shared.ts` publishes `pageQuery`; new plain
+    kernel-codec cursors in `files`, `gifts`, and `journal` `domain/cursors.ts`
+    and a reminder cursor beside the signed task cursor in
+    `planning/domain/cursors.ts`; tasks 100/100 to 20/50, relationships 20/20 to
+    20/50, gifts and debts from unbounded to one endpoint with
+    `giftCursor`/`debtCursor` and `nextGiftCursor`/`nextDebtCursor`, files and
+    reminders from unbounded or fixed 100 to 20/50, and the journal from a fixed
+    200 to 20/50; the authored client gains a trailing optional page argument
+    with the 124 names unchanged; the settings use case returns ISO session
+    timestamps and the route passes them through byte-identically;
+    `apps/web/src/components/LoadMore.astro` and `lib/load-more.ts` (focus kept
+    during a load, handed to the list when the last page hides the control)
+    drive tasks, gifts, debts, files, reminders, and the journal; the gift
+    attachment picker now reads the first 50 files; 81 files changed
+    (+2714/-253) plus 9 new files (867 lines); unit 734 vitest plus all sets
+    green, integration 130/0, every coverage set unchanged or higher against
+    main except `lifecycle`, which dipped only in the REL-038 file;
+    `contracts:generate` idempotent, `contracts:check` 123 documented and 126
+    mounted, build green, Chromium E2E 53 passed with only the four parked
+    failures; gates fmt:check, lint, check, check:architecture (14).
 
 - [ ] **GAP-024 — Move routes into module `transport/http/`.** L. Depends:
       013, 021. Contract alignment; may be deferred after Phase 4 if capacity is
