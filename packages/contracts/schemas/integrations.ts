@@ -49,7 +49,7 @@ export const davSubscriptionDisabled = z.strictObject({
  * `max` counts characters and the document publishes that number; the refine
  * counts the UTF-8 bytes the same string encodes to, which is the limit the
  * DAV module stores against. A URL of 2048 astral characters passes the first
- * and fails the second, and that is the refusal `apps/api/integrations` has
+ * and fails the second, and that is the refusal the integrations routes have
  * always answered with.
  */
 const REMOTE_URL_MAX_BYTES = 2048;

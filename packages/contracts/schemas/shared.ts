@@ -1,7 +1,7 @@
 /**
  * What every surface answers with.
  *
- * `Problem` is RFC 9457 as `apps/api/http/problem.ts` writes it, and it is the
+ * `Problem` is RFC 9457 as `packages/http-kit/problem.ts` writes it, and it is the
  * body behind 574 of this API's documented answers. It lives here rather than
  * in a domain file because a refusal belongs to no one domain, and because the
  * generator has to be able to name it once.

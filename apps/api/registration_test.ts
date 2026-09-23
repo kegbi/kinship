@@ -1,5 +1,5 @@
 import { createApiApp } from "./composition.ts";
-import type { RegistrationHttpServices } from "./registration.ts";
+import type { RegistrationHttpServices } from "../../packages/backend/modules/workspaces/transport/http/routes.ts";
 import { RegistrationError } from "../../packages/backend/modules/workspaces/public.ts";
 import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
 

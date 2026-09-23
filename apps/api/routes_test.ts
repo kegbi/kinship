@@ -15,7 +15,7 @@
  */
 
 import { createApiApp } from "./composition.ts";
-import { mountedRoutes } from "./http/route.ts";
+import { mountedRoutes } from "../../packages/http-kit/route.ts";
 import {
   API_ROUTES,
   DOCUMENTED_ROUTES,

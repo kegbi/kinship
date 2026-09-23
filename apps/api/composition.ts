@@ -8,6 +8,10 @@
  * the personalization router, the DAV bridges into people and planning, and
  * planning's hook into a settings timezone change.
  *
+ * The routes are not here either. Each module owns its own in
+ * `transport/http/routes.ts`, built on `packages/http-kit`, and this root
+ * imports that one file per module and mounts what it returns.
+ *
  * `createApiApp` is the route wiring and takes services; `createConfiguredApiApp`
  * is the real deployment; `createApiRuntime` reads the environment and is what
  * `main.ts` serves.
@@ -136,59 +140,67 @@ import type {
   TodayReminders,
   TodayTasks,
 } from "../../packages/backend/read-models/today/public.ts";
-import { createApiTokenRoutes } from "./api_tokens.ts";
+import { createApiTokenRoutes } from "../../packages/backend/modules/api-access/transport/http/routes.ts";
+import { createFileRoutes } from "../../packages/backend/modules/files/transport/http/routes.ts";
+import { createGiftRoutes } from "../../packages/backend/modules/gifts/transport/http/routes.ts";
+import {
+  createGovernanceRoutes,
+  createLegalRequirementGuard,
+} from "../../packages/backend/modules/governance/transport/http/routes.ts";
+import {
+  createExportRoutes,
+  createImportRoutes,
+} from "../../packages/backend/modules/import-export/transport/http/routes.ts";
+import { createIntegrationRoutes } from "../../packages/backend/modules/integrations/transport/http/routes.ts";
+import { createInteractionRoutes } from "../../packages/backend/modules/interactions/transport/http/routes.ts";
+import { createJournalRoutes } from "../../packages/backend/modules/journal/transport/http/routes.ts";
+import {
+  createPeopleRoutes,
+  type PeopleHttpServices,
+} from "../../packages/backend/modules/people/transport/http/routes.ts";
+import { createPlanningRoutes } from "../../packages/backend/modules/planning/transport/http/routes.ts";
+import { createRelationshipRoutes } from "../../packages/backend/modules/relationships/transport/http/routes.ts";
 import {
   type AuthenticationHttpServices,
   createAuthenticationRoutes,
-} from "./authentication.ts";
+  createInvitationRoutes,
+  createPersonalLifecycleRoutes,
+  createRegistrationRoutes,
+  createSettingsRoutes,
+  createWorkspaceLifecycleRoutes,
+  type InvitationHttpServices,
+  type PersonalLifecycleHttpServices,
+  type RegistrationHttpServices,
+  type SettingsHttpServices,
+  type WorkspaceLifecycleHttpServices,
+} from "../../packages/backend/modules/workspaces/transport/http/routes.ts";
+import {
+  JSON_BODY_MAX_BYTES,
+  requestBodyLimit,
+} from "../../packages/http-kit/body_limit.ts";
+import { sameOriginCors } from "../../packages/http-kit/cors.ts";
+import { healthRoutes } from "../../packages/http-kit/health.ts";
+import {
+  type Logger,
+  requestLogging,
+  stderrLogger,
+} from "../../packages/http-kit/logging.ts";
+import {
+  requestId,
+  type RequestIdEnv,
+} from "../../packages/http-kit/request_id.ts";
+import { apiSecureHeaders } from "../../packages/http-kit/secure_headers.ts";
 import {
   createAuthenticationResponseEqualizer,
   DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
   resolveAuthenticationResponseFloor,
 } from "./authentication_response.ts";
-import { createExportRoutes } from "./exports.ts";
 import { resolveObjectStorageConfiguration } from "./file_storage_config.ts";
-import { createFileRoutes } from "./files.ts";
-import { createGiftRoutes } from "./gifts.ts";
-import {
-  createGovernanceRoutes,
-  createLegalRequirementGuard,
-} from "./governance.ts";
-import { JSON_BODY_MAX_BYTES, requestBodyLimit } from "./http/body_limit.ts";
-import { sameOriginCors } from "./http/cors.ts";
-import { healthRoutes } from "./http/health.ts";
-import { type Logger, requestLogging, stderrLogger } from "./http/logging.ts";
-import { requestId, type RequestIdEnv } from "./http/request_id.ts";
-import { apiSecureHeaders } from "./http/secure_headers.ts";
-import { createImportRoutes } from "./imports.ts";
-import { createIntegrationRoutes } from "./integrations.ts";
-import { createInteractionRoutes } from "./interactions.ts";
-import {
-  createInvitationRoutes,
-  type InvitationHttpServices,
-} from "./invitations.ts";
-import { createJournalRoutes } from "./journal.ts";
-import { createPeopleRoutes, type PeopleHttpServices } from "./people.ts";
-import {
-  createPersonalLifecycleRoutes,
-  type PersonalLifecycleHttpServices,
-} from "./personal_lifecycle.ts";
 import { PersonalizationRouter } from "./personalization_router.ts";
-import { createPlanningRoutes } from "./planning.ts";
-import {
-  createRegistrationRoutes,
-  type RegistrationHttpServices,
-} from "./registration.ts";
-import { createRelationshipRoutes } from "./relationships.ts";
 import {
   type BrowserSecurityPolicy,
   browserSecurityPolicy,
 } from "./security_config.ts";
-import { createSettingsRoutes, type SettingsHttpServices } from "./settings.ts";
-import {
-  createWorkspaceLifecycleRoutes,
-  type WorkspaceLifecycleHttpServices,
-} from "./workspace_lifecycle.ts";
 
 export interface ApiServices extends RegistrationHttpServices {
   readonly apiTokens?: ApiTokenManagement;

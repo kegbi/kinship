@@ -20,7 +20,7 @@ import { oneOf } from "./shared.ts";
  * The two legal documents a path may name.
  *
  * It carries no `id` because `getPublicLegalDocument` inlines it into its path
- * parameter rather than naming a component, and `apps/api/governance` parses
+ * parameter rather than naming a component, and the governance routes parse
  * `{documentType}` with this exact schema.
  */
 export const legalDocumentType = z.enum(["privacy", "terms"]);

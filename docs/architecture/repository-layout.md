@@ -47,6 +47,7 @@ packages/
   contracts/
     openapi/
     generated/
+  http-kit/
 
 tests/
   e2e/
@@ -77,8 +78,16 @@ executable boundaries.
   `packages/backend/modules/<module-id>/composition.ts`. It builds that module's
   adapters and returns the module's facades and outbound ports, and only a
   declared composition root may import it.
+- A module that serves HTTP has
+  `packages/backend/modules/<module-id>/transport/http/routes.ts`. It exports
+  the module's route factories and their service types, and it is the one
+  transport file a declared composition root imports to mount them. Nothing else
+  imports another module's `transport/`.
 - Read models expose their own public entry point and remain query-only. One
   with adapters composes them the same way.
+- `apps/api` holds only the composition root, its entry points, and the
+  configuration it reads; the routes live in their modules and the shared HTTP
+  machinery lives in `packages/http-kit`.
 - `apps/web` consumes generated contracts. It never imports `packages/backend`.
 
 Tests may import private code only when testing that exact module. A test for
@@ -115,6 +124,23 @@ in `module-boundaries.yaml`.
 Hono routes, Zod request/response schemas, cookies, status codes, OpenAPI
 annotations, and mapping to RFC 9457 problems. Transport code calls application
 use cases and does not contain business decisions.
+
+A module's `transport/` imports its own `public.ts`, `application/`, and
+`transport/`, the shared kernel, the facades of modules it declares, the facade
+of a read model that names the module among its sources, `packages/contracts`,
+`packages/http-kit`, Hono, and Zod. It never imports its own `adapters/`,
+`domain/`, `ports/`, or `composition.ts`, the platform, or an app. Read models
+carry no `transport/`: the module whose data a projection reads serves its
+routes beside its writes, through the read model's facade.
+
+### The HTTP kit
+
+`packages/http-kit/` is what every module's routes share: mounting a contract
+descriptor, the session middleware, problem responses and failure tables,
+cookies, the origin and CORS checks, body limits, request identifiers, request
+logging, secure headers, downloads, the health probe, and the browser security
+policy shape. It depends on Hono, Zod, the shared kernel, `packages/contracts`,
+and the session types on the workspaces facade. It never depends on an app.
 
 ### Read models
 

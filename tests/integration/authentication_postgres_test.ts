@@ -6,7 +6,7 @@ import {
   createConfiguredApiApp,
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
-import { createAuthenticationRoutes } from "../../apps/api/authentication.ts";
+import { createAuthenticationRoutes } from "../../packages/backend/modules/workspaces/transport/http/authentication.ts";
 import {
   AuthenticationSubjectDigester,
 } from "../../packages/backend/modules/api-access/public.ts";

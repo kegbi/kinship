@@ -1,7 +1,6 @@
-export interface BrowserSecurityPolicy {
-  readonly origin: string;
-  readonly secureCookie: boolean;
-}
+import type { BrowserSecurityPolicy } from "../../packages/http-kit/security_policy.ts";
+
+export type { BrowserSecurityPolicy };
 
 function isLoopback(hostname: string): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1" ||

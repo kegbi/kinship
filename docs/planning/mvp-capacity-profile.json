@@ -75,7 +75,7 @@
     ],
     "api": [
       {
-        "path": "apps/api/people/directory_test.ts",
+        "path": "packages/backend/modules/people/transport/http/directory_test.ts",
         "markers": [
           "PEOPLE-002 HTTP lists only the resolved active workspace"
         ]
