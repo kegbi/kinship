@@ -30,6 +30,14 @@ shows a concrete blocker. Keep the choice consistent across the application; do
 not mix Base UI and Radix primitives component by component without a documented
 architecture decision.
 
+[ADR 0006](decisions/0006-ui-stack-shadcn-react-islands.md) reinstates this
+stack after `UXD-010` removed the then-unused packages, and migrates the vanilla
+surfaces to shadcn/ui islands incrementally. Alongside shadcn/ui and React it
+names Tailwind v4 through `@tailwindcss/vite`, carrying the existing design
+tokens as the shadcn theme variables; react-hook-form with `@hookform/resolvers`
+over the contract schemas in `packages/contracts/schemas`; and Testing Library
+for island tests.
+
 ## Accepted Backend Stack
 
 These choices were accepted on 2026-08-09. Exact versions remain pinned by the
@@ -207,6 +215,7 @@ project-wide compiler diagnostics.
 - [`eslint-plugin-astro`](https://ota-meshi.github.io/eslint-plugin-astro/user-guide/)
 - [React hooks lint plugin](https://react.dev/reference/eslint-plugin-react-hooks)
 - [shadcn/ui for Astro](https://ui.shadcn.com/docs/installation/astro)
+- [ADR 0006: UI stack — shadcn/ui in React islands](decisions/0006-ui-stack-shadcn-react-islands.md)
 - [Kysely documentation](https://www.kysely.dev/)
 - [Zod documentation](https://zod.dev/)
 - [Lefthook](https://lefthook.dev/)

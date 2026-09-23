@@ -403,7 +403,9 @@ These are deliberately outside the ready repair sequence:
   synchronize the authoritative decision before any UI framework migration.
   Routine repairs above use the existing implementation and require no new
   dependencies; this is not permission to rewrite either accepted contract
-  silently.
+  silently. Resolved on 2026-09-23 by
+  [ADR 0006](../architecture/decisions/0006-ui-stack-shadcn-react-islands.md),
+  which adopts shadcn/ui in React islands.
 - **Identity editing breadth:** Edit person currently exposes names and the
   partial-identity flag, while the read view includes description, gender and
   other identity states. Compare each missing mutation with the product/API

@@ -672,7 +672,8 @@ These constraints bind every leaf in this phase:
 
 - The accepted direction is vanilla TypeScript plus CSS custom properties
   (review §10.6). Do not introduce React, Tailwind, shadcn, or another component
-  framework.
+  framework. Superseded on 2026-09-23 by
+  [ADR 0006](../architecture/decisions/0006-ui-stack-shadcn-react-islands.md).
 - Preserve the static-shell and gateway-rewrite routing pattern (review §3.2).
   The five `internal/*-shell.astro` pages remain the implementations of the
   cataloged dynamic routes.

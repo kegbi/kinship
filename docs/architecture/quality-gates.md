@@ -264,6 +264,12 @@ accessibility checks such as axe to each representative page state, plus
 keyboard-only workflow assertions. Accessibility checks complement, rather than
 replace, semantic component tests.
 
+- Hydration budget: each island's hydrated bytes are measured and recorded in
+  its candidate's evidence, and static and public pages ship no React
+  ([ADR 0006](decisions/0006-ui-stack-shadcn-react-islands.md)).
+- Island readiness: each island sets `data-island-ready` after hydration, and
+  E2E waits on that marker before interacting with the island.
+
 Use mutation testing selectively for the highest-risk identity,
 workspace-isolation, partial-date, reminder, and import logic after the baseline
 suite is fast and stable. Mutation score is a diagnostic initially, not a
