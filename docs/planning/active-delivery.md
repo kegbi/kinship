@@ -242,6 +242,24 @@ Playwright test carrying its stable flow ID.
       skips a branch. Reproduce by running the set several times and diffing the
       per-file lines; fix by making the affected test deterministic, not by
       widening the floor.
+- [ ] **REL-039 — `app-004a` and `app-003b` fail intermittently in the Chromium
+      E2E under host load.** During the GAP-024 verification on 2026-09-23 two
+      full Chromium runs of the candidate failed `app-004a` (`[PEOPLE-004]`, the
+      delete dialog never opened after `Delete person` was clicked at
+      `app-004a.spec.ts:224`) and `app-003b` (`[PEOPLE-002]`, the search dialog
+      and command palette at lines 270, 298, and 312) beside the four parked
+      specs, and one run also failed `app-002c`. None of the steps sends an API
+      request. `app-003b` failed on `main` when run alone at the same line 298,
+      and the same session's full `main` runs passed both specs. Three repeats
+      of the two specs passed `app-004a` 3/3 on the candidate while `app-003b`
+      passed 2/3, and the candidate changed only import paths in the routes
+      those flows use. The likely cause is a click before the island's handler
+      attaches (the spec follows the person link and opens the person menu
+      without waiting for hydration). Reproduce with
+      `deno task test:e2e --project=chromium
+      --repeat-each=5 tests/e2e/app-004a.spec.ts tests/e2e/app-003b.spec.ts`
+      on a loaded host; fix by waiting for the surface's ready marker in the
+      spec or making the control inert until it is wired, not by adding retries.
 
 ## Just-In-Time Technical Capabilities
 
