@@ -928,7 +928,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     mounted, build green, Chromium E2E 53 passed with only the four parked
     failures; gates fmt:check, lint, check, check:architecture (14).
 
-- [ ] **GAP-024 — Move routes into module `transport/http/`.** L. Depends:
+- [x] **GAP-024 — Move routes into module `transport/http/`.** L. Depends:
       013, 021. Contract alignment; may be deferred after Phase 4 if capacity is
       short.
   - Scope: each module owns `transport/http/routes.ts` (+ tests) built on the
@@ -937,6 +937,37 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     generated-contract support only.
   - Verify: all API and integration gates green; `apps/api` contains only the
     kit, composition, main, and config.
+  - Delivered 2026-09-23: the kit moved from `apps/api/http/` to
+    `packages/http-kit/` (15 modules with suites, plus `security_policy.ts`
+    holding `BrowserSecurityPolicy` while `browserSecurityPolicy()` stays in
+    `apps/api/security_config.ts`); every route surface moved unchanged apart
+    from import paths into its owning module's `transport/http/` (`api-access`,
+    `files`, `gifts`, `governance`, `integrations`, `interactions`, `journal`,
+    `planning`, `relationships` one-to-one; `people` with its GAP-021 split;
+    `import-export` for imports and exports; `workspaces` for registration,
+    authentication, invitations, settings, and both lifecycles), each behind one
+    `transport/http/routes.ts` that `apps/api/composition.ts` imports directly
+    and mounts in the same order; routes are not re-exported from `public.ts` or
+    a module `composition.ts`, so the worker graph loads no Hono or transport
+    code; read models carry no `transport/` and are served by the module they
+    project, reached through their facade only when they list that module in
+    `sourceModules`; two undeclared cross-module type imports became
+    consumer-owned structural ports (`ScopedTokenAuthority`,
+    `SessionLegalRequirements`); `check_boundaries.ts` gains the `transport`
+    layer rule and lets a declared composition root import only another module's
+    `transport/http/routes.ts` (five new tests, baseline unchanged at 14);
+    `module-boundaries.yaml` `transportMayImport` and `compositionMayImport`
+    name `contracts` and `http-kit`, and `repository-layout.md` documents the
+    kit and the transport rule; `apps/api` keeps 15 files (`main.ts`, `app.ts`,
+    `composition.ts`, `personalization_router.ts`, the three configuration
+    files, and the root-level suites); `openapi.json`, the generated client, and
+    `apps/web` are unchanged; 128 files changed (+1614/-987, renames detected);
+    unit and integration 130/0 green, every coverage set unchanged against main
+    except the REL-038 file, `contracts:check` 123 documented and 126 mounted,
+    build green; the Chromium E2E runs showed `app-004a` and `app-003b` failing
+    beside the four parked specs, both browser-side and passing when repeated
+    (REL-039), while main measured 53 passed with only the four parked failures
+    on the same host; gates fmt:check, lint, check, check:architecture (14).
 
 ### Phase 4 — Frontend structure
 

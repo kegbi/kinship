@@ -23,10 +23,14 @@
  *    a module or read model may only import modules it declares; `application`,
  *    `domain`, and `ports` carry no infrastructure import — neither a vendor
  *    client nor a `packages/backend/platform` adapter — no `Deno.env`, and no
- *    raw `crm.` SQL; read models never write; `apps/web` never imports
- *    `packages/backend`; only declared composition roots reach into another
- *    unit's `adapters/`. `sharedKernel.path` is a unit of its own: every layer
- *    may import it, and it may import nothing outside itself.
+ *    raw `crm.` SQL; a module's `transport` imports only its own facade,
+ *    `application/`, and `transport/`, the shared kernel, other units'
+ *    facades (a read model's only when it composes the module), the route
+ *    contracts, the HTTP kit, Hono, and Zod; read models never write;
+ *    `apps/web` never imports `packages/backend`; only declared composition
+ *    roots reach into another unit's `adapters/` or mount its
+ *    `transport/http/routes.ts`. `sharedKernel.path` is a unit of its own:
+ *    every layer may import it, and it may import nothing outside itself.
  * 4. `table-access` and `table-foreign-read` — every `crm.<table>` token inside
  *    a module's `adapters/` is measured against the module's `ownsTables` and
  *    the owned tables of its `allowedModuleDependencies`. A token owned by
@@ -441,6 +445,18 @@ const INFRASTRUCTURE_IMPORTS = [
 const APPLICATION_LAYERS = ["application", "domain", "ports"];
 
 /**
+ * What a module's `transport/` may import besides its own facade, application,
+ * and transport, the shared kernel, and other units' facades: the route
+ * contracts it mounts, the HTTP kit it mounts them with, and the two libraries
+ * the kit is written in. `layerRules.transportMayImport` names the same list.
+ */
+const TRANSPORT_SUPPORT_PATHS = ["packages/contracts", "packages/http-kit"];
+const TRANSPORT_LIBRARIES = ["hono", "zod"];
+
+/** The one transport file a composition root may import from a module. */
+const TRANSPORT_ENTRY = "transport/http/routes.ts";
+
+/**
  * The shared infrastructure adapters.
  *
  * `repository-layout.md` places them beside the modules rather than inside
@@ -643,6 +659,18 @@ function layerViolations(
       continue;
     }
 
+    if (unit?.kind === "module" && layer === "transport") {
+      violations.push(
+        ...transportViolations(
+          file.path,
+          specifiers,
+          unit,
+          units,
+          readModelById,
+        ),
+      );
+    }
+
     if (unit?.kind === "read-model") {
       for (const call of ["insertInto", "updateTable", "deleteFrom"]) {
         if (!new RegExp(`\\b${call}\\s*\\(`).test(file.text)) continue;
@@ -683,6 +711,12 @@ function layerViolations(
       // A unit's `composition.ts` is not a facade and never will be; the
       // `composition` rule below decides who may import one.
       if (resolved === `${target.path}/composition.ts`) continue;
+      // A composition root mounts a module's routes the way it builds the
+      // module's adapters: directly, and through the one transport entry.
+      if (
+        compositionRoots.has(file.path) &&
+        resolved === `${target.path}/${TRANSPORT_ENTRY}`
+      ) continue;
 
       // Everything else — another unit's file, whether the importer is a
       // module, a read model, an app, or a tool — enters through the facade.
@@ -710,6 +744,80 @@ function layerViolations(
         });
       }
     }
+  }
+  return violations;
+}
+
+/**
+ * The `transport` layer: a module's HTTP routes.
+ *
+ * Routes call the module's use cases through its facade or its `application/`
+ * and never build or reach the module's adapters, domain, ports, or
+ * composition. Outside the module they mount `packages/contracts` descriptors
+ * with the `packages/http-kit` kit, and they may read the shared kernel,
+ * another module's facade (the declared-dependency rule still applies), and a
+ * read model's facade when that read model composes this module, which is how
+ * a projection over the module's own data is served beside its writes.
+ * Everything else — the platform, an app, the test support package, a
+ * database or storage client — is out of reach.
+ */
+function transportViolations(
+  path: string,
+  specifiers: readonly string[],
+  unit: Unit,
+  units: readonly Unit[],
+  readModelById: ReadonlyMap<string, ManifestReadModel>,
+): Violation[] {
+  const violations: Violation[] = [];
+  const violation = (detail: string): Violation => ({
+    rule: "layer",
+    subject: path,
+    detail,
+  });
+  for (const specifier of specifiers) {
+    const resolved = resolveSpecifier(path, specifier);
+    if (resolved === undefined) {
+      // The scanner reads text, so prose such as `from "the session store is
+      // down"` in a comment surfaces too; a real specifier has no whitespace.
+      if (/\s/.test(specifier)) continue;
+      const bare = specifier.replace(/^npm:/, "").replace(/@[^/@]+$/, "");
+      const library = bare.split("/")[0] ?? "";
+      if (TRANSPORT_LIBRARIES.includes(library)) continue;
+      violations.push(violation(`the transport layer imports ${specifier}`));
+      continue;
+    }
+    const target = owningUnit(resolved, units);
+    if (target?.path === unit.path) {
+      const own = resolved.slice(unit.path.length + 1);
+      if (
+        own === "public.ts" || own.startsWith("application/") ||
+        own.startsWith("transport/")
+      ) continue;
+      violations.push(violation(
+        `the transport layer imports ${resolved}; a module's transport reaches its own module only through public.ts, application/, and transport/`,
+      ));
+      continue;
+    }
+    if (target?.kind === "shared-kernel" || target?.kind === "module") {
+      // Another module's files are the general facade rule's business.
+      continue;
+    }
+    if (target?.kind === "read-model") {
+      const sources = readModelById.get(target.id)?.sourceModules ?? [];
+      if (sources.includes(unit.id)) continue;
+      violations.push(violation(
+        `the transport layer imports the ${target.id} read model, which does not compose ${unit.id}`,
+      ));
+      continue;
+    }
+    if (
+      TRANSPORT_SUPPORT_PATHS.some((support) =>
+        resolved.startsWith(`${support}/`)
+      )
+    ) continue;
+    violations.push(violation(
+      `the transport layer imports ${resolved}, which is outside the HTTP kit, the contracts, the shared kernel, and the module and read-model facades`,
+    ));
   }
   return violations;
 }

@@ -11,7 +11,7 @@
  * A `RouteDescriptor` is that single description. `defineRoute` returns one
  * after checking what a route can be wrong about on its own: the method, the
  * shape of the path, and whether every `{parameter}` in the path is declared.
- * `apps/api/http/route.ts` mounts descriptors onto Hono, and
+ * `packages/http-kit/route.ts` mounts descriptors onto Hono, and
  * `tools/contracts/build.ts` reads the same descriptors to emit the document
  * and the client, so mounting and documenting cannot disagree.
  *

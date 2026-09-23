@@ -63,12 +63,28 @@ layerRules:
     same-module-ports,
     shared-kernel,
   ]
+  # `contracts` is `packages/contracts` (route descriptors and schemas) and
+  # `http-kit` is `packages/http-kit` (mounting, sessions, problems, cookies).
+  # `source-read-model-public` is a read model's facade when that read model
+  # names the module among its `sourceModules`.
   transportMayImport: [
     same-module-public,
     same-module-application,
-    generated-contract-support,
+    same-module-transport,
+    shared-kernel,
+    allowed-module-public,
+    source-read-model-public,
+    contracts,
+    http-kit,
   ]
-  compositionMayImport: [module-public, module-adapters, platform, bootstrap]
+  compositionMayImport: [
+    module-public,
+    module-adapters,
+    module-transport-routes,
+    platform,
+    bootstrap,
+    http-kit,
+  ]
   frontendMayImport: [contracts-generated, frontend-code]
   forbiddenCrossModuleTargets: [domain, application, ports, adapters, transport]
 

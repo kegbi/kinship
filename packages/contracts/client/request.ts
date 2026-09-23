@@ -10,7 +10,7 @@
 
 import type { components } from "../generated/api-types.ts";
 
-/** RFC 9457, as `apps/api/http/problem.ts` writes it. */
+/** RFC 9457, as `packages/http-kit/problem.ts` writes it. */
 export type ProblemDetails = components["schemas"]["Problem"];
 
 export type ApiResult<T> = { readonly ok: true; readonly value: T } | {

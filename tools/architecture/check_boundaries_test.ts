@@ -647,6 +647,150 @@ Deno.test("[GAP-005] delivery code reaches a read model only through its facade"
   assert(facade.length === 0, `unexpected: ${render(facade)}`);
 });
 
+// --- Module transport ----------------------------------------------------
+
+const GIFT_ROUTES = "packages/backend/modules/gifts/transport/http/routes.ts";
+
+Deno.test("[GAP-024] a module's transport reaches its facade, application, kit, contracts, and kernel", async () => {
+  const violations = await fixture([
+    {
+      path: GIFT_ROUTES,
+      text: [
+        'import { Hono } from "hono";',
+        'import { secureHeaders } from "hono/secure-headers";',
+        'import type { z } from "zod";',
+        'import type { GiftManagement } from "../../public.ts";',
+        'import type { GiftContext } from "../../application/gift_context.ts";',
+        'import { GIFT_FAILURES } from "./failures.ts";',
+        'import { SHARED_FAILURE_STATUSES } from "../../../../shared-kernel/result.ts";',
+        'import { createGift } from "../../../../../contracts/routes/gifts.ts";',
+        'import { mount } from "../../../../../http-kit/route.ts";',
+        'import type { PersonFiles } from "../../../files/public.ts";',
+        '// A session that ended differs from "the session store is down".',
+      ].join("\n"),
+    },
+    {
+      // A module's routes may serve a projection over its own data: the
+      // read model names the module among its sources.
+      path: "packages/backend/modules/people/transport/http/routes.ts",
+      text:
+        'import type { TodayRecentPeople } from "../../../../read-models/today/public.ts";',
+    },
+  ]);
+  assert(violations.length === 0, `unexpected: ${render(violations)}`);
+});
+
+Deno.test("[GAP-024] a module's transport never reaches its own adapters, domain, ports, or composition", async () => {
+  const violations = await fixture([{
+    path: GIFT_ROUTES,
+    text: [
+      'import { PostgresGiftRepository } from "../../adapters/postgres/gift_repository.ts";',
+      'import { validateGift } from "../../domain/gift_rules.ts";',
+      'import type { GiftAudit } from "../../ports/audit.ts";',
+      'import { composeGifts } from "../../composition.ts";',
+    ].join("\n"),
+  }]);
+  const expected = [
+    "packages/backend/modules/gifts/adapters/postgres/gift_repository.ts",
+    "packages/backend/modules/gifts/composition.ts",
+    "packages/backend/modules/gifts/domain/gift_rules.ts",
+    "packages/backend/modules/gifts/ports/audit.ts",
+  ].map((target) =>
+    `the transport layer imports ${target}; a module's transport reaches its own module only through public.ts, application/, and transport/`
+  );
+  assert(
+    violations.length === expected.length &&
+      violations.every((violation) =>
+        violation.rule === "layer" && violation.subject === GIFT_ROUTES &&
+        expected.includes(violation.detail)
+      ),
+    `expected four own-module transport violations, got ${render(violations)}`,
+  );
+});
+
+Deno.test("[GAP-024] a module's transport never reaches the platform, an app, or a vendor client", async () => {
+  const violations = await fixture([{
+    path: GIFT_ROUTES,
+    text: [
+      'import { connectDatabase } from "../../../../platform/postgres/database.ts";',
+      'import { browserSecurityPolicy } from "../../../../../../apps/api/security_config.ts";',
+      'import { fixtures } from "../../../../testing/fixtures.ts";',
+      'import { sql } from "kysely";',
+      'import postgres from "npm:postgres@3.4.9";',
+    ].join("\n"),
+  }]);
+  const details = violations.map((violation) => violation.detail).sort();
+  const outside = (target: string) =>
+    `the transport layer imports ${target}, which is outside the HTTP kit, the contracts, the shared kernel, and the module and read-model facades`;
+  const expected = [
+    outside("apps/api/security_config.ts"),
+    outside("packages/backend/platform/postgres/database.ts"),
+    outside("packages/backend/testing/fixtures.ts"),
+    "the transport layer imports kysely",
+    "the transport layer imports npm:postgres@3.4.9",
+  ].sort();
+  assert(
+    JSON.stringify(details) === JSON.stringify(expected) &&
+      violations.every((violation) =>
+        violation.rule === "layer" && violation.subject === GIFT_ROUTES
+      ),
+    `expected five transport violations, got ${render(violations)}`,
+  );
+});
+
+Deno.test("[GAP-024] a module's transport serves only a read model that composes the module", async () => {
+  const violations = await fixture([{
+    path: GIFT_ROUTES,
+    text:
+      'import type { TodayRecentPeople } from "../../../../read-models/today/public.ts";',
+  }]);
+  assert(
+    violations.length === 1 && violations[0]?.rule === "layer" &&
+      violations[0].detail ===
+        "the transport layer imports the today read model, which does not compose gifts",
+    `expected one read-model transport violation, got ${render(violations)}`,
+  );
+});
+
+Deno.test("[GAP-024] only a declared composition root mounts a module's routes, and only through routes.ts", async () => {
+  const mounted = await fixture([{
+    path: "apps/api/composition.ts",
+    text:
+      'import { createGiftRoutes } from "../../packages/backend/modules/gifts/transport/http/routes.ts";',
+  }]);
+  assert(mounted.length === 0, `unexpected: ${render(mounted)}`);
+
+  const violations = await fixture([
+    {
+      path: "apps/api/gifts.ts",
+      text:
+        'import { createGiftRoutes } from "../../packages/backend/modules/gifts/transport/http/routes.ts";',
+    },
+    {
+      path: "apps/api/composition.ts",
+      text:
+        'import { GIFT_FAILURES } from "../../packages/backend/modules/gifts/transport/http/failures.ts";',
+    },
+    {
+      path: GIFT_ROUTES,
+      text:
+        'import { createFileRoutes } from "../../../files/transport/http/routes.ts";',
+    },
+  ]);
+  const expected = [
+    "apps/api/composition.ts|packages/backend/modules/gifts/transport/http/failures.ts is not a public entry point of gifts",
+    "apps/api/gifts.ts|packages/backend/modules/gifts/transport/http/routes.ts is not a public entry point of gifts",
+    "packages/backend/modules/gifts/transport/http/routes.ts|packages/backend/modules/files/transport/http/routes.ts is not a public entry point of files",
+  ];
+  const found = violations.map((violation) =>
+    `${violation.subject}|${violation.detail}`
+  ).sort();
+  assert(
+    JSON.stringify(found) === JSON.stringify(expected),
+    `expected three facade violations, got ${render(violations)}`,
+  );
+});
+
 // --- The shared kernel ---------------------------------------------------
 
 Deno.test("[GAP-006] every backend layer may import the shared kernel", async () => {
@@ -946,7 +1090,7 @@ Deno.test("[APP-005C] the audit-history read model stays inside its source modul
   const violations = await repository([
     "packages/backend/read-models/audit-history/adapters/postgres/audit_history_repository.ts",
     "packages/backend/read-models/audit-history/application/list_audit_history.ts",
-    "apps/api/governance.ts",
+    "packages/backend/modules/governance/transport/http/routes.ts",
   ]);
   assert(
     violations.length === 0,

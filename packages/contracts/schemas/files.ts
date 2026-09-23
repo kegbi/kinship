@@ -19,7 +19,7 @@ import { z } from "zod";
  *
  * It carries no `id` because the document inlines it into
  * `uploadPersonFile`'s header parameter rather than naming a component, and
- * `apps/api/files` parses the header with this exact schema.
+ * the files routes parse the header with this exact schema.
  */
 export const personFileKind = z.enum(["document", "photo"]);
 
