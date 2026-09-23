@@ -37,6 +37,22 @@ prerequisite queues.
   `REL-033`. Every backend module now has `domain/` and `ports/` directories
   measured at the shared kernel's bar, and `REL-038` records the one
   non-deterministic coverage measurement seen on the way.
+- Phase 3 of that plan (GAP-019 through GAP-024) is integrated at `cb132f30`,
+  and `REL-039` was parked at `6c915aa6`. The Phase 3 checkpoint on `6c915aa6`
+  passed root `check`, `contracts:check` (123 documented, 126 mounted),
+  `check:architecture` (14 baseline entries, unchanged), `test` (734 vitest,
+  every Deno set, integration 130/0), `test:coverage` (every set above its
+  floor; the only differences from the GAP-024 measurement are one branch in
+  `workspaces/adapters/postgres/personalization.ts` that flaps between 80.8% and
+  81.3% on identical code), `build`, and the `Dockerfile.api`, `Dockerfile.web`,
+  and `Dockerfile.gateway` image builds. The three-browser E2E matrix passed 158
+  of 171 flows with 2 skipped and failed 11: the eight tracked by `REL-032` and
+  `REL-033` as at the Phase 0 checkpoint, plus `app-003b` on Chromium and WebKit
+  and `app-007b` on WebKit, all three tracked by `REL-039` (`app-007b` passed
+  three WebKit repeats alone on the same commit). Route surfaces now live in
+  each module's `transport/http/` and the HTTP kit in `packages/http-kit`; the
+  next ticket, GAP-025, needs the product owner's decision on the UI stack
+  before it starts.
 - User-directed follow-up: responsive person blocks, focus-border repair, then
   an evidence-backed application repair plan and execution in a clean task.
 - Remaining repair statuses and execution order belong to the
@@ -260,6 +276,12 @@ Playwright test carrying its stable flow ID.
       --repeat-each=5 tests/e2e/app-004a.spec.ts tests/e2e/app-003b.spec.ts`
       on a loaded host; fix by waiting for the surface's ready marker in the
       spec or making the control inert until it is wired, not by adding retries.
+      The Phase 3 checkpoint matrix on `6c915aa6` failed `app-003b` on Chromium
+      and WebKit and, in the same class, `app-007b` ([GIFTS-001]) on WebKit at
+      `app-007b.spec.ts:108`: the gift form kept its filled name after `Save`
+      with no error shown, so the click never reached a wired handler.
+      `app-007b` then passed three WebKit repeats alone. Include it in the
+      repeat command above with `--project=webkit`.
 
 ## Just-In-Time Technical Capabilities
 
