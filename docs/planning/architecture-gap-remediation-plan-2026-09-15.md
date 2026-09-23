@@ -60,21 +60,21 @@ findings below cite file paths and line numbers as they stood at commit
 `docs/architecture/repository-layout.md` and `module-boundaries.yaml` mandate
 paths that do not exist:
 
-| Mandated                                        | Reality                                                                                                               |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `packages/backend/shared-kernel`                | absent; 25 hand-rolled `{ now(): Date }`, 8 `{ create(): string }` shapes                                             |
-| `packages/backend/bootstrap`                    | absent                                                                                                                |
-| `modules/<m>/domain/`                           | absent in all 14 modules                                                                                              |
-| `modules/<m>/ports/`                            | only `identity/ports/security.ts`; ports inline in `application/*.ts` mixed with DTOs                                 |
-| `modules/<m>/transport/http/`                   | absent; all routes live in `apps/api/*.ts`                                                                            |
-| `modules/billing`                               | absent (deliberate, optional)                                                                                         |
-| `tests/support`, `tests/fixtures`               | absent; every test file hand-rolls fixtures                                                                           |
-| `apps/web/src/islands`, shadcn/ui, React        | absent; vanilla TS + Astro; conflict recorded in the repair plan                                                      |
-| `tools/workflows`, `lefthook.yml`, CI config    | absent                                                                                                                |
-| Deno lint plugin + dependency-graph checker     | absent; 11 ticket-named text-grep spot checks under `tools/architecture/<TICKET>/`                                    |
-| Telemetry port, request IDs, metrics            | absent; `observability.md` is unimplemented                                                                           |
-| Generated Kysely types + drift check            | absent                                                                                                                |
-| Event bus / outbox for `publishes:`/`consumes:` | absent; three publisher interfaces wired to one synchronous consumer each in `apps/api/composition.ts:1003,1009,1018` |
+| Mandated                                        | Reality                                                                                                                               |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/backend/shared-kernel`                | absent; 25 hand-rolled `{ now(): Date }`, 8 `{ create(): string }` shapes                                                             |
+| `packages/backend/bootstrap`                    | absent                                                                                                                                |
+| `modules/<m>/domain/`                           | absent in all 14 modules                                                                                                              |
+| `modules/<m>/ports/`                            | only `identity/ports/security.ts`; ports inline in `application/*.ts` mixed with DTOs                                                 |
+| `modules/<m>/transport/http/`                   | absent; all routes live in `apps/api/*.ts`                                                                                            |
+| `modules/billing`                               | absent (deliberate, optional)                                                                                                         |
+| `tests/support`, `tests/fixtures`               | absent; every test file hand-rolls fixtures                                                                                           |
+| `apps/web/src/islands`, shadcn/ui, React        | absent; vanilla TS + Astro; conflict recorded in the repair plan. Resolved 2026-09-23 by ADR 0006 (adopt shadcn/ui in React islands). |
+| `tools/workflows`, `lefthook.yml`, CI config    | absent                                                                                                                                |
+| Deno lint plugin + dependency-graph checker     | absent; 11 ticket-named text-grep spot checks under `tools/architecture/<TICKET>/`                                                    |
+| Telemetry port, request IDs, metrics            | absent; `observability.md` is unimplemented                                                                                           |
+| Generated Kysely types + drift check            | absent                                                                                                                                |
+| Event bus / outbox for `publishes:`/`consumes:` | absent; three publisher interfaces wired to one synchronous consumer each in `apps/api/composition.ts:1003,1009,1018`                 |
 
 ### 1.4 Backend module isolation
 
@@ -171,7 +171,8 @@ paths that do not exist:
 - Stack conflict: `AGENTS.md` and `technology-baseline.md` require shadcn/ui,
   the accepted Phase 12 ledger selected vanilla TypeScript, and the September
   repair plan lists this as an unresolved decision. No React, Radix, `.tsx`, or
-  `client:` directive exists anywhere.
+  `client:` directive exists anywhere. Resolved 2026-09-23 by ADR 0006 (adopt
+  shadcn/ui in React islands).
 - `apps/web/src/lib` is 46 flat feature files. Each fuses DOM querying, pure
   helpers, imperative DOM builders, network calls, closure state, and event
   wiring in one `mount*` function (`person-gifts.ts:208`, `journal.ts:209`). No
@@ -971,97 +972,150 @@ project once. Full three-browser E2E and image builds run at the end of Phases
 
 ### Phase 4 — Frontend structure
 
-- [ ] **GAP-025 — ADR 0006: UI stack decision.** S. Depends: none. Requires
+- [x] **GAP-025 — ADR 0006: UI stack decision.** S. Depends: none. Requires
       product-owner sign-off.
-  - Recommendation: keep vanilla TypeScript islands plus Astro components; do
-    not adopt shadcn/ui or React. Rationale: 16.7k lines of working
-    framework-free UI, no hydration cost, the September repair plan's
-    accessibility work is already native-dialog based, and a React migration
-    would be a rewrite without a user-facing win. Amend `AGENTS.md`,
-    `technology-baseline.md`, and `dashboard-settings-design.md` accordingly. If
-    the owner instead chooses shadcn/ui, GAP-027/028 become an islands migration
-    and must be re-scoped.
-  - Verify: ADR merged; docs consistent (`grep shadcn` returns only the ADR).
+  - Decision: on 2026-09-23 the product owner answered "You can use shadcn/UI,
+    no framework free approach is needed if it will simplify our life
+    dramatically."
+    [ADR 0006](../architecture/decisions/0006-ui-stack-shadcn-react-islands.md)
+    therefore adopts shadcn/ui in React islands, migrating incrementally one
+    surface per candidate: source-owned components under
+    `apps/web/src/components/ui/`, React only inside hydrated Astro islands
+    under `apps/web/src/islands/` with the static-first shell, gateway-rewrite
+    routing, and page-catalog rendering modes unchanged, Tailwind v4 carrying
+    the UXD-001 tokens as the shadcn theme variables, one primitive family,
+    react-hook-form with the Zod resolver over `packages/contracts/schemas`, the
+    generated client as the only backend path, and an island readiness marker
+    that E2E waits on. It supersedes review §10.6, the Phase 12 vanilla
+    constraint, and the UXD-010 component-clause amendment, and re-scopes
+    GAP-026 through GAP-033 below.
+  - Verify: ADR 0006 merged; `AGENTS.md`, `technology-baseline.md`,
+    `dashboard-settings-design.md`, `repository-layout.md`, and
+    `quality-gates.md` agree with it; every earlier vanilla-direction statement
+    is annotated as superseded rather than deleted.
+  - Delivered 2026-09-23:
+    `docs/architecture/decisions/0006-ui-stack-shadcn-react-islands.md`
+    (accepted) records the owner's answer, the measured frontend (16,964 lines
+    of imperative DOM code under 32,761 lines of DOM tests), the decision,
+    answers to each review §10.6 objection, consequences, rejected alternatives,
+    and a dated compatibility note; `technology-baseline.md`,
+    `repository-layout.md`, and `quality-gates.md` (hydration budget and island
+    readiness marker) agree with it; the `dashboard-settings-design.md`
+    component clause names shadcn/ui-built Kinship primitives with every
+    accessibility clause unchanged; review §10.6, the Phase 12 constraint, and
+    the repair plan's conflict bullet are annotated as superseded or resolved;
+    GAP-026 through GAP-033 and the Part 4 dependency summary are re-scoped as
+    the incremental islands migration; `AGENTS.md` needed no change;
+    documentation only (9 files changed +182/-111 plus the 136-line ADR); gates
+    fmt:check, check:architecture (14), and root test:unit green.
 
-- [ ] **GAP-026 — Frontend core kit.** M. Depends: 025.
-  - Scope: `apps/web/src/lib/core/`: `api.ts`
-    (`callApi(fn, { status,
-    fallback })` replacing the 102
-    `.catch(() => undefined)` idioms; `renderProblem`), `forms.ts`
-    (`readForm(form, schema)`, `submitLifecycle`, `setFieldErrors` unifying
-    `auth-forms.ts`, `people-create.ts`, `profile-facts.ts`), `sections.ts`
-    (`SectionMount = (options:
-    SectionOptions) => SectionHandle`,
-    `SectionOptions = { personId,
-    workspaceId, archived, hidden?, preferences?, initial? }`),
-    `dom.ts` (query helpers, `setState`). Migrate person-gifts, journal,
-    people-create.
-  - Verify: their tests green; kit ≥ 95% coverage.
+- [ ] **GAP-026 — React islands scaffold and island core.** M. Depends: 025.
+  - Scope: choose and lock exact compatible versions (respecting pnpm
+    `minimumReleaseAge`) of `@astrojs/react`, `react`, `react-dom`, their types,
+    `tailwindcss` with `@tailwindcss/vite`, the shadcn CLI and the primitive
+    family `shadcn init` selects, `class-variance-authority`, `clsx`,
+    `tailwind-merge`, `lucide-react`, `react-hook-form`, `@hookform/resolvers`,
+    `@testing-library/react`, `@testing-library/user-event`, and
+    `eslint-plugin-react-hooks`. Register the React integration and Tailwind in
+    `astro.config.mjs`. Add `apps/web/components.json`. Map the UXD-001 tokens
+    onto the shadcn theme variables (light and dark) in one tokens file, so
+    existing CSS and Tailwind share one source. Vendor only the primitives the
+    pilot uses under `apps/web/src/components/ui/`. Build
+    `apps/web/src/islands/core/`:
+    - `useApi` (a typed call over the generated client answering
+      `{ status, data?, problem? }`, replacing `.catch(() => undefined)`);
+    - `useContractForm(schema)` (react-hook-form with the Zod resolver over
+      `packages/contracts/schemas`, mapping a problem's field errors onto
+      fields);
+    - an island root that sets `data-island-ready` after hydration;
+    - a bridge to the existing `#app-toasts` region.
 
-- [ ] **GAP-027 — Astro UI component library and canonical CSS classes.** M.
-      Depends: 025.
-  - Scope: `apps/web/src/components/ui/`: `Dialog.astro`, `FormActions.astro`,
-    `SectionCard.astro` (header, badge, skeleton, state slot),
-    `StateBadge.astro`, `EmptyState.astro`, `Skeleton.astro`, `Button` class
-    conventions. One definition each of `.button-*`, `.form-actions`,
-    `.section-state`, `.state-badge`, `.card` in `components.css`; remove the
-    duplicates from `base.css`, `person.css`, `settings.css`. Use the components
-    in `ApplicationLayout.astro` (extract the two dialogs) and the settings
-    pages.
-  - Verify: stylesheet tests updated; axe on affected pages; visual check at
-    390/768/1440.
+    Also add the Playwright helper `waitForIsland(page, name)`, and vitest
+    support for `.tsx` with Testing Library. Pilot: migrate the person gifts and
+    debts section (`lib/person-gifts.ts` and its LoadMore wiring) to an island,
+    keeping the labels, roles, and `data-*` hooks the E2E relies on, and delete
+    the vanilla module and its tests in the same candidate.
+  - Verify:
+    - `GIFTS-001` E2E on Chromium, Firefox, and WebKit.
+    - Web unit coverage at or above its floor, with `islands/core` at 95% or
+      more.
+    - axe on the person page.
+    - Gateway and static-shell contract tests green.
+    - A test proves public no-JavaScript pages ship no React.
+    - The pilot's hydrated bytes are recorded in the evidence line.
+    - `lint` includes the React-hooks rules.
+    - `build` and the web and gateway image builds are green.
 
-- [ ] **GAP-028 — Person profile decomposition.** L. Depends: 026, 027.
-  - Scope: replace the 852-line `person-profile-shell.astro` `.map()` with
-    per-section components under `components/person/` and a data-driven section
-    registry (`lib/person/sections.ts`: id, zone, component, mount, visibility
-    key) shared by the template, `people-profile.ts`, the section nav, and later
-    the visibility preference (GAP-047). All 15 section mounts conform to
-    `SectionMount`. `gateway_contract_test.ts`'s section-list assertion reads
-    the registry.
-  - Verify: `people-profile` tests, PEOPLE-004/005/006 E2E, and the gateway
-    contract test green; template under 200 lines.
+- [ ] **GAP-027 — shadcn component set and shell islands.** M. Depends: 026.
+  - Scope: build the Kinship primitives from shadcn/ui: button, card, badge,
+    breadcrumb, segmented filter, dialog, alert dialog, sheet, dropdown menu,
+    command palette, select/combobox, table, skeleton, tooltip. Static Astro
+    markup uses the same variant definitions (`buttonVariants`, `badgeVariants`,
+    card classes) so static and island markup share one definition. Move the two
+    `ApplicationLayout.astro` dialogs and the global people search / command
+    palette to islands. Delete the duplicated `.button-*`, `.card`,
+    `.state-badge`, `.form-actions` and dialog CSS they replace.
+  - Verify: axe and keyboard E2E for the palette, the dialogs, and the settings
+    pages; stylesheet contract tests updated; visual check at 390, 768, and
+    1440.
 
-- [ ] **GAP-029 — Feature folders and profile-facts split.** L. Depends: 026.
-  - Scope: restructure `src/lib` into `core/`, `shell/` (app-shell, theme,
-    toasts, global search, workspace-context, unsaved-changes), `auth/`,
-    `people/` (directory, create), `person/` (profile, facts/{contact-methods,
-    addresses,work,pets,food,first-meeting,tags}, dates, relationships,
-    interactions, communications, gifts, files, life-events, timeline,
-    reminders, tasks, rail), `settings/`, `today/`, `journal/`, `tasks/`. Split
-    `profile-facts.ts` into the seven fact modules plus a shared
-    `facts/editor.ts`; split its 3,370-line test accordingly. Update page
-    imports and `vitest.config.ts` includes.
-  - Verify: all web unit tests green with unchanged coverage; Chromium E2E.
+- [ ] **GAP-028 — Person profile section registry.** L. Depends: 026, 027.
+  - Scope: a data-driven section registry (`id`, zone, component, visibility
+    key) shared by the person template, the section navigation,
+    `gateway_contract_test.ts`, and later the visibility preference (GAP-047).
+    The 852-line `person-profile-shell.astro` becomes a registry render under
+    200 lines. A registry entry mounts either an island taking
+    `SectionProps = { personId, workspaceId, archived, preferences?, initial? }`
+    or, until that section migrates, its existing vanilla module, so every
+    section has one owner throughout. Migrate the identity/hero, the rail, and
+    the life-events and timeline sections to islands in this ticket. `?section=`
+    deep links keep resolving.
+  - Verify: `PEOPLE-003` through `PEOPLE-006` E2E, the gateway contract test
+    reads the registry, and the people-profile unit tests green.
 
-- [ ] **GAP-030 — Web test support.** M. Depends: 029.
-  - Scope: `apps/web/src/testing/`: `dom.ts` (markup builders per section from
-    the same registry), `fetch.ts` (`stubApi(routes)`, `jsonResponse`),
-    `fixtures.ts` (person, workspace, preferences), `a11y.ts`. Migrate the 39
-    local `markup()`/`response()` builders.
-  - Verify: all web tests green; ≥ 600 lines removed.
+- [ ] **GAP-029 — Profile facts as contract-driven forms.** L. Depends: 028.
+  - Scope: replace `lib/profile-facts.ts` (1,808 lines) and its 3,370-line suite
+    with seven fact islands (contact methods, addresses, work, pets, food, first
+    meeting, tags) over one shared `FactEditor` built on `useContractForm` and
+    the contract schemas, under `apps/web/src/features/person/facts/`. Keep the
+    APR-001 and APR-003 draft-preservation and retry behavior. Establish the
+    `features/<area>/` folder convention the remaining migrations follow.
+  - Verify: `PEOPLE-006` E2E (including the APR-001 and APR-003 flows), fact
+    island tests, and coverage unchanged or higher.
 
-- [ ] **GAP-031 — Pure reducers for stateful surfaces.** M-L. Depends: 026, 029.
-  - Scope: extract `reduce(state, event)` plus `render(state, dom)` for
-    interactions, tasks, reminders, communications, and the profile zone
-    registry; reducers unit-tested without DOM. Keep one owner per surface per
-    `AGENTS.md`.
-  - Verify: reducer tests; existing DOM tests unchanged.
+- [ ] **GAP-030 — Island test support.** M. Depends: 026.
+  - Scope: `apps/web/src/testing/`: `render.tsx` (Testing Library with the
+    island providers), `stubApi(routes)` and `jsonResponse`, fixtures (person,
+    workspace, preferences), and an axe helper. Migrate the vanilla tests' local
+    `markup()`/`response()` builders that still have live callers.
+  - Verify: all web tests green; migrated suites shorter.
 
-- [ ] **GAP-032 — Stylesheet restructure.** M. Depends: 027, 028.
-  - Scope: split `person.css` (3,080 lines) into
-    `person/{hero,rail,streams,
-    sections,editors,responsive}.css` under
-    `application.css` imports; merge the split `.profile-section-card` blocks;
-    document stylesheet ownership in
+- [ ] **GAP-031 — Stateful person surfaces as islands.** L. Depends: 028, 030.
+  - Scope: migrate interactions, communications, tasks, reminders,
+    relationships, and important dates to islands. Surfaces with non-trivial
+    state use `useReducer` with reducers unit-tested without the DOM, one owner
+    per surface per `AGENTS.md`. Delete each vanilla module and its tests as its
+    island lands.
+  - Verify: reducer tests; the interactions, tasks, reminders, relationships,
+    and important-dates E2E flows green.
+
+- [ ] **GAP-032 — Stylesheet retirement.** M. Depends: 027, 028.
+  - Scope: delete the CSS that migrated surfaces no longer use. Split what
+    remains of `person.css` by zone. Document stylesheet ownership (the tokens
+    file, the Tailwind layer, the remaining component CSS) in
     `docs/product/dashboard-settings-design.md`.
-  - Verify: stylesheet contract tests; visual check.
+  - Verify: stylesheet contract tests; visual check at 390, 768, and 1440.
 
-- [ ] **GAP-033 — Adopt the core kit across remaining features.** M. Depends:
-      026, 029.
-  - Scope: every remaining feature uses `callApi`, `forms`, and `SectionMount`;
-    remove the last local field-error and status-writing helpers.
-  - Verify: grep shows zero `.catch(() => undefined)` in `src/lib`.
+- [ ] **GAP-033 — Migrate the remaining surfaces and retire the vanilla DOM
+      layer.** L. Depends: 029, 031.
+  - Scope: move settings, personalization, the people directory and create flow,
+    Today, journal, the tasks page, authentication forms, imports and exports,
+    members, integrations, and audit history to islands or static Astro
+    components. `apps/web/src/lib` keeps only non-UI helpers (time presentation,
+    workspace context, routing).
+  - Verify: `grep` finds no `document.createElement` in `apps/web/src` outside
+    `components/ui/` and tests; full three-browser E2E at the Phase 4
+    checkpoint.
 
 ### Phase 5 — Test organization
 
@@ -1279,8 +1333,8 @@ GAP-001, 002 ─► 003 ─► 004
                                  ├─► 010, 011, 012, 014
                                  ├─► 015 ─► 016, 017, 018
                                  └─► 019 ─► 020 ─► 021 ─► 022 ─► 023
-GAP-025 ─► 026 ─► 028, 029 ─► 030, 031, 033
-       └─► 027 ─► 028 ─► 032
+GAP-025 ─► 026 ─► 027 ─► 028 ─► 029 ─► 033
+              └─► 030 ; 028+030 ─► 031 ─► 033 ; 027+028 ─► 032
 GAP-014 ─► 034, 035 ─► 037 ; 003 ─► 036 ─► 038
 GAP-019 ─► 039 ─► 040 ; 041 ─► 042 ; 013+025 ─► 043
 Phase 7 tickets depend on the Phase 2-4 tickets named in each entry.

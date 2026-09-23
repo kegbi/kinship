@@ -247,9 +247,8 @@ rows on that page; they do not create additional page routes.
 
 Use equivalent Kinship primitives for button, card, badge, breadcrumb, segmented
 filter, dialog, sheet, menu, table, and skeleton interactions. These primitives
-are hand-written vanilla TypeScript and CSS. This amendment supersedes the
-earlier shadcn/ui naming; it is an explicit implementation decision, not
-contract drift.
+are built from shadcn/ui components per
+[ADR 0006](../architecture/decisions/0006-ui-stack-shadcn-react-islands.md).
 
 The component library does not determine information architecture. In
 particular:

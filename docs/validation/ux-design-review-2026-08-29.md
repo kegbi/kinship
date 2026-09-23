@@ -1055,6 +1055,10 @@ hardcoded at `ApplicationLayout.astro:48`). The explicit toggle belongs in
 
 ### 10.6 Dead dependencies — one direction: **remove**
 
+Superseded on 2026-09-23 by
+[ADR 0006](../architecture/decisions/0006-ui-stack-shadcn-react-islands.md);
+retained as the record of the earlier direction.
+
 Remove `react`, `react-dom`, `@astrojs/react`, `@base-ui/react`, `shadcn`,
 `tailwindcss`, `@tailwindcss/vite`, `tailwind-merge`,
 `class-variance-authority`, `clsx`, `@types/react`, `@types/react-dom`,
