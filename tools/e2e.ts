@@ -135,23 +135,24 @@ export async function removeE2eTls(
   ], { KINSHIP_E2E_TLS_DIRECTORY: material.directory });
 }
 
-async function removeE2eImages(
+/** Runs one `docker` command in a run's environment and returns its output. */
+export type E2eDocker = (args: readonly string[]) => Promise<string>;
+
+/** Removes exactly the images a run-scoped project built and proves them gone. */
+export async function removeE2eImages(
   project: string,
-  environment: Readonly<Record<string, string>>,
+  docker: E2eDocker,
 ): Promise<void> {
   const expected = e2eImageNames(project);
   const list = async () =>
     new Set(
-      (await commandOutput(
-        "docker",
-        ["image", "ls", "--format", "{{.Repository}}:{{.Tag}}"],
-        environment,
-      )).split(/\r?\n/).filter(Boolean),
+      (await docker(["image", "ls", "--format", "{{.Repository}}:{{.Tag}}"]))
+        .split(/\r?\n/).filter(Boolean),
     );
   const before = await list();
   const present = expected.filter((image) => before.has(image));
   if (present.length > 0) {
-    await command("docker", ["image", "rm", ...present], environment);
+    await docker(["image", "rm", ...present]);
   }
   const after = await list();
   const remaining = expected.filter((image) => after.has(image));
@@ -159,6 +160,62 @@ async function removeE2eImages(
     throw new Error(
       `E2E images remained after cleanup: ${remaining.join(", ")}`,
     );
+  }
+}
+
+/** Proves a run-scoped project left no container, volume, or network. */
+export async function assertE2eProjectAbsent(
+  project: string,
+  docker: E2eDocker,
+): Promise<void> {
+  for (
+    const [kind, args] of [
+      ["containers", ["ps", "-aq"]],
+      ["volumes", ["volume", "ls", "-q"]],
+      ["networks", ["network", "ls", "-q"]],
+    ] as const
+  ) {
+    const filter = `label=com.docker.compose.project=${project}`;
+    if (await docker([...args, "--filter", filter])) {
+      throw new Error(`E2E project leaked ${kind}.`);
+    }
+  }
+}
+
+/**
+ * Tears down a Docker fixture that ran `compose up --build` under its own
+ * run-scoped project: every step runs even after an earlier one fails, and the
+ * images the run built go with the project (REL-043).
+ */
+export async function tearDownE2eComposeProject(
+  project: string,
+  docker: E2eDocker,
+): Promise<void> {
+  const errors: unknown[] = [];
+  for (
+    const step of [
+      () =>
+        docker([
+          ...E2E_COMPOSE_ARGS,
+          "down",
+          "--volumes",
+          "--remove-orphans",
+          "--timeout",
+          "10",
+        ]),
+      () => assertE2eProjectAbsent(project, docker),
+      () => removeE2eImages(project, docker),
+    ]
+  ) {
+    try {
+      await step();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) {
+    throw new AggregateError(errors, "E2E Compose project teardown failed.");
   }
 }
 
@@ -181,7 +238,10 @@ async function cleanupE2eArtifacts(
 ): Promise<void> {
   const results = await Promise.allSettled([
     tls ? removeE2eTls(tls) : Promise.resolve(),
-    removeE2eImages(project, environment),
+    removeE2eImages(
+      project,
+      (args) => commandOutput("docker", args, environment),
+    ),
     removePlaywrightLastRun(),
   ]);
   const errors = results.flatMap((result) =>
@@ -817,40 +877,6 @@ export async function startAstro(apiOrigin: string): Promise<OwnedWeb> {
   throw new Error("Astro could not bind a verified strict-port listener.");
 }
 
-async function assertProjectAbsent(
-  project: string,
-  environment: Readonly<Record<string, string>>,
-): Promise<void> {
-  for (
-    const [kind, args] of [
-      ["containers", [
-        "ps",
-        "-aq",
-        "--filter",
-        `label=com.docker.compose.project=${project}`,
-      ]],
-      ["volumes", [
-        "volume",
-        "ls",
-        "-q",
-        "--filter",
-        `label=com.docker.compose.project=${project}`,
-      ]],
-      ["networks", [
-        "network",
-        "ls",
-        "-q",
-        "--filter",
-        `label=com.docker.compose.project=${project}`,
-      ]],
-    ] as const
-  ) {
-    if (await commandOutput("docker", args, environment)) {
-      throw new Error(`E2E project leaked ${kind}.`);
-    }
-  }
-}
-
 async function waitForApi(origin: string): Promise<void> {
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
@@ -988,7 +1014,11 @@ async function main(): Promise<void> {
         ],
         environment,
       ).then(() => undefined),
-    assertAbsent: () => assertProjectAbsent(project, environment),
+    assertAbsent: () =>
+      assertE2eProjectAbsent(
+        project,
+        (args) => commandOutput("docker", args, environment),
+      ),
     cleanupFiles: () => cleanupE2eArtifacts(project, environment, tls),
   });
 }

@@ -4,6 +4,7 @@ import {
   E2E_COMPOSE_ARGS,
   e2eEnvironment,
   removeE2eTls,
+  tearDownE2eComposeProject,
 } from "./e2e.ts";
 
 const NGINX_IMAGE =
@@ -52,35 +53,6 @@ async function waitForContainerHealth(
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw new Error(`${container} did not become ${expected}.`);
-}
-
-async function assertComposeProjectAbsent(project: string): Promise<void> {
-  for (
-    const [kind, args] of [
-      ["containers", [
-        "ps",
-        "-aq",
-        "--filter",
-        `label=com.docker.compose.project=${project}`,
-      ]],
-      ["volumes", [
-        "volume",
-        "ls",
-        "-q",
-        "--filter",
-        `label=com.docker.compose.project=${project}`,
-      ]],
-      ["networks", [
-        "network",
-        "ls",
-        "-q",
-        "--filter",
-        `label=com.docker.compose.project=${project}`,
-      ]],
-    ] as const
-  ) {
-    assert(!(await docker(args)), `gateway readiness fixture leaked ${kind}`);
-  }
 }
 
 async function requestHealthFromGateway(
@@ -302,10 +274,8 @@ Deno.test({
       GATEWAY_TLS_CERTIFICATE_PATH: tls.certificate,
       GATEWAY_TLS_PRIVATE_KEY_PATH: tls.privateKey,
     };
-    let created = false;
     const errors: unknown[] = [];
     try {
-      created = true;
       await docker(
         [
           ...E2E_COMPOSE_ARGS,
@@ -422,26 +392,13 @@ Deno.test({
     } catch (error) {
       errors.push(error);
     } finally {
-      if (created) {
-        try {
-          await docker(
-            [
-              ...E2E_COMPOSE_ARGS,
-              "down",
-              "--volumes",
-              "--remove-orphans",
-              "--timeout",
-              "10",
-            ],
-            false,
-            environment,
-          );
-        } catch (error) {
-          errors.push(error);
-        }
-      }
       try {
-        await assertComposeProjectAbsent(project);
+        // Down, prove the project absent, and remove the images `up --build`
+        // made for this run, so no fixture run leaves them behind (REL-043).
+        await tearDownE2eComposeProject(
+          project,
+          (args) => docker(args, false, environment),
+        );
       } catch (error) {
         errors.push(error);
       }

@@ -374,6 +374,25 @@ Playwright test carrying its stable flow ID.
       `app-004c` (two), `app-004e`, `app-005b`, `app-005c`, `app-006a` (two),
       `app-006b` (two), and `auth-003` (two). No assertion changed and no retry,
       sleep, or timeout was added.
+- [x] **REL-043 — Test fixtures leave the images they build behind.** The
+      REL-040 and REL-039 implementers each found about 1,900
+      `kinship-e2e-<pid>-<ts>-*` images on the developer machine with no
+      container attached. `tools/e2e.ts` removed its own five images at
+      teardown, but the Compose readiness fixture in
+      `tools/gateway_log_capture_test.ts`, which the `gateway` set runs in every
+      root `test:unit`, ran `compose up --build` under its own `kinship-e2e-*`
+      project and tore down only containers, volumes, and networks. It is the
+      only fixture that builds under a per-run project: the PostgreSQL gate, the
+      object-storage and schema fixtures start only pinned images, and
+      `tools/dev.ts` builds under the fixed development project. Delivered
+      2026-09-25: `tools/e2e.ts` exports `removeE2eImages` and
+      `assertE2eProjectAbsent` over one Docker runner, which the launcher now
+      uses, and `tearDownE2eComposeProject`, which runs `compose down`, proves
+      the project absent, and removes exactly that run's five images, each step
+      even after an earlier one fails. The fixture's teardown calls it, and two
+      `e2e_test.ts` regressions prove it removes only the run's images after a
+      failed `down` and fails when one remains. The leftover images were not
+      removed.
 - [x] **REL-044 — Spec helpers end on an app navigation their callers then
       interrupt.** Linux CI run 36182979003 on `bf572f3e` timed out in
       `app-004b.spec.ts:92` (`[PEOPLE-005]`) on WebKit waiting for "Given name"
