@@ -8,6 +8,7 @@ import {
 import axe from "axe-core";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { settleNavigation } from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -1330,6 +1331,7 @@ test(
     ).toBe(false);
     await page.locator('a[href="/app/people"]').first().click();
     await expect(page).toHaveURL(/\/app\/people$/);
+    await settleNavigation(page);
     await page.goto(profilePath);
     await expect(
       food.getByRole("paragraph").filter({
@@ -1646,6 +1648,7 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
   await page.getByRole("button", { name: "Save person", exact: true }).click();
   await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
   const profilePath = new URL(page.url()).pathname;
+  await settleNavigation(page);
   await page.goto(profilePath);
   const contacts = page.locator("#profile-section-contact-methods");
   await expect(contacts).toHaveAttribute("data-section-state", "loading");

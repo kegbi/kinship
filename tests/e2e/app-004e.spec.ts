@@ -1,6 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import axe from "axe-core";
 import { execFileSync } from "node:child_process";
+import { settleNavigation } from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -402,6 +403,7 @@ test(
       .click();
     await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
     const profilePath = new URL(page.url()).pathname;
+    await settleNavigation(page);
     await page.goto(profilePath);
     await expect(page.locator('[data-profile-fact-section="tags"]'))
       .toHaveAttribute("data-section-state", "ready");

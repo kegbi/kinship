@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { settleNavigation } from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -674,6 +675,7 @@ test(
     await keyboardReachSignOutWithSingleWorkspace(page);
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/auth\/sign-in$/);
+    await settleNavigation(page);
     await page.goto("/app");
     await expect(page.getByRole("link", { name: "Go to sign-in" }))
       .toBeVisible();

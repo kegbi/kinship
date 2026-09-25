@@ -5,6 +5,7 @@ import {
   test,
 } from "@playwright/test";
 import axe from "axe-core";
+import { settleNavigation } from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -107,6 +108,7 @@ test(
       .click();
     await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
     const profilePath = new URL(page.url()).pathname;
+    await settleNavigation(page);
     await page.goto(profilePath);
     const section = page.locator("#profile-section-important-dates");
     const savedDates = page.locator("#important-dates-list");

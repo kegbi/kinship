@@ -7,6 +7,7 @@ import {
 import axe from "axe-core";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { settleNavigation } from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -260,6 +261,7 @@ test(
     await globalSearch.press("Enter");
     await expect(page).toHaveURL(new RegExp(`/app/people/${adaId}$`));
 
+    await settleNavigation(page);
     await page.goto("/app/people");
     const peopleNavigation = page.getByRole("link", {
       exact: true,
