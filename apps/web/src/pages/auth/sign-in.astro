@@ -11,7 +11,7 @@ export const prerender = true;
       <p>Sign in with your verified Kinship password. If you configured a second factor, we’ll ask for it before creating a session.</p>
     </section>
     <section class="auth-card" aria-label="Sign in">
-      <form id="sign-in-form" novalidate>
+      <form method="post" id="sign-in-form" novalidate>
         <label>Email address<input name="email" type="email" autocomplete="username" maxlength="254" required /></label>
         <label>Password<input name="password" type="password" autocomplete="current-password" maxlength="128" required /></label>
         <button type="submit">Sign in</button>

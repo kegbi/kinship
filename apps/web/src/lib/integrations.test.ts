@@ -112,6 +112,57 @@ describe("INTEGRATION-001 DAV settings", () => {
       .toBe(true);
   });
 
+  it("keeps a DAV secret submitted before the page loaded off the URL and adds it once loaded", async () => {
+    document.body.innerHTML = markup();
+    let resolveSession!: (value: Response) => void;
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/session") {
+        return new Promise<Response>((resolve) => resolveSession = resolve);
+      }
+      if (init?.method === "POST") {
+        return Promise.resolve(response({
+          status: "configured",
+          subscription: {
+            id: subscriptionId,
+            isActive: true,
+            lastOutcome: "never",
+            name: "Early DAV",
+            remoteUrl: "https://dav.example.test/collection/",
+          },
+        }, 201));
+      }
+      return Promise.resolve(
+        response({ status: "ready", subscriptions: [] }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const mounted = mountIntegrations();
+    const form = document.querySelector<HTMLFormElement>(
+      "[data-integration-create]",
+    )!;
+    (form.elements.namedItem("name") as HTMLInputElement).value = "Early DAV";
+    (form.elements.namedItem("remoteUrl") as HTMLInputElement).value =
+      "https://dav.example.test/collection/";
+    (form.elements.namedItem("password") as HTMLInputElement).value =
+      "dav-secret";
+    const early = new Event("submit", { bubbles: true, cancelable: true });
+    form.dispatchEvent(early);
+    expect(early.defaultPrevented).toBe(true);
+    resolveSession(response(session()));
+    await mounted;
+    const posts = () =>
+      fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+    await vi.waitFor(() => expect(posts()).toHaveLength(1));
+    await vi.waitFor(() =>
+      expect(form.querySelector("button")?.disabled).toBe(false)
+    );
+    expect(JSON.parse(String(posts()[0]![1]!.body))).toEqual({
+      name: "Early DAV",
+      password: "dav-secret",
+      remoteUrl: "https://dav.example.test/collection/",
+    });
+  });
+
   it("hides management from a regular member", async () => {
     document.body.innerHTML = markup();
     vi.stubGlobal(

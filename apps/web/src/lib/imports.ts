@@ -13,6 +13,7 @@ import {
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { IMPORT_SOURCE_MAX_BYTES } from "../../../../packages/contracts/imports.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
+import { bindSubmitEarly } from "./early-submit.ts";
 
 function element<T extends Element>(selector: string): T | undefined {
   return document.querySelector<T>(selector) ?? undefined;
@@ -74,6 +75,8 @@ export async function mountImports(): Promise<void> {
   );
   const state = element<HTMLElement>("[data-import-state]");
   if (!root || !state) return;
+  const importForm = element<HTMLFormElement>("[data-import-form]");
+  const submission = importForm ? bindSubmitEarly(importForm) : undefined;
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") {
     state.textContent = "Your session could not be confirmed.";
@@ -203,10 +206,10 @@ export async function mountImports(): Promise<void> {
   };
   input.addEventListener("change", () => void detect());
   // A file chosen while the session was resolving fired its change event
-  // before this listener existed.
-  if (input.files?.length) void detect();
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
+  // before this listener existed. A validation submitted meanwhile waits for
+  // that detection.
+  if (input.files?.length) await detect();
+  submission?.handle(async () => {
     if (validatingSource) return;
     if (!source) {
       state.textContent = "Choose a supported Monica JSON export first.";

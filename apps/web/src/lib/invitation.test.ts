@@ -71,6 +71,45 @@ describe("AUTH-002 invitation acceptance", () => {
     expect(navigate).toHaveBeenCalledTimes(1);
   });
 
+  it("reveals the invitation actions only once their token handoff is wired", async () => {
+    markup();
+    history.replaceState(
+      {},
+      "",
+      "/invite/private-token-abcdefghijklmnopqrstuvwxyz",
+    );
+    let resolveSession!: (value: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(
+          response({
+            status: "pending",
+            email: "invitee@example.test",
+            role: "member",
+            workspaceName: "Circle",
+          }),
+        )
+        .mockReturnValueOnce(
+          new Promise<Response>((resolve) => resolveSession = resolve),
+        ),
+    );
+    const navigate = vi.fn();
+    const mounted = mountInvitationAcceptance(navigate);
+    await vi.waitFor(() =>
+      expect(document.querySelector("h1")?.textContent).toBe("Join Circle")
+    );
+    const actions = document.querySelector<HTMLElement>("#invitation-actions")!;
+    expect(actions.hidden).toBe(true);
+    resolveSession(response({ code: "session_invalid", status: 401 }, 401));
+    await mounted;
+    expect(actions.hidden).toBe(false);
+    document.querySelector<HTMLAnchorElement>("#invitation-sign-in")?.click();
+    expect(navigate).toHaveBeenCalledWith(
+      "/auth/sign-in#invite=private-token-abcdefghijklmnopqrstuvwxyz",
+    );
+  });
+
   it("offers genuine sign-up through a scrubbed fragment handoff", async () => {
     markup();
     history.replaceState(

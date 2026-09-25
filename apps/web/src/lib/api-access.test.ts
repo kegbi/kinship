@@ -148,6 +148,43 @@ describe("API-001 personal API tokens", () => {
     await vi.waitFor(() => expect(submit.disabled).toBe(false));
   });
 
+  it("keeps a token created before the page loaded off the URL and creates it once loaded", async () => {
+    document.body.innerHTML = markup();
+    let resolveSession!: (value: Response) => void;
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/session") {
+        return new Promise<Response>((resolve) => resolveSession = resolve);
+      }
+      if (init?.method === "POST") {
+        return Promise.resolve(response({ secret, status: "created" }, 201));
+      }
+      return Promise.resolve(response({ records: [], status: "ready" }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const mounted = mountApiAccess();
+    const form = document.querySelector<HTMLFormElement>("[data-api-create]")!;
+    (form.elements.namedItem("name") as HTMLInputElement).value = "Early";
+    (form.elements.namedItem("scopes") as HTMLInputElement).checked = true;
+    const early = new Event("submit", { bubbles: true, cancelable: true });
+    form.dispatchEvent(early);
+    expect(early.defaultPrevented).toBe(true);
+    resolveSession(response(session()));
+    await mounted;
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector<HTMLInputElement>("[data-api-secret]")?.value,
+      ).toBe(secret)
+    );
+    const posts = fetchMock.mock.calls.filter(([, init]) =>
+      init?.method === "POST"
+    );
+    expect(posts).toHaveLength(1);
+    expect(JSON.parse(String(posts[0]![1]!.body))).toEqual({
+      name: "Early",
+      scopes: ["people:read"],
+    });
+  });
+
   it("does not expose token management to a regular member", async () => {
     document.body.innerHTML = markup();
     vi.stubGlobal(

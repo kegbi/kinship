@@ -11,6 +11,7 @@ import {
   revokeApiToken,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
+import { bindSubmitEarly } from "./early-submit.ts";
 
 function element<T extends Element>(selector: string): T | undefined {
   return document.querySelector<T>(selector) ?? undefined;
@@ -62,6 +63,7 @@ export async function mountApiAccess(): Promise<void> {
     !root || !state || !form || !list || !empty || !secretPanel ||
     !secretInput || !copy || !dismiss
   ) return;
+  const submission = bindSubmitEarly(form);
 
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") {
@@ -120,8 +122,7 @@ export async function mountApiAccess(): Promise<void> {
     state.textContent = "API tokens are current.";
   };
 
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
+  submission.handle(() => {
     const data = new FormData(form);
     const name = data.get("name")?.toString().trim();
     const expiresValue = data.get("expiresAt")?.toString();

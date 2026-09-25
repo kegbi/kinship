@@ -120,6 +120,37 @@ describe("PLANNING-001 task browser behavior", () => {
     expect(document.body.textContent).toBe("");
   });
 
+  it("keeps Add task unavailable until its action is wired", async () => {
+    expect(readFileSync("apps/web/src/pages/app/tasks/index.astro", "utf8"))
+      .toMatch(/<button data-task-add[^>]*\sdisabled>/);
+    surfaceMarkup(true);
+    let resolveSession!: (value: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        String(input) === "/api/v1/session"
+          ? new Promise<Response>((resolve) => resolveSession = resolve)
+          : Promise.resolve(
+            response(
+              String(input).startsWith("/api/v1/people")
+                ? { people: [], status: "ready" }
+                : { items: [], status: "ready" },
+            ),
+          )
+      ),
+    );
+    const mounted = mountTaskSurface();
+    const add = document.querySelector<HTMLButtonElement>("[data-task-add]")!;
+    expect(add.disabled).toBe(true);
+    resolveSession(response(session));
+    await mounted;
+    expect(add.disabled).toBe(false);
+    add.click();
+    expect(
+      document.querySelector<HTMLFormElement>("[data-task-form]")?.hidden,
+    ).toBe(false);
+  });
+
   it("loads a person task, creates a task, and completes idempotently", async () => {
     surfaceMarkup();
     mountUnsavedChangesGuard({

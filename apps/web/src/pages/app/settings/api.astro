@@ -26,7 +26,7 @@ export const prerender = true;
 
     <section class="api-access-section" aria-labelledby="create-token-heading">
       <header><p class="scope-label">Personal credential</p><h2 id="create-token-heading">Create API token</h2></header>
-      <form data-api-create class="api-token-form" novalidate>
+      <form method="post" data-api-create class="api-token-form" novalidate>
         <label>Token name<input name="name" type="text" maxlength="100" autocomplete="off" required /></label>
         <label>Expiry <span class="optional-label">Optional</span><input name="expiresAt" type="datetime-local" /></label>
         <fieldset><legend>Scopes</legend><label class="scope-choice"><input name="scopes" type="checkbox" value="people:read" />Read people</label></fieldset>

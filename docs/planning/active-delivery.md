@@ -331,6 +331,34 @@ Playwright test carrying its stable flow ID.
       `127.0.0.1:${E2E_GATEWAY_PORT:-}:8443`, so the PostgreSQL gate and the
       other overlay consumers, which leave it unset, keep a Docker-assigned
       port; the production `compose.yaml` mapping is unchanged.
+- [x] **REL-041 — Forms submitted before their handler fall back to a native
+      GET.** REL-033 found the members page's invitation form submitting
+      natively as `GET /app/settings/members?email=…` because its listener bound
+      only after the session and member reads, which put the invitee's email in
+      the URL, browser history, and the `Referer` header. On `823f8a07` 33 of
+      the 37 `<form>` elements in `apps/web/src/**/*.astro` declared no method,
+      and the page modules for API tokens, DAV integrations, person creation,
+      the people directory, import, storage lookup, and the leave-workspace and
+      delete-identity forms (with the current password) still bound their
+      `submit` listener after an await. Delivered 2026-09-25: every form now
+      declares `method="post"`, except Quick capture's `method="dialog"` and the
+      three `method="get"` audit and activity-report filters, whose fields are
+      opaque IDs, an action name, and dates. The gateway answers a POST to a
+      static path with 405 and logs only the method, route template, and status;
+      the two on-demand auth pages (`/auth/mfa`, `/auth/reset-password`) reach
+      the private renderer, which never reads a request body.
+      `form-method-contract.test.ts` fails on any form without a method, on a
+      GET form outside that allowlist or carrying a personal field, and on a
+      script-created form without `method = "post"`. `lib/early-submit.ts` binds
+      a form's submission before the first await and replays the latest early
+      one once the page is ready, used by the create, search, and import forms;
+      the directory lets its first load serve an early search and keeps a search
+      typed while it loaded. The two password forms start disabled and drop an
+      early submission until the current impact is shown, the export action and
+      the tasks page's `Add task` start disabled until their clicks are wired,
+      the personalization create form stays hidden until its section loads, and
+      the invitation actions appear only once their token handoff is wired. Each
+      change has a focused test that acts before the page is ready.
 - [x] **REL-042 — A spec's own navigation interrupts the app's still-loading
       page on Linux WebKit.** Run `36160197116` on `823f8a07` failed `app-004b`
       (`[PEOPLE-005]`, `app-004b.spec.ts:110`) and `app-004c` (`[PEOPLE-006]`

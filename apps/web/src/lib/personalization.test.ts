@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   mountPersonalization,
   PERSONALIZATION_SECTIONS,
@@ -570,6 +571,38 @@ describe("WORKSPACE-003 personalization deep links", () => {
       expect(document.querySelector("#personalization-heading")?.textContent)
         .toBe("Tags")
     );
+  });
+
+  it("keeps the create form out of reach until its section has loaded", async () => {
+    expect(
+      readFileSync(
+        "apps/web/src/pages/app/settings/personalization.astro",
+        "utf8",
+      ),
+    ).toMatch(/<form method="post" id="personalization-create"[^>]*\shidden>/);
+    markup();
+    const create = document.querySelector<HTMLFormElement>(
+      "#personalization-create",
+    )!;
+    create.hidden = true;
+    let resolveSession!: (value: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockReturnValueOnce(
+          new Promise<Response>((resolve) => resolveSession = resolve),
+        )
+        .mockResolvedValueOnce(response({
+          entries: [],
+          section: "profile-modules",
+          status: "ready",
+        })),
+    );
+    const mounted = mountPersonalization();
+    expect(create.hidden).toBe(true);
+    resolveSession(response(session));
+    await mounted;
+    expect(create.hidden).toBe(false);
   });
 
   it("reports session and section loading failures without stale rows", async () => {

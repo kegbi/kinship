@@ -13,7 +13,7 @@ export const prerender = true;
       { href: "/app/settings", label: "Settings" },
       { label: "Export" },
     ]} />
-    <header class="settings-heading"><div><p class="eyebrow">Data settings</p><h1>Export</h1><p>Portable person data with versioned checksums and short-lived downloads.</p></div><button data-export-create class="button-primary" type="button">Create export</button></header>
+    <header class="settings-heading"><div><p class="eyebrow">Data settings</p><h1>Export</h1><p>Portable person data with versioned checksums and short-lived downloads.</p></div><button data-export-create class="button-primary" type="button" disabled>Create export</button></header>
     <p data-export-state class="section-state" role="status" aria-live="polite">Loading export history…</p>
     <button data-export-retry class="button-secondary" type="button" hidden>Retry</button>
     <section aria-labelledby="export-history-heading"><h2 id="export-history-heading">Export history</h2><ol data-export-history class="import-history" aria-label="Export history"></ol></section>

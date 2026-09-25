@@ -32,7 +32,7 @@ export const prerender = true;
         <div><p class="section-kicker">Single-use access</p><h2 id="invite-heading">Invite a member</h2></div>
       </div>
       <p>The invitation is valid for seven days and can be accepted only by the invited email address.</p>
-      <form id="invitation-form" class="invitation-form" novalidate>
+      <form method="post" id="invitation-form" class="invitation-form" novalidate>
         <label>Email address<input name="email" type="email" autocomplete="email" maxlength="254" required /></label>
         <label>Role<select name="role"><option value="member">Member</option><option value="admin">Admin</option></select></label>
         <button type="submit">Send invitation</button>

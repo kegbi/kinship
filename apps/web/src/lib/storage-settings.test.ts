@@ -104,6 +104,38 @@ describe("FILES-001 workspace storage settings", () => {
     expect(document.body.textContent).not.toContain("storageKey");
   });
 
+  it("keeps a lookup submitted before the page loaded off the URL and runs it once loaded", async () => {
+    document.body.innerHTML = markup();
+    let resolveSession!: (value: Response) => void;
+    const queries: (string | null)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = new URL(String(input), "http://localhost");
+        if (url.pathname === "/api/v1/session") {
+          return new Promise<Response>((resolve) => resolveSession = resolve);
+        }
+        queries.push(url.searchParams.get("query"));
+        return Promise.resolve(response(ready()));
+      }),
+    );
+    const mounted = mountStorageSettings();
+    const form = document.querySelector<HTMLFormElement>(
+      "[data-storage-search]",
+    )!;
+    (form.elements.namedItem("query") as HTMLInputElement).value = "Ada";
+    const early = new Event("submit", { bubbles: true, cancelable: true });
+    form.dispatchEvent(early);
+    expect(early.defaultPrevented).toBe(true);
+    resolveSession(response(session()));
+    await mounted;
+    await vi.waitFor(() =>
+      expect(document.querySelector("[data-storage-search-state]")?.textContent)
+        .toBe("No files match this workspace lookup.")
+    );
+    expect(queries).toEqual([null, "Ada"]);
+  });
+
   it("shows forbidden access without rendering workspace inventory", async () => {
     document.body.innerHTML = markup();
     vi.stubGlobal(

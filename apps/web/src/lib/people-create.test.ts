@@ -116,6 +116,44 @@ describe("PEOPLE-001 person creation form", () => {
     expect(document.body.dataset.pageId).toBe("people.create");
   });
 
+  it("keeps a person saved before the page loaded off the URL and creates them once loaded", async () => {
+    const form = markup();
+    let resolveSession!: (value: Response) => void;
+    const fetchMock = vi.fn()
+      .mockReturnValueOnce(
+        new Promise<Response>((resolve) => resolveSession = resolve),
+      )
+      .mockResolvedValueOnce(response({
+        next: `/app/people/${personId}`,
+        person: { givenName: "Ada", id: personId, isPartial: false },
+        status: "created",
+      }, 201));
+    vi.stubGlobal("fetch", fetchMock);
+    const navigate = vi.fn();
+    const mounted = mountPeopleCreate(navigate);
+    set(form, "givenName", "Ada");
+    let early: Event | undefined;
+    document.addEventListener("submit", (event) => early = event, {
+      once: true,
+    });
+    form.requestSubmit(
+      document.querySelector<HTMLButtonElement>("#save-add-another")!,
+    );
+    expect(early?.defaultPrevented).toBe(true);
+    expect(location.search).toBe("");
+    resolveSession(response(session));
+    await mounted;
+    await vi.waitFor(() =>
+      expect(document.querySelector("#people-create-status")?.textContent)
+        .toBe("Ada created. Add another person.")
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      givenName: "Ada",
+      isPartial: false,
+    });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it("keeps duplicate guidance non-blocking through explicit create-anyway", async () => {
     const form = markup();
     set(form, "givenName", "Ada");

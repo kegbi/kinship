@@ -44,7 +44,7 @@ export const prerender = true;
 
       <section id="file-lookup" class="storage-settings-section" aria-labelledby="file-lookup-heading">
         <header><p class="scope-label">File lookup</p><h2 id="file-lookup-heading">Metadata lookup</h2></header>
-        <form data-storage-search class="storage-search-form">
+        <form method="post" data-storage-search class="storage-search-form">
           <label for="storage-query">File ID, filename, title, or person</label>
           <div><input id="storage-query" name="query" type="search" maxlength="100" autocomplete="off" required /><button type="submit">Search</button></div>
         </form>

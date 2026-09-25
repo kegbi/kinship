@@ -32,8 +32,9 @@ const workspacePage = readFileSync(
 );
 
 function formMarkup(page: string, id: string): string {
-  const markup = page.match(new RegExp(`<form id="${id}"[\\s\\S]*?</form>`))
-    ?.[0];
+  const markup = page.match(
+    new RegExp(`<form method="post" id="${id}"[\\s\\S]*?</form>`),
+  )?.[0];
   if (!markup) throw new Error(`Missing ${id} fixture markup.`);
   return markup;
 }
@@ -977,6 +978,37 @@ describe("AUTH-005 personal lifecycle", () => {
       document.querySelector<HTMLButtonElement>("#delete-identity-form button")
         ?.disabled,
     ).toBe(true);
+  });
+
+  it("keeps both password forms unable to submit until the current impact has loaded", async () => {
+    for (const id of ["leave-workspace-form", "delete-identity-form"]) {
+      const form = new RegExp(`<form[^>]*id="${id}"[\\s\\S]*?</form>`).exec(
+        profilePage,
+      )?.[0];
+      expect(form, id).toMatch(/<button type="submit"[^>]*\sdisabled>/);
+    }
+    document.body.innerHTML = lifecycleMarkup;
+    let resolvePreview!: (value: Response) => void;
+    const fetchMock = vi.fn().mockReturnValueOnce(
+      new Promise<Response>((resolve) => resolvePreview = resolve),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const mounted = mountPersonalLifecycle("workspace");
+    const buttons = [
+      ...document.querySelectorAll<HTMLButtonElement>("form button"),
+    ];
+    expect(buttons.map((button) => button.disabled)).toEqual([true, true]);
+    for (const form of document.querySelectorAll("form")) {
+      (form.elements.namedItem("password") as HTMLInputElement).value =
+        "current password";
+      const early = new Event("submit", { bubbles: true, cancelable: true });
+      form.dispatchEvent(early);
+      expect(early.defaultPrevented).toBe(true);
+    }
+    resolvePreview(response(lifecyclePreview));
+    await mounted;
+    expect(buttons.map((button) => button.disabled)).toEqual([false, false]);
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("reauthenticates, leaves, and selects the next valid workspace", async () => {

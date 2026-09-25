@@ -11,6 +11,7 @@ import {
   type ProblemDetails,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
+import { bindSubmitEarly } from "./early-submit.ts";
 import { displayPersonName, type PersonNameOrder } from "./person-name.ts";
 
 interface DirectoryElements {
@@ -117,7 +118,8 @@ function hydrateControls(
   defaultSort: PeopleDirectorySort,
 ): void {
   const query = new URLSearchParams(globalThis.location.search);
-  directory.search.value = query.get("search") ?? "";
+  // A search typed while the page was loading is kept over the URL's.
+  directory.search.value ||= query.get("search") ?? "";
   const sort = query.get("sort");
   directory.sort.value = isSort(sort) ? sort : defaultSort;
   directory.tag.dataset.initialValue = query.get("tag") ?? "";
@@ -305,6 +307,7 @@ export async function mountPeopleDirectory(): Promise<void> {
   const directory = elements();
   if (!directory) return;
   const selectedLifecycle = lifecycle();
+  const submission = bindSubmitEarly(directory.form);
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") {
     renderError(
@@ -427,11 +430,11 @@ export async function mountPeopleDirectory(): Promise<void> {
       } shown.`;
   };
 
-  directory.form.addEventListener("submit", (event) => {
-    event.preventDefault();
+  // The first load below reads the fields an early search carried.
+  submission.handle(() => {
     nextCursor = undefined;
     void load(false);
-  });
+  }, { replay: false });
   directory.loadMore.addEventListener("click", () => void load(true));
   directory.retry.addEventListener("click", () => void load(false));
   directory.tag.addEventListener("change", () => {

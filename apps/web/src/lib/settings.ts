@@ -23,6 +23,7 @@ import {
   WORKSPACE_CHANGE_REQUEST_EVENT,
   type WorkspaceChangeRequestDetail,
 } from "./workspace-context.ts";
+import { bindSubmitEarly } from "./early-submit.ts";
 
 let activeBeforeUnload: ((event: Event) => void) | undefined;
 let activeWorkspaceChangeRequest: ((event: Event) => void) | undefined;
@@ -51,6 +52,15 @@ export async function mountPersonalLifecycle(
     "#delete-identity-form",
   );
   if (!region || !leaveForm || !deleteForm) return;
+  // Both actions stay blocked until the current impact is shown. A submission
+  // made before then is dropped, never replayed: the impact must be reviewed
+  // first.
+  const leaveSubmission = bindSubmitEarly(leaveForm);
+  const deleteSubmission = bindSubmitEarly(deleteForm);
+  const leaveButton = leaveForm.querySelector<HTMLButtonElement>("button")!;
+  const deleteButton = deleteForm.querySelector<HTMLButtonElement>("button")!;
+  leaveButton.disabled = true;
+  deleteButton.disabled = true;
   const workspaceId = selectedWorkspaceId ?? await selectedWorkspace();
   if (!workspaceId) {
     return lifecycleStatus("Your session could not be confirmed.");
@@ -103,12 +113,7 @@ export async function mountPersonalLifecycle(
     blockers.textContent =
       `You are the final active owner of ${names}. Transfer ownership in Members before leaving an owned workspace or deleting your identity. Workspace deletion is a separate owner action.`;
   }
-  const leaveButton = leaveForm.querySelector<HTMLButtonElement>("button")!;
-  const deleteButton = deleteForm.querySelector<HTMLButtonElement>("button")!;
-  leaveButton.disabled = currentBlocked;
-  deleteButton.disabled = deleteBlocked;
-  leaveForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
+  leaveSubmission.handle(async () => {
     leaveButton.disabled = true;
     lifecycleStatus("Revalidating membership impact…");
     const result = await leaveCurrentWorkspace({
@@ -128,9 +133,8 @@ export async function mountPersonalLifecycle(
       clearActiveWorkspace();
     }
     navigate(result.value.next);
-  });
-  deleteForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
+  }, { replay: false });
+  deleteSubmission.handle(async () => {
     deleteButton.disabled = true;
     lifecycleStatus("Reauthenticating and revalidating every membership…");
     const result = await deletePersonalIdentity({
@@ -146,7 +150,9 @@ export async function mountPersonalLifecycle(
     }
     clearActiveWorkspace();
     navigate(result.value.next);
-  });
+  }, { replay: false });
+  leaveButton.disabled = currentBlocked;
+  deleteButton.disabled = deleteBlocked;
 }
 
 function status(): HTMLElement | undefined {

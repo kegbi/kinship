@@ -23,7 +23,7 @@ export const prerender = true;
       <section class="personalization-content" aria-labelledby="personalization-heading">
         <h2 id="personalization-heading" tabindex="-1">Profile modules</h2>
         <p>Names must be unique in this workspace. Impact counts are shown before replacement, disabling, or deletion.</p>
-        <form id="personalization-create" class="personalization-create"><label>New option name<input name="name" maxlength="200" required /></label><button type="submit">Create option</button></form>
+        <form method="post" id="personalization-create" class="personalization-create" hidden><label>New option name<input name="name" maxlength="200" required /></label><button type="submit">Create option</button></form>
         <p id="personalization-dirty" class="inline-status" role="status" aria-live="polite">All changes saved.</p>
         <p id="personalization-status" class="inline-status" role="status" tabindex="-1" aria-live="polite">Loading workspace personalization…</p>
         <ul id="personalization-list" class="personalization-list" aria-label="Personalization options"></ul>

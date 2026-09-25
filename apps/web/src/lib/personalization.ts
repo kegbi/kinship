@@ -476,6 +476,8 @@ export async function mountPersonalization(): Promise<void> {
       const row = document.createElement("li");
       row.className = "personalization-row";
       const form = document.createElement("form");
+      // REL-041: a native submission must never become a GET.
+      form.method = "post";
       form.className = "personalization-entry-form";
       const fields: HTMLElement[] = [];
       const inputField = (

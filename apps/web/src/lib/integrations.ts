@@ -4,6 +4,7 @@ import {
   type TimePreferences,
 } from "./time-presentation.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
+import { bindSubmitEarly } from "./early-submit.ts";
 import {
   createDavSubscription,
   type DavSubscription as Subscription,
@@ -88,6 +89,7 @@ export async function mountIntegrations(): Promise<void> {
   );
   const empty = document.querySelector<HTMLElement>("[data-integration-empty]");
   if (!root || !state || !form || !list || !empty) return;
+  const submission = bindSubmitEarly(form);
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") {
     state.textContent = "Your session could not be confirmed.";
@@ -151,8 +153,7 @@ export async function mountIntegrations(): Promise<void> {
     empty.hidden = result.value.subscriptions.length !== 0;
     state.textContent = "DAV connection status is current.";
   };
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
+  submission.handle(() => {
     if (inFlight) return;
     const data = new FormData(form);
     const button = form.querySelector<HTMLButtonElement>(
