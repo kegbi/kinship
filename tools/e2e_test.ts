@@ -2,8 +2,10 @@ import {
   ASTRO_PAGE_READINESS_MS,
   ASTRO_STARTUP_MS,
   awaitAstroReadiness,
+  chooseE2eGatewayPort,
   E2E_ASTRO_TASK_ARGS,
   E2E_COMPOSE_ARGS,
+  E2E_PROCESS_BINARIES,
   e2eEnvironment,
   e2eImageNames,
   e2ePlaywrightArgs,
@@ -13,6 +15,7 @@ import {
   reconcileTerminationOutcome,
   runE2eGate,
   startAstro,
+  startE2eStack,
   stopOwnedProcess,
   stopWeb,
   terminateExactProcesses,
@@ -57,11 +60,11 @@ Deno.test("E2E launcher names only exact disposable project images", async () =>
 
 Deno.test("E2E launcher isolates project, listeners, and browser origins", () => {
   const project = e2eProjectName(42, 1234);
-  const environment = e2eEnvironment(project, "http://127.0.0.1:18004");
+  const environment = e2eEnvironment(project, 18004);
   assert(project === "kinship-e2e-42-1234", "project is unique per run");
   assert(
     environment.COMPOSE_PROJECT_NAME === project &&
-      environment.PUBLIC_WEB_ORIGIN === "http://127.0.0.1:18004",
+      environment.PUBLIC_WEB_ORIGIN === "https://127.0.0.1:18004",
     "project and browser origin are run-scoped",
   );
   assert(
@@ -71,15 +74,159 @@ Deno.test("E2E launcher isolates project, listeners, and browser origins", () =>
     "the real stack exercises non-default names and reserved password bytes",
   );
   assert(
-    environment.TEST_WEB_ORIGIN === "http://127.0.0.1:18004" &&
+    environment.TEST_WEB_ORIGIN === "https://127.0.0.1:18004" &&
       !("API_TEST_PORT" in environment) &&
       !("MAILPIT_TEST_PORT" in environment) &&
       !("POSTGRES_TEST_PORT" in environment),
-    "Docker, not released listeners, assigns service ports",
+    "Docker assigns every private service port; only the gateway is chosen",
   );
   assert(
     E2E_COMPOSE_ARGS.includes("compose.test.yaml"),
     "launcher consumes the disposable test overlay",
+  );
+});
+
+Deno.test("[REL-040] the environment publishes the gateway on the chosen port", () => {
+  // On Linux, Compose recreated the gateway after the launcher rebuilt the
+  // environment around the port Docker had first assigned, and the recreated
+  // container received a new ephemeral port. The port is now chosen before
+  // any container exists and handed to Compose in the one environment.
+  const environment = e2eEnvironment(e2eProjectName(42, 1234), 18004);
+  assert(
+    environment.E2E_GATEWAY_PORT === "18004",
+    "Compose publishes the gateway on the launcher's chosen host port",
+  );
+  assert(
+    environment.PUBLIC_WEB_ORIGIN === "https://127.0.0.1:18004" &&
+      environment.TEST_WEB_ORIGIN === environment.PUBLIC_WEB_ORIGIN,
+    "the browser and API origin derive from that same port",
+  );
+});
+
+Deno.test("[REL-040] the gateway host port is chosen from a released loopback listener", async () => {
+  const port = chooseE2eGatewayPort();
+  assert(
+    Number.isInteger(port) && port > 0 && port <= 65_535,
+    `the chosen gateway port is a real TCP port, not ${port}`,
+  );
+  const listener = Deno.listen({ hostname: "127.0.0.1", port });
+  try {
+    assert(
+      (listener.addr as Deno.NetAddr).port === port,
+      "the probe listener is released so Docker can bind the chosen port",
+    );
+  } finally {
+    listener.close();
+  }
+  const launcher = await Deno.readTextFile(
+    new URL("./e2e.ts", import.meta.url),
+  );
+  assert(
+    !launcher.includes('"create",') &&
+      !launcher.includes('["start", gatewayContainer]'),
+    "no gateway is started ahead of the stack to discover its port",
+  );
+});
+
+Deno.test("[REL-040] the stack starts once and must keep the chosen gateway port", async () => {
+  const calls: string[] = [];
+  const operations = (gatewayOrigin: string) => ({
+    compose: (args: readonly string[]) => {
+      calls.push(args.join(" "));
+      return Promise.resolve();
+    },
+    port: (service: string, containerPort: number, protocol: string) =>
+      Promise.resolve(
+        service === "gateway"
+          ? gatewayOrigin
+          : `${protocol}://127.0.0.1:${containerPort + 1}`,
+      ),
+  });
+  const started = await startE2eStack(
+    18004,
+    operations("https://127.0.0.1:18004"),
+  );
+  assert(
+    calls.join("|") ===
+      "up --build --detach --wait --wait-timeout 120",
+    `the stack is built and started by one Compose command, not ${
+      calls.join("|")
+    }`,
+  );
+  assert(
+    started.gatewayOrigin === "https://127.0.0.1:18004" &&
+      started.mailOrigin === "http://127.0.0.1:8026",
+    "the ready stack reports the chosen gateway and the Docker-assigned mail origin",
+  );
+
+  let error: unknown;
+  try {
+    await startE2eStack(18004, operations("https://127.0.0.1:18005"));
+  } catch (caught) {
+    error = caught;
+  }
+  assert(
+    String(error).includes("chosen port 18004") &&
+      String(error).includes("https://127.0.0.1:18005"),
+    `a gateway published elsewhere fails clearly, not with ${String(error)}`,
+  );
+});
+
+Deno.test("[REL-040] a failed stack start prints diagnostics and keeps its cause", async () => {
+  const calls: string[] = [];
+  let error: unknown;
+  try {
+    await startE2eStack(18004, {
+      compose: (args) => {
+        calls.push(args[0] ?? "");
+        return args[0] === "up"
+          ? Promise.reject(new Error("compose up failed"))
+          : Promise.resolve();
+      },
+      port: () => Promise.reject(new Error("no port after a failed start")),
+    });
+  } catch (caught) {
+    error = caught;
+  }
+  assert(
+    String(error).includes("compose up failed"),
+    "the Compose failure stays primary",
+  );
+  assert(
+    calls.join(",") === "up,ps,logs",
+    `status and logs follow a failed start, not ${calls.join(",")}`,
+  );
+});
+
+Deno.test("[REL-040] the launcher's process binaries are declared once", async () => {
+  const [launcher, configText] = await Promise.all([
+    Deno.readTextFile(new URL("./e2e.ts", import.meta.url)),
+    Deno.readTextFile(new URL("../deno.json", import.meta.url)),
+  ]);
+  const spawned = new Set(
+    [
+      ...launcher.matchAll(
+        /(?:new Deno\.Command|commandOutput|command)\(\s*"([^"]+)"/g,
+      ),
+    ].map((match) => match[1]!),
+  );
+  assert(spawned.has("ps") && spawned.has("kill"), "the scan sees Linux paths");
+  const undeclared = [...spawned].filter((binary) =>
+    !E2E_PROCESS_BINARIES.includes(binary)
+  );
+  assert(
+    undeclared.length === 0,
+    `the launcher spawns undeclared binaries: ${undeclared.join(", ")}`,
+  );
+  const config = JSON.parse(configText) as {
+    readonly tasks: Readonly<Record<string, string>>;
+  };
+  const granted = /--allow-run=([^ ]+)/.exec(config.tasks["test:e2e"] ?? "")
+    ?.[1]?.split(",") ?? [];
+  assert(
+    [...granted].sort().join(",") ===
+      [...E2E_PROCESS_BINARIES].sort().join(","),
+    `test:e2e grants exactly the launcher binaries, not ${granted.join(",")}`,
   );
 });
 

@@ -1,4 +1,5 @@
 import {
+  chooseE2eGatewayPort,
   createE2eTls,
   E2E_COMPOSE_ARGS,
   e2eEnvironment,
@@ -297,7 +298,7 @@ Deno.test({
     const project = `kinship-e2e-${Deno.pid}-${run}`;
     const tls = await createE2eTls(project);
     const environment = {
-      ...e2eEnvironment(project, "http://127.0.0.1:1"),
+      ...e2eEnvironment(project, chooseE2eGatewayPort()),
       GATEWAY_TLS_CERTIFICATE_PATH: tls.certificate,
       GATEWAY_TLS_PRIVATE_KEY_PATH: tls.privateKey,
     };

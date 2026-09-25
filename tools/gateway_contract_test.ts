@@ -125,10 +125,12 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
     "stack has gateway and private renderer",
   );
   assert(
-    test.includes('"127.0.0.1::8443"') &&
+    test.includes('"127.0.0.1:${E2E_GATEWAY_PORT:-}:8443"') &&
+      !test.includes('"127.0.0.1::8443"') &&
       !test.includes('"127.0.0.1::8000"') &&
       !test.includes('"127.0.0.1::5432"'),
-    "test publishes a Docker-assigned gateway port and keeps API private",
+    "test publishes the gateway on the E2E launcher's chosen port (REL-040), " +
+      "Docker-assigned when unset, and keeps API private",
   );
   assert(
     gateway.includes("listen 8443 ssl") &&

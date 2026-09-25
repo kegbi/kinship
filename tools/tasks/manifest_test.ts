@@ -1,3 +1,4 @@
+import { E2E_PROCESS_BINARIES } from "../e2e.ts";
 import {
   COVERAGE_AGGREGATE,
   expandTests,
@@ -244,6 +245,41 @@ Deno.test(
         );
       }
     }
+  },
+);
+
+Deno.test(
+  "[REL-040] every set running the E2E launcher suite may spawn each launcher binary",
+  async () => {
+    // The first GitHub Actions run failed `tools/e2e_test.ts` on Linux with
+    // `Requires run access to "ps"`: the set granted only the Windows helpers.
+    const files = await repositoryTests();
+    let checked = 0;
+    for (const module of MODULES) {
+      for (
+        const [kind, set] of [
+          ["unit", module.unit],
+          ["coverage", module.coverage],
+        ] as const
+      ) {
+        if (!set || set.runner === "vitest") continue;
+        if (!expandTests(set.tests, files).includes("tools/e2e_test.ts")) {
+          continue;
+        }
+        checked += 1;
+        const granted = set.permissions?.run ?? [];
+        const missing = E2E_PROCESS_BINARIES.filter((binary) =>
+          !granted.includes(binary)
+        );
+        assert(
+          missing.length === 0,
+          `${module.id} ${kind} runs tools/e2e_test.ts and must permit ${
+            missing.join(", ")
+          }`,
+        );
+      }
+    }
+    assert(checked > 0, "some set runs the E2E launcher suite");
   },
 );
 

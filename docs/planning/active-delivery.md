@@ -282,6 +282,29 @@ Playwright test carrying its stable flow ID.
       with no error shown, so the click never reached a wired handler.
       `app-007b` then passed three WebKit repeats alone. Include it in the
       repeat command above with `--project=webkit`.
+- [x] **REL-040 — The first GitHub Actions run fails on two Linux-only tooling
+      paths.** Run `36151735884` on `a22818fe`, the workflow's first run on the
+      ubuntu runners, found two faults the Windows developer machine never
+      exercises. The unit job failed `tools/e2e_test.ts` "E2E canonical Astro
+      child remains live outside CI" with `Requires run access to "ps"`: off
+      Windows the launcher's process-tree helpers spawn `ps` to inspect and
+      `kill` to terminate, but the `api` unit and coverage sets granted only
+      `deno` and `powershell`. The E2E job stopped before any flow with
+      `Docker reassigned the inspected gateway port.`: the launcher created the
+      stack, started the gateway alone to learn its Docker-assigned port, then
+      rebuilt the environment with that origin and ran `compose up`, which on
+      Linux recreated the gateway under the changed configuration on a new
+      ephemeral port. Delivered 2026-09-25: `tools/e2e.ts` exports
+      `E2E_PROCESS_BINARIES`, which both sets now grant and which a
+      `manifest_test.ts` regression and a launcher source scan keep equal to
+      what the launcher spawns and to the `test:e2e` grant. The launcher now
+      chooses the gateway host port from a released loopback listener before any
+      container exists, passes it as `E2E_GATEWAY_PORT` in the one environment,
+      starts the stack with one `compose up --build --wait`, and fails clearly
+      if the gateway is published anywhere else. `compose.test.yaml` maps
+      `127.0.0.1:${E2E_GATEWAY_PORT:-}:8443`, so the PostgreSQL gate and the
+      other overlay consumers, which leave it unset, keep a Docker-assigned
+      port; the production `compose.yaml` mapping is unchanged.
 
 ## Just-In-Time Technical Capabilities
 

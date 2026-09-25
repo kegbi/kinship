@@ -17,12 +17,32 @@ export function e2eImageNames(project: string): readonly string[] {
   return E2E_IMAGE_SERVICES.map((service) => `${project}-${service}:latest`);
 }
 
+/**
+ * The gateway's host port, chosen before any container exists so the one
+ * Compose environment already carries the final browser origin. Docker binds
+ * it as soon as this probe listener is released.
+ */
+export function chooseE2eGatewayPort(): number {
+  const listener = Deno.listen({ hostname: "127.0.0.1", port: 0 });
+  try {
+    return (listener.addr as Deno.NetAddr).port;
+  } finally {
+    listener.close();
+  }
+}
+
+export function e2eGatewayOrigin(gatewayPort: number): string {
+  return `https://127.0.0.1:${gatewayPort}`;
+}
+
 export function e2eEnvironment(
   project: string,
-  webOrigin: string,
+  gatewayPort: number,
 ): Readonly<Record<string, string>> {
+  const webOrigin = e2eGatewayOrigin(gatewayPort);
   return {
     COMPOSE_PROJECT_NAME: project,
+    E2E_GATEWAY_PORT: String(gatewayPort),
     POSTGRES_DB: "kinship_e2e",
     POSTGRES_PASSWORD: `e2e@:/%${project}`,
     POSTGRES_USER: "kinship_e2e",
@@ -173,6 +193,23 @@ async function cleanupE2eArtifacts(
   }
 }
 
+/**
+ * Every executable this launcher may spawn on either platform: Docker and
+ * pnpm for the stack and browsers, `pwsh` for TLS material, `deno` for the
+ * Astro child, and `powershell` on Windows or `ps` and `kill` elsewhere to
+ * inspect and terminate exact process trees. The `test:e2e` task and every
+ * test set that runs `tools/e2e_test.ts` grant exactly this list (REL-040).
+ */
+export const E2E_PROCESS_BINARIES: readonly string[] = [
+  "docker",
+  "pnpm",
+  "deno",
+  "powershell",
+  "pwsh",
+  "ps",
+  "kill",
+];
+
 export const E2E_COMPOSE_ARGS = [
   "compose",
   "--file",
@@ -310,6 +347,60 @@ async function composePort(
   const port = mapping.match(/:(\d+)$/)?.[1];
   if (!port) throw new Error(`Could not inspect ${service} host port.`);
   return `${protocol}://127.0.0.1:${port}`;
+}
+
+export interface E2eStackOperations {
+  /** Runs `docker compose` with the launcher's files and one environment. */
+  readonly compose: (
+    args: readonly string[],
+    allowFailure?: boolean,
+  ) => Promise<unknown>;
+  /** Resolves a service's published host origin. */
+  readonly port: (
+    service: string,
+    containerPort: number,
+    protocol: string,
+  ) => Promise<string>;
+}
+
+/**
+ * Builds and starts the whole stack with one Compose command, so no container
+ * is ever created under an environment that later changes. REL-040: starting
+ * the gateway first to learn a Docker-assigned port made Compose recreate it
+ * on Linux, where the recreated container received a different port.
+ */
+export async function startE2eStack(
+  gatewayPort: number,
+  operations: E2eStackOperations,
+): Promise<{ readonly gatewayOrigin: string; readonly mailOrigin: string }> {
+  try {
+    await operations.compose([
+      "up",
+      "--build",
+      "--detach",
+      "--wait",
+      "--wait-timeout",
+      "120",
+    ]);
+  } catch (error) {
+    await operations.compose(["ps", "--all"], true);
+    await operations.compose(
+      ["logs", "--no-color", "--tail", "100", "gateway", "web", "api"],
+      true,
+    );
+    throw error;
+  }
+  const [gatewayOrigin, mailOrigin] = await Promise.all([
+    operations.port("gateway", 8443, "https"),
+    operations.port("mailpit", 8025, "http"),
+  ]);
+  const expected = e2eGatewayOrigin(gatewayPort);
+  if (gatewayOrigin !== expected) {
+    throw new Error(
+      `Compose published the gateway at ${gatewayOrigin} instead of the chosen port ${gatewayPort} (${expected}).`,
+    );
+  }
+  return { gatewayOrigin, mailOrigin };
 }
 
 export interface OwnedProcess {
@@ -832,7 +923,8 @@ async function main(): Promise<void> {
   const project = e2eProjectName(Deno.pid, Date.now());
   let browser: OwnedProcess | undefined;
   let tls: E2eTlsMaterial | undefined;
-  let environment = e2eEnvironment(project, "http://127.0.0.1:1");
+  const gatewayPort = chooseE2eGatewayPort();
+  let environment = e2eEnvironment(project, gatewayPort);
   await runE2eGate({
     startup: async () => {
       tls = await createE2eTls(project);
@@ -841,75 +933,18 @@ async function main(): Promise<void> {
         GATEWAY_TLS_CERTIFICATE_PATH: tls.certificate,
         GATEWAY_TLS_PRIVATE_KEY_PATH: tls.privateKey,
       };
-      await command("docker", [
-        ...E2E_COMPOSE_ARGS,
-        "create",
-        "--build",
-      ], environment);
-      const gatewayContainer = await commandOutput(
-        "docker",
-        [...E2E_COMPOSE_ARGS, "ps", "--all", "--quiet", "gateway"],
-        environment,
-      );
-      if (!gatewayContainer) {
-        throw new Error("Gateway container was not created.");
-      }
-      await command("docker", ["start", gatewayContainer], environment);
-      const gatewayOrigin = await composePort(
-        "gateway",
-        8443,
-        environment,
-        "https",
-      );
-      environment = {
-        ...e2eEnvironment(project, gatewayOrigin),
-        GATEWAY_TLS_CERTIFICATE_PATH: tls.certificate,
-        GATEWAY_TLS_PRIVATE_KEY_PATH: tls.privateKey,
-      };
-      try {
-        await command("docker", [
-          ...E2E_COMPOSE_ARGS,
-          "up",
-          "--detach",
-          "--wait",
-          "--wait-timeout",
-          "120",
-        ], environment);
-      } catch (error) {
-        await command(
-          "docker",
-          [
-            ...E2E_COMPOSE_ARGS,
-            "ps",
-            "--all",
-          ],
-          environment,
-          true,
-        );
-        await command(
-          "docker",
-          [
-            ...E2E_COMPOSE_ARGS,
-            "logs",
-            "--no-color",
-            "--tail",
-            "100",
-            "gateway",
-            "web",
-            "api",
-          ],
-          environment,
-          true,
-        );
-        throw error;
-      }
-      const [readyGatewayOrigin, mailOrigin] = await Promise.all([
-        composePort("gateway", 8443, environment, "https"),
-        composePort("mailpit", 8025, environment),
-      ]);
-      if (readyGatewayOrigin !== gatewayOrigin) {
-        throw new Error("Docker reassigned the inspected gateway port.");
-      }
+      const stackEnvironment = environment;
+      const { gatewayOrigin, mailOrigin } = await startE2eStack(gatewayPort, {
+        compose: (args, allowFailure) =>
+          command(
+            "docker",
+            [...E2E_COMPOSE_ARGS, ...args],
+            stackEnvironment,
+            allowFailure,
+          ),
+        port: (service, containerPort, protocol) =>
+          composePort(service, containerPort, stackEnvironment, protocol),
+      });
       environment = {
         ...environment,
         E2E_EXTERNAL_WEB: "1",
