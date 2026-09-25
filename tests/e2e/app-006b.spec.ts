@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import axe from "axe-core";
+import { settleNavigation } from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -60,6 +61,7 @@ test(
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page).toHaveURL(/\/app$/);
 
+    await settleNavigation(page);
     await page.goto("/app/people/new");
     await page.getByLabel("Given name").fill("Ada");
     await page.getByLabel("Family name").fill("Lovelace");
@@ -71,6 +73,7 @@ test(
     const target = new Date(Date.now() + 75_000);
     const targetDate = target.toISOString().slice(0, 10);
     const targetTime = target.toISOString().slice(11, 16);
+    await settleNavigation(page);
     await page.goto(`${profilePath}?section=reminders`);
     const reminderSection = page.locator("#profile-section-reminders");
     await expect(reminderSection.getByText("No reminders yet.")).toBeVisible();

@@ -331,6 +331,21 @@ Playwright test carrying its stable flow ID.
       `127.0.0.1:${E2E_GATEWAY_PORT:-}:8443`, so the PostgreSQL gate and the
       other overlay consumers, which leave it unset, keep a Docker-assigned
       port; the production `compose.yaml` mapping is unchanged.
+- [x] **REL-042 — A spec's own navigation interrupts the app's still-loading
+      page on Linux WebKit.** Run `36160197116` on `823f8a07` failed `app-004b`
+      (`[PEOPLE-005]`, `app-004b.spec.ts:110`) and `app-004c` (`[PEOPLE-006]`
+      APR-001, `app-004c.spec.ts:1325`) on WebKit with "WebKit encountered an
+      internal error" from `page.goto`. The preceding `toHaveURL` passes as soon
+      as the app's own navigation commits, so the spec's `goto` interrupted a
+      document that was still loading; Chromium and Firefox tolerate that, Linux
+      WebKit does not. Delivered 2026-09-25: `tests/e2e/support/navigation.ts`
+      exports `settleNavigation(page)`, which waits for the current document's
+      `load` event, and a scripted search for an app-driven navigation or
+      `toHaveURL` followed by a spec `goto` or `reload` with no page wait
+      between placed it at every such site: `app-002c`, `app-003b`, `app-004b`,
+      `app-004c` (two), `app-004e`, `app-005b`, `app-005c`, `app-006a` (two),
+      `app-006b` (two), and `auth-003` (two). No assertion changed and no retry,
+      sleep, or timeout was added.
 
 ## Just-In-Time Technical Capabilities
 

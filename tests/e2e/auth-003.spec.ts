@@ -13,6 +13,7 @@ import {
   randomUUID,
 } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { settleNavigation } from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -421,6 +422,7 @@ test(
         cookie.name === "kinship_session"
       ),
     ).toBeUndefined();
+    await settleNavigation(page);
     await page.goto("/app");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
       "Sign in to Kinship",
@@ -708,6 +710,7 @@ test("[AUTH-003] recovers safely and rejects expired reset links", {
     update crm.password_reset_requests set expires_at = now() - interval '1 minute'
       where email = ${sqlLiteral(email)} and used_at is null;
   `);
+  await settleNavigation(page);
   await page.goto(`/auth/reset-password?token=${encodeURIComponent(expired)}`);
   await keyboardReset(page, "expired correct horse battery staple");
   await expect(page.getByRole("status")).toContainText("invalid or expired");

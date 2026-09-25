@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import axe from "axe-core";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { settleNavigation } from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -101,6 +102,7 @@ test(
     await page.getByLabel("Password").fill(password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page).toHaveURL(/\/app$/);
+    await settleNavigation(page);
     await page.goto("/app/people/new");
     await page.getByLabel("Given name").fill("Ada");
     await page.getByLabel("Family name").fill("Lovelace");
