@@ -226,9 +226,11 @@ test(
     await expect(page.locator("#person-profile-tags > li").last()).toHaveText(
       "+2 more",
     );
-    await expect(page.locator("#person-profile-due-state")).toContainText(
-      "0 open tasks",
+    await expect(page.locator("#person-profile-due-state")).toHaveText(
+      "Not set",
     );
+    await expect(page.locator('[data-person-vital-value="next-reminder"]'))
+      .toHaveText("Not recorded");
     await expect(page.locator("[data-profile-section]")).toHaveCount(22);
     await expect(
       page.locator('[data-profile-section][data-section-state="unavailable"]'),
@@ -254,6 +256,14 @@ test(
       "href",
       `/app/people/${personId}/activity-report`,
     );
+    const tasks = page.locator("#profile-section-tasks");
+    await page.locator('[data-zone="planning"]').scrollIntoViewIfNeeded();
+    await expect(tasks).toHaveAttribute("data-section-state", "ready");
+    await expect(tasks.locator("[data-task-state]")).toHaveText(
+      "No tasks in this view.",
+    );
+    await expect(tasks.locator("[data-task-open-list] > li")).toHaveCount(0);
+    await expect(page.locator("#profile-section-documents")).toBeFocused();
     await page.unroute(profilePattern);
     await expectAccessible(page);
 

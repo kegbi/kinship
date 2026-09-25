@@ -163,7 +163,7 @@ Playwright test carrying its stable flow ID.
       the remaining page budget, and `deno task test:repro:astro-readiness` runs
       the probe under coverage three times.
 
-- [ ] **REL-032 — Person workspace due-state E2E assertions no longer match the
+- [x] **REL-032 — Person workspace due-state E2E assertions no longer match the
       rendered summary.** The Phase 0 checkpoint on `08680601` ran the full
       three-browser E2E matrix: `tests/e2e/app-003c.spec.ts:229` expects
       `#person-profile-due-state` to contain "0 open tasks" but receives "Not
@@ -174,7 +174,11 @@ Playwright test carrying its stable flow ID.
       GAP-001 through GAP-005; the block now renders the contact cadence, which
       points at the person-section chrome and summary work in `14d8ed2a` and
       APR-006. Decide whether the specs or the block are stale and fix the
-      owning side with a focused test.
+      owning side with a focused test. The specs were stale because APR-006
+      (`3abb45fe`) deliberately made the hero's Stay in touch slot show only the
+      cadence or "Not set" and updated `app-004c` but not these two flows, so
+      they now assert the cadence there, the next reminder in its vital, and the
+      open tasks in the tasks section.
 
 - [ ] **REL-033 — Two Chromium E2E flows fail deterministically.** In the same
       checkpoint and again in an isolated Chromium rerun,

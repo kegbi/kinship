@@ -170,14 +170,13 @@ test("[PEOPLE-003] reads the complete canonical person workspace", {
     .toBeVisible();
   await expect(page.getByText("Partial identity · unknown values preserved"))
     .toBeVisible();
-  await expect(page.locator("#person-profile-due-state")).toContainText(
-    "1 open task",
+  await expect(page.locator("#person-profile-due-state")).toHaveText(
+    "Every 1 month",
   );
-  await expect(page.locator("#person-profile-due-state")).toContainText(
-    "next reminder",
-  );
-  await expect(page.locator("#person-profile-due-state")).toContainText(
-    "stay in touch",
+  await expect(page.locator('[data-person-vital-value="next-reminder"]'))
+    .toContainText("2030");
+  await expect(page.locator("[data-cadence-list]")).toContainText(
+    "Every 1 month",
   );
 
   const sections = page.locator("[data-profile-section]");
@@ -206,6 +205,9 @@ test("[PEOPLE-003] reads the complete canonical person workspace", {
   await expect(history.getByRole("button", { name: /add/i })).toHaveCount(0);
 
   const tasks = page.locator("#profile-section-tasks");
+  const openTasks = tasks.locator("[data-task-open-list] > li");
+  await expect(openTasks).toHaveCount(1);
+  await expect(openTasks).toContainText("Review correspondence");
   await tasks.getByRole("button", { name: "Add task" }).click();
   await tasks.getByLabel("Title").fill("Owning facade proof");
   await tasks.getByRole("button", { name: "Save task" }).click();
