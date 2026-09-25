@@ -141,8 +141,12 @@ function setQuery(input: HTMLInputElement, value: string): void {
 }
 
 let cleanup: (() => void) | undefined;
+const pendingSessionGates: (() => void)[] = [];
 
 afterEach(() => {
+  // A failed assertion must not leave a shared session read pending for the
+  // next test.
+  pendingSessionGates.splice(0).forEach((release) => release());
   cleanup?.();
   cleanup = undefined;
   vi.useRealTimers();
@@ -797,5 +801,146 @@ describe("UXD-004 global people search", () => {
     await vi.waitFor(() => expect(problem.hidden).toBe(false));
     expect(document.querySelector("#global-people-search-status")?.textContent)
       .toBe("People search is temporarily unavailable");
+  });
+});
+
+function gatedSession(
+  base: ReturnType<typeof fetchFor>,
+  sessionResponse: () => Response = () => response(session),
+): { readonly fetchMock: typeof base; readonly release: () => void } {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  pendingSessionGates.push(release);
+  const fetchMock = vi.fn(async (request: RequestInfo | URL) => {
+    if (String(request) !== "/api/v1/session") return await base(request);
+    await gate;
+    return sessionResponse();
+  });
+  return { fetchMock: fetchMock as unknown as typeof base, release };
+}
+
+function optionLabels(): (string | null | undefined)[] {
+  return [...document.querySelectorAll<HTMLElement>('[role="option"]')].map((
+    option,
+  ) => option.querySelector("strong")?.textContent);
+}
+
+describe("REL-039 global people search before its startup reads", () => {
+  it("opens from Ctrl+K pressed before the session resolves and renders once ready", async () => {
+    markup();
+    const { fetchMock, release } = gatedSession(fetchFor([], [
+      { archived: false, id: adaId, name: "Ada Lovelace" },
+    ]));
+    vi.stubGlobal("fetch", fetchMock);
+    const mounting = mountGlobalPeopleSearch();
+    const shortcut = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      key: "k",
+    });
+    document.dispatchEvent(shortcut);
+    const dialog = document.querySelector<HTMLDialogElement>(
+      "#global-people-search-dialog",
+    )!;
+    expect(shortcut.defaultPrevented).toBe(true);
+    expect(dialog.open).toBe(true);
+    expect(document.querySelectorAll('[role="option"]')).toHaveLength(0);
+
+    release();
+    cleanup = await mounting;
+    await vi.waitFor(() => expect(optionLabels()).toEqual(["Ada Lovelace"]));
+  });
+
+  it("keeps a command query typed before the session resolves", async () => {
+    markup();
+    const { fetchMock, release } = gatedSession(fetchFor());
+    vi.stubGlobal("fetch", fetchMock);
+    const mounting = mountGlobalPeopleSearch();
+    const input = document.querySelector<HTMLInputElement>(
+      "#global-people-search-input",
+    )!;
+    setQuery(input, "> log");
+    expect(
+      document.querySelector<HTMLDialogElement>(
+        "#global-people-search-dialog",
+      )!.open,
+    ).toBe(true);
+
+    release();
+    cleanup = await mounting;
+    expect(optionLabels()).toEqual(["Log interaction"]);
+  });
+
+  it("opens with a query typed into the focused field before the script mounted", async () => {
+    markup();
+    vi.stubGlobal("fetch", fetchFor());
+    const input = document.querySelector<HTMLInputElement>(
+      "#global-people-search-input",
+    )!;
+    input.focus();
+    input.value = "> log";
+    cleanup = await mountGlobalPeopleSearch();
+    expect(
+      document.querySelector<HTMLDialogElement>(
+        "#global-people-search-dialog",
+      )!.open,
+    ).toBe(true);
+    expect(optionLabels()).toEqual(["Log interaction"]);
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("closes an early palette and unbinds when the session is unavailable", async () => {
+    markup();
+    const { fetchMock, release } = gatedSession(
+      fetchFor(),
+      () => response({ code: "session_unavailable", status: 503 }, 503),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const mounting = mountGlobalPeopleSearch();
+    const opener = document.querySelector<HTMLButtonElement>(
+      "[data-global-people-search-open]",
+    )!;
+    opener.click();
+    const dialog = document.querySelector<HTMLDialogElement>(
+      "#global-people-search-dialog",
+    )!;
+    expect(dialog.open).toBe(true);
+
+    release();
+    cleanup = await mounting;
+    expect(dialog.open).toBe(false);
+    opener.click();
+    expect(dialog.open).toBe(false);
+  });
+
+  it("hands Log interaction to quick capture only once its opener is wired", async () => {
+    markup();
+    vi.stubGlobal("fetch", fetchFor());
+    const quickCapture = document.querySelector<HTMLButtonElement>(
+      "header [data-quick-capture]",
+    )!;
+    quickCapture.disabled = true;
+    quickCapture.dataset.interactionCaptureReady = "false";
+    const openQuickCapture = vi.fn();
+    quickCapture.addEventListener("click", openQuickCapture);
+    cleanup = await mountGlobalPeopleSearch();
+    setQuery(
+      document.querySelector<HTMLInputElement>("#global-people-search-input")!,
+      "> log",
+    );
+    document.querySelector<HTMLElement>('[role="option"]')!.click();
+    expect(
+      document.querySelector<HTMLDialogElement>(
+        "#global-people-search-dialog",
+      )!.open,
+    ).toBe(false);
+    expect(openQuickCapture).not.toHaveBeenCalled();
+
+    quickCapture.dataset.interactionCaptureReady = "true";
+    quickCapture.disabled = false;
+    await vi.waitFor(() => expect(openQuickCapture).toHaveBeenCalledOnce());
   });
 });

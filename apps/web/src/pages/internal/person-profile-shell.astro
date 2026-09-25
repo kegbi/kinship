@@ -128,13 +128,14 @@ const railSections = [
               aria-label="Open person menu"
               aria-expanded="false"
               aria-controls="person-menu"
+              disabled
             ><span aria-hidden="true">…</span></button>
             <div id="person-menu" class="person-menu-popover" hidden>
-              <button id="person-edit-open" class="button-secondary" type="button">Edit person</button>
+              <button id="person-edit-open" class="button-secondary" type="button" disabled>Edit person</button>
               <a id="person-export-vcard" class="button-secondary" href="/app/people" download hidden>Export vCard</a>
-              <button id="person-archive" class="button-secondary" type="button">Archive person</button>
+              <button id="person-archive" class="button-secondary" type="button" disabled>Archive person</button>
               <button id="person-audit-history" class="button-secondary" type="button">Audit history</button>
-              <button id="person-delete-open" class="button-danger" type="button">Delete person</button>
+              <button id="person-delete-open" class="button-danger" type="button" disabled>Delete person</button>
             </div>
           </div>
         </div>
@@ -218,7 +219,7 @@ const railSections = [
 
       <aside class="person-archived-banner" data-person-archived-banner hidden>
         <p><strong>This person is archived.</strong> Editing is disabled.</p>
-        <button id="person-restore" class="button-secondary" type="button">Restore person</button>
+        <button id="person-restore" class="button-secondary" type="button" disabled>Restore person</button>
       </aside>
 
       <div class="person-workspace-navigation">

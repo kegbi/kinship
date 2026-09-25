@@ -38,6 +38,12 @@ interface SearchPerson {
 
 type MemberRole = SessionContext["member"]["role"];
 
+interface SearchContext {
+  readonly commands: readonly PaletteCommand[];
+  readonly nameOrder: PersonNameOrder;
+  readonly workspaceId: string;
+}
+
 interface PaletteCommand {
   readonly command?: "log-interaction";
   readonly label: string;
@@ -258,19 +264,16 @@ export async function mountGlobalPeopleSearch(
 ): Promise<() => void> {
   const ui = searchElements();
   if (!ui) return () => {};
-  const session = await resolveWorkspaceSession();
-  if (session.status !== "ready") return () => {};
-  const commands = commandIndex(session.session.member.role);
-  const preferences = await getMemberPreferences(session.session.workspace.id)
-    .catch(() => undefined);
-  const nameOrder = preferences?.ok
-    ? preferences.value.preferences.contactNameOrder
-    : "given_family_nickname";
+  // Every listener is bound before the startup reads (REL-039): a shortcut,
+  // click, or query that arrives while the session and preferences load opens
+  // the palette at once and is rendered when `context` is known.
+  let context: SearchContext | undefined = undefined;
 
   let activeIndex = -1;
   let debounce: ReturnType<typeof setTimeout> | undefined;
   let lastOpener: HTMLElement | undefined;
   let requestAbort: AbortController | undefined;
+  let quickCaptureHandoff: MutationObserver | undefined;
 
   const options = (): HTMLElement[] => [
     ...ui.list.querySelectorAll<HTMLElement>('[role="option"]'),
@@ -317,8 +320,10 @@ export async function mountGlobalPeopleSearch(
       : true;
     const rows = people.map(personOption);
     if (query && !hasExactMatch) rows.push(addPersonOption(query));
-    if (query && people.length === 0) {
-      rows.push(...matchingCommands(commands, query).map(commandOption));
+    if (query && people.length === 0 && context) {
+      rows.push(
+        ...matchingCommands(context.commands, query).map(commandOption),
+      );
     }
     ui.list.replaceChildren(...rows);
     ui.empty.textContent = "No people match";
@@ -329,7 +334,10 @@ export async function mountGlobalPeopleSearch(
     } found`;
     setActive(0);
   };
-  const renderCommands = (filter: string): void => {
+  const renderCommands = (
+    commands: readonly PaletteCommand[],
+    filter: string,
+  ): void => {
     const matches = matchingCommands(commands, filter);
     ui.list.replaceChildren(...matches.map(commandOption));
     ui.empty.textContent = "No commands match";
@@ -342,8 +350,11 @@ export async function mountGlobalPeopleSearch(
   };
   const isLatest = (controller: AbortController): boolean =>
     requestAbort === controller && !controller.signal.aborted;
-  const loadRecent = async (controller: AbortController): Promise<void> => {
-    const result = await getTodayRecentPeople(session.session.workspace.id)
+  const loadRecent = async (
+    controller: AbortController,
+    { nameOrder, workspaceId }: SearchContext,
+  ): Promise<void> => {
+    const result = await getTodayRecentPeople(workspaceId)
       .catch(() => undefined);
     if (!isLatest(controller)) return;
     if (!result?.ok) {
@@ -354,11 +365,8 @@ export async function mountGlobalPeopleSearch(
     }
     const identities = await Promise.all(
       result.value.people.map(async (person) => {
-        const identity = await getPerson(
-          person.id,
-          session.session.workspace.id,
-          "summary",
-        ).catch(() => undefined);
+        const identity = await getPerson(person.id, workspaceId, "summary")
+          .catch(() => undefined);
         return identity?.ok
           ? {
             archived: identity.value.status === "archived",
@@ -378,11 +386,10 @@ export async function mountGlobalPeopleSearch(
   const loadSearch = async (
     query: string,
     controller: AbortController,
+    { nameOrder, workspaceId }: SearchContext,
   ): Promise<void> => {
-    const result = await listPeople(
-      { limit: 8, search: query },
-      session.session.workspace.id,
-    ).catch(() => undefined);
+    const result = await listPeople({ limit: 8, search: query }, workspaceId)
+      .catch(() => undefined);
     if (!isLatest(controller)) return;
     if (!result?.ok) {
       clearResults();
@@ -403,21 +410,23 @@ export async function mountGlobalPeopleSearch(
     requestAbort?.abort();
     requestAbort = undefined;
     const query = value.trim();
+    clearResults();
+    // Until the startup reads finish the query waits; they queue it again.
+    const ready = context;
+    if (!ready) return;
     if (query.startsWith(">")) {
-      clearResults();
-      renderCommands(query.slice(1).trim());
+      renderCommands(ready.commands, query.slice(1).trim());
       return;
     }
     const controller = new AbortController();
     requestAbort = controller;
-    clearResults();
     if (!query) {
-      void loadRecent(controller);
+      void loadRecent(controller, ready);
       return;
     }
     ui.status.textContent = "Searching people";
     debounce = setTimeout(
-      () => void loadSearch(query, controller),
+      () => void loadSearch(query, controller, ready),
       SEARCH_DEBOUNCE_MS,
     );
   };
@@ -447,12 +456,36 @@ export async function mountGlobalPeopleSearch(
     lastOpener = undefined;
     if (opener?.isConnected) opener.focus();
   };
+  // Quick capture wires its header opener after its own startup reads and
+  // marks it `data-interaction-capture-ready="false"` until then, so the
+  // request is handed over once it is wired instead of clicking a disabled
+  // control.
+  const openQuickCapture = (): void => {
+    quickCaptureHandoff?.disconnect();
+    quickCaptureHandoff = undefined;
+    const opener = document.querySelector<HTMLButtonElement>(
+      "header [data-quick-capture]",
+    );
+    if (!opener) return;
+    if (opener.dataset.interactionCaptureReady !== "false") {
+      opener.click();
+      return;
+    }
+    const handoff = new MutationObserver(() => {
+      if (opener.dataset.interactionCaptureReady === "false") return;
+      handoff.disconnect();
+      if (quickCaptureHandoff === handoff) quickCaptureHandoff = undefined;
+      opener.click();
+    });
+    handoff.observe(opener, {
+      attributeFilter: ["data-interaction-capture-ready"],
+    });
+    quickCaptureHandoff = handoff;
+  };
   const activate = (option?: HTMLElement): void => {
     if (option?.dataset.command === "log-interaction") {
       closeDialog(ui.dialog);
-      document.querySelector<HTMLButtonElement>(
-        "header [data-quick-capture]",
-      )?.click();
+      openQuickCapture();
       return;
     }
     const path = option?.dataset.path;
@@ -524,7 +557,9 @@ export async function mountGlobalPeopleSearch(
   ui.dialog.addEventListener("close", restore);
   document.addEventListener("keydown", onDocumentKeydown);
 
-  return () => {
+  const unmount = (): void => {
+    quickCaptureHandoff?.disconnect();
+    quickCaptureHandoff = undefined;
     if (ui.dialog.open) closeDialog(ui.dialog);
     else restore();
     ui.input.removeEventListener("input", onInput);
@@ -537,4 +572,26 @@ export async function mountGlobalPeopleSearch(
       button.removeEventListener("click", handler);
     }
   };
+  // A query typed into the focused field before this script ran fired no bound
+  // `input` event. The field has autocomplete off, so its value was typed.
+  if (ui.input.value && document.activeElement === ui.input) {
+    openPalette(ui.input);
+  }
+
+  const session = await resolveWorkspaceSession();
+  if (session.status !== "ready") {
+    unmount();
+    return () => {};
+  }
+  const preferences = await getMemberPreferences(session.session.workspace.id)
+    .catch(() => undefined);
+  context = {
+    commands: commandIndex(session.session.member.role),
+    nameOrder: preferences?.ok
+      ? preferences.value.preferences.contactNameOrder
+      : "given_family_nickname",
+    workspaceId: session.session.workspace.id,
+  };
+  if (ui.dialog.open) queue(ui.input.value);
+  return unmount;
 }

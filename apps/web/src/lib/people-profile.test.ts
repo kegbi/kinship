@@ -87,13 +87,13 @@ function markup(path = `/app/people/${personId}`): void {
           <button data-person-interaction-capture data-quick-capture data-interaction-intended-kind="activity" type="button">Log interaction</button>
           <button data-person-interaction-capture data-quick-capture data-interaction-intended-kind="note" type="button">Add note</button>
           <div role="group" aria-label="Person menu">
-            <button id="person-menu-toggle" type="button" aria-label="Open person menu" aria-expanded="false" aria-controls="person-menu"><span aria-hidden="true">…</span></button>
+            <button id="person-menu-toggle" type="button" disabled aria-label="Open person menu" aria-expanded="false" aria-controls="person-menu"><span aria-hidden="true">…</span></button>
             <div id="person-menu" hidden>
-              <button id="person-edit-open" type="button">Edit person</button>
+              <button id="person-edit-open" type="button" disabled>Edit person</button>
               <a id="person-export-vcard" hidden>Export vCard</a>
-              <button id="person-archive" type="button">Archive person</button>
+              <button id="person-archive" type="button" disabled>Archive person</button>
               <button id="person-audit-history" type="button">Audit history</button>
-              <button id="person-delete-open" type="button">Delete person</button>
+              <button id="person-delete-open" type="button" disabled>Delete person</button>
             </div>
           </div>
         </div>
@@ -127,7 +127,7 @@ function markup(path = `/app/people/${personId}`): void {
       </header>
       <aside data-person-archived-banner hidden>
         <p>This person is archived. Editing is disabled.</p>
-        <button id="person-restore" type="button">Restore person</button>
+        <button id="person-restore" type="button" disabled>Restore person</button>
       </aside>
       <nav id="person-profile-sections">
         <ul>
@@ -2760,6 +2760,72 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     );
     expect(document.querySelector("#person-lifecycle-status")?.textContent)
       .toContain("cancelled");
+  });
+
+  it("REL-039 keeps the person menu and lifecycle actions inert until their handlers are attached", async () => {
+    markup();
+    const toggle = document.querySelector<HTMLButtonElement>(
+      "#person-menu-toggle",
+    )!;
+    const deleteOpen = document.querySelector<HTMLButtonElement>(
+      "#person-delete-open",
+    )!;
+    const lifecycleActions = [
+      "#person-edit-open",
+      "#person-archive",
+      "#person-delete-open",
+      "#person-restore",
+    ].map((selector) => document.querySelector<HTMLButtonElement>(selector)!);
+    let releaseProfile!: (value: Response) => void;
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(session))
+      .mockReturnValueOnce(
+        new Promise<Response>((resolve) => {
+          releaseProfile = resolve;
+        }),
+      )
+      .mockResolvedValue(undefined as never);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const mounting = mountPeopleProfile();
+    expect(toggle.disabled).toBe(false);
+    toggle.click();
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(lifecycleActions.map((action) => action.disabled)).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
+
+    releaseProfile(response(zeroProfile()));
+    await mounting;
+    expect(lifecycleActions.map((action) => action.disabled)).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
+    deleteOpen.click();
+    expect(
+      document.querySelector<HTMLDialogElement>("#person-delete-dialog")!.open,
+    ).toBe(true);
+  });
+
+  it("REL-039 leaves lifecycle actions inert when the person cannot load", async () => {
+    markup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockResolvedValueOnce(response({ status: 404 }, 404)),
+    );
+    await mountPeopleProfile();
+    expect(
+      document.querySelector<HTMLButtonElement>("#person-delete-open")!
+        .disabled,
+    ).toBe(true);
   });
 
   it("[PEOPLE-004] opens a native modal and Escape cancels without deleting", async () => {

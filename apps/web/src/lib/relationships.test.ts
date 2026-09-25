@@ -2369,4 +2369,27 @@ describe("relationship profile section", () => {
     );
     expect(section.dataset.sectionState).toBe("read-only");
   });
+
+  it("REL-039 announces its state without scrolling the page under a pending click", async () => {
+    markup();
+    const state = document.querySelector("#relationships-state") as HTMLElement;
+    const focus = vi.spyOn(state, "focus");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response({ options: [], status: "ready" }))
+        .mockResolvedValueOnce(
+          response({ relationships: [relationship], status: "archived" }),
+        ),
+    );
+    await mountRelationships(personId, workspaceId, true);
+    expect(
+      (document.querySelector("#profile-section-relationships") as HTMLElement)
+        .dataset.sectionState,
+    ).toBe("read-only");
+    expect(focus).toHaveBeenCalled();
+    expect(focus.mock.calls.map(([options]) => options)).toEqual(
+      focus.mock.calls.map(() => ({ preventScroll: true })),
+    );
+  });
 });

@@ -885,6 +885,9 @@ function mountPersonMenu(
     globalThis.history.pushState({}, "", url);
     focusSection(profile, navigation, sectionId);
   });
+  // The shell renders the toggle disabled so a click before this script ran
+  // is refused visibly instead of lost (REL-039).
+  toggle.disabled = false;
 }
 
 function setPersonMenuOpen(open: boolean): void {
@@ -1316,6 +1319,10 @@ function mountLifecycleActions(
     lifecycle.deleteDialog.close();
     globalThis.location.assign(result.value.next);
   });
+  // The shell renders these actions disabled until the person has loaded and
+  // every handler above is attached, so an early click waits instead of
+  // landing on an unwired control (REL-039).
+  disableActions(false);
   return () => state === "archived";
 }
 
