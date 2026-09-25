@@ -125,6 +125,39 @@ describe("IMPORT-001 settings import", () => {
     ]);
   });
 
+  it("detects a file chosen before the session resolved", async () => {
+    document.body.innerHTML = newMarkup();
+    let resolveSession!: (response: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        new Promise<Response>((resolve) => {
+          resolveSession = resolve;
+        })
+      ),
+    );
+    const mounted = mountImports();
+    const input = document.querySelector<HTMLInputElement>(
+      'input[type="file"]',
+    )!;
+    Object.defineProperty(input, "files", {
+      value: [
+        new File(
+          [JSON.stringify({ format: "monica-json", version: 1, tables: {} })],
+          "monica.json",
+          { type: "application/json" },
+        ),
+      ],
+    });
+    input.dispatchEvent(new Event("change"));
+    resolveSession(response(session));
+    await mounted;
+    await vi.waitFor(() =>
+      expect(document.querySelector("[data-import-detection]")?.textContent)
+        .toBe("Monica JSON version 1 detected.")
+    );
+  });
+
   it("serializes validation and never makes a replaced source response committable", async () => {
     document.body.innerHTML = newMarkup();
     let dryRuns = 0;

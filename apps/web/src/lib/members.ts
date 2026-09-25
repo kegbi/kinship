@@ -177,8 +177,48 @@ function renderLists(
 export async function mountMembersPage(): Promise<void> {
   const ui = elements();
   if (!ui) return;
+  // Bound before any await: an early submission must never fall through to a
+  // native GET that puts the invitee's email in the URL. It is sent once the
+  // page has loaded.
+  let loaded!: (
+    page: { workspaceId: string; load: () => Promise<void> } | undefined,
+  ) => void;
+  const ready = new Promise<Parameters<typeof loaded>[0]>((resolve) => {
+    loaded = resolve;
+  });
+  ui.form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = new FormData(ui.form);
+    const role = String(data.get("role")) === "admin" ? "admin" : "member";
+    ui.submit.disabled = true;
+    ui.formStatus.textContent = "Creating and delivering the invitation…";
+    const page = await ready;
+    if (!page) {
+      ui.formStatus.textContent = "";
+      return;
+    }
+    const result = await createWorkspaceInvitation({
+      email: String(data.get("email") ?? "").trim().toLowerCase(),
+      role,
+    }, page.workspaceId).catch(() => undefined);
+    ui.submit.disabled = false;
+    if (result?.ok) {
+      ui.form.reset();
+      ui.formStatus.textContent =
+        "Invitation sent. The link can be used once within seven days.";
+      await page.load();
+      return;
+    }
+    ui.formStatus.textContent = result?.problem.code === "already_member"
+      ? "That person is already an active member."
+      : result?.problem.code === "invitation_forbidden"
+      ? "Only a workspace owner or admin can send invitations."
+      : result?.problem.detail ??
+        "The invitation could not be sent. Try again.";
+  });
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") {
+    loaded(undefined);
     ui.form.hidden = true;
     ui.membersState.textContent = "Your session could not be confirmed.";
     ui.pendingState.textContent = "Pending invitations are unavailable.";
@@ -207,29 +247,5 @@ export async function mountMembersPage(): Promise<void> {
     await renderManagement(ui, workspaceId);
   };
   await load();
-  ui.form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const data = new FormData(ui.form);
-    const role = String(data.get("role")) === "admin" ? "admin" : "member";
-    ui.submit.disabled = true;
-    ui.formStatus.textContent = "Creating and delivering the invitation…";
-    const result = await createWorkspaceInvitation({
-      email: String(data.get("email") ?? "").trim().toLowerCase(),
-      role,
-    }, workspaceId).catch(() => undefined);
-    ui.submit.disabled = false;
-    if (result?.ok) {
-      ui.form.reset();
-      ui.formStatus.textContent =
-        "Invitation sent. The link can be used once within seven days.";
-      await load();
-      return;
-    }
-    ui.formStatus.textContent = result?.problem.code === "already_member"
-      ? "That person is already an active member."
-      : result?.problem.code === "invitation_forbidden"
-      ? "Only a workspace owner or admin can send invitations."
-      : result?.problem.detail ??
-        "The invitation could not be sent. Try again.";
-  });
+  loaded({ workspaceId, load });
 }

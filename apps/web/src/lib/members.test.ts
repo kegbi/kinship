@@ -180,6 +180,34 @@ describe("AUTH-002 members settings", () => {
     );
   });
 
+  it("keeps an invitation sent before the page loaded off the URL and sends it once loaded", async () => {
+    const form = markup();
+    let resolveSession!: (response: Response) => void;
+    const fetchMock = vi.fn()
+      .mockReturnValueOnce(
+        new Promise<Response>((resolve) => {
+          resolveSession = resolve;
+        }),
+      )
+      .mockResolvedValueOnce(response(members))
+      .mockResolvedValueOnce(response({ status: "invited" }, 201))
+      .mockResolvedValueOnce(response(members));
+    vi.stubGlobal("fetch", fetchMock);
+    const mounted = mountMembersPage();
+    const submit = new Event("submit", { bubbles: true, cancelable: true });
+    form.dispatchEvent(submit);
+    expect(submit.defaultPrevented).toBe(true);
+    resolveSession(response(session));
+    await mounted;
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(fetchMock.mock.calls[2]?.[1]?.body).toBe(
+      JSON.stringify({ email: "invitee@example.test", role: "member" }),
+    );
+    expect(document.querySelector("#invitation-status")?.textContent).toMatch(
+      /seven days/i,
+    );
+  });
+
   it("shows role denial and unavailable states honestly", async () => {
     markup();
     vi.stubGlobal(

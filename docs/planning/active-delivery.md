@@ -180,7 +180,7 @@ Playwright test carrying its stable flow ID.
       they now assert the cadence there, the next reminder in its vital, and the
       open tasks in the tasks section.
 
-- [ ] **REL-033 — Two Chromium E2E flows fail deterministically.** In the same
+- [x] **REL-033 — Two Chromium E2E flows fail deterministically.** In the same
       checkpoint and again in an isolated Chromium rerun,
       `tests/e2e/app-009a.spec.ts:99` ([IMPORT-001]) never sees "Monica JSON
       version 1 detected." after the dry run, and
@@ -189,6 +189,15 @@ Playwright test carrying its stable flow ID.
       Both flows pass on Firefox and WebKit. Same causality proof as REL-032: no
       product or spec code changed in Phase 0. Reproduce with
       `deno task test:e2e tests/e2e/app-009a.spec.ts tests/e2e/auth-002.spec.ts --project=chromium`.
+      The import page was wrong: it bound the file input's `change` listener
+      only after the session and preferences requests resolved, and Chromium's
+      trace shows `setInputFiles` finishing before those requests did, so the
+      page now also detects a file already chosen when it mounts. The members
+      page was wrong too: the close error followed a timeout on a replacement
+      invitation whose early click the trace shows as a native
+      `GET /app/settings/members?email=…` before the submit listener existed, so
+      the listener now binds before any await and sends the invitation once the
+      page has loaded.
 
 - [ ] **REL-034 — Astro child exits before readiness with a libuv assertion on
       Windows.** Root `deno task test` on `08680601` failed "E2E canonical Astro
