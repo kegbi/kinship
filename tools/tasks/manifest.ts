@@ -13,6 +13,8 @@
  * unit homes.
  */
 
+import { E2E_PROCESS_BINARIES } from "../e2e.ts";
+
 export type PermissionScope = "all" | readonly string[];
 
 export interface Permissions {
@@ -545,7 +547,9 @@ export const MODULES: readonly TaskModule[] = [
           ...OWNERSHIP_BOUNDARY_READS,
         ],
         env: ["CI", "READABLE_STREAM"],
-        run: ["deno", "powershell"],
+        // `tools/e2e_test.ts` drives the launcher's process helpers, which
+        // spawn `ps` and `kill` off Windows (REL-040).
+        run: E2E_PROCESS_BINARIES,
         net: ["127.0.0.1"],
       },
     },
@@ -619,7 +623,8 @@ export const MODULES: readonly TaskModule[] = [
           "packages/contracts",
           ...SCHEMA_READS,
         ],
-        run: ["deno", "powershell"],
+        // As in the unit set: `tools/e2e_test.ts` runs here too (REL-040).
+        run: E2E_PROCESS_BINARIES,
         env: ["CI", ...APPLICATION_DATABASE_ENV],
         net: "all",
       },
