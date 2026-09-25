@@ -4,6 +4,7 @@ import {
   type StorageSettings,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
+import { bindSubmitEarly } from "./early-submit.ts";
 
 function element<T extends Element>(selector: string): T | undefined {
   return document.querySelector<T>(selector) ?? undefined;
@@ -91,6 +92,7 @@ export async function mountStorageSettings(): Promise<void> {
   const results = element<HTMLUListElement>("[data-storage-results]");
   const retry = element<HTMLButtonElement>("[data-storage-retry]");
   if (!root || !state || !form || !searchState || !results || !retry) return;
+  const submission = bindSubmitEarly(form);
 
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") {
@@ -149,8 +151,11 @@ export async function mountStorageSettings(): Promise<void> {
       : "Metadata is current, but the configured provider is unavailable.";
   };
 
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
+  retry.addEventListener("click", () => void load(lastQuery));
+  await load();
+  // Handled after the first load so a lookup submitted while it ran is not
+  // superseded by it.
+  submission.handle(() => {
     const query = new FormData(form).get("query")?.toString().trim();
     if (!query) {
       searchState.textContent =
@@ -159,6 +164,4 @@ export async function mountStorageSettings(): Promise<void> {
     }
     void load(query);
   });
-  retry.addEventListener("click", () => void load(lastQuery));
-  await load();
 }

@@ -8,6 +8,7 @@ vi.mock("./time-presentation.ts", async (original) => ({
   }),
 }));
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { mountExports } from "./exports.ts";
 
 const workspaceId = "00000000-0000-4000-8000-000000000003";
@@ -99,6 +100,30 @@ describe("EXPORT-001 settings export", () => {
       "GET /api/v1/exports",
       `POST /api/v1/exports/${exportId}/downloads`,
     ]);
+  });
+
+  it("keeps creation unavailable until its action is wired", async () => {
+    expect(
+      readFileSync("apps/web/src/pages/app/settings/export.astro", "utf8"),
+    ).toMatch(/<button data-export-create[^>]*\sdisabled>/);
+    document.body.innerHTML = markup();
+    let resolveSession!: (value: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        String(input) === "/api/v1/session"
+          ? new Promise<Response>((resolve) => resolveSession = resolve)
+          : Promise.resolve(response({ exports: [], status: "ready" }))
+      ),
+    );
+    const mounted = mountExports();
+    const create = document.querySelector<HTMLButtonElement>(
+      "[data-export-create]",
+    )!;
+    expect(create.disabled).toBe(true);
+    resolveSession(response(session));
+    await mounted;
+    expect(create.disabled).toBe(false);
   });
 
   it("shows the admin-only state to a member without loading history", async () => {

@@ -247,6 +247,37 @@ describe("PEOPLE-002 people directory island", () => {
     expect(document.activeElement?.id).toBe("people-directory-error");
   });
 
+  it("keeps a search submitted before the page loaded off a native GET and runs it as the first load", async () => {
+    markup();
+    let resolveSession!: (value: Response) => void;
+    const fetchMock = vi.fn((url: string) =>
+      url === "/api/v1/session"
+        ? new Promise<Response>((resolve) => resolveSession = resolve)
+        : Promise.resolve(response(
+          url.includes("tag-options")
+            ? { options: [], status: "ready" }
+            : { lifecycle: "active", people: [], status: "ready" },
+        ))
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const mounted = mountPeopleDirectory();
+    document.querySelector<HTMLInputElement>("#people-directory-search")!
+      .value = "Ada";
+    const early = new Event("submit", { bubbles: true, cancelable: true });
+    document.querySelector("form")!.dispatchEvent(early);
+    expect(early.defaultPrevented).toBe(true);
+    resolveSession(response(session));
+    await mounted;
+    const listRequests = fetchMock.mock.calls.map(([url]) => url).filter((
+      url,
+    ) => url.startsWith("/api/v1/people?"));
+    expect(listRequests).toHaveLength(1);
+    expect(new URL(listRequests[0]!, "http://localhost").searchParams.get(
+      "search",
+    )).toBe("Ada");
+    expect(location.search).toBe("?search=Ada");
+  });
+
   it("distinguishes an archived empty list from lost workspace access", async () => {
     markup("archived");
     vi.stubGlobal(

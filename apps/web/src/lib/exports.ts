@@ -76,6 +76,8 @@ export async function mountExports(): Promise<void> {
   const create = element<HTMLButtonElement>("[data-export-create]");
   const retry = element<HTMLButtonElement>("[data-export-retry]");
   if (!root || !state || !create) return;
+  // Enabled once its click is wired, so an early click is never lost.
+  create.disabled = true;
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") {
     state.textContent = "Your session could not be confirmed.";
@@ -138,5 +140,6 @@ export async function mountExports(): Promise<void> {
       create.disabled = false;
     }
   });
+  create.disabled = false;
   await load();
 }

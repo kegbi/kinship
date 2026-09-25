@@ -171,12 +171,13 @@ const railSections = [
           <ul id="person-profile-tags" class="profile-tag-list" aria-label="Person tags"></ul>
           <p data-profile-fact-state class="section-state"><span class="sr-only">Loading tag assignments…</span><span class="skeleton skeleton-chip" aria-hidden="true"></span></p>
           <button data-profile-fact-add class="button-secondary" type="button" hidden>Edit tags</button>
-          <form data-profile-fact-form class="profile-fact-form" hidden novalidate></form>
+          <form method="post" data-profile-fact-form class="profile-fact-form" hidden novalidate></form>
         </div>
 
         <p id="person-lifecycle-status" class="section-state person-lifecycle-status" role="status" aria-live="polite"></p>
 
         <form
+          method="post"
           id="person-edit-form"
           class="person-lifecycle-form"
           data-profile-section="identity-summary"
@@ -205,7 +206,7 @@ const railSections = [
         </form>
 
         <dialog id="person-delete-dialog" class="person-delete-dialog" aria-labelledby="person-delete-heading" aria-describedby="person-delete-impact">
-          <form id="person-delete-form">
+          <form method="post" id="person-delete-form">
             <h3 id="person-delete-heading">Delete this person?</h3>
             <p id="person-delete-impact" role="status">Loading deletion impact…</p>
             <label>Confirmation <input id="person-delete-confirmation" name="confirmation" autocomplete="off" required /></label>
@@ -274,7 +275,7 @@ const railSections = [
                   </header>
                   <p id="important-dates-state" class="section-state" tabindex="-1"><span class="sr-only">Loading important dates…</span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span></p>
                   <ul id="important-dates-list" class="important-dates-list" aria-label="Saved important dates"></ul>
-                  <form id="important-date-form" class="important-date-form" hidden novalidate>
+                  <form method="post" id="important-date-form" class="important-date-form" hidden novalidate>
                     <input id="important-date-version" name="expectedUpdatedAt" type="hidden" />
                     <div class="form-grid">
                       <label>
@@ -361,7 +362,7 @@ const railSections = [
                     <button id="relationships-previous" class="button-secondary" type="button" hidden>Previous relationships</button>
                     <button id="relationships-load-more" class="button-secondary" type="button" hidden>Next relationships</button>
                   </nav>
-                  <form id="relationship-form" class="profile-fact-form" hidden novalidate>
+                  <form method="post" id="relationship-form" class="profile-fact-form" hidden novalidate>
                     <fieldset>
                       <legend>Choose an existing person</legend>
                       <label>Search people <input id="relationship-person-search" type="search" maxlength="200" /></label>
@@ -415,7 +416,7 @@ const railSections = [
                   </header>
                   <p data-cadence-state data-rail-editor-feedback class="section-state" tabindex="-1"><span class="sr-only">Loading stay-in-touch cadence…</span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span></p>
                   <ul data-cadence-list class="task-list" aria-label="Stay-in-touch cadence"></ul>
-                  <form data-cadence-form class="profile-fact-form" hidden novalidate>
+                  <form method="post" data-cadence-form class="profile-fact-form" hidden novalidate>
                     <label>Reconnect every <input name="intervalCount" type="number" min="1" max="100" value="1" required /></label>
                     <label>Calendar unit
                       <select name="intervalUnit">
@@ -454,7 +455,7 @@ const railSections = [
                   </header>
                   <p data-profile-fact-state class="section-state" tabindex="-1"><span class="sr-only">Loading {title.toLowerCase()}…</span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span></p>
                   <ul data-profile-fact-list class="profile-fact-list" aria-label={`Saved ${title.toLowerCase()}`}></ul>
-                  <form data-profile-fact-form class="profile-fact-form" hidden novalidate></form>
+                  <form method="post" data-profile-fact-form class="profile-fact-form" hidden novalidate></form>
                 </section>
               ))}
           </div>
@@ -518,7 +519,7 @@ const railSections = [
                 <p data-communication-state class="section-state"><span class="sr-only">Loading {title.toLowerCase()}…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
                 <button data-communication-load-retry class="button-secondary" type="button" hidden>Retry loading communications</button>
                 <ul data-communication-list class="interaction-list" aria-label={`Recent ${title.toLowerCase()}`} hidden></ul>
-                <form data-communication-form class="profile-fact-form" hidden novalidate>
+                <form method="post" data-communication-form class="profile-fact-form" hidden novalidate>
                   <label>When it happened <input name="happenedAt" type="datetime-local" required /></label>
                   {id === "calls"
                     ? (
@@ -629,7 +630,7 @@ const railSections = [
                 </header>
                 <p data-task-state class="section-state"><span class="sr-only">Loading tasks…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
                 <button data-task-retry class="button-secondary" type="button" hidden>Retry tasks</button>
-                <form data-task-form class="profile-fact-form task-form" hidden novalidate>
+                <form method="post" data-task-form class="profile-fact-form task-form" hidden novalidate>
                   <label>Title <input name="title" maxlength="500" required /></label>
                   <label>Description (optional) <textarea name="description" maxlength="10000" rows="3"></textarea></label>
                   <label>Due time (optional) <input name="dueAt" type="datetime-local" /></label>
@@ -663,7 +664,7 @@ const railSections = [
                 <p data-reminder-state class="section-state"><span class="sr-only">Loading reminders…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
                 <ul id="person-reminder-list" data-reminder-list class="task-list reminder-list" aria-label="Person reminders"></ul>
                 <LoadMore list="reminders" label="Load more reminders" controls="person-reminder-list" />
-                <form data-reminder-form class="profile-fact-form" hidden novalidate>
+                <form method="post" data-reminder-form class="profile-fact-form" hidden novalidate>
                   <label>Title <input name="title" maxlength="500" required /></label>
                   <label>First date <input name="anchorOn" type="date" required /></label>
                   <label>Send time <input name="sendTime" type="time" value="09:00" required /></label>
@@ -729,7 +730,7 @@ const railSections = [
                 <button data-file-refresh class="button-secondary" type="button" hidden>Retry loading</button>
                 <ul id={`${id}-list`} data-file-list class="person-file-list" aria-label={`Saved ${title.toLowerCase()}`}></ul>
                 <LoadMore list="files" label="Load more files" controls={`${id}-list`} />
-                <form data-file-form class="profile-fact-form" hidden novalidate>
+                <form method="post" data-file-form class="profile-fact-form" hidden novalidate>
                   <label>Title <input name="title" maxlength="500" required /></label>
                   <label>
                     File

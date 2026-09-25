@@ -26,7 +26,7 @@ export const prerender = true;
 
     <section class="api-access-section" aria-labelledby="configure-dav-heading">
       <header><p class="scope-label">Workspace connection</p><h2 id="configure-dav-heading">Add DAV collection</h2></header>
-      <form data-integration-create class="api-token-form" novalidate>
+      <form method="post" data-integration-create class="api-token-form" novalidate>
         <label>Connection name<input name="name" type="text" maxlength="100" required /></label>
         <label>DAV collection URL<input name="remoteUrl" type="url" inputmode="url" placeholder="https://dav.example.com/collection/" required /></label>
         <label>Username<input name="username" type="text" maxlength="255" autocomplete="username" /></label>

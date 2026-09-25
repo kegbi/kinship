@@ -9,7 +9,7 @@ export const prerender = true;
     <header class="page-heading"><div><p class="eyebrow">Personal history · <span data-workspace-name></span></p><h1>Journal</h1></div><button data-journal-add class="button-primary" type="button">Add item</button></header>
     <p data-journal-state class="section-state" role="status" aria-live="polite">Loading journal…</p>
     <button data-journal-retry class="button-secondary" type="button" hidden>Retry journal</button>
-    <form data-journal-form class="profile-fact-form journal-form" hidden novalidate>
+    <form method="post" data-journal-form class="profile-fact-form journal-form" hidden novalidate>
       <h2>Journal item</h2>
       <label>Item type <select name="type"><option value="post">Post</option><option value="day-rating">Day rating</option><option value="activity">Linked activity</option></select></label>
       <label data-journal-post>When <input name="occurredAt" type="datetime-local" /></label>

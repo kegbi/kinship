@@ -158,6 +158,51 @@ describe("IMPORT-001 settings import", () => {
     );
   });
 
+  it("keeps a validation submitted before the session resolved off the URL and runs it once the file is detected", async () => {
+    document.body.innerHTML = newMarkup();
+    let resolveSession!: (response: Response) => void;
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const path = new URL(String(input), "http://localhost").pathname;
+        calls.push(path);
+        if (path === "/api/v1/session") {
+          return new Promise<Response>((resolve) => resolveSession = resolve);
+        }
+        return Promise.resolve(response({
+          importId: "00000000-0000-4000-8000-000000000010",
+          report,
+          status: "dry_run",
+        }, 201));
+      }),
+    );
+    const mounted = mountImports();
+    const input = document.querySelector<HTMLInputElement>(
+      'input[type="file"]',
+    )!;
+    Object.defineProperty(input, "files", {
+      value: [
+        new File(
+          [JSON.stringify({ format: "monica-json", version: 1, tables: {} })],
+          "monica.json",
+          { type: "application/json" },
+        ),
+      ],
+    });
+    const early = new Event("submit", { bubbles: true, cancelable: true });
+    document.querySelector<HTMLFormElement>("[data-import-form]")!
+      .dispatchEvent(early);
+    expect(early.defaultPrevented).toBe(true);
+    resolveSession(response(session));
+    await mounted;
+    await vi.waitFor(() =>
+      expect(document.querySelector("[data-import-contacts]")?.textContent)
+        .toBe("1")
+    );
+    expect(calls).toEqual(["/api/v1/session", "/api/v1/imports/dry-runs"]);
+  });
+
   it("serializes validation and never makes a replaced source response committable", async () => {
     document.body.innerHTML = newMarkup();
     let dryRuns = 0;

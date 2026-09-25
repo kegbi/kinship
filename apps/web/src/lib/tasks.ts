@@ -181,6 +181,9 @@ export async function mountTaskSurface(options: {
   surfaceAbort?.abort();
   const abort = new AbortController();
   surfaceAbort = abort;
+  // `setMutable` enables it in the same task that binds its click listener,
+  // so an early click is never lost.
+  add.disabled = true;
   let archived = options.archived === true;
   let createRequestId: string | undefined;
   let dueDirty = false;

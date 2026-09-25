@@ -66,7 +66,6 @@ export async function mountInvitationAcceptance(
   heading.textContent = `Join ${inspected.value.workspaceName}`;
   detail.textContent =
     `${inspected.value.email} was invited as ${inspected.value.role}. Sign in or create that account before accepting.`;
-  actions.hidden = false;
   const session = await getSession().catch(() => undefined);
   accept.hidden = !session?.ok && !continuing;
   signIn.hidden = session?.ok === true || continuing;
@@ -116,4 +115,7 @@ export async function mountInvitationAcceptance(
     detail.textContent = result?.problem.detail ??
       "The invitation could not be accepted. Try again.";
   });
+  // Revealed only once the handoff above is wired: an earlier click on a
+  // plain link would leave without the invitation.
+  actions.hidden = false;
 }

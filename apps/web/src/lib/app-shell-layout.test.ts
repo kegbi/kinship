@@ -226,7 +226,7 @@ describe("APR-010 membership application width", () => {
         "apps/web/src/pages/app/settings/preferences.astro",
         "utf8",
       )
-        .match(/<form id="preferences-form"[\s\S]*?<\/form>/)![0];
+        .match(/<form method="post" id="preferences-form"[\s\S]*?<\/form>/)![0];
       root.insertAdjacentHTML("beforeend", formMarkup);
       const pending = deferred<ReturnType<typeof preferences>>();
       mocks.preferences.mockReturnValueOnce(pending.promise)

@@ -4,6 +4,7 @@ import {
   type PersonInput,
   type ProblemDetails,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import { bindSubmitEarly } from "./early-submit.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 
 type Navigate = (path: string) => void;
@@ -112,6 +113,7 @@ export async function mountPeopleCreate(
   const status = document.querySelector<HTMLElement>("#people-create-status");
   const duplicate = document.querySelector<HTMLElement>("#duplicate-warning");
   if (!form || !status || !duplicate) return;
+  const submission = bindSubmitEarly(form);
   const parameters = new URLSearchParams(globalThis.location.search);
   for (const name of ["givenName", "familyName"] as const) {
     const prefill = parameters.get(name);
@@ -181,9 +183,8 @@ export async function mountPeopleCreate(
     );
     if (target) target.textContent = "";
   });
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    addAnother = (event as SubmitEvent).submitter?.id === "save-add-another";
+  submission.handle((event) => {
+    addAnother = event.submitter?.id === "save-add-another";
     void submit();
   });
   document.querySelector<HTMLButtonElement>("#create-anyway")?.addEventListener(

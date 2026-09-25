@@ -11,7 +11,7 @@ Astro.response.headers.set("Referrer-Policy", "no-referrer");
       <p class="eyebrow">Security check</p>
       <h1 id="mfa-heading">One more step.</h1>
       <p>Enter the six-digit code from your authenticator, or one unused recovery code.</p>
-      <form id="mfa-form" novalidate>
+      <form method="post" id="mfa-form" novalidate>
         <label>Authenticator or recovery code<input name="factor" autocomplete="one-time-code" maxlength="128" required /></label>
         <button type="submit">Continue securely</button>
       </form>
