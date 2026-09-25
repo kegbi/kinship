@@ -92,11 +92,16 @@ executable boundaries.
   configuration it reads; the routes live in their modules and the shared HTTP
   machinery lives in `packages/http-kit`.
 - `apps/web` consumes generated contracts. It never imports `packages/backend`.
+  Besides the generated client it may import `packages/contracts/schemas` (the
+  `contracts-schemas` token in `module-boundaries.yaml`), the pure Zod schemas
+  an island's form validates with; `tools/architecture/check_boundaries.ts`
+  refuses the route descriptors, the client internals, and the HTTP kit.
 - Per [ADR 0006](decisions/0006-ui-stack-shadcn-react-islands.md),
   `apps/web/components.json` configures the shadcn CLI,
   `apps/web/src/components/ui/` holds the vendored source-owned shadcn/ui
   components, `apps/web/src/islands/` holds the hydrated React islands, and
-  `apps/web/src/islands/core/` is the island kit GAP-026 builds. By GAP-033
+  `apps/web/src/islands/core/` is the island kit GAP-026 builds. A section of a
+  static shell becomes an island through that kit's `mountIsland`. By GAP-033
   `apps/web/src/lib` shrinks to non-UI helpers.
 
 Tests may import private code only when testing that exact module. A test for

@@ -35,6 +35,9 @@ import {
 
 const ROOT = new URL("../../", import.meta.url);
 
+/** The on-demand suite the `build` verb runs over the output it built. */
+const WEB_BUILD_OUTPUT = "web-build";
+
 class TaskFailure extends Error {
   constructor(readonly code: number, message: string) {
     super(message);
@@ -286,6 +289,8 @@ async function runBuild(): Promise<void> {
   await contractsCheck();
   await deno(["check", ...buildTargets()]);
   await pnpm(["exec", "astro", "build", "--root", "apps/web"]);
+  // What the build ships: no React on public pages, and the islands' bytes.
+  await runUnitSet(moduleOrFail(WEB_BUILD_OUTPUT));
 }
 
 async function runOperator(args: readonly string[]): Promise<void> {

@@ -339,3 +339,30 @@ Deno.test("[GAP-003] the frontend coverage include matches the vitest configurat
     );
   }
 });
+
+Deno.test("[GAP-026] the web sets run and measure the React islands", async () => {
+  const files = await repositoryTests();
+  const web = MODULES.find((module) => module.id === "web");
+  assert(web?.coverage, "the web module declares a coverage set");
+  const suite = "apps/web/src/islands/core/mount.test.tsx";
+  assert(files.includes(suite), `${suite} is a repository test module`);
+  assert(unitTests(web, files).includes(suite), "root test runs island suites");
+  const production = await listProductionFiles(ROOT);
+  for (
+    const source of [
+      "apps/web/src/islands/core/mount.tsx",
+      "apps/web/src/islands/core/api.ts",
+      "apps/web/src/components/ui/button.tsx",
+    ]
+  ) {
+    assert(production.includes(source), `${source} is production code`);
+    assert(
+      web.coverage.include.some((include) => includeMatches(include, source)),
+      `web coverage measures ${source}`,
+    );
+  }
+  assert(
+    !production.some((file) => file.endsWith(".test.tsx")),
+    "an island suite is not production code",
+  );
+});

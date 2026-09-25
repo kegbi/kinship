@@ -28,7 +28,9 @@ At scaffolding time, use shadcn/ui's current default primitive family (Base UI
 in this research snapshot) unless an accessibility or component-coverage test
 shows a concrete blocker. Keep the choice consistent across the application; do
 not mix Base UI and Radix primitives component by component without a documented
-architecture decision.
+architecture decision. On 2026-09-23 GAP-026 ran `shadcn init` (shadcn 4.21.0),
+which selected Base UI (`@base-ui/react`, style `base-nova`), so the vendored
+components use Base UI primitives only.
 
 [ADR 0006](decisions/0006-ui-stack-shadcn-react-islands.md) reinstates this
 stack after `UXD-010` removed the then-unused packages, and migrates the vanilla

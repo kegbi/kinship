@@ -58,7 +58,12 @@ client.
   `apps/web/src/components/ui/`, configured by `apps/web/components.json`.
 - **Islands.** React is used only inside hydrated Astro islands under
   `apps/web/src/islands/`. There is no SPA and no application-wide SSR; static,
-  public, and no-JavaScript pages ship no React.
+  public, and no-JavaScript pages ship no React. An island mounts in one of two
+  ways (GAP-026): an Astro `client:*` island wrapped in `IslandRoot` where the
+  page can pass props at render time, or, for a section of a static shell that
+  needs runtime context and activates lazily with its zone,
+  `mountIsland(container, name, element)` from `apps/web/src/islands/core/`,
+  which renders a React root into the section the shell already drew.
 - **Styling.** Tailwind CSS v4 through its Vite plugin, carrying the existing
   UXD-001 tokens as the shadcn theme variables in both the light and the dark
   theme. The tokens file stays the single source for existing CSS and Tailwind.

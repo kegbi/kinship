@@ -27,7 +27,10 @@
  *    `application/`, and `transport/`, the shared kernel, other units'
  *    facades (a read model's only when it composes the module), the route
  *    contracts, the HTTP kit, Hono, and Zod; read models never write;
- *    `apps/web` never imports `packages/backend`; only declared composition
+ *    `apps/web` never imports `packages/backend`, reaches the generated client
+ *    and the contract schemas only through the `layerRules.frontendMayImport`
+ *    tokens that open them, and never imports the route descriptors, the
+ *    client internals, or the HTTP kit; only declared composition
  *    roots reach into another unit's `adapters/` or mount its
  *    `transport/http/routes.ts`. `sharedKernel.path` is a unit of its own:
  *    every layer may import it, and it may import nothing outside itself.
@@ -320,6 +323,8 @@ export interface ManifestReadModel {
 export interface Manifest {
   readonly approvedCrossModuleReads: readonly ApprovedCrossModuleRead[];
   readonly compositionRoots: readonly string[];
+  /** `layerRules.frontendMayImport`: the surfaces `apps/web` may import. */
+  readonly frontendMayImport: readonly string[];
   /** `sharedKernel.path`: the one unit every other unit may import. */
   readonly sharedKernelPath: string;
   readonly modules: readonly ManifestModule[];
@@ -354,6 +359,9 @@ function readManifest(document: JsonObject): Manifest {
       tables: strings(entry["tables"]),
     })),
     compositionRoots: strings(document["compositionRoots"]),
+    frontendMayImport: isJsonObject(document["layerRules"])
+      ? strings(document["layerRules"]["frontendMayImport"])
+      : [],
     sharedKernelPath: isJsonObject(sharedKernel)
       ? text(sharedKernel["path"])
       : "",
@@ -557,6 +565,53 @@ function tableOwnershipViolations(
   return violations;
 }
 
+/**
+ * The `packages/` trees a `layerRules.frontendMayImport` token opens to
+ * `apps/web`. `contracts-generated` is the generated client barrel;
+ * `contracts-schemas` is the pure Zod schemas an island's form validates with
+ * (GAP-026), which carry no I/O and import only Zod and each other.
+ */
+const FRONTEND_IMPORT_SURFACES: ReadonlyArray<
+  { readonly token: string; readonly path: string }
+> = [
+  { token: "contracts-generated", path: "packages/contracts/generated/" },
+  { token: "contracts-schemas", path: "packages/contracts/schemas/" },
+];
+
+/**
+ * The server side of the shared packages. `apps/web` reaches the API only
+ * through the generated barrel, never around it into the client it re-exports,
+ * the route descriptors, the document generator's inputs, or the HTTP kit.
+ */
+const FRONTEND_FORBIDDEN_PATHS = [
+  "packages/contracts/client/",
+  "packages/contracts/openapi/",
+  "packages/contracts/registry.ts",
+  "packages/contracts/routes/",
+  "packages/http-kit/",
+];
+
+/** Why `apps/web` may not import `resolved`, or `undefined` when it may. */
+function frontendImportViolation(
+  resolved: string,
+  frontendMayImport: readonly string[],
+): string | undefined {
+  if (resolved.includes("packages/backend")) {
+    return `apps/web imports ${resolved} from packages/backend`;
+  }
+  const surface = FRONTEND_IMPORT_SURFACES.find(({ path }) =>
+    resolved.startsWith(path)
+  );
+  if (surface) {
+    return frontendMayImport.includes(surface.token)
+      ? undefined
+      : `apps/web imports ${resolved}, which frontendMayImport allows only with ${surface.token}`;
+  }
+  return FRONTEND_FORBIDDEN_PATHS.some((path) => resolved.startsWith(path))
+    ? `apps/web imports ${resolved}, which is not a frontend import surface`
+    : undefined;
+}
+
 function layerViolations(
   input: BoundaryInput,
   manifest: Manifest,
@@ -579,12 +634,12 @@ function layerViolations(
     if (file.path.startsWith("apps/web/")) {
       for (const specifier of specifiers) {
         const resolved = resolveSpecifier(file.path, specifier) ?? specifier;
-        if (!resolved.includes("packages/backend")) continue;
-        violations.push({
-          rule: "layer",
-          subject: file.path,
-          detail: `apps/web imports ${resolved} from packages/backend`,
-        });
+        const detail = frontendImportViolation(
+          resolved,
+          manifest.frontendMayImport,
+        );
+        if (detail === undefined) continue;
+        violations.push({ rule: "layer", subject: file.path, detail });
       }
     }
 
@@ -1197,7 +1252,7 @@ const CANONICAL_SCHEMA_PATH =
   "personal-crm-schema/v7/personal_crm_schema_v7.sql";
 const BASELINE_PATH = "tools/architecture/boundary-baseline.json";
 const SOURCE_ROOTS = ["apps", "packages", "tools"];
-const SOURCE_EXTENSIONS = [".ts", ".astro"];
+const SOURCE_EXTENSIONS = [".ts", ".tsx", ".astro"];
 const IGNORED_DIRECTORIES = new Set([
   "node_modules",
   ".astro",
@@ -1205,8 +1260,14 @@ const IGNORED_DIRECTORIES = new Set([
   ".coverage",
 ]);
 
-function isSource(name: string): boolean {
-  if (name.endsWith("_test.ts") || name.endsWith(".test.ts")) return false;
+/** True for a production source the checker reads: TypeScript, TSX, Astro. */
+export function isSourceFile(name: string): boolean {
+  if (
+    name.endsWith("_test.ts") || name.endsWith(".test.ts") ||
+    name.endsWith(".test.tsx")
+  ) {
+    return false;
+  }
   if (name.endsWith(".test-helper.ts")) return false;
   if (name.endsWith(".d.ts")) return false;
   return SOURCE_EXTENSIONS.some((extension) => name.endsWith(extension));
@@ -1222,7 +1283,7 @@ async function collectSources(root: URL): Promise<SourceFile[]> {
         await walk(path);
         continue;
       }
-      if (!isSource(entry.name)) continue;
+      if (!isSourceFile(entry.name)) continue;
       files.push({ path, text: await Deno.readTextFile(new URL(path, root)) });
     }
   };

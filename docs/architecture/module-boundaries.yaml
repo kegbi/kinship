@@ -85,7 +85,7 @@ layerRules:
     bootstrap,
     http-kit,
   ]
-  frontendMayImport: [contracts-generated, frontend-code]
+  frontendMayImport: [contracts-generated, contracts-schemas, frontend-code]
   forbiddenCrossModuleTargets: [domain, application, ports, adapters, transport]
 
 modules:

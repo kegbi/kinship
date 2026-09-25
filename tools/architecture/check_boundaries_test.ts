@@ -14,6 +14,7 @@ import {
   type BoundaryInput,
   compareWithBaseline,
   inspectBoundaries,
+  isSourceFile,
   type SourceFile,
   validateAgainstSchema,
   type Violation,
@@ -565,6 +566,75 @@ Deno.test("[GAP-005] apps/web never imports packages/backend", async () => {
     ),
     `expected a frontend violation, got ${render(violations)}`,
   );
+});
+
+const WITH_CONTRACT_SCHEMAS = MANIFEST.replace(
+  "frontendMayImport: [contracts-generated]",
+  "frontendMayImport: [contracts-generated, contracts-schemas]",
+);
+
+Deno.test("[GAP-026] an island validates with the published contract schemas", async () => {
+  const violations = await fixture([{
+    path: "apps/web/src/islands/person-gifts/gift-form.tsx",
+    text: [
+      'import { giftCreateInput } from "../../../../../packages/contracts/schemas/gifts.ts";',
+      'import { createGift } from "../../../../../packages/contracts/generated/auth-client.ts";',
+    ].join("\n"),
+  }], { manifestText: WITH_CONTRACT_SCHEMAS });
+  assert(
+    violations.length === 0,
+    `expected no violation, got ${render(violations)}`,
+  );
+});
+
+Deno.test("[GAP-026] the schema import needs the contracts-schemas token", async () => {
+  const violations = await fixture([{
+    path: "apps/web/src/islands/person-gifts/gift-form.tsx",
+    text:
+      'import { giftCreateInput } from "../../../../../packages/contracts/schemas/gifts.ts";',
+  }]);
+  assert(
+    violations.some((violation) =>
+      violation.rule === "layer" &&
+      violation.detail ===
+        "apps/web imports packages/contracts/schemas/gifts.ts, which frontendMayImport allows only with contracts-schemas"
+    ),
+    `expected a frontend violation, got ${render(violations)}`,
+  );
+});
+
+Deno.test("[GAP-026] apps/web never imports route descriptors or server kits", async () => {
+  const violations = await fixture([{
+    path: "apps/web/src/islands/person-gifts/gift-form.tsx",
+    text: [
+      'import { giftRoutes } from "../../../../../packages/contracts/routes/gifts.ts";',
+      'import { problem } from "../../../../../packages/http-kit/problem.ts";',
+      'import { request } from "../../../../../packages/contracts/client/request.ts";',
+    ].join("\n"),
+  }], { manifestText: WITH_CONTRACT_SCHEMAS });
+  for (
+    const target of [
+      "packages/contracts/routes/gifts.ts",
+      "packages/http-kit/problem.ts",
+      "packages/contracts/client/request.ts",
+    ]
+  ) {
+    assert(
+      violations.some((violation) =>
+        violation.rule === "layer" &&
+        violation.detail ===
+          `apps/web imports ${target}, which is not a frontend import surface`
+      ),
+      `expected a violation for ${target}, got ${render(violations)}`,
+    );
+  }
+});
+
+Deno.test("[GAP-026] the checker reads island .tsx sources but not their suites", () => {
+  assert(isSourceFile("gifts-island.tsx"), "an island is a source");
+  assert(!isSourceFile("gifts-island.test.tsx"), "an island suite is not");
+  assert(isSourceFile("people.ts"), "a module is a source");
+  assert(!isSourceFile("people.test.ts"), "a vitest suite is not");
 });
 
 Deno.test("[GAP-005] only declared composition roots import adapters", async () => {

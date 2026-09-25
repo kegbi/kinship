@@ -1009,7 +1009,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     documentation only (9 files changed +182/-111 plus the 136-line ADR); gates
     fmt:check, check:architecture (14), and root test:unit green.
 
-- [ ] **GAP-026 — React islands scaffold and island core.** M. Depends: 025.
+- [x] **GAP-026 — React islands scaffold and island core.** M. Depends: 025.
   - Scope: choose and lock exact compatible versions (respecting pnpm
     `minimumReleaseAge`) of `@astrojs/react`, `react`, `react-dom`, their types,
     `tailwindcss` with `@tailwindcss/vite`, the shadcn CLI and the primitive
@@ -1045,6 +1045,32 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     - The pilot's hydrated bytes are recorded in the evidence line.
     - `lint` includes the React-hooks rules.
     - `build` and the web and gateway image builds are green.
+  - Delivered 2026-09-25: exact versions within `minimumReleaseAge`
+    (`@astrojs/react` 6.0.6, React 19.3.0, Tailwind 4.3.3, shadcn 4.21.0,
+    `@base-ui/react` 1.8.0, react-hook-form 7.88.0, `@hookform/resolvers` 5.9.1,
+    Testing Library, `eslint-plugin-react-hooks` 7.1.1, and `zod` 4.4.3 matching
+    `deno.json`), with Astro bumped to 7.3.3 and `@astrojs/node` to 11.1.6
+    because the React integration needs them; `shadcn init` selected Base UI
+    (`base-nova`), recorded in `technology-baseline.md`; the shadcn theme
+    variables are declared over the UXD-001 tokens and Tailwind imports only its
+    theme and utilities layers, so static pages are byte-identical;
+    `islands/core` (`settle`, `useLatestRequest`, `useApi`, `useContractForm`
+    with `applyProblem`, `useDocumentEvent`, `toast`, `LoadMore`, `IslandRoot`,
+    and `mountIsland`, the second mounting mode ADR 0006 now records) measures
+    100% on every axis; the gifts and debts section is one island
+    (98.6/95.6/100/100) and `lib/person-gifts.ts` with its suite is deleted;
+    `module-boundaries.yaml` `frontendMayImport` gains `contracts-schemas`, with
+    the checker rule and tests (baseline 14); `tools/web_build_output_test.ts`,
+    run by `build`, proves the public pages reach no React and records 118,358 B
+    gzip hydrated for the gifts island (49,829 B entry plus 68,529 B React
+    runtime), loaded with the Things zone; 55 files changed (+7196/-1556, 3295
+    of them lockfile); web tests 779, web coverage 93.62/85.20/90.13/95.42
+    against 93.40/84.84/89.16/95.24 on main, every Deno set unchanged or higher;
+    `GIFTS-001` passed 3/3 on Chromium, 2/2 on Firefox, and 3/3 on WebKit; the
+    full Chromium project passed 52 with the four parked failures and the
+    REL-039 `app-004a` delete-dialog intermittent; build and the api, web, and
+    gateway image builds green; gates fmt:check, lint, check,
+    check:architecture, contracts:check.
 
 - [ ] **GAP-027 — shadcn component set and shell islands.** M. Depends: 026.
   - Scope: build the Kinship primitives from shadcn/ui: button, card, badge,
