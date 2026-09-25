@@ -889,13 +889,21 @@ test(
         const upstream = await route.fetch();
         expect(upstream.ok()).toBe(true);
         const snapshot = await upstream.json();
+        // The rewritten body differs in length from the upstream one, and
+        // `fulfill({ response })` would replay the upstream Content-Length, so
+        // a browser that honours it (Linux WebKit, REL-039) cuts the longer
+        // "archived" and "hidden" bodies into invalid JSON. Playwright sets the
+        // right length when the stale header is left out.
+        const { "content-length": _upstreamLength, ...headers } = upstream
+          .headers();
         await route.fulfill({
-          response: upstream,
+          headers,
           json: {
             ...snapshot,
             records: mode === "archived" ? snapshot.records : [],
             status: mode === "empty" ? "ready" : mode,
           },
+          status: upstream.status(),
         });
       }
     });

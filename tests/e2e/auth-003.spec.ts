@@ -262,6 +262,10 @@ async function keyboardReset(page: Page, password: string): Promise<void> {
 }
 
 async function keyboardOpenMemberMenu(page: Page): Promise<void> {
+  // Quick capture stays disabled, and out of the Tab order, until its handlers
+  // are wired after the session and preferences load (REL-039).
+  await expect(page.getByRole("button", { name: "Quick capture" }))
+    .toBeEnabled();
   const skipLink = page.getByRole("link", { name: "Skip to main content" });
   await page.keyboard.press("Tab");
   await expect(skipLink).toBeFocused();

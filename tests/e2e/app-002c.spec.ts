@@ -137,6 +137,10 @@ async function expectAccessible(page: Page): Promise<void> {
 }
 
 async function keyboardReachMemberMenuToggle(page: Page): Promise<void> {
+  // Quick capture stays disabled, and out of the Tab order, until its handlers
+  // are wired after the session and preferences load (REL-039).
+  await expect(page.getByRole("button", { name: "Quick capture" }))
+    .toBeEnabled();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Skip to main content" }))
     .toBeFocused();

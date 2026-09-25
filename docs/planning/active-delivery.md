@@ -271,7 +271,7 @@ Playwright test carrying its stable flow ID.
       skips a branch. Reproduce by running the set several times and diffing the
       per-file lines; fix by making the affected test deterministic, not by
       widening the floor.
-- [ ] **REL-039 — `app-004a` and `app-003b` fail intermittently in the Chromium
+- [x] **REL-039 — `app-004a` and `app-003b` fail intermittently in the Chromium
       E2E under host load.** During the GAP-024 verification on 2026-09-23 two
       full Chromium runs of the candidate failed `app-004a` (`[PEOPLE-004]`, the
       delete dialog never opened after `Delete person` was clicked at
@@ -294,7 +294,20 @@ Playwright test carrying its stable flow ID.
       `app-007b.spec.ts:108`: the gift form kept its filled name after `Save`
       with no error shown, so the click never reached a wired handler.
       `app-007b` then passed three WebKit repeats alone. Include it in the
-      repeat command above with `--project=webkit`.
+      repeat command above with `--project=webkit`. The global people search
+      bound every listener only after its session and preferences reads and the
+      person page wired its lifecycle actions only after the person loaded, so
+      the search now binds before any await, renders a queued or pre-typed query
+      once ready, and hands `Log interaction` to Quick capture only once that
+      opener is wired, the person menu toggle and lifecycle actions ship
+      disabled until their handlers attach, and the relationships section
+      announces its state on an archived person without the scrolling `focus()`
+      that moved the page under Firefox's pending `Restore person` click
+      (`app-004a`, `app-004d`); the Linux WebKit `app-002c` failure was the
+      still-disabled Quick capture being skipped by Tab, now awaited in
+      `app-002c` and `auth-003`, `app-004c` replayed the upstream Content-Length
+      with a longer rewritten "archived" body, and `app-003c` now scopes "No
+      tags saved" to the hero's tag list.
 - [x] **REL-040 — The first GitHub Actions run fails on two Linux-only tooling
       paths.** Run `36151735884` on `a22818fe`, the workflow's first run on the
       ubuntu runners, found two faults the Windows developer machine never

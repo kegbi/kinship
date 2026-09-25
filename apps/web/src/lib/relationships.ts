@@ -506,6 +506,9 @@ export async function mountRelationships(
     cancelPeopleSearch();
     restoreOpenFormAfterTypeLoad = false;
   };
+  // This runs on every load, including the person page's first paint, where a
+  // scrolling focus() moved the page under a pending click (REL-039). The
+  // state is still announced; the page just stays where the reader put it.
   const applySectionState = () => {
     const concealed = currentStatus === "hidden" || typeState === "hidden";
     if (concealed) {
@@ -520,7 +523,9 @@ export async function mountRelationships(
       ui.add.disabled = true;
       ui.loadMore.hidden = true;
       ui.previous.hidden = true;
-      document.querySelector<HTMLElement>("#main-content")?.focus();
+      document.querySelector<HTMLElement>("#main-content")?.focus({
+        preventScroll: true,
+      });
       return;
     }
     ui.section.hidden = false;
@@ -551,7 +556,7 @@ export async function mountRelationships(
           : "Try again");
       ui.state.textContent = listProblem;
       setRailEmpty("relationships", false);
-      ui.state.focus();
+      ui.state.focus({ preventScroll: true });
       return;
     }
     if (readOnly) {
@@ -562,7 +567,7 @@ export async function mountRelationships(
         "Relationships are read-only because this person is archived.";
       setRailCount("relationships", current.length);
       setRailEmpty("relationships", false);
-      ui.state.focus();
+      ui.state.focus({ preventScroll: true });
       return;
     }
     if (typesUnavailable) {
@@ -571,7 +576,7 @@ export async function mountRelationships(
       ui.badge && (ui.badge.textContent = "Unavailable");
       ui.state.textContent = typeProblem;
       setRailEmpty("relationships", false);
-      ui.state.focus();
+      ui.state.focus({ preventScroll: true });
       return;
     }
     if (listState === "loading" || typeState === "loading") {
@@ -593,7 +598,7 @@ export async function mountRelationships(
       ui.badge && (ui.badge.textContent = "Unavailable");
       ui.state.textContent = peopleSearchProblem;
       setRailEmpty("relationships", false);
-      ui.state.focus();
+      ui.state.focus({ preventScroll: true });
       return;
     }
     disablePeopleSelection(false);

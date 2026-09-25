@@ -326,7 +326,13 @@ test(
     await expect(
       page.getByRole("heading", { level: 1, name: "Empty Profile" }),
     ).toBeVisible();
-    await expect(page.getByText("No tags saved")).toBeVisible();
+    // The tags rail's status line also reads "No tags saved." once its facts
+    // load; this step checks the hero's tag list.
+    await expect(
+      page.getByRole("list", { name: "Person tags" }).getByText(
+        "No tags saved",
+      ),
+    ).toBeVisible();
     await expect(page.getByText("No description saved.")).toBeVisible();
     await expect(page.locator("#person-first-run")).toBeVisible();
     const emptyZones = page.locator("[data-zone]");
