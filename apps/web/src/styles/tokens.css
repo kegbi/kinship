@@ -110,3 +110,32 @@
 :root[data-theme="light"] {
   color-scheme: light;
 }
+
+/*
+ * The shadcn/ui theme variables (ADR 0006), each one UXD-001 token above.
+ * The tokens change with the theme, so this one declaration serves light and
+ * dark alike and cannot drift from them. Two shadcn names are left out on
+ * purpose: `--accent` would shadow the design system's own `--accent`, and
+ * `--muted` is already read (with a fallback) by the audit and journal
+ * styles, so declaring it would recolour their text. islands.css maps those
+ * two roles straight onto `--accent-soft` and `--surface-sunken`.
+ */
+:root {
+  --background: var(--surface-page);
+  --foreground: var(--ink-1);
+  --card: var(--surface-1);
+  --card-foreground: var(--ink-1);
+  --popover: var(--surface-1);
+  --popover-foreground: var(--ink-1);
+  --primary: var(--ink-1);
+  --primary-foreground: var(--ink-inverse);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--ink-1);
+  --muted-foreground: var(--ink-2);
+  --accent-foreground: var(--accent-hover);
+  --destructive: var(--danger);
+  --border: var(--line-1);
+  --input: var(--line-strong);
+  --ring: var(--focus-ring);
+  --radius: var(--radius-md);
+}

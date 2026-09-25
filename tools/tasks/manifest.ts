@@ -254,6 +254,14 @@ export const ARCHITECTURE_PERMISSIONS: Permissions = {
   ],
 };
 
+// --- The web suite -------------------------------------------------------
+
+/** The vitest suites: the vanilla modules' `.ts` and the islands' `.tsx`. */
+export const WEB_TESTS = [
+  "apps/web/src/**/*.test.ts",
+  "apps/web/src/**/*.test.tsx",
+] as const;
+
 // --- Type-check and build entry points ----------------------------------
 
 /** Production entry points every check and build gate compiles. */
@@ -1558,12 +1566,19 @@ export const MODULES: readonly TaskModule[] = [
   },
   {
     id: "web",
-    unit: { runner: "vitest", tests: ["apps/web/src/**/*.test.ts"] },
+    unit: { runner: "vitest", tests: WEB_TESTS },
     coverage: {
       runner: "vitest",
       directory: "web",
-      tests: ["apps/web/src/**/*.test.ts"],
-      include: ["apps/web/src/lib/*.ts"],
+      tests: WEB_TESTS,
+      // The vanilla modules, the React islands with their kit (ADR 0006), and
+      // the vendored shadcn/ui components they render.
+      include: [
+        "apps/web/src/lib/*.ts",
+        "apps/web/src/islands/**/*.ts",
+        "apps/web/src/islands/**/*.tsx",
+        "apps/web/src/components/ui/*.tsx",
+      ],
     },
   },
   {
@@ -1676,6 +1691,17 @@ export const MODULES: readonly TaskModule[] = [
         ],
         write: [".artifacts/private-production-recovery"],
       },
+    },
+  },
+  {
+    id: "web-build",
+    onDemand: {
+      reason:
+        "GAP-026 proves what `astro build` ships to the browser — public pages load no React, and the gifts island's hydrated bytes — so it reads apps/web/dist and can only run after a build. The `build` verb runs it right after `astro build`.",
+    },
+    unit: {
+      tests: ["tools/web_build_output_test.ts"],
+      permissions: { read: ["apps/web/dist/client", "apps/web/src/styles"] },
     },
   },
   {
@@ -1881,7 +1907,8 @@ export async function listRepositoryTestFiles(
       if (entry.isDirectory) {
         await walk(path);
       } else if (
-        entry.name.endsWith("_test.ts") || entry.name.endsWith(".test.ts")
+        entry.name.endsWith("_test.ts") || entry.name.endsWith(".test.ts") ||
+        entry.name.endsWith(".test.tsx")
       ) {
         found.push(path);
       }
@@ -1891,7 +1918,10 @@ export async function listRepositoryTestFiles(
   return found.sort();
 }
 
-/** Walks the repository for every production TypeScript module. */
+/**
+ * Walks the repository for every production TypeScript module, the React
+ * islands' `.tsx` included.
+ */
 export async function listProductionFiles(root: URL): Promise<string[]> {
   const ignored = IGNORED_DIRECTORIES;
   const found: string[] = [];
@@ -1903,9 +1933,14 @@ export async function listProductionFiles(root: URL): Promise<string[]> {
         await walk(path);
         continue;
       }
-      if (!entry.name.endsWith(".ts")) continue;
+      if (!entry.name.endsWith(".ts") && !entry.name.endsWith(".tsx")) {
+        continue;
+      }
       if (entry.name.endsWith(".d.ts")) continue;
-      if (entry.name.endsWith("_test.ts") || entry.name.endsWith(".test.ts")) {
+      if (
+        entry.name.endsWith("_test.ts") || entry.name.endsWith(".test.ts") ||
+        entry.name.endsWith(".test.tsx")
+      ) {
         continue;
       }
       if (entry.name.endsWith(".test-helper.ts")) continue;

@@ -4,29 +4,9 @@
  * distinct symbol next to its heading so blocks read differently at a glance;
  * the glyph is aria-hidden because the heading text remains the label.
  */
-export type SectionIconName =
-  | "activities"
-  | "addresses"
-  | "audit"
-  | "calls"
-  | "contact-methods"
-  | "conversations"
-  | "debts"
-  | "documents"
-  | "first-meeting"
-  | "food-preferences"
-  | "gifts"
-  | "important-dates"
-  | "life-events"
-  | "notes"
-  | "pets"
-  | "photos"
-  | "relationships"
-  | "reminders"
-  | "stay-in-touch"
-  | "tasks"
-  | "timeline"
-  | "work";
+import { SECTION_ICON_PATHS, type SectionIconName } from "../lib/section-icons.ts";
+
+export type { SectionIconName };
 
 interface Props {
   readonly name: SectionIconName;
@@ -34,55 +14,8 @@ interface Props {
 }
 
 const { name, class: className } = Astro.props;
-
-const paths: Record<SectionIconName, string> = {
-  activities:
-    '<path d="M3 12h4l2.5-6 4 12 2.5-6H21"/>',
-  addresses:
-    '<path d="M12 21s6-5.2 6-10.5a6 6 0 1 0-12 0C6 15.8 12 21 12 21Z"/><circle cx="12" cy="10.5" r="2.25"/>',
-  audit:
-    '<path d="M12 3 5 6v5c0 4.4 3 8 7 9.5 4-1.5 7-5.1 7-9.5V6l-7-3Z"/><path d="m9.5 12 1.75 1.75L14.5 10.5"/>',
-  calls:
-    '<path d="M6.5 3.5h3l1.5 4-2 1.5a11 11 0 0 0 6 6l1.5-2 4 1.5v3a2 2 0 0 1-2 2A15.5 15.5 0 0 1 4.5 5.5a2 2 0 0 1 2-2Z"/>',
-  "contact-methods":
-    '<circle cx="12" cy="12" r="3.25"/><path d="M15.25 12v1.25a2 2 0 0 0 4 0V12a7.25 7.25 0 1 0-2.85 5.75"/>',
-  conversations:
-    '<path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 19 16.5h-7.5L7 20v-3.5H5A1.5 1.5 0 0 1 3.5 15V7A1.5 1.5 0 0 1 5 5.5Z"/>',
-  debts:
-    '<rect x="3" y="6.5" width="18" height="11" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6.5 10v4M17.5 10v4"/>',
-  documents:
-    '<path d="M7 3.5h6.5L18.5 8.5v10a2 2 0 0 1-2 2h-9.5a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z"/><path d="M13.5 3.5v5h5M9 13h6M9 16.5h6"/>',
-  "first-meeting":
-    '<path d="M12 3.5 13.9 9l5.6 1.9-5.6 1.9L12 18.5l-1.9-5.7-5.6-1.9L10.1 9 12 3.5Z"/><path d="M19 17.5v3M17.5 19h3"/>',
-  "food-preferences":
-    '<path d="M7 3.5v6a2.5 2.5 0 0 0 5 0v-6M9.5 3.5v17M16.5 3.5c-1.5 1-2.5 3.2-2.5 6.5 0 1.5.8 2.5 2.5 2.5v8"/>',
-  gifts:
-    '<path d="M4 11h16v9.5H4V11ZM3 7.5h18V11H3V7.5ZM12 7.5v13"/><path d="M12 7.5c-2.2 0-4-1.5-4-3s3-1 4 3c1-4 4-4.5 4-3s-1.8 3-4 3Z"/>',
-  "important-dates":
-    '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3"/><circle cx="12" cy="14.5" r="1.25" fill="currentColor" stroke="none"/>',
-  "life-events":
-    '<path d="M5.5 20.5v-17"/><path d="M5.5 4.5h11l-2.5 3.5 2.5 3.5h-11"/>',
-  notes:
-    '<path d="M5.5 4.5h13v9l-4 4h-9v-13Z"/><path d="M14.5 17.5v-4h4M8.5 9h7M8.5 12.5h4"/>',
-  pets:
-    '<circle cx="12" cy="15" r="3.5"/><circle cx="6.5" cy="10" r="1.6"/><circle cx="17.5" cy="10" r="1.6"/><circle cx="9.5" cy="6" r="1.6"/><circle cx="14.5" cy="6" r="1.6"/>',
-  photos:
-    '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.75"/><path d="m20.5 15.5-4.5-4.5-6 6.5"/>',
-  relationships:
-    '<circle cx="9" cy="8" r="3.25"/><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0"/><path d="M15.5 5a3.25 3.25 0 0 1 0 6.25M17 14.5a5 5 0 0 1 3.5 4.75"/>',
-  reminders:
-    '<path d="M6.5 15.5V11a5.5 5.5 0 0 1 11 0v4.5l1.5 2h-14l1.5-2Z"/><path d="M10 20.5a2 2 0 0 0 4 0M12 3.5v2"/>',
-  "stay-in-touch":
-    '<path d="M12 20s-7.5-4.6-7.5-10A4.25 4.25 0 0 1 12 7.5 4.25 4.25 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10Z"/><path d="M6 12.5h3l1.5-2.5 2 5 1.5-2.5H18"/>',
-  tasks:
-    '<rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="m8 12.25 2.75 2.75L16.5 9.5"/>',
-  timeline:
-    '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
-  work:
-    '<rect x="3.5" y="7.5" width="17" height="12" rx="2"/><path d="M9 7.5V5.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5.5v2M3.5 12.5h17"/>',
-};
 ---
 
 <span class:list={["section-icon", className]} data-section-icon={name} aria-hidden="true">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" focusable="false" set:html={paths[name]} />
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" focusable="false" set:html={SECTION_ICON_PATHS[name]} />
 </span>

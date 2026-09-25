@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import axe from "axe-core";
+import { waitForIsland } from "./support/islands.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -99,6 +100,7 @@ test(
     );
     expect(uploaded.status()).toBe(201);
     await page.goto(`/app/people/${personId}?section=gifts`);
+    await waitForIsland(page, "person-gifts");
     const gifts = page.locator('[data-person-gifts="gift"]');
     await expect(gifts.getByText("No gifts saved.")).toBeVisible();
     await gifts.getByRole("button", { name: "Add gift" }).click();

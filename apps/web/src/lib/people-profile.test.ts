@@ -786,11 +786,19 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     );
 
     zoneObserver.activate("things");
+    // The gifts island (GAP-026) replaces the shell's markup when it mounts,
+    // so the control is looked up in what it rendered.
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector('[data-person-gifts="gift"]')
+          ?.hasAttribute("data-island-ready"),
+      ).toBe(true)
+    );
     const giftAdd = document.querySelector<HTMLButtonElement>(
       '[data-person-gifts="gift"] [data-gift-add]',
     );
     expect(giftAdd).not.toBeNull();
-    await vi.waitFor(() => expect(giftAdd!.hidden).toBe(true));
+    expect(giftAdd!.hidden).toBe(true);
   });
 
   it("UXD-003B activates a deep-linked zone without delaying section focus", async () => {

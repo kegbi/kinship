@@ -29,7 +29,6 @@ import { mountPersonAuditSummary } from "./audit-history.ts";
 import { mountTaskSurface } from "./tasks.ts";
 import { mountPersonReminders } from "./reminders.ts";
 import { mountPersonFiles } from "./person-files.ts";
-import { mountPersonGifts } from "./person-gifts.ts";
 import { mountPersonLifeEvents } from "./person-life-events.ts";
 import { mountPersonTimeline } from "./person-timeline.ts";
 import {
@@ -1474,12 +1473,18 @@ export async function mountPeopleProfile(): Promise<void> {
   );
   register(
     "things",
-    () =>
-      mountPersonGifts({
+    async () => {
+      // The gifts island (GAP-026) and React load with the zone, so a person
+      // page that never shows its Things pays nothing for them.
+      const { mountGiftsIsland } = await import(
+        "../islands/person-gifts/mount.tsx"
+      );
+      await mountGiftsIsland({
         archived: isArchived(),
         personId: id,
         workspaceId: session.session.workspace.id,
-      }),
+      });
+    },
   );
   register(
     "admin",
