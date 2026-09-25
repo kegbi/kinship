@@ -60,6 +60,7 @@ async function signIn(page: Page, email: string): Promise<void> {
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/app$/);
+  await settleNavigation(page);
 }
 
 async function openPersonMenu(page: Page): Promise<void> {

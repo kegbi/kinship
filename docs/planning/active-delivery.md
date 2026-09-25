@@ -374,6 +374,18 @@ Playwright test carrying its stable flow ID.
       `app-004c` (two), `app-004e`, `app-005b`, `app-005c`, `app-006a` (two),
       `app-006b` (two), and `auth-003` (two). No assertion changed and no retry,
       sleep, or timeout was added.
+- [x] **REL-044 — Spec helpers end on an app navigation their callers then
+      interrupt.** Linux CI run 36182979003 on `bf572f3e` timed out in
+      `app-004b.spec.ts:92` (`[PEOPLE-005]`) on WebKit waiting for "Given name"
+      to become editable: the spec's `signIn` helper returns once
+      `toHaveURL(/\/app$/)` passes at commit, and the caller's
+      `goto("/app/people/new")` interrupts `/app` while it is still loading.
+      REL-042 settled the call sites inside test bodies but not the helpers. The
+      eleven helpers that end on an app navigation (`signIn` in `app-002e`,
+      `app-003a`, `app-003b`, `app-003c`, `app-004a`, `app-004b`, `app-004c`,
+      and `auth-002`; `createPerson` in `app-004d` and `app-005a`;
+      `keyboardFinishSignOut` in `auth-003`) now call `settleNavigation` before
+      returning.
 
 ## Just-In-Time Technical Capabilities
 

@@ -5,6 +5,7 @@ import {
   test,
 } from "@playwright/test";
 import axe from "axe-core";
+import { settleNavigation } from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -59,6 +60,7 @@ async function signIn(page: Page, email: string): Promise<void> {
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/app$/);
+  await settleNavigation(page);
 }
 
 async function openPersonMenu(page: Page): Promise<void> {

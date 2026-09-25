@@ -8,6 +8,7 @@ import {
 import axe from "axe-core";
 import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
+import { settleNavigation } from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -128,6 +129,7 @@ async function signIn(page: Page, email: string): Promise<void> {
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/app$/);
+  await settleNavigation(page);
 }
 
 async function openMemberPopover(page: Page): Promise<void> {

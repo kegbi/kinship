@@ -310,6 +310,7 @@ async function keyboardFinishSignOut(page: Page): Promise<void> {
   await expect(signOutButton).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/auth\/sign-in$/);
+  await settleNavigation(page);
 }
 
 async function keyboardSignOutWithMultipleWorkspaces(
