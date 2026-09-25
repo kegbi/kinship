@@ -170,7 +170,7 @@ export async function mountImports(): Promise<void> {
     const report = element<HTMLElement>("[data-import-report]");
     if (report) report.hidden = true;
   };
-  input.addEventListener("change", async () => {
+  const detect = async () => {
     source = undefined;
     resetCommitState();
     const file = input.files?.[0];
@@ -200,7 +200,11 @@ export async function mountImports(): Promise<void> {
       if (input.files?.[0] !== file) return;
       detection.textContent = "This file is not valid JSON.";
     }
-  });
+  };
+  input.addEventListener("change", () => void detect());
+  // A file chosen while the session was resolving fired its change event
+  // before this listener existed.
+  if (input.files?.length) void detect();
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (validatingSource) return;
