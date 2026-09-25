@@ -18,6 +18,7 @@ import {
   startE2eStack,
   stopOwnedProcess,
   stopWeb,
+  tearDownE2eComposeProject,
   terminateExactProcesses,
   waitForProcessAbsence,
 } from "./e2e.ts";
@@ -195,6 +196,77 @@ Deno.test("[REL-040] a failed stack start prints diagnostics and keeps its cause
   assert(
     calls.join(",") === "up,ps,logs",
     `status and logs follow a failed start, not ${calls.join(",")}`,
+  );
+});
+
+function fakeImageDocker(
+  images: Set<string>,
+  calls: string[],
+  options: { readonly downFails?: boolean; readonly rmIgnored?: boolean } = {},
+): (args: readonly string[]) => Promise<string> {
+  return (args) => {
+    calls.push(args.join(" "));
+    if (args.includes("down") && options.downFails) {
+      return Promise.reject(new Error("compose down failed"));
+    }
+    if (args[0] === "image" && args[1] === "ls") {
+      return Promise.resolve([...images].join("\n"));
+    }
+    if (args[0] === "image" && args[1] === "rm" && !options.rmIgnored) {
+      for (const image of args.slice(2)) images.delete(image);
+    }
+    return Promise.resolve("");
+  };
+}
+
+Deno.test("[REL-043] a Compose fixture's teardown removes the images it built", async () => {
+  const project = "kinship-e2e-42-1234";
+  const unrelated = ["kinship-e2e-7-8-api:latest", "postgres:18.4-alpine3.23"];
+  const images = new Set([...e2eImageNames(project), ...unrelated]);
+  const calls: string[] = [];
+  let error: unknown;
+  try {
+    await tearDownE2eComposeProject(
+      project,
+      fakeImageDocker(images, calls, { downFails: true }),
+    );
+  } catch (caught) {
+    error = caught;
+  }
+  assert(
+    String(error).includes("compose down failed"),
+    `a failed down stays reported, not ${String(error)}`,
+  );
+  const down = calls.findIndex((call) =>
+    call.startsWith(`${E2E_COMPOSE_ARGS.join(" ")} down `)
+  );
+  const remove = calls.indexOf(`image rm ${e2eImageNames(project).join(" ")}`);
+  assert(
+    down >= 0 && remove > down,
+    `the images go after down, even a failed one: ${calls.join(" | ")}`,
+  );
+  assert(
+    [...images].sort().join(",") === [...unrelated].sort().join(","),
+    `only this run's images are removed, leaving ${[...images].join(",")}`,
+  );
+});
+
+Deno.test("[REL-043] a Compose fixture's teardown fails when its images remain", async () => {
+  const project = "kinship-e2e-42-1234";
+  let error: unknown;
+  try {
+    await tearDownE2eComposeProject(
+      project,
+      fakeImageDocker(new Set(e2eImageNames(project)), [], {
+        rmIgnored: true,
+      }),
+    );
+  } catch (caught) {
+    error = caught;
+  }
+  assert(
+    String(error).includes(`${project}-api:latest`),
+    `a leftover image fails the fixture, not ${String(error)}`,
   );
 });
 
