@@ -380,7 +380,7 @@ and then runs the same `deno task` verbs a developer runs locally.
 | `schema`           | every run               | `test:schema` against the pinned PostgreSQL image                                                                                                     |
 | `e2e-chromium`     | pull requests           | `test:e2e --project=chromium` against the Compose stack, uploading Playwright traces on failure                                                       |
 | `e2e-all-browsers` | `main`, nightly, manual | the whole Chromium, Firefox, and WebKit matrix                                                                                                        |
-| `images`           | `main`, nightly, manual | production builds of `Dockerfile.api`, `Dockerfile.web`, and `Dockerfile.gateway`                                                                     |
+| `images`           | `main`, nightly, manual | production builds of `Dockerfile.api` and of the `web` and `gateway` targets of `Dockerfile.web`                                                      |
 
 `static`, `unit`, `integration`, and `schema` run in parallel; the three
 expensive jobs wait for `static`. Coverage is never split in a way that lets
@@ -389,9 +389,9 @@ uncovered code evade the aggregate threshold.
 [`tools/pipeline_contract_test.ts`](../../tools/pipeline_contract_test.ts) is
 the executable consumer of this workflow and of `lefthook.yml`. It proves the
 required jobs and hook stages exist, that the job graph stays acyclic, that
-installation stays frozen, that the pinned Deno version matches
-`.tool-versions`, and that every command either names a declared `deno.json`
-task or a declared dependency binary.
+installation stays frozen, that the pinned Deno version and the Node image
+version match `.tool-versions`, and that every command either names a declared
+`deno.json` task or a declared dependency binary.
 
 Named by the tickets that add them, still missing: the workflow and page catalog
 coverage gate, container image scanning, and artifact publication. Upload
