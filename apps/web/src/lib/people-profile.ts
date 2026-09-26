@@ -485,13 +485,24 @@ function activateSectionZone(
   return zone;
 }
 
+/**
+ * Why the page moves to a section (REL-045). The reader `navigate`s: the
+ * section glides into place. The page `load`s a deep link: it jumps there, so
+ * no animation is still running when the reader reaches for the section's
+ * controls. Every zone has `settle`d: the reader may already be pressing
+ * something, so their focus stays, a section they can see stays where it is,
+ * and one that drifted out of view jumps back.
+ */
+type SectionPlacement = "navigate" | "load" | "settle";
+
 function focusSection(
   profile: ProfileElements,
   navigation: SectionNavigationContext,
   id: string | null,
-  preserveInteractiveFocus = false,
+  placement: SectionPlacement = "navigate",
   replaceActivatedView = false,
 ): boolean {
+  const preserveInteractiveFocus = placement === "settle";
   const activatedZone = activateSectionZone(navigation, id);
   if (activatedZone && replaceActivatedView) {
     const url = new URL(globalThis.location.href);
@@ -551,9 +562,19 @@ function focusSection(
     }
   }
   if (preserveInteractiveFocus && hasMeaningfulInteractiveFocus()) return true;
-  target.scrollIntoView?.({ block: "start" });
+  if (placement === "navigate") {
+    target.scrollIntoView?.({ block: "start" });
+  } else if (placement === "load" || !inViewport(target)) {
+    target.scrollIntoView?.({ behavior: "instant", block: "start" });
+  }
   target.focus({ preventScroll: true });
   return true;
+}
+
+/** Whether any of `element` is inside the viewport. */
+function inViewport(element: HTMLElement): boolean {
+  const { bottom, height, top } = element.getBoundingClientRect();
+  return height > 0 && bottom > 0 && top < globalThis.innerHeight;
 }
 
 function currentSection(): string | null {
@@ -563,18 +584,11 @@ function currentSection(): string | null {
 function reconcileSectionLocation(
   profile: ProfileElements,
   navigation: SectionNavigationContext,
-  preserveInteractiveFocus = false,
+  placement: "navigate" | "settle" = "navigate",
 ): void {
-  if (
-    focusSection(
-      profile,
-      navigation,
-      currentSection(),
-      preserveInteractiveFocus,
-    )
-  ) return;
+  if (focusSection(profile, navigation, currentSection(), placement)) return;
   clearCurrentSection(profile);
-  if (preserveInteractiveFocus && hasMeaningfulInteractiveFocus()) return;
+  if (placement === "settle" && hasMeaningfulInteractiveFocus()) return;
   heading()?.focus({ preventScroll: true });
 }
 
@@ -717,7 +731,7 @@ function renderReady(
   profile.state.hidden = true;
   profile.ready.hidden = false;
   profile.ready.removeAttribute("aria-busy");
-  if (!focusSection(profile, navigation, currentSection(), false, true)) {
+  if (!focusSection(profile, navigation, currentSection(), "load", true)) {
     heading()?.focus();
   }
 }
@@ -852,5 +866,5 @@ export async function mountPeopleProfile(): Promise<void> {
   await Promise.all([eagerRail, afterFirstPaint()]);
   await zoneRegistry.settled();
   promoteSectionStatusRegions();
-  reconcileSectionLocation(profile, sectionNavigation, true);
+  reconcileSectionLocation(profile, sectionNavigation, "settle");
 }

@@ -9,6 +9,11 @@
 * {
   box-sizing: border-box;
 }
+/* A hidden element stays hidden whatever its class displays it as, so no
+   control is reachable before its owner wires and reveals it (REL-045). */
+[hidden] {
+  display: none !important;
+}
 body {
   min-width: 320px;
   min-height: 100vh;
@@ -120,9 +125,6 @@ h1 {
 form {
   display: grid;
   gap: .4rem;
-}
-form[hidden] {
-  display: none;
 }
 label {
   display: grid;

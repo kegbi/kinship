@@ -209,6 +209,12 @@ export async function mountTaskSurface(options: {
   if (!workspaceId) {
     if (session?.status !== "ready") {
       state.textContent = "Tasks are unavailable. Sign in again or retry.";
+      // Nothing below binds Retry on this path, so it remounts the surface,
+      // and it is wired before it shows (REL-045).
+      retry?.addEventListener("click", () => void mountTaskSurface(options), {
+        once: true,
+        signal: abort.signal,
+      });
       if (retry) retry.hidden = false;
       return;
     }

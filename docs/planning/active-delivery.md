@@ -405,6 +405,30 @@ Playwright test carrying its stable flow ID.
       and `auth-002`; `createPerson` in `app-004d` and `app-005a`;
       `keyboardFinishSignOut` in `auth-003`) now call `settleNavigation` before
       returning.
+- [x] **REL-045 — Clicks land before, or beside, the handler they were aimed
+      at.** Linux CI run 36208299565 on `2048ff98` failed `auth-002.spec.ts:216`
+      (`[AUTH-002]`): `Accept invitation` was clicked before the page had even
+      asked for the session, although REL-041 keeps `#invitation-actions` hidden
+      until its handlers attach, because `auth.css` gave `.invitation-actions`
+      `display: grid` and, unlike `base.css`, no rule that lets `hidden` win.
+      Run 36222291227 on `781bb1c5` failed `app-007a.spec.ts:85` (`[FILES-001]`,
+      the upload form never opened after `Attach document`), run 36225990339 on
+      `0855ba9c` failed `app-005c.spec.ts:146` (`[GOVERNANCE-002]`,
+      `Open full audit history` never navigated) on WebKit, and a local WebKit
+      run of the GAP-040 candidate failed `app-004c.spec.ts:319` (`[PEOPLE-006]`
+      APR-006, the reminder form never opened). In the person-page traces the
+      page scrolls under the click: the workspace animated its `?section=`
+      placement through the document's smooth scrolling and, once every zone
+      settled, animated it again, moving a section the reader could already see
+      while the pointer was down. Delivered 2026-09-26: `auth.css` hides every
+      `[hidden]` element, and a stylesheet test proves no auth page displays an
+      element its markup hides; a deep link now jumps to its section instead of
+      gliding, the settled pass leaves a visible section where it is and jumps
+      back to one that drifted out of view, and a section the reader picks still
+      glides; and the tasks page wires `Retry tasks` before showing it when its
+      own session read fails. An audit of the person-page modules and the
+      settings, journal, tasks, and compliance pages found no other control
+      visible and enabled before its handler across an await. No spec changed.
 
 ## Just-In-Time Technical Capabilities
 

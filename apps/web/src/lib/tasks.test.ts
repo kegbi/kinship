@@ -121,6 +121,46 @@ describe("PLANNING-001 task browser behavior", () => {
     expect(document.body.textContent).toBe("");
   });
 
+  it("REL-045 never reveals Retry tasks without wiring it when the session is unavailable", async () => {
+    surfaceMarkup(true);
+    let sessionAvailable = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        Promise.resolve(
+          String(input) === "/api/v1/session"
+            ? sessionAvailable
+              ? response(session)
+              : response({ code: "unavailable", status: 503 }, 503)
+            : response(
+              String(input).startsWith("/api/v1/people")
+                ? { people: [], status: "ready" }
+                : { items: [], status: "ready" },
+            ),
+        )
+      ),
+    );
+    await mountTaskSurface();
+    const state = document.querySelector<HTMLElement>("[data-task-state]")!;
+    const retry = document.querySelector<HTMLButtonElement>(
+      "[data-task-retry]",
+    )!;
+    expect(state.textContent).toBe(
+      "Tasks are unavailable. Sign in again or retry.",
+    );
+    expect(retry.hidden).toBe(false);
+
+    sessionAvailable = true;
+    retry.click();
+    await vi.waitFor(() =>
+      expect(state.textContent).toBe("No tasks in this view.")
+    );
+    expect(retry.hidden).toBe(true);
+    expect(
+      document.querySelector<HTMLButtonElement>("[data-task-add]")?.disabled,
+    ).toBe(false);
+  });
+
   it("keeps Add task unavailable until its action is wired", async () => {
     expect(readFileSync("apps/web/src/pages/app/tasks/index.astro", "utf8"))
       .toMatch(/<button data-task-add[^>]*\sdisabled>/);
