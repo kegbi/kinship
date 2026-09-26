@@ -131,7 +131,7 @@ test("[IMPORT-001] imports Monica data safely and idempotently", {
     },
     headers: { origin },
   })).status()).toBe(401);
-  await page.addScriptTag({ content: axe.source });
+  await page.evaluate(axe.source);
   expect(
     await page.evaluate(async () =>
       (await (globalThis as typeof globalThis & {

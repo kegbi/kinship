@@ -144,7 +144,7 @@ test(
       page.locator("#today-cadences-list li", { hasText: "Ada Lovelace" }),
     ).toBeVisible();
 
-    await page.addScriptTag({ content: axe.source });
+    await page.evaluate(axe.source);
     expect(
       await page.evaluate(async () =>
         (await (globalThis as typeof globalThis & {

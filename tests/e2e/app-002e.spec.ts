@@ -8,6 +8,7 @@ import {
 import axe from "axe-core";
 import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
+import { recordPolicyViolations } from "./support/content-security-policy.ts";
 import { settleNavigation } from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
@@ -149,7 +150,7 @@ async function sessionCookie(context: BrowserContext): Promise<string> {
 }
 
 async function expectAccessible(page: Page): Promise<void> {
-  await page.addScriptTag({ content: axe.source });
+  await page.evaluate(axe.source);
   const violations = await page.evaluate(async () =>
     (await (globalThis as typeof globalThis & {
       axe: { run(): Promise<{ violations: unknown[] }> };
@@ -603,6 +604,7 @@ test(
   },
   async ({ browser, browserName, context, page, request }) => {
     test.setTimeout(240_000);
+    const policyViolations = recordPolicyViolations(page);
     const suffix = `${browserName}-${Date.now()}`;
     const ownerEmail = `settings-owner-${suffix}@example.test`;
     const memberEmail = `settings-member-${suffix}@example.test`;
@@ -860,5 +862,6 @@ test(
       }),
     ).toBeVisible();
     await memberContext.close();
+    expect(policyViolations).toEqual([]);
   },
 );

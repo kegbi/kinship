@@ -1264,13 +1264,34 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     `contracts:check` 123 and 126, build and images green, Chromium E2E 57
     passed; gates fmt:check, lint, check, check:architecture (14).
 
-- [ ] **GAP-040 — Gateway hardening.** M. Depends: 039.
+- [x] **GAP-040 — Gateway hardening.** M. Depends: 039.
   - Scope: `limit_req_zone`/`limit_conn_zone` on `/api/v1/` and auth routes,
     `X-Request-Id` generation and forwarding, explicit `ssl_ciphers` and
     `ssl_prefer_server_ciphers`, HSTS `includeSubDomains` decision, CSP nonce
     for the inline theme script (drop `'unsafe-inline'` for scripts). Extend
     `gateway_contract_test.ts`.
   - Verify: contract test and log-capture test green; E2E green.
+  - Delivered 2026-09-26: the gateway rate-limits `/api/v1/` per client address
+    (`kinship_api` 50 r/s burst 200, `kinship_credentials` 5 r/s burst 100 on
+    the thirteen credential routes selected by a `map`, `kinship_connections`
+    64), answering 429 with `Retry-After`, no-store, the security headers, and
+    the API's own problem body (`request_rate_limited`), with numbers tuned from
+    captured E2E traffic; TLS 1.2 offers only ECDHE with AES-GCM or
+    ChaCha20-Poly1305, server cipher preference off, session tickets off; HSTS
+    keeps one year without `includeSubDomains` or `preload`, recorded in
+    `compose-contract.md`; `script-src` is `'self'` plus the hash of the one
+    inline theme script (hashes, not a nonce, because pages are static files;
+    Vite no longer inlines bundled scripts), `style-src` stays because Base UI
+    renders style elements; every proxied location forwards the gateway's
+    `X-Request-Id`; `gateway_contract_test.ts` gains six tests rejecting each
+    old weak form, `web_build_output_test.ts` proves every built inline script
+    is hash-allowed with no handlers, the log-capture test proves 429 answers
+    and the served CSP, and the E2E specs load axe through `page.evaluate` with
+    a helper that fails a test on any CSP report; 42 files changed (+923/-45);
+    unit and coverage unchanged, build 11 web-build tests, images green,
+    Chromium E2E 57 passed, Firefox 15, WebKit 14 with one REL-045 reminder-form
+    intermittent that passed three repeats; gates fmt:check, lint, check,
+    check:architecture (14), contracts:check.
 
 - [ ] **GAP-041 — Compose and Docker consolidation.** S-M. Depends: none.
   - Scope: `compose.support.yaml` holding mailpit and object-store once,

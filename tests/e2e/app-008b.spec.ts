@@ -162,7 +162,7 @@ test("[GOVERNANCE-001] reviews and accepts an exact required legal version", {
     "data-page-id",
     "journal.index",
   );
-  await page.addScriptTag({ content: axe.source });
+  await page.evaluate(axe.source);
   expect(
     await page.evaluate(async () =>
       (await (globalThis as typeof globalThis & {

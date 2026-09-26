@@ -90,7 +90,7 @@ test(
     await expect(result).toContainText("Care plan");
     await expect(result).toContainText("Ada Lovelace");
     await expect(page.locator("main")).not.toContainText("storageKey");
-    await page.addScriptTag({ content: axe.source });
+    await page.evaluate(axe.source);
     expect(
       await page.evaluate(async () =>
         (await (globalThis as typeof globalThis & {

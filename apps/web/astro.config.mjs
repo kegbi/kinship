@@ -43,6 +43,14 @@ export default defineConfig({
     port: webPort,
   },
   vite: {
+    build: {
+      // Astro writes a small bundled page script into the HTML unless this
+      // says no. The gateway's CSP allows inline scripts only by hash
+      // (GAP-040), so every bundled script ships as a same-origin file and
+      // the one inline script is the hand-written theme bootstrap. Other
+      // assets keep Vite's default limit.
+      assetsInlineLimit: (file) => (/\.m?js$/.test(file) ? false : undefined),
+    },
     resolve: {
       // cmdk's unused Radix Command.Dialog stays out of the bundle; see
       // cmdk-radix-dialog.mjs.

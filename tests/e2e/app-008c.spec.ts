@@ -254,7 +254,7 @@ test("[PEOPLE-003] reads the complete canonical person workspace", {
     `${origin}/api/v1/people/${foreignPersonId}/life-events`,
   )).status()).toBe(404);
 
-  await page.addScriptTag({ content: axe.source });
+  await page.evaluate(axe.source);
   expect(
     await page.evaluate(async () =>
       (await (globalThis as typeof globalThis & {

@@ -144,7 +144,7 @@ async function openPersonMenu(page: Page): Promise<void> {
 }
 
 async function expectAccessible(page: Page): Promise<void> {
-  await page.addScriptTag({ content: axe.source });
+  await page.evaluate(axe.source);
   expect(
     await page.evaluate(async () =>
       (await (globalThis as typeof globalThis & {

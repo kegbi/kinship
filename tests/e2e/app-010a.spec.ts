@@ -119,7 +119,7 @@ test(
     await page.goto("/app/settings/api");
     await expect(secretInput).not.toBeVisible();
     await expect(page.locator("body")).not.toContainText(secret);
-    await page.addScriptTag({ content: axe.source });
+    await page.evaluate(axe.source);
     expect(
       await page.evaluate(async () =>
         (await (globalThis as typeof globalThis & {

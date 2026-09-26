@@ -211,7 +211,7 @@ test("[INTERACTION-002] logs calls and conversations in the person workspace", {
   );
   expect(invalidMethod.status()).toBe(404);
 
-  await page.addScriptTag({ content: axe.source });
+  await page.evaluate(axe.source);
   expect(
     await page.evaluate(async () =>
       (await (globalThis as typeof globalThis & {

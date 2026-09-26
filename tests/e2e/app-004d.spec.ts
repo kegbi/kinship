@@ -231,7 +231,7 @@ test(
     );
     await section.getByRole("button", { name: "Create anyway" }).click();
     await expect(section).toContainText("parent: Grace Hopper");
-    await page.addScriptTag({ content: axe.source });
+    await page.evaluate(axe.source);
     expect(
       await page.evaluate(async () =>
         (await (globalThis as typeof globalThis & {

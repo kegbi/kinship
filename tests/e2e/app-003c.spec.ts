@@ -131,7 +131,7 @@ async function signIn(page: Page, email: string): Promise<void> {
 }
 
 async function expectAccessible(page: Page): Promise<void> {
-  await page.addScriptTag({ content: axe.source });
+  await page.evaluate(axe.source);
   const violations = await page.evaluate(async () =>
     (await (globalThis as typeof globalThis & {
       axe: { run(): Promise<{ violations: unknown[] }> };

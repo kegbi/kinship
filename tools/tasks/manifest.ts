@@ -202,6 +202,9 @@ export const API_CONFIGURATION_READS = [
   "packages/backend/modules/workspaces/adapters/postgres/personalization.ts",
   "packages/backend/modules/workspaces/adapters/postgres/profile_fact_configuration.ts",
   "apps/web/src/pages/app/settings/profile.astro",
+  // GAP-040: every inline script and event attribute the CSP must account for.
+  "apps/web/src",
+  "packages/http-kit/problem.ts",
   "apps/web/src/pages/internal/activity-report-shell.astro",
   "apps/web/src/pages/internal/person-audit-shell.astro",
   "apps/web/src/pages/internal/person-profile-shell.astro",
@@ -1725,7 +1728,14 @@ export const MODULES: readonly TaskModule[] = [
     },
     unit: {
       tests: ["tools/web_build_output_test.ts"],
-      permissions: { read: ["apps/web/dist/client", "apps/web/src/styles"] },
+      permissions: {
+        read: [
+          "apps/web/dist/client",
+          "apps/web/dist/server/entry.mjs",
+          "apps/web/src/styles",
+          "gateway/security_headers.conf",
+        ],
+      },
     },
   },
   {

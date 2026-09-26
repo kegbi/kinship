@@ -287,6 +287,115 @@ Deno.test("[GAP-027] no chunk ships cmdk's unused Radix Dialog", async () => {
   }
 });
 
+/** Every built HTML page under the client output, relative to it. */
+async function builtPages(directory = ""): Promise<string[]> {
+  const pages: string[] = [];
+  for await (const entry of Deno.readDir(new URL(directory || ".", CLIENT))) {
+    const path = `${directory}${entry.name}`;
+    if (entry.isDirectory) pages.push(...await builtPages(`${path}/`));
+    else if (entry.name.endsWith(".html")) pages.push(path);
+  }
+  return pages.sort();
+}
+
+/** Script types a browser executes, which CSP governs; others are data. */
+const EXECUTABLE_SCRIPT_TYPE =
+  /^(|module|text\/javascript|application\/javascript)$/i;
+
+/** The bodies of the executable scripts a page carries inline. */
+export function inlineScripts(html: string): string[] {
+  const bodies: string[] = [];
+  for (
+    const [, attributes = "", body = ""] of html.matchAll(
+      /<script\b([^>]*)>([\s\S]*?)<\/script>/gi,
+    )
+  ) {
+    if (/\bsrc\s*=/i.test(attributes)) continue;
+    const type = attributes.match(/\btype\s*=\s*["']?([^"'\s>]*)/i)?.[1] ??
+      "";
+    if (EXECUTABLE_SCRIPT_TYPE.test(type)) bodies.push(body);
+  }
+  return bodies;
+}
+
+/** The `script-src` sources the gateway's CSP allows. */
+async function gatewayScriptSources(): Promise<Set<string>> {
+  const headers = await Deno.readTextFile(
+    new URL("../gateway/security_headers.conf", import.meta.url),
+  );
+  const policy = headers.match(
+    /add_header Content-Security-Policy "([^"]*)" always;/,
+  )?.[1] ?? "";
+  const directive = policy.split(";").map((part) => part.trim().split(/\s+/))
+    .find(([name]) => name === "script-src") ?? [];
+  return new Set(directive.slice(1));
+}
+
+async function hashSource(body: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(body),
+  );
+  return `'sha256-${btoa(String.fromCharCode(...new Uint8Array(digest)))}'`;
+}
+
+Deno.test("[GAP-040] the inline script reader skips external and data scripts", () => {
+  const html = [
+    '<script src="/_astro/a.js"></script>',
+    "<script>one()</script>",
+    '<script type="module">two()</script>',
+    '<script type="application/json">{"data":1}</script>',
+    "<SCRIPT type='text/javascript'>three()</SCRIPT>",
+  ].join("");
+  assert(
+    JSON.stringify(inlineScripts(html)) ===
+      JSON.stringify(["one()", "two()", "three()"]),
+    `executable inline scripts only: ${inlineScripts(html)}`,
+  );
+});
+
+Deno.test("[GAP-040] every inline script the build ships is allowed by the gateway's CSP", async () => {
+  const allowed = await gatewayScriptSources();
+  assert(
+    allowed.has("'self'") && !allowed.has("'unsafe-inline'"),
+    "the gateway's script-src is the origin plus hashes",
+  );
+  const pages = await builtPages();
+  assert(pages.length > 20, `the build wrote pages, found ${pages.length}`);
+  const shipped = new Set<string>();
+  for (const page of pages) {
+    const html = await read(page);
+    for (const body of inlineScripts(html)) {
+      const hash = await hashSource(body);
+      shipped.add(hash);
+      assert(allowed.has(hash), `${page} inlines a script CSP blocks: ${hash}`);
+    }
+    const handler = html.match(/<[a-zA-Z][^>]*?\son[a-z]+\s*=/)?.[0];
+    assert(handler === undefined, `${page} carries an inline handler`);
+    assert(!/javascript:/i.test(html), `${page} carries a javascript: URL`);
+  }
+  // Only the hand-written theme script is inline; Astro inlines no bundled
+  // page script (astro.config.mjs), so no build output changes the policy.
+  assert(
+    shipped.size === 1 && [...allowed].filter((s) => s !== "'self'")
+      .every((hash) => shipped.has(hash)),
+    `the build ships exactly the inline scripts the CSP hashes: ${[
+      ...shipped,
+    ]}`,
+  );
+});
+
+Deno.test("[GAP-040] pages rendered on demand inline no bundled script either", async () => {
+  // The renderer's manifest lists the bundled scripts it would write into a
+  // page body; on-demand pages have no HTML in the client output to hash.
+  const entry = await Deno.readTextFile(
+    new URL("../apps/web/dist/server/entry.mjs", import.meta.url),
+  );
+  const inlined = entry.match(/"inlinedScripts":(\[[^\]]*\])/)?.[1];
+  assert(inlined !== undefined, "the renderer manifest names inlined scripts");
+  assert(inlined === "[]", `the renderer inlines scripts: ${inlined}`);
+});
+
 /**
  * The body of the built `@layer utilities { … }` block. The protected pages'
  * stylesheet bundles the hand-written CSS and the Tailwind layers into one
