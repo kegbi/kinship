@@ -127,6 +127,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web
+      target: web
     environment:
       API_ORIGIN: http://api:8000
       HOST: 0.0.0.0
@@ -151,7 +152,8 @@ services:
   gateway:
     build:
       context: .
-      dockerfile: Dockerfile.gateway
+      dockerfile: Dockerfile.web
+      target: gateway
     depends_on:
       api:
         condition: service_healthy

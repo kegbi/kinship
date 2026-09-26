@@ -7,6 +7,10 @@ interface ComposeModel {
     Record<string, {
       readonly depends_on?: Readonly<Record<string, unknown>>;
       readonly environment?: Readonly<Record<string, string>>;
+      readonly healthcheck?: unknown;
+      readonly image?: string;
+      readonly read_only?: boolean;
+      readonly stop_grace_period?: string;
     }>
   >;
 }
@@ -59,6 +63,32 @@ Deno.test("OPS-001D dev and test Compose retain isolated capture mail", async ()
       api.environment?.SMTP_HOST === "mailpit" &&
         api.environment?.SMTP_SECURITY === "plain",
       `${overlay} keeps local capture delivery`,
+    );
+  }
+});
+
+Deno.test("GAP-041 dev and test share one local support definition", async () => {
+  const [development, test] = await Promise.all([
+    renderCompose(["compose.yaml", "compose.dev.yaml"]),
+    renderCompose(["compose.yaml", "compose.test.yaml"]),
+  ]);
+  for (const name of ["mailpit", "object-store"] as const) {
+    const shared = (model: ComposeModel) => {
+      const service = model.services[name];
+      assert(service, `both overlays include ${name}`);
+      const { environment, healthcheck, image, read_only, stop_grace_period } =
+        service;
+      return JSON.stringify({
+        environment,
+        healthcheck,
+        image,
+        read_only,
+        stop_grace_period,
+      });
+    };
+    assert(
+      shared(development) === shared(test),
+      `dev and test render ${name} from the same compose.support.yaml definition`,
     );
   }
 });

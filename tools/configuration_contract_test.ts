@@ -169,6 +169,9 @@ Deno.test("[OPS-001E1] RustFS owns local and recovery S3 boundaries", async () =
   const test = await Deno.readTextFile(
     new URL("../compose.test.yaml", import.meta.url),
   );
+  const support = await Deno.readTextFile(
+    new URL("../compose.support.yaml", import.meta.url),
+  );
   assert(
     !base.includes("  object-store:"),
     "production-like Compose has no local object-store service",
@@ -190,41 +193,53 @@ Deno.test("[OPS-001E1] RustFS owns local and recovery S3 boundaries", async () =
   const rustfsImage =
     "rustfs/rustfs:1.0.0-beta.12@sha256:41fe89380f4120a337790c02af192c3fe7bb55c3edc2e6e9357b487b47c6ab21";
   for (
-    const [name, localBoundary] of [
-      ["development overlay", development],
-      ["test overlay", test],
-    ] as const
-  ) {
-    assert(
-      localBoundary.includes(rustfsImage),
-      `${name} must use the exact accepted RustFS image`,
-    );
-    assert(
-      !localBoundary.includes("minio/minio:"),
-      `${name} must not run a MinIO server`,
-    );
-  }
-  for (
     const [name, overlay] of [
       ["development overlay", development],
       ["test overlay", test],
     ] as const
   ) {
-    assert(overlay.includes("  object-store:"), `${name} owns RustFS`);
+    for (const service of ["mailpit", "object-store"]) {
+      assert(
+        overlay.includes(
+          `\n  ${service}:\n    extends:\n      file: compose.support.yaml\n      service: ${service}\n`,
+        ),
+        `${name} must extend the shared ${service} definition`,
+      );
+    }
     assert(
-      overlay.includes("RUSTFS_ACCESS_KEY:") &&
-        overlay.includes("RUSTFS_SECRET_KEY:"),
-      `${name} configures RustFS credentials`,
+      !overlay.includes("rustfs/rustfs:") &&
+        !overlay.includes("axllent/mailpit:") &&
+        !overlay.includes("RUSTFS_ACCESS_KEY:"),
+      `${name} must not redefine a support service compose.support.yaml owns`,
     );
     assert(
-      overlay.includes("/health"),
-      `${name} waits on the RustFS health endpoint`,
+      overlay.includes("  object-store:"),
+      `${name} places RustFS storage`,
     );
     assert(
-      !overlay.includes("MINIO_ROOT_") && !overlay.includes("MC_HOST_"),
+      !overlay.includes("minio/minio:") && !overlay.includes("MINIO_ROOT_") &&
+        !overlay.includes("MC_HOST_"),
       `${name} must not retain MinIO server configuration`,
     );
   }
+  assert(
+    support.includes(rustfsImage),
+    "local support services must use the exact accepted RustFS image",
+  );
+  assert(
+    support.includes("RUSTFS_ACCESS_KEY:") &&
+      support.includes("RUSTFS_SECRET_KEY:"),
+    "local support services configure RustFS credentials",
+  );
+  assert(
+    support.includes("http://127.0.0.1:9000/health"),
+    "local support services wait on the RustFS health endpoint",
+  );
+  assert(
+    !support.includes("minio/minio:") && !support.includes("MINIO_ROOT_") &&
+      !support.includes("MC_HOST_"),
+    "local support services must not run a MinIO server",
+  );
   const developmentTool = await Deno.readTextFile(
     new URL("./dev.ts", import.meta.url),
   );

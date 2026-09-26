@@ -1,3 +1,7 @@
+# Mailpit and RustFS are defined once in compose.support.yaml; this overlay
+# extends them, publishes only the Mailpit API port on a Docker-assigned host
+# port, and keeps object storage in a disposable tmpfs.
+
 services:
   postgres:
     ports: !reset []
@@ -44,44 +48,15 @@ services:
     ports: !override
       - "127.0.0.1:${E2E_GATEWAY_PORT:-}:8443"
   mailpit:
-    image: axllent/mailpit:v1.30.6@sha256:7f33095f80e901f6ad08028f06ca284aa58fe84942be5496008d041d3b9f4d4d
-    environment:
-      MP_DATABASE: /tmp/mailpit.db
-      MP_MAX_MESSAGES: "100"
-    healthcheck:
-      test: ["CMD", "/mailpit", "readyz"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
-    read_only: true
-    tmpfs:
-      - /tmp:size=32m
+    extends:
+      file: compose.support.yaml
+      service: mailpit
     ports:
       - "127.0.0.1::8025"
   object-store:
-    image: rustfs/rustfs:1.0.0-beta.12@sha256:41fe89380f4120a337790c02af192c3fe7bb55c3edc2e6e9357b487b47c6ab21
-    environment:
-      RUSTFS_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-kinship}
-      RUSTFS_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-kinship-local-secret}
-    ports: !reset []
-    volumes: !reset []
+    extends:
+      file: compose.support.yaml
+      service: object-store
     tmpfs:
       # uid/gid 10001 is the pinned image's rustfs user; revisit on image bumps.
       - /data:uid=10001,gid=10001
-    healthcheck:
-      test: [
-        "CMD",
-        "curl",
-        "--fail",
-        "--silent",
-        "http://127.0.0.1:9000/health",
-      ]
-      interval: 2s
-      timeout: 3s
-      retries: 30
-      start_period: 2s
-    stop_grace_period: 10s
-
-volumes:
-  object-store-data:
-  postgres-data:

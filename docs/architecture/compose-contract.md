@@ -29,7 +29,21 @@ The implementation uses:
 
 - `compose.yaml` for the production-like base;
 - `compose.dev.yaml` for source mounts and developer services;
-- `compose.test.yaml` for isolated test settings and disposable storage.
+- `compose.test.yaml` for isolated test settings and disposable storage;
+- `compose.support.yaml` for the local `mailpit` and `object-store` services,
+  defined once; `compose.dev.yaml` and `compose.test.yaml` each `extends:`
+  both services from it and add only what differs: development
+  publishes their host ports and keeps objects in a named volume; test
+  publishes only the Mailpit API on a Docker-assigned port and keeps objects in
+  a tmpfs. Production-like `compose.yaml` never loads it.
+
+Images come from two Dockerfiles. `Dockerfile.api` builds the Deno image that
+`migrate`, `api`, and `worker` share. `Dockerfile.web` has one `build` stage
+that installs the frozen pnpm lockfile and runs the Astro build once, and two
+targets that copy from it: `web`, the private Node renderer, and `gateway`,
+nginx serving the static client output. Compose selects each with `target:`,
+so the images keep their per-service names. Node images use the exact
+`nodejs` version in `.tool-versions`, pinned by digest.
 
 The existing schema validation Compose file remains a narrow independent harness
 until the application stack supersedes none of its checks.

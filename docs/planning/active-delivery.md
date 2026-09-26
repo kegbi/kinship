@@ -60,9 +60,8 @@ prerequisite queues.
   are fixed as `REL-032`, `REL-033`, and `REL-039` through `REL-045` (`REL-034`,
   `REL-035`, `REL-036`, and `REL-038` stay parked). On 2026-09-26 the product
   owner removed AI assistance (GAP-054, DG-08) from scope and paused the plan
-  after REL-045; it resumed the same day with `REL-046` and GAP-030. GAP-041 has
-  an unreviewed candidate on the `gap/GAP-041` branch, built on `f18ff843`; the
-  next tickets are its review and GAP-031.
+  after REL-045; it resumed the same day with `REL-046` and GAP-030. GAP-041
+  from Phase 6 is integrated too; the next ticket is GAP-031.
 - User-directed follow-up: responsive person blocks, focus-border repair, then
   an evidence-backed application repair plan and execution in a clean task.
 - Remaining repair statuses and execution order belong to the

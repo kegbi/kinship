@@ -453,19 +453,44 @@ Deno.test("[GAP-004] CI runs every repository gate on the right events", async (
 
   const images = jobCommands(jobOrFail(document, "images"), "images");
   for (
-    const dockerfile of [
-      "Dockerfile.api",
-      "Dockerfile.web",
-      "Dockerfile.gateway",
-    ]
+    const [dockerfile, target] of [
+      ["Dockerfile.api", ""],
+      ["Dockerfile.web", "web"],
+      ["Dockerfile.web", "gateway"],
+    ] as const
   ) {
     assert(
       images.some((command) =>
-        command.includes("docker build") && command.includes(dockerfile)
+        command.includes("docker build") &&
+        command.includes(`--file ${dockerfile} `) &&
+        (target === "" || command.includes(`--target ${target} `))
       ),
-      `the images job must build ${dockerfile}`,
+      `the images job must build ${dockerfile} ${target}`.trim(),
     );
     await Deno.stat(new URL(dockerfile, ROOT));
+  }
+});
+
+Deno.test("[GAP-041] the images run the Node runtime .tool-versions pins", async () => {
+  const [versions, dockerfile] = await Promise.all([
+    Deno.readTextFile(new URL(".tool-versions", ROOT)),
+    Deno.readTextFile(new URL("Dockerfile.web", ROOT)),
+  ]);
+  const expected = /^nodejs (\S+)$/m.exec(versions)?.[1];
+  assert(expected !== undefined, ".tool-versions must pin the Node runtime");
+  const bases = [...dockerfile.matchAll(/^FROM (node:\S+)/gm)].map((match) =>
+    match[1] ?? ""
+  );
+  assert(bases.length > 0, "the web Dockerfile must build on a Node image");
+  for (const base of bases) {
+    assert(
+      new RegExp(
+        `^node:${
+          expected.replaceAll(".", "\\.")
+        }-bookworm-slim@sha256:[0-9a-f]{64}$`,
+      ).test(base),
+      `${base} must be Node ${expected} pinned by digest, as .tool-versions pins`,
+    );
   }
 });
 

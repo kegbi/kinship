@@ -212,7 +212,6 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
     base,
     test,
     gateway,
-    gatewayImage,
     profileShell,
     activityReportShell,
     auditShell,
@@ -222,7 +221,6 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
       Deno.readTextFile(new URL("../compose.yaml", import.meta.url)),
       Deno.readTextFile(new URL("../compose.test.yaml", import.meta.url)),
       Deno.readTextFile(new URL("../gateway/nginx.conf", import.meta.url)),
-      Deno.readTextFile(new URL("../Dockerfile.gateway", import.meta.url)),
       Deno.readTextFile(
         new URL(
           "../apps/web/src/pages/internal/person-profile-shell.astro",
@@ -243,9 +241,32 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
       ).catch(() => ""),
       Deno.readTextFile(new URL("../Dockerfile.web", import.meta.url)),
     ]);
+  const stages = web.split(/^(?=FROM )/m);
+  const stage = (name: string) =>
+    stages.find((text) => new RegExp(`^FROM \\S+ AS ${name}\\n`).test(text)) ??
+      "";
+  const gatewayImage = stage("gateway");
+  const rendererImage = stage("web");
   assert(
     base.includes("  gateway:") && base.includes("  web:"),
     "stack has gateway and private renderer",
+  );
+  assert(
+    (web.match(/astro build/g)?.length ?? 0) === 1 &&
+      stage("build").includes("astro build") &&
+      gatewayImage.includes("COPY --from=build ") &&
+      rendererImage.includes("COPY --from=build "),
+    "the gateway and renderer targets share one Astro build stage",
+  );
+  const services = (name: string) =>
+    base.slice(base.indexOf(`\n  ${name}:`) + 1).split(/\n {2}\S/, 1)[0] ??
+      "";
+  assert(
+    services("web").includes("dockerfile: Dockerfile.web\n      target: web") &&
+      services("gateway").includes(
+        "dockerfile: Dockerfile.web\n      target: gateway",
+      ),
+    "Compose builds each image from its own target of the shared Dockerfile",
   );
   assert(
     test.includes('"127.0.0.1:${E2E_GATEWAY_PORT:-}:8443"') &&
@@ -417,8 +438,8 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
     "invitation responses expose one private no-store policy through the gateway",
   );
   assert(
-    web.includes("pnpm install --frozen-lockfile") &&
-      web.includes("server/entry.mjs"),
+    stage("build").includes("pnpm install --frozen-lockfile") &&
+      rendererImage.includes("server/entry.mjs"),
     "renderer image uses frozen dependencies and production output",
   );
 });

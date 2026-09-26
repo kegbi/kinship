@@ -1337,12 +1337,36 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     intermittent that passed three repeats; gates fmt:check, lint, check,
     check:architecture (14), contracts:check.
 
-- [ ] **GAP-041 — Compose and Docker consolidation.** S-M. Depends: none.
+- [x] **GAP-041 — Compose and Docker consolidation.** S-M. Depends: none.
   - Scope: `compose.support.yaml` holding mailpit and object-store once,
     included by dev and test; one multi-stage Dockerfile with `web` and
     `gateway` targets sharing a single Astro build stage; reconcile Node 24.15.0
     across `.tool-versions` and images; ignore `.playwright-cli/`.
   - Verify: `deno task dev` and `deno task test:e2e` green; image builds.
+  - Delivered 2026-09-26: `compose.support.yaml` defines mailpit and the RustFS
+    object store once, and the `mailpit` and `object-store` services of
+    `compose.dev.yaml` and `compose.test.yaml` each `extends:` it and add only
+    their published ports and storage (the implementer's `include:` form
+    rendered on Compose v5 but CI's Compose v2 refuses a service that overrides
+    an included one, which the existing compose-render test caught on the first
+    PR run; both forms render byte-identical configurations to `main` apart from
+    the build targets on v2.38 and v5.1); `Dockerfile.web` has one `build` stage
+    running the frozen install and the Astro build once, with `gateway` (nginx,
+    static client output) and `web` (the private Node renderer, still the
+    default target) targets, selected by `target:` in `compose.yaml` and by
+    `--target` in the CI images job, and `Dockerfile.gateway` is deleted; both
+    Node stages run `node:24.15.0-bookworm-slim` pinned by digest, matching
+    `.tool-versions`, where they ran 24.7.0; `.playwright-cli/` is ignored;
+    `configuration_contract_test.ts`, `gateway_contract_test.ts` (one shared
+    build stage, per-service targets), `pipeline_contract_test.ts` (each target
+    built, Node image equals `.tool-versions`), and
+    `private_production_compose_test.ts` (dev and test render one support
+    definition) are extended and `compose-contract.md` and `quality-gates.md`
+    describe the result; 15 files changed (+224/-124); web tests 906, unit and
+    coverage unchanged (no production code changed); the api, web, and gateway
+    images build; Chromium E2E 57 passed locally and on PR CI with the
+    integration, schema, unit, and static jobs green; gates fmt:check, lint,
+    check, check:architecture (14), contracts:check.
 
 - [ ] **GAP-042 — Generated Kysely types and drift check.** M. Depends: 041.
   - Scope: `kysely-codegen` from a clean migrated database into
