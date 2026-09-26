@@ -31,8 +31,8 @@ The implementation uses:
 - `compose.dev.yaml` for source mounts and developer services;
 - `compose.test.yaml` for isolated test settings and disposable storage;
 - `compose.support.yaml` for the local `mailpit` and `object-store` services,
-  defined once and pulled in by the `include:` of both `compose.dev.yaml` and
-  `compose.test.yaml`. Each overlay adds only what differs: development
+  defined once; `compose.dev.yaml` and `compose.test.yaml` each `extends:`
+  both services from it and add only what differs: development
   publishes their host ports and keeps objects in a named volume; test
   publishes only the Mailpit API on a Docker-assigned port and keeps objects in
   a tmpfs. Production-like `compose.yaml` never loads it.

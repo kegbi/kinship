@@ -198,10 +198,14 @@ Deno.test("[OPS-001E1] RustFS owns local and recovery S3 boundaries", async () =
       ["test overlay", test],
     ] as const
   ) {
-    assert(
-      /^include:\n {2}- compose\.support\.yaml\n/m.test(overlay),
-      `${name} must include the shared local support services`,
-    );
+    for (const service of ["mailpit", "object-store"]) {
+      assert(
+        overlay.includes(
+          `\n  ${service}:\n    extends:\n      file: compose.support.yaml\n      service: ${service}\n`,
+        ),
+        `${name} must extend the shared ${service} definition`,
+      );
+    }
     assert(
       !overlay.includes("rustfs/rustfs:") &&
         !overlay.includes("axllent/mailpit:") &&

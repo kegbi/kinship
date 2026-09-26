@@ -1,8 +1,8 @@
-# Local support services shared by the development and test overlays, which
-# both `include:` this file. Production-like `compose.yaml` never loads it: a
-# private deployment supplies its own SMTP relay and S3-compatible store.
-# Published ports and object storage differ per overlay, so each overlay adds
-# them.
+# Local support services shared by the development and test overlays: each
+# overlay's `mailpit` and `object-store` `extends:` the entry here and adds only
+# what differs (published ports, object storage). Production-like `compose.yaml`
+# never loads it: a private deployment supplies its own SMTP relay and
+# S3-compatible store.
 services:
   mailpit:
     image: axllent/mailpit:v1.30.6@sha256:7f33095f80e901f6ad08028f06ca284aa58fe84942be5496008d041d3b9f4d4d

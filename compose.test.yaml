@@ -1,8 +1,6 @@
 # Mailpit and RustFS are defined once in compose.support.yaml; this overlay
-# publishes only the Mailpit API port on a Docker-assigned host port and keeps
-# object storage in a disposable tmpfs.
-include:
-  - compose.support.yaml
+# extends them, publishes only the Mailpit API port on a Docker-assigned host
+# port, and keeps object storage in a disposable tmpfs.
 
 services:
   postgres:
@@ -50,9 +48,15 @@ services:
     ports: !override
       - "127.0.0.1:${E2E_GATEWAY_PORT:-}:8443"
   mailpit:
+    extends:
+      file: compose.support.yaml
+      service: mailpit
     ports:
       - "127.0.0.1::8025"
   object-store:
+    extends:
+      file: compose.support.yaml
+      service: object-store
     tmpfs:
       # uid/gid 10001 is the pinned image's rustfs user; revisit on image bumps.
       - /data:uid=10001,gid=10001
