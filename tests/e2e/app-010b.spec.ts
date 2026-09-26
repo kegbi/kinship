@@ -139,7 +139,7 @@ test("[INTEGRATION-001] configures, retries, resumes, and disables DAV", {
   await expect(connection).toContainText("Synchronized");
   await connection.getByRole("button", { name: "Disable" }).click();
   await expect(connection).toContainText("Disabled");
-  await page.addScriptTag({ content: axe.source });
+  await page.evaluate(axe.source);
   expect(
     await page.evaluate(async () =>
       (await (globalThis as typeof globalThis & {

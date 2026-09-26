@@ -498,7 +498,7 @@ test(
     expect(Math.abs(mobileTracks[0] - mobileLayout.width)).toBeLessThanOrEqual(
       1,
     );
-    await page.addScriptTag({ content: axe.source });
+    await page.evaluate(axe.source);
     expect(
       await page.evaluate(async () =>
         (await (globalThis as typeof globalThis & {

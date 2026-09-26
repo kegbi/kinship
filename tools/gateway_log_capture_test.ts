@@ -13,6 +13,44 @@ const CLIENT_REQUEST_ID = "client-chosen-request-id";
 /** What the gateway's own `$request_id` looks like: 32 lower-case hex digits. */
 const GATEWAY_REQUEST_ID = /"request_id":"[0-9a-f]{32}"/;
 
+/** The one inline script the pages carry: the theme bootstrap (GAP-040). */
+const THEME_SCRIPT_HASH =
+  "'sha256-JcBF2XCeGM7UUhyx5ih7eaW4njR7Xo8zgcRdSMNXAj4='";
+
+const CONTENT_SECURITY_POLICY =
+  `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' ${THEME_SCRIPT_HASH}; connect-src 'self'`;
+
+/** The `script-src` sources of one Content-Security-Policy value. */
+function scriptSources(policy: string): string[] {
+  return policy.split(";").map((part) => part.trim().split(/\s+/))
+    .find(([name]) => name === "script-src")?.slice(1) ?? [];
+}
+
+/** The CSP hash source of each executable inline script in a page. */
+async function inlineScriptHashes(html: string): Promise<string[]> {
+  const hashes: string[] = [];
+  for (
+    const [, attributes = "", body = ""] of html.matchAll(
+      /<script\b([^>]*)>([\s\S]*?)<\/script>/gi,
+    )
+  ) {
+    if (/\bsrc\s*=/i.test(attributes)) continue;
+    const type = attributes.match(/\btype\s*=\s*["']?([^"'\s>]*)/i)?.[1] ??
+      "";
+    if (!/^(|module|text\/javascript|application\/javascript)$/i.test(type)) {
+      continue;
+    }
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(body),
+    );
+    hashes.push(
+      `'sha256-${btoa(String.fromCharCode(...new Uint8Array(digest)))}'`,
+    );
+  }
+  return hashes;
+}
+
 const NGINX_IMAGE =
   "nginx:1.29.1-alpine3.22@sha256:42a516af16b852e33b7682d5ef8acbd5d13fe08fecadc7ed98605ba5e3b26ab8";
 
@@ -148,6 +186,63 @@ async function requestForLog(
   }
 }
 
+/**
+ * One request the upstream cannot answer here (the fixture has no API); the
+ * answer when the gateway refused it itself with 429, undefined otherwise.
+ */
+async function rateLimitedAnswer(
+  url: string,
+): Promise<{ body: string; headers: Headers } | undefined> {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(3_000) });
+    const body = await response.text();
+    return response.status === 429
+      ? { body, headers: response.headers }
+      : undefined;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+/**
+ * A page fetched through the gateway from inside its container, the way the
+ * browser meets it: the last status and CSP (after redirects) and the body.
+ */
+async function pageThroughGateway(
+  gatewayContainer: string,
+  path: string,
+): Promise<{ status: number; policy: string | undefined; html: string }> {
+  const output = await new Deno.Command("docker", {
+    args: [
+      "exec",
+      gatewayContainer,
+      "wget",
+      "-S",
+      "-q",
+      "-O",
+      "-",
+      `http://127.0.0.1:8080${path}`,
+    ],
+    cwd: new URL("../", import.meta.url),
+    stdin: "null",
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  const headers = new TextDecoder().decode(output.stderr);
+  const statuses = [...headers.matchAll(/HTTP\/1\.1 (\d{3})/g)];
+  const policies = [
+    ...headers.matchAll(/content-security-policy:\s*([^\r\n]+)/gi),
+  ];
+  return {
+    status: Number(statuses.at(-1)?.[1] ?? "0"),
+    policy: policies.at(-1)?.[1]?.trim(),
+    html: new TextDecoder().decode(output.stdout),
+  };
+}
+
 Deno.test({
   name:
     "real Nginx exposes browser protections and logs only safe operational fields",
@@ -192,8 +287,7 @@ Deno.test({
       await waitForGateway(origin);
       const browserBoundary = await fetch(origin);
       const expectedHeaders = {
-        "content-security-policy":
-          "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'",
+        "content-security-policy": CONTENT_SECURITY_POLICY,
         "permissions-policy": "camera=(), geolocation=(), microphone=()",
         "referrer-policy": "no-referrer",
         "strict-transport-security": "max-age=31536000",
@@ -263,6 +357,44 @@ Deno.test({
         requestLines.length > 0 &&
           requestLines.every((line) => GATEWAY_REQUEST_ID.test(line)),
         `every gateway.request line carries the gateway's request identifier: ${logs}`,
+      );
+
+      // GAP-040: past the credential burst, the gateway itself refuses one
+      // client address with the API's RFC 9457 problem shape.
+      const refusals = (await Promise.all(
+        Array.from(
+          { length: 150 },
+          () => rateLimitedAnswer(`${origin}/api/v1/password-resets`),
+        ),
+      )).filter((answer) => answer !== undefined);
+      assert(
+        refusals.length > 0,
+        "a burst of credential requests past the limit is refused",
+      );
+      for (const { body, headers } of refusals) {
+        assert(
+          headers.get("content-type") === "application/problem+json" &&
+            headers.get("cache-control") === "no-store" &&
+            headers.get("retry-after") !== null &&
+            headers.get("content-security-policy") ===
+              CONTENT_SECURITY_POLICY,
+          `the refusal is an uncached problem with the browser policy: ${[
+            ...headers,
+          ]}`,
+        );
+        const problem = JSON.parse(body) as Record<string, unknown>;
+        assert(
+          problem.status === 429 && problem.code === "request_rate_limited" &&
+            problem.type ===
+              "https://kinship.test/problems/request_rate_limited" &&
+            typeof problem.title === "string" &&
+            typeof problem.detail === "string",
+          `the refusal is the API's problem shape: ${body}`,
+        );
+      }
+      await waitForContainerLog(
+        container,
+        /"event":"gateway\.request","method":"GET","route":"\/api\/v1\/\*","status":429/,
       );
     } catch (error) {
       errors.push(error);
@@ -386,6 +518,48 @@ Deno.test({
         !gatewayLogs.includes(CLIENT_REQUEST_ID) &&
           !apiLogs.includes(CLIENT_REQUEST_ID),
         "a client-chosen request identifier never reaches a log line",
+      );
+
+      // GAP-040: every inline script a served page carries, static or
+      // rendered on demand, is one the served CSP allows by hash.
+      const seen: string[] = [];
+      for (
+        const path of [
+          "/",
+          "/auth/sign-in",
+          "/app",
+          "/app/people/0b8f3c2e-4d5a-4b6c-8d7e-9f0a1b2c3d4e",
+          "/auth/mfa",
+          "/auth/reset-password",
+          "/auth/verify-email",
+          "/app/compliance",
+          "/invite/unknown-invitation-token",
+        ]
+      ) {
+        const page = await pageThroughGateway(gatewayContainer, path);
+        if (page.status !== 200) {
+          assert(
+            !["/", "/auth/sign-in", "/app", "/auth/mfa", "/app/compliance"]
+              .includes(path),
+            `${path} answered ${page.status}`,
+          );
+          continue;
+        }
+        assert(
+          page.policy === CONTENT_SECURITY_POLICY,
+          `${path} is served the gateway's CSP: ${page.policy}`,
+        );
+        const allowed = scriptSources(page.policy);
+        for (const hash of await inlineScriptHashes(page.html)) {
+          seen.push(`${path} ${hash}`);
+          assert(allowed.includes(hash), `${path} inlines ${hash}, blocked`);
+        }
+      }
+      assert(
+        seen.some((entry) => entry.startsWith("/app ")) &&
+          seen.some((entry) => entry.startsWith("/app/compliance ")) &&
+          seen.every((entry) => entry.endsWith(THEME_SCRIPT_HASH)),
+        `static and rendered pages carry only the theme script: ${seen}`,
       );
 
       await docker(

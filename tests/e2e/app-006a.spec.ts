@@ -182,7 +182,7 @@ test(
       page.locator(".attention-groups li", { hasText: "Review shared notes" }),
     ).toHaveCount(0);
 
-    await page.addScriptTag({ content: axe.source });
+    await page.evaluate(axe.source);
     expect(
       await page.evaluate(async () =>
         (await (globalThis as typeof globalThis & {

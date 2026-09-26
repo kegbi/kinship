@@ -119,7 +119,7 @@ test(
     await documentRow.getByRole("button", { name: "Remove" }).click();
     await expect(documents.getByText("File removed.")).toBeVisible();
     await expect(documentRow).toHaveCount(0);
-    await page.addScriptTag({ content: axe.source });
+    await page.evaluate(axe.source);
     expect(
       await page.evaluate(async () =>
         (await (globalThis as typeof globalThis & {

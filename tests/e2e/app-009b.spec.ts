@@ -98,7 +98,7 @@ test("[EXPORT-001] exports portable workspace data and a person vCard", {
     expect.objectContaining({ first_name: "Ada" }),
   ]);
   expect(JSON.stringify(portable)).not.toMatch(/password|secret|storage_key/i);
-  await page.addScriptTag({ content: axe.source });
+  await page.evaluate(axe.source);
   expect(
     await page.evaluate(async () =>
       (await (globalThis as typeof globalThis & {

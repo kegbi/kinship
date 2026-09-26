@@ -165,7 +165,7 @@ test(
     await page.getByRole("button", { name: "Archive person" }).click();
     await expect(gifts.getByRole("button", { name: "Add gift" })).toBeHidden();
     await expect(debts.getByRole("button", { name: "Add debt" })).toBeHidden();
-    await page.addScriptTag({ content: axe.source });
+    await page.evaluate(axe.source);
     expect(
       await page.evaluate(async () =>
         (await (globalThis as typeof globalThis & {

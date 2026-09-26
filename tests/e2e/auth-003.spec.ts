@@ -13,6 +13,7 @@ import {
   randomUUID,
 } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { recordPolicyViolations } from "./support/content-security-policy.ts";
 import { settleNavigation } from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
@@ -148,7 +149,7 @@ async function createVerifiedUser(
 
 async function expectAccessible(page: Page): Promise<void> {
   await page.waitForLoadState("networkidle");
-  await page.addScriptTag({ content: axe.source });
+  await page.evaluate(axe.source);
   const violations = await page.evaluate(async () => {
     const scanner = (window as typeof window & {
       axe: { run(): Promise<{ violations: unknown[] }> };
@@ -649,6 +650,7 @@ test(
 test("[AUTH-003] recovers safely and rejects expired reset links", {
   annotation: { type: "flow", description: "AUTH-003" },
 }, async ({ page, request, browserName }) => {
+  const policyViolations = recordPolicyViolations(page);
   const email = `auth-003-reset-${browserName}-${Date.now()}@example.test`;
   await createVerifiedUser(request, email, "Recovery circle");
   await page.goto("/auth/forgot-password");
@@ -716,4 +718,5 @@ test("[AUTH-003] recovers safely and rejects expired reset links", {
   await keyboardReset(page, "expired correct horse battery staple");
   await expect(page.getByRole("status")).toContainText("invalid or expired");
   await expectAccessible(page);
+  expect(policyViolations).toEqual([]);
 });

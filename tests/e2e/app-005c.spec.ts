@@ -189,7 +189,7 @@ test(
     await expect(page.locator("#protected-shell")).toBeHidden();
     await expect(page.locator("[data-audit-filters]")).toBeHidden();
 
-    await page.addScriptTag({ content: axe.source });
+    await page.evaluate(axe.source);
     expect(
       await page.evaluate(async () =>
         (await (globalThis as typeof globalThis & {

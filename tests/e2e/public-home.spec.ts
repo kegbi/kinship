@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import axe from "axe-core";
+import { recordPolicyViolations } from "./support/content-security-policy.ts";
 
 interface AxeViolation {
   readonly help: string;
@@ -10,7 +11,7 @@ interface AxeViolation {
 
 async function expectAccessible(page: Page): Promise<void> {
   await page.waitForLoadState("networkidle");
-  await page.addScriptTag({ content: axe.source });
+  await page.evaluate(axe.source);
   const violations = await page.evaluate(async () => {
     const scanner = (
       window as typeof window & {
@@ -38,6 +39,7 @@ async function expectAccessible(page: Page): Promise<void> {
 }
 
 test("public home reports live API readiness and degrades safely", async ({ page }) => {
+  const policyViolations = recordPolicyViolations(page);
   await page.goto("/");
 
   await expect(page).toHaveTitle(/Kinship/);
@@ -58,6 +60,7 @@ test("public home reports live API readiness and degrades safely", async ({ page
   await expect(readiness).toContainText("API temporarily unavailable");
   await expect(readiness).toHaveAttribute("data-state", "unavailable");
   await expect(page.getByRole("main")).toBeVisible();
+  expect(policyViolations).toEqual([]);
 });
 
 test("public pages expose their catalog contracts and navigate both ways", async ({ page }) => {

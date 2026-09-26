@@ -1,4 +1,5 @@
 import { PERSON_SECTIONS } from "../apps/web/src/features/person/sections.ts";
+import { problemBody } from "../packages/http-kit/problem.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -33,6 +34,126 @@ function nginxLocations(config: string): NginxLocation[] {
   }
 
   return locations;
+}
+
+/** The value one `add_header <name> "<value>" always;` line sets. */
+export function addedHeaderValue(
+  config: string,
+  name: string,
+): string | undefined {
+  return config.match(
+    new RegExp(`^\\s*add_header\\s+${name}\\s+"([^"]*)"\\s+always;$`, "m"),
+  )?.[1];
+}
+
+/** A Content-Security-Policy value as directive name to source list. */
+export function cspDirectives(policy: string): Map<string, string[]> {
+  const directives = new Map<string, string[]>();
+  for (const part of policy.split(";")) {
+    const [name, ...sources] = part.trim().split(/\s+/);
+    if (!name) continue;
+    directives.set(name.toLowerCase(), sources);
+  }
+  return directives;
+}
+
+const HASH_SOURCE = /^'sha(256|384|512)-[A-Za-z0-9+/]+={0,2}'$/;
+
+/**
+ * Why a `script-src` is weaker than GAP-040's: anything but the origin and
+ * inline-script hashes. An empty answer is the strict policy.
+ */
+export function scriptSourceWeaknesses(
+  sources: readonly string[] | undefined,
+): string[] {
+  if (sources === undefined) return ["script-src is missing"];
+  const weaknesses: string[] = [];
+  if (!sources.includes("'self'")) weaknesses.push("'self' is missing");
+  for (const source of sources) {
+    if (source === "'self'" || HASH_SOURCE.test(source)) continue;
+    weaknesses.push(`${source} is allowed`);
+  }
+  return weaknesses;
+}
+
+/** The base64 SHA-256 of one inline script, as a CSP hash source. */
+export async function scriptHashSource(body: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(body),
+  );
+  return `'sha256-${btoa(String.fromCharCode(...new Uint8Array(digest)))}'`;
+}
+
+/** The TLS 1.2 suites the gateway may offer: ECDHE with an AEAD cipher. */
+const MODERN_TLS12_SUITE =
+  /^ECDHE-(ECDSA|RSA)-(AES128-GCM-SHA256|AES256-GCM-SHA384|CHACHA20-POLY1305)$/;
+
+/** Why a server block's TLS settings fall short of the GAP-040 profile. */
+export function tlsWeaknesses(config: string): string[] {
+  const weaknesses: string[] = [];
+  const directive = (name: string) =>
+    config.match(new RegExp(`^\\s*${name}\\s+([^;]+);$`, "m"))?.[1]?.trim();
+  if (directive("ssl_protocols") !== "TLSv1.2 TLSv1.3") {
+    weaknesses.push("ssl_protocols is not exactly TLSv1.2 TLSv1.3");
+  }
+  const ciphers = directive("ssl_ciphers");
+  if (ciphers === undefined) {
+    weaknesses.push("ssl_ciphers is left to the library default");
+  } else {
+    for (const suite of ciphers.split(":")) {
+      if (!MODERN_TLS12_SUITE.test(suite)) {
+        weaknesses.push(`${suite} is not an ECDHE AEAD suite`);
+      }
+    }
+  }
+  if (directive("ssl_prefer_server_ciphers") !== "off") {
+    weaknesses.push("ssl_prefer_server_ciphers is not off");
+  }
+  if (directive("ssl_session_tickets") !== "off") {
+    weaknesses.push("ssl_session_tickets is not off");
+  }
+  return weaknesses;
+}
+
+/** Why an HSTS value departs from the private single-host decision. */
+export function hstsWeaknesses(value: string | undefined): string[] {
+  if (value === undefined) return ["Strict-Transport-Security is missing"];
+  const weaknesses: string[] = [];
+  const maxAge = Number(value.match(/^max-age=(\d+)/)?.[1] ?? "0");
+  if (maxAge < 31_536_000) weaknesses.push("max-age is under one year");
+  if (/includeSubDomains/i.test(value)) {
+    weaknesses.push("includeSubDomains asserts HSTS for sibling hosts");
+  }
+  if (/preload/i.test(value)) {
+    weaknesses.push("preload commits the whole domain to a browser list");
+  }
+  return weaknesses;
+}
+
+/** Every `<script is:inline>` body in the Astro sources under `directory`. */
+async function sourceInlineScripts(directory: URL): Promise<string[]> {
+  const bodies: string[] = [];
+  for await (const entry of Deno.readDir(directory)) {
+    const path = new URL(
+      entry.isDirectory ? `${entry.name}/` : entry.name,
+      directory,
+    );
+    if (entry.isDirectory) {
+      bodies.push(...await sourceInlineScripts(path));
+      continue;
+    }
+    if (!entry.name.endsWith(".astro")) continue;
+    const source = await Deno.readTextFile(path);
+    for (
+      const [, body] of source.matchAll(
+        /<script\b[^>]*\bis:inline\b[^>]*>([\s\S]*?)<\/script>/g,
+      )
+    ) {
+      bodies.push(body ?? "");
+    }
+  }
+  return bodies;
 }
 
 function addedHeaderNames(config: string): string[] {
@@ -148,7 +269,7 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
   );
   assert(
     (gateway.match(/include \/etc\/nginx\/security_headers\.conf;/g)?.length ??
-          0) === 7 &&
+          0) === 8 &&
       gatewayImage.includes(
         "COPY gateway/security_headers.conf /etc/nginx/security_headers.conf",
       ),
@@ -163,13 +284,11 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
     "gateway owns API routing and trusted client address",
   );
   assert(
-    (gateway.match(/proxy_set_header X-Request-Id \$request_id;/g)?.length ??
-          0) === 2 &&
-      gateway.includes(
-        '"bytes_sent":$body_bytes_sent,"request_id":"$request_id"}',
-      ) &&
+    gateway.includes(
+      '"bytes_sent":$body_bytes_sent,"request_id":"$request_id"}',
+    ) &&
       !gateway.includes("$http_x_request_id"),
-    "gateway forwards its own request identifier to both API locations and logs it, never a client's",
+    "gateway logs its own request identifier, never a client's",
   );
   assert(
     gateway.includes("resolver 127.0.0.11") &&
@@ -302,6 +421,378 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
       web.includes("server/entry.mjs"),
     "renderer image uses frozen dependencies and production output",
   );
+});
+
+/**
+ * The credential endpoints a client can guess secrets through: sign-in, MFA,
+ * registration and its email verification, password reset, and every step of
+ * accepting an invitation. The contract registry is their authority.
+ */
+const CREDENTIAL_ROUTES = [
+  ["authentication.ts", "/api/v1/sessions"],
+  ["authentication.ts", "/api/v1/mfa-challenges"],
+  ["authentication.ts", "/api/v1/password-reset-requests"],
+  ["authentication.ts", "/api/v1/password-resets"],
+  ["registration.ts", "/api/v1/registrations"],
+  ["registration.ts", "/api/v1/email-verifications"],
+  ["registration.ts", "/api/v1/email-verification-deliveries"],
+  ["invitations.ts", "/api/v1/workspace-invitations/accept"],
+  ["invitations.ts", "/api/v1/workspace-invitations/authenticate"],
+  ["invitations.ts", "/api/v1/workspace-invitations/inspect"],
+  ["invitations.ts", "/api/v1/workspace-invitations/mfa"],
+  ["invitations.ts", "/api/v1/workspace-invitations/register"],
+  ["invitations.ts", "/api/v1/workspace-invitations/verification-delivery"],
+] as const;
+
+/** Signed-in or harmless API paths the stricter zone must leave alone. */
+const ORDINARY_API_PATHS = [
+  "/api/v1/session",
+  "/api/v1/sign-out",
+  "/api/v1/health",
+  "/api/v1/people",
+  "/api/v1/settings/sessions",
+  "/api/v1/workspace-invitations",
+  "/api/v1/sessions/extra",
+];
+
+/** One `http`-level `map <source> <variable> { … }` block's body. */
+function nginxMap(config: string, variable: string): string {
+  return config.match(
+    new RegExp(`\\n {2}map \\S+ \\${variable} \\{\\n([\\s\\S]*?)\\n {2}\\}`),
+  )?.[1] ?? "";
+}
+
+function nginxLocation(config: string, selector: string): string {
+  return nginxLocations(config).find((location) =>
+    location.selector === selector
+  )?.body ?? "";
+}
+
+/** The rate a `limit_req_zone` line declares, in requests per second. */
+function zoneRate(config: string, zone: string): number {
+  const [, amount, unit] = config.match(
+    new RegExp(`limit_req_zone \\S+ zone=${zone}:\\d+m rate=(\\d+)r/([sm]);`),
+  ) ?? [];
+  if (amount === undefined) return Number.NaN;
+  return Number(amount) / (unit === "m" ? 60 : 1);
+}
+
+/** Why the gateway's API rate limits fall short of GAP-040. */
+function rateLimitWeaknesses(config: string): string[] {
+  const weaknesses: string[] = [];
+  const zones: readonly [string, RegExp][] = [
+    [
+      "a per-address API zone",
+      /^ {2}limit_req_zone \$binary_remote_addr zone=kinship_api:10m rate=\d+r\/s;$/m,
+    ],
+    [
+      "a per-address credential zone",
+      /^ {2}limit_req_zone \$kinship_credential_client zone=kinship_credentials:10m rate=\d+r\/m;$/m,
+    ],
+    [
+      "a per-address connection zone",
+      /^ {2}limit_conn_zone \$binary_remote_addr zone=kinship_connections:10m;$/m,
+    ],
+  ];
+  for (const [name, pattern] of zones) {
+    if (!pattern.test(config)) weaknesses.push(`${name} is missing`);
+  }
+  const apiRate = zoneRate(config, "kinship_api");
+  const credentialRate = zoneRate(config, "kinship_credentials");
+  if (
+    !(credentialRate > 0 && credentialRate <= 5 && apiRate > credentialRate)
+  ) {
+    weaknesses.push(
+      `the credential zone (${credentialRate}/s) is not stricter than the API zone (${apiRate}/s)`,
+    );
+  }
+  if (
+    !/^ {2}limit_req_status 429;$/m.test(config) ||
+    !/^ {2}limit_conn_status 429;$/m.test(config)
+  ) {
+    weaknesses.push("a limited request is not answered 429");
+  }
+  const api = nginxLocation(config, "/api/v1/");
+  for (
+    const directive of [
+      /^\s*limit_req zone=kinship_api burst=\d+ nodelay;$/m,
+      /^\s*limit_req zone=kinship_credentials burst=\d+ nodelay;$/m,
+      /^\s*limit_conn kinship_connections \d+;$/m,
+    ]
+  ) {
+    if (!directive.test(api)) weaknesses.push(`/api/v1/ lacks ${directive}`);
+  }
+  if (
+    !/^\s*error_page 429 = @rate_limited;$/m.test(api) ||
+    /proxy_intercept_errors on/.test(api)
+  ) {
+    weaknesses.push(
+      "/api/v1/ does not answer its own refusals while passing the API's through",
+    );
+  }
+  return weaknesses;
+}
+
+Deno.test("[GAP-040] the gateway limits API and credential request rates per client address", async () => {
+  const gateway = await Deno.readTextFile(
+    new URL("../gateway/nginx.conf", import.meta.url),
+  );
+  const credentialMap = nginxMap(gateway, "$kinship_credential_client");
+  const pattern = credentialMap.match(/^\s*~(\S+) \$binary_remote_addr;$/m)
+    ?.[1];
+  assert(
+    pattern !== undefined && /^\s*default "";$/m.test(credentialMap),
+    "credential requests are keyed by client address and all others by nothing",
+  );
+  const credential = new RegExp(pattern);
+  for (const [file, path] of CREDENTIAL_ROUTES) {
+    const routes = await Deno.readTextFile(
+      new URL(`../packages/contracts/routes/${file}`, import.meta.url),
+    );
+    assert(
+      routes.includes(`path: "${path}"`),
+      `${path} is a real route in the contract registry`,
+    );
+    assert(credential.test(path), `${path} counts against the credential zone`);
+  }
+  for (const path of ORDINARY_API_PATHS) {
+    assert(!credential.test(path), `${path} is not a credential route`);
+  }
+
+  const weaknesses = rateLimitWeaknesses(gateway);
+  assert(weaknesses.length === 0, `rate limits: ${weaknesses.join("; ")}`);
+
+  // The pre-GAP-040 gateway, and nginx's default 503 refusal.
+  const before = gateway
+    .replace(/^ *limit_(req|conn)(_zone|_status)?\b.*\n/gm, "")
+    .replace(/^ *error_page 429 .*\n/m, "");
+  assert(
+    rateLimitWeaknesses(before).length === 9,
+    `an unlimited gateway is rejected: ${rateLimitWeaknesses(before)}`,
+  );
+  assert(
+    rateLimitWeaknesses(
+      gateway.replace("limit_req_status 429;", "limit_req_status 503;"),
+    ).length === 1,
+    "a 503 refusal is rejected",
+  );
+  assert(
+    rateLimitWeaknesses(
+      gateway.replace(/rate=\d+r\/m;/, "rate=600r/m;"),
+    ).length === 1,
+    "a credential zone as loose as the API zone is rejected",
+  );
+
+  const limited = nginxLocation(gateway, "@rate_limited");
+  const body = limited.match(/^\s*return 429 '(\{[^']*\})';$/m)?.[1];
+  assert(body !== undefined, "the rate-limit answer returns a JSON body");
+  const parsed = JSON.parse(body) as { code?: string; detail?: string };
+  assert(
+    body ===
+        JSON.stringify(
+          problemBody(
+            429,
+            parsed.code ?? "",
+            "Too many requests",
+            parsed.detail ?? "",
+          ),
+        ) && parsed.code === "request_rate_limited",
+    `the rate-limit answer is the API's RFC 9457 problem shape: ${body}`,
+  );
+  assert(
+    /^\s*default_type application\/problem\+json;$/m.test(limited) &&
+      /^\s*add_header Cache-Control "no-store" always;$/m.test(limited) &&
+      /^\s*add_header Retry-After "\d+" always;$/m.test(limited) &&
+      /^\s*include \/etc\/nginx\/security_headers\.conf;$/m.test(limited),
+    "the rate-limit answer is an uncached problem with the browser policy",
+  );
+});
+
+Deno.test("[GAP-040] TLS offers only modern forward-secret AEAD suites", async () => {
+  const gateway = await Deno.readTextFile(
+    new URL("../gateway/nginx.conf", import.meta.url),
+  );
+  const weaknesses = tlsWeaknesses(gateway);
+  assert(weaknesses.length === 0, `TLS weaknesses: ${weaknesses.join("; ")}`);
+
+  const before = "    ssl_protocols TLSv1.2 TLSv1.3;\n";
+  assert(
+    tlsWeaknesses(before).length === 3,
+    "the library-default cipher configuration is rejected",
+  );
+  for (
+    const weak of [
+      "ECDHE-RSA-AES128-SHA",
+      "ECDHE-RSA-AES128-SHA256",
+      "AES128-GCM-SHA256",
+      "DHE-RSA-AES128-GCM-SHA256",
+      "ECDHE-RSA-DES-CBC3-SHA",
+    ]
+  ) {
+    assert(
+      tlsWeaknesses(
+        `ssl_protocols TLSv1.2 TLSv1.3;\nssl_ciphers ${weak};\nssl_prefer_server_ciphers off;\nssl_session_tickets off;\n`,
+      ).length === 1,
+      `${weak} is rejected`,
+    );
+  }
+  assert(
+    tlsWeaknesses(
+      "ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;\nssl_ciphers ECDHE-RSA-AES128-GCM-SHA256;\nssl_prefer_server_ciphers on;\nssl_session_tickets on;\n",
+    ).length === 3,
+    "legacy protocols, server preference, and session tickets are rejected",
+  );
+});
+
+Deno.test("[GAP-040] HSTS stays scoped to the deployment host", async () => {
+  const securityHeaders = await Deno.readTextFile(
+    new URL("../gateway/security_headers.conf", import.meta.url),
+  );
+  const value = addedHeaderValue(securityHeaders, "Strict-Transport-Security");
+  assert(
+    value === "max-age=31536000" && hstsWeaknesses(value).length === 0,
+    `HSTS keeps one year without asserting sibling hosts: ${value}`,
+  );
+  for (
+    const rejected of [
+      "max-age=31536000; includeSubDomains",
+      "max-age=63072000; includeSubDomains; preload",
+      "max-age=86400",
+    ]
+  ) {
+    assert(hstsWeaknesses(rejected).length > 0, `${rejected} is rejected`);
+  }
+  const contract = await Deno.readTextFile(
+    new URL("../docs/architecture/compose-contract.md", import.meta.url),
+  );
+  assert(
+    /includeSubDomains/.test(contract) && /GAP-040/.test(contract),
+    "the compose contract records the HSTS decision",
+  );
+});
+
+Deno.test("[GAP-040] the CSP allows scripts only from the origin and hashed inline scripts", async () => {
+  const securityHeaders = await Deno.readTextFile(
+    new URL("../gateway/security_headers.conf", import.meta.url),
+  );
+  const policy = addedHeaderValue(securityHeaders, "Content-Security-Policy");
+  assert(policy !== undefined, "the gateway serves a CSP");
+  const directives = cspDirectives(policy);
+  const scriptSources = directives.get("script-src");
+  const weaknesses = scriptSourceWeaknesses(scriptSources);
+  assert(weaknesses.length === 0, `script-src: ${weaknesses.join("; ")}`);
+  assert(
+    !directives.has("script-src-elem") && !directives.has("script-src-attr"),
+    "no narrower script directive reopens inline scripts",
+  );
+
+  const inline = await sourceInlineScripts(
+    new URL("../apps/web/src/", import.meta.url),
+  );
+  assert(inline.length > 0, "the theme script is an inline script");
+  const expected = new Set(await Promise.all(inline.map(scriptHashSource)));
+  const hashes = new Set(
+    scriptSources!.filter((source) => source !== "'self'"),
+  );
+  for (const hash of expected) {
+    assert(hashes.has(hash), `script-src allows the inline script ${hash}`);
+  }
+  for (const hash of hashes) {
+    assert(expected.has(hash), `script-src allows a stale inline hash ${hash}`);
+  }
+
+  assert(
+    JSON.stringify(directives.get("style-src")) ===
+      JSON.stringify(["'self'", "'unsafe-inline'"]),
+    "style-src keeps inline styles, which Base UI's <style> elements need",
+  );
+  for (
+    const [name, sources] of [
+      ["default-src", ["'self'"]],
+      ["object-src", ["'none'"]],
+      ["base-uri", ["'self'"]],
+      ["frame-ancestors", ["'none'"]],
+      ["form-action", ["'self'"]],
+      ["connect-src", ["'self'"]],
+    ] as const
+  ) {
+    assert(
+      JSON.stringify(directives.get(name)) === JSON.stringify(sources),
+      `${name} stays ${sources.join(" ")}`,
+    );
+  }
+
+  const before = cspDirectives(
+    "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'",
+  );
+  assert(
+    scriptSourceWeaknesses(before.get("script-src")).includes(
+      "'unsafe-inline' is allowed",
+    ),
+    "the pre-GAP-040 script-src is rejected",
+  );
+  for (
+    const weak of [
+      ["'self'", "'unsafe-eval'"],
+      ["'self'", "'unsafe-hashes'", "'sha256-AAAA'"],
+      ["'self'", "https:"],
+      ["'self'", "*"],
+      ["'self'", "data:"],
+      ["'self'", "'nonce-static'"],
+      ["'sha256-AAAA'"],
+    ]
+  ) {
+    assert(
+      scriptSourceWeaknesses(weak).length > 0,
+      `script-src ${weak.join(" ")} is rejected`,
+    );
+  }
+  assert(
+    scriptSourceWeaknesses(undefined).length > 0,
+    "a policy without script-src is rejected",
+  );
+});
+
+Deno.test("[GAP-040] Astro sources carry no inline event handler attributes", async () => {
+  // CSP cannot allow `onclick="…"` without 'unsafe-inline' or
+  // 'unsafe-hashes'; a handler belongs in a script.
+  const offenders: string[] = [];
+  async function scan(directory: URL): Promise<void> {
+    for await (const entry of Deno.readDir(directory)) {
+      if (entry.isDirectory) {
+        await scan(new URL(`${entry.name}/`, directory));
+        continue;
+      }
+      if (!entry.name.endsWith(".astro")) continue;
+      const source = await Deno.readTextFile(new URL(entry.name, directory));
+      for (
+        const [attribute] of source.matchAll(/<[a-zA-Z][^>]*?\son[a-z]+=/g)
+      ) {
+        offenders.push(`${entry.name}: ${attribute}`);
+      }
+    }
+  }
+  await scan(new URL("../apps/web/src/", import.meta.url));
+  assert(offenders.length === 0, `inline handlers: ${offenders.join("; ")}`);
+});
+
+Deno.test("[GAP-040] every proxied location forwards the gateway's request identifier", async () => {
+  const gateway = await Deno.readTextFile(
+    new URL("../gateway/nginx.conf", import.meta.url),
+  );
+  const proxied = nginxLocations(gateway).filter(({ body }) =>
+    /^\s*proxy_pass /m.test(body)
+  );
+  assert(
+    proxied.length >= 8,
+    `the gateway proxies the API, readiness, and renderer locations (${proxied.length})`,
+  );
+  for (const { selector, body } of proxied) {
+    assert(
+      /^\s*proxy_set_header X-Request-Id \$request_id;$/m.test(body),
+      `${selector} forwards the gateway's own request identifier`,
+    );
+  }
 });
 
 Deno.test("AUTH-003 E2E has no direct product API or host Astro escape hatch", async () => {

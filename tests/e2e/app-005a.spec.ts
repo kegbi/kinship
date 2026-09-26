@@ -263,7 +263,7 @@ test(
     await expect(page.locator("#today-favorite-notes")).toContainText(
       "Remember the analytical engine sketch.",
     );
-    await page.addScriptTag({ content: axe.source });
+    await page.evaluate(axe.source);
     expect(
       await page.evaluate(async () =>
         (await (globalThis as typeof globalThis & {

@@ -130,7 +130,7 @@ test(
     );
     await expect(page.locator("[data-danger-counts]")).toContainText("people");
     await expect(page.locator("[data-danger-counts]")).toContainText("1");
-    await page.addScriptTag({ content: axe.source });
+    await page.evaluate(axe.source);
     expect(
       await page.evaluate(async () =>
         (await (globalThis as typeof globalThis & {

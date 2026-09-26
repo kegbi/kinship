@@ -180,7 +180,7 @@ test("[AUTH-005] leaves a workspace or deletes personal identity safely", {
   await expect(deleteForm.locator("#delete-confirmation-value")).toHaveText(
     `DELETE ${deletingEmail}`,
   );
-  await page.addScriptTag({ content: axe.source });
+  await page.evaluate(axe.source);
   expect(
     await page.evaluate(async () =>
       (await (globalThis as typeof globalThis & {

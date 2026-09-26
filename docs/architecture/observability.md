@@ -152,8 +152,9 @@ a cast or a spread:
 
 ### Correlation
 
-- The gateway forwards its own `$request_id` to the API as `X-Request-Id`
-  (`/api/v1/` and `/gateway-health`) and logs it as `request_id` in
+- The gateway forwards its own `$request_id` as `X-Request-Id` on every proxied
+  location (`/api/v1/`, `/gateway-health`, the renderer readiness probe, and
+  each on-demand renderer route; GAP-040) and logs it as `request_id` in
   `gateway.request`. A client-supplied `X-Request-Id` does not pass the gateway.
 - The API's request-ID middleware keeps a supplied `[\w-]{1,128}` value or mints
   a UUID, echoes it in the `X-Request-Id` response header, and logs it in

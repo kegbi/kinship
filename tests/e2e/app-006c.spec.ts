@@ -493,7 +493,7 @@ test(
       hasText: "Grace prefers concise written updates.",
     })).toBeVisible();
     await expect(favoriteRetry).toBeHidden();
-    await page.addScriptTag({ content: axe.source });
+    await page.evaluate(axe.source);
     expect(
       await page.evaluate(async () =>
         (await (globalThis as typeof globalThis & {

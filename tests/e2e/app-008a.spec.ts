@@ -153,7 +153,7 @@ test("[JOURNAL-001] maintains the personal journal", {
   await expect(
     page.getByText("This item does not exist in the active workspace."),
   ).toBeVisible();
-  await page.addScriptTag({ content: axe.source });
+  await page.evaluate(axe.source);
   expect(
     await page.evaluate(async () =>
       (await (globalThis as typeof globalThis & {
