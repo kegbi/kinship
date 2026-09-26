@@ -1,0 +1,51 @@
+---
+/** The calls or conversations card `lib/communications.ts` owns (GAP-031). */
+import PersonSection from "./PersonSection.astro";
+import type { PersonSectionEntry } from "../../features/person/sections.ts";
+import {
+  badgeVariants,
+  buttonVariants,
+  formActionsVariants,
+} from "../ui/variants.ts";
+
+interface Props {
+  readonly section: PersonSectionEntry;
+}
+
+const { section } = Astro.props;
+const calls = section.id === "calls";
+---
+
+<PersonSection
+  section={section}
+  class="communication-section-card"
+  attributes={{ "data-communication-kind": calls ? "call" : "conversation" }}
+  state={{ "data-communication-state": "" }}
+>
+  <span slot="badge" data-communication-badge class={badgeVariants({ variant: "status" })}>Loading</span>
+  <button slot="action" data-communication-add class={buttonVariants({ className: "profile-section-cta" })} type="button" hidden>{calls ? "Log call" : "Log conversation"}</button>
+  <button data-communication-load-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry loading communications</button>
+  <ul data-communication-list class="interaction-list" aria-label={`Recent ${section.title.toLowerCase()}`} hidden></ul>
+  <form method="post" data-communication-form class="profile-fact-form" hidden novalidate>
+    <label>When it happened <input name="happenedAt" type="datetime-local" required /></label>
+    {calls
+      ? (
+        <>
+          <label>Call direction <select name="callDirection" required><option value="contact">They called me</option><option value="member">I called them</option></select></label>
+          <label>Details (optional) <textarea name="content" maxlength="10000"></textarea></label>
+          <label>Emotions (optional) <select name="emotionIds" multiple></select></label>
+        </>
+      )
+      : (
+        <>
+          <label>Channel <select name="channelTypeId" required><option value="">Select channel</option></select></label>
+          <label>Specific contact method (optional) <select name="contactMethodId"><option value="">No specific method</option></select></label>
+          <label>Title (optional) <input name="title" maxlength="500" /></label>
+          <div data-message-rows></div>
+          <button data-add-message class={buttonVariants({ variant: "outline" })} type="button">Add message</button>
+        </>
+      )}
+    <p data-communication-form-state class="section-state" role="alert" tabindex="-1"></p>
+    <div class={formActionsVariants()} data-form-actions><button class={buttonVariants()} type="submit">Save {calls ? "call" : "conversation"}</button><button data-communication-cancel class={buttonVariants({ variant: "outline" })} type="button">Cancel</button><button data-communication-refresh class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry refresh</button></div>
+  </form>
+</PersonSection>

@@ -77,10 +77,24 @@ function DialogTitle({
   );
 }
 
+function DialogDescription({
+  className,
+  ...props
+}: DialogPrimitive.Description.Props & { className?: string }) {
+  return (
+    <DialogPrimitive.Description
+      data-slot="dialog-description"
+      className={cn("m-0", className)}
+      {...props}
+    />
+  );
+}
+
 export {
   Dialog,
   DialogClose,
   DialogContent,
+  DialogDescription,
   DialogOverlay,
   DialogPortal,
   DialogTitle,

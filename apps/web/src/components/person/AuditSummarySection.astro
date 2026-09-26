@@ -1,0 +1,31 @@
+---
+/** The audit summary card `lib/audit-history.ts` owns (GAP-033). */
+import PersonSection from "./PersonSection.astro";
+import type { PersonSectionEntry } from "../../features/person/sections.ts";
+import {
+  badgeVariants,
+  buttonVariants,
+  formActionsVariants,
+} from "../ui/variants.ts";
+
+interface Props {
+  readonly section: PersonSectionEntry;
+}
+
+const { section } = Astro.props;
+---
+
+<PersonSection
+  section={section}
+  class="audit-summary-card"
+  attributes={{ "data-person-audit-summary": "" }}
+  state={{ "data-person-audit-state": "" }}
+  loading="Loading authorized audit summary…"
+>
+  <span slot="badge" data-person-audit-badge class={badgeVariants({ variant: "status" })}>Loading</span>
+  <ol data-person-audit-list class="audit-event-list" aria-label="Recent authorized person audit events"></ol>
+  <div class={formActionsVariants()} data-form-actions>
+    <a data-person-audit-link class={buttonVariants({ variant: "outline" })} href="/app/people" hidden>Open full audit history</a>
+    <button data-person-audit-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry audit summary</button>
+  </div>
+</PersonSection>

@@ -1,6 +1,10 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  type CapturedProfileSummary,
+  captureProfileSummary,
+} from "../features/person/profile-summary.test-helper.ts";
 import { mountProfileFacts } from "./profile-facts.ts";
 import { buttonVariants } from "../components/ui/variants.ts";
 import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
@@ -106,6 +110,15 @@ async function renderMeasuredSummary(
   for (const frame of frames) frame(0);
   return { description, text };
 }
+
+// The rail's counts are the rail island's: this block publishes them.
+let summary: CapturedProfileSummary;
+beforeEach(() => {
+  summary = captureProfileSummary();
+});
+afterEach(() => {
+  summary.stop();
+});
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -1543,9 +1556,8 @@ describe("PEOPLE-006 profile-fact sections", () => {
     const contact = document.querySelector<HTMLElement>(
       '[data-profile-fact-section="contact-methods"]',
     )!;
-    expect(contact.dataset.railEmpty).toBe("true");
-    expect(contact.querySelector("[data-profile-rail-count]")?.textContent)
-      .toBe("0");
+    expect(summary.railEmpty("contact-methods")).toBe(true);
+    expect(summary.railCount("contact-methods")).toBe("0");
     expect(contact.querySelector("[data-profile-fact-state]")?.textContent)
       .toBe("No contact methods saved.");
     const contactAdd = contact.querySelector<HTMLButtonElement>(
@@ -1566,11 +1578,10 @@ describe("PEOPLE-006 profile-fact sections", () => {
       )?.getAttribute("aria-label"),
     ).toBe("Edit food preferences");
     expect(
-      document.querySelector('[data-person-vital-value="work"]')?.textContent,
+      summary.vital("work"),
     ).toBe("Mathematician at Analytical Engines");
     expect(
-      document.querySelector('[data-person-vital-value="first-meeting"]')
-        ?.textContent,
+      summary.vital("first-meeting"),
     ).toBe("Royal Society");
 
     const work = document.querySelector<HTMLElement>(
@@ -1582,14 +1593,11 @@ describe("PEOPLE-006 profile-fact sections", () => {
     remove.click();
     await vi.waitFor(() =>
       expect(
-        document.querySelector('[data-person-vital-value="work"]')
-          ?.textContent,
+        summary.vital("work"),
       ).toBe("Not recorded")
     );
-    expect(work.querySelector("[data-profile-rail-count]")?.textContent).toBe(
-      "0",
-    );
-    expect(work.dataset.railEmpty).toBe("true");
+    expect(summary.railCount("work")).toBe("0");
+    expect(summary.railEmpty("work")).toBe(true);
   });
 
   it("closes an open profile-fact editor without stealing focus when another opens", async () => {
@@ -2084,7 +2092,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
     assigned.options[0]!.selected = true;
     assigned.form!.requestSubmit();
     await vi.waitFor(() =>
-      expect(document.querySelector("#person-profile-tags")?.textContent)
+      expect(summary.tags())
         .toContain("Friend")
     );
     expect(document.querySelector("[data-profile-fact-state]")?.textContent)
@@ -2121,10 +2129,10 @@ describe("PEOPLE-006 profile-fact sections", () => {
             ? `${count} tag${count === 1 ? "" : "s"} saved.`
             : "No tags saved.",
         );
-      expect(document.querySelector("#person-profile-tags")?.textContent)
+      expect(summary.tags())
         .toContain(count === 0 ? "No tags saved" : "Tag 0");
       if (count > 8) {
-        expect(document.querySelector("#person-profile-tags")?.textContent)
+        expect(summary.tags())
           .toContain("+4 more");
       }
     },
@@ -2154,8 +2162,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
     await mountProfileFacts(personId, workspaceId, false, revision, undefined, [
       { id: "contact-methods", status: "ready", count: 2 },
     ]);
-    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
-      .toBe("2");
+    expect(summary.railCount("contact-methods")).toBe("2");
     expect(document.querySelector("[data-profile-fact-state]")?.textContent)
       .toBe("Showing 1 of 2 saved.");
     document.querySelector<HTMLButtonElement>("[data-profile-fact-more]")!
@@ -2166,8 +2173,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
           ?.hidden,
       ).toBe(true)
     );
-    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
-      .toBe("2");
+    expect(summary.railCount("contact-methods")).toBe("2");
     expect(document.querySelector("[data-profile-fact-state]")?.textContent)
       .toBe("Showing 1 of 2 saved.");
   });
@@ -2190,7 +2196,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
       })),
     );
     await mountProfileFacts(personId, workspaceId, false, revision);
-    expect(document.querySelector("#person-profile-tags")?.textContent).toBe(
+    expect(summary.tags()).toBe(
       "Unavailable tag",
     );
     expect(document.querySelector("[data-profile-fact-state]")?.textContent)
@@ -2259,7 +2265,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
       }),
     );
     await vi.waitFor(() =>
-      expect(document.querySelector("#person-profile-tags")?.textContent)
+      expect(summary.tags())
         .toContain("Confidential friend")
     );
   });
@@ -2680,8 +2686,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
       .toHaveLength(50);
     expect(document.querySelector("[data-profile-fact-state]")?.textContent)
       .toBe("Showing 50 on this page.");
-    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
-      .toBe("50 on this page");
+    expect(summary.railCount("contact-methods")).toBe("50 on this page");
     expect(document.querySelector("[data-profile-fact-pagination]")?.tagName)
       .toBe("NAV");
     const more = document.querySelector<HTMLButtonElement>(
@@ -2697,8 +2702,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(document.querySelector("[data-profile-fact-state]")?.textContent)
       .toBe("Showing 1 on this page.");
-    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
-      .toBe("1 on this page");
+    expect(summary.railCount("contact-methods")).toBe("1 on this page");
     const previous = document.querySelector<HTMLButtonElement>(
       "[data-profile-fact-previous]",
     )!;
@@ -3182,7 +3186,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
           .toContain("Profile fact saved.")
       );
     }
-    expect(document.querySelector("#person-profile-tags")?.textContent)
+    expect(summary.tags())
       .toContain("Friend");
     expect(document.body.textContent).toContain("Home, One Way, London, UK");
     expect(document.body.textContent).toContain("Mathematician at Engines");
@@ -3282,10 +3286,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
     ).toBe(true);
     expect(document.querySelector("[data-profile-fact-badge]")?.textContent)
       .toBe("Read-only");
-    expect(
-      document.querySelector<HTMLElement>("[data-profile-fact-section]")
-        ?.dataset.railEmpty,
-    ).toBe("true");
+    expect(summary.railEmpty("contact-methods")).toBe(true);
   });
 
   it("rejects notes-only pets locally with an adjacent field error", async () => {

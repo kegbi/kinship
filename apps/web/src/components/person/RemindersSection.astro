@@ -1,0 +1,35 @@
+---
+/** The person reminders card `lib/reminders.ts` owns (GAP-031). */
+import LoadMore from "../LoadMore.astro";
+import PersonSection from "./PersonSection.astro";
+import type { PersonSectionEntry } from "../../features/person/sections.ts";
+import { buttonVariants, formActionsVariants } from "../ui/variants.ts";
+
+interface Props {
+  readonly section: PersonSectionEntry;
+}
+
+const { section } = Astro.props;
+---
+
+<PersonSection section={section} state={{ "data-reminder-state": "" }}>
+  <button slot="action" data-reminder-add class={buttonVariants({ className: "profile-section-cta" })} type="button" hidden>Add reminder</button>
+  <ul id="person-reminder-list" data-reminder-list class="task-list reminder-list" aria-label="Person reminders"></ul>
+  <LoadMore list="reminders" label="Load more reminders" controls="person-reminder-list" />
+  <form method="post" data-reminder-form class="profile-fact-form" hidden novalidate>
+    <label>Title <input name="title" maxlength="500" required /></label>
+    <label>First date <input name="anchorOn" type="date" required /></label>
+    <label>Send time <input name="sendTime" type="time" value="09:00" required /></label>
+    <label>Repeat
+      <select name="recurrenceUnit">
+        <option value="none">Once</option>
+        <option value="day">Daily</option>
+        <option value="week">Weekly</option>
+        <option value="month">Monthly</option>
+        <option value="year">Yearly</option>
+      </select>
+    </label>
+    <label>Every <input name="recurrenceInterval" type="number" min="1" max="100" value="1" required /></label>
+    <div class={formActionsVariants()} data-form-actions><button class={buttonVariants()} type="submit">Save reminder</button><button data-reminder-cancel class={buttonVariants({ variant: "outline" })} type="button">Cancel</button></div>
+  </form>
+</PersonSection>

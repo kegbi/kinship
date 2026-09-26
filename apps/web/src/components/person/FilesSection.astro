@@ -1,0 +1,49 @@
+---
+/** The documents or photos card `lib/person-files.ts` owns (GAP-033). */
+import LoadMore from "../LoadMore.astro";
+import PersonSection from "./PersonSection.astro";
+import type { PersonSectionEntry } from "../../features/person/sections.ts";
+import {
+  badgeVariants,
+  buttonVariants,
+  formActionsVariants,
+} from "../ui/variants.ts";
+
+interface Props {
+  readonly section: PersonSectionEntry;
+}
+
+const { section } = Astro.props;
+const photos = section.id === "photos";
+const listId = `${section.id}-list`;
+---
+
+<PersonSection
+  section={section}
+  class="person-files-card"
+  attributes={{ "data-person-files": photos ? "photo" : "document" }}
+  state={{ "data-file-state": "" }}
+>
+  <span slot="badge" data-file-badge class={badgeVariants({ variant: "status" })}>Loading</span>
+  <button slot="action" data-file-add class={buttonVariants({ className: "profile-section-cta" })} type="button" hidden>Attach {photos ? "photo" : "document"}</button>
+  <button data-file-refresh class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry loading</button>
+  <ul id={listId} data-file-list class="person-file-list" aria-label={`Saved ${section.title.toLowerCase()}`}></ul>
+  <LoadMore list="files" label="Load more files" controls={listId} />
+  <form method="post" data-file-form class="profile-fact-form" hidden novalidate>
+    <label>Title <input name="title" maxlength="500" required /></label>
+    <label>
+      File
+      <input
+        name="file"
+        type="file"
+        accept={photos ? "image/jpeg,image/png,image/webp" : "application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+        required
+      />
+    </label>
+    <p class="form-hint">Maximum file size: 10 MB.</p>
+    <div class={formActionsVariants()} data-form-actions>
+      <button class={buttonVariants()} type="submit">Upload</button>
+      <button data-file-cancel class={buttonVariants({ variant: "outline" })} type="button">Cancel</button>
+    </div>
+  </form>
+</PersonSection>

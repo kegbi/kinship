@@ -1,6 +1,10 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  type CapturedProfileSummary,
+  captureProfileSummary,
+} from "../features/person/profile-summary.test-helper.ts";
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 import { mountRelationships } from "./relationships.ts";
@@ -65,6 +69,15 @@ const relationship = {
   toPersonId: targetId,
   updatedAt,
 };
+
+// The rail's counts are the rail island's: this block publishes them.
+let summary: CapturedProfileSummary;
+beforeEach(() => {
+  summary = captureProfileSummary();
+});
+afterEach(() => {
+  summary.stop();
+});
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -1396,13 +1409,8 @@ describe("relationship profile section", () => {
     expect(document.querySelector("#relationships-state")?.textContent).toBe(
       "People unlinked. Neither person was deleted.",
     );
-    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
-      .toBe("0");
-    expect(
-      document.querySelector("#profile-section-relationships")?.getAttribute(
-        "data-rail-empty",
-      ),
-    ).toBe("true");
+    expect(summary.railCount("relationships")).toBe("0");
+    expect(summary.railEmpty("relationships")).toBe(true);
     expect(document.activeElement).toBe(
       document.querySelector("#relationships-state"),
     );

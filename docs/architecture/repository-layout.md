@@ -23,6 +23,9 @@ apps/
       layouts/
       components/
         ui/
+        person/
+      features/
+        person/
       islands/
         core/
       lib/
@@ -103,6 +106,12 @@ executable boundaries.
   `apps/web/src/islands/core/` is the island kit GAP-026 builds. A section of a
   static shell becomes an island through that kit's `mountIsland`. By GAP-033
   `apps/web/src/lib` shrinks to non-UI helpers.
+- The person workspace renders from one section registry,
+  `apps/web/src/features/person/sections.ts` (GAP-028): pure data the static
+  shell, the section navigation, and `tools/gateway_contract_test.ts` all read.
+  `features/person/section-mounts.ts` names each section's one owner, an island
+  or, until it migrates, its vanilla module; `apps/web/src/components/person/`
+  holds the shell's per-section Astro partials.
 
 Tests may import private code only when testing that exact module. A test for
 one module may not use a private import from another module as a convenience.

@@ -11,12 +11,11 @@ import {
   updateRelationship,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { saveWithLockedForm } from "./unsaved-changes.ts";
+import { setQuietLabel, setRailState } from "./rail-labels.ts";
 import {
-  setQuietLabel,
   setRailCount,
   setRailEmpty,
-  setRailState,
-} from "./person-facts-rail.ts";
+} from "../features/person/profile-summary.ts";
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 import { buttonVariants } from "../components/ui/variants.ts";
 

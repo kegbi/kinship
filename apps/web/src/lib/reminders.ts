@@ -17,7 +17,12 @@ import {
   type TodayReminderItem,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
-import { setRailCount, setRailEmpty } from "./person-facts-rail.ts";
+import {
+  setNextReminder,
+  setRailCount,
+  setRailEmpty,
+  setStayInTouch,
+} from "../features/person/profile-summary.ts";
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 import { buttonVariants } from "../components/ui/variants.ts";
 
@@ -111,12 +116,6 @@ export async function mountPersonReminders(options: {
   const cadenceCancel = document.querySelector<HTMLButtonElement>(
     "[data-cadence-cancel]",
   );
-  const cadenceHero = document.querySelector<HTMLElement>(
-    "#person-profile-due-state",
-  );
-  const nextReminderHero = document.querySelector<HTMLElement>(
-    '[data-person-vital-value="next-reminder"]',
-  );
   const reminderSection = reminderState?.closest<HTMLElement>(
     '[data-profile-section="reminders"]',
   );
@@ -173,10 +172,9 @@ export async function mountPersonReminders(options: {
     if (cadenceSection) cadenceSection.dataset.sectionState = "loading";
     reminderState.textContent = "Loading reminders…";
     cadenceState.textContent = "Loading stay-in-touch cadence…";
-    if (cadenceHero) cadenceHero.textContent = "Loading cadence…";
-    if (refreshSummary && nextReminderHero) {
-      nextReminderHero.textContent = "Refreshing…";
-    }
+    // The hero shows the due state and the next reminder (GAP-028).
+    setStayInTouch("Loading cadence…");
+    if (refreshSummary) setNextReminder("Refreshing…");
     setRailEmpty("stay-in-touch", false);
     const [result, summary] = await Promise.all([
       listPersonReminders(
@@ -192,19 +190,21 @@ export async function mountPersonReminders(options: {
         )
         : undefined,
     ]);
-    if (refreshSummary && nextReminderHero) {
-      nextReminderHero.textContent = summary?.ok
-        ? summary.value.dueInformation.nextReminderAt
-          ? formatInstant(
-            summary.value.dueInformation.nextReminderAt,
-            options.timePreferences,
-          )
-          : "Not recorded"
-        : "Unavailable";
+    if (refreshSummary) {
+      setNextReminder(
+        summary?.ok
+          ? summary.value.dueInformation.nextReminderAt
+            ? formatInstant(
+              summary.value.dueInformation.nextReminderAt,
+              options.timePreferences,
+            )
+            : "Not recorded"
+          : "Unavailable",
+      );
     }
     if (!result?.ok) {
       more.present(undefined);
-      if (cadenceHero) cadenceHero.textContent = "Unavailable";
+      setStayInTouch("Unavailable");
       if (reminderSection) reminderSection.dataset.sectionState = "error";
       if (cadenceSection) cadenceSection.dataset.sectionState = "error";
       reminderState.textContent =
@@ -258,15 +258,15 @@ export async function mountPersonReminders(options: {
     const cadences = result.value.cadences.filter((cadence) =>
       cadence.isActive
     );
-    if (cadenceHero) {
-      cadenceHero.textContent = cadences.length
+    setStayInTouch(
+      cadences.length
         ? cadences.map((cadence) =>
           `Every ${cadence.intervalCount} ${cadence.intervalUnit}${
             cadence.intervalCount === 1 ? "" : "s"
           }`
         ).join(" · ")
-        : "Not set";
-    }
+        : "Not set",
+    );
     cadenceList.replaceChildren(...cadences.map((cadence) => {
       const item = document.createElement("li");
       item.textContent =

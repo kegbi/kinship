@@ -1,9 +1,16 @@
 // @vitest-environment happy-dom
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
+import {
+  filterZone,
+  PERSON_SECTIONS,
+  RAIL_SECTION_ORDER,
+  railSections,
+  STREAM_ZONES,
+} from "../features/person/sections.ts";
 
 const createPage = readFileSync(
   resolve("apps/web/src/pages/app/people/new.astro"),
@@ -22,6 +29,25 @@ const profilePage = readFileSync(
   resolve("apps/web/src/pages/internal/person-profile-shell.astro"),
   "utf8",
 );
+/** The person template's partials (GAP-028), by file name. */
+const personPartials = Object.fromEntries(
+  readdirSync(resolve("apps/web/src/components/person"))
+    .filter((name) => name.endsWith(".astro"))
+    .sort()
+    .map((name) => [
+      name,
+      readFileSync(resolve("apps/web/src/components/person", name), "utf8"),
+    ]),
+);
+const partial = (name: string): string => {
+  const source = personPartials[name];
+  if (source === undefined) throw new Error(`no partial ${name}`);
+  return source;
+};
+/** The whole person template: the shell and every partial it renders. */
+const profileTemplate = [profilePage, ...Object.values(personPartials)].join(
+  "\n",
+);
 const paletteIsland = readFileSync(
   resolve(
     "apps/web/src/islands/global-people-search/global-people-search.tsx",
@@ -32,6 +58,10 @@ const islandStyles = readFileSync(
   resolve("apps/web/src/styles/islands.css"),
   "utf8",
 );
+const heroParts = readFileSync(
+  resolve("apps/web/src/islands/person-hero/hero-parts.tsx"),
+  "utf8",
+);
 const profileController = readFileSync(
   resolve("apps/web/src/lib/people-profile.ts"),
   "utf8",
@@ -39,10 +69,25 @@ const profileController = readFileSync(
 
 describe("people form layout regressions", () => {
   it("keeps timeline filters disabled until their controller binds them", () => {
-    const filters = [...profilePage.matchAll(
-      /<button\b[^>]*data-timeline-filter="[^"]+"[^>]*>/g,
+    const timeline = partial("PersonTimeline.astro");
+    const kinds = timeline.slice(
+      timeline.indexOf("const filters = ["),
+      timeline.indexOf("] as const;"),
+    );
+    expect(
+      [...kinds.matchAll(/\["([a-z-]+)", "[^"]+"\]/g)].map(([, kind]) => kind),
+    ).toEqual([
+      "all",
+      "note",
+      "call",
+      "conversation",
+      "activity",
+      "life-event",
+    ]);
+    const filters = [...timeline.matchAll(
+      /<button\b[^>]*data-timeline-filter=\{kind\}[^>]*>/g,
     )];
-    expect(filters).toHaveLength(6);
+    expect(filters).toHaveLength(1);
     for (const [markup] of filters) {
       const template = document.createElement("template");
       template.innerHTML = markup;
@@ -113,7 +158,7 @@ describe("people form layout regressions", () => {
     // Every profile button and action link draws with a Kinship variant from
     // components/ui/variants.ts (GAP-027): a button or a segmented filter.
     const unclassifiedButtons = [
-      ...profilePage.matchAll(/<button\b[\s\S]*?<\/button>/g),
+      ...profileTemplate.matchAll(/<button\b[\s\S]*?<\/button>/g),
     ].flatMap(([button]) =>
       /^<button\b[^>]*\bclass=\{(?:buttonVariants\(|segment\})[^>]*>/s
           .test(button)
@@ -123,22 +168,22 @@ describe("people form layout regressions", () => {
     expect(unclassifiedButtons).toEqual([]);
     const outline = String
       .raw`class=\{buttonVariants\(\{ variant: "outline" \}\)\}`;
-    expect(profilePage).toMatch(
+    expect(profileTemplate).toMatch(
       new RegExp(
         `<a[^>]*id="person-export-vcard"[^>]*${outline}[^>]*>Export vCard</a>`,
       ),
     );
-    expect(profilePage).toMatch(
+    expect(profileTemplate).toMatch(
       new RegExp(
         `<a[^>]*${outline}[^>]*data-activity-report-link[^>]*>Open activity report</a>`,
       ),
     );
-    expect(profilePage).toMatch(
+    expect(profileTemplate).toMatch(
       new RegExp(
         `<button[^>]*data-profile-fact-add[^>]*${outline}[^>]*>Edit tags</button>`,
       ),
     );
-    expect(profilePage).toMatch(
+    expect(profileTemplate).toMatch(
       new RegExp(
         `<button[^>]*data-life-event-retry[^>]*${outline}[^>]*>Retry life events</button>`,
       ),
@@ -163,9 +208,9 @@ describe("people form layout regressions", () => {
   });
 
   it("UXD-002A2 keeps two peer actions and moves lifecycle actions into one person menu", () => {
-    const actions = profilePage.slice(
-      profilePage.indexOf('class="person-profile-actions"'),
-      profilePage.indexOf('<dl class="person-vital-stats"'),
+    const actions = profileTemplate.slice(
+      profileTemplate.indexOf('class="person-profile-actions"'),
+      profileTemplate.indexOf('<dl class="person-vital-stats"'),
     );
     expect(actions).toContain('aria-label="Open person menu"');
     expect(actions).toContain('aria-expanded="false"');
@@ -237,7 +282,6 @@ describe("people form layout regressions", () => {
   it("PRF-001 gives ordered facts a visible heading and puts navigation before the blocks", () => {
     const railStart = profilePage.indexOf('class="profile-facts-rail"');
     const mainStart = profilePage.indexOf('class="profile-section-list"');
-    const rail = profilePage.slice(railStart, mainStart);
     expect(railStart).toBeGreaterThan(-1);
     expect(mainStart).toBeGreaterThan(railStart);
     expect(profilePage.slice(0, railStart)).toContain(
@@ -251,14 +295,11 @@ describe("people form layout regressions", () => {
     expect(profilePage).toContain(
       '<details class="profile-section-directory">',
     );
-    const railDefinition = profilePage.slice(
-      profilePage.indexOf("const railSections = ["),
-      profilePage.indexOf(
-        "] as const;",
-        profilePage.indexOf("const railSections = ["),
-      ),
+    // The rail renders the registry's rail sections in their rail order.
+    expect(profilePage.slice(railStart, mainStart)).toContain(
+      "railSections().map(",
     );
-    const orderedIds = [
+    expect(railSections().map((section) => section.id)).toEqual([
       "contact-methods",
       "relationships",
       "important-dates",
@@ -268,22 +309,36 @@ describe("people form layout regressions", () => {
       "food-preferences",
       "first-meeting",
       "stay-in-touch",
-    ];
-    let previous = -1;
-    for (const id of orderedIds) {
-      const current = railDefinition.indexOf(`"${id}"`);
-      expect(current).toBeGreaterThan(previous);
-      previous = current;
+    ]);
+    expect([...RAIL_SECTION_ORDER]).toHaveLength(9);
+    // Every rail block draws its chrome through the one section component.
+    const chrome = partial("PersonSection.astro");
+    const railPartials = [
+      "ImportantDatesSection.astro",
+      "ProfileFactSection.astro",
+      "RelationshipsSection.astro",
+      "StayInTouchSection.astro",
+    ].map(partial);
+    for (const rail of [chrome, ...railPartials]) {
+      expect(rail).not.toContain("section-kicker");
+      expect(rail).not.toContain("state-badge");
     }
-    expect(rail).not.toContain("section-kicker");
-    expect(rail).not.toContain("state-badge");
-    expect(rail.match(/class="profile-section-card profile-rail-block"/g))
-      .toHaveLength(4);
-    expect(rail).toContain("data-profile-rail-count hidden");
-    expect(rail).toContain("data-profile-fact-add-icon");
-    expect(rail).toContain('aria-label="Add important date"');
-    expect(rail).toContain('aria-label="Add relationship"');
-    expect(rail).toContain('<span aria-hidden="true">+</span>');
+    expect(chrome).toContain(
+      'rail ? "profile-rail-block"',
+    );
+    expect(chrome).toContain("data-profile-rail-count hidden");
+    expect(partial("ProfileFactSection.astro")).toContain(
+      "data-profile-fact-add-icon",
+    );
+    expect(partial("ImportantDatesSection.astro")).toContain(
+      'aria-label="Add important date"',
+    );
+    expect(partial("RelationshipsSection.astro")).toContain(
+      'aria-label="Add relationship"',
+    );
+    for (const rail of railPartials) {
+      expect(rail).toContain('<span aria-hidden="true">+</span>');
+    }
   });
 
   it("PRF-001 stacks the mobile workspace and gives desktop facts paired cards without nested scrolling", () => {
@@ -348,106 +403,82 @@ describe("people form layout regressions", () => {
   });
 
   it("UXD-002C groups the twelve stream cards under legal headings and retires load-mode metadata", () => {
-    const zoneDefinition = profilePage.slice(
-      profilePage.indexOf("const streamZones = ["),
-      profilePage.indexOf(
-        "] as const;",
-        profilePage.indexOf("const streamZones = ["),
+    expect(STREAM_ZONES.map((zone) => zone.id)).toEqual([
+      "timeline",
+      "planning",
+      "things",
+      "admin",
+    ]);
+    expect(
+      PERSON_SECTIONS.filter((section) =>
+        section.zone !== "rail" && section.zone !== "hero"
       ),
-    );
-    const orderedZones = ["timeline", "planning", "things", "admin"];
-    let previousZone = -1;
-    for (const zone of orderedZones) {
-      const currentZone = zoneDefinition.indexOf(`"${zone}"`);
-      expect(currentZone).toBeGreaterThan(previousZone);
-      previousZone = currentZone;
-    }
+    ).toHaveLength(12);
     const main = profilePage.slice(
       profilePage.indexOf('class="profile-section-list"'),
     );
     expect(main).toContain(
-      '<section class="person-zone" data-zone={zone} aria-labelledby={`person-zone-${zone}-heading`} aria-busy="true">',
+      '<section class="person-zone" data-zone={zone.id} aria-labelledby={`person-zone-${zone.id}-heading`} aria-busy="true">',
     );
     expect(main).toContain(
-      "<h2 id={`person-zone-${zone}-heading`}>{zoneTitle}</h2>",
+      "<h2 id={`person-zone-${zone.id}-heading`}>{zone.title}</h2>",
     );
-    expect(main).not.toContain("section-kicker");
-    expect(main).not.toContain("<h2 id={`profile-section-");
-    expect(main).toContain("<h3 id={`profile-section-${id}-heading`}");
-    expect(main).toContain(
-      '<h3 id="profile-section-life-events-heading">Life events</h3>',
+    const chrome = partial("PersonSection.astro");
+    for (const source of [main, ...Object.values(personPartials)]) {
+      expect(source).not.toContain("section-kicker");
+      expect(source).not.toContain("<h2 id={`profile-section-");
+    }
+    // Every card's heading is the registry title under its stable id.
+    expect(chrome).toContain(
+      "const headingId = `profile-section-${id}-heading`;",
     );
-    expect(main).toContain(
-      '<h3 id="profile-section-tasks-heading">Tasks</h3>',
-    );
-    expect(main).toContain(
-      "<div><h4>Open</h4><ul data-task-open-list",
-    );
-    expect(main).toContain(
+    expect(chrome).toContain("<h3 id={headingId}>{title}</h3>");
+    const tasks = partial("TasksSection.astro");
+    expect(tasks).toContain("<div><h4>Open</h4><ul data-task-open-list");
+    expect(tasks).toContain(
       "<div><h4>Completed</h4><ul data-task-completed-list",
     );
-    expect(main).toContain(
+    expect(tasks).toContain(
       "<div><h4>Cancelled</h4><ul data-task-cancelled-list",
     );
-    expect(profilePage).not.toContain("data-load-mode");
+    expect(profileTemplate).not.toContain("data-load-mode");
   });
 
   it("UXD-002C maps every stable profile section to its filter zone", () => {
-    const sectionZone = profileController.slice(
-      profileController.indexOf("const SECTION_ZONE = {"),
-      profileController.indexOf(
-        "} as const;",
-        profileController.indexOf("const SECTION_ZONE = {"),
-      ),
+    // The section registry (GAP-028) is the one map from a section to its
+    // filter zone; the profile controller keeps no copy of its own.
+    expect(profileController).not.toContain("const SECTION_ZONE");
+    expect(profileController).toMatch(
+      /import \{[^}]*\bfilterZone\b[^}]*\} from "\.\.\/features\/person\/sections\.ts";/s,
     );
-    const expectedSections = [
-      "contact-methods",
-      "addresses",
-      "relationships",
-      "important-dates",
-      "work",
-      "pets",
-      "food-preferences",
-      "first-meeting",
-      "stay-in-touch",
-      "life-events",
-      "notes",
-      "conversations",
-      "calls",
-      "activities",
-      "tasks",
-      "reminders",
-      "gifts",
-      "debts",
-      "documents",
-      "photos",
-      "audit-summary",
-      "identity-summary",
-    ];
-    expect(sectionZone.match(/^\s{2}(?:"[^"]+"|[a-z-]+):/gm)).toHaveLength(
-      22,
-    );
-    for (const id of expectedSections) {
-      expect(sectionZone).toMatch(
-        new RegExp(
-          `(?:"${id}"|${id}): "(?:facts|timeline|planning|things|admin)"`,
-        ),
+    expect(PERSON_SECTIONS).toHaveLength(22);
+    for (const section of PERSON_SECTIONS) {
+      expect(["facts", "timeline", "planning", "things", "admin"]).toContain(
+        filterZone(section),
       );
     }
   });
 
   it("UXD-002C uses an accessible sticky filter without introducing tabs or a second heading", () => {
-    const switcher = profilePage.slice(
-      profilePage.indexOf('class="zone-switcher"'),
-      profilePage.indexOf('<p id="person-profile-section-notice"'),
+    const switcher = profileTemplate.slice(
+      profileTemplate.indexOf('class="zone-switcher"'),
+      profileTemplate.indexOf('<p id="person-profile-section-notice"'),
     );
     expect(switcher).toContain(
       '<div class="zone-filter" role="group" aria-label="Filter person sections">',
     );
-    expect(switcher.match(/<button\b/g)).toHaveLength(5);
-    for (const view of ["all", "timeline", "planning", "things", "admin"]) {
-      expect(switcher).toContain(`data-zone-filter="${view}"`);
-    }
+    // "All", then one button per registry stream zone.
+    expect(switcher.match(/<button\b/g)).toHaveLength(2);
+    expect(switcher).toContain('data-zone-filter="all"');
+    expect(switcher).toMatch(
+      /STREAM_ZONES\.map\(\(zone\) => \(\s*<button [^>]*data-zone-filter=\{zone\.id\}[^>]*>\{zone\.title\}<\/button>/,
+    );
+    expect(STREAM_ZONES.map((zone) => zone.id)).toEqual([
+      "timeline",
+      "planning",
+      "things",
+      "admin",
+    ]);
     expect(switcher).not.toContain('role="tablist"');
     expect(switcher).not.toContain('role="tab"');
     expect(switcher).toContain(
@@ -502,39 +533,47 @@ describe("people form layout regressions", () => {
   });
 
   it("UXD-003B ships the visible busy shell, silent section states, and reduced-motion skeletons", () => {
-    const stateTag = profilePage.match(
+    const stateTag = profileTemplate.match(
       /<section id="person-profile-state"[^>]*>/,
     )?.[0];
-    const readyTag = profilePage.match(
+    const readyTag = profileTemplate.match(
       /<section id="person-profile-ready"[^>]*>/,
     )?.[0];
     expect(stateTag).toContain("hidden");
     expect(readyTag).not.toContain("hidden");
     expect(readyTag).toContain('aria-busy="true"');
-    expect(profilePage).not.toContain("Opening person…");
-    expect(profilePage).toMatch(
+    expect(profileTemplate).not.toContain("Opening person…");
+    expect(profileTemplate).toMatch(
       /<h1 id="person-profile-name"[^>]*>[\s\S]*?class=\{skeletonVariants\([^)]*\)\} data-slot="skeleton" aria-hidden="true"[\s\S]*?Loading person…[\s\S]*?<\/h1>/,
     );
 
     const initialSectionStates = [
-      ...profilePage.matchAll(
+      ...profileTemplate.matchAll(
         /<p\b[^>]*\bclass="[^"]*\bsection-state\b[^"]*"[^>]*>/gs,
       ),
     ].map(([tag]) => tag).filter((tag) =>
       !tag.includes('id="person-lifecycle-status"') &&
       !tag.includes('role="alert"')
     );
-    expect(initialSectionStates.length).toBeGreaterThan(10);
+    // `PersonSection` draws the 21 section status lines from two templates;
+    // the hero, timeline, and task editor add their own.
+    expect(initialSectionStates.length).toBeGreaterThan(4);
+    expect(
+      partial("PersonSection.astro").match(
+        /<p \{\.\.\.state\} class="section-state"/g,
+      ),
+    ).toHaveLength(2);
     expect(
       initialSectionStates.every((tag) =>
         !tag.includes('role="status"') && !tag.includes("aria-live")
       ),
     ).toBe(true);
-    expect(profilePage).toMatch(
+    expect(profileTemplate).toMatch(
       /id="person-lifecycle-status"[^>]*role="status"[^>]*aria-live="polite"/,
     );
-    expect(profilePage).toMatch(
-      /id="person-delete-impact"[^>]*role="status"/,
+    // The delete dialog is the hero island's (GAP-028).
+    expect(heroParts).toMatch(
+      /<DialogDescription id="person-delete-impact" role="status">/,
     );
 
     // The sweep is the skeleton variant's `animate-skeleton`, which stops for
@@ -543,8 +582,8 @@ describe("people form layout regressions", () => {
       "--animate-skeleton: skeleton-sweep 1.4s ease-in-out infinite;",
     );
     expect(islandStyles).toMatch(/@keyframes skeleton-sweep\s*\{/);
-    expect(profilePage).toContain('skeletonVariants({ shape: "avatar" })');
-    expect(profilePage).toContain(
+    expect(profileTemplate).toContain('skeletonVariants({ shape: "avatar" })');
+    expect(profileTemplate).toContain(
       'skeletonVariants({ className: "w-28", shape: "chip" })',
     );
   });

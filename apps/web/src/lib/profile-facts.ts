@@ -20,14 +20,15 @@ import {
   type ProfileFactUpdateInputBySection,
   updateProfileFact,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import { setQuietLabel, setRailState } from "./rail-labels.ts";
 import {
   setFirstMeetingPlace,
-  setQuietLabel,
   setRailCount,
   setRailEmpty,
-  setRailState,
+  setTagPreview,
   setVitalStat,
-} from "./person-facts-rail.ts";
+  tagPreview,
+} from "../features/person/profile-summary.ts";
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 import { insertProfileRailExpander } from "./profile-rail-expander.ts";
 import { showToast } from "./toasts.ts";
@@ -773,13 +774,8 @@ function clearFactContent(
   target.add.onclick = null;
   target.add.hidden = true;
   if (section !== "tags") clearRailPresentation(section);
-  else {
-    const preview = document.querySelector<HTMLElement>("#person-profile-tags");
-    if (preview) {
-      preview.replaceChildren();
-      preview.hidden = true;
-    }
-  }
+  // The hero previews the tags; with none to show it hides the preview.
+  else setTagPreview(undefined);
 }
 
 function publishRailPresentation(
@@ -811,34 +807,18 @@ function publishRailPresentation(
   }
 }
 
+/** Sends the hero the assigned tags' names for its preview. */
 function renderTags(
   record: Extract<ProfileFactRecord, { readonly section: "tags" }>,
   options: readonly ProfileFactOption[],
 ): void {
-  const list = document.querySelector<HTMLUListElement>("#person-profile-tags");
-  if (!list) return;
-  list.hidden = false;
-  const names = record.value.tagIds.map((id) =>
-    options.find((option) => option.id === id)?.name ?? "Unavailable tag"
+  setTagPreview(
+    tagPreview(
+      record.value.tagIds.map((id) =>
+        options.find((option) => option.id === id)?.name ?? "Unavailable tag"
+      ),
+    ),
   );
-  list.replaceChildren();
-  if (!names.length) {
-    const item = document.createElement("li");
-    item.className = "profile-tag-empty";
-    item.textContent = "No tags saved";
-    list.append(item);
-  } else {
-    for (const name of names.slice(0, 8)) {
-      const item = document.createElement("li");
-      item.textContent = name;
-      list.append(item);
-    }
-    if (names.length > 8) {
-      const more = document.createElement("li");
-      more.textContent = `+${names.length - 8} more`;
-      list.append(more);
-    }
-  }
 }
 
 export async function mountProfileFacts(

@@ -1,0 +1,37 @@
+---
+/**
+ * The unified timeline card that heads the Timeline zone, drawn before its
+ * owner hydrates it. Its filters stay disabled until they are wired.
+ */
+import SectionIcon from "../SectionIcon.astro";
+import {
+  buttonVariants,
+  segmentVariants,
+  skeletonLinesVariants,
+  skeletonVariants,
+} from "../ui/variants.ts";
+
+const segment = segmentVariants();
+const filters = [
+  ["all", "All types"],
+  ["note", "Notes"],
+  ["call", "Calls"],
+  ["conversation", "Conversations"],
+  ["activity", "Activities"],
+  ["life-event", "Life events"],
+] as const;
+---
+
+<section id="person-timeline" class="profile-section-card person-timeline" aria-labelledby="person-timeline-heading">
+  <header class="profile-section-heading">
+    <SectionIcon name="timeline" class="profile-section-glyph" />
+    <div class="profile-section-title"><h3 id="person-timeline-heading">Everything, in order</h3></div>
+  </header>
+  <div class="person-timeline-filters" role="group" aria-label="Filter timeline by type">
+    {filters.map(([kind, label]) => <button class={segment} data-timeline-filter={kind} type="button" aria-pressed={kind === "all" ? "true" : "false"} disabled>{label}</button>)}
+  </div>
+  <p data-timeline-state class="section-state"><span class="sr-only">Loading the timeline…</span><span class={skeletonLinesVariants} aria-hidden="true"><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-60" })} data-slot="skeleton" aria-hidden="true"></span></span></p>
+  <ul data-timeline-list class="person-timeline-list" aria-label="Person timeline"></ul>
+  <button data-timeline-more class={buttonVariants({ variant: "outline" })} type="button" hidden>Load older events</button>
+  <button data-timeline-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry the timeline</button>
+</section>

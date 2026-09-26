@@ -1109,7 +1109,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     and profile specs; build and web and gateway images green; gates fmt:check,
     lint, check, check:architecture (14), contracts:check.
 
-- [ ] **GAP-028 — Person profile section registry.** L. Depends: 026, 027.
+- [x] **GAP-028 — Person profile section registry.** L. Depends: 026, 027.
   - Scope: a data-driven section registry (`id`, zone, component, visibility
     key) shared by the person template, the section navigation,
     `gateway_contract_test.ts`, and later the visibility preference (GAP-047).
@@ -1122,6 +1122,28 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     deep links keep resolving.
   - Verify: `PEOPLE-003` through `PEOPLE-006` E2E, the gateway contract test
     reads the registry, and the people-profile unit tests green.
+  - Delivered 2026-09-26: `apps/web/src/features/person/sections.ts` is the
+    section registry (the 22 catalog sections in order with `id`, title, zone,
+    icon, `visibilityKey`, and mount kind; pure data a Deno tool can import),
+    with the loaders and the `SectionProps`/`SectionMount` contract in
+    `section-mounts.ts` so the registry stays free of React; the shell,
+    `components/person/PersonSection.astro` and 14 partials,
+    `lib/people-profile.ts` (zone activation and `?section=` deep links, 1,566
+    to 853 lines), and `tools/gateway_contract_test.ts` all read it;
+    `person-profile-shell.astro` is 149 lines (from 818); the hero (identity,
+    vitals, due state, tag preview, person menu, contract-validated edit form,
+    Base UI delete dialog, one pure lifecycle reducer), the rail, the timeline,
+    and life events are islands (hero 8,943 B entry over the shared 81,533 B
+    React runtime), and `lib/person-timeline.ts`, `lib/person-life-events.ts`,
+    and `lib/person-facts-rail.ts` with their suites are deleted and ported by
+    role; the vanilla sections publish counts, vitals, and tag names to the hero
+    and rail through `features/person/profile-summary.ts`; one spec waits for
+    the timeline island; screenshots at 390, 768, and 1440 are pixel-identical;
+    69 files changed (+7098/-3460); web tests 863, web coverage
+    94.02/86.47/91.65/95.82, every Deno set unchanged; build and images green;
+    Chromium E2E 57 passed, WebKit and Firefox 13 each on the profile,
+    lifecycle, dates, facts, and timeline specs; gates fmt:check, lint, check,
+    check:architecture (14), contracts:check.
 
 - [ ] **GAP-029 — Profile facts as contract-driven forms.** L. Depends: 028.
   - Scope: replace `lib/profile-facts.ts` (1,808 lines) and its 3,370-line suite

@@ -1,0 +1,137 @@
+---
+/**
+ * The person hero as the static shell draws it before the hero island
+ * (`islands/person-hero`) hydrates: breadcrumb, identity, the person actions
+ * and menu, vital stats, tags, the identity editor, and the archived banner.
+ *
+ * The island renders the identity into `[data-person-hero]` and every other
+ * part through a portal into its `data-person-*-slot`, each a
+ * `display: contents` wrapper so the hero's grid lays the parts out as
+ * before. Quick capture's two buttons belong to `lib/interactions.ts` and the
+ * tags editor to `lib/profile-facts.ts`; they sit beside the slots. Every
+ * control the island wires is disabled here, so a click before hydration
+ * waits instead of landing on nothing (REL-039).
+ */
+import {
+  badgeVariants,
+  breadcrumbVariants,
+  buttonVariants,
+  skeletonLinesVariants,
+  skeletonVariants,
+} from "../ui/variants.ts";
+---
+
+<header class="person-profile-hero">
+  <div class="contents" data-person-hero>
+    <nav class={`${breadcrumbVariants.list} person-profile-breadcrumb`} aria-label="Breadcrumb">
+      <a class={breadcrumbVariants.link} href="/app/people">People</a>
+      <span aria-hidden="true">/</span>
+      <span data-person-breadcrumb-name aria-current="page"><span class={skeletonVariants({ className: "w-28", shape: "chip" })} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading person…</span></span>
+    </nav>
+
+    <div id="person-profile-avatar" class="person-profile-avatar" aria-hidden="true"><span class={skeletonVariants({ shape: "avatar" })} data-slot="skeleton" aria-hidden="true"></span></div>
+    <div class="person-profile-heading">
+      <div class="person-profile-title">
+        <h1 id="person-profile-name" tabindex="-1"><span class={skeletonVariants({ shape: "line-60" })} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading person…</span></h1>
+        <p id="person-profile-nickname" hidden></p>
+      </div>
+      <div class="person-profile-badges" role="group" aria-label="Person states">
+        <p id="person-profile-saved-state" class={badgeVariants({ variant: "secondary" })}><span class={skeletonVariants({ shape: "chip" })} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading person state…</span></p>
+      </div>
+      <p class="person-profile-description" data-profile-description><span class={skeletonLinesVariants} aria-hidden="true"><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span></span><span class="sr-only">Loading person description…</span></p>
+    </div>
+  </div>
+
+  <div class="person-profile-actions" data-person-profile-actions role="group" aria-label="Person actions">
+    <button
+      class={buttonVariants()}
+      data-person-interaction-capture
+      data-quick-capture
+      data-interaction-intended-kind="activity"
+      type="button"
+    >Log interaction</button>
+    <button
+      class={buttonVariants({ variant: "outline" })}
+      data-person-interaction-capture
+      data-quick-capture
+      data-interaction-intended-kind="note"
+      type="button"
+    >Add note</button>
+    <div class="contents" data-person-menu-slot>
+      <div class="person-menu" role="group" aria-label="Person menu">
+        <button
+          id="person-menu-toggle"
+          class={buttonVariants({ variant: "outline" })}
+          type="button"
+          aria-label="Open person menu"
+          aria-expanded="false"
+          aria-controls="person-menu"
+          disabled
+        ><span aria-hidden="true">…</span></button>
+        <div id="person-menu" class="person-menu-popover" hidden>
+          <button id="person-edit-open" class={buttonVariants({ variant: "outline" })} type="button" disabled>Edit person</button>
+          <a id="person-export-vcard" class={buttonVariants({ variant: "outline" })} href="/app/people" download hidden>Export vCard</a>
+          <button id="person-archive" class={buttonVariants({ variant: "outline" })} type="button" disabled>Archive person</button>
+          <button id="person-audit-history" class={buttonVariants({ variant: "outline" })} type="button" disabled>Audit history</button>
+          <button id="person-delete-open" class={buttonVariants({ className: "person-menu-danger", variant: "destructive" })} type="button" disabled>Delete person</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="contents" data-person-vitals-slot>
+    <dl class="person-vital-stats" data-person-vital-stats>
+      <div>
+        <dt>Age or birthday</dt>
+        <dd><a href="?section=important-dates" data-person-vital-value="birthday"><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading birthday…</span></a></dd>
+      </div>
+      <div>
+        <dt>Last contact</dt>
+        <dd><a href="?section=activities" data-profile-last-contact><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading last contact…</span></a></dd>
+      </div>
+      <div>
+        <dt>Next reminder</dt>
+        <dd><a href="?section=reminders" data-person-vital-value="next-reminder"><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading next reminder…</span></a></dd>
+      </div>
+      <div>
+        <dt>Stay in touch</dt>
+        <dd><a href="?section=stay-in-touch"><span id="person-profile-due-state" role="status"><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading due information…</span></span></a></dd>
+      </div>
+      <div>
+        <dt>Work</dt>
+        <dd><a href="?section=work" data-person-vital-value="work"><span class={skeletonVariants({ shape: "line-60" })} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading work…</span></a></dd>
+      </div>
+      <div>
+        <dt>First met</dt>
+        <dd><a href="?section=first-meeting" data-person-vital-value="first-meeting"><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading first meeting…</span></a></dd>
+      </div>
+    </dl>
+  </div>
+
+  <div class="person-hero-tags" data-profile-fact-section="tags" data-section-state="loading" aria-busy="true">
+    <span class="contents" data-person-tags-slot><ul id="person-profile-tags" class="profile-tag-list" aria-label="Person tags"></ul></span>
+    <p data-profile-fact-state class="section-state"><span class="sr-only">Loading tag assignments…</span><span class={skeletonVariants({ shape: "chip" })} data-slot="skeleton" aria-hidden="true"></span></p>
+    <button data-profile-fact-add class={buttonVariants({ variant: "outline" })} type="button" hidden>Edit tags</button>
+    <form method="post" data-profile-fact-form class="profile-fact-form" hidden novalidate></form>
+  </div>
+
+  <div class="contents" data-person-lifecycle-slot>
+    <p id="person-lifecycle-status" class="section-state person-lifecycle-status" role="status" aria-live="polite"></p>
+    <form
+      method="post"
+      id="person-edit-form"
+      class="person-lifecycle-form"
+      data-profile-section="identity-summary"
+      data-section-state="ready"
+      aria-label="Edit person"
+      hidden
+    ></form>
+  </div>
+</header>
+
+<div class="contents" data-person-archived-slot>
+  <aside class="person-archived-banner" data-person-archived-banner hidden>
+    <p><strong>This person is archived.</strong> Editing is disabled.</p>
+    <button id="person-restore" class={buttonVariants({ variant: "outline" })} type="button" disabled>Restore person</button>
+  </aside>
+</div>

@@ -12,6 +12,10 @@ vi.mock("./time-presentation.ts", async (original) => ({
 import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  type CapturedProfileSummary,
+  captureProfileSummary,
+} from "../features/person/profile-summary.test-helper.ts";
 import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 import { mountPersonReminders, mountTodayReminders } from "./reminders.ts";
@@ -151,6 +155,15 @@ async function settleResponse(
   for (let turn = 0; turn < 6; turn += 1) await Promise.resolve();
 }
 
+// The rail's counts are the rail island's: this block publishes them.
+let summary: CapturedProfileSummary;
+beforeEach(() => {
+  summary = captureProfileSummary();
+});
+afterEach(() => {
+  summary.stop();
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
   document.head.innerHTML = "";
@@ -257,8 +270,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
         ).toBe(false)
       );
       expect(
-        document.querySelector('[data-person-vital-value="next-reminder"]')
-          ?.textContent,
+        summary.vital("next-reminder"),
       ).toBe(
         outcome === "failure"
           ? "Unavailable"
@@ -271,8 +283,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
         .click();
       await vi.waitFor(() =>
         expect(
-          document.querySelector('[data-person-vital-value="next-reminder"]')
-            ?.textContent,
+          summary.vital("next-reminder"),
         ).toBe("Not recorded")
       );
       expect(writes).toHaveBeenCalledTimes(2);
@@ -413,7 +424,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
       document.querySelector<HTMLButtonElement>('[data-load-more="reminders"]')
         ?.hidden,
     ).toBe(false);
-    expect(document.querySelector("#person-profile-due-state")?.textContent)
+    expect(summary.vital("stay-in-touch"))
       .toBe("Not set");
   });
 
@@ -482,7 +493,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
         personId,
         workspaceId,
       });
-      expect(document.querySelector("#person-profile-due-state")?.textContent)
+      expect(summary.vital("stay-in-touch"))
         .toBe(isActive ? "Every 2 weeks" : "Not set");
       expect(document.querySelector("[data-cadence-state]")?.textContent).toBe(
         isActive
@@ -547,15 +558,14 @@ describe("PLANNING-002 reminder browser behavior", () => {
       personId,
       workspaceId,
     });
-    expect(document.querySelector("#person-profile-due-state")?.textContent)
+    expect(summary.vital("stay-in-touch"))
       .toBe("Not set");
     expect(summaryReads).not.toHaveBeenCalled();
     document.querySelector<HTMLFormElement>("[data-reminder-form]")!
       .requestSubmit();
     await vi.waitFor(() =>
       expect(
-        document.querySelector('[data-person-vital-value="next-reminder"]')
-          ?.textContent,
+        summary.vital("next-reminder"),
       ).toBe(
         formatInstant("2026-09-21T07:00:00.000000Z", {
           locale: "en",
@@ -563,20 +573,19 @@ describe("PLANNING-002 reminder browser behavior", () => {
         }),
       )
     );
-    expect(document.querySelector("#person-profile-due-state")?.textContent)
+    expect(summary.vital("stay-in-touch"))
       .toBe("Not set");
     document.querySelector<HTMLButtonElement>("[data-reminder-list] button")!
       .click();
     await vi.waitFor(() =>
       expect(
-        document.querySelector('[data-person-vital-value="next-reminder"]')
-          ?.textContent,
+        summary.vital("next-reminder"),
       ).toBe("Not recorded")
     );
     document.querySelector<HTMLFormElement>("[data-cadence-form]")!
       .requestSubmit();
     await vi.waitFor(() =>
-      expect(document.querySelector("#person-profile-due-state")?.textContent)
+      expect(summary.vital("stay-in-touch"))
         .toBe("Every 1 month")
     );
     expect(summaryReads).toHaveBeenCalledTimes(3);
@@ -612,8 +621,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
       .requestSubmit();
     await vi.waitFor(() =>
       expect(
-        document.querySelector('[data-person-vital-value="next-reminder"]')
-          ?.textContent,
+        summary.vital("next-reminder"),
       ).toBe("Unavailable")
     );
     expect(document.querySelector("[data-reminder-state]")?.textContent).toBe(
@@ -1088,12 +1096,8 @@ describe("PLANNING-002 reminder browser behavior", () => {
       .toContain("Notification visible");
     expect(document.querySelector("[data-cadence-list]")?.textContent)
       .toContain("Every 1 month");
-    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
-      .toBe("1");
-    expect(
-      document.querySelector('[data-profile-section="stay-in-touch"]')
-        ?.hasAttribute("data-rail-empty"),
-    ).toBe(false);
+    expect(summary.railCount("stay-in-touch")).toBe("1");
+    expect(summary.railEmpty("stay-in-touch")).toBe(false);
     expect(document.querySelectorAll("[data-reminder-list] button"))
       .toHaveLength(0);
     expect(
@@ -1132,11 +1136,7 @@ describe("PLANNING-002 reminder browser behavior", () => {
       workspaceId,
     });
 
-    expect(
-      document.querySelector<HTMLElement>(
-        '[data-profile-section="stay-in-touch"]',
-      )?.dataset.railEmpty,
-    ).toBe("true");
+    expect(summary.railEmpty("stay-in-touch")).toBe(true);
   });
 
   it("reuses the reminder request id after an ambiguous create failure", async () => {
@@ -1157,13 +1157,8 @@ describe("PLANNING-002 reminder browser behavior", () => {
       personId,
       workspaceId,
     });
-    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
-      .toBe("0");
-    expect(
-      document.querySelector<HTMLElement>(
-        '[data-profile-section="stay-in-touch"]',
-      )?.dataset.railEmpty,
-    ).toBe("true");
+    expect(summary.railCount("stay-in-touch")).toBe("0");
+    expect(summary.railEmpty("stay-in-touch")).toBe(true);
     const form = document.querySelector<HTMLFormElement>(
       "[data-reminder-form]",
     )!;

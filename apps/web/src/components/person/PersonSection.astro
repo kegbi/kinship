@@ -1,0 +1,81 @@
+---
+/**
+ * One person-workspace section's chrome, drawn from its registry entry
+ * (GAP-028): the card with its stable id, `data-profile-section`, loading
+ * state, and deep-link focus target, its heading and glyph, and the status
+ * line with its skeleton. The owner — an island or a vanilla module — fills
+ * the rest: a section's partial passes its header action and badge through
+ * the `action` and `badge` slots and its body through the default slot.
+ *
+ * A section with no owner yet renders as honestly unavailable rather than
+ * as an empty result.
+ */
+import SectionIcon from "../SectionIcon.astro";
+import type { PersonSectionEntry } from "../../features/person/sections.ts";
+import {
+  badgeVariants,
+  skeletonLinesVariants,
+  skeletonVariants,
+} from "../ui/variants.ts";
+
+interface Props {
+  readonly section: PersonSectionEntry;
+  /** Classes after `profile-section-card`, such as the card's variant. */
+  readonly class?: string;
+  /** Extra attributes the owner finds its card by. */
+  readonly attributes?: Readonly<Record<string, string>>;
+  /** The status line's attributes; without them the section is unavailable. */
+  readonly state?: Readonly<Record<string, string>>;
+  /** What the status line says while it loads, for assistive technology. */
+  readonly loading?: string;
+}
+
+const { attributes = {}, loading, section, state } = Astro.props;
+const { icon, id, title, zone } = section;
+const rail = zone === "rail";
+const headingId = `profile-section-${id}-heading`;
+const available = state !== undefined;
+const cardClass = [
+  "profile-section-card",
+  rail ? "profile-rail-block" : available ? Astro.props.class : "unavailable-section-card",
+].filter(Boolean).join(" ");
+const loadingLabel = loading ?? `Loading ${title.toLowerCase()}…`;
+---
+
+<section
+  id={`profile-section-${id}`}
+  class={cardClass}
+  data-profile-section={id}
+  {...attributes}
+  data-section-state={available ? "loading" : "unavailable"}
+  tabindex="-1"
+  aria-labelledby={headingId}
+>
+  {rail
+    ? (
+      <header class="profile-section-heading">
+        {icon && <SectionIcon name={icon} class="profile-rail-icon" />}
+        <h3 id={headingId}>{title}</h3>
+        <span class="contents" data-rail-count-slot><span class="profile-rail-count" data-profile-rail-count hidden></span></span>
+        <slot name="action" />
+      </header>
+    )
+    : (
+      <header class="profile-section-heading">
+        {available && icon && <SectionIcon name={icon} class="profile-section-glyph" />}
+        <div class="profile-section-title">
+          <h3 id={headingId}>{title}</h3>
+          {available ? <slot name="badge" /> : <span class={badgeVariants({ variant: "status" })}>Unavailable</span>}
+        </div>
+        <slot name="action" />
+      </header>
+    )}
+  {available && rail && (
+    <p {...state} class="section-state" tabindex="-1"><span class="sr-only">{loadingLabel}</span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span></p>
+  )}
+  {available && !rail && (
+    <p {...state} class="section-state"><span class="sr-only">{loadingLabel}</span><span class={skeletonLinesVariants} aria-hidden="true"><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-60" })} data-slot="skeleton" aria-hidden="true"></span></span></p>
+  )}
+  {!available && <p>This section is not available yet. No empty result is being inferred and no saved data has changed.</p>}
+  <slot />
+</section>

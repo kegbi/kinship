@@ -1,0 +1,29 @@
+---
+/** The stay-in-touch rail block `lib/reminders.ts` owns (GAP-031). */
+import PersonSection from "./PersonSection.astro";
+import type { PersonSectionEntry } from "../../features/person/sections.ts";
+import { buttonVariants, formActionsVariants } from "../ui/variants.ts";
+
+interface Props {
+  readonly section: PersonSectionEntry;
+}
+
+const { section } = Astro.props;
+---
+
+<PersonSection section={section} state={{ "data-cadence-state": "", "data-rail-editor-feedback": "" }} loading="Loading stay-in-touch cadence…">
+  <button slot="action" data-cadence-add class={buttonVariants({ className: "profile-rail-add" })} type="button" aria-label="Add stay-in-touch cadence" hidden><span aria-hidden="true">+</span></button>
+  <ul data-cadence-list class="task-list" aria-label="Stay-in-touch cadence"></ul>
+  <form method="post" data-cadence-form class="profile-fact-form" hidden novalidate>
+    <label>Reconnect every <input name="intervalCount" type="number" min="1" max="100" value="1" required /></label>
+    <label>Calendar unit
+      <select name="intervalUnit">
+        <option value="week">Week</option>
+        <option value="month">Month</option>
+        <option value="year">Year</option>
+        <option value="day">Day</option>
+      </select>
+    </label>
+    <div class={formActionsVariants()} data-form-actions><button class={buttonVariants()} type="submit">Save cadence</button><button data-cadence-cancel class={buttonVariants({ variant: "outline" })} type="button">Cancel</button></div>
+  </form>
+</PersonSection>

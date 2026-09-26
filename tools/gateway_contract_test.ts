@@ -1,3 +1,5 @@
+import { PERSON_SECTIONS } from "../apps/web/src/features/person/sections.ts";
+
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
@@ -320,12 +322,23 @@ Deno.test("AUTH-003 E2E has no direct product API or host Astro escape hatch", a
 });
 
 Deno.test("[APP-003C] static person shell keeps the accepted canonical sections", async () => {
-  const shell = await Deno.readTextFile(
-    new URL(
-      "../apps/web/src/pages/internal/person-profile-shell.astro",
-      import.meta.url,
+  // The section registry (GAP-028) is the one list the shell, the section
+  // navigation, and this contract read; the shell renders every section's
+  // chrome from it through `PersonSection.astro`.
+  const [shell, sectionChrome] = await Promise.all([
+    Deno.readTextFile(
+      new URL(
+        "../apps/web/src/pages/internal/person-profile-shell.astro",
+        import.meta.url,
+      ),
     ),
-  );
+    Deno.readTextFile(
+      new URL(
+        "../apps/web/src/components/person/PersonSection.astro",
+        import.meta.url,
+      ),
+    ),
+  ]);
   const expected = [
     "identity-summary",
     "important-dates",
@@ -350,25 +363,22 @@ Deno.test("[APP-003C] static person shell keeps the accepted canonical sections"
     "photos",
     "audit-summary",
   ];
-  const sectionDeclaration = shell.match(
-    /const sections = \[([\s\S]*?)\] as const;/,
-  )?.[1] ?? "";
-  const declared = [...sectionDeclaration.matchAll(
-    /\["([a-z-]+)", "[^"]+"\]/g,
-  )].map((match) => match[1]);
   assert(
-    declared.length > 0,
-    "the shell section extraction found no declarations",
+    JSON.stringify(PERSON_SECTIONS.map((section) => section.id)) ===
+      JSON.stringify(expected),
+    "the registry declares every page-catalog section once and in order",
   );
   assert(
-    JSON.stringify(declared) === JSON.stringify(expected),
-    "the shell declares every page-catalog section once and in order",
+    shell.includes('from "../../features/person/sections.ts"') &&
+      shell.includes("PERSON_SECTIONS.map(") &&
+      !/const sections = \[/.test(shell),
+    "the shell renders its sections from the registry, not its own list",
   );
   assert(
-    shell.includes("href={`?section=${id}`}") &&
-      shell.includes("data-profile-section={id}") &&
-      shell.includes("data-zone={zone}") &&
-      shell.includes("No empty result is being inferred"),
+    shell.includes("href={`?section=${section.id}`}") &&
+      sectionChrome.includes("data-profile-section={id}") &&
+      shell.includes("data-zone={zone.id}") &&
+      sectionChrome.includes("No empty result is being inferred"),
     "sections use canonical query deep links, structural zone metadata, and honest unavailable states",
   );
   assert(

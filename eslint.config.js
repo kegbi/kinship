@@ -8,6 +8,7 @@ import typescriptParser from "@typescript-eslint/parser";
 // islands of ADR 0006, the hooks rules and the same accessibility preset.
 const islandSources = [
   "apps/web/src/islands/**/*.{ts,tsx}",
+  "apps/web/src/features/**/*.{ts,tsx}",
   "apps/web/src/components/ui/**/*.tsx",
 ];
 

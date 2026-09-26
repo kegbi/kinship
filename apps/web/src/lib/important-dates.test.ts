@@ -1,6 +1,10 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  type CapturedProfileSummary,
+  captureProfileSummary,
+} from "../features/person/profile-summary.test-helper.ts";
 import {
   formatImportantDate,
   mountImportantDates,
@@ -86,6 +90,15 @@ function button(label: string): HTMLButtonElement {
   if (!match) throw new Error(`Missing button: ${label}`);
   return match;
 }
+
+// The rail's counts are the rail island's: this block publishes them.
+let summary: CapturedProfileSummary;
+beforeEach(() => {
+  summary = captureProfileSummary();
+});
+afterEach(() => {
+  summary.stop();
+});
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -402,13 +415,8 @@ describe("PEOPLE-005 important-date presentation", () => {
     await mountImportantDates(personId, workspaceId, false);
     expect(document.querySelector("#important-dates-state")?.textContent)
       .toBe("No important dates recorded.");
-    expect(
-      document.querySelector("#profile-section-important-dates")?.getAttribute(
-        "data-rail-empty",
-      ),
-    ).toBe("true");
-    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
-      .toBe("0");
+    expect(summary.railEmpty("important-dates")).toBe(true);
+    expect(summary.railCount("important-dates")).toBe("0");
     (document.querySelector("#important-date-add") as HTMLButtonElement)
       .click();
     const precision = document.querySelector(
@@ -433,16 +441,10 @@ describe("PEOPLE-005 important-date presentation", () => {
       expect(document.querySelector("#important-dates-list")?.textContent)
         .toContain("February 29 (year unknown)")
     );
-    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
-      .toBe("1");
+    expect(summary.railCount("important-dates")).toBe("1");
+    expect(summary.railEmpty("important-dates")).toBe(false);
     expect(
-      document.querySelector("#profile-section-important-dates")?.hasAttribute(
-        "data-rail-empty",
-      ),
-    ).toBe(false);
-    expect(
-      document.querySelector('[data-person-vital-value="birthday"]')
-        ?.textContent,
+      summary.vital("birthday"),
     ).toBe("February 29 (year unknown)");
   });
 
@@ -513,12 +515,10 @@ describe("PEOPLE-005 important-date presentation", () => {
     await mountImportantDates(personId, workspaceId, false);
 
     expect(
-      document.querySelector('[data-person-vital-value="birthday"]')
-        ?.textContent,
+      summary.vital("birthday"),
     ).toBe("Age 34 · March 12, 1992");
     expect(
-      document.querySelector('[data-person-vital-value="first-meeting"]')
-        ?.textContent,
+      summary.vital("first-meeting"),
     ).toBe("June 5, 2010");
     expect(document.querySelector("[data-important-dates-expander]"))
       .toBeNull();
@@ -545,8 +545,7 @@ describe("PEOPLE-005 important-date presentation", () => {
     await mountImportantDates(personId, workspaceId, false);
 
     expect(
-      document.querySelector('[data-person-vital-value="birthday"]')
-        ?.textContent,
+      summary.vital("birthday"),
     ).toBe("March 12, 1992");
   });
 
@@ -561,11 +560,7 @@ describe("PEOPLE-005 important-date presentation", () => {
 
     await mountImportantDates(personId, workspaceId, true);
 
-    expect(
-      document.querySelector<HTMLElement>(
-        "#profile-section-important-dates",
-      )?.dataset.railEmpty,
-    ).toBe("true");
+    expect(summary.railEmpty("important-dates")).toBe(true);
     expect(document.querySelector("#important-dates-state")?.textContent)
       .toBe("No important dates recorded. This archived person is read-only.");
   });
@@ -818,13 +813,8 @@ describe("PEOPLE-005 important-date presentation", () => {
       expect(document.querySelector("#important-dates-state")?.textContent)
         .toBe("No important dates recorded.")
     );
-    expect(document.querySelector("[data-profile-rail-count]")?.textContent)
-      .toBe("0");
-    expect(
-      document.querySelector("#profile-section-important-dates")?.getAttribute(
-        "data-rail-empty",
-      ),
-    ).toBe("true");
+    expect(summary.railCount("important-dates")).toBe("0");
+    expect(summary.railEmpty("important-dates")).toBe(true);
   });
 
   it("maps missing, server, and network failures without leaking details", async () => {

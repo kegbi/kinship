@@ -1,0 +1,55 @@
+---
+/** The relationships rail block `lib/relationships.ts` owns (GAP-031). */
+import PersonSection from "./PersonSection.astro";
+import type { PersonSectionEntry } from "../../features/person/sections.ts";
+import { buttonVariants, formActionsVariants } from "../ui/variants.ts";
+
+interface Props {
+  readonly section: PersonSectionEntry;
+}
+
+const { section } = Astro.props;
+---
+
+<PersonSection section={section} state={{ id: "relationships-state", "data-rail-editor-feedback": "" }}>
+  <button slot="action" id="relationship-add" class={buttonVariants({ className: "profile-rail-add" })} type="button" aria-label="Add relationship" hidden><span aria-hidden="true">+</span></button>
+  <ul id="relationships-list" class="profile-fact-list" aria-label="Saved relationships" tabindex="-1"></ul>
+  <nav class={formActionsVariants()} aria-label="Relationship pages">
+    <button id="relationships-previous" class={buttonVariants({ variant: "outline" })} type="button" hidden>Previous relationships</button>
+    <button id="relationships-load-more" class={buttonVariants({ variant: "outline" })} type="button" hidden>Next relationships</button>
+  </nav>
+  <form method="post" id="relationship-form" class="profile-fact-form" hidden novalidate>
+    <fieldset>
+      <legend>Choose an existing person</legend>
+      <label>Search people <input id="relationship-person-search" type="search" maxlength="200" /></label>
+      <button id="relationship-person-search-button" class={buttonVariants({ variant: "outline" })} type="button">Search people</button>
+      <label>Related person <select id="relationship-target" name="targetPersonId"><option value="">Select existing person</option></select></label>
+    </fieldset>
+    <fieldset>
+      <legend>Or create a new related person</legend>
+      <div class="form-grid">
+        <label>New person given name <input name="newGivenName" maxlength="200" /></label>
+        <label>New person family name <input name="newFamilyName" maxlength="200" /></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Relationship type</legend>
+      <label>Search relationship types <input id="relationship-type-search" type="search" maxlength="200" /></label>
+      <button id="relationship-type-search-button" class={buttonVariants({ variant: "outline" })} type="button">Search relationship types</button>
+      <label>Relationship type <select id="relationship-type" name="relationshipTypeId" required><option value="">Select relationship type</option></select></label>
+      <nav class={formActionsVariants()} aria-label="Relationship type pages">
+        <button id="relationship-types-previous" class={buttonVariants({ variant: "outline" })} type="button" hidden>Previous relationship types</button>
+        <button id="relationship-types-next" class={buttonVariants({ variant: "outline" })} type="button" hidden>Next relationship types</button>
+      </nav>
+    </fieldset>
+    <div id="relationship-duplicate-choices" role="group" aria-label="Possible duplicate person choices" hidden>
+      <p>A person with this name may already exist.</p>
+      <button id="relationship-select-existing" class={buttonVariants({ variant: "outline" })} type="button">Select existing person</button>
+      <button id="relationship-create-anyway" class={buttonVariants({ variant: "outline" })} type="button">Create anyway</button>
+    </div>
+    <div class={formActionsVariants()} data-form-actions>
+      <button class={buttonVariants()} type="submit">Save relationship</button>
+      <button id="relationship-cancel" class={buttonVariants({ variant: "outline" })} type="button">Cancel</button>
+    </div>
+  </form>
+</PersonSection>

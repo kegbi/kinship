@@ -8,14 +8,13 @@ import {
   type ProblemDetails,
   updateImportantDate,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import { setQuietLabel, setRailState } from "./rail-labels.ts";
 import {
   setFirstMeetingDate,
-  setQuietLabel,
   setRailCount,
   setRailEmpty,
-  setRailState,
   setVitalStat,
-} from "./person-facts-rail.ts";
+} from "../features/person/profile-summary.ts";
 import { insertProfileRailExpander } from "./profile-rail-expander.ts";
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 import { buttonVariants } from "../components/ui/variants.ts";

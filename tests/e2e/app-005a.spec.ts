@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import axe from "axe-core";
 import { settleNavigation } from "./support/navigation.ts";
+import { waitForIsland } from "./support/islands.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -186,6 +187,8 @@ test(
       name: "Activities",
       exact: true,
     });
+    // The timeline island replaces the shell's disabled chips (GAP-028).
+    await waitForIsland(page, "person-timeline");
     await activityFilter.scrollIntoViewIfNeeded();
     await activityFilter.click();
     const compilerTimelineRow = timeline.locator("[data-timeline-id]", {

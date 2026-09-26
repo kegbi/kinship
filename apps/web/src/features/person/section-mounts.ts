@@ -1,0 +1,295 @@
+/**
+ * Who mounts each person section, and how (GAP-028).
+ *
+ * `sections.ts` says whether an island or a vanilla module owns a section;
+ * this says where that owner's code is. Every owner loads on demand and
+ * answers one contract, `SectionMount`: given the workspace element the
+ * sections live in and the `SectionProps` every section receives, it renders
+ * or wires its sections and resolves, once its first answer has settled, with
+ * the function that unmounts it. A module that owns several sections — notes
+ * and activities, calls and conversations, reminders and the stay-in-touch
+ * cadence — is one owner shared by those entries, so it mounts once.
+ *
+ * Until a section migrates, its entry adapts the vanilla module's existing
+ * mount function to the contract; the module's own behaviour is unchanged.
+ */
+
+import type {
+  getPerson,
+  ResolvedMemberPreferences,
+} from "../../../../../packages/contracts/generated/auth-client.ts";
+import type {
+  PersonSectionEntry,
+  PersonSectionId,
+  SectionMountKind,
+  SectionVisibilityKey,
+} from "./sections.ts";
+import { PERSON_SECTIONS } from "./sections.ts";
+
+/** The profile answer the page loaded: identity, due state, and summary. */
+export type PersonProfile = Extract<
+  Awaited<ReturnType<typeof getPerson>>,
+  { readonly ok: true }
+>["value"];
+
+/** What every section's owner receives. */
+export interface SectionProps {
+  readonly personId: string;
+  readonly workspaceId: string;
+  /** Whether the person is archived at the moment the owner mounts. */
+  readonly archived: boolean;
+  /** The member's locale, time zone, and name order, when they loaded. */
+  readonly preferences?: ResolvedMemberPreferences | undefined;
+  /** The profile answer the page already has, so no owner refetches it. */
+  readonly initial?: PersonProfile | undefined;
+}
+
+/**
+ * Mounts an owner into the workspace element `container` and resolves, when
+ * its first load has settled, with the function that unmounts it.
+ */
+export type SectionMount = (
+  container: HTMLElement,
+  props: SectionProps,
+) => Promise<() => void>;
+
+export interface SectionMountEntry<Kind extends SectionMountKind> {
+  readonly kind: Kind;
+  readonly load: () => Promise<SectionMount>;
+}
+
+const nothing = (): void => undefined;
+
+/**
+ * Whether the workspace turned `key`'s profile module off. Tags are a module
+ * without a section of their own: the hero previews them.
+ */
+export function sectionHidden(
+  props: SectionProps,
+  key: SectionVisibilityKey | "tags",
+): boolean {
+  return props.initial?.person.profileSections?.some((section) =>
+    section.id === key && section.status === "hidden"
+  ) ?? false;
+}
+
+function island(
+  load: () => Promise<SectionMount>,
+): SectionMountEntry<"island"> {
+  return { kind: "island", load };
+}
+
+/** A vanilla module's mount, adapted to the contract; it never unmounts. */
+function vanilla(
+  load: () => Promise<(props: SectionProps) => Promise<void>>,
+): SectionMountEntry<"vanilla"> {
+  return {
+    kind: "vanilla",
+    load: () =>
+      load().then((mount) => (_container, props) =>
+        mount(props).then(() => nothing)
+      ),
+  };
+}
+
+// The hero island owns the identity section's editor with the rest of the
+// hero; the page mounts it as soon as the profile answer arrives.
+const hero = island(() =>
+  import("../../islands/person-hero/mount.tsx").then((module) =>
+    module.mountPersonHero
+  )
+);
+
+const importantDates = vanilla(() =>
+  import("../../lib/important-dates.ts").then(
+    ({ mountImportantDates }) => (props) =>
+      mountImportantDates(props.personId, props.workspaceId, props.archived),
+  )
+);
+
+const profileFacts = vanilla(() =>
+  import("../../lib/profile-facts.ts").then(
+    ({ mountProfileFacts }) => (props) =>
+      mountProfileFacts(
+        props.personId,
+        props.workspaceId,
+        props.archived,
+        props.initial?.person.updatedAt ?? "",
+        props.initial?.summary?.primaryContactMethods,
+        props.initial?.summary?.sectionCounts,
+      ),
+  )
+);
+
+const relationships = vanilla(() =>
+  import("../../lib/relationships.ts").then(
+    ({ mountRelationships }) => (props) =>
+      mountRelationships(
+        props.personId,
+        props.workspaceId,
+        props.archived,
+        sectionHidden(props, "relationships"),
+        props.initial?.person.updatedAt,
+      ),
+  )
+);
+
+const reminders = vanilla(() =>
+  import("../../lib/reminders.ts").then(({ mountPersonReminders }) => (props) =>
+    mountPersonReminders({
+      archived: props.archived,
+      personId: props.personId,
+      timePreferences: props.preferences,
+      workspaceId: props.workspaceId,
+    })
+  )
+);
+
+const lifeEvents = island(() =>
+  import("../../islands/person-life-events/mount.tsx").then((module) =>
+    module.mountPersonLifeEvents
+  )
+);
+
+const interactions = vanilla(() =>
+  import("../../lib/interactions.ts").then(
+    ({ mountPersonInteractions }) => (props) =>
+      mountPersonInteractions(
+        props.personId,
+        props.workspaceId,
+        props.archived,
+        {
+          activities: sectionHidden(props, "activities"),
+          notes: sectionHidden(props, "notes"),
+        },
+      ),
+  )
+);
+
+const communications = vanilla(() =>
+  import("../../lib/communications.ts").then(
+    ({ mountCommunications }) => (props) =>
+      mountCommunications(
+        props.personId,
+        props.workspaceId,
+        props.archived,
+        {
+          calls: sectionHidden(props, "calls"),
+          conversations: sectionHidden(props, "conversations"),
+        },
+        props.preferences,
+      ),
+  )
+);
+
+const tasks = vanilla(() =>
+  import("../../lib/tasks.ts").then(({ mountTaskSurface }) => (props) =>
+    mountTaskSurface({
+      archived: props.archived,
+      hidden: sectionHidden(props, "tasks"),
+      personId: props.personId,
+      timePreferences: props.preferences,
+      workspaceId: props.workspaceId,
+    })
+  )
+);
+
+// The gifts island (GAP-026) and React load with the Things zone, so a person
+// page that never shows its Things pays nothing for them.
+const gifts = island(() =>
+  import("../../islands/person-gifts/mount.tsx").then(
+    ({ mountGiftsIsland }) => (_container, props) =>
+      mountGiftsIsland({
+        archived: props.archived,
+        personId: props.personId,
+        workspaceId: props.workspaceId,
+      }),
+  )
+);
+
+const files = vanilla(() =>
+  import("../../lib/person-files.ts").then(({ mountPersonFiles }) => (props) =>
+    mountPersonFiles({
+      archived: props.archived,
+      personId: props.personId,
+      workspaceId: props.workspaceId,
+    })
+  )
+);
+
+const auditSummary = vanilla(() =>
+  import("../../lib/audit-history.ts").then(
+    ({ mountPersonAuditSummary }) => (props) =>
+      mountPersonAuditSummary(
+        props.personId,
+        props.workspaceId,
+        props.preferences,
+      ),
+  )
+);
+
+type MountKindOf<Id extends PersonSectionId> = Extract<
+  typeof PERSON_SECTIONS[number],
+  { readonly id: Id }
+>["mount"];
+
+/**
+ * Each section's owner. The type ties every loader's kind to the kind its
+ * registry entry declares, so a section cannot silently change owner.
+ */
+export const SECTION_MOUNTS: {
+  readonly [Id in PersonSectionId]: SectionMountEntry<MountKindOf<Id>>;
+} = {
+  "identity-summary": hero,
+  "important-dates": importantDates,
+  "contact-methods": profileFacts,
+  addresses: profileFacts,
+  relationships,
+  "first-meeting": profileFacts,
+  work: profileFacts,
+  "food-preferences": profileFacts,
+  pets: profileFacts,
+  "life-events": lifeEvents,
+  notes: interactions,
+  conversations: communications,
+  calls: communications,
+  activities: interactions,
+  tasks,
+  reminders,
+  "stay-in-touch": reminders,
+  gifts,
+  debts: gifts,
+  documents: files,
+  photos: files,
+  "audit-summary": auditSummary,
+};
+
+/**
+ * The unified timeline card heads the Timeline zone. It is not one of the 22
+ * sections — it merges five of them — but it activates with that zone.
+ */
+export const TIMELINE_MOUNT: SectionMountEntry<"island"> = island(() =>
+  import("../../islands/person-timeline/mount.tsx").then((module) =>
+    module.mountPersonTimeline
+  )
+);
+
+/**
+ * The rail's own summary — its heading and each block's count chip — mounts
+ * before the rail's blocks, so each count they publish finds its reader.
+ */
+export const RAIL_MOUNT: SectionMountEntry<"island"> = island(() =>
+  import("../../islands/person-rail/mount.tsx").then((module) =>
+    module.mountPersonRail
+  )
+);
+
+/**
+ * The distinct owners of `sections`, in first-seen order: an owner shared by
+ * several sections appears once.
+ */
+export function sectionOwners(
+  sections: readonly PersonSectionEntry<PersonSectionId>[],
+): readonly SectionMountEntry<SectionMountKind>[] {
+  return [...new Set(sections.map((entry) => SECTION_MOUNTS[entry.id]))];
+}

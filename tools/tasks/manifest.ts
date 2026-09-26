@@ -205,6 +205,7 @@ export const API_CONFIGURATION_READS = [
   "apps/web/src/pages/internal/activity-report-shell.astro",
   "apps/web/src/pages/internal/person-audit-shell.astro",
   "apps/web/src/pages/internal/person-profile-shell.astro",
+  "apps/web/src/components/person/PersonSection.astro",
   "packages/backend/read-models/audit-history/adapters/postgres/audit_history_repository.ts",
   "packages/backend/modules/workspaces/adapters/postgres/workspace_invitations.ts",
   "packages/backend/modules/workspaces/adapters/postgres/settings_management.ts",
@@ -1590,10 +1591,13 @@ export const MODULES: readonly TaskModule[] = [
       runner: "vitest",
       directory: "web",
       tests: WEB_TESTS,
-      // The vanilla modules, the React islands with their kit (ADR 0006), and
-      // the vendored shadcn/ui components they render.
+      // The vanilla modules, the feature registries and shared parts they
+      // and the islands read (GAP-028), the React islands with their kit
+      // (ADR 0006), and the vendored shadcn/ui components they render.
       include: [
         "apps/web/src/lib/*.ts",
+        "apps/web/src/features/**/*.ts",
+        "apps/web/src/features/**/*.tsx",
         "apps/web/src/islands/**/*.ts",
         "apps/web/src/islands/**/*.tsx",
         "apps/web/src/components/ui/*.ts",
@@ -1717,7 +1721,7 @@ export const MODULES: readonly TaskModule[] = [
     id: "web-build",
     onDemand: {
       reason:
-        "GAP-026 and GAP-027 prove what `astro build` ships to the browser — public pages load no React, the palette and gifts islands' hydrated bytes, and the Tailwind utilities the variants compile to — so it reads apps/web/dist and can only run after a build. The `build` verb runs it right after `astro build`.",
+        "GAP-026, GAP-027, and GAP-028 prove what `astro build` ships to the browser — public pages load no React, the palette's and the person page's islands' hydrated bytes, and the Tailwind utilities the variants compile to — so it reads apps/web/dist and can only run after a build. The `build` verb runs it right after `astro build`.",
     },
     unit: {
       tests: ["tools/web_build_output_test.ts"],
