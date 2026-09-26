@@ -270,7 +270,7 @@ catalog never scoped or explicitly deferred, measured against the stated goal of
 | 10 | CalDAV syncs VTODO only, no VEVENT for dates/reminders        | `http_dav_client.ts:96`                                                                                                    |
 | 11 | Identity editing breadth; module visibility toggles           | repair plan "Decisions and existing deferrals"; `workspace_profile_modules` unused; all 22 sections render unconditionally |
 | 12 | Notifications centre, favorites, directory tag cloud/sort     | UXD-020 parked                                                                                                             |
-| 13 | AI assistance                                                 | zero application code; DG-08 gate open and unassigned                                                                      |
+| 13 | AI assistance                                                 | zero application code; DG-08 gate open and unassigned; removed from scope by the product owner on 2026-09-26               |
 | 14 | OAuth server, keyboard shortcuts, print styles, UI i18n       | schema-only / none                                                                                                         |
 
 ---
@@ -1432,6 +1432,9 @@ require a synchronized schema v8 and are called out explicitly.
 
 - [ ] **GAP-054 — AI assistance: DG-08 contract and first slice.** L. Depends:
       039, 015. Flow `ASSIST-001`.
+  - Removed 2026-09-26 by the product owner: AI assistance is not needed for
+    now. The ticket is not scheduled and its ID is retired rather than reused;
+    DG-08 is deferred until the owner asks for it again.
   - Scope, part 1 (decision): write
     `docs/architecture/decisions/0007-ai-assistance.md` covering product
     surface, data minimization, authorization (only data the member can already
