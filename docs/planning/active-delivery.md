@@ -511,6 +511,24 @@ Playwright test carrying its stable flow ID.
       (`[data-cadence-add]`) so it opens the editor, with a focused test and the
       `app-006b` flow unchanged.
 
+- [x] **REL-050 — Specs still leave a person workspace they just reached before
+      it settles.** Main CI run `36276307459` on `9aa51fc` (a documentation-only
+      commit) failed `app-004e.spec.ts:407` (`[WORKSPACE-003]`) on WebKit with
+      "WebKit encountered an internal error" from `page.goto`: the spec saved a
+      new person and navigated again once the arrival page's `load` event fired
+      (`settleNavigation`, REL-042), while that workspace was still loading
+      section code and reading, the state REL-046 found Linux WebKit mishandles.
+      REL-046 made only the two `createPerson` helpers wait for
+      `data-workspace-settled`. The same run's Chromium `app-006c` passed, as
+      REL-048 expects. Delivered 2026-09-26: a scripted search for a
+      `settleNavigation` that leaves a person workspace the spec just reached
+      found six sites; four (`app-003b`, `app-004e`, `app-006a`, `app-006b`) now
+      wait with `settlePersonWorkspace`, and the two in `app-004b` and
+      `app-004c` keep `settleNavigation` because they deliberately hold a
+      section read open across that navigation, so that workspace never settles
+      by design. No assertion changed and no retry, sleep, or timeout was added.
+      The four specs passed on Chromium and WebKit, twice each.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.

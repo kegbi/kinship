@@ -8,7 +8,10 @@ import axe from "axe-core";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { waitForIsland } from "./support/islands.ts";
-import { settleNavigation } from "./support/navigation.ts";
+import {
+  settleNavigation,
+  settlePersonWorkspace,
+} from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -264,7 +267,7 @@ test(
     await globalSearch.press("Enter");
     await expect(page).toHaveURL(new RegExp(`/app/people/${adaId}$`));
 
-    await settleNavigation(page);
+    await settlePersonWorkspace(page);
     await page.goto("/app/people");
     await waitForIsland(page, "global-people-search");
     const peopleNavigation = page.getByRole("link", {
