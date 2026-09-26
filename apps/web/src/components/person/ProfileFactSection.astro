@@ -1,8 +1,10 @@
 ---
 /**
  * A profile-fact rail block — contact methods, addresses, work, pets, food
- * preferences, or first meeting — that `lib/profile-facts.ts` owns and fills
- * from the fact's contract (GAP-029).
+ * preferences, or first meeting — as the shell draws it before its fact
+ * island (`features/person/facts/`, GAP-029) takes it over. The island keeps
+ * the heading, where it draws the add control in place of the hidden one
+ * here, and renders the rest from the fact's contract.
  */
 import PersonSection from "./PersonSection.astro";
 import type { PersonSectionEntry } from "../../features/person/sections.ts";

@@ -26,6 +26,7 @@ apps/
         person/
       features/
         person/
+          facts/
       islands/
         core/
       lib/
@@ -112,6 +113,13 @@ executable boundaries.
   `features/person/section-mounts.ts` names each section's one owner, an island
   or, until it migrates, its vanilla module; `apps/web/src/components/person/`
   holds the shell's per-section Astro partials.
+- `apps/web/src/features/<area>/` holds one product area's islands, hooks, and
+  pure helpers, each migrated surface in its own subfolder beside the area's
+  shared registry and summaries (GAP-029: `features/person/facts/` holds the
+  seven profile fact islands, the `FactEditor` they share, and their pure record
+  helpers). `apps/web/src/islands/` keeps the island kit and the islands not yet
+  filed under an area, and `apps/web/src/lib/` keeps cross-cutting non-UI
+  helpers.
 
 Tests may import private code only when testing that exact module. A test for
 one module may not use a private import from another module as a convenience.

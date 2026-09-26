@@ -1,12 +1,16 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment happy-dom
+import { describe, expect, it, vi } from "vitest";
 import {
   firstMeetingText,
   type HeroFacts,
   heroFactsFromProfile,
   heroFactsReducer,
+  RAIL_SUMMARY_EVENT,
   railCountText,
   railSummaryFromProfile,
   railSummaryReducer,
+  setRailCount,
+  summaryStore,
   tagPreview,
 } from "./profile-summary.ts";
 import type { PersonProfile } from "./section-mounts.ts";
@@ -142,5 +146,31 @@ describe("GAP-028 hero facts", () => {
     const names = Array.from({ length: 12 }, (_, index) => `Tag ${index}`);
     expect(tagPreview(names)).toEqual({ more: 4, names: names.slice(0, 8) });
     expect(tagPreview([])).toEqual({ more: 0, names: [] });
+  });
+});
+
+describe("GAP-029 summary store", () => {
+  it("folds every change published from the moment it exists, and stops", () => {
+    const store = summaryStore(RAIL_SUMMARY_EVENT, railSummaryReducer, {});
+    // Published before anything subscribed: kept, not lost.
+    setRailCount("pets", 3);
+    expect(store.get().pets?.count).toBe(3);
+    const heard = vi.fn();
+    const unsubscribe = store.subscribe(heard);
+    setRailCount("work", 1, "page");
+    expect(heard).toHaveBeenCalledOnce();
+    expect(store.get().work).toEqual({ count: 1, empty: false, scope: "page" });
+    // An event without a change changes nothing and tells no one.
+    const before = store.get();
+    document.dispatchEvent(new CustomEvent(RAIL_SUMMARY_EVENT));
+    expect(store.get()).toBe(before);
+    expect(heard).toHaveBeenCalledOnce();
+    unsubscribe();
+    setRailCount("work", 2);
+    expect(heard).toHaveBeenCalledOnce();
+    expect(store.get().work?.count).toBe(2);
+    store.stop();
+    setRailCount("work", 5);
+    expect(store.get().work?.count).toBe(2);
   });
 });

@@ -8,7 +8,9 @@
  * part through a portal into its `data-person-*-slot`, each a
  * `display: contents` wrapper so the hero's grid lays the parts out as
  * before. Quick capture's two buttons belong to `lib/interactions.ts` and the
- * tags editor to `lib/profile-facts.ts`; they sit beside the slots. Every
+ * tags editor, `[data-profile-fact-section="tags"]`, to its fact island
+ * (`features/person/facts/tags.tsx`), which keeps the tag slot inside it;
+ * they sit beside the slots. Every
  * control the island wires is disabled here, so a click before hydration
  * waits instead of landing on nothing (REL-039).
  */

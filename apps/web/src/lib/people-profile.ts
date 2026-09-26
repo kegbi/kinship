@@ -29,6 +29,7 @@ import {
   type SectionMountEntry,
   sectionOwners,
   type SectionProps,
+  TAGS_MOUNT,
   TIMELINE_MOUNT,
 } from "../features/person/section-mounts.ts";
 
@@ -71,7 +72,10 @@ interface ZoneRegistry {
    * count a section publishes finds its reader.
    */
   readonly mountSummaries: () => Promise<void>;
-  /** Mounts the rail's owners now; each owner mounts once per page. */
+  /**
+   * Mounts the rail's owners, and the tags editor beside the hero, now; each
+   * owner mounts once per page.
+   */
   readonly mountRail: () => Promise<void>;
   readonly settled: () => Promise<void>;
 }
@@ -240,9 +244,8 @@ function createZoneRegistry(
         mount(RAIL_MOUNT),
       ]).then(() => undefined),
     mountRail: () =>
-      Promise.all(sectionOwners(railSections()).map(mount)).then(() =>
-        undefined
-      ),
+      Promise.all([...sectionOwners(railSections()), TAGS_MOUNT].map(mount))
+        .then(() => undefined),
     settled: () => Promise.all(activations.values()).then(() => undefined),
   };
 }

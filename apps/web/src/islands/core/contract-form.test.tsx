@@ -94,6 +94,32 @@ describe("GAP-026 useContractForm", () => {
     expect(result.current.formState.errors.title?.message).toBe("Required.");
   });
 
+  it("lets a surface word an issue and keeps the default wording otherwise", async () => {
+    const limited = z.strictObject({
+      labels: z.array(z.string()).max(1),
+      title: z.string().max(3),
+      type: z.string(),
+    });
+    const { result } = renderHook(() => {
+      const form = useContractForm(limited, {
+        defaultValues: { labels: ["a", "b"], title: "long" },
+        issueMessage: (issue) =>
+          issue.code === "too_big"
+            ? `${issue.path?.join(".")} holds at most ${String(issue.maximum)}.`
+            : undefined,
+      });
+      void form.formState.errors;
+      return form;
+    });
+    await act(async () => {
+      await result.current.trigger();
+    });
+    const { errors } = result.current.formState;
+    expect(errors.title?.message).toBe("title holds at most 3.");
+    expect(errors.labels?.message).toBe("labels holds at most 1.");
+    expect(errors.type?.message).toBe("Required.");
+  });
+
   it("maps a problem's field errors onto the matching fields", () => {
     const { result } = renderHook(() => useSubscribedNoteForm());
     let mapped: readonly string[] = [];

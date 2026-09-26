@@ -8,6 +8,13 @@ import {
   sectionHidden,
   type SectionMount,
 } from "../../features/person/section-mounts.ts";
+import {
+  HERO_FACTS_EVENT,
+  heroFactsFromProfile,
+  heroFactsReducer,
+  summaryStore,
+} from "../../features/person/profile-summary.ts";
+import { formatInstant } from "../../lib/time-presentation.ts";
 import { mountIsland } from "../core/index.ts";
 import { type HeroSlots, PersonHero } from "./person-hero.tsx";
 
@@ -52,23 +59,39 @@ export const personHeroMount = (
   // Portals append, so the skeletons the shell drew in each slot go in the
   // same task as the first commit and nothing blank is painted.
   for (const target of Object.values(slots)) target?.replaceChildren();
-  return Promise.resolve(
-    mountIsland(
-      root,
-      PERSON_HERO_ISLAND,
-      <PersonHero
-        archived={props.archived}
-        dueInformation={profile.dueInformation}
-        identity={profile.person}
-        personId={props.personId}
-        preferences={props.preferences}
-        slots={slots}
-        tagsHidden={sectionHidden(props, "tags")}
-        workspaceId={props.workspaceId}
-        {...(navigate ? { navigate } : {})}
-      />,
+  const tagsHidden = sectionHidden(props, "tags");
+  // Listening starts before the first render, so nothing a section
+  // publishes from now on can be missed.
+  const facts = summaryStore(
+    HERO_FACTS_EVENT,
+    heroFactsReducer,
+    heroFactsFromProfile(
+      profile.person,
+      profile.dueInformation,
+      tagsHidden,
+      (instant) => formatInstant(instant, props.preferences),
     ),
   );
+  const unmount = mountIsland(
+    root,
+    PERSON_HERO_ISLAND,
+    <PersonHero
+      archived={props.archived}
+      dueInformation={profile.dueInformation}
+      facts={facts}
+      identity={profile.person}
+      personId={props.personId}
+      preferences={props.preferences}
+      slots={slots}
+      tagsHidden={tagsHidden}
+      workspaceId={props.workspaceId}
+      {...(navigate ? { navigate } : {})}
+    />,
+  );
+  return Promise.resolve(() => {
+    unmount();
+    facts.stop();
+  });
 };
 
 export const mountPersonHero: SectionMount = personHeroMount();

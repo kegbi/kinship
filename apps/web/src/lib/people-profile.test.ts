@@ -87,7 +87,7 @@ function markup(path = `/app/people/${personId}`): void {
           </div>
         </div>
         <div class="contents" data-person-vitals-slot><dl data-person-vital-stats></dl></div>
-        <div data-profile-fact-section="tags">
+        <div class="person-hero-tags">
           <span class="contents" data-person-tags-slot><ul id="person-profile-tags"></ul></span>
         </div>
         <div class="contents" data-person-lifecycle-slot>
@@ -269,9 +269,12 @@ function summaryRailMarkup(): void {
     `
       <header class="profile-facts-heading"><h2 id="profile-facts-heading">Profile facts</h2></header>
       <section data-profile-section="contact-methods" data-profile-fact-section="contact-methods" data-section-state="loading">
-        <span data-rail-count-slot><span data-profile-rail-count hidden></span></span>
+        <header class="profile-section-heading">
+          <h3>Contact methods</h3>
+          <span data-rail-count-slot><span data-profile-rail-count hidden></span></span>
+          <button data-profile-fact-add data-profile-fact-add-icon aria-label="Add contact methods"><span aria-hidden="true">+</span></button>
+        </header>
         <p data-profile-fact-state></p><ul data-profile-fact-list></ul>
-        <button data-profile-fact-add data-profile-fact-add-icon aria-label="Add contact methods"><span aria-hidden="true">+</span></button>
         <form data-profile-fact-form></form>
       </section>
       ${
@@ -1168,6 +1171,12 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("PEOPLE-006 hides the visible tag surface for a disabled module", async () => {
     markup();
+    // The tags editor (GAP-029) mounts over its block and, with the module
+    // off, hides it without reading any tags.
+    document.querySelector(".person-hero-tags")?.setAttribute(
+      "data-profile-fact-section",
+      "tags",
+    );
     vi.stubGlobal(
       "fetch",
       vi.fn()

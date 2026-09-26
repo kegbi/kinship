@@ -12,7 +12,8 @@
  * facts) sit beside the slots, never inside them.
  *
  * The facts behind the vitals and tags arrive from the sections that own them
- * as document events (`features/person/profile-summary.ts`). Every lifecycle
+ * as document events (`features/person/profile-summary.ts`), folded by a
+ * store the mount starts before the first render. Every lifecycle
  * transition goes through one pure reducer (`hero-state.ts`); the island
  * announces each change the rest of the page reacts to
  * (`person-lifecycle-changed`, `person-revision-changed`) and asks the page's
@@ -24,10 +25,10 @@
 
 import {
   type SubmitEvent,
-  useEffect,
   useLayoutEffect,
   useReducer,
   useRef,
+  useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -42,17 +43,14 @@ import {
 } from "../../../../../packages/contracts/generated/auth-client.ts";
 import { badgeVariants, breadcrumbVariants } from "@/components/ui/variants.ts";
 import { displayPersonName } from "../../lib/person-name.ts";
-import { formatInstant } from "../../lib/time-presentation.ts";
 import { showToast } from "../../lib/toasts.ts";
 import {
   markFormSaved,
   saveWithLockedForm,
 } from "../../lib/unsaved-changes.ts";
-import {
-  HERO_FACTS_EVENT,
-  type HeroFactChange,
-  heroFactsFromProfile,
-  heroFactsReducer,
+import type {
+  HeroFacts,
+  SummaryStore,
 } from "../../features/person/profile-summary.ts";
 import { SECTION_REQUEST_EVENT } from "../../features/person/sections.ts";
 import { settle, useContractForm, useDocumentEvent } from "../core/index.ts";
@@ -97,6 +95,11 @@ export interface PersonHeroProps {
   readonly tagsHidden: boolean;
   readonly preferences?: ResolvedMemberPreferences | undefined;
   readonly slots: HeroSlots;
+  /**
+   * The vitals and tag preview: the profile's, with every change the
+   * sections published since the mount started listening.
+   */
+  readonly facts: SummaryStore<HeroFacts>;
   /** Where a deleted person's page goes next. */
   readonly navigate?: (path: string) => void;
 }
@@ -117,17 +120,7 @@ export function PersonHero(props: PersonHeroProps) {
     heroReducer,
     initialHeroState(props.identity, props.archived),
   );
-  const [facts, publish] = useReducer(
-    heroFactsReducer,
-    undefined,
-    () =>
-      heroFactsFromProfile(
-        props.identity,
-        props.dueInformation,
-        props.tagsHidden,
-        (instant) => formatInstant(instant, preferences),
-      ),
-  );
+  const facts = useSyncExternalStore(props.facts.subscribe, props.facts.get);
   const editor = useContractForm(identityForm, {
     defaultValues: identityValues(props.identity),
   });
@@ -160,13 +153,11 @@ export function PersonHero(props: PersonHeroProps) {
     else if (target === "edit-field") editor.setFocus("givenName");
   }, [deletion, editor, state]);
 
-  useEffect(() => {
+  // The title changes in the same commit as the heading, never a task later.
+  useLayoutEffect(() => {
     document.title = `${name} — Kinship`;
   }, [name]);
 
-  useDocumentEvent<CustomEvent<HeroFactChange>>(HERO_FACTS_EVENT, (event) => {
-    if (event.detail) publish(event.detail);
-  });
   useDocumentEvent<CustomEvent<{ readonly personUpdatedAt?: unknown }>>(
     "person-revision-changed",
     (event) => {

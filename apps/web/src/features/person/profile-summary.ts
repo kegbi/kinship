@@ -5,9 +5,10 @@
  * tag preview; the rail island owns each rail section's count and collapsed
  * empty state. The facts behind them are loaded by the sections that own
  * them — important dates, profile facts, relationships, reminders, and
- * communications — which stay vanilla until GAP-029 and GAP-031. Those
- * modules used to write the hero's and rail's DOM directly; now they publish
- * the fact here, one document event per change, and the owning island folds
+ * communications; the profile facts are islands (GAP-029) and the rest stay
+ * vanilla until GAP-031. Those modules used to write the hero's and rail's
+ * DOM directly; now every owner publishes the fact here, one document event
+ * per change, and the owning island folds
  * it into its state with the pure reducers below. The islands mount before
  * any section loads (`lib/people-profile.ts`), so no change is sent before
  * its reader listens.
@@ -19,6 +20,50 @@ import type {
   PersonProfileSummary,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
 import type { RailSectionId } from "./sections.ts";
+
+// --- Reading what the sections publish ------------------------------------
+
+/**
+ * The state one island folds from one summary event, readable with React's
+ * `useSyncExternalStore`.
+ *
+ * It listens from the moment it is created — before the island's first
+ * render — so a change a section publishes in the same task as the mount, or
+ * while React has yet to run the island's effects, is folded in and never
+ * lost. And because React reads it as an external store, a change published
+ * outside React renders by the next microtask rather than whenever a
+ * scheduler task gets to it.
+ */
+export interface SummaryStore<State> {
+  readonly get: () => State;
+  readonly subscribe: (listener: () => void) => () => void;
+  /** Stops listening; the state stays as it was. */
+  readonly stop: () => void;
+}
+
+export function summaryStore<State, Change>(
+  event: string,
+  reducer: (state: State, change: Change) => State,
+  initial: State,
+): SummaryStore<State> {
+  let state = initial;
+  const listeners = new Set<() => void>();
+  const onChange = (published: Event) => {
+    const change = (published as CustomEvent<Change | undefined>).detail;
+    if (change === undefined || change === null) return;
+    state = reducer(state, change);
+    for (const listener of listeners) listener();
+  };
+  document.addEventListener(event, onChange);
+  return {
+    get: () => state,
+    stop: () => document.removeEventListener(event, onChange),
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
 
 // --- The rail --------------------------------------------------------------
 

@@ -4,7 +4,12 @@
  * reader.
  */
 
-import { railSummaryFromProfile } from "../../features/person/profile-summary.ts";
+import {
+  RAIL_SUMMARY_EVENT,
+  railSummaryFromProfile,
+  railSummaryReducer,
+  summaryStore,
+} from "../../features/person/profile-summary.ts";
 import type { SectionMount } from "../../features/person/section-mounts.ts";
 import { RAIL_SECTION_ORDER } from "../../features/person/sections.ts";
 import { mountIsland } from "../core/index.ts";
@@ -34,14 +39,20 @@ export const mountPersonRail: SectionMount = (container, props) => {
   // A portal appends, so the chips the shell drew go in the same task as the
   // first commit and nothing blank is painted.
   for (const block of blocks) block.countSlot.replaceChildren();
-  return Promise.resolve(
-    mountIsland(
-      heading,
-      PERSON_RAIL_ISLAND,
-      <PersonRail
-        blocks={blocks}
-        initial={railSummaryFromProfile(props.initial?.summary)}
-      />,
-    ),
+  // Listening starts before the first render, so nothing a block publishes
+  // from now on can be missed.
+  const summary = summaryStore(
+    RAIL_SUMMARY_EVENT,
+    railSummaryReducer,
+    railSummaryFromProfile(props.initial?.summary),
   );
+  const unmount = mountIsland(
+    heading,
+    PERSON_RAIL_ISLAND,
+    <PersonRail blocks={blocks} summary={summary} />,
+  );
+  return Promise.resolve(() => {
+    unmount();
+    summary.stop();
+  });
 };

@@ -320,6 +320,31 @@ describe("PEOPLE-001 person hero island", () => {
     expect(text("#person-profile-due-state")).toBe("Not set");
   });
 
+  it("GAP-029 renders a vital published in the mount's own task by the next microtask", async () => {
+    markup();
+    const root = document.querySelector<HTMLElement>("#person-profile-ready")!;
+    const environment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    environment.IS_REACT_ACT_ENVIRONMENT = false;
+    try {
+      const mounting = mountPersonHero(root, {
+        archived: false,
+        initial: profile(),
+        personId,
+        preferences: utc,
+        workspaceId,
+      });
+      // A section publishing before the hero's effects have run, and with no
+      // act to flush React: only microtasks pass before the assertion.
+      setVitalStat("work", "Engineer");
+      mounted.push(await mounting);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(text('[data-person-vital-value="work"]')).toBe("Engineer");
+    } finally {
+      environment.IS_REACT_ACT_ENVIRONMENT = true;
+    }
+  });
+
   it("UXD-002B shows each vital a section publishes, preferring a first-meeting date to its place", async () => {
     markup();
     await mount();
@@ -472,6 +497,56 @@ describe("PEOPLE-001 person hero island", () => {
 });
 
 describe("PEOPLE-004 person lifecycle in the hero", () => {
+  it("APR-008 renames the page title in the same commit as the heading", async () => {
+    markup();
+    await mount();
+    const user = userEvent.setup();
+    await openMenu();
+    await user.click(screen.getByRole("button", { name: "Edit person" }));
+    const form = screen.getByRole("form", { name: "Edit person" });
+    const family = within(form).getByRole("textbox", { name: "Family name" });
+    await user.clear(family);
+    await user.type(family, "Byron");
+    vi.mocked(fetch).mockResolvedValueOnce(response({
+      person: {
+        familyName: "Byron",
+        givenName: "Ada",
+        id: personId,
+        isPartial: false,
+        lifecycle: "active",
+        updatedAt: "2026-08-15T09:00:00.000000Z",
+      },
+      status: "updated",
+    }));
+    // The answer lands outside React's act, as in the browser, and the
+    // scheduler yields after every task, as it does on a busy page: whatever
+    // the heading shows when it changes, the title must already say too.
+    const environment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    let clock = performance.now();
+    const time = vi.spyOn(performance, "now").mockImplementation(() =>
+      clock += 50
+    );
+    const titles: string[] = [];
+    const observer = new MutationObserver(() => {
+      if (heading().textContent === "Ada Byron") titles.push(document.title);
+    });
+    observer.observe(heading(), {
+      characterData: true,
+      childList: true,
+      subtree: true,
+    });
+    environment.IS_REACT_ACT_ENVIRONMENT = false;
+    try {
+      (form as HTMLFormElement).requestSubmit();
+      await vi.waitFor(() => expect(titles.length).toBeGreaterThan(0));
+    } finally {
+      environment.IS_REACT_ACT_ENVIRONMENT = true;
+      observer.disconnect();
+      time.mockRestore();
+    }
+    expect(titles[0]).toBe("Ada Byron — Kinship");
+  });
+
   it("edits the identity, announces the revision, and focuses the renamed heading", async () => {
     const root = markup();
     await mount();
