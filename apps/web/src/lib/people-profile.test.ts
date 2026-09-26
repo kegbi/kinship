@@ -2290,6 +2290,59 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(title.value).toBe("Keep this draft");
   });
 
+  it("REL-045 never moves a deep-linked section the reader can already see once every zone settles", async () => {
+    markup(`/app/people/${personId}?section=documents`);
+    const documents = document.querySelector<HTMLElement>(
+      "#profile-section-documents",
+    )!;
+    const scroll = vi.fn();
+    documents.scrollIntoView = scroll;
+    // The reader sees the section, and may be pressing something inside it.
+    documents.getBoundingClientRect = () => new DOMRect(0, 120, 600, 300);
+    stubReadyProfile();
+
+    await mountPeopleProfile();
+
+    // The page placed the section once, when it first showed, without an
+    // animation still running when the reader reaches for its controls; the
+    // last zone settling must not scroll the page under a pending click.
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll).toHaveBeenCalledWith({
+      behavior: "instant",
+      block: "start",
+    });
+    expect(document.activeElement).toBe(documents);
+
+    // A section the reader picks still glides into place.
+    const photos = document.querySelector<HTMLElement>(
+      "#profile-section-photos",
+    )!;
+    const glide = vi.fn();
+    photos.scrollIntoView = glide;
+    document.querySelector<HTMLAnchorElement>('[data-section-link="photos"]')
+      ?.click();
+    expect(glide).toHaveBeenCalledWith({ block: "start" });
+  });
+
+  it("REL-045 brings back a deep-linked section that drifted out of view, without animating", async () => {
+    markup(`/app/people/${personId}?section=documents`);
+    const documents = document.querySelector<HTMLElement>(
+      "#profile-section-documents",
+    )!;
+    const scroll = vi.fn();
+    documents.scrollIntoView = scroll;
+    stubReadyProfile();
+    documents.getBoundingClientRect = () =>
+      new DOMRect(0, innerHeight + 400, 600, 300);
+
+    await mountPeopleProfile();
+
+    expect(scroll).toHaveBeenCalledTimes(2);
+    for (const call of scroll.mock.calls) {
+      expect(call).toEqual([{ behavior: "instant", block: "start" }]);
+    }
+  });
+
   it("[APP-003C] reconciles queryless and invalid section history", async () => {
     markup();
     vi.stubGlobal(
