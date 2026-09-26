@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountImportantDates } from "../../lib/important-dates.ts";
-import { mountProfileFacts } from "../../lib/profile-facts.ts";
 import { mountRelationships } from "../../lib/relationships.ts";
 import { mountPersonReminders } from "../../lib/reminders.ts";
 import { mountPersonInteractions } from "../../lib/interactions.ts";
@@ -14,6 +13,13 @@ import { mountPersonTimeline } from "../../islands/person-timeline/mount.tsx";
 import { mountPersonLifeEvents } from "../../islands/person-life-events/mount.tsx";
 import { mountPersonRail } from "../../islands/person-rail/mount.tsx";
 import { mountPersonHero } from "../../islands/person-hero/mount.tsx";
+import { mountAddresses } from "./facts/addresses.tsx";
+import { mountContactMethods } from "./facts/contact-methods.tsx";
+import { mountFirstMeeting } from "./facts/first-meeting.tsx";
+import { mountFoodPreferences } from "./facts/food.tsx";
+import { mountPets } from "./facts/pets.tsx";
+import { mountTags } from "./facts/tags.tsx";
+import { mountWork } from "./facts/work.tsx";
 import {
   type PersonProfile,
   RAIL_MOUNT,
@@ -21,15 +27,13 @@ import {
   sectionHidden,
   sectionOwners,
   type SectionProps,
+  TAGS_MOUNT,
   TIMELINE_MOUNT,
 } from "./section-mounts.ts";
 import { PERSON_SECTIONS, railSections, zoneSections } from "./sections.ts";
 
 vi.mock("../../lib/important-dates.ts", () => ({
   mountImportantDates: vi.fn(async () => {}),
-}));
-vi.mock("../../lib/profile-facts.ts", () => ({
-  mountProfileFacts: vi.fn(async () => {}),
 }));
 vi.mock("../../lib/relationships.ts", () => ({
   mountRelationships: vi.fn(async () => {}),
@@ -127,6 +131,11 @@ describe("GAP-028 section owners", () => {
       SECTION_MOUNTS["contact-methods"],
       SECTION_MOUNTS.relationships,
       SECTION_MOUNTS["important-dates"],
+      SECTION_MOUNTS.addresses,
+      SECTION_MOUNTS.work,
+      SECTION_MOUNTS.pets,
+      SECTION_MOUNTS["food-preferences"],
+      SECTION_MOUNTS["first-meeting"],
       SECTION_MOUNTS["stay-in-touch"],
     ]);
     expect(sectionOwners(zoneSections("timeline"))).toEqual([
@@ -153,6 +162,40 @@ describe("GAP-028 section owners", () => {
     );
   });
 
+  it("GAP-029 mounts each profile fact section, and the tags editor, as its own island", async () => {
+    const facts = {
+      addresses: mountAddresses,
+      "contact-methods": mountContactMethods,
+      "first-meeting": mountFirstMeeting,
+      "food-preferences": mountFoodPreferences,
+      pets: mountPets,
+      work: mountWork,
+    } as const;
+    for (const [id, mount] of Object.entries(facts)) {
+      const entry = SECTION_MOUNTS[id as keyof typeof facts];
+      expect(entry.kind).toBe("island");
+      expect(await entry.load()).toBe(mount);
+    }
+    expect(
+      new Set(
+        Object.keys(facts).map((id) =>
+          SECTION_MOUNTS[id as keyof typeof facts]
+        ),
+      ).size,
+    ).toBe(6);
+    expect(TAGS_MOUNT.kind).toBe("island");
+    expect(await TAGS_MOUNT.load()).toBe(mountTags);
+  });
+
+  it("GAP-029 resolves a fact section with nothing to own at once", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    document.body.innerHTML = "";
+    await mount("pets", { archived: false, personId, workspaceId });
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it("reads a hidden module from the profile the page loaded", () => {
     expect(sectionHidden(props(["notes"]), "notes")).toBe(true);
     expect(sectionHidden(props(["notes"]), "calls")).toBe(false);
@@ -172,15 +215,6 @@ describe("GAP-028 section owners", () => {
       personId,
       workspaceId,
       true,
-    );
-    await mount("work", hidden);
-    expect(mountProfileFacts).toHaveBeenCalledWith(
-      personId,
-      workspaceId,
-      true,
-      "2026-08-15T08:00:00.000000Z",
-      [],
-      [],
     );
     await mount("relationships", hidden);
     expect(mountRelationships).toHaveBeenCalledWith(
@@ -238,17 +272,5 @@ describe("GAP-028 section owners", () => {
       personId,
       workspaceId,
     });
-  });
-
-  it("falls back to an empty revision before the profile has loaded", async () => {
-    await mount("pets", { archived: false, personId, workspaceId });
-    expect(mountProfileFacts).toHaveBeenCalledWith(
-      personId,
-      workspaceId,
-      false,
-      "",
-      undefined,
-      undefined,
-    );
   });
 });

@@ -1,6 +1,6 @@
 /**
  * Label and status-line helpers the vanilla rail blocks share until they
- * migrate (GAP-029, GAP-031). The rail's counts and the hero's vitals are the
+ * migrate (GAP-031). The rail's counts and the hero's vitals are the
  * islands' now (`features/person/profile-summary.ts`).
  */
 

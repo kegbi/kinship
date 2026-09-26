@@ -8,9 +8,9 @@
  * preload lists Vite writes for them — and fails when a public page can reach
  * a chunk that carries React. Protected pages load React for one island in
  * their layout, the people palette; the person page adds its own islands —
- * the hero, the rail summary, the timeline, life events, and gifts — each
- * loaded on demand. Every island's bytes are measured, so the evidence line
- * records real numbers.
+ * the hero, the rail summary, the timeline, life events, gifts, and the seven
+ * profile fact sections — each loaded on demand. Every island's bytes are
+ * measured, so the evidence line records real numbers.
  *
  * It needs `apps/web/dist`, so it runs from the `build` verb right after
  * `astro build` rather than in the aggregate unit gate.
@@ -237,14 +237,22 @@ Deno.test("[GAP-027] a protected page loads React only for the people palette", 
 });
 
 /**
- * The person shell's islands (GAP-026, GAP-028), each loaded on demand by the
- * shell's script rather than shipped as a page script: the hero and the rail
- * summary as soon as the person resolves, the timeline and life events with
- * the Timeline zone, and gifts and debts with the Things zone.
+ * The person shell's islands (GAP-026, GAP-028, GAP-029), each loaded on
+ * demand by the shell's script rather than shipped as a page script: the hero
+ * and the rail summary as soon as the person resolves, the profile fact
+ * sections and the tags editor with the rail, the timeline and life events
+ * with the Timeline zone, and gifts and debts with the Things zone.
  */
 const PERSON_ISLANDS = [
   "person-hero",
   "person-rail",
+  "person-fact-contact-methods",
+  "person-fact-addresses",
+  "person-fact-work",
+  "person-fact-pets",
+  "person-fact-food-preferences",
+  "person-fact-first-meeting",
+  "person-fact-tags",
   "person-timeline",
   "person-life-events",
   "person-gifts",

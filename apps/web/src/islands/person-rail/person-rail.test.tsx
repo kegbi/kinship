@@ -127,7 +127,9 @@ describe("GAP-028 profile facts rail island", () => {
       setRailCount("important-dates", 4);
       setRailEmpty("important-dates", false);
       mounted.push(await mounting);
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      // Only microtasks: no timer, so the order cannot depend on load.
+      await Promise.resolve();
+      await Promise.resolve();
     } finally {
       environment.IS_REACT_ACT_ENVIRONMENT = true;
     }
@@ -159,6 +161,22 @@ describe("GAP-028 profile facts rail island", () => {
       document.dispatchEvent(new CustomEvent("person-rail-summary-changed"));
     });
     expect(chip("important-dates")[0]?.textContent).toBe("4");
+  });
+
+  it("renders a publication sent outside React by the next microtask, never by a later task", async () => {
+    markup();
+    mounted.push(await mountPersonRail(document.body, props()));
+    const environment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    environment.IS_REACT_ACT_ENVIRONMENT = false;
+    try {
+      // A section publishing from a network callback, outside any act.
+      setRailCount("pets", 3);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(chip("pets")[0]?.textContent).toBe("3");
+    } finally {
+      environment.IS_REACT_ACT_ENVIRONMENT = true;
+    }
   });
 
   it("owns only the blocks the shell drew, and nothing without a heading", async () => {

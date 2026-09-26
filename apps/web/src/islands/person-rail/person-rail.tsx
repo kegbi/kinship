@@ -2,25 +2,23 @@
  * The profile facts rail's summary (GAP-028): the column heading, and each
  * rail block's count chip and collapsed empty state.
  *
- * The rail's nine blocks keep their vanilla owners until GAP-029 and GAP-031
- * migrate them; each block's body is theirs. What the rail itself shows about
+ * Each of the rail's nine blocks has its own owner — the profile fact islands
+ * (GAP-029) and the vanilla modules GAP-031 migrates — and each block's body
+ * is theirs. What the rail itself shows about
  * them is this island's: it starts from the counts the profile summary
  * already knows (UXD-002B), then folds in each count a block publishes as it
  * loads (`features/person/profile-summary.ts`). A chip renders through a
  * portal into the slot the block's heading reserves for it.
  */
 
-import { useLayoutEffect, useReducer } from "react";
+import { useLayoutEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
-  RAIL_SUMMARY_EVENT,
   railCountText,
   type RailSummary,
-  type RailSummaryChange,
-  railSummaryReducer,
+  type SummaryStore,
 } from "../../features/person/profile-summary.ts";
 import type { RailSectionId } from "../../features/person/sections.ts";
-import { useDocumentEvent } from "../core/index.ts";
 
 /** A rail block and the slot in its heading the count chip renders into. */
 export interface RailBlock {
@@ -31,18 +29,17 @@ export interface RailBlock {
 
 export interface PersonRailProps {
   readonly blocks: readonly RailBlock[];
-  /** The counts the profile answer already carried. */
-  readonly initial: RailSummary;
+  /**
+   * The counts the profile answer carried, with every change the blocks
+   * published since the mount started listening.
+   */
+  readonly summary: SummaryStore<RailSummary>;
 }
 
 export function PersonRail(props: PersonRailProps) {
-  const [summary, dispatch] = useReducer(railSummaryReducer, props.initial);
-
-  useDocumentEvent<CustomEvent<RailSummaryChange>>(
-    RAIL_SUMMARY_EVENT,
-    (event) => {
-      if (event.detail) dispatch(event.detail);
-    },
+  const summary = useSyncExternalStore(
+    props.summary.subscribe,
+    props.summary.get,
   );
 
   useLayoutEffect(() => {

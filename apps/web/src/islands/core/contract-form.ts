@@ -21,6 +21,9 @@ import {
   type UseFormReturn,
 } from "react-hook-form";
 import type { z } from "zod";
+
+/** One issue the contract schema raised, before it is worded. */
+export type ContractIssue = z.core.$ZodRawIssue;
 import type { ProblemDetails } from "../../../../../packages/contracts/generated/auth-client.ts";
 
 /**
@@ -48,7 +51,14 @@ function missingIsRequired(
 export type ContractFormOptions<
   Input extends FieldValues,
   Output extends FieldValues,
-> = Omit<UseFormProps<Input, unknown, Output>, "resolver">;
+> = Omit<UseFormProps<Input, unknown, Output>, "resolver"> & {
+  /**
+   * Words an issue for the surface's readers, such as naming a limit in the
+   * surface's own terms. The contract still decides what is invalid; an
+   * issue this answers `undefined` for keeps the default wording.
+   */
+  readonly issueMessage?: (issue: ContractIssue) => string | undefined;
+};
 
 export type ContractForm<
   Input extends FieldValues,
@@ -75,10 +85,11 @@ export function useContractForm<
   schema: z.ZodType<Output, Input>,
   options: ContractFormOptions<Input, Output> = {},
 ): ContractForm<Input, Output> {
+  const { issueMessage, ...formOptions } = options;
   const resolver: Resolver<Input, unknown, Output> = zodResolver(schema, {
-    error: missingIsRequired,
+    error: (issue) => issueMessage?.(issue) ?? missingIsRequired(issue),
   });
-  const form = useForm<Input, unknown, Output>({ ...options, resolver });
+  const form = useForm<Input, unknown, Output>({ ...formOptions, resolver });
   const { getValues, setError } = form;
   const applyProblem = useCallback((problem: ProblemDetails) => {
     const fields = new Set(Object.keys(getValues()));

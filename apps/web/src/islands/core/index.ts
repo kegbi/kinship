@@ -24,6 +24,7 @@ export {
 export {
   type ContractForm,
   type ContractFormOptions,
+  type ContractIssue,
   problemFieldName,
   useContractForm,
 } from "./contract-form.ts";

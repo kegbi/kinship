@@ -107,18 +107,32 @@ const importantDates = vanilla(() =>
   )
 );
 
-const profileFacts = vanilla(() =>
-  import("../../lib/profile-facts.ts").then(
-    ({ mountProfileFacts }) => (props) =>
-      mountProfileFacts(
-        props.personId,
-        props.workspaceId,
-        props.archived,
-        props.initial?.person.updatedAt ?? "",
-        props.initial?.summary?.primaryContactMethods,
-        props.initial?.summary?.sectionCounts,
-      ),
+// Each profile fact section is its own island (GAP-029), loaded with the
+// rail; `features/person/facts/` holds them and the editor they share.
+const contactMethods = island(() =>
+  import("./facts/contact-methods.tsx").then((module) =>
+    module.mountContactMethods
   )
+);
+
+const addresses = island(() =>
+  import("./facts/addresses.tsx").then((module) => module.mountAddresses)
+);
+
+const firstMeeting = island(() =>
+  import("./facts/first-meeting.tsx").then((module) => module.mountFirstMeeting)
+);
+
+const work = island(() =>
+  import("./facts/work.tsx").then((module) => module.mountWork)
+);
+
+const foodPreferences = island(() =>
+  import("./facts/food.tsx").then((module) => module.mountFoodPreferences)
+);
+
+const pets = island(() =>
+  import("./facts/pets.tsx").then((module) => module.mountPets)
 );
 
 const relationships = vanilla(() =>
@@ -242,13 +256,13 @@ export const SECTION_MOUNTS: {
 } = {
   "identity-summary": hero,
   "important-dates": importantDates,
-  "contact-methods": profileFacts,
-  addresses: profileFacts,
+  "contact-methods": contactMethods,
+  addresses,
   relationships,
-  "first-meeting": profileFacts,
-  work: profileFacts,
-  "food-preferences": profileFacts,
-  pets: profileFacts,
+  "first-meeting": firstMeeting,
+  work,
+  "food-preferences": foodPreferences,
+  pets,
   "life-events": lifeEvents,
   notes: interactions,
   conversations: communications,
@@ -272,6 +286,15 @@ export const TIMELINE_MOUNT: SectionMountEntry<"island"> = island(() =>
   import("../../islands/person-timeline/mount.tsx").then((module) =>
     module.mountPersonTimeline
   )
+);
+
+/**
+ * The tags editor beside the hero's tag preview (GAP-029). Tags are a profile
+ * module without a section of their own, so the editor is not one of the 22
+ * sections; it mounts with the rail's blocks, as the vanilla module did.
+ */
+export const TAGS_MOUNT: SectionMountEntry<"island"> = island(() =>
+  import("./facts/tags.tsx").then((module) => module.mountTags)
 );
 
 /**

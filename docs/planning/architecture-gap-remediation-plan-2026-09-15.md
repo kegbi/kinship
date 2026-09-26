@@ -1145,7 +1145,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     lifecycle, dates, facts, and timeline specs; gates fmt:check, lint, check,
     check:architecture (14), contracts:check.
 
-- [ ] **GAP-029 — Profile facts as contract-driven forms.** L. Depends: 028.
+- [x] **GAP-029 — Profile facts as contract-driven forms.** L. Depends: 028.
   - Scope: replace `lib/profile-facts.ts` (1,808 lines) and its 3,370-line suite
     with seven fact islands (contact methods, addresses, work, pets, food, first
     meeting, tags) over one shared `FactEditor` built on `useContractForm` and
@@ -1154,6 +1154,28 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     `features/<area>/` folder convention the remaining migrations follow.
   - Verify: `PEOPLE-006` E2E (including the APR-001 and APR-003 flows), fact
     island tests, and coverage unchanged or higher.
+  - Delivered 2026-09-26: `apps/web/src/features/person/facts/` holds one
+    `FactEditor` (list, add, edit, remove, a lifetime form element that keeps
+    the rail editors, unsaved-changes guard, and mobile sheet working,
+    `useContractForm` over the contract create and update schemas with
+    per-section wording through a new `issueMessage` option, server problems
+    onto fields, and every read through one latest-request slot) and seven
+    section islands (contact methods, addresses, work, pets, food preferences,
+    first meeting, tags; 503-1,391 B entries over the shared React runtime),
+    registered as island entries in the section registry with a new
+    `TAGS_MOUNT`; `lib/profile-facts.ts` (1,801 lines) and its 3,379-line suite
+    are deleted and every case is ported by role; the `features/<area>/`
+    convention is recorded in `repository-layout.md`; review fixed two timing
+    defects with deterministic tests: the hero and rail now read a summary store
+    created before mount through `useSyncExternalStore`, so a publication
+    outside React renders by the next microtask, the page title changes in the
+    heading's commit, and a phone save closes its sheet before the status line
+    takes focus; screenshots at 390, 768, and 1440 are pixel-identical; 43 files
+    changed (+6787/-5254) plus the review round; web tests 889, web coverage
+    94.40/86.80/93.12/96.14, every Deno set unchanged except the REL-038 file;
+    build green, Chromium E2E 57 passed, WebKit `app-004c` 24 of 24 over three
+    repeats, Firefox `app-004c` 8; gates fmt:check, lint, check,
+    check:architecture (14), contracts:check.
 
 - [ ] **GAP-030 — Island test support.** M. Depends: 026.
   - Scope: `apps/web/src/testing/`: `render.tsx` (Testing Library with the
