@@ -1953,6 +1953,13 @@ export async function listRepositoryTestFiles(
 }
 
 /**
+ * The web suites' shared scaffolding (GAP-030): renderers, the `fetch` stub,
+ * fixtures, and the axe helper. Like a `.test-helper.ts`, it is neither
+ * production nor a suite, so no coverage set measures it.
+ */
+export const WEB_TEST_SUPPORT = "apps/web/src/testing";
+
+/**
  * Walks the repository for every production TypeScript module, the React
  * islands' `.tsx` included.
  */
@@ -1964,7 +1971,7 @@ export async function listProductionFiles(root: URL): Promise<string[]> {
       if (ignored.has(entry.name)) continue;
       const path = `${relative}/${entry.name}`;
       if (entry.isDirectory) {
-        await walk(path);
+        if (path !== WEB_TEST_SUPPORT) await walk(path);
         continue;
       }
       if (!entry.name.endsWith(".ts") && !entry.name.endsWith(".tsx")) {

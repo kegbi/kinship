@@ -1,5 +1,16 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { PersonProfileSectionId } from "../../../../../packages/contracts/generated/auth-client.ts";
+import { stubApi } from "../../testing/api.ts";
+import {
+  ids,
+  personProfile,
+  preferences as memberPreferences,
+  profileSummary,
+  revision,
+  sectionProps,
+} from "../../testing/fixtures.ts";
+import { drawShell } from "../../testing/render.tsx";
 import { mountImportantDates } from "../../lib/important-dates.ts";
 import { mountRelationships } from "../../lib/relationships.ts";
 import { mountPersonReminders } from "../../lib/reminders.ts";
@@ -21,7 +32,6 @@ import { mountPets } from "./facts/pets.tsx";
 import { mountTags } from "./facts/tags.tsx";
 import { mountWork } from "./facts/work.tsx";
 import {
-  type PersonProfile,
   RAIL_MOUNT,
   SECTION_MOUNTS,
   sectionHidden,
@@ -60,56 +70,27 @@ vi.mock("../../islands/person-gifts/mount.tsx", () => ({
   mountGiftsIsland: vi.fn(() => Promise.resolve(() => {})),
 }));
 
-const personId = "00000000-0000-4000-8000-000000000100";
-const workspaceId = "00000000-0000-4000-8000-000000000300";
-const preferences = {
-  contactNameOrder: "given_family_nickname",
-  contactSortOrder: "given_name_asc",
-  effectiveTimezone: "UTC",
-  fluidLayout: false,
-  locale: "en",
-  measurementSystem: "metric",
-  temperatureScale: "celsius",
-} as unknown as NonNullable<SectionProps["preferences"]>;
+const { person: personId, workspace: workspaceId } = ids;
+const preferences = memberPreferences();
 
-function profile(hidden: readonly string[] = []): PersonProfile {
-  return {
-    dueInformation: { detail: "", openTaskCount: 0, status: "ready" },
-    person: {
-      givenName: "Ada",
-      id: personId,
-      isDeceased: false,
-      isPartial: false,
-      isSelf: false,
-      isStarred: false,
-      profileSections: hidden.map((id) => ({ id, status: "hidden" })),
-      tagCount: 0,
-      tags: [],
-      updatedAt: "2026-08-15T08:00:00.000000Z",
-    },
-    status: "ready",
-    summary: {
-      primaryContactMethods: [],
-      relationshipCounts: [],
-      sectionCounts: [],
-    },
-  } as unknown as PersonProfile;
-}
-
-const props = (hidden: readonly string[] = []): SectionProps => ({
-  archived: true,
-  initial: profile(hidden),
-  personId,
-  preferences,
-  workspaceId,
-});
+const props = (hidden: readonly PersonProfileSectionId[] = []) =>
+  sectionProps({
+    archived: true,
+    initial: personProfile({
+      person: {
+        profileSections: hidden.map((id) => ({ id, status: "hidden" })),
+      },
+      summary: profileSummary(),
+    }),
+    preferences,
+  });
 
 async function mount(
   id: keyof typeof SECTION_MOUNTS,
-  sectionProps: SectionProps,
+  given: SectionProps,
 ): Promise<unknown> {
   const owner = await SECTION_MOUNTS[id].load();
-  const unmount = await owner(document.body, sectionProps);
+  const unmount = await owner(document.body, given);
   expect(unmount).toBeTypeOf("function");
   unmount();
   return unmount;
@@ -188,19 +169,16 @@ describe("GAP-028 section owners", () => {
   });
 
   it("GAP-029 resolves a fact section with nothing to own at once", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-    document.body.innerHTML = "";
-    await mount("pets", { archived: false, personId, workspaceId });
-    expect(fetchMock).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
+    const api = stubApi();
+    drawShell("");
+    await mount("pets", sectionProps());
+    expect(api.fetch).not.toHaveBeenCalled();
   });
 
   it("reads a hidden module from the profile the page loaded", () => {
     expect(sectionHidden(props(["notes"]), "notes")).toBe(true);
     expect(sectionHidden(props(["notes"]), "calls")).toBe(false);
-    expect(sectionHidden({ archived: false, personId, workspaceId }, "notes"))
-      .toBe(false);
+    expect(sectionHidden(sectionProps(), "notes")).toBe(false);
   });
 
   it("hands each vanilla module the arguments it always took", async () => {
@@ -222,7 +200,7 @@ describe("GAP-028 section owners", () => {
       workspaceId,
       true,
       true,
-      "2026-08-15T08:00:00.000000Z",
+      revision,
     );
     await mount("reminders", hidden);
     expect(mountPersonReminders).toHaveBeenCalledWith({

@@ -1,110 +1,108 @@
 // @vitest-environment happy-dom
-import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { mountGiftsIsland } from "./mount.tsx";
 import { buttonVariants } from "@/components/ui/variants.ts";
+import {
+  deferred,
+  jsonResponse,
+  problemResponse,
+  stubApi,
+  unreachable,
+} from "../../testing/api.ts";
+import { ids, sectionProps } from "../../testing/fixtures.ts";
+import {
+  drawShell,
+  element,
+  mountPending,
+  mountSettled,
+} from "../../testing/render.tsx";
 
-const personId = "00000000-0000-4000-8000-000000000001";
-const workspaceId = "00000000-0000-4000-8000-000000000002";
+const { person: personId, workspace: workspaceId } = ids;
 const giftId = "00000000-0000-4000-8000-000000000003";
 
-function response(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    headers: { "content-type": "application/json" },
-    status,
-  });
-}
+const GIFTS = "GET /api/v1/people/:personId/gifts";
+const PEOPLE = "GET /api/v1/people";
+const FILES = "GET /api/v1/people/:personId/files";
+const NO_PEOPLE = jsonResponse({ people: [], status: "ready" });
+const NO_FILES = jsonResponse({ files: [], status: "ready" });
+/** The editor's options, answered empty. */
+const OPTIONS = { [PEOPLE]: NO_PEOPLE, [FILES]: NO_FILES };
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => resolve = done);
-  return { promise, resolve };
-}
+/** A list answer: nothing saved unless the test says so. */
+const page = (fields: Record<string, unknown> = {}) =>
+  jsonResponse({
+    debts: [],
+    gifts: [],
+    status: "ready",
+    supportedCurrencyCodes: ["EUR"],
+    ...fields,
+  });
+
+const stamped = {
+  createdAt: "2026-08-23T08:00:00.000Z",
+  personId,
+  updatedAt: "2026-08-23T08:00:00.000Z",
+};
+const firstGift = (name: string) => ({
+  ...stamped,
+  id: giftId,
+  name,
+  status: "idea",
+});
+const lunch = {
+  ...stamped,
+  amount: "5.0000",
+  direction: "they_owe",
+  id: "00000000-0000-4000-8000-000000000008",
+  reason: "Lunch",
+  status: "open",
+};
 
 /** The two cards as the static person shell draws them before hydration. */
 function markup(): void {
-  document.body.innerHTML = [["gifts", "gift"], ["debts", "debt"]].map((
-    [id, type],
-  ) =>
-    `<section id="profile-section-${id}" class="profile-section-card person-files-card" data-profile-section="${id}" data-person-gifts="${type}" data-section-state="loading" tabindex="-1" aria-labelledby="profile-section-${id}-heading">
+  drawShell(
+    [["gifts", "gift"], ["debts", "debt"]].map(([id, type]) =>
+      `<section id="profile-section-${id}" class="profile-section-card person-files-card" data-profile-section="${id}" data-person-gifts="${type}" data-section-state="loading" tabindex="-1" aria-labelledby="profile-section-${id}-heading">
       <header class="profile-section-heading"><div class="profile-section-title"><h3 id="profile-section-${id}-heading">${
-      id === "gifts" ? "Gifts" : "Debts"
-    }</h3><span data-gift-badge class="state-badge">Loading</span></div></header>
+        id === "gifts" ? "Gifts" : "Debts"
+      }</h3><span data-gift-badge class="state-badge">Loading</span></div></header>
       <p data-gift-state class="section-state">Loading…</p>
     </section>`
-  ).join("") + '<ol id="app-toasts"></ol>';
+    ).join("") + '<ol id="app-toasts"></ol>',
+  );
 }
 
 const section = (type: "gift" | "debt") =>
-  document.querySelector<HTMLElement>(`[data-person-gifts="${type}"]`)!;
+  element(`[data-person-gifts="${type}"]`);
 const card = (type: "gift" | "debt") => within(section(type));
 const stateLine = (type: "gift" | "debt") =>
   section(type).querySelector("[data-gift-state]")?.textContent;
 
-const mounted: Array<() => void> = [];
-
-async function mount(archived = false): Promise<void> {
-  await act(async () => {
-    mounted.push(
-      await mountGiftsIsland({ archived, personId, workspaceId }),
-    );
-  });
-}
-
-function unmountAll(): void {
-  act(() => {
-    for (const unmount of mounted.splice(0)) unmount();
-  });
-}
-
-afterEach(() => {
-  unmountAll();
-  cleanup();
-  vi.unstubAllGlobals();
-  document.body.innerHTML = "";
-});
+const mount = (archived = false) =>
+  mountSettled(() => mountGiftsIsland(sectionProps({ archived })));
 
 describe("GAP-023 gift and debt paging", () => {
   it("extends one card without disturbing the other", async () => {
     markup();
-    const gift = {
-      createdAt: "2026-08-23T08:00:00.000Z",
-      id: giftId,
-      name: "First gift",
-      personId,
-      status: "idea",
-      updatedAt: "2026-08-23T08:00:00.000Z",
-    };
-    const debt = {
-      amount: "5.0000",
-      createdAt: "2026-08-23T08:00:00.000Z",
-      direction: "they_owe",
-      id: "00000000-0000-4000-8000-000000000008",
-      personId,
-      reason: "Lunch",
-      status: "open",
-      updatedAt: "2026-08-23T08:00:00.000Z",
-    };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({
-        debts: [debt],
-        gifts: [gift],
-        nextGiftCursor: "gift-cursor",
-        status: "ready",
-        supportedCurrencyCodes: ["EUR"],
-      }))
-      .mockResolvedValueOnce(response({
-        debts: [],
-        gifts: [{
-          ...gift,
-          id: "00000000-0000-4000-8000-000000000007",
-          name: "Second gift",
-        }],
-        status: "ready",
-        supportedCurrencyCodes: ["EUR"],
-      }));
-    vi.stubGlobal("fetch", fetchMock);
+    const gift = firstGift("First gift");
+    const api = stubApi({
+      [GIFTS]: [
+        page({
+          debts: [lunch],
+          gifts: [gift],
+          nextGiftCursor: "gift-cursor",
+        }),
+        page({
+          gifts: [{
+            ...gift,
+            id: "00000000-0000-4000-8000-000000000007",
+            name: "Second gift",
+          }],
+        }),
+      ],
+    });
     await mount();
     const moreGifts = card("gift").getByRole("button", {
       name: "Load more gifts",
@@ -117,9 +115,7 @@ describe("GAP-023 gift and debt paging", () => {
     await waitFor(() =>
       expect(card("gift").getByText("Second gift")).toBeTruthy()
     );
-    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toContain(
-      "giftCursor=gift-cursor",
-    );
+    expect(api.calls().at(-1)).toContain("giftCursor=gift-cursor");
     expect(card("gift").getByText("First gift")).toBeTruthy();
     // The debt card keeps the page it already had rather than being replaced.
     expect(card("debt").getByText("Lunch")).toBeTruthy();
@@ -132,54 +128,33 @@ describe("GAP-023 gift and debt paging", () => {
 
   it("extends the debt card and leaves the gift card and its control alone", async () => {
     markup();
-    const gift = {
-      createdAt: "2026-08-23T08:00:00.000Z",
-      id: giftId,
-      name: "Only gift",
-      personId,
-      status: "idea",
-      updatedAt: "2026-08-23T08:00:00.000Z",
-    };
-    const debt = {
-      amount: "5.0000",
-      createdAt: "2026-08-23T08:00:00.000Z",
-      direction: "they_owe",
-      id: "00000000-0000-4000-8000-000000000008",
-      personId,
-      reason: "Lunch",
-      status: "open",
-      updatedAt: "2026-08-23T08:00:00.000Z",
-    };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({
-        debts: [debt],
-        gifts: [gift],
-        nextDebtCursor: "debt-cursor",
-        nextGiftCursor: "gift-cursor",
-        status: "ready",
-        supportedCurrencyCodes: ["EUR"],
-      }))
-      .mockResolvedValueOnce(response({
-        debts: [{
-          ...debt,
-          id: "00000000-0000-4000-8000-000000000009",
-          reason: "Dinner",
-        }],
-        gifts: [gift],
-        nextGiftCursor: "gift-cursor",
-        status: "ready",
-        supportedCurrencyCodes: ["EUR"],
-      }));
-    vi.stubGlobal("fetch", fetchMock);
+    const gift = firstGift("Only gift");
+    const api = stubApi({
+      [GIFTS]: [
+        page({
+          debts: [lunch],
+          gifts: [gift],
+          nextDebtCursor: "debt-cursor",
+          nextGiftCursor: "gift-cursor",
+        }),
+        page({
+          debts: [{
+            ...lunch,
+            id: "00000000-0000-4000-8000-000000000009",
+            reason: "Dinner",
+          }],
+          gifts: [gift],
+          nextGiftCursor: "gift-cursor",
+        }),
+      ],
+    });
     await mount();
     const moreDebts = card("debt").getByRole("button", {
       name: "Load more debts",
     });
     await userEvent.setup().click(moreDebts);
     await waitFor(() => expect(card("debt").getByText("Dinner")).toBeTruthy());
-    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toContain(
-      "debtCursor=debt-cursor",
-    );
+    expect(api.calls().at(-1)).toContain("debtCursor=debt-cursor");
     expect(card("debt").getByText("Lunch")).toBeTruthy();
     // The gift page that came back with the debts is not appended again.
     expect(card("gift").getAllByText("Only gift")).toHaveLength(1);
@@ -192,23 +167,20 @@ describe("GAP-023 gift and debt paging", () => {
 
 describe("GIFTS-001 person gifts and debts", () => {
   it("does nothing without both complete person sections", async () => {
-    document.body.innerHTML = '<section data-person-gifts="gift"></section>';
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
+    drawShell('<section data-person-gifts="gift"></section>');
+    const api = stubApi();
     await mount();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(api.fetch).not.toHaveBeenCalled();
     expect(section("gift").hasAttribute("data-island")).toBe(false);
   });
 
   it("hydrates in place, keeping each section and marking the island ready", async () => {
     markup();
     const list = deferred<Response>();
-    vi.stubGlobal("fetch", vi.fn(() => list.promise));
-    const mounting = mountGiftsIsland({
-      archived: false,
-      personId,
-      workspaceId,
-    });
+    stubApi({ [GIFTS]: list.promise });
+    const mounting = mountPending(() =>
+      mountGiftsIsland(sectionProps({ archived: false }))
+    );
     const gift = section("gift");
     expect(gift.dataset.island).toBe("person-gifts");
     expect(gift.hasAttribute("data-island-ready")).toBe(true);
@@ -230,13 +202,8 @@ describe("GIFTS-001 person gifts and debts", () => {
       1,
     );
     await act(async () => {
-      list.resolve(response({
-        debts: [],
-        gifts: [],
-        status: "ready",
-        supportedCurrencyCodes: ["EUR"],
-      }));
-      mounted.push(await mounting);
+      list.resolve(page());
+      await mounting;
     });
     expect(stateLine("gift")).toBe("No gifts saved.");
     expect(stateLine("debt")).toBe("No debts saved.");
@@ -250,36 +217,21 @@ describe("GIFTS-001 person gifts and debts", () => {
     markup();
     const people = deferred<Response>();
     const files = deferred<Response>();
-    let editorOpened = false;
     let peopleCalls = 0;
     let fileCalls = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: RequestInfo | URL) => {
-        const url = new URL(String(input), "http://localhost");
-        if (url.pathname.endsWith("/gifts")) {
-          return Promise.resolve(response({
-            debts: [],
-            gifts: [{ id: giftId, name: "Tickets", personId, status: "idea" }],
-            status: "ready",
-            supportedCurrencyCodes: ["EUR"],
-          }));
-        }
-        if (url.pathname.endsWith("/people")) {
-          peopleCalls += 1;
-          return editorOpened
-            ? people.promise
-            : Promise.reject(new Error("people unavailable"));
-        }
-        if (url.pathname.endsWith("/files")) {
-          fileCalls += 1;
-          return editorOpened
-            ? files.promise
-            : Promise.reject(new Error("files unavailable"));
-        }
-        throw new Error(`unexpected ${url.pathname}`);
+    stubApi({
+      [GIFTS]: page({
+        gifts: [{ id: giftId, name: "Tickets", personId, status: "idea" }],
       }),
-    );
+      [PEOPLE]: () => {
+        peopleCalls += 1;
+        return people.promise;
+      },
+      [FILES]: () => {
+        fileCalls += 1;
+        return files.promise;
+      },
+    });
 
     await mount();
 
@@ -287,7 +239,6 @@ describe("GIFTS-001 person gifts and debts", () => {
       section("gift").querySelector(`[data-gift-id="${giftId}"]`)?.textContent,
     ).toContain("Tickets");
     expect([peopleCalls, fileCalls]).toEqual([0, 0]);
-    editorOpened = true;
     const user = userEvent.setup();
     await user.click(card("gift").getByRole("button", { name: "Add gift" }));
     await waitFor(() => expect([peopleCalls, fileCalls]).toEqual([1, 1]));
@@ -303,8 +254,8 @@ describe("GIFTS-001 person gifts and debts", () => {
     );
     expect(stateLine("gift")).toBe("Loading gift and debt form options…");
     await act(async () => {
-      people.resolve(response({ people: [], status: "ready" }));
-      files.resolve(response({ files: [], status: "ready" }));
+      people.resolve(NO_PEOPLE);
+      files.resolve(NO_FILES);
       await Promise.all([people.promise, files.promise]);
     });
     await waitFor(() =>
@@ -327,25 +278,14 @@ describe("GIFTS-001 person gifts and debts", () => {
   it("reports options that cannot load and retries when the editor reopens", async () => {
     markup();
     let peopleCalls = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: RequestInfo | URL) => {
-        const url = new URL(String(input), "http://localhost");
-        if (url.pathname.endsWith("/gifts")) {
-          return Promise.resolve(response({
-            debts: [],
-            gifts: [],
-            status: "ready",
-            supportedCurrencyCodes: ["EUR"],
-          }));
-        }
-        if (url.pathname.endsWith("/people")) {
-          peopleCalls += 1;
-          return Promise.resolve(response({ detail: "Denied" }, 403));
-        }
-        return Promise.resolve(response({ files: [], status: "ready" }));
-      }),
-    );
+    stubApi({
+      [GIFTS]: page(),
+      [PEOPLE]: () => {
+        peopleCalls += 1;
+        return problemResponse(403, { detail: "Denied" });
+      },
+      [FILES]: NO_FILES,
+    });
     await mount();
     const user = userEvent.setup();
     await user.click(card("debt").getByRole("button", { name: "Add debt" }));
@@ -365,21 +305,18 @@ describe("GIFTS-001 person gifts and debts", () => {
 
   it("renders unknown amount/no recipient and serializes create through authoritative refresh", async () => {
     markup();
-    const empty = {
-      debts: [],
-      gifts: [{ id: giftId, name: "Tickets", personId, status: "idea" }],
-      status: "ready",
-      supportedCurrencyCodes: ["EUR", "USD"],
-    };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response(empty))
-      .mockResolvedValueOnce(response({ people: [], status: "ready" }))
-      .mockResolvedValueOnce(response({ files: [], status: "ready" }))
-      .mockResolvedValueOnce(
-        response({ gift: empty.gifts[0], status: "created" }, 201),
-      )
-      .mockResolvedValueOnce(response(empty));
-    vi.stubGlobal("fetch", fetchMock);
+    const tickets = { id: giftId, name: "Tickets", personId, status: "idea" };
+    const api = stubApi({
+      [GIFTS]: page({
+        gifts: [tickets],
+        supportedCurrencyCodes: ["EUR", "USD"],
+      }),
+      ...OPTIONS,
+      "POST /api/v1/people/:personId/gifts": jsonResponse(
+        { gift: tickets, status: "created" },
+        201,
+      ),
+    });
     await mount();
     const item = section("gift").querySelector(`[data-gift-id="${giftId}"]`);
     expect(item?.textContent).toContain("Amount unknown");
@@ -400,10 +337,10 @@ describe("GIFTS-001 person gifts and debts", () => {
     );
     await user.click(save);
     await waitFor(() => expect(stateLine("gift")).toBe("Gift saved."));
-    expect(fetchMock).toHaveBeenCalledTimes(5);
-    const [, init] = fetchMock.mock.calls[3]!;
-    expect(init?.method).toBe("POST");
-    expect(JSON.parse(String(init?.body))).toEqual({
+    expect(api.fetch).toHaveBeenCalledTimes(5);
+    const created = api.requests()[3]!;
+    expect(created.method).toBe("POST");
+    expect(created.body).toEqual({
       amount: "12",
       currencyCode: "USD",
       eventAt: new Date("2026-09-01T10:30").toISOString(),
@@ -418,16 +355,7 @@ describe("GIFTS-001 person gifts and debts", () => {
 
   it("validates the editor with the contract schema before saving", async () => {
     markup();
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({
-        debts: [],
-        gifts: [],
-        status: "ready",
-        supportedCurrencyCodes: ["EUR"],
-      }))
-      .mockResolvedValueOnce(response({ people: [], status: "ready" }))
-      .mockResolvedValueOnce(response({ files: [], status: "ready" }));
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubApi({ [GIFTS]: page(), ...OPTIONS });
     await mount();
     const user = userEvent.setup();
     await user.click(card("gift").getByRole("button", { name: "Add gift" }));
@@ -449,15 +377,14 @@ describe("GIFTS-001 person gifts and debts", () => {
         "aria-invalid",
       ),
     ).toBe("true");
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(api.fetch).toHaveBeenCalledTimes(3);
   });
 
   it("keeps archived sections read-only and exposes refresh failures", async () => {
     markup();
-    const fetchMock = vi.fn().mockImplementation(() =>
-      Promise.resolve(response({ detail: "Access lost" }, 403))
-    );
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubApi({
+      [GIFTS]: problemResponse(403, { detail: "Access lost" }),
+    });
     await mount(true);
     expect(card("gift").queryByRole("button", { name: "Add gift" })).toBeNull();
     expect(card("debt").queryByRole("button", { name: "Add debt" })).toBeNull();
@@ -470,16 +397,13 @@ describe("GIFTS-001 person gifts and debts", () => {
     await userEvent.setup().click(
       card("gift").getByRole("button", { name: "Retry loading" }),
     );
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.fetch).toHaveBeenCalledTimes(2));
     expect(stateLine("gift")).toContain("Access lost");
   });
 
   it("says the list is unavailable when the API cannot be reached", async () => {
     markup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() => Promise.reject(new Error("offline"))),
-    );
+    stubApi({ [GIFTS]: unreachable });
     await mount();
     expect(stateLine("gift")).toBe(
       "Gifts and debts are temporarily unavailable.",
@@ -546,66 +470,50 @@ describe("GIFTS-001 person gifts and debts", () => {
           status: "cancelled",
         },
       ],
-      status: "ready",
       supportedCurrencyCodes: ["EUR", "USD"],
     };
-    const people = {
-      people: [{
-        givenName: "Ada",
-        id: personId,
-        isPartial: false,
-        isStarred: false,
-        lifecycle: "active",
-        tagCount: 0,
-        tags: [],
-      }, {
-        givenName: "Old",
-        id: giftId,
-        isPartial: false,
-        isStarred: false,
-        lifecycle: "archived",
-        tagCount: 0,
-        tags: [],
-      }],
-      status: "ready",
+    const person = {
+      isPartial: false,
+      isStarred: false,
+      tagCount: 0,
+      tags: [],
     };
-    const files = {
-      files: [{
-        byteSize: 4,
-        createdAt: "now",
-        fileId: giftId,
-        filename: "gift.pdf",
-        kind: "document",
-        mimeType: "application/pdf",
-        personId,
-        status: "available",
-        title: "Receipt",
-      }, {
-        byteSize: 4,
-        createdAt: "now",
-        fileId: personId,
-        filename: "lost.pdf",
-        kind: "document",
-        mimeType: "application/pdf",
-        personId,
-        status: "missing",
-        title: "Lost",
-      }],
-      status: "ready",
+    const file = {
+      byteSize: 4,
+      createdAt: "now",
+      kind: "document",
+      mimeType: "application/pdf",
+      personId,
     };
-    const replies: unknown[] = [
-      records,
-      people,
-      files,
-      { status: "saved" },
-      records,
-      { status: "saved" },
-      records,
-    ];
-    const fetchMock = vi.fn().mockImplementation(() =>
-      Promise.resolve(response(replies.shift()))
-    );
-    vi.stubGlobal("fetch", fetchMock);
+    const saved = jsonResponse({ status: "saved" });
+    const api = stubApi({
+      [GIFTS]: page(records),
+      [PEOPLE]: jsonResponse({
+        people: [
+          { ...person, givenName: "Ada", id: personId, lifecycle: "active" },
+          { ...person, givenName: "Old", id: giftId, lifecycle: "archived" },
+        ],
+        status: "ready",
+      }),
+      [FILES]: jsonResponse({
+        files: [{
+          ...file,
+          fileId: giftId,
+          filename: "gift.pdf",
+          status: "available",
+          title: "Receipt",
+        }, {
+          ...file,
+          fileId: personId,
+          filename: "lost.pdf",
+          status: "missing",
+          title: "Lost",
+        }],
+        status: "ready",
+      }),
+      "PATCH /api/v1/people/:personId/gifts/:giftId/status": saved,
+      "PATCH /api/v1/people/:personId/debts/:debtId/status": saved,
+    });
     await mount();
     const user = userEvent.setup();
     await user.click(card("gift").getByRole("button", { name: "Add gift" }));
@@ -649,7 +557,7 @@ describe("GIFTS-001 person gifts and debts", () => {
     ).toContain("planned · 2 EUR · Recipient selected · Attachment linked");
     await user.click(card("gift").getByRole("button", { name: "Cancel" }));
     const ideaStatus = within(
-      section("gift").querySelector<HTMLElement>(`[data-gift-id="${giftId}"]`)!,
+      element(`[data-gift-id="${giftId}"]`, section("gift")),
     );
     const giftStatus = ideaStatus.getByRole("button", {
       name: "Change status",
@@ -661,9 +569,9 @@ describe("GIFTS-001 person gifts and debts", () => {
     );
     await user.click(giftStatus);
     await waitFor(() => expect(stateLine("gift")).toBe("Status changed."));
-    const [statusUrl, statusInit] = fetchMock.mock.calls[3]!;
-    expect(String(statusUrl)).toContain(`/gifts/${giftId}/status`);
-    expect(JSON.parse(String(statusInit?.body))).toEqual({ status: "given" });
+    const statusChange = api.requests()[3]!;
+    expect(statusChange.url.pathname).toContain(`/gifts/${giftId}/status`);
+    expect(statusChange.body).toEqual({ status: "given" });
     // The row reads exactly as the vanilla one did, currency gap included.
     expect(
       [...section("debt").querySelectorAll("li > p")].map((row) =>
@@ -675,9 +583,7 @@ describe("GIFTS-001 person gifts and debts", () => {
       "They owe · 5  · cancelled",
     ]);
     const coffee = within(
-      section("debt").querySelector<HTMLElement>(
-        `[data-debt-id="${records.debts[0]!.id}"]`,
-      )!,
+      element(`[data-debt-id="${records.debts[0]!.id}"]`, section("debt")),
     );
     expect(
       coffee.getByRole("combobox", { name: "Next status for Coffee" })
@@ -685,32 +591,29 @@ describe("GIFTS-001 person gifts and debts", () => {
     ).toHaveLength(2);
     await user.click(coffee.getByRole("button", { name: "Change status" }));
     await waitFor(() => expect(stateLine("debt")).toBe("Status changed."));
-    expect(JSON.parse(String(fetchMock.mock.calls[5]?.[1]?.body))).toEqual({
-      status: "settled",
-    });
+    expect(api.requests()[5]?.body).toEqual({ status: "settled" });
     expect(card("debt").queryAllByRole("combobox")).toHaveLength(1);
   });
 
   it("reports a status change the server refuses or never answers", async () => {
     markup();
-    const records = {
-      debts: [{
-        amount: "2",
-        direction: "i_owe",
-        id: giftId,
-        personId,
-        status: "open",
-      }],
-      gifts: [{ id: giftId, name: "Book", personId, status: "idea" }],
-      status: "ready",
-      supportedCurrencyCodes: ["EUR"],
-    };
-    const replies = [
-      () => Promise.resolve(response(records)),
-      () => Promise.resolve(response({ detail: "Invalid transition" }, 409)),
-      () => Promise.reject(new Error("offline")),
-    ];
-    vi.stubGlobal("fetch", vi.fn(() => replies.shift()!()));
+    stubApi({
+      [GIFTS]: page({
+        debts: [{
+          amount: "2",
+          direction: "i_owe",
+          id: giftId,
+          personId,
+          status: "open",
+        }],
+        gifts: [{ id: giftId, name: "Book", personId, status: "idea" }],
+      }),
+      "PATCH /api/v1/people/:personId/gifts/:giftId/status": problemResponse(
+        409,
+        { detail: "Invalid transition" },
+      ),
+      "PATCH /api/v1/people/:personId/debts/:debtId/status": unreachable,
+    });
     await mount();
     const user = userEvent.setup();
     await user.click(
@@ -727,24 +630,25 @@ describe("GIFTS-001 person gifts and debts", () => {
 
   it("creates a debt and retains mutation errors without replacing them", async () => {
     markup();
-    const empty = {
-      debts: [],
-      gifts: [],
-      status: "ready",
-      supportedCurrencyCodes: ["EUR", "USD"],
-    };
-    const okReplies: unknown[] = [
-      empty,
-      { people: [], status: "ready" },
-      { files: [], status: "ready" },
-      { debt: {}, status: "created" },
-      empty,
-    ];
-    const fetchMock = vi.fn().mockImplementation(() =>
-      Promise.resolve(response(okReplies.shift()))
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    await mount();
+    const api = stubApi({
+      [GIFTS]: page({ supportedCurrencyCodes: ["EUR", "USD"] }),
+      ...OPTIONS,
+      "POST /api/v1/people/:personId/debts": jsonResponse({
+        debt: {},
+        status: "created",
+      }),
+      "POST /api/v1/people/:personId/gifts": [
+        problemResponse(409, {
+          code: "invalid_request",
+          detail: "Invalid transition",
+          errors: { name: "Already taken." },
+          title: "Conflict",
+          type: "https://kinship.test/problems/invalid_request",
+        }),
+        unreachable,
+      ],
+    });
+    const unmount = await mount();
     const user = userEvent.setup();
     await user.click(card("debt").getByRole("button", { name: "Add debt" }));
     const save = card("debt").getByRole("button", { name: "Save" });
@@ -754,7 +658,7 @@ describe("GIFTS-001 person gifts and debts", () => {
     await user.type(card("debt").getByLabelText("Reason (optional)"), "Lunch");
     await user.click(save);
     await waitFor(() => expect(stateLine("debt")).toBe("Debt saved."));
-    expect(JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body))).toEqual({
+    expect(api.requests()[3]?.body).toEqual({
       amount: "12",
       currencyCode: "USD",
       direction: "they_owe",
@@ -762,26 +666,8 @@ describe("GIFTS-001 person gifts and debts", () => {
       status: "open",
     });
 
-    unmountAll();
+    unmount();
     markup();
-    const failedReplies: Array<() => Promise<Response>> = [
-      () => Promise.resolve(response(empty)),
-      () => Promise.resolve(response({ people: [], status: "ready" })),
-      () => Promise.resolve(response({ files: [], status: "ready" })),
-      () =>
-        Promise.resolve(
-          response({
-            code: "invalid_request",
-            detail: "Invalid transition",
-            errors: { name: "Already taken." },
-            status: 409,
-            title: "Conflict",
-            type: "https://kinship.test/problems/invalid_request",
-          }, 409),
-        ),
-      () => Promise.reject(new Error("offline")),
-    ];
-    vi.stubGlobal("fetch", vi.fn(() => failedReplies.shift()!()));
     await mount();
     await user.click(card("gift").getByRole("button", { name: "Add gift" }));
     const giftSave = card("gift").getByRole("button", { name: "Save" });
@@ -805,21 +691,13 @@ describe("GIFTS-001 person gifts and debts", () => {
 
   it("runs one save at a time across both cards", async () => {
     markup();
-    const created = deferred<Response>();
-    const replies: Array<() => Promise<Response>> = [
-      () =>
-        Promise.resolve(response({
-          debts: [],
-          gifts: [{ id: giftId, name: "Book", personId, status: "idea" }],
-          status: "ready",
-          supportedCurrencyCodes: ["EUR"],
-        })),
-      () => Promise.resolve(response({ people: [], status: "ready" })),
-      () => Promise.resolve(response({ files: [], status: "ready" })),
-      () => created.promise,
-    ];
-    const fetchMock = vi.fn(() => replies.shift()!());
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubApi({
+      [GIFTS]: page({
+        gifts: [{ id: giftId, name: "Book", personId, status: "idea" }],
+      }),
+      ...OPTIONS,
+      "POST /api/v1/people/:personId/gifts": deferred<Response>().promise,
+    });
     await mount();
     const user = userEvent.setup();
     await user.click(card("gift").getByRole("button", { name: "Add gift" }));
@@ -831,63 +709,45 @@ describe("GIFTS-001 person gifts and debts", () => {
     await user.click(
       card("gift").getByRole("button", { name: "Change status" }),
     );
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(api.fetch).toHaveBeenCalledTimes(4);
   });
 
   it("switches existing gift and debt actions to read-only on lifecycle events", async () => {
     markup();
-    const records = {
-      debts: [{
-        amount: "2",
-        direction: "i_owe",
-        id: giftId,
-        personId,
-        status: "open",
-      }],
-      gifts: [{ id: giftId, name: "Book", personId, status: "idea" }],
-      status: "ready",
-      supportedCurrencyCodes: ["EUR", "USD"],
-    };
-    const replies: unknown[] = [records, { people: [], status: "ready" }, {
-      files: [],
-      status: "ready",
-    }];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation(() =>
-        Promise.resolve(response(replies.shift()))
-      ),
-    );
+    stubApi({
+      [GIFTS]: page({
+        debts: [{
+          amount: "2",
+          direction: "i_owe",
+          id: giftId,
+          personId,
+          status: "open",
+        }],
+        gifts: [{ id: giftId, name: "Book", personId, status: "idea" }],
+        supportedCurrencyCodes: ["EUR", "USD"],
+      }),
+      ...OPTIONS,
+    });
     await mount();
     await userEvent.setup().click(
       card("gift").getByRole("button", { name: "Add gift" }),
     );
-    act(() => {
-      document.dispatchEvent(
-        new CustomEvent("person-lifecycle-changed", {
-          detail: { archived: true, personId: workspaceId },
-        }),
-      );
-    });
+    const lifecycle = (archived: boolean, person: string = personId) =>
+      act(() => {
+        document.dispatchEvent(
+          new CustomEvent("person-lifecycle-changed", {
+            detail: { archived, personId: person },
+          }),
+        );
+      });
+    lifecycle(true, workspaceId);
     expect(section("gift").querySelector("form")).not.toBeNull();
-    act(() => {
-      document.dispatchEvent(
-        new CustomEvent("person-lifecycle-changed", {
-          detail: { archived: true, personId },
-        }),
-      );
-    });
+    lifecycle(true);
     expect(screen.queryByRole("button", { name: /^Add / })).toBeNull();
     expect(section("gift").querySelector("form")).toBeNull();
     expect(screen.queryAllByRole("button", { name: "Change status" }))
       .toHaveLength(0);
-    act(() => {
-      document.dispatchEvent(
-        new CustomEvent("person-lifecycle-changed", {
-          detail: { archived: false, personId },
-        }),
-      );
-    });
+    lifecycle(false);
     expect(screen.getAllByRole("button", { name: /^Add / })).toHaveLength(2);
   });
 });

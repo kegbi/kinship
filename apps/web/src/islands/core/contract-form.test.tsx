@@ -9,22 +9,17 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { debtStatusInput } from "../../../../../packages/contracts/schemas/gifts.ts";
-import type { ProblemDetails } from "../../../../../packages/contracts/generated/auth-client.ts";
+import { problemBody } from "../../testing/api.ts";
 import { problemFieldName, useContractForm } from "./contract-form.ts";
 import { z } from "zod";
 
 afterEach(cleanup);
 
-function problem(errors?: Record<string, string>): ProblemDetails {
-  return {
-    code: "invalid_request",
+const problem = (errors?: Record<string, string>) =>
+  problemBody(400, {
     detail: "Check the highlighted fields.",
-    status: 400,
-    title: "Invalid request",
-    type: "https://kinship.test/problems/invalid_request",
     ...(errors ? { errors } : {}),
-  };
-}
+  });
 
 const note = z.strictObject({
   title: z.string().trim().min(1),

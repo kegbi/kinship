@@ -1,21 +1,20 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { jsonResponse, problemResponse, stubApi } from "../testing/api.ts";
+import { ids } from "../testing/fixtures.ts";
+import { drawShell } from "../testing/render.tsx";
 import { mountPersonFiles } from "./person-files.ts";
 
-const personId = "00000000-0000-4000-8000-000000000001";
-const workspaceId = "00000000-0000-4000-8000-000000000002";
+const { person: personId, workspace: workspaceId } = ids;
 const fileId = "00000000-0000-4000-8000-000000000003";
-
-function response(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    headers: { "content-type": "application/json" },
-    status,
-  });
-}
+const FILES = "GET /api/v1/people/:personId/files";
+const UPLOAD = "POST /api/v1/people/:personId/files";
+const REMOVE = "DELETE /api/v1/people/:personId/files/:fileId";
 
 function markup(): void {
-  document.body.innerHTML = ["document", "photo"].map((kind) => `
+  drawShell(
+    ["document", "photo"].map((kind) => `
     <section data-person-files="${kind}">
       <span data-file-badge>Loading</span>
       <p data-file-state></p>
@@ -30,13 +29,9 @@ function markup(): void {
         <button data-file-cancel type="button">Cancel</button>
       </form>
     </section>
-  `).join("");
+  `).join(""),
+  );
 }
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-  document.body.innerHTML = "";
-});
 
 function storedFile(overrides: Record<string, unknown> = {}) {
   return {
@@ -53,26 +48,39 @@ function storedFile(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const listed = (files: readonly unknown[], nextCursor?: string) =>
+  jsonResponse({
+    files,
+    ...(nextCursor ? { nextCursor } : {}),
+    status: "ready",
+  });
+
+const unavailable = (detail: string, type = "problem") =>
+  problemResponse(503, {
+    code: "files_unavailable",
+    detail,
+    title: "Unavailable",
+    type,
+  });
+
+const mount = (archived = false) =>
+  mountPersonFiles({ archived, personId, workspaceId });
+
 describe("GAP-023 person file paging", () => {
   it("appends the next page and retires the control when the last one answers", async () => {
     markup();
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({
-        files: [storedFile({ title: "First page" })],
-        nextCursor: "file-cursor",
-        status: "ready",
-      }))
-      .mockResolvedValueOnce(response({
-        files: [
+    const api = stubApi({
+      [FILES]: [
+        listed([storedFile({ title: "First page" })], "file-cursor"),
+        listed([
           storedFile({
             fileId: "00000000-0000-4000-8000-000000000009",
             title: "Second page",
           }),
-        ],
-        status: "ready",
-      }));
-    vi.stubGlobal("fetch", fetchMock);
-    await mountPersonFiles({ archived: false, personId, workspaceId });
+        ]),
+      ],
+    });
+    await mount();
     const more = document.querySelector<HTMLButtonElement>(
       '[data-load-more="files"]',
     )!;
@@ -81,32 +89,25 @@ describe("GAP-023 person file paging", () => {
     await vi.waitFor(() =>
       expect(document.body.textContent).toContain("Second page")
     );
-    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toContain(
-      "cursor=file-cursor",
-    );
+    expect(api.calls().at(-1)).toContain("cursor=file-cursor");
     expect(document.body.textContent).toContain("First page");
     expect(more.hidden).toBe(true);
   });
 
   it("hides the control when a continued page fails", async () => {
     markup();
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({
-        files: [storedFile()],
-        nextCursor: "file-cursor",
-        status: "ready",
-      }))
-      .mockResolvedValueOnce(
-        response({
+    stubApi({
+      [FILES]: [
+        listed([storedFile()], "file-cursor"),
+        problemResponse(400, {
           code: "file_query_invalid",
           detail: "Reload the first page of files before continuing.",
-          status: 400,
           title: "Invalid file query",
           type: "problem",
-        }, 400),
-      );
-    vi.stubGlobal("fetch", fetchMock);
-    await mountPersonFiles({ archived: false, personId, workspaceId });
+        }),
+      ],
+    });
+    await mount();
     const more = document.querySelector<HTMLButtonElement>(
       '[data-load-more="files"]',
     )!;
@@ -120,58 +121,38 @@ describe("GAP-023 person file paging", () => {
 
 describe("FILES-001 person profile files", () => {
   it("does nothing when the profile has no complete files section", async () => {
-    document.body.innerHTML =
-      '<section data-person-files="document"></section>';
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-    await mountPersonFiles({ archived: false, personId, workspaceId });
-    expect(fetchMock).not.toHaveBeenCalled();
+    drawShell('<section data-person-files="document"></section>');
+    const api = stubApi();
+    await mount();
+    expect(api.fetch).not.toHaveBeenCalled();
   });
   it("renders explicit available, missing, and quarantined states without object references", async () => {
     markup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        files: [
-          {
-            byteSize: 20,
-            createdAt: "2026-08-23T08:00:00.000Z",
-            fileId,
-            filename: "care.pdf",
-            kind: "document",
-            mimeType: "application/pdf",
-            personId,
-            status: "available",
-            title: "Care plan",
-          },
-          {
-            byteSize: 30,
-            createdAt: "2026-08-23T08:00:00.000Z",
-            fileId: "00000000-0000-4000-8000-000000000004",
-            filename: "missing.jpg",
-            kind: "photo",
-            mimeType: "image/jpeg",
-            personId,
-            status: "missing",
-            title: "Old portrait",
-          },
-          {
-            byteSize: 40,
-            createdAt: "2026-08-23T08:00:00.000Z",
-            fileId: "00000000-0000-4000-8000-000000000005",
-            filename: "held.jpg",
-            kind: "photo",
-            mimeType: "image/jpeg",
-            personId,
-            status: "quarantined",
-            title: "Held portrait",
-          },
-        ],
-        status: "ready",
-      })),
-    );
+    stubApi({
+      [FILES]: listed([
+        storedFile(),
+        storedFile({
+          byteSize: 30,
+          fileId: "00000000-0000-4000-8000-000000000004",
+          filename: "missing.jpg",
+          kind: "photo",
+          mimeType: "image/jpeg",
+          status: "missing",
+          title: "Old portrait",
+        }),
+        storedFile({
+          byteSize: 40,
+          fileId: "00000000-0000-4000-8000-000000000005",
+          filename: "held.jpg",
+          kind: "photo",
+          mimeType: "image/jpeg",
+          status: "quarantined",
+          title: "Held portrait",
+        }),
+      ]),
+    });
 
-    await mountPersonFiles({ archived: false, personId, workspaceId });
+    await mount();
     expect(
       document.querySelector(
         '[data-file-id="00000000-0000-4000-8000-000000000004"]',
@@ -191,23 +172,12 @@ describe("FILES-001 person profile files", () => {
 
   it("serializes upload then refreshes the authoritative list", async () => {
     markup();
-    const saved = {
-      byteSize: 4,
-      createdAt: "2026-08-23T08:00:00.000Z",
-      fileId,
-      filename: "care.pdf",
-      kind: "document",
-      mimeType: "application/pdf",
-      personId,
-      status: "available",
-      title: "Care plan",
-    };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({ files: [], status: "ready" }))
-      .mockResolvedValueOnce(response({ file: saved, status: "created" }, 201))
-      .mockResolvedValueOnce(response({ files: [saved], status: "ready" }));
-    vi.stubGlobal("fetch", fetchMock);
-    await mountPersonFiles({ archived: false, personId, workspaceId });
+    const saved = storedFile({ byteSize: 4 });
+    const api = stubApi({
+      [FILES]: [listed([]), listed([saved])],
+      [UPLOAD]: jsonResponse({ file: saved, status: "created" }, 201),
+    });
+    await mount();
     document.querySelector<HTMLButtonElement>(
       '[data-person-files="document"] [data-file-add]',
     )?.click();
@@ -224,28 +194,24 @@ describe("FILES-001 person profile files", () => {
       expect(document.querySelector(`[data-file-id="${fileId}"]`)).not
         .toBeNull()
     );
-    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe("POST");
-    expect(fetchMock.mock.calls[1]?.[1]?.headers).toMatchObject({
+    expect(api.requests()[1]?.method).toBe("POST");
+    expect(api.requests()[1]?.init?.headers).toMatchObject({
       "X-File-Kind": "document",
       "X-File-Name": "care.pdf",
       "X-Workspace-Id": workspaceId,
     });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(api.fetch).toHaveBeenCalledTimes(3);
   });
 
   it("keeps archived files read-only and reports unavailable loading", async () => {
     markup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        detail: "File storage is offline.",
-        status: 503,
-        title: "Unavailable",
-        type: "https://kinship.test/problems/files_unavailable",
-        code: "files_unavailable",
-      }, 503)),
-    );
-    await mountPersonFiles({ archived: true, personId, workspaceId });
+    stubApi({
+      [FILES]: unavailable(
+        "File storage is offline.",
+        "https://kinship.test/problems/files_unavailable",
+      ),
+    });
+    await mount(true);
     expect(
       document.querySelector('[data-person-files="document"] [data-file-badge]')
         ?.textContent,
@@ -263,22 +229,8 @@ describe("FILES-001 person profile files", () => {
 
   it("repaints existing file controls across in-page archive and restore", async () => {
     markup();
-    const saved = {
-      byteSize: 20,
-      createdAt: "2026-08-23T08:00:00.000Z",
-      fileId,
-      filename: "care.pdf",
-      kind: "document",
-      mimeType: "application/pdf",
-      personId,
-      status: "available",
-      title: "Care plan",
-    };
-    const fetchMock = vi.fn().mockResolvedValue(
-      response({ files: [saved], status: "ready" }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    await mountPersonFiles({ archived: false, personId, workspaceId });
+    const api = stubApi({ [FILES]: listed([storedFile()]) });
+    await mount();
     const add = document.querySelector<HTMLButtonElement>(
       '[data-person-files="document"] [data-file-add]',
     )!;
@@ -298,7 +250,7 @@ describe("FILES-001 person profile files", () => {
     expect(document.querySelector(`[data-file-remove="${fileId}"]`)).toBeNull();
     staleRemove.click();
     await Promise.resolve();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(api.fetch).toHaveBeenCalledTimes(1);
 
     document.dispatchEvent(
       new CustomEvent("person-lifecycle-changed", {
@@ -312,17 +264,14 @@ describe("FILES-001 person profile files", () => {
 
   it("validates, cancels, and reports a failed upload without a stale refresh", async () => {
     markup();
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({ files: [], status: "ready" }))
-      .mockResolvedValueOnce(response({
-        code: "files_unavailable",
-        detail: "Upload storage is offline.",
-        status: 503,
-        title: "Unavailable",
-        type: "https://kinship.test/problems/files_unavailable",
-      }, 503));
-    vi.stubGlobal("fetch", fetchMock);
-    await mountPersonFiles({ archived: false, personId, workspaceId });
+    const api = stubApi({
+      [FILES]: listed([]),
+      [UPLOAD]: unavailable(
+        "Upload storage is offline.",
+        "https://kinship.test/problems/files_unavailable",
+      ),
+    });
+    await mount();
     const root = document.querySelector<HTMLElement>(
       '[data-person-files="photo"]',
     )!;
@@ -351,35 +300,25 @@ describe("FILES-001 person profile files", () => {
         "offline",
       )
     );
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(api.fetch).toHaveBeenCalledTimes(2);
   });
 
   it("restores a failed remove control, then refreshes after a successful remove", async () => {
     markup();
-    const saved = {
-      byteSize: 2048,
-      createdAt: "2026-08-23T08:00:00.000Z",
-      fileId,
-      filename: "care.pdf",
-      kind: "document",
-      mimeType: "application/pdf",
-      personId,
-      status: "processing",
-      title: "Care plan",
-    };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({ files: [saved], status: "ready" }))
-      .mockResolvedValueOnce(response({
-        code: "files_unavailable",
-        detail: "Remove storage is offline.",
-        status: 503,
-        title: "Unavailable",
-        type: "https://kinship.test/problems/files_unavailable",
-      }, 503))
-      .mockResolvedValueOnce(response({ fileId, status: "removed" }))
-      .mockResolvedValueOnce(response({ files: [], status: "ready" }));
-    vi.stubGlobal("fetch", fetchMock);
-    await mountPersonFiles({ archived: false, personId, workspaceId });
+    stubApi({
+      [FILES]: [
+        listed([storedFile({ byteSize: 2048, status: "processing" })]),
+        listed([]),
+      ],
+      [REMOVE]: [
+        unavailable(
+          "Remove storage is offline.",
+          "https://kinship.test/problems/files_unavailable",
+        ),
+        jsonResponse({ fileId, status: "removed" }),
+      ],
+    });
+    await mount();
     const button = document.querySelector<HTMLButtonElement>(
       `[data-file-remove="${fileId}"]`,
     )!;
@@ -395,36 +334,12 @@ describe("FILES-001 person profile files", () => {
 
   it("preserves an explicit retry state when post-upload refresh fails", async () => {
     markup();
-    const saved = {
-      byteSize: 4,
-      createdAt: "2026-08-23T08:00:00.000Z",
-      fileId,
-      filename: "care.pdf",
-      kind: "document",
-      mimeType: "application/pdf",
-      personId,
-      status: "available",
-      title: "Care plan",
-    };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response({ files: [], status: "ready" }))
-        .mockResolvedValueOnce(
-          response({ file: saved, status: "created" }, 201),
-        )
-        .mockResolvedValueOnce(
-          response({
-            code: "files_unavailable",
-            detail: "Refresh offline.",
-            status: 503,
-            title: "Unavailable",
-            type: "problem",
-          }, 503),
-        )
-        .mockResolvedValueOnce(response({ files: [saved], status: "ready" })),
-    );
-    await mountPersonFiles({ archived: false, personId, workspaceId });
+    const saved = storedFile({ byteSize: 4 });
+    stubApi({
+      [FILES]: [listed([]), unavailable("Refresh offline."), listed([saved])],
+      [UPLOAD]: jsonResponse({ file: saved, status: "created" }, 201),
+    });
+    await mount();
     const root = document.querySelector<HTMLElement>(
       '[data-person-files="document"]',
     )!;
@@ -451,33 +366,14 @@ describe("FILES-001 person profile files", () => {
 
   it("does not leave a stale disabled row when post-remove refresh fails", async () => {
     markup();
-    const saved = {
-      byteSize: 4,
-      createdAt: "2026-08-23T08:00:00.000Z",
-      fileId,
-      filename: "care.pdf",
-      kind: "document",
-      mimeType: "application/pdf",
-      personId,
-      status: "available",
-      title: "Care plan",
-    };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response({ files: [saved], status: "ready" }))
-        .mockResolvedValueOnce(response({ fileId, status: "removed" }))
-        .mockResolvedValueOnce(
-          response({
-            code: "files_unavailable",
-            detail: "Refresh offline.",
-            status: 503,
-            title: "Unavailable",
-            type: "problem",
-          }, 503),
-        ),
-    );
-    await mountPersonFiles({ archived: false, personId, workspaceId });
+    stubApi({
+      [FILES]: [
+        listed([storedFile({ byteSize: 4 })]),
+        unavailable("Refresh offline."),
+      ],
+      [REMOVE]: jsonResponse({ fileId, status: "removed" }),
+    });
+    await mount();
     const root = document.querySelector<HTMLElement>(
       '[data-person-files="document"]',
     )!;

@@ -10,6 +10,8 @@ const islandSources = [
   "apps/web/src/islands/**/*.{ts,tsx}",
   "apps/web/src/features/**/*.{ts,tsx}",
   "apps/web/src/components/ui/**/*.tsx",
+  // The suites' shared island test support (GAP-030) renders islands too.
+  "apps/web/src/testing/**/*.{ts,tsx}",
 ];
 
 export default [

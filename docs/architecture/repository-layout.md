@@ -120,6 +120,13 @@ executable boundaries.
   helpers). `apps/web/src/islands/` keeps the island kit and the islands not yet
   filed under an area, and `apps/web/src/lib/` keeps cross-cutting non-UI
   helpers.
+- `apps/web/src/testing/` is the web suites' one shared test support (GAP-030):
+  `render.tsx` mounts and renders islands and tears them down after each test,
+  `api.ts` stubs `fetch` by route (`stubApi`, `jsonResponse`,
+  `problemResponse`), `fixtures.ts` builds contract-typed people, profiles,
+  sessions, and preferences, and `a11y.ts` runs axe-core's structural rules.
+  Like a `.test-helper.ts`, it is neither production code nor measured by
+  coverage.
 
 Tests may import private code only when testing that exact module. A test for
 one module may not use a private import from another module as a convenience.

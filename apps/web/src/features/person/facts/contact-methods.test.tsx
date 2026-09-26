@@ -1,11 +1,5 @@
 // @vitest-environment happy-dom
-import {
-  act,
-  cleanup,
-  fireEvent,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { act, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -13,20 +7,21 @@ import {
   captureProfileSummary,
 } from "../profile-summary.test-helper.ts";
 import { buttonVariants } from "@/components/ui/variants.ts";
+import { jsonResponse, stubApi } from "../../../testing/api.ts";
+import { personProfile, profileSummary } from "../../../testing/fixtures.ts";
+import { chooseOptions } from "../../../testing/render.tsx";
 import { mountContactMethods } from "./contact-methods.tsx";
 import {
+  anyRoute,
   block,
   fact,
   factRead,
+  factSaved,
   mountFacts,
-  nextRevision,
   personId,
   railBlock,
-  response,
   revision,
   shell,
-  stubFetch,
-  unmountFacts,
 } from "./facts.test-helper.ts";
 
 const typeId = "00000000-0000-4000-8000-000000000200";
@@ -50,10 +45,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   summary.stop();
-  unmountFacts();
-  cleanup();
   vi.unstubAllGlobals();
-  document.body.innerHTML = "";
 });
 
 const section = () => within(block("contact-methods"));
@@ -69,11 +61,11 @@ describe("GAP-029 contact methods island", () => {
   it("PRF-001 separates contact labels and values from compact local actions", async () => {
     shell(railBlock("contact-methods"));
     const value = "ada.lovelace.correspondence@analytical-engines.example.test";
-    stubFetch(() =>
-      factRead([contact(value, personId, { isPrimary: true })], {
+    stubApi({
+      [anyRoute]: factRead([contact(value, personId, { isPrimary: true })], {
         options: [{ id: typeId, kind: "contact-type", name: "Personal email" }],
-      })
-    );
+      }),
+    });
     await mountFacts(mountContactMethods);
     const item = rows()[0]!;
     expect(item.querySelector(".profile-fact-label")?.textContent).toBe(
@@ -111,8 +103,8 @@ describe("GAP-029 contact methods island", () => {
     const primaryId = "00000000-0000-4000-8000-000000000301";
     const phoneId = "00000000-0000-4000-8000-000000000302";
     const secondaryId = "00000000-0000-4000-8000-000000000306";
-    stubFetch(() =>
-      factRead([
+    stubApi({
+      [anyRoute]: factRead([
         contact("ada@example.test", primaryId, { isPrimary: true }),
         contact("+44 20 7946 0958", phoneId, {
           isPrimary: true,
@@ -125,8 +117,8 @@ describe("GAP-029 contact methods island", () => {
           kind: "contact-type",
           name: "Phone",
         }],
-      })
-    );
+      }),
+    });
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     await mountFacts(mountContactMethods, {
@@ -194,11 +186,11 @@ describe("GAP-029 contact methods island", () => {
   it("reports a rejected copy through the toast region", async () => {
     shell(railBlock("contact-methods"));
     const primaryId = "00000000-0000-4000-8000-000000000305";
-    stubFetch(() =>
-      factRead([contact("ada@example.test", primaryId, { isPrimary: true })], {
-        options: [email],
-      })
-    );
+    stubApi({
+      [anyRoute]: factRead([
+        contact("ada@example.test", primaryId, { isPrimary: true }),
+      ], { options: [email] }),
+    });
     vi.stubGlobal("navigator", {
       clipboard: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
     });
@@ -228,12 +220,12 @@ describe("GAP-029 contact methods island", () => {
     "shows every method as saved when the profile names %s primary summary",
     async (_name, primaryContactMethods) => {
       shell(railBlock("contact-methods"));
-      stubFetch(() =>
-        factRead([
+      stubApi({
+        [anyRoute]: factRead([
           contact("ada@example.test", "00000000-0000-4000-8000-000000000307"),
           contact("other@example.test", "00000000-0000-4000-8000-000000000308"),
-        ], { options: [email] })
-      );
+        ], { options: [email] }),
+      });
       await mountFacts(
         mountContactMethods,
         primaryContactMethods ? { primaryContactMethods } : {},
@@ -255,38 +247,28 @@ describe("GAP-029 contact methods island", () => {
       { isPrimary: true, labelIds: [labelId] },
     );
     let saved = false;
-    const fetch = stubFetch((url, init) => {
-      if (url.pathname === `/api/v1/people/${personId}`) {
-        return response({
-          dueInformation: {},
-          person: {},
-          status: "ready",
-          summary: {
-            primaryContactMethods: [{
-              href: "mailto:ada@example.test",
-              id: record.id,
-              kind: "email",
-              label: "Email",
-              value: "ada@example.test",
-            }],
-            relationshipCounts: [],
-            sectionCounts: [],
-          },
-        });
-      }
-      if (init?.method === "POST") {
+    const api = stubApi({
+      "GET /api/v1/people/:personId": jsonResponse(personProfile({
+        summary: profileSummary({
+          primaryContactMethods: [{
+            href: "mailto:ada@example.test",
+            id: record.id,
+            kind: "email",
+            label: "Email",
+            value: "ada@example.test",
+          }],
+        }),
+      })),
+      "POST /api/v1/*": () => {
         saved = true;
-        return response({
-          personUpdatedAt: nextRevision,
-          record,
-          status: "saved",
-        });
-      }
-      return factRead(saved ? [record] : [], {
-        options: url.searchParams.has("includeOptions") || saved
-          ? [email, { id: labelId, kind: "contact-label", name: "Home" }]
-          : [],
-      });
+        return factSaved(record);
+      },
+      "GET /api/v1/*": ({ url }) =>
+        factRead(saved ? [record] : [], {
+          options: url.searchParams.has("includeOptions") || saved
+            ? [email, { id: labelId, kind: "contact-label", name: "Home" }]
+            : [],
+        }),
     });
     await mountFacts(mountContactMethods);
     expect(summary.railEmpty("contact-methods")).toBe(true);
@@ -316,7 +298,7 @@ describe("GAP-029 contact methods island", () => {
     await waitFor(() =>
       expect(stateLine().textContent).toBe("Profile fact saved.")
     );
-    expect(fetch.bodies()).toEqual([{
+    expect(api.bodies()).toEqual([{
       expectedPersonUpdatedAt: revision,
       isPrimary: true,
       labelIds: [labelId],
@@ -325,7 +307,7 @@ describe("GAP-029 contact methods island", () => {
       typeId,
       value: "ada@example.test",
     }]);
-    expect(fetch.calls()).toEqual([
+    expect(api.calls()).toEqual([
       `GET /api/v1/people/${personId}/facts/contact-methods`,
       `GET /api/v1/people/${personId}/facts/contact-methods?includeOptions=true`,
       `POST /api/v1/people/${personId}/facts/contact-methods`,
@@ -350,9 +332,9 @@ describe("GAP-029 contact methods island", () => {
       kind: "contact-label",
       name: `Label ${index + 1}`,
     }));
-    const fetch = stubFetch(() =>
-      factRead([], { options: [email, ...labels] })
-    );
+    const api = stubApi({
+      [anyRoute]: factRead([], { options: [email, ...labels] }),
+    });
     await mountFacts(mountContactMethods);
     const user = userEvent.setup();
     await user.click(
@@ -378,14 +360,13 @@ describe("GAP-029 contact methods island", () => {
     const choice = section().getByLabelText<HTMLSelectElement>(
       "Contact labels",
     );
-    for (const option of choice.options) option.selected = true;
-    fireEvent.change(choice);
+    chooseOptions(choice, [...choice.options].map((option) => option.value));
     expect(choice.selectedOptions).toHaveLength(21);
     await user.click(save);
     await waitFor(() =>
       expect(errors()).toEqual(["Choose no more than 20 labels."])
     );
-    expect(fetch.calls().some((call) => call.startsWith("POST"))).toBe(false);
+    expect(api.calls().some((call) => call.startsWith("POST"))).toBe(false);
   });
 
   it("loads one bounded vocabulary page only when the editor opens", async () => {
@@ -395,36 +376,37 @@ describe("GAP-029 contact methods island", () => {
       kind: "contact-type",
       name: `Type ${String(index + 1).padStart(2, "0")}`,
     }));
-    const fetch = stubFetch((url) =>
-      factRead([], {
-        options: !url.searchParams.has("includeOptions")
-          ? []
-          : url.searchParams.has("optionCursor")
-          ? [{
-            id: typeId,
-            kind: "contact-type",
-            name: "Selected continuation type",
-          }]
-          : firstOptions,
-        ...(url.searchParams.has("optionCursor")
-          ? {}
-          : { nextOptionsCursor: "next-options" }),
-      })
-    );
+    const api = stubApi({
+      [anyRoute]: ({ url }) =>
+        factRead([], {
+          options: !url.searchParams.has("includeOptions")
+            ? []
+            : url.searchParams.has("optionCursor")
+            ? [{
+              id: typeId,
+              kind: "contact-type",
+              name: "Selected continuation type",
+            }]
+            : firstOptions,
+          ...(url.searchParams.has("optionCursor")
+            ? {}
+            : { nextOptionsCursor: "next-options" }),
+        }),
+    });
     await mountFacts(mountContactMethods);
-    expect(fetch.mock).toHaveBeenCalledTimes(1);
+    expect(api.fetch).toHaveBeenCalledTimes(1);
     const user = userEvent.setup();
     await user.click(
       section().getByRole("button", { name: "Add contact methods" }),
     );
-    await waitFor(() => expect(fetch.mock).toHaveBeenCalledTimes(2));
-    expect(fetch.calls()[1]).toContain("includeOptions=true");
+    await waitFor(() => expect(api.fetch).toHaveBeenCalledTimes(2));
+    expect(api.calls()[1]).toContain("includeOptions=true");
     const more = await waitFor(() =>
       section().getByRole("button", { name: "Load more contact options" })
     );
     await user.click(more);
-    await waitFor(() => expect(fetch.mock).toHaveBeenCalledTimes(3));
-    expect(fetch.calls()[2]).toContain("optionCursor=next-options");
+    await waitFor(() => expect(api.fetch).toHaveBeenCalledTimes(3));
+    expect(api.calls()[2]).toContain("optionCursor=next-options");
     await waitFor(() =>
       expect(
         within(section().getByLabelText("Contact type")).getByRole("option", {
@@ -443,7 +425,7 @@ describe("GAP-029 contact methods island", () => {
       section().getByRole("button", { name: "Search contact options" }),
     );
     await waitFor(() =>
-      expect(fetch.calls()[3]).toBe(
+      expect(api.calls()[3]).toBe(
         `GET /api/v1/people/${personId}/facts/contact-methods?includeOptions=true&optionSearch=Type+0`,
       )
     );
@@ -451,11 +433,13 @@ describe("GAP-029 contact methods island", () => {
 
   it("blocks saving while the vocabulary cannot be searched", async () => {
     shell(railBlock("contact-methods"));
-    const fetch = stubFetch((url) =>
-      url.searchParams.has("optionSearch")
-        ? response({ status: 503, title: "Unavailable" }, 503)
-        : factRead([], { options: [email] })
-    );
+    const api = stubApi({
+      "GET /api/v1/*?optionSearch=e": jsonResponse(
+        { status: 503, title: "Unavailable" },
+        503,
+      ),
+      [anyRoute]: factRead([], { options: [email] }),
+    });
     await mountFacts(mountContactMethods);
     const user = userEvent.setup();
     await user.click(
@@ -482,7 +466,7 @@ describe("GAP-029 contact methods island", () => {
         )?.textContent,
       ).toBe("Options are unavailable. No changes were saved.")
     );
-    expect(fetch.calls().some((call) => call.startsWith("POST"))).toBe(false);
+    expect(api.calls().some((call) => call.startsWith("POST"))).toBe(false);
   });
 
   it("APR-006 pages bounded facts and edits a record on a later page with its own options", async () => {
@@ -502,19 +486,15 @@ describe("GAP-029 contact methods island", () => {
           name: index === 50 ? "Continuation type" : "Email",
         }],
       }));
-    const fetch = stubFetch((url, init) => {
-      if (init?.method === "PUT") {
-        return response({
-          personUpdatedAt: nextRevision,
-          record: records[50],
-          status: "saved",
-        });
-      }
-      const later = url.searchParams.has("cursor");
-      return factRead(later ? records.slice(50) : records.slice(0, 50), {
+    const api = stubApi({
+      "PUT /api/v1/*": factSaved(records[50]),
+      "GET /api/v1/*?cursor=next-facts": factRead(records.slice(50), {
         options: [email],
-        ...(later ? {} : { nextCursor: "next-facts" }),
-      });
+      }),
+      "GET /api/v1/*": factRead(records.slice(0, 50), {
+        options: [email],
+        nextCursor: "next-facts",
+      }),
     });
     await mountFacts(mountContactMethods);
     expect(rows()).toHaveLength(50);
@@ -554,22 +534,22 @@ describe("GAP-029 contact methods island", () => {
       section().getByRole("button", { name: "Save profile fact" }),
     );
     await waitFor(() =>
-      expect(fetch.bodies()[0]?.typeId).toBe(continuationTypeId)
+      expect(api.bodies()[0]).toMatchObject({ typeId: continuationTypeId })
     );
   });
 
   it("fails an unresolved vocabulary-backed record editor closed", async () => {
     shell(railBlock("contact-methods"));
-    const fetch = stubFetch(() =>
-      factRead([{
+    const api = stubApi({
+      [anyRoute]: factRead([{
         ...contact("unresolved@example.test", personId, {
           labelIds: ["00000000-0000-4000-8000-000000000298"],
           typeId: "00000000-0000-4000-8000-000000000299",
         }),
         referencesResolved: false,
         selectedOptions: [],
-      }])
-    );
+      }]),
+    });
     await mountFacts(mountContactMethods);
     await userEvent.setup().click(
       section().getByRole("button", { name: /^Edit Contact:/ }),
@@ -581,6 +561,6 @@ describe("GAP-029 contact methods island", () => {
     );
     expect(document.activeElement).toBe(stateLine());
     expect(block("contact-methods").querySelector("form")!.hidden).toBe(true);
-    expect(fetch.mock).toHaveBeenCalledTimes(1);
+    expect(api.fetch).toHaveBeenCalledTimes(1);
   });
 });

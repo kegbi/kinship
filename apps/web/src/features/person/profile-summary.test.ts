@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
+import { personIdentity, profileSummary } from "../../testing/fixtures.ts";
 import {
   firstMeetingText,
   type HeroFacts,
@@ -13,34 +14,22 @@ import {
   summaryStore,
   tagPreview,
 } from "./profile-summary.ts";
-import type { PersonProfile } from "./section-mounts.ts";
 
-const person = {
-  givenName: "Ada",
-  id: "00000000-0000-4000-8000-000000000100",
-  isDeceased: false,
-  isPartial: false,
-  isSelf: false,
-  isStarred: false,
+const person = personIdentity({
   tagCount: 10,
   tags: [{ id: "00000000-0000-4000-8000-000000000200", name: "Friend" }],
-  updatedAt: "2026-08-15T08:00:00.000000Z",
-} as unknown as PersonProfile["person"];
+});
 
 describe("GAP-028 rail summary", () => {
   it("seeds counted sections from the summary and nothing for a hidden one", () => {
-    const summary = railSummaryFromProfile(
-      {
-        primaryContactMethods: [],
-        relationshipCounts: [],
-        sectionCounts: [
-          { count: 2, id: "contact-methods", status: "ready" },
-          { count: 0, id: "pets", status: "ready" },
-          { id: "addresses", status: "hidden" },
-          { count: 5, id: "notes", status: "ready" },
-        ],
-      } as unknown as PersonProfile["summary"],
-    );
+    const summary = railSummaryFromProfile(profileSummary({
+      sectionCounts: [
+        { count: 2, id: "contact-methods", status: "ready" },
+        { count: 0, id: "pets", status: "ready" },
+        { id: "addresses", status: "hidden" },
+        { count: 5, id: "notes", status: "ready" },
+      ],
+    }));
     expect(summary).toEqual({
       addresses: { empty: false, scope: "total" },
       "contact-methods": { count: 2, empty: false, scope: "total" },

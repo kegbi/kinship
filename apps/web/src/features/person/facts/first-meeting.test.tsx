@@ -1,28 +1,28 @@
 // @vitest-environment happy-dom
-import { cleanup, screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type CapturedProfileSummary,
   captureProfileSummary,
 } from "../profile-summary.test-helper.ts";
+import { jsonResponse, stubApi } from "../../../testing/api.ts";
 import {
+  anyRoute,
   block,
   fact,
   factRead,
+  factSaved,
   mountFacts,
-  nextRevision,
   personId,
   railBlock,
-  response,
   revision,
   shell,
-  stubFetch,
-  unmountFacts,
 } from "./facts.test-helper.ts";
 import { mountFirstMeeting } from "./first-meeting.tsx";
 
 const introducerId = "00000000-0000-4000-8000-000000000450";
+const PEOPLE = "GET /api/v1/people";
 
 let summary: CapturedProfileSummary;
 beforeEach(() => {
@@ -30,10 +30,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   summary.stop();
-  unmountFacts();
-  cleanup();
   vi.unstubAllGlobals();
-  document.body.innerHTML = "";
 });
 
 const section = () => within(block("first-meeting"));
@@ -42,9 +39,9 @@ describe("GAP-029 first meeting island", () => {
   it("[PEOPLE-006] saves where they met with an introducer found by search", async () => {
     shell(railBlock("first-meeting"));
     let saved: object | undefined;
-    const fetch = stubFetch((url, init) => {
-      if (url.pathname === "/api/v1/people") {
-        return response({
+    const api = stubApi({
+      [PEOPLE]: ({ url }) =>
+        jsonResponse({
           people: url.searchParams.get("search") === "Charles"
             ? [{
               familyName: "Babbage",
@@ -53,21 +50,16 @@ describe("GAP-029 first meeting island", () => {
             }]
             : [],
           status: "ready",
-        });
-      }
-      if (init?.method === "POST") {
+        }),
+      "POST /api/v1/*": () => {
         saved = fact("first-meeting", {
           introducedByPersonId: introducerId,
           notes: "Introduced while discussing mathematics",
           placeText: "London salon",
         });
-        return response({
-          personUpdatedAt: nextRevision,
-          record: saved,
-          status: "saved",
-        });
-      }
-      return factRead(saved ? [saved] : []);
+        return factSaved(saved);
+      },
+      "GET /api/v1/*": () => factRead(saved ? [saved] : []),
     });
     await mountFacts(mountFirstMeeting);
     const root = block("first-meeting");
@@ -109,14 +101,14 @@ describe("GAP-029 first meeting island", () => {
     const state = root.querySelector<HTMLElement>("[data-profile-fact-state]")!;
     await waitFor(() => expect(state.textContent).toBe("Profile fact saved."));
     await waitFor(() => expect(document.activeElement).toBe(state));
-    expect(fetch.bodies()).toEqual([{
+    expect(api.bodies()).toEqual([{
       expectedPersonUpdatedAt: revision,
       introducedByPersonId: introducerId,
       notes: "Introduced while discussing mathematics",
       placeText: "London salon",
       section: "first-meeting",
     }]);
-    expect(fetch.calls()).toEqual([
+    expect(api.calls()).toEqual([
       `GET /api/v1/people/${personId}/facts/first-meeting`,
       `GET /api/v1/people?excludePersonId=${personId}&limit=20`,
       `GET /api/v1/people?excludePersonId=${personId}&limit=20&search=Charles`,
@@ -141,11 +133,10 @@ describe("GAP-029 first meeting island", () => {
 
   it("refuses a first meeting with no context on its place field", async () => {
     shell(railBlock("first-meeting"));
-    const fetch = stubFetch((url) =>
-      url.pathname === "/api/v1/people"
-        ? response({ people: [], status: "ready" })
-        : factRead([])
-    );
+    const api = stubApi({
+      [PEOPLE]: jsonResponse({ people: [], status: "ready" }),
+      [anyRoute]: factRead([]),
+    });
     await mountFacts(mountFirstMeeting);
     const user = userEvent.setup();
     await user.click(
@@ -164,23 +155,23 @@ describe("GAP-029 first meeting island", () => {
     expect(screen.getByRole("alert").textContent).toBe(
       "Correct the highlighted profile details before saving.",
     );
-    expect(fetch.calls().some((call) => call.startsWith("POST"))).toBe(false);
+    expect(api.calls().some((call) => call.startsWith("POST"))).toBe(false);
   });
 
   it("fails closed when an existing introducer outside the first page cannot be found again", async () => {
     shell(railBlock("first-meeting"));
-    const fetch = stubFetch((url) => {
-      if (url.pathname === "/api/v1/people") {
-        return url.searchParams.get("selectedPersonId") === introducerId
-          ? response({ status: 503, title: "Unavailable" }, 503)
-          : response({ people: [], status: "ready" });
-      }
-      return factRead([
+    const api = stubApi({
+      [`${PEOPLE}?selectedPersonId=${introducerId}`]: jsonResponse(
+        { status: 503, title: "Unavailable" },
+        503,
+      ),
+      [PEOPLE]: jsonResponse({ people: [], status: "ready" }),
+      [anyRoute]: factRead([
         fact("first-meeting", {
           introducedByPersonId: introducerId,
           notes: "Story",
         }),
-      ]);
+      ]),
     });
     await mountFacts(mountFirstMeeting);
     const user = userEvent.setup();
@@ -196,8 +187,8 @@ describe("GAP-029 first meeting island", () => {
       )
     );
     expect(block("first-meeting").querySelector("form")!.hidden).toBe(true);
-    expect(fetch.calls().some((call) => call.startsWith("POST"))).toBe(false);
-    expect(fetch.calls().some((call) => call.startsWith("PUT"))).toBe(false);
+    expect(api.calls().some((call) => call.startsWith("POST"))).toBe(false);
+    expect(api.calls().some((call) => call.startsWith("PUT"))).toBe(false);
   });
 
   it("edits a saved first meeting with its introducer found again, and clears its vital when the module goes", async () => {
@@ -207,19 +198,18 @@ describe("GAP-029 first meeting island", () => {
       introducedByPersonId: introducerId,
       placeText: "Royal Society",
     });
-    const fetch = stubFetch((url) => {
-      if (url.pathname === "/api/v1/people") {
-        return response({
-          people: [],
-          selected: {
-            familyName: "Babbage",
-            givenName: "Charles",
-            id: introducerId,
-          },
-          status: "ready",
-        });
-      }
-      return factRead(status === "ready" ? [record] : [], { status });
+    const api = stubApi({
+      [PEOPLE]: jsonResponse({
+        people: [],
+        selected: {
+          familyName: "Babbage",
+          givenName: "Charles",
+          id: introducerId,
+        },
+        status: "ready",
+      }),
+      [anyRoute]: () =>
+        factRead(status === "ready" ? [record] : [], { status }),
     });
     await mountFacts(mountFirstMeeting);
     expect(summary.vital("first-meeting")).toBe("Royal Society");
@@ -238,12 +228,11 @@ describe("GAP-029 first meeting island", () => {
       section().getByLabelText<HTMLInputElement>("Where or how you first met")
         .value,
     ).toBe("Royal Society");
-    expect(fetch.calls()[1]).toBe(
+    expect(api.calls()[1]).toBe(
       `GET /api/v1/people?excludePersonId=${personId}&limit=20&selectedPersonId=${introducerId}`,
     );
     await user.click(section().getByRole("button", { name: "Cancel" }));
     status = "hidden";
-    const { act } = await import("@testing-library/react");
     act(() => {
       document.dispatchEvent(
         new CustomEvent("person-lifecycle-changed", {
@@ -266,15 +255,15 @@ describe("GAP-029 first meeting island", () => {
       return frames.length;
     });
     vi.stubGlobal("cancelAnimationFrame", () => undefined);
-    stubFetch(() =>
-      factRead([
+    stubApi({
+      [anyRoute]: factRead([
         fact("first-meeting", {
           notes:
             "Introduced while discussing mathematics and analytical engines",
           placeText: "London salon",
         }),
-      ])
-    );
+      ]),
+    });
     await mountFacts(mountFirstMeeting);
     const story = block("first-meeting").querySelector<HTMLElement>(
       "[data-profile-fact-list] p",
@@ -284,7 +273,6 @@ describe("GAP-029 first meeting island", () => {
       clientHeight: { configurable: true, value: 32 },
       scrollHeight: { configurable: true, value: 64 },
     });
-    const { act } = await import("@testing-library/react");
     act(() => {
       for (const frame of frames.splice(0)) frame(0);
     });

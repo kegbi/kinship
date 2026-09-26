@@ -1,29 +1,24 @@
 // @vitest-environment happy-dom
-import {
-  act,
-  cleanup,
-  fireEvent,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { act, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   type CapturedProfileSummary,
   captureProfileSummary,
 } from "../profile-summary.test-helper.ts";
+import { jsonResponse, stubApi } from "../../../testing/api.ts";
+import { chooseOptions } from "../../../testing/render.tsx";
 import {
+  anyRoute,
   block,
   fact,
   factRead,
+  factSaved,
   mountFacts,
   nextRevision,
-  response,
   revision,
   shell,
-  stubFetch,
   tagsBlock,
-  unmountFacts,
 } from "./facts.test-helper.ts";
 import { mountTags } from "./tags.tsx";
 
@@ -33,13 +28,7 @@ let summary: CapturedProfileSummary;
 beforeEach(() => {
   summary = captureProfileSummary();
 });
-afterEach(() => {
-  summary.stop();
-  unmountFacts();
-  cleanup();
-  vi.unstubAllGlobals();
-  document.body.innerHTML = "";
-});
+afterEach(() => summary.stop());
 
 const section = () => within(block("tags"));
 const stateLine = () =>
@@ -47,24 +36,11 @@ const stateLine = () =>
 const assigned = () =>
   section().getByLabelText<HTMLSelectElement>("Assigned tags");
 const tags = (ids: readonly string[]) => fact("tags", { tagIds: ids });
-
-/**
- * Adds `ids` to what `select` has chosen, all at once, as a browser's picker
- * (and Playwright) does. Marking the options also refreshes happy-dom's
- * cached `selectedOptions`, which a selection alone leaves stale.
- */
-function choose(select: HTMLSelectElement, ids: readonly string[]): void {
-  for (const option of select.options) {
-    if (!ids.includes(option.value)) continue;
-    option.selected = true;
-    option.toggleAttribute("data-chosen", true);
-  }
-  fireEvent.change(select);
-}
+const TAG_OPTIONS = "GET /api/v1/people/tag-options";
 
 describe("GAP-029 tags island", () => {
   it("keeps the hero's preview slot and edits beside it", async () => {
-    stubFetch(() => factRead([tags([])]));
+    stubApi({ [anyRoute]: factRead([tags([])]) });
     shell(tagsBlock());
     await mountFacts(mountTags);
     const root = block("tags");
@@ -83,24 +59,19 @@ describe("GAP-029 tags island", () => {
 
   it("APR-006 refreshes the tag preview and assigned count after local edits", async () => {
     let saved = false;
-    const fetch = stubFetch((url, init) => {
-      if (url.pathname.endsWith("/tag-options")) {
-        return response({
-          options: [{ id: tagId, name: "Friend" }],
-          status: "ready",
-        });
-      }
-      if (init?.method === "PUT") {
+    const api = stubApi({
+      [TAG_OPTIONS]: jsonResponse({
+        options: [{ id: tagId, name: "Friend" }],
+        status: "ready",
+      }),
+      "PUT /api/v1/*": () => {
         saved = true;
-        return response({
-          personUpdatedAt: nextRevision,
-          record: { ...tags([tagId]), updatedAt: nextRevision },
-          status: "saved",
-        });
-      }
-      return factRead([tags(saved ? [tagId] : [])], {
-        options: saved ? [{ id: tagId, name: "Friend" }] : [],
-      });
+        return factSaved({ ...tags([tagId]), updatedAt: nextRevision });
+      },
+      "GET /api/v1/*": () =>
+        factRead([tags(saved ? [tagId] : [])], {
+          options: saved ? [{ id: tagId, name: "Friend" }] : [],
+        }),
     });
     shell(tagsBlock());
     await mountFacts(mountTags);
@@ -109,13 +80,13 @@ describe("GAP-029 tags island", () => {
     const user = userEvent.setup();
     await user.click(section().getByRole("button", { name: "Edit tags" }));
     await waitFor(() => expect(assigned().options).toHaveLength(1));
-    choose(assigned(), [tagId]);
+    chooseOptions(assigned(), [tagId]);
     await user.click(
       section().getByRole("button", { name: "Save profile fact" }),
     );
     await waitFor(() => expect(summary.tags()).toBe("Friend"));
     expect(stateLine().textContent).toBe("1 tag saved. Profile fact saved.");
-    expect(fetch.bodies()).toEqual([{
+    expect(api.bodies()).toEqual([{
       expectedPersonUpdatedAt: revision,
       expectedUpdatedAt: revision,
       id: tags([]).id,
@@ -131,9 +102,11 @@ describe("GAP-029 tags island", () => {
         id: `00000000-0000-4000-8300-${String(index).padStart(12, "0")}`,
         name: `Tag ${index}`,
       }));
-      stubFetch(() =>
-        factRead([tags(options.map((option) => option.id))], { options })
-      );
+      stubApi({
+        [anyRoute]: factRead([tags(options.map((option) => option.id))], {
+          options,
+        }),
+      });
       shell(tagsBlock());
       await mountFacts(mountTags);
       expect(stateLine().textContent).toBe(
@@ -147,7 +120,7 @@ describe("GAP-029 tags island", () => {
   );
 
   it("APR-006 keeps missing tag names distinct from empty assignments", async () => {
-    stubFetch(() => factRead([tags(["unresolved"])]));
+    stubApi({ [anyRoute]: factRead([tags(["unresolved"])]) });
     shell(tagsBlock());
     await mountFacts(mountTags);
     expect(summary.tags()).toBe("Unavailable tag");
@@ -171,11 +144,11 @@ describe("GAP-029 tags island", () => {
     );
     let failOptions = false;
     let tagOptionCalls = 0;
-    const fetch = stubFetch((url) => {
-      if (url.pathname.endsWith("/tag-options")) {
+    const api = stubApi({
+      [TAG_OPTIONS]: () => {
         tagOptionCalls++;
-        if (failOptions) return response({ status: 503 }, 503);
-        return response({
+        if (failOptions) return jsonResponse({ status: 503 }, 503);
+        return jsonResponse({
           nextCursor: "next-tags",
           options: ids.slice(0, 20).map((id, index) => ({
             id,
@@ -183,10 +156,10 @@ describe("GAP-029 tags island", () => {
           })),
           status: "ready",
         });
-      }
-      return factRead([tags(ids)], {
+      },
+      [anyRoute]: factRead([tags(ids)], {
         options: ids.map((id, index) => ({ id, name: `Tag ${index + 1}` })),
-      });
+      }),
     });
     shell(tagsBlock());
     await mountFacts(mountTags);
@@ -210,18 +183,18 @@ describe("GAP-029 tags island", () => {
     expect(section().queryByRole("button", { name: "Load more tags" }))
       .toBeNull();
     act(() => block("tags").querySelector("form")!.requestSubmit());
-    expect(fetch.calls().some((call) => /^(PUT|POST)/.test(call))).toBe(false);
+    expect(api.calls().some((call) => /^(PUT|POST)/.test(call))).toBe(false);
   });
 
   it("keeps tag selections durable across independent searches and continuation", async () => {
     const currentId = "00000000-0000-4000-8000-000000000401";
     const alphaId = "00000000-0000-4000-8000-000000000402";
     const betaId = "00000000-0000-4000-8000-000000000403";
-    const fetch = stubFetch((url, init) => {
-      if (url.pathname.endsWith("/tag-options")) {
+    const api = stubApi({
+      [TAG_OPTIONS]: ({ url }) => {
         const search = url.searchParams.get("search");
         const cursor = url.searchParams.get("cursor");
-        return response({
+        return jsonResponse({
           ...(search === "alpha" && cursor
             ? { options: [{ id: alphaId, name: "Alpha" }] }
             : search === "alpha"
@@ -234,17 +207,12 @@ describe("GAP-029 tags island", () => {
             : { options: [{ id: currentId, name: "Current" }] }),
           status: "ready",
         });
-      }
-      if (init?.method === "PUT") {
-        return response({
-          personUpdatedAt: nextRevision,
-          record: tags(JSON.parse(String(init.body)).tagIds),
-          status: "saved",
-        });
-      }
-      return factRead([tags([currentId])], {
+      },
+      "PUT /api/v1/*": ({ body }) =>
+        factSaved(tags((body as { tagIds: string[] }).tagIds)),
+      "GET /api/v1/*": factRead([tags([currentId])], {
         options: [{ id: currentId, name: "Current" }],
-      });
+      }),
     });
     shell(tagsBlock());
     await mountFacts(mountTags);
@@ -261,7 +229,7 @@ describe("GAP-029 tags island", () => {
       expect(within(assigned()).getByRole("option", { name: "Alpha" }))
         .toBeTruthy()
     );
-    choose(assigned(), [alphaId]);
+    chooseOptions(assigned(), [alphaId]);
     await user.click(section().getByRole("button", { name: "Load more tags" }));
     await waitFor(() =>
       expect(section().queryByRole("button", { name: "Load more tags" }))
@@ -276,12 +244,14 @@ describe("GAP-029 tags island", () => {
     );
     expect([...assigned().selectedOptions].map((option) => option.value))
       .toEqual([currentId, alphaId]);
-    choose(assigned(), [betaId]);
+    chooseOptions(assigned(), [betaId]);
     await user.click(
       section().getByRole("button", { name: "Save profile fact" }),
     );
     await waitFor(() =>
-      expect(fetch.bodies()[0]?.tagIds).toEqual([currentId, alphaId, betaId])
+      expect(api.bodies()[0]).toMatchObject({
+        tagIds: [currentId, alphaId, betaId],
+      })
     );
   });
 
@@ -290,17 +260,16 @@ describe("GAP-029 tags island", () => {
       id: `00000000-0000-4000-8200-${String(index + 1).padStart(12, "0")}`,
       name: `Tag ${index + 1}`,
     }));
-    const fetch = stubFetch((url) =>
-      url.pathname.endsWith("/tag-options")
-        ? response({ options: all, status: "ready" })
-        : factRead([])
-    );
+    const api = stubApi({
+      [TAG_OPTIONS]: jsonResponse({ options: all, status: "ready" }),
+      [anyRoute]: factRead([]),
+    });
     shell(tagsBlock());
     await mountFacts(mountTags);
     const user = userEvent.setup();
     await user.click(section().getByRole("button", { name: "Edit tags" }));
     await waitFor(() => expect(assigned().options).toHaveLength(501));
-    choose(assigned(), all.map((tag) => tag.id));
+    chooseOptions(assigned(), all.map((tag) => tag.id));
     await user.click(
       section().getByRole("button", { name: "Save profile fact" }),
     );
@@ -309,24 +278,23 @@ describe("GAP-029 tags island", () => {
         "Choose no more than 500 tags.",
       )
     );
-    expect(fetch.calls().some((call) => /^(PUT|POST)/.test(call))).toBe(false);
+    expect(api.calls().some((call) => /^(PUT|POST)/.test(call))).toBe(false);
   });
 
   it("purges its tags while the module is off and reads them again when it is back", async () => {
     let status: "hidden" | "ready" = "ready";
-    stubFetch((url) => {
-      if (url.pathname.endsWith("/tag-options")) {
-        return response({
-          options: [{ id: tagId, name: "Confidential friend" }],
-          status: "ready",
-        });
-      }
-      return factRead(status === "ready" ? [tags([tagId])] : [], {
-        options: status === "ready"
-          ? [{ id: tagId, name: "Confidential friend" }]
-          : [],
-        status,
-      });
+    stubApi({
+      [TAG_OPTIONS]: jsonResponse({
+        options: [{ id: tagId, name: "Confidential friend" }],
+        status: "ready",
+      }),
+      [anyRoute]: () =>
+        factRead(status === "ready" ? [tags([tagId])] : [], {
+          options: status === "ready"
+            ? [{ id: tagId, name: "Confidential friend" }]
+            : [],
+          status,
+        }),
     });
     shell(tagsBlock());
     await mountFacts(mountTags);

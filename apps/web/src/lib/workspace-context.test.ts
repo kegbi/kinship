@@ -2,18 +2,19 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  deferred,
+  jsonResponse,
+  problemResponse,
+  stubApi,
+} from "../testing/api.ts";
+import {
   resolveWorkspaceSession,
   updateCachedSessionUiState,
 } from "./workspace-context.ts";
 
 const SESSION_CACHE_KEY = "kinship.session";
-
-function response(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    headers: { "content-type": "application/json" },
-    status,
-  });
-}
+const SESSION = "GET /api/v1/session";
+const ENTRY = "POST /api/v1/application-entry";
 
 const session = {
   member: { id: "member", role: "owner" },
@@ -50,8 +51,7 @@ describe("protected workspace session resolution", () => {
           throw new DOMException("Storage unavailable", "SecurityError");
         },
       });
-      const fetchMock = vi.fn(() => Promise.resolve(response(session)));
-      vi.stubGlobal("fetch", fetchMock);
+      const api = stubApi({ [SESSION]: jsonResponse(session) });
       vi.resetModules();
       const context = await import("./workspace-context.ts");
 
@@ -59,7 +59,7 @@ describe("protected workspace session resolution", () => {
         session,
         status: "ready",
       });
-      expect(fetchMock).toHaveBeenCalledWith(
+      expect(api.fetch).toHaveBeenCalledWith(
         "/api/v1/session",
         expect.anything(),
       );
@@ -67,7 +67,7 @@ describe("protected workspace session resolution", () => {
         session,
         status: "ready",
       });
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(api.fetch).toHaveBeenCalledTimes(2);
     },
   );
 
@@ -75,11 +75,10 @@ describe("protected workspace session resolution", () => {
     vi.spyOn(globalThis, "sessionStorage", "get").mockImplementation(() => {
       throw new DOMException("Storage disabled", "SecurityError");
     });
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({ status: 401 }, 401))
-      .mockResolvedValueOnce(response({ member: { firstName: "Avery" } }))
-      .mockResolvedValueOnce(response(session));
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubApi({
+      [SESSION]: [problemResponse(401), jsonResponse(session)],
+      [ENTRY]: [jsonResponse({ member: { firstName: "Avery" } })],
+    });
     vi.resetModules();
     const context = await import("./workspace-context.ts");
 
@@ -88,11 +87,7 @@ describe("protected workspace session resolution", () => {
       session,
       status: "ready",
     });
-    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
-      "/api/v1/session",
-      "/api/v1/application-entry",
-      "/api/v1/session",
-    ]);
+    expect(api.calls()).toEqual([SESSION, ENTRY, SESSION]);
   });
 
   it.each(["getItem", "setItem"] as const)(
@@ -148,13 +143,8 @@ describe("protected workspace session resolution", () => {
           throw new DOMException("Quota reached", "QuotaExceededError");
         }),
     });
-    let finish!: (value: Response) => void;
-    const fetchMock = vi.fn(() =>
-      new Promise<Response>((resolve) => {
-        finish = resolve;
-      })
-    );
-    vi.stubGlobal("fetch", fetchMock);
+    const revalidation = deferred<Response>();
+    const api = stubApi({ [SESSION]: revalidation.promise });
     vi.resetModules();
     const context = await import("./workspace-context.ts");
 
@@ -164,13 +154,13 @@ describe("protected workspace session resolution", () => {
     });
     const revalidated = vi.fn();
     context.onSessionRevalidated(revalidated);
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(api.fetch).toHaveBeenCalledWith(
       "/api/v1/session",
       expect.objectContaining({
         headers: expect.objectContaining({ "X-Workspace-Id": "selected" }),
       }),
     );
-    finish(response(fresh));
+    revalidation.resolve(jsonResponse(fresh));
     await vi.waitFor(() =>
       expect(revalidated).toHaveBeenCalledWith({
         session: fresh,
@@ -224,17 +214,17 @@ describe("protected workspace session resolution", () => {
   });
 
   it("serializes concurrent first-entry consumers through one application handoff", async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(
-        response({ code: "session_invalid", status: 401 }, 401),
-      )
-      .mockResolvedValueOnce(response({
+    const api = stubApi({
+      [SESSION]: [
+        problemResponse(401, { code: "session_invalid" }),
+        jsonResponse(session),
+      ],
+      [ENTRY]: [jsonResponse({
         member: { firstName: "Avery", id: "member" },
         status: "ready",
         workspace: { id: "workspace", name: "Circle" },
-      }))
-      .mockResolvedValueOnce(response(session));
-    vi.stubGlobal("fetch", fetchMock);
+      })],
+    });
 
     const resolutions = await Promise.all([
       resolveWorkspaceSession(),
@@ -247,18 +237,13 @@ describe("protected workspace session resolution", () => {
       { entryFirstName: "Avery", session, status: "ready" },
       { entryFirstName: "Avery", session, status: "ready" },
     ]);
-    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
-      "/api/v1/session",
-      "/api/v1/application-entry",
-      "/api/v1/session",
-    ]);
+    expect(api.calls()).toEqual([SESSION, ENTRY, SESSION]);
     expect(JSON.parse(sessionStorage.getItem(SESSION_CACHE_KEY) ?? "null"))
       .toEqual({ savedAt: expect.any(Number), session });
   });
 
   it("serves a fresh cached session without awaiting its revalidation", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(response(session));
-    vi.stubGlobal("fetch", fetchMock);
+    stubApi({ [SESSION]: jsonResponse(session) });
 
     await resolveWorkspaceSession();
 
@@ -266,12 +251,8 @@ describe("protected workspace session resolution", () => {
       .toEqual({ savedAt: expect.any(Number), session });
 
     vi.resetModules();
-    let finishRevalidation!: (value: Response) => void;
-    const revalidation = new Promise<Response>((resolve) => {
-      finishRevalidation = resolve;
-    });
-    const revalidationFetch = vi.fn(() => revalidation);
-    vi.stubGlobal("fetch", revalidationFetch);
+    const revalidation = deferred<Response>();
+    const api = stubApi({ [SESSION]: revalidation.promise });
     const nextModule = await import("./workspace-context.ts");
 
     const cachedPromise = nextModule.resolveWorkspaceSession();
@@ -283,8 +264,8 @@ describe("protected workspace session resolution", () => {
 
     expect(cached).toEqual({ session, status: "ready" });
     expect(concurrent).toEqual(cached);
-    expect(revalidationFetch).toHaveBeenCalledTimes(1);
-    finishRevalidation(response(session));
+    expect(api.fetch).toHaveBeenCalledTimes(1);
+    revalidation.resolve(jsonResponse(session));
     await Promise.resolve();
   });
 
@@ -317,8 +298,7 @@ describe("protected workspace session resolution", () => {
           workspaces: [{ id: activeWorkspace, name: "Other circle" }],
         }
         : session;
-      const fetchMock = vi.fn().mockResolvedValue(response(freshSession));
-      vi.stubGlobal("fetch", fetchMock);
+      const api = stubApi({ [SESSION]: jsonResponse(freshSession) });
       vi.resetModules();
       const currentModule = await import("./workspace-context.ts");
 
@@ -326,7 +306,7 @@ describe("protected workspace session resolution", () => {
         session: freshSession,
         status: "ready",
       });
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(api.fetch).toHaveBeenCalledTimes(1);
     }
   });
 });

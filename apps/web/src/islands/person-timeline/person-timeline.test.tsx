@@ -1,31 +1,32 @@
 // @vitest-environment happy-dom
-import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { segmentVariants } from "@/components/ui/variants.ts";
 import type { SectionProps } from "../../features/person/section-mounts.ts";
+import {
+  deferred,
+  jsonResponse,
+  problemResponse,
+  stubApi,
+  unreachable,
+} from "../../testing/api.ts";
+import { ids, preferences, sectionProps } from "../../testing/fixtures.ts";
+import {
+  drawShell,
+  element,
+  mountPending,
+  mountSection,
+} from "../../testing/render.tsx";
 import { mountPersonTimeline } from "./mount.tsx";
 
 const segment = segmentVariants();
-const personId = "00000000-0000-4000-8000-000000000100";
-const workspaceId = "00000000-0000-4000-8000-000000000300";
-
-function response(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    headers: { "Content-Type": "application/json" },
-    status,
-  });
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => resolve = done);
-  return { promise, resolve };
-}
+const { person: personId, workspace: workspaceId } = ids;
+const TIMELINE = "GET /api/v1/people/:personId/timeline";
 
 /** The card as the static shell draws it, filters disabled until wired. */
 function markup(): HTMLElement {
-  document.body.innerHTML = `
+  drawShell(`
     <main>
       <section id="person-timeline" class="profile-section-card person-timeline" aria-labelledby="person-timeline-heading">
         <header class="profile-section-heading"><div class="profile-section-title"><h3 id="person-timeline-heading">Everything, in order</h3></div></header>
@@ -35,8 +36,8 @@ function markup(): HTMLElement {
         <p data-timeline-state class="section-state">Loading the timeline…</p>
         <ul data-timeline-list class="person-timeline-list" aria-label="Person timeline"></ul>
       </section>
-    </main>`;
-  return document.querySelector("#person-timeline")!;
+    </main>`);
+  return element("#person-timeline");
 }
 
 function item(overrides: Record<string, unknown> = {}) {
@@ -51,45 +52,26 @@ function item(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const utc = {
-  contactNameOrder: "given_family_nickname",
-  effectiveTimezone: "UTC",
-  locale: "en",
-} as unknown as NonNullable<SectionProps["preferences"]>;
+/** A ready timeline page. */
+const page = (items: readonly unknown[], more: object = {}) =>
+  jsonResponse({ items, status: "ready", ...more });
 
-const mounted: Array<() => void> = [];
+/** Answers every timeline read with one ready page of `items`. */
+const serve = (items: readonly unknown[]) =>
+  stubApi({ [TIMELINE]: page(items) });
 
-async function mount(
-  preferences: SectionProps["preferences"] = utc,
-): Promise<void> {
-  await act(async () => {
-    mounted.push(
-      await mountPersonTimeline(document.body, {
-        archived: false,
-        personId,
-        preferences,
-        workspaceId,
-      }),
-    );
-  });
-}
+const props = (prefs: SectionProps["preferences"] = preferences()) =>
+  sectionProps({ preferences: prefs });
 
-const card = () =>
-  within(document.querySelector<HTMLElement>("#person-timeline")!);
+const mount = (prefs?: SectionProps["preferences"]) =>
+  mountSection(mountPersonTimeline, props(prefs));
+
+const card = () => within(element("#person-timeline"));
 const stateLine = () =>
   document.querySelector("p[data-timeline-state]")?.textContent;
 const rows = () => [
   ...document.querySelectorAll<HTMLElement>("[data-timeline-id]"),
 ];
-
-afterEach(() => {
-  act(() => {
-    for (const unmount of mounted.splice(0)) unmount();
-  });
-  cleanup();
-  vi.unstubAllGlobals();
-  document.body.innerHTML = "";
-});
 
 describe("merged person timeline island", () => {
   it("accepts an immediate filter click and supersedes the initial request", async () => {
@@ -99,15 +81,13 @@ describe("merged person timeline island", () => {
       excerpt: "Designed a compiler together",
       kind: "activity",
     });
-    const fetchMock = vi.fn()
-      .mockReturnValueOnce(initial.promise)
-      .mockResolvedValueOnce(response({ items: [activity], status: "ready" }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    let settledMount!: Promise<void>;
-    act(() => {
-      settledMount = mount();
+    const api = stubApi({
+      [TIMELINE]: [initial.promise, page([activity])],
     });
+
+    const settledMount = mountPending(() =>
+      mountPersonTimeline(document.body, props())
+    );
     // The island took the card over: its filters are wired and enabled.
     expect(root.dataset.island).toBe("person-timeline");
     expect(root.hasAttribute("data-island-ready")).toBe(true);
@@ -133,19 +113,15 @@ describe("merged person timeline island", () => {
     await userEvent.setup().click(activities);
 
     await waitFor(() => expect(root.dataset.timelineState).toBe("ready"));
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+    expect(api.fetch).toHaveBeenCalledTimes(2);
+    expect(api.fetch.mock.calls[1]?.[0]).toBe(
       `/api/v1/people/${personId}/timeline?kind=activity&limit=20`,
     );
-    expect(
-      new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("X-Workspace-Id"),
-    ).toBe(workspaceId);
+    expect(api.requests()[1]?.headers.get("X-Workspace-Id")).toBe(workspaceId);
     expect(activities.getAttribute("aria-pressed")).toBe("true");
 
-    initial.resolve(response({
-      items: [item({ excerpt: "A newer unfiltered note" })],
+    initial.resolve(page([item({ excerpt: "A newer unfiltered note" })], {
       nextCursor: "older-unfiltered-events",
-      status: "ready",
     }));
     await act(() => settledMount);
     const list = card().getByRole("list", { name: "Person timeline" });
@@ -162,37 +138,27 @@ describe("merged person timeline island", () => {
     async (effectiveTimezone) => {
       markup();
       const occurredAt = "2026-09-04T22:10:00Z";
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue(response({
-          items: [
-            item({
-              calendarDate: { day: 5, month: 9, year: 2026 },
-              kind: "life-event",
-              occurredAt,
-            }),
-            item({
-              calendarDate: { day: 29, month: 2 },
-              datePrecision: "month_day",
-              kind: "life-event",
-              occurredAt,
-            }),
-            item({
-              calendarDate: {},
-              datePrecision: "unknown",
-              kind: "life-event",
-              occurredAt,
-            }),
-            item({ kind: "life-event", occurredAt }),
-          ],
-          status: "ready",
-        })),
-      );
-      await mount({
-        ...utc,
-        effectiveTimezone,
-        locale: "en-US",
-      });
+      serve([
+        item({
+          calendarDate: { day: 5, month: 9, year: 2026 },
+          kind: "life-event",
+          occurredAt,
+        }),
+        item({
+          calendarDate: { day: 29, month: 2 },
+          datePrecision: "month_day",
+          kind: "life-event",
+          occurredAt,
+        }),
+        item({
+          calendarDate: {},
+          datePrecision: "unknown",
+          kind: "life-event",
+          occurredAt,
+        }),
+        item({ kind: "life-event", occurredAt }),
+      ]);
+      await mount(preferences({ effectiveTimezone, locale: "en-US" }));
       const dates = [...document.querySelectorAll("[data-timeline-date]")];
       expect(dates.map((date) => date.textContent)).toEqual([
         "September 5, 2026",
@@ -213,18 +179,10 @@ describe("merged person timeline island", () => {
 
   it("APR-009 formats an instant with explicit member locale and timezone", async () => {
     markup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        items: [item({ occurredAt: "2026-09-04T22:10:00Z" })],
-        status: "ready",
-      })),
+    serve([item({ occurredAt: "2026-09-04T22:10:00Z" })]);
+    await mount(
+      preferences({ effectiveTimezone: "Europe/Belgrade", locale: "de-DE" }),
     );
-    await mount({
-      ...utc,
-      effectiveTimezone: "Europe/Belgrade",
-      locale: "de-DE",
-    });
     expect(document.querySelector("[data-timeline-date]")?.textContent)
       .toBe("05.09.2026, 00:10");
   });
@@ -244,11 +202,7 @@ describe("merged person timeline island", () => {
       occurredAt: "2025-12-31T10:00:00.000Z",
       title: "Second title",
     });
-    const fetchMock = vi.fn().mockResolvedValue(response({
-      items: [first, second],
-      status: "ready",
-    }));
-    vi.stubGlobal("fetch", fetchMock);
+    const api = serve([first, second]);
 
     await mount();
 
@@ -272,7 +226,7 @@ describe("merged person timeline island", () => {
       "First excerpt",
     );
     expect(stateLine()).toBe("2 timeline events");
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(api.fetch).toHaveBeenCalledWith(
       `/api/v1/people/${personId}/timeline?limit=20`,
       { headers: expect.objectContaining({ "X-Workspace-Id": workspaceId }) },
     );
@@ -280,13 +234,7 @@ describe("merged person timeline island", () => {
 
   it("falls back to the kind and an honest placeholder when a row has no text", async () => {
     markup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        items: [item({ excerpt: undefined, kind: "note", title: undefined })],
-        status: "ready",
-      })),
-    );
+    serve([item({ excerpt: undefined, kind: "note", title: undefined })]);
     await mount(undefined);
     const [row] = rows();
     expect(row!.querySelector(".person-timeline-summary-excerpt")?.textContent)
@@ -300,26 +248,20 @@ describe("merged person timeline island", () => {
 
   it("renders activity participants, category, and emotions in received order", async () => {
     markup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        items: [
-          item({
-            activityType: "Workshop",
-            emotions: [
-              { id: crypto.randomUUID(), name: "Inspired" },
-              { id: crypto.randomUUID(), name: "Curious" },
-            ],
-            kind: "activity",
-            participants: [
-              { id: crypto.randomUUID(), name: "Ada Lovelace" },
-              { id: crypto.randomUUID(), name: "Grace Hopper" },
-            ],
-          }),
+    serve([
+      item({
+        activityType: "Workshop",
+        emotions: [
+          { id: crypto.randomUUID(), name: "Inspired" },
+          { id: crypto.randomUUID(), name: "Curious" },
         ],
-        status: "ready",
-      })),
-    );
+        kind: "activity",
+        participants: [
+          { id: crypto.randomUUID(), name: "Ada Lovelace" },
+          { id: crypto.randomUUID(), name: "Grace Hopper" },
+        ],
+      }),
+    ]);
 
     await mount();
 
@@ -336,16 +278,10 @@ describe("merged person timeline island", () => {
 
   it("renders incoming and outgoing call direction", async () => {
     markup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        items: [
-          item({ contactWasCaller: true, kind: "call" }),
-          item({ contactWasCaller: false, kind: "call" }),
-        ],
-        status: "ready",
-      })),
-    );
+    serve([
+      item({ contactWasCaller: true, kind: "call" }),
+      item({ contactWasCaller: false, kind: "call" }),
+    ]);
 
     await mount();
 
@@ -358,33 +294,27 @@ describe("merged person timeline island", () => {
 
   it("renders conversation metadata and messages in received order", async () => {
     markup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        items: [
-          item({
-            channelType: "Email",
-            contactMethod: "ada@example.test",
-            kind: "conversation",
-            messages: [
-              {
-                content: "Can we compare notes?",
-                direction: "inbound",
-                writtenAt: "2026-01-02T14:00:00.000Z",
-              },
-              {
-                content: "Yes, tomorrow works.",
-                direction: "outbound",
-                writtenAt: "2026-01-02T14:05:00.000Z",
-              },
-            ],
-          }),
-          item({ kind: "conversation" }),
-          item({ kind: "conversation", messages: [] }),
+    serve([
+      item({
+        channelType: "Email",
+        contactMethod: "ada@example.test",
+        kind: "conversation",
+        messages: [
+          {
+            content: "Can we compare notes?",
+            direction: "inbound",
+            writtenAt: "2026-01-02T14:00:00.000Z",
+          },
+          {
+            content: "Yes, tomorrow works.",
+            direction: "outbound",
+            writtenAt: "2026-01-02T14:05:00.000Z",
+          },
         ],
-        status: "ready",
-      })),
-    );
+      }),
+      item({ kind: "conversation" }),
+      item({ kind: "conversation", messages: [] }),
+    ]);
 
     await mount();
 
@@ -406,13 +336,7 @@ describe("merged person timeline island", () => {
 
   it("omits detail lists for notes and life events", async () => {
     markup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        items: [item({ kind: "note" }), item({ kind: "life-event" })],
-        status: "ready",
-      })),
-    );
+    serve([item({ kind: "note" }), item({ kind: "life-event" })]);
 
     await mount();
 
@@ -422,21 +346,15 @@ describe("merged person timeline island", () => {
   it("formats every date precision in UTC without inventing an unknown date", async () => {
     markup();
     const occurredAt = "1999-12-31T23:59:00.000Z";
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        items: [
-          item({ datePrecision: "full" }),
-          item({ datePrecision: "year_month" }),
-          item({ datePrecision: "year" }),
-          item({ datePrecision: "month_day" }),
-          item({ datePrecision: "month" }),
-          item({ datePrecision: "day" }),
-          item({ datePrecision: "unknown", occurredAt }),
-        ],
-        status: "ready",
-      })),
-    );
+    serve([
+      item({ datePrecision: "full" }),
+      item({ datePrecision: "year_month" }),
+      item({ datePrecision: "year" }),
+      item({ datePrecision: "month_day" }),
+      item({ datePrecision: "month" }),
+      item({ datePrecision: "day" }),
+      item({ datePrecision: "unknown", occurredAt }),
+    ]);
 
     await mount();
 
@@ -469,24 +387,22 @@ describe("merged person timeline island", () => {
 
   it("reloads a selected kind from the first page and updates chip state", async () => {
     markup();
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({
-        items: [item()],
-        nextCursor: "cursor-for-all",
-        status: "ready",
-      }))
-      .mockResolvedValueOnce(response({ items: [], status: "ready" }));
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubApi({
+      [TIMELINE]: [
+        page([item()], { nextCursor: "cursor-for-all" }),
+        page([]),
+      ],
+    });
 
     await mount();
     const notes = card().getByRole("button", { name: "Notes" });
     await userEvent.setup().click(notes);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+    await waitFor(() => expect(api.fetch).toHaveBeenCalledTimes(2));
+    expect(api.fetch.mock.calls[1]?.[0]).toBe(
       `/api/v1/people/${personId}/timeline?kind=note&limit=20`,
     );
-    expect(String(fetchMock.mock.calls[1]?.[0])).not.toContain("cursor");
+    expect(String(api.fetch.mock.calls[1]?.[0])).not.toContain("cursor");
     await waitFor(() =>
       expect(stateLine()).toBe("No timeline events recorded.")
     );
@@ -500,12 +416,7 @@ describe("merged person timeline island", () => {
   it("shows a reload in progress without the first-load skeleton", async () => {
     markup();
     const reload = deferred<Response>();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response({ items: [item()], status: "ready" }))
-        .mockReturnValueOnce(reload.promise),
-    );
+    stubApi({ [TIMELINE]: [page([item()]), reload.promise] });
     await mount();
     await userEvent.setup().click(
       card().getByRole("button", { name: "Calls" }),
@@ -513,7 +424,7 @@ describe("merged person timeline island", () => {
     expect(stateLine()).toBe("Loading the timeline…");
     expect(rows()).toHaveLength(0);
     await act(async () => {
-      reload.resolve(response({ items: [], status: "ready" }));
+      reload.resolve(page([]));
       await reload.promise;
     });
     await waitFor(() =>
@@ -531,13 +442,9 @@ describe("merged person timeline island", () => {
       excerpt: "Newly created note",
       id: "00000000-0000-4000-8000-000000000204",
     });
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({ items: [original], status: "ready" }))
-      .mockResolvedValueOnce(response({
-        items: [created, original],
-        status: "ready",
-      }));
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubApi({
+      [TIMELINE]: [page([original]), page([created, original])],
+    });
 
     await mount();
     act(() => {
@@ -549,7 +456,7 @@ describe("merged person timeline island", () => {
     });
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(api.fetch).toHaveBeenCalledTimes(2);
       expect(
         card().getByRole("list", { name: "Person timeline" }).textContent,
       ).toContain("Newly created note");
@@ -558,14 +465,10 @@ describe("merged person timeline island", () => {
 
   it("ignores a changed timeline for another person or without detail", async () => {
     markup();
-    const fetchMock = vi.fn().mockResolvedValue(response({
-      items: [item()],
-      status: "ready",
-    }));
-    vi.stubGlobal("fetch", fetchMock);
+    const api = serve([item()]);
 
     await mount();
-    fetchMock.mockClear();
+    api.fetch.mockClear();
     act(() => {
       document.dispatchEvent(
         new CustomEvent("person-timeline-changed", {
@@ -576,7 +479,7 @@ describe("merged person timeline island", () => {
     });
     await Promise.resolve();
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(api.fetch).not.toHaveBeenCalled();
   });
 
   it("appends older pages, preserves paging focus, and hides the exhausted control", async () => {
@@ -585,15 +488,13 @@ describe("merged person timeline island", () => {
     const second = item({ id: "00000000-0000-4000-8000-000000000212" });
     const third = item({ id: "00000000-0000-4000-8000-000000000213" });
     const older = deferred<Response>();
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({
-        items: [first],
-        nextCursor: "cursor-1",
-        status: "ready",
-      }))
-      .mockReturnValueOnce(older.promise)
-      .mockResolvedValueOnce(response({ items: [third], status: "ready" }));
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubApi({
+      [TIMELINE]: [
+        page([first], { nextCursor: "cursor-1" }),
+        older.promise,
+        page([third]),
+      ],
+    });
 
     await mount();
     const user = userEvent.setup();
@@ -602,15 +503,11 @@ describe("merged person timeline island", () => {
     expect(stateLine()).toBe("Loading older events…");
     expect((more as HTMLButtonElement).disabled).toBe(true);
     await act(async () => {
-      older.resolve(response({
-        items: [second],
-        nextCursor: "cursor-2",
-        status: "ready",
-      }));
+      older.resolve(page([second], { nextCursor: "cursor-2" }));
       await older.promise;
     });
     await waitFor(() => expect(rows()).toHaveLength(2));
-    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+    expect(api.fetch.mock.calls[1]?.[0]).toBe(
       `/api/v1/people/${personId}/timeline?cursor=cursor-1&limit=20`,
     );
     expect(document.activeElement).toBe(more);
@@ -628,37 +525,33 @@ describe("merged person timeline island", () => {
 
   it("offers retry for a server failure but not when the person is gone", async () => {
     let root = markup();
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({
-        detail: "Timeline storage is unavailable.",
-        status: 503,
-        title: "Unavailable",
-        type: "about:blank",
-      }, 503))
-      .mockResolvedValueOnce(response({ items: [], status: "ready" }));
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubApi({
+      [TIMELINE]: [
+        problemResponse(503, {
+          detail: "Timeline storage is unavailable.",
+          title: "Unavailable",
+        }),
+        page([]),
+      ],
+    });
 
-    await mount();
+    const unmount = await mount();
     expect(stateLine()).toBe("Timeline storage is unavailable.");
     expect(root.dataset.timelineState).toBe("error");
     const retry = card().getByRole("button", { name: "Retry the timeline" });
     expect(retry.hidden).toBe(false);
     await userEvent.setup().click(retry);
     await waitFor(() => expect(root.dataset.timelineState).toBe("empty"));
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(api.fetch).toHaveBeenCalledTimes(2);
 
-    act(() => {
-      for (const unmount of mounted.splice(0)) unmount();
-    });
+    unmount();
     root = markup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
+    api.route(
+      TIMELINE,
+      problemResponse(404, {
         detail: "No person was found.",
-        status: 404,
         title: "Not found",
-        type: "about:blank",
-      }, 404)),
+      }),
     );
     await mount();
     expect(stateLine()).toBe("This person is no longer available.");
@@ -670,17 +563,12 @@ describe("merged person timeline island", () => {
 
   it("names forbidden access and an unreachable server honestly", async () => {
     const root = markup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response({
-          detail: "Forbidden.",
-          status: 403,
-          title: "Forbidden",
-          type: "about:blank",
-        }, 403))
-        .mockRejectedValueOnce(new TypeError("offline")),
-    );
+    stubApi({
+      [TIMELINE]: [
+        problemResponse(403, { detail: "Forbidden.", title: "Forbidden" }),
+        unreachable,
+      ],
+    });
     await mount();
     expect(root.dataset.timelineState).toBe("forbidden");
     expect(stateLine()).toBe(
@@ -699,10 +587,7 @@ describe("merged person timeline island", () => {
 
   it("renders an honest empty state and tolerates a missing surface", async () => {
     markup();
-    const fetchMock = vi.fn().mockResolvedValue(
-      response({ items: [], status: "ready" }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
+    const api = serve([]);
 
     await mount();
     expect(stateLine()).toBe("No timeline events recorded.");
@@ -716,7 +601,7 @@ describe("merged person timeline island", () => {
     });
     expect(unmount).toBeTypeOf("function");
     unmount();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(api.fetch).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("list")).toBeNull();
   });
 });

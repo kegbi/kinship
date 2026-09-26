@@ -17,18 +17,25 @@ vi.mock(
   }),
 );
 
+import {
+  deferred,
+  jsonResponse,
+  problemResponse,
+  stubApi,
+  unreachable,
+} from "../testing/api.ts";
+import { workspaceSession } from "../testing/fixtures.ts";
+import { drawShell } from "../testing/render.tsx";
 import { mountApplicationShell, mountSettingsSearch } from "./app-shell.ts";
 import { mountProfileSettings } from "./settings.ts";
 
-function response(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
+const SESSION = "GET /api/v1/session";
+const SIGN_OUT = "POST /api/v1/sign-out";
+const ENTRY = "POST /api/v1/application-entry";
+const PROFILE = "GET /api/v1/settings/profile";
 
 function shellMarkup(): void {
-  document.body.innerHTML = `
+  drawShell(`
     <a class="skip-link" href="#main-content">Skip to main content</a>
     <section id="access-state" role="status">Checking</section>
     <div id="protected-shell" hidden>
@@ -48,7 +55,7 @@ function shellMarkup(): void {
         <button id="member-sign-out" type="button">Sign out</button>
       </div>
       <ul id="app-toasts" aria-live="polite" aria-label="Notifications"></ul>
-    </div>`;
+    </div>`);
 }
 
 function profileMarkup(): void {
@@ -58,25 +65,38 @@ function profileMarkup(): void {
   );
 }
 
-function session(
-  activeId = "00000000-0000-4000-8000-000000000001",
-  workspaces = [
-    {
-      id: "00000000-0000-4000-8000-000000000001",
-      name: "Family circle",
-    },
-  ],
-): unknown {
-  return {
-    status: "authenticated",
-    principal: { userId: "00000000-0000-4000-8000-000000000010" },
-    workspace: workspaces.find((workspace) => workspace.id === activeId),
-    member: {
-      id: "00000000-0000-4000-8000-000000000020",
-      role: "owner",
-    },
+const family = {
+  id: "00000000-0000-4000-8000-000000000001",
+  name: "Family circle",
+};
+const community = {
+  id: "00000000-0000-4000-8000-000000000002",
+  name: "Community circle",
+};
+const asMember = { member: { id: "member", role: "member" } };
+const profile = jsonResponse({
+  status: "ready",
+  profile: {
+    email: "owner@example.test",
+    firstName: "Original",
+    lastName: "Owner",
+  },
+});
+
+function session(activeId = family.id, workspaces = [family]) {
+  const workspace = workspaces.find(({ id }) => id === activeId)!;
+  // As the suite's sessions always were: without the legal-document list, so
+  // the shell's fallback for a session that carries none stays exercised.
+  const { requiredLegalDocuments: _none, ...answer } = workspaceSession({
+    workspace,
     workspaces,
-  };
+  });
+  return answer;
+}
+
+/** Answers every session read with the default session and `overrides`. */
+function serveSession(overrides: Record<string, unknown> = {}) {
+  return stubApi({ [SESSION]: jsonResponse({ ...session(), ...overrides }) });
 }
 
 function cacheSession(value: unknown): void {
@@ -89,7 +109,6 @@ function cacheSession(value: unknown): void {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
-  document.body.innerHTML = "";
   localStorage.clear();
   sessionStorage.clear();
 });
@@ -99,22 +118,15 @@ describe("APP-002C protected application shell", () => {
     "APR-007 keeps the menu open when pending %s disables its focused control",
     async (action) => {
       shellMarkup();
-      const workspaces = [
-        { id: "00000000-0000-4000-8000-000000000001", name: "Family" },
-        { id: "00000000-0000-4000-8000-000000000002", name: "Community" },
-      ];
-      let finishRequest!: (result: Response) => void;
-      const pending = new Promise<Response>((resolve) =>
-        finishRequest = resolve
-      );
-      vi.stubGlobal(
-        "fetch",
-        vi.fn()
-          .mockResolvedValueOnce(
-            response(session(workspaces[0]!.id, workspaces)),
-          )
-          .mockReturnValueOnce(pending),
-      );
+      const workspaces = [family, community];
+      const pending = deferred<Response>();
+      stubApi({
+        [SESSION]: [
+          jsonResponse(session(family.id, workspaces)),
+          pending.promise,
+        ],
+        [SIGN_OUT]: [pending.promise],
+      });
       const navigate = vi.fn();
       await mountApplicationShell(navigate);
       const toggle = document.querySelector<HTMLButtonElement>(
@@ -144,7 +156,7 @@ describe("APP-002C protected application shell", () => {
         }),
       );
       const hiddenWhilePending = menu.hidden;
-      finishRequest(response({ title: "Temporarily unavailable" }, 503));
+      pending.resolve(jsonResponse({ title: "Temporarily unavailable" }, 503));
       await vi.waitFor(() => expect(control.disabled).toBe(false));
       expect(hiddenWhilePending).toBe(false);
       expect(menu.hidden).toBe(false);
@@ -158,7 +170,7 @@ describe("APP-002C protected application shell", () => {
   it("APR-007 handles Escape after pointer activation without native button focus", async () => {
     shellMarkup();
     cacheSession(session());
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(session())));
+    serveSession();
     await mountApplicationShell(vi.fn());
     const toggle = document.querySelector<HTMLButtonElement>(
       "#member-menu-toggle",
@@ -185,7 +197,7 @@ describe("APP-002C protected application shell", () => {
   it("APR-007 dismisses the member menu with Escape and restores its toggle", async () => {
     shellMarkup();
     cacheSession(session());
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(session())));
+    serveSession();
     await mountApplicationShell(vi.fn());
     const toggle = document.querySelector<HTMLButtonElement>(
       "#member-menu-toggle",
@@ -208,7 +220,7 @@ describe("APP-002C protected application shell", () => {
   it("APR-007 dismisses on outside pointer or focus while keeping internal controls usable", async () => {
     shellMarkup();
     cacheSession(session());
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(session())));
+    serveSession();
     await mountApplicationShell(vi.fn());
     const toggle = document.querySelector<HTMLButtonElement>(
       "#member-menu-toggle",
@@ -247,12 +259,12 @@ describe("APP-002C protected application shell", () => {
         throw new DOMException("Disabled", "SecurityError");
       },
     });
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response(session()))
-      .mockResolvedValueOnce(
-        response({ status: "signed-out", next: "/auth/sign-in" }),
-      );
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubApi({
+      [SESSION]: [jsonResponse(session())],
+      [SIGN_OUT]: [
+        jsonResponse({ status: "signed-out", next: "/auth/sign-in" }),
+      ],
+    });
     const navigate = vi.fn();
 
     await mountApplicationShell(navigate);
@@ -263,10 +275,7 @@ describe("APP-002C protected application shell", () => {
     await vi.waitFor(() =>
       expect(navigate).toHaveBeenCalledWith("/auth/sign-in")
     );
-    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
-      "/api/v1/session",
-      "/api/v1/sign-out",
-    ]);
+    expect(api.calls()).toEqual([SESSION, SIGN_OUT]);
   });
 
   it.each(["getItem", "setItem"] as const)(
@@ -281,25 +290,18 @@ describe("APP-002C protected application shell", () => {
         { id: "other", name: "Other circle" },
       ];
       sessionStorage.setItem("kinship.active-workspace", "current");
-      const fetchMock = vi.fn()
-        .mockResolvedValueOnce(response(session("current", workspaces)))
-        .mockResolvedValueOnce(response(session("current", workspaces)))
-        .mockResolvedValueOnce(response({
-          status: "ready",
-          profile: {
-            email: "owner@example.test",
-            firstName: "Original",
-            lastName: "Owner",
-          },
-        }))
-        .mockImplementation(() =>
-          Promise.resolve(response(session("other", workspaces)))
-        );
-      vi.stubGlobal("fetch", fetchMock);
+      const api = stubApi({
+        [SESSION]: [
+          jsonResponse(session("current", workspaces)),
+          jsonResponse(session("current", workspaces)),
+        ],
+        [PROFILE]: [profile],
+      });
       vi.stubGlobal("confirm", vi.fn(() => true));
       const navigate = vi.fn();
       await mountApplicationShell(navigate);
       await mountProfileSettings();
+      api.route(SESSION, jsonResponse(session("other", workspaces)));
       const firstName = document.querySelector<HTMLInputElement>(
         '[name="firstName"]',
       )!;
@@ -366,18 +368,14 @@ describe("APP-002C protected application shell", () => {
     shellMarkup();
     history.replaceState({}, "", "/app/journal?view=recent");
     document.body.dataset.pageId = "journal.index";
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        ...(session() as Record<string, unknown>),
-        requiredLegalDocuments: [{
-          content: "Exact terms",
-          documentType: "terms",
-          id: "00000000-0000-4000-8000-000000000101",
-          version: "2026-08",
-        }],
-      })),
-    );
+    serveSession({
+      requiredLegalDocuments: [{
+        content: "Exact terms",
+        documentType: "terms",
+        id: "00000000-0000-4000-8000-000000000101",
+        version: "2026-08",
+      }],
+    });
     const navigate = vi.fn();
 
     await mountApplicationShell(navigate);
@@ -392,19 +390,11 @@ describe("APP-002C protected application shell", () => {
   it("renders access lost when cached session revalidation returns 401", async () => {
     shellMarkup();
     cacheSession(session());
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(
-          response({ code: "session_invalid", status: 401 }, 401),
-        )
-        .mockResolvedValueOnce(
-          response({ code: "session_invalid", status: 401 }, 401),
-        )
-        .mockResolvedValueOnce(
-          response({ code: "entry_invalid", status: 409 }, 409),
-        ),
-    );
+    const invalid = problemResponse(401, { code: "session_invalid" });
+    stubApi({
+      [SESSION]: [invalid, invalid],
+      [ENTRY]: [problemResponse(409, { code: "entry_invalid" })],
+    });
     vi.resetModules();
     const { mountApplicationShell: mountFreshShell } = await import(
       "./app-shell.ts"
@@ -428,13 +418,7 @@ describe("APP-002C protected application shell", () => {
       "<article data-requires-workspace-admin>Privileged members UI</article>",
     );
     cacheSession(session());
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        ...(session() as Record<string, unknown>),
-        member: { id: "member", role: "member" },
-      })),
-    );
+    serveSession(asMember);
     vi.resetModules();
     const { mountApplicationShell: mountFreshShell } = await import(
       "./app-shell.ts"
@@ -455,18 +439,14 @@ describe("APP-002C protected application shell", () => {
     history.replaceState({}, "", "/app/journal?view=recent");
     document.body.dataset.pageId = "journal.index";
     cacheSession(session());
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        ...(session() as Record<string, unknown>),
-        requiredLegalDocuments: [{
-          content: "Exact terms",
-          documentType: "terms",
-          id: "00000000-0000-4000-8000-000000000101",
-          version: "2026-09",
-        }],
-      })),
-    );
+    serveSession({
+      requiredLegalDocuments: [{
+        content: "Exact terms",
+        documentType: "terms",
+        id: "00000000-0000-4000-8000-000000000101",
+        version: "2026-09",
+      }],
+    });
     const navigate = vi.fn();
     vi.resetModules();
     const { mountApplicationShell: mountFreshShell } = await import(
@@ -485,8 +465,7 @@ describe("APP-002C protected application shell", () => {
   it("keeps the rendered cached session when revalidation is unavailable", async () => {
     shellMarkup();
     cacheSession(session());
-    const fetchMock = vi.fn().mockRejectedValue(new Error("offline"));
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubApi({ [SESSION]: unreachable });
     const navigate = vi.fn();
     vi.resetModules();
     const { mountApplicationShell: mountFreshShell } = await import(
@@ -494,7 +473,7 @@ describe("APP-002C protected application shell", () => {
     );
 
     await mountFreshShell(navigate);
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(api.fetch).toHaveBeenCalledTimes(1));
 
     expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
       .toBe(false);
@@ -507,22 +486,11 @@ describe("APP-002C protected application shell", () => {
   it("repaints the workspace presentation when revalidation adds a workspace", async () => {
     shellMarkup();
     const workspaces = [
-      {
-        id: "00000000-0000-4000-8000-000000000001",
-        name: "Renamed family circle",
-      },
-      {
-        id: "00000000-0000-4000-8000-000000000002",
-        name: "Community circle",
-      },
+      { ...family, name: "Renamed family circle" },
+      community,
     ];
     cacheSession(session());
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        response(session(workspaces[0]!.id, workspaces)),
-      ),
-    );
+    stubApi({ [SESSION]: jsonResponse(session(family.id, workspaces)) });
     vi.resetModules();
     const { mountApplicationShell: mountFreshShell } = await import(
       "./app-shell.ts"
@@ -555,13 +523,7 @@ describe("APP-002C protected application shell", () => {
         "beforeend",
         "<main>Privileged audit filters</main>",
       );
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue(response({
-          ...(session() as Record<string, unknown>),
-          member: { id: "member", role: "member" },
-        })),
-      );
+      serveSession(asMember);
 
       await mountApplicationShell();
 
@@ -581,13 +543,7 @@ describe("APP-002C protected application shell", () => {
     async (role) => {
       shellMarkup();
       document.body.dataset.pageId = "settings.audit";
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue(response({
-          ...(session() as Record<string, unknown>),
-          member: { id: "administrator", role },
-        })),
-      );
+      serveSession({ member: { id: "administrator", role } });
 
       await mountApplicationShell();
 
@@ -607,13 +563,7 @@ describe("APP-002C protected application shell", () => {
         "beforeend",
         "<main data-requires-workspace-owner>Workspace deletion controls</main>",
       );
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue(response({
-          ...(session() as Record<string, unknown>),
-          member: { id: "non-owner", role },
-        })),
-      );
+      serveSession({ member: { id: "non-owner", role } });
 
       await mountApplicationShell();
 
@@ -635,13 +585,7 @@ describe("APP-002C protected application shell", () => {
       "beforeend",
       '<main id="main-content" tabindex="-1">Audit filters</main>',
     );
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        ...(session() as Record<string, unknown>),
-        member: { id: "member", role: "member" },
-      })),
-    );
+    serveSession(asMember);
 
     await mountApplicationShell();
 
@@ -664,13 +608,7 @@ describe("APP-002C protected application shell", () => {
       "beforeend",
       "<article data-requires-workspace-admin>Privileged members UI</article>",
     );
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        ...(session() as Record<string, unknown>),
-        member: { id: "member", role: "member" },
-      })),
-    );
+    serveSession(asMember);
     await mountApplicationShell();
     expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
       .toBe(true);
@@ -683,13 +621,7 @@ describe("APP-002C protected application shell", () => {
   it("returns a canonical forbidden state for direct workspace-settings access", async () => {
     shellMarkup();
     document.body.dataset.pageId = "settings.workspace";
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        ...(session() as Record<string, unknown>),
-        member: { id: "member", role: "member" },
-      })),
-    );
+    serveSession(asMember);
     await mountApplicationShell();
     expect(document.querySelector("#access-state")?.textContent).toContain(
       "Workspace settings unavailable",
@@ -703,13 +635,7 @@ describe("APP-002C protected application shell", () => {
       "beforeend",
       "<main data-requires-workspace-admin>Personalization controls</main>",
     );
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        ...(session() as Record<string, unknown>),
-        member: { id: "member", role: "member" },
-      })),
-    );
+    serveSession(asMember);
 
     await mountApplicationShell();
 
@@ -728,13 +654,7 @@ describe("APP-002C protected application shell", () => {
       "beforeend",
       '<main id="main-content" data-requires-workspace-admin>Workspace inventory and provider diagnostics</main>',
     );
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        ...(session() as Record<string, unknown>),
-        member: { id: "member", role: "member" },
-      })),
-    );
+    serveSession(asMember);
 
     await mountApplicationShell();
 
@@ -760,13 +680,7 @@ describe("APP-002C protected application shell", () => {
       "beforeend",
       '<main id="main-content" data-requires-workspace-admin>Portable workspace export</main>',
     );
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(response({
-        ...(session() as Record<string, unknown>),
-        member: { id: "member", role: "member" },
-      })),
-    );
+    serveSession(asMember);
     await mountApplicationShell();
     expect(document.querySelector("#access-state")?.textContent).toContain(
       "Export unavailable",
@@ -778,13 +692,12 @@ describe("APP-002C protected application shell", () => {
 
   it("reveals one active workspace and signs out without browser token storage", async () => {
     shellMarkup();
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response(session()))
-      .mockResolvedValueOnce(response({
-        status: "signed-out",
-        next: "/auth/sign-in",
-      }));
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubApi({
+      [SESSION]: [jsonResponse(session())],
+      [SIGN_OUT]: [
+        jsonResponse({ status: "signed-out", next: "/auth/sign-in" }),
+      ],
+    });
     const navigate = vi.fn();
     const skipLink = document.querySelector<HTMLAnchorElement>(".skip-link")!;
     skipLink.focus();
@@ -818,29 +731,21 @@ describe("APP-002C protected application shell", () => {
       expect(navigate).toHaveBeenCalledWith("/auth/sign-in")
     );
     expect(sessionStorage.getItem("kinship.session")).toBeNull();
-    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/v1/sign-out");
-    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe("POST");
+    expect(api.calls()[1]).toBe("POST /api/v1/sign-out");
   });
 
   it("shows and changes the switcher only for multiple accessible workspaces", async () => {
     shellMarkup();
     history.replaceState({}, "", "/app/settings/members");
     document.body.dataset.pageId = "settings.members";
-    const workspaces = [
-      {
-        id: "00000000-0000-4000-8000-000000000001",
-        name: "Family circle",
-      },
-      {
-        id: "00000000-0000-4000-8000-000000000002",
-        name: "Community circle",
-      },
-    ];
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response(session(workspaces[0]!.id, workspaces)))
-      .mockRejectedValueOnce(new Error("workspace unavailable"))
-      .mockResolvedValueOnce(response(session(workspaces[1]!.id, workspaces)));
-    vi.stubGlobal("fetch", fetchMock);
+    const workspaces = [family, community];
+    const api = stubApi({
+      [SESSION]: [
+        jsonResponse(session(family.id, workspaces)),
+        unreachable,
+        jsonResponse(session(community.id, workspaces)),
+      ],
+    });
 
     const navigate = vi.fn();
     await mountApplicationShell(navigate);
@@ -870,7 +775,7 @@ describe("APP-002C protected application shell", () => {
     await vi.waitFor(() =>
       expect(navigate).toHaveBeenCalledWith("/app/settings/members")
     );
-    expect(fetchMock.mock.calls[1]?.[1]?.headers).toEqual({
+    expect(api.fetch.mock.calls[1]?.[1]?.headers).toEqual({
       "X-Workspace-Id": workspaces[1]!.id,
       "content-type": "application/json",
     });
@@ -878,7 +783,7 @@ describe("APP-002C protected application shell", () => {
       workspaces[1]!.id,
     );
     expect(sessionStorage.getItem("kinship.session")).toBeNull();
-    expect(fetchMock.mock.calls[2]?.[1]?.headers).toEqual({
+    expect(api.fetch.mock.calls[2]?.[1]?.headers).toEqual({
       "X-Workspace-Id": workspaces[1]!.id,
       "content-type": "application/json",
     });
@@ -887,29 +792,12 @@ describe("APP-002C protected application shell", () => {
   it("cancels a dirty workspace switch before changing selection or storage", async () => {
     shellMarkup();
     profileMarkup();
-    const workspaces = [
-      {
-        id: "00000000-0000-4000-8000-000000000001",
-        name: "Family circle",
-      },
-      {
-        id: "00000000-0000-4000-8000-000000000002",
-        name: "Community circle",
-      },
-    ];
+    const workspaces = [family, community];
     sessionStorage.setItem("kinship.active-workspace", workspaces[0]!.id);
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response(session(workspaces[0]!.id, workspaces)))
-      .mockResolvedValueOnce(response(session(workspaces[0]!.id, workspaces)))
-      .mockResolvedValueOnce(response({
-        status: "ready",
-        profile: {
-          email: "owner@example.test",
-          firstName: "Original",
-          lastName: "Owner",
-        },
-      }));
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubApi({
+      [SESSION]: jsonResponse(session(family.id, workspaces)),
+      [PROFILE]: [profile],
+    });
     const confirm = vi.fn(() => false);
     vi.stubGlobal("confirm", confirm);
     const navigate = vi.fn();
@@ -929,7 +817,7 @@ describe("APP-002C protected application shell", () => {
     select.dispatchEvent(new Event("change", { bubbles: true }));
 
     await vi.waitFor(() => expect(confirm).toHaveBeenCalledOnce());
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(api.fetch).toHaveBeenCalledTimes(3);
     expect(select.value).toBe(workspaces[0]!.id);
     expect(sessionStorage.getItem("kinship.active-workspace")).toBe(
       workspaces[0]!.id,
@@ -948,30 +836,16 @@ describe("APP-002C protected application shell", () => {
     shellMarkup();
     profileMarkup();
     history.replaceState({}, "", "/app/settings/profile");
-    const workspaces = [
-      {
-        id: "00000000-0000-4000-8000-000000000001",
-        name: "Family circle",
-      },
-      {
-        id: "00000000-0000-4000-8000-000000000002",
-        name: "Community circle",
-      },
-    ];
+    const workspaces = [family, community];
     sessionStorage.setItem("kinship.active-workspace", workspaces[0]!.id);
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response(session(workspaces[0]!.id, workspaces)))
-      .mockResolvedValueOnce(response(session(workspaces[0]!.id, workspaces)))
-      .mockResolvedValueOnce(response({
-        status: "ready",
-        profile: {
-          email: "owner@example.test",
-          firstName: "Original",
-          lastName: "Owner",
-        },
-      }))
-      .mockResolvedValueOnce(response(session(workspaces[1]!.id, workspaces)));
-    vi.stubGlobal("fetch", fetchMock);
+    stubApi({
+      [SESSION]: [
+        jsonResponse(session(family.id, workspaces)),
+        jsonResponse(session(family.id, workspaces)),
+        jsonResponse(session(community.id, workspaces)),
+      ],
+      [PROFILE]: [profile],
+    });
     const confirm = vi.fn(() => true);
     vi.stubGlobal("confirm", confirm);
     const navigate = vi.fn();
@@ -1006,17 +880,13 @@ describe("APP-002C protected application shell", () => {
   it("retains a saved workspace when its session request is offline", async () => {
     shellMarkup();
     const savedWorkspaceId = "00000000-0000-4000-8000-000000000099";
-    sessionStorage.setItem(
-      "kinship.active-workspace",
-      savedWorkspaceId,
-    );
-    const fetchMock = vi.fn().mockRejectedValue(new Error("offline"));
-    vi.stubGlobal("fetch", fetchMock);
+    sessionStorage.setItem("kinship.active-workspace", savedWorkspaceId);
+    const api = stubApi({ [SESSION]: unreachable });
 
     await mountApplicationShell(vi.fn());
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
+    expect(api.fetch).toHaveBeenCalledTimes(1);
+    expect(api.fetch.mock.calls[0]?.[1]?.headers).toEqual({
       "X-Workspace-Id": savedWorkspaceId,
       "content-type": "application/json",
     });
@@ -1038,14 +908,13 @@ describe("APP-002C protected application shell", () => {
     shellMarkup();
     const savedWorkspaceId = "00000000-0000-4000-8000-000000000099";
     sessionStorage.setItem("kinship.active-workspace", savedWorkspaceId);
-    const fetchMock = vi.fn().mockResolvedValue(
-      response({ code: "session_unavailable", status: 503 }, 503),
-    );
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubApi({
+      [SESSION]: problemResponse(503, { code: "session_unavailable" }),
+    });
 
     await mountApplicationShell(vi.fn());
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(api.fetch).toHaveBeenCalledTimes(1);
     expect(sessionStorage.getItem("kinship.active-workspace")).toBe(
       savedWorkspaceId,
     );
@@ -1058,21 +927,21 @@ describe("APP-002C protected application shell", () => {
     shellMarkup();
     const savedWorkspaceId = "00000000-0000-4000-8000-000000000099";
     sessionStorage.setItem("kinship.active-workspace", savedWorkspaceId);
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(
-        response({ code: "session_invalid", status: 401 }, 401),
-      )
-      .mockResolvedValueOnce(response(session()));
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubApi({
+      [SESSION]: [
+        problemResponse(401, { code: "session_invalid" }),
+        jsonResponse(session()),
+      ],
+    });
 
     await mountApplicationShell(vi.fn());
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
+    expect(api.fetch).toHaveBeenCalledTimes(2);
+    expect(api.fetch.mock.calls[0]?.[1]?.headers).toEqual({
       "X-Workspace-Id": savedWorkspaceId,
       "content-type": "application/json",
     });
-    expect(fetchMock.mock.calls[1]?.[1]?.headers).toEqual({
+    expect(api.fetch.mock.calls[1]?.[1]?.headers).toEqual({
       "content-type": "application/json",
     });
     expect(sessionStorage.getItem("kinship.active-workspace")).toBeNull();
@@ -1085,16 +954,10 @@ describe("APP-002C protected application shell", () => {
 
   it("shows sign-in after definitive session and entry access loss", async () => {
     shellMarkup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(
-          response({ code: "session_invalid", status: 401 }, 401),
-        )
-        .mockResolvedValueOnce(
-          response({ code: "entry_handoff_invalid", status: 409 }, 409),
-        ),
-    );
+    stubApi({
+      [SESSION]: [problemResponse(401, { code: "session_invalid" })],
+      [ENTRY]: [problemResponse(409, { code: "entry_handoff_invalid" })],
+    });
 
     await mountApplicationShell(vi.fn());
 
@@ -1109,31 +972,24 @@ describe("APP-002C protected application shell", () => {
 
   it("exchanges a first-workspace entry before revealing the shell", async () => {
     shellMarkup();
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(
-        response({ code: "session_invalid", status: 401 }, 401),
-      )
-      .mockResolvedValueOnce(response({
+    const api = stubApi({
+      [SESSION]: [
+        problemResponse(401, { code: "session_invalid" }),
+        jsonResponse(session()),
+      ],
+      [ENTRY]: [jsonResponse({
         status: "ready",
-        workspace: {
-          id: "00000000-0000-4000-8000-000000000001",
-          name: "Family circle",
-        },
+        workspace: family,
         member: {
           id: "00000000-0000-4000-8000-000000000020",
           firstName: "Avery",
         },
-      }))
-      .mockResolvedValueOnce(response(session()));
-    vi.stubGlobal("fetch", fetchMock);
+      })],
+    });
 
     await mountApplicationShell(vi.fn());
 
-    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
-      "/api/v1/session",
-      "/api/v1/application-entry",
-      "/api/v1/session",
-    ]);
+    expect(api.calls()).toEqual([SESSION, ENTRY, SESSION]);
     expect(document.querySelector("#protected-shell")?.hasAttribute("hidden"))
       .toBe(false);
     expect(document.querySelectorAll("#app-toasts > li")).toHaveLength(0);
@@ -1145,12 +1001,7 @@ describe("APP-002C protected application shell", () => {
   it("keeps later session errors visible without a routine mount notice", async () => {
     vi.useFakeTimers();
     shellMarkup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response(session()))
-        .mockRejectedValueOnce(new Error("offline")),
-    );
+    stubApi({ [SESSION]: [jsonResponse(session())], [SIGN_OUT]: unreachable });
 
     await mountApplicationShell(vi.fn());
     const toasts = document.querySelector<HTMLElement>("#app-toasts")!;
@@ -1167,12 +1018,7 @@ describe("APP-002C protected application shell", () => {
 
   it("keeps a failed sign-out retryable and does not navigate", async () => {
     shellMarkup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response(session()))
-        .mockRejectedValueOnce(new Error("offline")),
-    );
+    stubApi({ [SESSION]: [jsonResponse(session())], [SIGN_OUT]: unreachable });
     const navigate = vi.fn();
 
     await mountApplicationShell(navigate);
@@ -1196,7 +1042,7 @@ describe("APP-002C protected application shell", () => {
   });
 
   it("does not mount without the required shell or settings elements", async () => {
-    document.body.innerHTML = "<main></main>";
+    drawShell("<main></main>");
     await mountApplicationShell(vi.fn());
     mountSettingsSearch();
     expect(document.body.innerHTML).toBe("<main></main>");
@@ -1204,12 +1050,11 @@ describe("APP-002C protected application shell", () => {
 
   it("does not consume application entry when session resolution is offline", async () => {
     shellMarkup();
-    const fetchMock = vi.fn().mockRejectedValue(new Error("offline"));
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubApi({ [SESSION]: unreachable });
 
     await mountApplicationShell(vi.fn());
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(api.fetch).toHaveBeenCalledTimes(1);
     expect(document.querySelector("#access-state")?.textContent).toMatch(
       /temporarily unavailable/i,
     );
@@ -1217,19 +1062,17 @@ describe("APP-002C protected application shell", () => {
 
   it("fails closed when an exchanged entry cannot resolve its session", async () => {
     shellMarkup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(
-          response({ code: "session_invalid", status: 401 }, 401),
-        )
-        .mockResolvedValueOnce(response({
-          status: "ready",
-          workspace: { id: "workspace", name: "Circle" },
-          member: { id: "member", firstName: "Avery" },
-        }))
-        .mockRejectedValueOnce(new Error("offline")),
-    );
+    stubApi({
+      [SESSION]: [
+        problemResponse(401, { code: "session_invalid" }),
+        unreachable,
+      ],
+      [ENTRY]: [jsonResponse({
+        status: "ready",
+        workspace: { id: "workspace", name: "Circle" },
+        member: { id: "member", firstName: "Avery" },
+      })],
+    });
 
     await mountApplicationShell(vi.fn());
 
@@ -1238,12 +1081,12 @@ describe("APP-002C protected application shell", () => {
   });
 
   it("filters the grouped settings overview without mutating settings", () => {
-    document.body.innerHTML = `
+    drawShell(`
       <label for="settings-search">Search settings</label>
       <input id="settings-search" type="search">
       <article data-settings-item data-search="profile name email">Profile</article>
       <article data-settings-item data-search="security sessions password">Security</article>
-      <p id="settings-no-results" hidden>No settings match.</p>`;
+      <p id="settings-no-results" hidden>No settings match.</p>`);
 
     mountSettingsSearch();
     const input = document.querySelector<HTMLInputElement>("#settings-search")!;

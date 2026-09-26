@@ -3,20 +3,11 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { deferred } from "../../testing/api.ts";
 import { LoadMore } from "./load-more.tsx";
 import { buttonVariants } from "@/components/ui/variants.ts";
 
 afterEach(cleanup);
-
-function deferred() {
-  let resolve!: () => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<void>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  return { promise, reject, resolve };
-}
 
 /** A list that grows by the pages `answers` hands out, one per click. */
 function Paged(
@@ -68,7 +59,7 @@ describe("GAP-026 LoadMore", () => {
   });
 
   it("passes the offered cursor, announces the load, and refuses a second click", async () => {
-    const page = deferred();
+    const page = deferred<void>();
     const onLoad = vi.fn();
     render(
       <Paged
@@ -98,7 +89,7 @@ describe("GAP-026 LoadMore", () => {
   });
 
   it("restores the label when the page fails", async () => {
-    const page = deferred();
+    const page = deferred<void>();
     render(<Paged answers={[() => page.promise.then(() => "c2")]} />);
     const user = userEvent.setup();
     await user.click(control());
