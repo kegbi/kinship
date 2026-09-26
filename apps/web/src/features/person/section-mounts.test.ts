@@ -7,16 +7,9 @@ import {
   personProfile,
   preferences as memberPreferences,
   profileSummary,
-  revision,
   sectionProps,
 } from "../../testing/fixtures.ts";
 import { drawShell } from "../../testing/render.tsx";
-import { mountImportantDates } from "../../lib/important-dates.ts";
-import { mountRelationships } from "../../lib/relationships.ts";
-import { mountPersonReminders } from "../../lib/reminders.ts";
-import { mountPersonInteractions } from "../../lib/interactions.ts";
-import { mountCommunications } from "../../lib/communications.ts";
-import { mountTaskSurface } from "../../lib/tasks.ts";
 import { mountPersonFiles } from "../../lib/person-files.ts";
 import { mountPersonAuditSummary } from "../../lib/audit-history.ts";
 import { mountGiftsIsland } from "../../islands/person-gifts/mount.tsx";
@@ -24,6 +17,10 @@ import { mountPersonTimeline } from "../../islands/person-timeline/mount.tsx";
 import { mountPersonLifeEvents } from "../../islands/person-life-events/mount.tsx";
 import { mountPersonRail } from "../../islands/person-rail/mount.tsx";
 import { mountPersonHero } from "../../islands/person-hero/mount.tsx";
+import { mountImportantDates } from "./important-dates/important-dates.tsx";
+import { mountPersonReminders } from "./reminders/person-reminders.tsx";
+import { mountPersonTasks } from "../tasks/task-surface.tsx";
+import { mountPersonRelationships } from "./relationships/person-relationships.tsx";
 import { mountAddresses } from "./facts/addresses.tsx";
 import { mountContactMethods } from "./facts/contact-methods.tsx";
 import { mountFirstMeeting } from "./facts/first-meeting.tsx";
@@ -31,6 +28,8 @@ import { mountFoodPreferences } from "./facts/food.tsx";
 import { mountPets } from "./facts/pets.tsx";
 import { mountTags } from "./facts/tags.tsx";
 import { mountWork } from "./facts/work.tsx";
+import { mountPersonInteractions } from "./interactions/mount.tsx";
+import { mountPersonCommunications } from "./communications/mount.tsx";
 import {
   RAIL_MOUNT,
   SECTION_MOUNTS,
@@ -42,24 +41,6 @@ import {
 } from "./section-mounts.ts";
 import { PERSON_SECTIONS, railSections, zoneSections } from "./sections.ts";
 
-vi.mock("../../lib/important-dates.ts", () => ({
-  mountImportantDates: vi.fn(async () => {}),
-}));
-vi.mock("../../lib/relationships.ts", () => ({
-  mountRelationships: vi.fn(async () => {}),
-}));
-vi.mock("../../lib/reminders.ts", () => ({
-  mountPersonReminders: vi.fn(async () => {}),
-}));
-vi.mock("../../lib/interactions.ts", () => ({
-  mountPersonInteractions: vi.fn(async () => {}),
-}));
-vi.mock("../../lib/communications.ts", () => ({
-  mountCommunications: vi.fn(async () => {}),
-}));
-vi.mock("../../lib/tasks.ts", () => ({
-  mountTaskSurface: vi.fn(async () => {}),
-}));
 vi.mock("../../lib/person-files.ts", () => ({
   mountPersonFiles: vi.fn(async () => {}),
 }));
@@ -143,6 +124,27 @@ describe("GAP-028 section owners", () => {
     );
   });
 
+  it("GAP-031 mounts notes with activities, and calls with conversations, as one island each", async () => {
+    for (const id of ["notes", "activities"] as const) {
+      expect(SECTION_MOUNTS[id].kind).toBe("island");
+      expect(await SECTION_MOUNTS[id].load()).toBe(mountPersonInteractions);
+    }
+    for (const id of ["calls", "conversations"] as const) {
+      expect(SECTION_MOUNTS[id].kind).toBe("island");
+      expect(await SECTION_MOUNTS[id].load()).toBe(mountPersonCommunications);
+    }
+    expect(SECTION_MOUNTS.activities).toBe(SECTION_MOUNTS.notes);
+    expect(SECTION_MOUNTS.conversations).toBe(SECTION_MOUNTS.calls);
+  });
+
+  it("GAP-031 resolves the interaction and communication islands with nothing to own at once", async () => {
+    const api = stubApi();
+    drawShell("");
+    await mount("notes", sectionProps());
+    await mount("calls", sectionProps());
+    expect(api.fetch).not.toHaveBeenCalled();
+  });
+
   it("GAP-029 mounts each profile fact section, and the tags editor, as its own island", async () => {
     const facts = {
       addresses: mountAddresses,
@@ -168,6 +170,21 @@ describe("GAP-028 section owners", () => {
     expect(await TAGS_MOUNT.load()).toBe(mountTags);
   });
 
+  it("GAP-031 mounts the stateful person surfaces as islands", async () => {
+    const islands = {
+      "important-dates": mountImportantDates,
+      relationships: mountPersonRelationships,
+      reminders: mountPersonReminders,
+      "stay-in-touch": mountPersonReminders,
+      tasks: mountPersonTasks,
+    } as const;
+    for (const [id, mount] of Object.entries(islands)) {
+      const entry = SECTION_MOUNTS[id as keyof typeof islands];
+      expect(entry.kind).toBe("island");
+      expect(await entry.load()).toBe(mount);
+    }
+  });
+
   it("GAP-029 resolves a fact section with nothing to own at once", async () => {
     const api = stubApi();
     drawShell("");
@@ -182,56 +199,7 @@ describe("GAP-028 section owners", () => {
   });
 
   it("hands each vanilla module the arguments it always took", async () => {
-    const hidden = props([
-      "activities",
-      "calls",
-      "relationships",
-      "tasks",
-    ]);
-    await mount("important-dates", hidden);
-    expect(mountImportantDates).toHaveBeenCalledWith(
-      personId,
-      workspaceId,
-      true,
-    );
-    await mount("relationships", hidden);
-    expect(mountRelationships).toHaveBeenCalledWith(
-      personId,
-      workspaceId,
-      true,
-      true,
-      revision,
-    );
-    await mount("reminders", hidden);
-    expect(mountPersonReminders).toHaveBeenCalledWith({
-      archived: true,
-      personId,
-      timePreferences: preferences,
-      workspaceId,
-    });
-    await mount("notes", hidden);
-    expect(mountPersonInteractions).toHaveBeenCalledWith(
-      personId,
-      workspaceId,
-      true,
-      { activities: true, notes: false },
-    );
-    await mount("calls", hidden);
-    expect(mountCommunications).toHaveBeenCalledWith(
-      personId,
-      workspaceId,
-      true,
-      { calls: true, conversations: false },
-      preferences,
-    );
-    await mount("tasks", hidden);
-    expect(mountTaskSurface).toHaveBeenCalledWith({
-      archived: true,
-      hidden: true,
-      personId,
-      timePreferences: preferences,
-      workspaceId,
-    });
+    const hidden = props(["activities", "calls"]);
     await mount("photos", hidden);
     expect(mountPersonFiles).toHaveBeenCalledWith({
       archived: true,

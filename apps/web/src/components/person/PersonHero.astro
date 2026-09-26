@@ -7,12 +7,15 @@
  * The island renders the identity into `[data-person-hero]` and every other
  * part through a portal into its `data-person-*-slot`, each a
  * `display: contents` wrapper so the hero's grid lays the parts out as
- * before. Quick capture's two buttons belong to `lib/interactions.ts` and the
- * tags editor, `[data-profile-fact-section="tags"]`, to its fact island
- * (`features/person/facts/tags.tsx`), which keeps the tag slot inside it;
- * they sit beside the slots. Every
- * control the island wires is disabled here, so a click before hydration
- * waits instead of landing on nothing (REL-039).
+ * before. Quick capture's two buttons sit beside the slots: the Quick capture
+ * island (`features/interactions/`) wires them and keeps them disabled until
+ * it has, and the notes and activities island
+ * (`features/person/interactions/`) hides them while the person is archived
+ * or their kind is turned off. The tags editor,
+ * `[data-profile-fact-section="tags"]`, belongs to its fact island
+ * (`features/person/facts/tags.tsx`), which keeps the tag slot inside it.
+ * Every control an island wires is disabled here, so a click before
+ * hydration waits instead of landing on nothing (REL-039).
  */
 import {
   badgeVariants,
@@ -49,15 +52,19 @@ import {
       class={buttonVariants()}
       data-person-interaction-capture
       data-quick-capture
+      data-interaction-capture-ready="false"
       data-interaction-intended-kind="activity"
       type="button"
+      disabled
     >Log interaction</button>
     <button
       class={buttonVariants({ variant: "outline" })}
       data-person-interaction-capture
       data-quick-capture
+      data-interaction-capture-ready="false"
       data-interaction-intended-kind="note"
       type="button"
+      disabled
     >Add note</button>
     <div class="contents" data-person-menu-slot>
       <div class="person-menu" role="group" aria-label="Person menu">

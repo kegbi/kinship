@@ -19,6 +19,7 @@ import {
       <div><p class="eyebrow">Planning · <span data-workspace-name></span></p><h1>Tasks</h1></div>
       <button data-task-add class={buttonVariants()} type="button" disabled>Add task</button>
     </header>
+    <div class="contents" data-task-surface>
     <section class="task-filters" aria-label="Task filters">
       <label>State <select data-task-status-filter><option value="">All states</option><option value="open">Open</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></label>
       <label>Person <select data-task-person-filter><option value="">All people and workspace tasks</option></select></label>
@@ -42,10 +43,14 @@ import {
       <section aria-labelledby="cancelled-tasks-heading"><h2 id="cancelled-tasks-heading">Cancelled</h2><ul data-task-cancelled-list class="task-list" aria-label="Cancelled tasks"></ul></section>
       <LoadMore list="tasks" label="Load more tasks" />
     </div>
+    </div>
   </main>
 </ApplicationLayout>
 
 <script>
-  import { mountTaskSurface } from "../../../lib/tasks.ts";
-  void mountTaskSurface();
+  // The task surface island (`features/tasks/`, GAP-031) takes over the
+  // region above once it knows the workspace; until then Add task stays
+  // disabled, as drawn.
+  import { mountTasksPage } from "../../../features/tasks/task-surface.tsx";
+  void mountTasksPage();
 </script>

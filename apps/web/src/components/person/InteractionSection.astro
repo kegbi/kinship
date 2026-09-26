@@ -1,5 +1,10 @@
 ---
-/** The notes or activities card `lib/interactions.ts` owns (GAP-031). */
+/**
+ * The notes or activities card as the static shell draws it before the
+ * notes and activities island (`features/person/interactions/`) takes it
+ * over (GAP-031). Its Quick capture shortcut stays disabled until Quick
+ * capture has wired it.
+ */
 import PersonSection from "./PersonSection.astro";
 import type { PersonSectionEntry } from "../../features/person/sections.ts";
 import { buttonVariants } from "../ui/variants.ts";
@@ -20,8 +25,10 @@ const title = section.title.toLowerCase();
     class={buttonVariants({ className: "profile-section-cta" })}
     data-person-interaction-capture
     data-quick-capture
+    data-interaction-capture-ready="false"
     data-interaction-intended-kind={activities ? "activity" : "note"}
     type="button"
+    disabled
   >{activities ? "Log activity" : "Add note"}</button>
   <ul id={`${prefix}-list`} class="interaction-list" aria-label={`Recent ${title}`} hidden></ul>
   <button id={`${prefix}-retry`} class={buttonVariants({ variant: "outline" })} type="button" aria-controls={`${prefix}-list`} hidden>Retry {title}</button>

@@ -17,10 +17,6 @@
   background: var(--surface, var(--surface-1));
 }
 
-.interaction-capture-dialog::backdrop {
-  background: color-mix(in srgb, var(--ink-1) 55%, transparent);
-}
-
 .interaction-capture-dialog form {
   display: grid;
   gap: var(--space-4);

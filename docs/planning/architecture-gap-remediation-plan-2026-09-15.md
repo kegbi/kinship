@@ -1206,7 +1206,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     every Deno set unchanged except the REL-038 file; gates fmt:check, lint,
     check, check:architecture (14), contracts:check, root test:unit.
 
-- [ ] **GAP-031 — Stateful person surfaces as islands.** L. Depends: 028, 030.
+- [x] **GAP-031 — Stateful person surfaces as islands.** L. Depends: 028, 030.
   - Scope: migrate interactions and the Quick capture dialog, communications,
     tasks, reminders, relationships, and important dates to islands. Surfaces
     with non-trivial state use `useReducer` with reducers unit-tested without
@@ -1214,6 +1214,46 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     and its tests as its island lands.
   - Verify: reducer tests; the interactions, tasks, reminders, relationships,
     and important-dates E2E flows green.
+  - Delivered 2026-09-26: implemented as two halves combined into one candidate.
+    Interactions: `features/interactions/` holds Quick capture, one Base UI
+    dialog island driven by a pure `captureReducer` (with `captureControls` and
+    `captureSubmission`, which replays an uncertain save under the same key),
+    mounted from the layout's palette script; every `data-quick-capture` opener,
+    including the activity report's, ships disabled with
+    `data-interaction-capture-ready="false"`, and one observer is the only
+    writer of `disabled`. `features/person/interactions/` renders notes and
+    activities as one island, and `features/person/communications/` renders
+    calls and conversations over a pure `communicationsReducer`. Planning and
+    rail surfaces: `features/tasks/` is one task surface serving the person card
+    and `/app/tasks` (`taskReducer`), `features/person/reminders/` draws the
+    reminders card and the rail's stay-in-touch block (`remindersReducer`), and
+    `features/person/relationships/` and `features/person/important-dates/` have
+    their own reducers. Each surface reads through one latest-request slot,
+    keeps the unsaved-changes guard and rail editors, publishes the same
+    `profile-summary.ts` keys, and keeps its ids, `data-*` hooks, labels,
+    events, deep links, archived and hidden states. `lib/communications.ts`,
+    `lib/relationships.ts`, `lib/important-dates.ts`, `lib/rail-labels.ts`, and
+    `lib/profile-rail-expander.ts` and their suites are deleted.
+    `lib/interactions.ts` (1,264 to 266 lines), `lib/tasks.ts` (1,131 to 622),
+    and `lib/reminders.ts` (641 to 229) keep only the Today and activity-report
+    code GAP-033 moves. Every deleted test is ported by role under its old name
+    or a named successor. Review fixed six defects, each with a failing test
+    first: an activity-report opener enabled before it was wired, task refreshes
+    reading stale filters, Load more taking a write's refresh (now hidden while
+    a write is busy), a second task save dropped during a refresh, a weakened
+    first-run focus assertion, and a lost `people-profile.ts` branch. The tasks
+    page is the one page script besides the palette's allowed to reach React,
+    recorded in `tools/web_build_output_test.ts`. The new islands' gzip entries
+    are 1,854-6,283 B over the shared 81,552 B React runtime. 63 files changed
+    (+17,864/-12,779); no spec changed. Web tests 1,042, web coverage
+    95.70/90.13/95.91/97.42, every production file's row unchanged or higher
+    except the trimmed `lib/reminders.ts` (95.72/92.2/100/96.42), and every Deno
+    set unchanged. Chromium E2E 57 passed, WebKit 17 and Firefox 7 on the
+    interactions, communications, Today, dates, relationships, tasks, reminders,
+    search, lifecycle, and facts specs. Gates build (12 web-build tests),
+    fmt:check, lint, check, check:architecture (14), contracts:check, and root
+    test:unit and test:coverage all passed. The gateway log-capture fixture
+    passed in a copy that trusts this environment's proxy.
 
 - [ ] **GAP-032 — Stylesheet retirement.** M. Depends: 027, 028.
   - Scope: delete the CSS that migrated surfaces no longer use. Split what

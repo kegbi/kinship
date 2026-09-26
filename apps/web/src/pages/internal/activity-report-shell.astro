@@ -24,7 +24,7 @@ import {
         <p class="eyebrow">Person activity report · <span data-workspace-name></span></p>
         <h1 id="activity-report-heading" tabindex="-1">Loading activity report…</h1>
       </div>
-      <button class={buttonVariants()} data-quick-capture type="button">Record interaction</button>
+      <button class={buttonVariants()} data-quick-capture data-interaction-capture-ready="false" type="button" disabled>Record interaction</button>
     </header>
     <form class="activity-report-filter" method="get">
       <label>Year <input name="year" type="number" min="1" max="9999" inputmode="numeric" /></label>

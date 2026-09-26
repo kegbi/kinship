@@ -45,6 +45,9 @@ const PERSON_SHELL = "internal/person-profile-shell/index.html";
 /** A protected page with no island of its own: Today. */
 const TODAY = "app/index.html";
 
+/** The workspace tasks page, whose script mounts the task surface island. */
+const TASKS_PAGE = "app/tasks/index.html";
+
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
@@ -196,16 +199,33 @@ async function logHydratedBytes(
   );
 }
 
-Deno.test("[GAP-027] no page script but the palette's and the person shell's can reach React", async () => {
+/**
+ * The tasks page's own script (GAP-031), which mounts the task surface
+ * island: the one page script the tasks page loads beyond its layout's.
+ */
+async function tasksPageScript(): Promise<string> {
+  const scripts = [...eagerScripts(await read(TASKS_PAGE))].filter((chunk) =>
+    !/ApplicationLayout\.astro_astro_type_script_/.test(chunk) &&
+    /\.astro_astro_type_script_/.test(chunk)
+  );
+  assert(scripts.length === 1, `one tasks page script, not ${scripts}`);
+  return scripts[0]!;
+}
+
+Deno.test("[GAP-027] no page script but the palette's, the person shell's, and the tasks page's can reach React", async () => {
   // Pages rendered on demand (auth resets, invitations) have no HTML in the
   // client output, but their scripts do: every page script is checked.
   const palette = await paletteScript();
+  const tasks = await tasksPageScript();
   let scripts = 0;
   for await (const entry of Deno.readDir(new URL("_astro/", CLIENT))) {
     const chunk = `_astro/${entry.name}`;
     if (!/.astro_astro_type_script_.*.js$/.test(entry.name)) continue;
     scripts += 1;
-    if (chunk === palette || /^person-profile-shell\./.test(entry.name)) {
+    if (
+      chunk === palette || chunk === tasks ||
+      /^person-profile-shell\./.test(entry.name)
+    ) {
       continue;
     }
     for (const loaded of await reachable([chunk])) {
@@ -237,11 +257,15 @@ Deno.test("[GAP-027] a protected page loads React only for the people palette", 
 });
 
 /**
- * The person shell's islands (GAP-026, GAP-028, GAP-029), each loaded on
- * demand by the shell's script rather than shipped as a page script: the hero
- * and the rail summary as soon as the person resolves, the profile fact
- * sections and the tags editor with the rail, the timeline and life events
- * with the Timeline zone, and gifts and debts with the Things zone.
+ * The person shell's islands (GAP-026, GAP-028, GAP-029, GAP-031), each
+ * loaded on demand by the shell's script rather than shipped as a page script:
+ * the hero and the rail summary as soon as the person resolves; important
+ * dates, relationships, the profile fact sections, and the tags editor with
+ * the rail; the timeline, life events, notes and activities, and calls and
+ * conversations with the Timeline zone; tasks with the Planning zone;
+ * reminders, which also draw the rail's stay-in-touch block, with whichever of
+ * the rail and the Planning zone activates first; and gifts and debts with the
+ * Things zone.
  */
 const PERSON_ISLANDS = [
   "person-hero",
@@ -255,7 +279,13 @@ const PERSON_ISLANDS = [
   "person-fact-tags",
   "person-timeline",
   "person-life-events",
+  "person-interactions",
+  "person-communications",
   "person-gifts",
+  "person-important-dates",
+  "person-relationships",
+  "person-reminders",
+  "person-tasks",
 ] as const;
 
 Deno.test("[GAP-028] the person shell loads each of its islands on demand", async () => {
@@ -272,6 +302,22 @@ Deno.test("[GAP-028] the person shell loads each of its islands on demand", asyn
     assert(!fromPalette.has(entry), `${name} does not load with the palette`);
     await logHydratedBytes(name, entry, react);
   }
+});
+
+Deno.test("[GAP-031] the tasks page loads the task surface island from its own script", async () => {
+  const react = await reactChunksOf(TASKS_PAGE);
+  const [entry, ...others] = await islandEntries("tasks-page");
+  assert(entry && others.length === 0, "one tasks-page island entry");
+  const tasks = await tasksPageScript();
+  assert(
+    (await reachable([tasks])).has(entry),
+    "the tasks page script loads the task surface",
+  );
+  assert(
+    !(await reachable([await paletteScript()])).has(entry),
+    "the task surface does not load with the palette",
+  );
+  await logHydratedBytes("tasks-page", entry, react);
 });
 
 Deno.test("[GAP-027] no chunk ships cmdk's unused Radix Dialog", async () => {

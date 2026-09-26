@@ -100,10 +100,10 @@ const hero = island(() =>
   )
 );
 
-const importantDates = vanilla(() =>
-  import("../../lib/important-dates.ts").then(
-    ({ mountImportantDates }) => (props) =>
-      mountImportantDates(props.personId, props.workspaceId, props.archived),
+// The important-dates rail block is an island (GAP-031).
+const importantDates = island(() =>
+  import("./important-dates/important-dates.tsx").then((module) =>
+    module.mountImportantDates
   )
 );
 
@@ -135,27 +135,18 @@ const pets = island(() =>
   import("./facts/pets.tsx").then((module) => module.mountPets)
 );
 
-const relationships = vanilla(() =>
-  import("../../lib/relationships.ts").then(
-    ({ mountRelationships }) => (props) =>
-      mountRelationships(
-        props.personId,
-        props.workspaceId,
-        props.archived,
-        sectionHidden(props, "relationships"),
-        props.initial?.person.updatedAt,
-      ),
+// The relationships rail block is an island (GAP-031).
+const relationships = island(() =>
+  import("./relationships/person-relationships.tsx").then((module) =>
+    module.mountPersonRelationships
   )
 );
 
-const reminders = vanilla(() =>
-  import("../../lib/reminders.ts").then(({ mountPersonReminders }) => (props) =>
-    mountPersonReminders({
-      archived: props.archived,
-      personId: props.personId,
-      timePreferences: props.preferences,
-      workspaceId: props.workspaceId,
-    })
+// One island owns the reminders card and the stay-in-touch rail block, which
+// one read answers (GAP-031).
+const reminders = island(() =>
+  import("./reminders/person-reminders.tsx").then((module) =>
+    module.mountPersonReminders
   )
 );
 
@@ -165,47 +156,26 @@ const lifeEvents = island(() =>
   )
 );
 
-const interactions = vanilla(() =>
-  import("../../lib/interactions.ts").then(
-    ({ mountPersonInteractions }) => (props) =>
-      mountPersonInteractions(
-        props.personId,
-        props.workspaceId,
-        props.archived,
-        {
-          activities: sectionHidden(props, "activities"),
-          notes: sectionHidden(props, "notes"),
-        },
-      ),
+// Notes and activities are one island (GAP-031), loaded with the Timeline
+// zone; `features/person/interactions/` holds it.
+const interactions = island(() =>
+  import("./interactions/mount.tsx").then((module) =>
+    module.mountPersonInteractions
   )
 );
 
-const communications = vanilla(() =>
-  import("../../lib/communications.ts").then(
-    ({ mountCommunications }) => (props) =>
-      mountCommunications(
-        props.personId,
-        props.workspaceId,
-        props.archived,
-        {
-          calls: sectionHidden(props, "calls"),
-          conversations: sectionHidden(props, "conversations"),
-        },
-        props.preferences,
-      ),
+// Calls and conversations are one island (GAP-031), loaded with the
+// Timeline zone; `features/person/communications/` holds it.
+const communications = island(() =>
+  import("./communications/mount.tsx").then((module) =>
+    module.mountPersonCommunications
   )
 );
 
-const tasks = vanilla(() =>
-  import("../../lib/tasks.ts").then(({ mountTaskSurface }) => (props) =>
-    mountTaskSurface({
-      archived: props.archived,
-      hidden: sectionHidden(props, "tasks"),
-      personId: props.personId,
-      timePreferences: props.preferences,
-      workspaceId: props.workspaceId,
-    })
-  )
+// The task surface island serves this card and the `/app/tasks` page
+// (GAP-031).
+const tasks = island(() =>
+  import("../tasks/task-surface.tsx").then((module) => module.mountPersonTasks)
 );
 
 // The gifts island (GAP-026) and React load with the Things zone, so a person

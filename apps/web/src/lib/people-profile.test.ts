@@ -1371,7 +1371,18 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     await mounting;
     await vi.waitFor(() => expect(firstMeetingClick).toHaveBeenCalledOnce());
     expect(birthdayClick).toHaveBeenCalledOnce();
-    expect(document.activeElement).toBe(controls.cadence);
+    // The reminders island (GAP-031) owns the stay-in-touch block and draws
+    // its cadence editor closed, as the shell does, so the action focuses no
+    // field inside it and focus stays on the person's heading.
+    const cadenceForm = document.querySelector<HTMLFormElement>(
+      "[data-cadence-form]",
+    )!;
+    expect(cadenceForm.hidden || cadenceForm.closest("[hidden]") !== null)
+      .toBe(true);
+    expect(cadenceForm.contains(document.activeElement)).toBe(false);
+    expect(document.activeElement).toBe(
+      document.querySelector("#person-profile-name"),
+    );
   });
 
   it("UXD-005B never clicks a hidden or disabled first-action control", async () => {
@@ -1399,6 +1410,26 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(firstMeetingClick).not.toHaveBeenCalled();
     expect(birthdayClick).not.toHaveBeenCalled();
     expect(document.activeElement).not.toBe(controls.cadence);
+  });
+
+  it("UXD-005B focuses a visible first-action field once the rail settles", async () => {
+    markup(`/app/people/${firstRunPersonId}`);
+    const controls = firstRunActionMarkup();
+    // Without its reminder form the reminders island stays unmounted, so the
+    // shell's cadence field remains the visible stay-in-touch control.
+    document.querySelector("[data-reminder-form]")?.remove();
+    stubProfile(zeroProfile(), {
+      [REMINDERS]: noReminders,
+      [REST]: recorded,
+    });
+    await mountPeopleProfile();
+
+    document.querySelector<HTMLButtonElement>(
+      '[data-first-run-action="stay-in-touch"]',
+    )!.click();
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(controls.cadence)
+    );
   });
 
   it("PRF-001 aligns the shared navigator only when opening its directory", async () => {
@@ -1840,6 +1871,34 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     await mounting;
     expect(document.activeElement).toBe(edit);
     expect(notice?.hidden).toBe(true);
+  });
+
+  it("UXD-006 keeps focus on a control the reader chose while the workspace settles without a section", async () => {
+    markup(`/app/people/${personId}`);
+    firstRunActionMarkup();
+    const reminders = deferred<Response>();
+    stubProfile(profileOf({}, { dueInformation: { status: "unavailable" } }), {
+      [VIEW]: recorded,
+      [REMINDERS]: reminders.promise,
+    });
+
+    const mounting = mountPeopleProfile();
+    await vi.waitFor(() =>
+      expect(document.querySelector("#person-profile-name")?.textContent).toBe(
+        "Ada",
+      )
+    );
+    const edit = document.querySelector<HTMLButtonElement>(
+      "#person-edit-open",
+    )!;
+    edit.focus();
+    reminders.resolve(noReminders);
+    await mounting;
+
+    expect(document.activeElement).toBe(edit);
+    expect(document.activeElement).not.toBe(
+      document.querySelector("#person-profile-name"),
+    );
   });
 
   it("PLANNING-002 does not steal reminder form focus after delayed profile reconciliation", async () => {
