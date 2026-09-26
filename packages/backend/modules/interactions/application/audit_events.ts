@@ -12,6 +12,7 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
+import { correlationOf } from "../../../shared-kernel/telemetry.ts";
 import type { CommunicationAudit, InteractionAudit } from "../ports/audit.ts";
 
 export function describeInteractionEvent(
@@ -35,6 +36,7 @@ export function describeInteractionEvent(
     subjectType: record.kind,
     visibleOnDashboard: true,
     workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
   };
 }
 
@@ -74,6 +76,7 @@ export function describeCommunicationEvent(
     subjectType: command.record.kind,
     visibleOnDashboard: true,
     workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
   };
 }
 

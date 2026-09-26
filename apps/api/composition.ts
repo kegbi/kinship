@@ -180,11 +180,7 @@ import {
 } from "../../packages/http-kit/body_limit.ts";
 import { sameOriginCors } from "../../packages/http-kit/cors.ts";
 import { healthRoutes } from "../../packages/http-kit/health.ts";
-import {
-  type Logger,
-  requestLogging,
-  stderrLogger,
-} from "../../packages/http-kit/logging.ts";
+import { requestLogging } from "../../packages/http-kit/logging.ts";
 import {
   requestId,
   type RequestIdEnv,
@@ -195,6 +191,8 @@ import {
   DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
   resolveAuthenticationResponseFloor,
 } from "./authentication_response.ts";
+import { jsonLogger } from "../../packages/backend/platform/telemetry/json_logger.ts";
+import type { Logger } from "../../packages/backend/shared-kernel/telemetry.ts";
 import { resolveObjectStorageConfiguration } from "./file_storage_config.ts";
 import { PersonalizationRouter } from "./personalization_router.ts";
 import {
@@ -986,6 +984,6 @@ export function createApiRuntime(
     undefined,
     davKeysetValue ? decodeDavEncryptionKeyset(davKeysetValue) : undefined,
     davEnabled,
-    stderrLogger(),
+    jsonLogger(),
   );
 }

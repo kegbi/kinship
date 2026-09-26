@@ -3,10 +3,13 @@
  *
  * The worker is the second deployable and composes the same modules the API
  * does, through the same per-module `compose*` functions: planning's delivery
- * loop and the workspace cleanup reconciler, over one shared context.
+ * loop and the workspace cleanup reconciler, over one shared context. Each
+ * delivery run is logged as one redacted `worker.job` JSON line on stdout.
  */
 
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import { jsonLogger } from "../../packages/backend/platform/telemetry/json_logger.ts";
+import type { Logger } from "../../packages/backend/shared-kernel/telemetry.ts";
 import type { SharedComposition } from "../../packages/backend/platform/composition.ts";
 import { composeObjectStorage } from "../../packages/backend/modules/files/composition.ts";
 import { governanceAuditRecorder } from "../../packages/backend/modules/governance/composition.ts";
@@ -36,7 +39,10 @@ export function createApplicationWorker(
   };
 }
 
-export function createConfiguredReminderWorker(databaseUrl: string): {
+export function createConfiguredReminderWorker(
+  databaseUrl: string,
+  logger: Logger = jsonLogger(),
+): {
   readonly close: () => Promise<void>;
   readonly worker: TickWorker;
 } {
@@ -57,7 +63,7 @@ export function createConfiguredReminderWorker(databaseUrl: string): {
   return {
     close: connection.destroy,
     worker: createApplicationWorker(
-      composeReminderDelivery(shared),
+      composeReminderDelivery(shared, { logger }),
       composeWorkspaceCleanup(shared, { storage }),
     ),
   };

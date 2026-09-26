@@ -360,3 +360,39 @@ Deno.test("GOVERNANCE-002 cursor is immutable and bound to every filter", async 
     "retired cursor key reached audit storage",
   );
 });
+
+Deno.test("[GAP-039] the request correlation in a payload is dropped, not shown or flagged", async () => {
+  const requestId = "3f2a9c0d8e7b6a5f4e3d2c1b0a9f8e7d";
+  const repository: AuditHistoryRepository = {
+    list(command) {
+      return Promise.resolve({
+        items: [{
+          action: "people.person-created",
+          actor: { id: command.memberId, name: "Workspace owner" },
+          id: "00000000-0000-4000-8000-000000000911",
+          occurredAt: "2026-09-26T10:00:00.000Z",
+          payload: { isPartial: false, requestId },
+          subject: { type: "person" },
+        }],
+        status: "ready",
+      });
+    },
+  };
+
+  const result = await createAuditHistory({ cursorKeyset, repository }).list(
+    actor("owner"),
+    { limit: 20 },
+  );
+
+  assert(result.status === "ready", "audit history was unavailable");
+  if (result.status !== "ready") return;
+  assert(
+    result.items[0]?.redacted === false &&
+      JSON.stringify(result.items[0]?.details) ===
+        JSON.stringify({ isPartial: false }) &&
+      !JSON.stringify(result).includes(requestId),
+    `operational correlation leaked into or flagged the history: ${
+      JSON.stringify(result)
+    }`,
+  );
+});

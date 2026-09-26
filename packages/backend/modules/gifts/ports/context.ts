@@ -9,6 +9,8 @@
  * directory depend on nothing outside gifts.
  */
 
+import type { Correlation } from "../../../shared-kernel/telemetry.ts";
+
 /**
  * The unit of work a port runs inside.
  *
@@ -21,7 +23,7 @@ export interface GiftTransaction {
 }
 
 /** Who is acting, as the workspace already established them. */
-export interface GiftActor {
+export interface GiftActor extends Correlation {
   readonly memberId: string;
   readonly role: "admin" | "member" | "owner";
   readonly userId: string;

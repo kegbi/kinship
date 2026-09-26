@@ -9,8 +9,10 @@ import {
   fixedClock,
   inMemoryRepository,
   recordingAudit,
+  recordingLogger,
   sequentialIds,
 } from "./fakes.ts";
+import type { Logger } from "../shared-kernel/telemetry.ts";
 
 Deno.test("[GAP-014] the fixed clock never moves and hands out its own Date", () => {
   const clock = fixedClock("2026-08-23T10:00:00.000Z");
@@ -155,4 +157,30 @@ Deno.test("[GAP-014] the fake object store keeps bytes by key and records every 
 Deno.test("[GAP-014] the fixture actor satisfies a module's own actor type", () => {
   const people: PeopleActor = actor();
   assertEquals(people.role, "member");
+});
+
+Deno.test("[GAP-039] the recording logger satisfies the kernel port and keeps every event", () => {
+  const recorder = recordingLogger();
+  const kernel: Logger = recorder;
+  kernel.log({
+    event: "api.request",
+    method: "GET",
+    route: "/api/v1/people",
+    status: 200,
+    duration_ms: 3,
+  });
+  kernel.log({
+    event: "worker.job",
+    job: "reminder-delivery",
+    request_id: "run-1",
+    attempt: 1,
+    outcome: "sent",
+    duration_ms: 5,
+  });
+
+  assertEquals(
+    recorder.events.map((event) => event.event),
+    ["api.request", "worker.job"],
+    "each event, in order, exactly as it was logged",
+  );
 });

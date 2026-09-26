@@ -11,6 +11,7 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
+import { correlationOf } from "../../../shared-kernel/telemetry.ts";
 import type { GiftAudit } from "../ports/audit.ts";
 
 export function describeGiftEvent(
@@ -30,6 +31,7 @@ export function describeGiftEvent(
     subjectType: command.recordType,
     visibleOnDashboard: true,
     workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
   };
 }
 

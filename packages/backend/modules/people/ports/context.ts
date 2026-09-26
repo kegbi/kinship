@@ -8,6 +8,8 @@
  * the ports in this directory are the only files that need them.
  */
 
+import type { Correlation } from "../../../shared-kernel/telemetry.ts";
+
 /**
  * The unit of work a port runs inside.
  *
@@ -20,7 +22,7 @@ export interface PeopleTransaction {
 }
 
 /** Who is acting, as the workspace already established them. */
-export interface PeopleActor {
+export interface PeopleActor extends Correlation {
   readonly memberId: string;
   readonly role: "admin" | "member" | "owner";
   readonly userId: string;

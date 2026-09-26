@@ -10,6 +10,8 @@
  * files.
  */
 
+import type { Correlation } from "../../../shared-kernel/telemetry.ts";
+
 /**
  * The unit of work a port runs inside.
  *
@@ -22,7 +24,7 @@ export interface PersonFileTransaction {
 }
 
 /** Who is acting, as the workspace already established them. */
-export interface PersonFileActor {
+export interface PersonFileActor extends Correlation {
   readonly memberId: string;
   readonly role: "admin" | "member" | "owner";
   readonly userId: string;

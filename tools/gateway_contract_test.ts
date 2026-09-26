@@ -161,6 +161,15 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
     "gateway owns API routing and trusted client address",
   );
   assert(
+    (gateway.match(/proxy_set_header X-Request-Id \$request_id;/g)?.length ??
+          0) === 2 &&
+      gateway.includes(
+        '"bytes_sent":$body_bytes_sent,"request_id":"$request_id"}',
+      ) &&
+      !gateway.includes("$http_x_request_id"),
+    "gateway forwards its own request identifier to both API locations and logs it, never a client's",
+  );
+  assert(
     gateway.includes("resolver 127.0.0.11") &&
       gateway.includes("set $api_upstream http://api:8000") &&
       gateway.includes("set $web_upstream http://web:4321"),

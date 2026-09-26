@@ -271,8 +271,16 @@ Deno.test("[EXPORT-001] PostgreSQL export is portable, private, and tenant-safe"
   assert(
     vcardAudit?.subject_type === "person" &&
       vcardAudit.subject_id === personId && vcardAudit.person_id === personId &&
-      JSON.stringify(vcardAudit.payload) === '{"format":"vcard"}',
-    "vCard audit is person-scoped and contains no exported content",
+      // The payload is the format and, since GAP-039, the request's own
+      // correlation identifier, which the response echoed.
+      JSON.stringify(vcardAudit.payload) ===
+        JSON.stringify({
+          format: "vcard",
+          requestId: vcard.headers.get("X-Request-Id"),
+        }),
+    `vCard audit is person-scoped and contains no exported content: ${
+      JSON.stringify({ vcardAudit, echoed: vcard.headers.get("X-Request-Id") })
+    }`,
   );
 
   const startOnlyId = crypto.randomUUID();

@@ -7,6 +7,7 @@
  */
 
 import type { SharedComposition } from "../../platform/composition.ts";
+import type { Logger } from "../../shared-kernel/telemetry.ts";
 import { InAppReminderDelivery } from "./adapters/in_app/reminder_delivery.ts";
 import { PostgresPersonDateReminderPublisher } from "./adapters/postgres/person_date_reminders.ts";
 import {
@@ -73,8 +74,15 @@ export function composePlanning(
   };
 }
 
-/** The worker half: the loop that claims due occurrences and delivers them. */
-export function composeReminderDelivery(shared: SharedComposition) {
+/**
+ * The worker half: the loop that claims due occurrences and delivers them.
+ * Given a logger, each run is logged as `worker.job` and correlated by an
+ * identifier minted from the shared identifier source.
+ */
+export function composeReminderDelivery(
+  shared: SharedComposition,
+  options: { readonly logger?: Logger } = {},
+) {
   return createReminderDeliveryWorker({
     audit: reminderDeliveryAuditFrom(shared.audit),
     clock: shared.clock,
@@ -85,6 +93,9 @@ export function composeReminderDelivery(shared: SharedComposition) {
       shared.database,
       shared.actors,
     ),
+    ...(options.logger
+      ? { telemetry: { correlation: shared.ids, logger: options.logger } }
+      : {}),
     transaction: shared.peopleTransaction,
   });
 }

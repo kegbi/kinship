@@ -26,14 +26,27 @@ import type {
   ResolvedSessionContext,
   WorkspaceRole,
 } from "../backend/modules/workspaces/public.ts";
+import {
+  type Correlation,
+  correlationOf,
+} from "../backend/shared-kernel/telemetry.ts";
 import { cookieValue, SESSION_COOKIE } from "./cookies.ts";
 import { definedProblem, type ProblemDefinition } from "./problem.ts";
+import { requestIdOf } from "./request_id.ts";
 
 /** The header a member switches their active workspace with. */
 export const WORKSPACE_HEADER = "X-Workspace-Id";
 
-/** The membership a request is acting as. */
-export interface SessionActor {
+/**
+ * The membership a request is acting as, and the request it is acting in.
+ *
+ * `requestId` is the request's correlation (GAP-039): the identifier the
+ * gateway forwarded or the API minted. It rides on the actor because the actor
+ * is what every route already hands its use case, so a use case reaches the
+ * identifier — and the audit event it describes carries it — without a second
+ * parameter. It is absent when the request-ID middleware is not mounted.
+ */
+export interface SessionActor extends Correlation {
   readonly memberId: string;
   readonly role: WorkspaceRole;
   readonly userId: string;
@@ -109,13 +122,22 @@ function resolve(
   return read(context, sessions, requestedWorkspaceId).catch(() => undefined);
 }
 
+/** This request's correlation, as a member that is absent when there is none. */
+function correlation(context: Context): Correlation {
+  return correlationOf({ requestId: requestIdOf(context) });
+}
+
 /** The membership, and nothing else, out of a wider resolution. */
-function membership(resolved: ResolvedSession): SessionActor {
+function membership(
+  resolved: ResolvedSession,
+  context: Context,
+): SessionActor {
   return {
     memberId: resolved.memberId,
     role: resolved.role,
     userId: resolved.userId,
     workspaceId: resolved.workspaceId,
+    ...correlation(context),
   };
 }
 
@@ -138,7 +160,9 @@ export function sessionActor(
     context.set(
       "actor",
       () => {
-        narrowed ??= session().then((value) => value && membership(value));
+        narrowed ??= session().then((value) =>
+          value && membership(value, context)
+        );
         return narrowed;
       },
     );
@@ -195,7 +219,7 @@ export async function workspaceScopedActor(
     sessions,
     requestedWorkspaceId ?? context.req.header(WORKSPACE_HEADER),
   );
-  return resolved && membership(resolved);
+  return resolved && membership(resolved, context);
 }
 
 /**
@@ -216,7 +240,7 @@ export async function readActor(
     sessions,
     context.req.header(WORKSPACE_HEADER),
   );
-  return resolved && membership(resolved);
+  return resolved && membership(resolved, context);
 }
 
 /** What this module needs of a scoped API-token authority. */
@@ -262,6 +286,6 @@ export async function tokenOrSessionActor(
     context.req.header(WORKSPACE_HEADER),
   ).catch(() => undefined);
   return authenticated?.status === "authenticated"
-    ? authenticated.actor
+    ? { ...authenticated.actor, ...correlation(context) }
     : undefined;
 }

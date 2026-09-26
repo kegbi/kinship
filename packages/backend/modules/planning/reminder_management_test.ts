@@ -1,6 +1,10 @@
 import * as planning from "./public.ts";
 import { InAppReminderDelivery } from "./adapters/in_app/reminder_delivery.ts";
-import { fixedClock } from "../../testing/fakes.ts";
+import {
+  fixedClock,
+  recordingLogger,
+  sequentialIds,
+} from "../../testing/fakes.ts";
 
 Deno.test("PLANNING-002 exposes calendar reminder management", () => {
   const publicPlanning = planning as unknown as Record<string, unknown>;
@@ -637,5 +641,162 @@ Deno.test("PLANNING-002 management preserves validation, authorization, replay, 
       replayedCadence,
       withoutOccurrence,
     }));
+  }
+});
+
+Deno.test("[GAP-039] each delivery run is logged with its attempt and outcome and correlated to its audit", async () => {
+  const base = {
+    body: "Call Ada",
+    memberId: "00000000-0000-4000-8000-000000000702",
+    personId: "00000000-0000-4000-8000-000000000703",
+    providerResultState: "unattempted" as const,
+    title: "Reminder",
+    workspaceId: "00000000-0000-4000-8000-000000000704",
+  };
+  const claims = [
+    {
+      ...base,
+      attemptCount: 1,
+      claimToken: "claim-1",
+      id: "confirmed",
+      providerIdempotencyKey: "confirmed",
+    },
+    {
+      ...base,
+      attemptCount: 2,
+      claimToken: "claim-2",
+      id: "retry",
+      providerIdempotencyKey: "retry",
+    },
+    {
+      ...base,
+      attemptCount: 3,
+      claimToken: "claim-3",
+      id: "poisoned",
+      providerIdempotencyKey: "poisoned",
+    },
+  ];
+  const logger = recordingLogger();
+  const runs = sequentialIds({ prefix: "0b000000-0000-4000-8000-" });
+  const audited: Array<
+    { readonly action: string; readonly requestId?: string }
+  > = [];
+  const worker = planning.createReminderDeliveryWorker({
+    audit: {
+      record(command) {
+        audited.push({
+          action: command.action,
+          ...(command.requestId ? { requestId: command.requestId } : {}),
+        });
+        return Promise.resolve();
+      },
+    },
+    clock: fixedClock("2026-08-18T10:00:00Z"),
+    provider: {
+      deliver: ({ occurrenceId }) =>
+        Promise.resolve(
+          occurrenceId === "retry"
+            ? { code: "temporary", status: "transient" as const }
+            : {
+              receipt: `receipt:${occurrenceId}`,
+              status: "confirmed" as const,
+            },
+        ),
+      reconcile: () =>
+        Promise.resolve({ code: "unused", status: "transient" as const }),
+    },
+    repository: {
+      replenish: () => Promise.resolve(),
+      claimDue: () => Promise.resolve(claims),
+      finalize: (command) =>
+        command.id === "poisoned"
+          ? Promise.reject(new Error("deadlock detected for Ada Lovelace"))
+          : Promise.resolve(true),
+    },
+    telemetry: { correlation: runs, logger },
+    transaction: { run: (work) => work({ opaque: "tx" }) },
+  });
+
+  await worker.tick({ owner: "telemetry" });
+
+  const [first, second, third] = runs.issued;
+  const events = logger.events.map((event) => {
+    const { duration_ms: duration, ...rest } = event as typeof event & {
+      readonly duration_ms: number;
+    };
+    if (!Number.isInteger(duration) || duration < 0) {
+      throw new Error(`a job run had no duration: ${JSON.stringify(event)}`);
+    }
+    return rest;
+  });
+  const expected = [
+    [first, 1, "sent"],
+    [second, 2, "retry"],
+    [third, 3, "processing-error"],
+  ].map(([requestId, attempt, outcome]) => ({
+    event: "worker.job",
+    job: "reminder-delivery",
+    request_id: requestId,
+    attempt,
+    outcome,
+  }));
+  if (JSON.stringify(events) !== JSON.stringify(expected)) {
+    throw new Error(
+      `job runs were not logged as declared: ${JSON.stringify(events)}`,
+    );
+  }
+  if (
+    JSON.stringify(audited) !==
+      JSON.stringify([{ action: "delivered", requestId: first }])
+  ) {
+    throw new Error(
+      `the delivery audit lost its run's identifier: ${
+        JSON.stringify(audited)
+      }`,
+    );
+  }
+  const written = JSON.stringify(logger.events);
+  for (const secret of ["Ada Lovelace", "deadlock", base.workspaceId, "Call"]) {
+    if (written.includes(secret)) throw new Error(`the log exposed ${secret}`);
+  }
+});
+
+Deno.test("[GAP-039] a delivery worker without telemetry logs nothing and correlates nothing", async () => {
+  const audited: Array<Record<string, unknown>> = [];
+  const worker = planning.createReminderDeliveryWorker({
+    audit: {
+      record(command) {
+        audited.push({ ...command });
+        return Promise.resolve();
+      },
+    },
+    clock: fixedClock("2026-08-18T10:00:00Z"),
+    provider: {
+      deliver: () => Promise.resolve({ receipt: "r", status: "confirmed" }),
+      reconcile: () => Promise.resolve({ receipt: "r", status: "confirmed" }),
+    },
+    repository: {
+      replenish: () => Promise.resolve(),
+      claimDue: () =>
+        Promise.resolve([{
+          attemptCount: 1,
+          body: "Call Ada",
+          claimToken: "claim",
+          id: "plain",
+          memberId: "member",
+          providerIdempotencyKey: "plain",
+          providerResultState: "unattempted" as const,
+          title: "Reminder",
+          workspaceId: "workspace",
+        }]),
+      finalize: () => Promise.resolve(true),
+    },
+    transaction: { run: (work) => work({ opaque: "tx" }) },
+  });
+
+  await worker.tick({ owner: "no-telemetry" });
+
+  if (audited.length !== 1 || Object.hasOwn(audited[0]!, "requestId")) {
+    throw new Error(`an uncorrelated run grew a member: ${audited.length}`);
   }
 });

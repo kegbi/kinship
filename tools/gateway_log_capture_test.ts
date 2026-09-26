@@ -7,6 +7,12 @@ import {
   tearDownE2eComposeProject,
 } from "./e2e.ts";
 
+/** A request identifier a client chose; the gateway must not forward it. */
+const CLIENT_REQUEST_ID = "client-chosen-request-id";
+
+/** What the gateway's own `$request_id` looks like: 32 lower-case hex digits. */
+const GATEWAY_REQUEST_ID = /"request_id":"[0-9a-f]{32}"/;
+
 const NGINX_IMAGE =
   "nginx:1.29.1-alpine3.22@sha256:42a516af16b852e33b7682d5ef8acbd5d13fe08fecadc7ed98605ba5e3b26ab8";
 
@@ -74,18 +80,43 @@ async function requestHealthFromGateway(
   ], true);
 }
 
-async function waitForReadinessLog(
-  gatewayContainer: string,
+async function waitForContainerLog(
+  container: string,
   pattern: RegExp,
 ): Promise<string> {
   const deadline = Date.now() + 15_000;
   let logs = "";
   while (Date.now() < deadline) {
-    logs = await docker(["logs", gatewayContainer]);
+    logs = await docker(["logs", container]);
     if (pattern.test(logs)) return logs;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error(`Gateway readiness diagnostic was absent: ${logs}`);
+  throw new Error(`Expected container log line ${pattern} was absent: ${logs}`);
+}
+
+/**
+ * Asks the API for its health through the gateway, the way a browser would,
+ * with a client-chosen `X-Request-Id`, and returns the identifier the answer
+ * echoed. `wget -S` prints the response headers on stderr.
+ */
+async function requestApiThroughGateway(
+  gatewayContainer: string,
+): Promise<string> {
+  const response = await docker([
+    "exec",
+    gatewayContainer,
+    "wget",
+    "-S",
+    "-q",
+    "-O",
+    "/dev/null",
+    "--header",
+    `X-Request-Id: ${CLIENT_REQUEST_ID}`,
+    "http://127.0.0.1:8080/api/v1/health",
+  ], true);
+  const echoed = /x-request-id:\s*(\S+)/i.exec(response)?.[1];
+  assert(echoed, `the API answer echoed no request identifier: ${response}`);
+  return echoed;
 }
 
 async function waitForGateway(origin: string): Promise<void> {
@@ -225,6 +256,14 @@ Deno.test({
           logs.includes('"status":') && logs.includes('"duration_seconds":'),
         `gateway logs must retain allowlisted structured operations: ${logs}`,
       );
+      const requestLines = logs.split("\n").filter((line) =>
+        line.includes('"event":"gateway.request"')
+      );
+      assert(
+        requestLines.length > 0 &&
+          requestLines.every((line) => GATEWAY_REQUEST_ID.test(line)),
+        `every gateway.request line carries the gateway's request identifier: ${logs}`,
+      );
     } catch (error) {
       errors.push(error);
     } finally {
@@ -324,6 +363,31 @@ Deno.test({
         "Compose readiness fixture created all required services",
       );
 
+      // GAP-039: the gateway replaces a client's identifier with its own,
+      // forwards it, and the API logs and echoes that same identifier.
+      const forwarded = await requestApiThroughGateway(gatewayContainer);
+      assert(
+        /^[0-9a-f]{32}$/.test(forwarded) && forwarded !== CLIENT_REQUEST_ID,
+        `the gateway forwarded its own identifier, not the client's: ${forwarded}`,
+      );
+      const gatewayLogs = await waitForContainerLog(
+        gatewayContainer,
+        new RegExp(
+          `"event":"gateway\\.request".*"route":"/api/v1/\\*".*"request_id":"${forwarded}"`,
+        ),
+      );
+      const apiLogs = await waitForContainerLog(
+        apiContainer,
+        new RegExp(
+          `"event":"api\\.request".*"route":"/api/v1/health".*"request_id":"${forwarded}"`,
+        ),
+      );
+      assert(
+        !gatewayLogs.includes(CLIENT_REQUEST_ID) &&
+          !apiLogs.includes(CLIENT_REQUEST_ID),
+        "a client-chosen request identifier never reaches a log line",
+      );
+
       await docker(
         [
           ...E2E_COMPOSE_ARGS,
@@ -339,7 +403,7 @@ Deno.test({
         gatewayContainer,
         "?token=readiness-query-secret",
       );
-      let logs = await waitForReadinessLog(
+      let logs = await waitForContainerLog(
         gatewayContainer,
         /"event":"gateway\.readiness","boundary":"api","state":"unavailable","status":503/,
       );
@@ -359,7 +423,7 @@ Deno.test({
       );
       await waitForContainerHealth(apiContainer, "healthy");
       await requestHealthFromGateway(gatewayContainer);
-      await waitForReadinessLog(
+      await waitForContainerLog(
         gatewayContainer,
         /"boundary":"api","state":"ready","status":200/,
       );
@@ -376,7 +440,7 @@ Deno.test({
         environment,
       );
       await requestHealthFromGateway(gatewayContainer);
-      logs = await waitForReadinessLog(
+      logs = await waitForContainerLog(
         gatewayContainer,
         /"event":"gateway\.readiness","boundary":"web","state":"unavailable","status":5\d\d/,
       );

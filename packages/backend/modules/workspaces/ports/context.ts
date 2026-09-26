@@ -18,6 +18,7 @@
  */
 
 import type { WorkspaceRole } from "../domain/roles.ts";
+import type { Correlation } from "../../../shared-kernel/telemetry.ts";
 
 /** The workspace context a signed-in request is acting in. */
 export interface ActiveWorkspaceContext {
@@ -64,7 +65,7 @@ export interface InvitationActor {
 }
 
 /** Who is reading or changing settings. */
-export interface SettingsActor {
+export interface SettingsActor extends Correlation {
   readonly memberId: string;
   readonly role: WorkspaceRole;
   readonly userId: string;

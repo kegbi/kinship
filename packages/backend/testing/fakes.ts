@@ -14,7 +14,7 @@
  * a framework.
  *
  * The fakes are typed against the shared kernel's contracts (`Clock`,
- * `IdGenerator`, `AuditEventRecorder`) and otherwise structurally, so the
+ * `IdGenerator`, `AuditEventRecorder`, `Logger`) and otherwise structurally, so the
  * package imports no module, reaches into no unit's private code, and adds
  * nothing to a test's runtime module graph — every import below is a type.
  */
@@ -22,6 +22,7 @@
 import type { Clock } from "../shared-kernel/clock.ts";
 import type { IdGenerator } from "../shared-kernel/ids.ts";
 import type { AuditEventWrite } from "../shared-kernel/audit_event.ts";
+import type { LogEvent, Logger } from "../shared-kernel/telemetry.ts";
 
 // --- Time ----------------------------------------------------------------
 
@@ -133,6 +134,27 @@ export function recordingAudit<
     assertRecorded: () => Promise.resolve(),
     assertPostcondition: () => Promise.resolve(),
     assertFailurePostcondition: () => Promise.resolve(),
+  };
+}
+
+// --- Telemetry -----------------------------------------------------------
+
+/** A logger that keeps every event it was given, in order. */
+export interface RecordingLogger extends Logger {
+  readonly events: readonly LogEvent[];
+}
+
+/**
+ * The kernel `Logger` as a test sees it: the events exactly as the code under
+ * test logged them, before the platform adapter would redact anything.
+ */
+export function recordingLogger(): RecordingLogger {
+  const events: LogEvent[] = [];
+  return {
+    events,
+    log: (event) => {
+      events.push(event);
+    },
   };
 }
 

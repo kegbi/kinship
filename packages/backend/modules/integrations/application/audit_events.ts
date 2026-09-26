@@ -11,6 +11,7 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
+import { correlationOf } from "../../../shared-kernel/telemetry.ts";
 import type { DavAudit, DavAuditCommand } from "../ports/audit.ts";
 
 export function describeDavEvent(command: DavAuditCommand): AuditEvent {
@@ -26,6 +27,7 @@ export function describeDavEvent(command: DavAuditCommand): AuditEvent {
     subjectType: "dav_subscription",
     visibleOnDashboard: false,
     workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
   };
 }
 

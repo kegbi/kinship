@@ -12,6 +12,7 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
+import { correlationOf } from "../../../shared-kernel/telemetry.ts";
 import type { InvitationAudit } from "../ports/invitation_repository.ts";
 import type { PersonalLifecycleAudit } from "../ports/personal_lifecycle.ts";
 import type { AuthenticationAudit } from "../ports/session.ts";
@@ -103,6 +104,7 @@ export function describeSettingsEvent(
     subjectType: command.subjectType,
     visibleOnDashboard: false,
     workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
   };
 }
 
