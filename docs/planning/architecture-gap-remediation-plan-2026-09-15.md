@@ -1177,12 +1177,34 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     repeats, Firefox `app-004c` 8; gates fmt:check, lint, check,
     check:architecture (14), contracts:check.
 
-- [ ] **GAP-030 — Island test support.** M. Depends: 026.
+- [x] **GAP-030 — Island test support.** M. Depends: 026.
   - Scope: `apps/web/src/testing/`: `render.tsx` (Testing Library with the
     island providers), `stubApi(routes)` and `jsonResponse`, fixtures (person,
     workspace, preferences), and an axe helper. Migrate the vanilla tests' local
     `markup()`/`response()` builders that still have live callers.
   - Verify: all web tests green; migrated suites shorter.
+  - Delivered 2026-09-26: `apps/web/src/testing/` holds the web suites' shared
+    support: `stubApi` (routes keyed `"METHOD /path/:param"` with optional
+    query, `*` method, and trailing `/*`; answers as responses, promises,
+    handlers, or one-call-at-a-time lists; every call recorded; an unmatched
+    request fails the test; `fetch` restored automatically), `jsonResponse`,
+    `problemResponse` over the contract's `ProblemDetails`, `deferred`, and
+    `unreachable`; `render.tsx` (`drawShell`, `mountSection`, `mountSettled`,
+    `mountPending`, `adoptMount`, `renderIsland` waiting for
+    `data-island-ready`, and `chooseOptions` holding the happy-dom multi-select
+    workaround); contract-typed fixtures for ids, person, profile, summary,
+    preferences, workspace session, and section props; and an axe helper
+    (`expectNoAxeViolations`, without the layout and page-level rules happy-dom
+    cannot evaluate); the folder and every `*.test-helper.ts` are excluded from
+    production coverage and the manifest; 29 island, feature, and vanilla suites
+    plus the facts test helper moved onto it with every test name kept (14,191
+    to 12,614 lines); the vanilla suites GAP-031 and GAP-033 delete were left as
+    they are; 35 files changed (+2336/-3881); web tests 906 after replaying onto
+    REL-046, web coverage 94.43/86.83/92.98/96.17 with every production file's
+    row unchanged except `workspace-context.ts` rising to 87.87% branch (the
+    totals moved only because the two test-helper files left the measurement),
+    every Deno set unchanged except the REL-038 file; gates fmt:check, lint,
+    check, check:architecture (14), contracts:check, root test:unit.
 
 - [ ] **GAP-031 — Stateful person surfaces as islands.** L. Depends: 028, 030.
   - Scope: migrate interactions and the Quick capture dialog, communications,

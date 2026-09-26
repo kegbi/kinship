@@ -1,23 +1,23 @@
 // @vitest-environment happy-dom
-import { act, cleanup, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import type { PersonProfileSummary } from "../../../../../packages/contracts/generated/auth-client.ts";
 import {
   setRailCount,
   setRailEmpty,
 } from "../../features/person/profile-summary.ts";
-import type {
-  PersonProfile,
-  SectionProps,
-} from "../../features/person/section-mounts.ts";
 import { RAIL_SECTION_ORDER } from "../../features/person/sections.ts";
+import {
+  personProfile,
+  profileSummary,
+  sectionProps,
+} from "../../testing/fixtures.ts";
+import { adoptMount, drawShell, mountSection } from "../../testing/render.tsx";
 import { mountPersonRail } from "./mount.tsx";
-
-const personId = "00000000-0000-4000-8000-000000000100";
-const workspaceId = "00000000-0000-4000-8000-000000000300";
 
 /** The facts column as the static shell draws it. */
 function markup(ids: readonly string[] = RAIL_SECTION_ORDER): void {
-  document.body.innerHTML = `
+  drawShell(`
     <main>
       <section class="profile-facts-column" aria-labelledby="profile-facts-heading">
         <header class="profile-facts-heading">
@@ -34,49 +34,25 @@ function markup(ids: readonly string[] = RAIL_SECTION_ORDER): void {
   }
         </div>
       </section>
-    </main>`;
+    </main>`);
 }
 
-function props(
-  sectionCounts: readonly Record<string, unknown>[] = [],
-): SectionProps {
-  return {
-    archived: false,
-    initial: {
-      dueInformation: { detail: "", openTaskCount: 0, status: "ready" },
-      person: {} as PersonProfile["person"],
-      status: "ready",
-      summary: {
-        primaryContactMethods: [],
-        relationshipCounts: [],
-        sectionCounts,
-      },
-    } as unknown as PersonProfile,
-    personId,
-    workspaceId,
-  };
-}
-
-const mounted: Array<() => void> = [];
-
-async function mount(sectionProps: SectionProps = props()): Promise<void> {
-  await act(async () => {
-    mounted.push(await mountPersonRail(document.body, sectionProps));
+/** A profile whose summary counts `sectionCounts`. */
+const props = (sectionCounts: PersonProfileSummary["sectionCounts"] = []) =>
+  sectionProps({
+    initial: personProfile({ summary: profileSummary({ sectionCounts }) }),
   });
-}
 
+const mount = (given = props()) => mountSection(mountPersonRail, given);
+
+/**
+ * Unmounts, when the test ends, a rail mounted outside `act` as the browser
+ * mounts it (the shared helpers mount inside `act`).
+ */
 const block = (id: string) =>
   document.querySelector<HTMLElement>(`[data-profile-section="${id}"]`)!;
 const chip = (id: string) =>
   block(id).querySelectorAll<HTMLElement>("[data-profile-rail-count]");
-
-afterEach(() => {
-  act(() => {
-    for (const unmount of mounted.splice(0)) unmount();
-  });
-  cleanup();
-  document.body.innerHTML = "";
-});
 
 describe("GAP-028 profile facts rail island", () => {
   it("UXD-002B seeds visible and hidden counts from the profile summary", async () => {
@@ -126,7 +102,7 @@ describe("GAP-028 profile facts rail island", () => {
       );
       setRailCount("important-dates", 4);
       setRailEmpty("important-dates", false);
-      mounted.push(await mounting);
+      adoptMount(await mounting);
       // Only microtasks: no timer, so the order cannot depend on load.
       await Promise.resolve();
       await Promise.resolve();
@@ -165,7 +141,7 @@ describe("GAP-028 profile facts rail island", () => {
 
   it("renders a publication sent outside React by the next microtask, never by a later task", async () => {
     markup();
-    mounted.push(await mountPersonRail(document.body, props()));
+    adoptMount(await mountPersonRail(document.body, props()));
     const environment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
     environment.IS_REACT_ACT_ENVIRONMENT = false;
     try {
@@ -181,25 +157,21 @@ describe("GAP-028 profile facts rail island", () => {
 
   it("owns only the blocks the shell drew, and nothing without a heading", async () => {
     markup(["work"]);
-    await mount(props([{ count: 1, id: "work", status: "ready" }]));
+    const unmountRail = await mount(
+      props([{ count: 1, id: "work", status: "ready" }]),
+    );
     expect(chip("work")[0]?.textContent).toBe("1");
 
-    act(() => {
-      for (const unmount of mounted.splice(0)) unmount();
-    });
-    document.body.innerHTML = "<main></main>";
-    const unmount = await mountPersonRail(document.body, {
-      archived: false,
-      personId,
-      workspaceId,
-    });
+    unmountRail();
+    drawShell("<main></main>");
+    const unmount = await mountPersonRail(document.body, sectionProps());
     expect(unmount).toBeTypeOf("function");
     unmount();
   });
 
   it("shows nothing it does not know when the profile has no summary", async () => {
     markup();
-    await mount({ archived: false, personId, workspaceId });
+    await mount(sectionProps());
     for (const id of RAIL_SECTION_ORDER) {
       expect(chip(id)[0]?.hidden).toBe(true);
       expect(block(id).hasAttribute("data-rail-empty")).toBe(false);

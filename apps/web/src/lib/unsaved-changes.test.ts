@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { drawShell, element } from "../testing/render.tsx";
 import {
   markFormSaved,
   mountUnsavedChangesGuard,
@@ -9,27 +10,21 @@ import {
 } from "./unsaved-changes.ts";
 import { requestWorkspaceChange } from "./workspace-context.ts";
 
-function markup(): {
-  readonly first: HTMLFormElement;
-  readonly firstName: HTMLInputElement;
-  readonly root: HTMLElement;
-  readonly second: HTMLFormElement;
-  readonly secondName: HTMLInputElement;
-} {
-  document.body.innerHTML = `
+function markup() {
+  drawShell(`
     <main id="guard-root">
       <form id="first"><input name="name"><input name="selected" type="checkbox"></form>
       <section><form id="second"><input name="name"></form></section>
     </main>
-    <form id="outside"><input name="name"></form>`;
-  const first = document.querySelector<HTMLFormElement>("#first")!;
-  const second = document.querySelector<HTMLFormElement>("#second")!;
+    <form id="outside"><input name="name"></form>`);
+  const first = element<HTMLFormElement>("#first");
+  const second = element<HTMLFormElement>("#second");
   return {
     first,
-    firstName: first.elements.namedItem("name") as HTMLInputElement,
-    root: document.querySelector<HTMLElement>("#guard-root")!,
+    firstName: element<HTMLInputElement>('[name="name"]', first),
+    root: element("#guard-root"),
     second,
-    secondName: second.elements.namedItem("name") as HTMLInputElement,
+    secondName: element<HTMLInputElement>('[name="name"]', second),
   };
 }
 
@@ -47,7 +42,6 @@ function edit(control: HTMLInputElement, value: string): void {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
-  document.body.innerHTML = "";
 });
 
 describe("person workspace unsaved-changes guard", () => {

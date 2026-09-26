@@ -1,45 +1,41 @@
 /**
  * Test support for the fact islands: the shell's markup for a fact section,
- * a mount that waits for the first read, and a fetch stub that answers by
- * method and path.
+ * the fact reads the API answers, and a mount over that shell. The fetch
+ * stub, the profile fixtures, and the teardown come from `src/testing`.
  */
 
-import { act } from "@testing-library/react";
-import { vi } from "vitest";
 import type {
-  PersonProfile,
-  SectionMount,
-  SectionProps,
-} from "../section-mounts.ts";
+  PersonProfileSectionId,
+  PersonProfileSummary,
+} from "../../../../../../packages/contracts/generated/auth-client.ts";
+import { jsonResponse } from "../../../testing/api.ts";
+import {
+  ids,
+  personProfile,
+  profileSummary,
+  sectionProps,
+} from "../../../testing/fixtures.ts";
+import {
+  drawShell,
+  element,
+  mountPending,
+  mountSettled,
+} from "../../../testing/render.tsx";
+import type { SectionMount, SectionProps } from "../section-mounts.ts";
 
-export const personId = "00000000-0000-4000-8000-000000000100";
-export const workspaceId = "00000000-0000-4000-8000-000000000003";
+export const { person: personId, workspace: workspaceId } = ids;
 export const revision = "2026-08-16T12:00:00.000000Z";
 export const nextRevision = "2026-08-16T12:00:00.000001Z";
 
-export function response(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    headers: { "content-type": "application/json" },
-    status,
-  });
-}
-
-export function problem(status: number, detail = "Private failure details") {
-  return response({
-    code: "rejected",
-    detail,
-    status,
-    title: "Rejected",
-    type: "about:blank",
-  }, status);
-}
+/** The `stubApi` key of every API route, for a suite answering from one handler. */
+export const anyRoute = "* /api/v1/*";
 
 /** A fact read answering `records` (with ids and revisions filled in). */
 export function factRead(
   records: readonly object[],
   extra: Record<string, unknown> = {},
 ): Response {
-  return response({
+  return jsonResponse({
     options: [],
     personUpdatedAt: revision,
     records,
@@ -48,11 +44,28 @@ export function factRead(
   });
 }
 
+/** A saved fact: `record`, moving the person to `personUpdatedAt`. */
+export function factSaved(
+  record: unknown,
+  personUpdatedAt = nextRevision,
+): Response {
+  return jsonResponse({ personUpdatedAt, record, status: "saved" });
+}
+
+/** A deleted fact, moving the person to the next revision. */
+export function factDeleted(): Response {
+  return jsonResponse({
+    factId: "deleted",
+    personUpdatedAt: nextRevision,
+    status: "deleted",
+  });
+}
+
 /** A fact record of `section` holding `value`. */
 export function fact(
   section: string,
   value: object,
-  id = personId,
+  id: string = personId,
   extra: Record<string, unknown> = {},
 ) {
   return { id, section, updatedAt: revision, value, ...extra };
@@ -96,11 +109,12 @@ export function tagsBlock(): string {
 
 /** Draws the given blocks, with the application's toast region. */
 export function shell(...blocks: readonly string[]): HTMLElement {
-  document.body.innerHTML =
+  drawShell(
     `<ul id="app-toasts"></ul><main id="person-profile-ready">${
       blocks.join("")
-    }</main>`;
-  return document.querySelector<HTMLElement>("#person-profile-ready")!;
+    }</main>`,
+  );
+  return element("#person-profile-ready");
 }
 
 /** The section element of `section`. */
@@ -110,64 +124,37 @@ export function block(section: string): HTMLElement {
   )!;
 }
 
-export interface MountOptions {
+/** The profile the page loaded: its summary, lifecycle, and hidden modules. */
+export interface MountOptions extends Partial<PersonProfileSummary> {
   readonly archived?: boolean;
-  readonly hidden?: readonly string[];
-  readonly primaryContactMethods?: readonly object[];
-  readonly sectionCounts?: readonly object[];
+  readonly hidden?: readonly PersonProfileSectionId[];
 }
 
-/** The profile answer a page loaded, as the section mounts receive it. */
-export function profile(options: MountOptions = {}): PersonProfile {
-  return {
-    dueInformation: { detail: "", openTaskCount: 0, status: "ready" },
-    person: {
-      givenName: "Ada",
-      id: personId,
-      isDeceased: false,
-      isPartial: false,
-      isSelf: false,
-      isStarred: false,
-      profileSections: (options.hidden ?? []).map((id) => ({
-        id,
-        status: "hidden",
-      })),
-      tagCount: 0,
-      tags: [],
-      updatedAt: revision,
-    },
-    status: options.archived ? "archived" : "ready",
-    summary: {
-      primaryContactMethods: options.primaryContactMethods ?? [],
-      relationshipCounts: [],
-      sectionCounts: options.sectionCounts ?? [],
-    },
-  } as unknown as PersonProfile;
+function props(
+  { archived = false, hidden = [], ...summary }: MountOptions,
+): SectionProps {
+  return sectionProps({
+    archived,
+    initial: personProfile({
+      person: {
+        profileSections: hidden.map((id) => ({ id, status: "hidden" })),
+        updatedAt: revision,
+      },
+      status: archived ? "archived" : "ready",
+      summary: profileSummary(summary),
+    }),
+  });
 }
 
-const mounted: Array<() => void> = [];
+const start = (mount: SectionMount, options: MountOptions) => () =>
+  mount(element("#person-profile-ready"), props(options));
 
-function props(options: MountOptions): SectionProps {
-  return {
-    archived: options.archived ?? false,
-    initial: profile(options),
-    personId,
-    workspaceId,
-  };
-}
-
-function container(): HTMLElement {
-  return document.querySelector<HTMLElement>("#person-profile-ready")!;
-}
-
-/** Mounts `mount` over the shell and waits for its first read. */
-export async function mountFacts(
+/** Mounts `mount` over the shell, waits for its first read, and answers its unmount. */
+export function mountFacts(
   mount: SectionMount,
   options: MountOptions = {},
-): Promise<void> {
-  await act(async () => {
-    mounted.push(await mount(container(), props(options)));
-  });
+): Promise<() => void> {
+  return mountSettled(start(mount, options));
 }
 
 /**
@@ -177,58 +164,8 @@ export async function mountFacts(
 export function mountFactsLater(
   mount: SectionMount,
   options: MountOptions = {},
-): Promise<void> {
-  let settled!: Promise<() => void>;
-  act(() => {
-    settled = mount(container(), props(options));
-  });
-  return settled.then((unmount) => {
-    mounted.push(unmount);
-  });
-}
-
-/** Unmounts every island a test mounted. */
-export function unmountFacts(): void {
-  act(() => {
-    for (const unmount of mounted.splice(0)) unmount();
-  });
-}
-
-type Handler = (
-  url: URL,
-  init: RequestInit | undefined,
-) => Response | Promise<Response>;
-
-/**
- * Stubs `fetch` with `handler`, which sees each request's URL and init, and
- * answers the recorded calls as "METHOD /path?query" lines.
- */
-export function stubFetch(handler: Handler): {
-  readonly calls: () => readonly string[];
-  readonly bodies: () => readonly Record<string, unknown>[];
-  readonly mock: ReturnType<typeof vi.fn>;
-} {
-  const mock = vi.fn((resource: string | URL | Request, init?: RequestInit) => {
-    const url = new URL(String(resource), "http://localhost");
-    return Promise.resolve(handler(url, init));
-  });
-  vi.stubGlobal("fetch", mock);
-  return {
-    bodies: () =>
-      mock.mock.calls.flatMap(([, init]) =>
-        (init as RequestInit | undefined)?.body
-          ? [JSON.parse(String((init as RequestInit).body))]
-          : []
-      ),
-    calls: () =>
-      mock.mock.calls.map(([resource, init]) => {
-        const url = new URL(String(resource), "http://localhost");
-        return `${
-          (init as RequestInit | undefined)?.method ?? "GET"
-        } ${url.pathname}${url.search}`;
-      }),
-    mock,
-  };
+): Promise<() => void> {
+  return mountPending(start(mount, options));
 }
 
 /** The section named `section` in the URL of a fact request. */

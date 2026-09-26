@@ -1,4 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import {
+  jsonResponse,
+  problemResponse,
+  stubApi,
+  unreachable,
+} from "../testing/api.ts";
 import {
   formatCalendarDate,
   formatInstant,
@@ -6,7 +12,7 @@ import {
   loadTimePreferences,
 } from "./time-presentation.ts";
 
-afterEach(() => vi.unstubAllGlobals());
+const PREFERENCES = "GET /api/v1/settings/preferences";
 
 describe("APR-009 explicit date presentation", () => {
   it.each([
@@ -120,7 +126,7 @@ describe("APR-009 explicit date presentation", () => {
     }
   });
   it("does not use the browser timezone when preferences cannot be loaded", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    stubApi({ [PREFERENCES]: unreachable });
     expect(await loadTimePreferences("workspace-a")).toBeUndefined();
     expect(formatInstant("2026-09-04T22:10:00Z", undefined)).toBe(
       "Time unavailable",
@@ -139,23 +145,18 @@ describe("APR-009 explicit date presentation", () => {
     ).toBe("Time unavailable");
   });
   it("loads each workspace's resolved preferences without caching another membership", async () => {
-    const fetch = vi.fn().mockImplementation((_url, options) =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            status: "ready",
-            preferences: {
-              locale: "de-DE",
-              effectiveTimezone: options.headers["X-Workspace-Id"] === "a"
-                ? "Europe/Belgrade"
-                : "Asia/Tokyo",
-            },
-          }),
-          { headers: { "content-type": "application/json" } },
-        ),
-      )
-    );
-    vi.stubGlobal("fetch", fetch);
+    const api = stubApi({
+      [PREFERENCES]: ({ headers }) =>
+        jsonResponse({
+          status: "ready",
+          preferences: {
+            locale: "de-DE",
+            effectiveTimezone: headers.get("X-Workspace-Id") === "a"
+              ? "Europe/Belgrade"
+              : "Asia/Tokyo",
+          },
+        }),
+    });
     expect(await loadTimePreferences("a")).toEqual({
       locale: "de-DE",
       effectiveTimezone: "Europe/Belgrade",
@@ -164,20 +165,7 @@ describe("APR-009 explicit date presentation", () => {
       locale: "de-DE",
       effectiveTimezone: "Asia/Tokyo",
     });
-    fetch.mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          status: 403,
-          title: "Forbidden",
-          detail: "Forbidden",
-          type: "about:blank",
-        }),
-        {
-          status: 403,
-          headers: { "content-type": "application/problem+json" },
-        },
-      ),
-    );
+    api.route(PREFERENCES, problemResponse(403, { title: "Forbidden" }));
     expect(await loadTimePreferences("b")).toBeUndefined();
   });
 });

@@ -1,22 +1,22 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
+import { fireEvent, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   type CapturedProfileSummary,
   captureProfileSummary,
 } from "../profile-summary.test-helper.ts";
+import { problemResponse, stubApi } from "../../../testing/api.ts";
 import {
+  anyRoute,
   block,
   fact,
+  factDeleted,
   factRead,
+  factSaved,
   mountFacts,
-  nextRevision,
   railBlock,
-  response,
   shell,
-  stubFetch,
-  unmountFacts,
 } from "./facts.test-helper.ts";
 import { mountWork } from "./work.tsx";
 
@@ -31,36 +31,25 @@ let summary: CapturedProfileSummary;
 beforeEach(() => {
   summary = captureProfileSummary();
 });
-afterEach(() => {
-  summary.stop();
-  unmountFacts();
-  cleanup();
-  vi.unstubAllGlobals();
-  document.body.innerHTML = "";
-});
+afterEach(() => summary.stop());
 
 const section = () => within(block("work"));
 
 describe("GAP-029 work island", () => {
   it("chooses an existing organization or names a new one, never both", async () => {
     shell(railBlock("work"));
-    const fetch = stubFetch((url, init) => {
-      if (init?.method === "POST") {
-        const body = JSON.parse(String(init.body));
-        return response({
-          personUpdatedAt: nextRevision,
-          record: fact("work", {
-            ...body,
-            organizationName: "Analytical Engines",
-          }),
-          status: "saved",
-        });
-      }
-      return factRead([], {
-        options: url.searchParams.get("optionSearch") === "Analytical"
-          ? [organization]
-          : [],
-      });
+    const api = stubApi({
+      "POST /api/v1/*": ({ body }) =>
+        factSaved(fact("work", {
+          ...body as object,
+          organizationName: "Analytical Engines",
+        })),
+      "GET /api/v1/*": ({ url }) =>
+        factRead([], {
+          options: url.searchParams.get("optionSearch") === "Analytical"
+            ? [organization]
+            : [],
+        }),
     });
     await mountFacts(mountWork);
     const user = userEvent.setup();
@@ -95,14 +84,14 @@ describe("GAP-029 work island", () => {
     await user.click(
       section().getByRole("button", { name: "Save profile fact" }),
     );
-    await waitFor(() => expect(fetch.bodies()).toHaveLength(1));
-    expect(fetch.bodies()[0]).toMatchObject({
+    await waitFor(() => expect(api.bodies()).toHaveLength(1));
+    expect(api.bodies()[0]).toMatchObject({
       isCurrent: false,
       organizationId,
       section: "work",
       title: "Mathematician",
     });
-    expect(fetch.bodies()[0]).not.toHaveProperty("organizationName");
+    expect(api.bodies()[0]).not.toHaveProperty("organizationName");
     await waitFor(() =>
       expect(
         block("work").querySelector("[data-profile-fact-state]")
@@ -113,18 +102,15 @@ describe("GAP-029 work island", () => {
 
   it("puts an API refusal on the field it names and focuses it", async () => {
     shell(railBlock("work"));
-    stubFetch((_url, init) =>
-      init?.method === "POST"
-        ? response({
-          code: "validation_failed",
-          detail: "Profile fact validation failed.",
-          errors: { endOn: "End date must be on or after the start date." },
-          status: 400,
-          title: "Validation failed",
-          type: "about:blank",
-        }, 400)
-        : factRead([])
-    );
+    stubApi({
+      "POST /api/v1/*": problemResponse(400, {
+        code: "validation_failed",
+        detail: "Profile fact validation failed.",
+        errors: { endOn: "End date must be on or after the start date." },
+        title: "Validation failed",
+      }),
+      "GET /api/v1/*": factRead([]),
+    });
     await mountFacts(mountWork);
     const user = userEvent.setup();
     await user.click(section().getByRole("button", { name: "Add work" }));
@@ -172,7 +158,7 @@ describe("GAP-029 work island", () => {
         title: "Fellow",
       }, "00000000-0000-4000-8000-000000000413"),
     ];
-    stubFetch(() => factRead(roles));
+    stubApi({ [anyRoute]: factRead(roles) });
     await mountFacts(mountWork);
     const items = [
       ...block("work").querySelectorAll<HTMLLIElement>(
@@ -195,24 +181,21 @@ describe("GAP-029 work island", () => {
   it("UXD-002B publishes the work vital and clears it when the role is deleted", async () => {
     shell(railBlock("work"));
     let present = true;
-    stubFetch((_url, init) => {
-      if (init?.method === "DELETE") {
+    stubApi({
+      "DELETE /api/v1/*": () => {
         present = false;
-        return response({
-          factId: "deleted",
-          personUpdatedAt: nextRevision,
-          status: "deleted",
-        });
-      }
-      return factRead(
-        present
-          ? [fact("work", {
-            isCurrent: true,
-            organizationName: "Analytical Engines",
-            title: "Mathematician",
-          })]
-          : [],
-      );
+        return factDeleted();
+      },
+      "GET /api/v1/*": () =>
+        factRead(
+          present
+            ? [fact("work", {
+              isCurrent: true,
+              organizationName: "Analytical Engines",
+              title: "Mathematician",
+            })]
+            : [],
+        ),
     });
     await mountFacts(mountWork);
     expect(summary.vital("work")).toBe("Mathematician at Analytical Engines");
@@ -235,8 +218,8 @@ describe("GAP-029 work island", () => {
 
   it("edits a saved role with its organization chosen and dates filled", async () => {
     shell(railBlock("work"));
-    const fetch = stubFetch((url) =>
-      factRead([{
+    const api = stubApi({
+      [anyRoute]: factRead([{
         ...fact("work", {
           endOn: "2021-01-01",
           isCurrent: true,
@@ -246,8 +229,8 @@ describe("GAP-029 work island", () => {
           title: "Mathematician",
         }),
         selectedOptions: [organization],
-      }], url.searchParams.has("includeOptions") ? {} : {})
-    );
+      }]),
+    });
     await mountFacts(mountWork);
     const user = userEvent.setup();
     await user.click(
@@ -269,6 +252,6 @@ describe("GAP-029 work island", () => {
       .toBe("2020-01-01");
     expect(section().getByLabelText<HTMLInputElement>("Current role").checked)
       .toBe(true);
-    expect(fetch.calls()).toHaveLength(2);
+    expect(api.calls()).toHaveLength(2);
   });
 });

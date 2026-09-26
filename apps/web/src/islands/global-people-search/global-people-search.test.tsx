@@ -1,14 +1,25 @@
 // @vitest-environment happy-dom
 
-import {
-  act,
-  cleanup,
-  fireEvent,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getMemberPreferences } from "../../../../../packages/contracts/generated/auth-client.ts";
+import {
+  getMemberPreferences,
+  type ResolvedMemberPreferences,
+} from "../../../../../packages/contracts/generated/auth-client.ts";
+import {
+  deferred,
+  jsonResponse,
+  stubApi,
+  type StubbedApi,
+  unreachable,
+} from "../../testing/api.ts";
+import { ids, preferences, workspaceSession } from "../../testing/fixtures.ts";
+import {
+  drawShell,
+  element,
+  mountPending,
+  mountSettled,
+} from "../../testing/render.tsx";
 import {
   GLOBAL_PEOPLE_SEARCH_ISLAND,
   mountGlobalPeopleSearch,
@@ -22,48 +33,33 @@ vi.mock(
   }),
 );
 
-const workspaceId = "00000000-0000-4000-8000-000000000003";
+const workspaceId = ids.workspace;
 const adaId = "00000000-0000-4000-8000-000000000101";
 const graceId = "00000000-0000-4000-8000-000000000102";
-const session = {
-  member: { id: "member", role: "member" },
-  principal: { userId: "user" },
-  status: "authenticated",
-  workspace: { id: workspaceId, name: "Circle" },
-  workspaces: [{ id: workspaceId, name: "Circle" }],
-};
+const session = workspaceSession({
+  member: { id: ids.member, role: "member" },
+});
 
-function preferences(contactNameOrder: string) {
-  return {
-    ok: true as const,
-    value: {
-      status: "ready" as const,
-      preferences: {
-        effectiveTimezone: "UTC",
-        contactNameOrder,
-        contactSortOrder: "given_name_asc",
-        fluidLayout: false,
-        locale: "en",
-        measurementSystem: "metric",
-        temperatureScale: "celsius",
-      },
-    },
-  };
-}
+const savedPreferences = (
+  contactNameOrder: ResolvedMemberPreferences["contactNameOrder"],
+) => ({
+  ok: true as const,
+  value: {
+    preferences: preferences({ contactNameOrder }),
+    status: "ready" as const,
+  },
+});
 
 beforeEach(() => {
   vi.mocked(getMemberPreferences).mockReset().mockResolvedValue(
-    // deno-lint-ignore no-explicit-any
-    preferences("given_family_nickname") as any,
+    savedPreferences("given_family_nickname"),
   );
 });
 
-function response(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    headers: { "content-type": "application/json" },
-    status,
-  });
-}
+afterEach(() => {
+  vi.useRealTimers();
+  sessionStorage.clear();
+});
 
 function directoryPerson(
   id: string,
@@ -86,7 +82,7 @@ function directoryPerson(
 
 /** The header as ApplicationLayout.astro draws it before the island mounts. */
 function markup(): void {
-  document.body.innerHTML = `
+  drawShell(`
     <div class="global-search" data-global-people-search>
       <input id="global-people-search-input" type="search" role="combobox" aria-label="Find a person" aria-expanded="false" placeholder="Search people…" autocomplete="off">
       <button data-global-people-search-open type="button" aria-label="Find a person" aria-expanded="false"><span>Search</span></button>
@@ -95,79 +91,58 @@ function markup(): void {
     <button id="shortcut-opener" type="button">Open shortcut</button>
     <input id="other-input">
     <textarea id="note"></textarea>
-    <div id="editor" contenteditable="true" tabindex="0"></div>`;
+    <div id="editor" contenteditable="true" tabindex="0"></div>`);
 }
 
-function fetchFor(
+const SESSION = "GET /api/v1/session";
+
+/** The API behind the palette: a session, recent people, and a directory. */
+function stubPeople(
   people: readonly ReturnType<typeof directoryPerson>[] = [],
   recent: readonly { archived: boolean; id: string; name: string }[] = [],
-  sessionBody: unknown = session,
-) {
-  return vi.fn((request: RequestInfo | URL) => {
-    const url = String(request);
-    if (url === "/api/v1/session") {
-      return Promise.resolve(response(sessionBody));
-    }
-    if (url === "/api/v1/today/recent-people") {
-      return Promise.resolve(response({ people: recent, status: "ready" }));
-    }
-    if (url.startsWith("/api/v1/people?")) {
-      return Promise.resolve(
-        response({ lifecycle: "active", people, status: "ready" }),
-      );
-    }
-    if (
-      url === `/api/v1/people/${adaId}?include=summary` ||
-      url === `/api/v1/people/${graceId}?include=summary`
-    ) {
-      const isAda = url.includes(adaId);
-      return Promise.resolve(response({
+  sessionAnswer: Response | Promise<Response> = jsonResponse(session),
+): StubbedApi {
+  return stubApi({
+    [SESSION]: sessionAnswer,
+    "GET /api/v1/today/recent-people": jsonResponse({
+      people: recent,
+      status: "ready",
+    }),
+    "GET /api/v1/people/:personId?include=summary": ({ params }) => {
+      const isAda = params["personId"] === adaId;
+      return jsonResponse({
         status: isAda ? "ready" : "archived",
         person: directoryPerson(
           isAda ? adaId : graceId,
           isAda ? "Ada" : "Grace",
           isAda ? "Lovelace" : "Hopper",
         ),
-      }));
-    }
-    throw new Error(`Unexpected request: ${url}`);
+      });
+    },
+    "GET /api/v1/people": jsonResponse({
+      lifecycle: "active",
+      people,
+      status: "ready",
+    }),
   });
 }
 
-const peopleRequests = (fetchMock: ReturnType<typeof vi.fn>) =>
-  fetchMock.mock.calls.filter(([url]) =>
-    String(url).startsWith("/api/v1/people?")
-  );
-
-const mounted: Array<() => void> = [];
-const pendingSessionGates: Array<() => void> = [];
+const peopleRequests = (api: StubbedApi) =>
+  api.requests().filter(({ url }) => url.pathname === "/api/v1/people");
 
 /** Mounts the island and lets its session and preference reads settle. */
-async function mount(navigate: (path: string) => void = vi.fn()) {
-  await act(async () => {
-    mounted.push(mountGlobalPeopleSearch(navigate));
-    await Promise.resolve();
-  });
-}
+const mount = (navigate: (path: string) => void = vi.fn()) =>
+  mountSettled(() => Promise.resolve(mountGlobalPeopleSearch(navigate)));
 
 /** Mounts without settling, for the reads a test holds back. */
-function mountNow(navigate: (path: string) => void = vi.fn()) {
-  act(() => {
-    mounted.push(mountGlobalPeopleSearch(navigate));
-  });
-}
+const mountNow = () =>
+  void mountPending(() => Promise.resolve(mountGlobalPeopleSearch(vi.fn())));
 
-afterEach(() => {
-  pendingSessionGates.splice(0).forEach((release) => release());
-  act(() => {
-    for (const unmount of mounted.splice(0)) unmount();
-  });
-  cleanup();
-  vi.useRealTimers();
-  vi.unstubAllGlobals();
-  document.body.innerHTML = "";
-  sessionStorage.clear();
-});
+/** Holds the session read back until the test releases `answer`. */
+function gatedSession(answer: () => Response = () => jsonResponse(session)) {
+  const gate = deferred<Response>();
+  return { answer: gate.promise, release: () => gate.resolve(answer()) };
+}
 
 const field = () =>
   screen.getByRole<HTMLInputElement>("combobox", { name: "Find a person" });
@@ -197,31 +172,12 @@ function key(target: EventTarget, init: KeyboardEventInit): KeyboardEvent {
   return event;
 }
 
-function gatedSession(
-  base: ReturnType<typeof fetchFor>,
-  sessionResponse: () => Response = () => response(session),
-): { readonly fetchMock: typeof base; readonly release: () => void } {
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  pendingSessionGates.push(release);
-  const fetchMock = vi.fn(async (request: RequestInfo | URL) => {
-    if (String(request) !== "/api/v1/session") return await base(request);
-    await gate;
-    return sessionResponse();
-  });
-  return { fetchMock: fetchMock as unknown as typeof base, release };
-}
-
 describe("GAP-027 people palette island", () => {
   it("takes over the static header and marks itself ready", async () => {
     markup();
-    vi.stubGlobal("fetch", fetchFor());
+    stubPeople();
     await mount();
-    const container = document.querySelector<HTMLElement>(
-      "[data-global-people-search]",
-    )!;
+    const container = element("[data-global-people-search]");
     expect(container.dataset.island).toBe(GLOBAL_PEOPLE_SEARCH_ISLAND);
     expect(container.hasAttribute("data-island-ready")).toBe(true);
     expect(field().getAttribute("aria-expanded")).toBe("false");
@@ -244,13 +200,9 @@ describe("UXD-004 global people search", () => {
     async (query) => {
       markup();
       vi.mocked(getMemberPreferences).mockResolvedValue(
-        // deno-lint-ignore no-explicit-any
-        preferences("family_given_nickname") as any,
+        savedPreferences("family_given_nickname"),
       );
-      vi.stubGlobal(
-        "fetch",
-        fetchFor([directoryPerson(adaId, "Ada", "Lovelace", "Countess")]),
-      );
+      stubPeople([directoryPerson(adaId, "Ada", "Lovelace", "Countess")]);
       await mount();
       type(query);
       await waitFor(() =>
@@ -265,20 +217,14 @@ describe("UXD-004 global people search", () => {
     "APR-008 omits an unavailable recent identity (%s) without exposing its stale name",
     async (failure) => {
       markup();
-      const base = fetchFor([], [
+      stubPeople([], [
         { id: adaId, name: "Old Ada", archived: false },
         { id: graceId, name: "Do not expose this stale name", archived: false },
-      ]);
-      vi.stubGlobal(
-        "fetch",
-        vi.fn((url: RequestInfo | URL) => {
-          if (String(url).includes(`/people/${graceId}?`)) {
-            return failure === "transport"
-              ? Promise.reject(new Error("offline"))
-              : Promise.resolve(response({ status: failure }, failure));
-          }
-          return base(url);
-        }),
+      ]).route(
+        `GET /api/v1/people/${graceId}`,
+        failure === "transport"
+          ? unreachable
+          : jsonResponse({ status: failure }, failure),
       );
       await mount();
       fireEvent.click(screen.getByRole("button", { name: "Find a person" }));
@@ -292,21 +238,17 @@ describe("UXD-004 global people search", () => {
 
   it("APR-008 ignores a late recent identity after a newer search", async () => {
     markup();
-    let release!: (response: Response) => void;
-    const pending = new Promise<Response>((resolve) => release = resolve);
-    const base = fetchFor([directoryPerson(graceId, "Grace", "Hopper")], [{
+    const pending = deferred<Response>();
+    const api = stubPeople([directoryPerson(graceId, "Grace", "Hopper")], [{
       id: adaId,
       name: "Old Ada",
       archived: false,
     }]);
-    const fetchMock = vi.fn((url: RequestInfo | URL) =>
-      String(url).includes(`/people/${adaId}?`) ? pending : base(url)
-    );
-    vi.stubGlobal("fetch", fetchMock);
+    api.route(`GET /api/v1/people/${adaId}`, pending.promise);
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Find a person" }));
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
+      expect(api.fetch).toHaveBeenCalledWith(
         `/api/v1/people/${adaId}?include=summary`,
         expect.anything(),
       )
@@ -314,7 +256,7 @@ describe("UXD-004 global people search", () => {
     type("Grace");
     await waitFor(() => expect(optionNames()[0]).toBe("Grace Hopper"));
     await act(async () => {
-      release(response({
+      pending.resolve(jsonResponse({
         status: "ready",
         person: directoryPerson(adaId, "Ada", "Lovelace"),
       }));
@@ -329,17 +271,13 @@ describe("UXD-004 global people search", () => {
   it("APR-008 formats search results and recent identities with explicit saved preferences", async () => {
     markup();
     vi.mocked(getMemberPreferences).mockResolvedValue(
-      // deno-lint-ignore no-explicit-any
-      preferences("family_given_nickname") as any,
+      savedPreferences("family_given_nickname"),
     );
-    vi.stubGlobal(
-      "fetch",
-      fetchFor([directoryPerson(adaId, "Ada", "Lovelace")], [{
-        id: adaId,
-        name: "Do not parse this label",
-        archived: false,
-      }]),
-    );
+    stubPeople([directoryPerson(adaId, "Ada", "Lovelace")], [{
+      id: adaId,
+      name: "Do not parse this label",
+      archived: false,
+    }]);
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Find a person" }));
     await waitFor(() => expect(optionNames()).toEqual(["Lovelace Ada"]));
@@ -351,24 +289,23 @@ describe("UXD-004 global people search", () => {
 
   it("renders command rows locally for > without a people request", async () => {
     markup();
-    const fetchMock = fetchFor();
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubPeople();
     await mount();
     type(">");
     expect(screen.getAllByRole("option")).toHaveLength(11);
     expect(optionNames()[0]).toBe("Log interaction");
     expect(statusLine()).toBe("11 commands found");
     expect(
-      fetchMock.mock.calls.filter(([url]) =>
-        String(url).startsWith("/api/v1/people?") ||
-        String(url) === "/api/v1/today/recent-people"
+      api.calls().filter((call) =>
+        call.startsWith("GET /api/v1/people?") ||
+        call === "GET /api/v1/today/recent-people"
       ),
     ).toHaveLength(0);
   });
 
   it("shows mode-specific empty copy when commands and people do not match", async () => {
     markup();
-    vi.stubGlobal("fetch", fetchFor([]));
+    stubPeople([]);
     await mount();
     type("> zzz");
     expect(screen.getByText("No commands match")).toBeTruthy();
@@ -384,8 +321,8 @@ describe("UXD-004 global people search", () => {
 
   it("filters commands case-insensitively and gates settings by role", async () => {
     markup();
-    vi.stubGlobal("fetch", fetchFor());
-    await mount();
+    stubPeople();
+    const unmount = await mount();
     type("> PREFERENCES");
     expect(optionNames()).toEqual(["Personal · Preferences"]);
     type(">");
@@ -395,14 +332,13 @@ describe("UXD-004 global people search", () => {
     expect(labels).not.toContain("Data · Import");
     expect(labels).not.toContain("Workspace actions · Workspace danger zone");
 
-    act(() => {
-      for (const unmount of mounted.splice(0)) unmount();
-    });
+    unmount();
     sessionStorage.clear();
     markup();
-    vi.stubGlobal(
-      "fetch",
-      fetchFor([], [], {
+    stubPeople(
+      [],
+      [],
+      jsonResponse({
         ...session,
         member: { ...session.member, role: "admin" },
       }),
@@ -418,9 +354,9 @@ describe("UXD-004 global people search", () => {
 
   it("closes command mode and opens quick capture for Log interaction", async () => {
     markup();
-    vi.stubGlobal("fetch", fetchFor());
+    stubPeople();
     const openQuickCapture = vi.fn();
-    document.querySelector("header [data-quick-capture]")!
+    element("header [data-quick-capture]")
       .addEventListener("click", openQuickCapture);
     await mount();
     type("> log");
@@ -432,8 +368,8 @@ describe("UXD-004 global people search", () => {
 
   it("appends matching commands only when a people query has zero matches", async () => {
     markup();
-    vi.stubGlobal("fetch", fetchFor([]));
-    await mount();
+    stubPeople([]);
+    const unmount = await mount();
     type("task");
     await waitFor(() => expect(statusLine()).toBe("0 people found"));
     expect(optionNames()).toEqual([
@@ -442,14 +378,9 @@ describe("UXD-004 global people search", () => {
       "Tasks",
     ]);
 
-    act(() => {
-      for (const unmount of mounted.splice(0)) unmount();
-    });
+    unmount();
     markup();
-    vi.stubGlobal(
-      "fetch",
-      fetchFor([directoryPerson(adaId, "Task", "Master")]),
-    );
+    stubPeople([directoryPerson(adaId, "Task", "Master")]);
     await mount();
     type("task");
     await waitFor(() => expect(statusLine()).toBe("1 person found"));
@@ -461,15 +392,12 @@ describe("UXD-004 global people search", () => {
 
   it("opens from Ctrl/Cmd+K, renders recent people, and returns the focus", async () => {
     markup();
-    const fetchMock = fetchFor([], [
+    const api = stubPeople([], [
       { archived: false, id: adaId, name: "Ada Lovelace" },
       { archived: true, id: graceId, name: "Grace Hopper" },
     ]);
-    vi.stubGlobal("fetch", fetchMock);
     await mount();
-    const opener = document.querySelector<HTMLButtonElement>(
-      "#shortcut-opener",
-    )!;
+    const opener = element("#shortcut-opener");
     opener.focus();
     const shortcut = key(document, { ctrlKey: true, key: "k" });
     expect(shortcut.defaultPrevented).toBe(true);
@@ -483,7 +411,7 @@ describe("UXD-004 global people search", () => {
     expect(statusLine()).toBe("2 people found");
     expect(field().getAttribute("aria-expanded")).toBe("true");
     expect(document.activeElement).toBe(field());
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(api.fetch).toHaveBeenCalledWith(
       "/api/v1/today/recent-people",
       expect.objectContaining({
         headers: expect.objectContaining({ "X-Workspace-Id": workspaceId }),
@@ -513,10 +441,7 @@ describe("UXD-004 global people search", () => {
 
   it("returns the focus and an empty field to the header after typing there", async () => {
     markup();
-    vi.stubGlobal(
-      "fetch",
-      fetchFor([directoryPerson(adaId, "Ada", "Lovelace")]),
-    );
+    stubPeople([directoryPerson(adaId, "Ada", "Lovelace")]);
     await mount();
     field().focus();
     type("Ada");
@@ -532,10 +457,9 @@ describe("UXD-004 global people search", () => {
 
   it("debounces one-character searches and drops superseded keystrokes", async () => {
     markup();
-    const fetchMock = fetchFor([
+    const api = stubPeople([
       directoryPerson(adaId, "Ada", "Lovelace", "Countess"),
     ]);
-    vi.stubGlobal("fetch", fetchMock);
     await mount();
     vi.useFakeTimers();
     type("A");
@@ -543,11 +467,11 @@ describe("UXD-004 global people search", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(199);
     });
-    expect(peopleRequests(fetchMock)).toHaveLength(0);
+    expect(peopleRequests(api)).toHaveLength(0);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1);
     });
-    expect(peopleRequests(fetchMock)).toHaveLength(1);
+    expect(peopleRequests(api)).toHaveLength(1);
 
     type("A ");
     type("Ad");
@@ -555,11 +479,10 @@ describe("UXD-004 global people search", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(200);
     });
-    expect(peopleRequests(fetchMock)).toHaveLength(2);
-    const lastSearchUrl = String(peopleRequests(fetchMock).at(-1)?.[0]);
-    expect(
-      new URL(lastSearchUrl, "https://kinship.test").searchParams.get("search"),
-    ).toBe("Ada");
+    expect(peopleRequests(api)).toHaveLength(2);
+    expect(peopleRequests(api).at(-1)?.url.searchParams.get("search")).toBe(
+      "Ada",
+    );
     vi.useRealTimers();
     await waitFor(() =>
       expect(optionNames()[0]).toBe("Ada Lovelace “Countess”")
@@ -569,13 +492,10 @@ describe("UXD-004 global people search", () => {
 
   it("moves the active option with the arrows, wrapping, and navigates with Enter", async () => {
     markup();
-    vi.stubGlobal(
-      "fetch",
-      fetchFor([
-        directoryPerson(adaId, "Ada", "Lovelace"),
-        directoryPerson(graceId, "Grace", "Hopper"),
-      ]),
-    );
+    stubPeople([
+      directoryPerson(adaId, "Ada", "Lovelace"),
+      directoryPerson(graceId, "Grace", "Hopper"),
+    ]);
     const navigate = vi.fn();
     await mount(navigate);
     type("a");
@@ -610,7 +530,7 @@ describe("UXD-004 global people search", () => {
 
   it("adds a split-name synthetic option only when there is no exact match", async () => {
     markup();
-    vi.stubGlobal("fetch", fetchFor([]));
+    stubPeople([]);
     const navigate = vi.fn();
     await mount(navigate);
     type("Marie Dupont");
@@ -644,7 +564,7 @@ describe("UXD-004 global people search", () => {
 
   it("opens from the header field's arrow and Enter keys", async () => {
     markup();
-    vi.stubGlobal("fetch", fetchFor());
+    stubPeople();
     await mount();
     for (const pressed of ["ArrowDown", "ArrowUp", "Enter"]) {
       const event = key(field(), { key: pressed });
@@ -660,33 +580,32 @@ describe("UXD-004 global people search", () => {
 
   it("focuses the header field with slash except from an editable control", async () => {
     markup();
-    vi.stubGlobal("fetch", fetchFor());
+    stubPeople();
     await mount();
     const slash = key(document, { key: "/" });
     expect(slash.defaultPrevented).toBe(true);
     expect(document.activeElement).toBe(field());
     for (const selector of ["#other-input", "#note", "#editor"]) {
-      const editable = document.querySelector<HTMLElement>(selector)!;
+      const editable = element(selector);
       editable.focus();
       const event = key(editable, { key: "/" });
       expect(event.defaultPrevented).toBe(false);
       expect(document.activeElement).toBe(editable);
     }
-    document.querySelector<HTMLElement>("#shortcut-opener")!.focus();
+    element("#shortcut-opener").focus();
     key(document.activeElement!, { ctrlKey: true, key: "/" });
     expect(document.activeElement?.id).toBe("shortcut-opener");
   });
 
   it("keeps unavailable search states non-alerting", async () => {
     markup();
-    const fetchMock = vi.fn((request: RequestInfo | URL) => {
-      const url = String(request);
-      if (url === "/api/v1/session") return Promise.resolve(response(session));
-      return Promise.resolve(
-        response({ code: "people_unavailable", status: 503 }, 503),
-      );
+    stubApi({
+      [SESSION]: jsonResponse(session),
+      "* /api/v1/*": jsonResponse(
+        { code: "people_unavailable", status: 503 },
+        503,
+      ),
     });
-    vi.stubGlobal("fetch", fetchMock);
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Find a person" }));
     const problem = await screen.findByText(
@@ -706,12 +625,12 @@ describe("UXD-004 global people search", () => {
 
   it("stays closed when the session is unavailable", async () => {
     markup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        response({ code: "session_unavailable", status: 503 }, 503),
+    stubApi({
+      "* /api/v1/*": jsonResponse(
+        { code: "session_unavailable", status: 503 },
+        503,
       ),
-    );
+    });
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Find a person" }));
     expect(palette()).toBeNull();
@@ -723,10 +642,12 @@ describe("UXD-004 global people search", () => {
 describe("REL-039 global people search before its startup reads", () => {
   it("opens from Ctrl+K pressed before the session resolves and renders once ready", async () => {
     markup();
-    const { fetchMock, release } = gatedSession(fetchFor([], [
-      { archived: false, id: adaId, name: "Ada Lovelace" },
-    ]));
-    vi.stubGlobal("fetch", fetchMock);
+    const { answer, release } = gatedSession();
+    stubPeople(
+      [],
+      [{ archived: false, id: adaId, name: "Ada Lovelace" }],
+      answer,
+    );
     mountNow();
     const shortcut = key(document, { ctrlKey: true, key: "k" });
     expect(shortcut.defaultPrevented).toBe(true);
@@ -741,8 +662,8 @@ describe("REL-039 global people search before its startup reads", () => {
 
   it("keeps a command query typed before the session resolves", async () => {
     markup();
-    const { fetchMock, release } = gatedSession(fetchFor());
-    vi.stubGlobal("fetch", fetchMock);
+    const { answer, release } = gatedSession();
+    stubPeople([], [], answer);
     mountNow();
     type("> log");
     expect(palette()).not.toBeNull();
@@ -756,10 +677,10 @@ describe("REL-039 global people search before its startup reads", () => {
 
   it("opens with a query typed into the focused field before the script mounted", async () => {
     markup();
-    vi.stubGlobal("fetch", fetchFor());
-    const staticField = document.querySelector<HTMLInputElement>(
+    stubPeople();
+    const staticField = element<HTMLInputElement>(
       "#global-people-search-input",
-    )!;
+    );
     staticField.focus();
     staticField.value = "> log";
     await mount();
@@ -771,9 +692,8 @@ describe("REL-039 global people search before its startup reads", () => {
 
   it("keeps the focus a reader gave the empty field before the script mounted", async () => {
     markup();
-    vi.stubGlobal("fetch", fetchFor());
-    document.querySelector<HTMLInputElement>("#global-people-search-input")!
-      .focus();
+    stubPeople();
+    element("#global-people-search-input").focus();
     await mount();
     expect(palette()).toBeNull();
     expect(document.activeElement).toBe(field());
@@ -781,11 +701,10 @@ describe("REL-039 global people search before its startup reads", () => {
 
   it("closes an early palette and stops opening when the session is unavailable", async () => {
     markup();
-    const { fetchMock, release } = gatedSession(
-      fetchFor(),
-      () => response({ code: "session_unavailable", status: 503 }, 503),
+    const { answer, release } = gatedSession(() =>
+      jsonResponse({ code: "session_unavailable", status: 503 }, 503)
     );
-    vi.stubGlobal("fetch", fetchMock);
+    stubPeople([], [], answer);
     mountNow();
     const opener = screen.getByRole("button", { name: "Find a person" });
     fireEvent.click(opener);
@@ -801,10 +720,10 @@ describe("REL-039 global people search before its startup reads", () => {
 
   it("hands Log interaction to quick capture only once its opener is wired", async () => {
     markup();
-    vi.stubGlobal("fetch", fetchFor());
-    const quickCapture = document.querySelector<HTMLButtonElement>(
+    stubPeople();
+    const quickCapture = element<HTMLButtonElement>(
       "header [data-quick-capture]",
-    )!;
+    );
     quickCapture.disabled = true;
     quickCapture.dataset.interactionCaptureReady = "false";
     const openQuickCapture = vi.fn();

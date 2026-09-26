@@ -31,6 +31,11 @@ export default defineConfig({
       exclude: [
         "apps/web/src/**/*.test.ts",
         "apps/web/src/**/*.test.tsx",
+        // The suites' shared scaffolding (GAP-030) is not production code.
+        "apps/web/src/testing/**",
+        // A suite's own `.test-helper.ts` is scaffolding too, as the manifest
+        // already treats it.
+        "apps/web/src/**/*.test-helper.ts",
       ],
       reporter: ["text"],
       reportsDirectory: ".coverage/web",

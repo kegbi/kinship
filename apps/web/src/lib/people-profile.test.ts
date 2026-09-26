@@ -7,6 +7,23 @@ import { clearToasts } from "./toasts.ts";
 
 import { getMemberPreferences } from "../../../../packages/contracts/generated/auth-client.ts";
 import { badgeVariants, segmentVariants } from "../components/ui/variants.ts";
+import {
+  type ApiHandler,
+  type ApiRoutes,
+  deferred,
+  jsonResponse,
+  problemResponse,
+  stubApi,
+  type StubbedApi,
+  unreachable,
+} from "../testing/api.ts";
+import {
+  ids,
+  personProfile,
+  preferences,
+  workspaceSession,
+} from "../testing/fixtures.ts";
+import { drawShell } from "../testing/render.tsx";
 
 const segment = segmentVariants();
 
@@ -21,38 +38,98 @@ vi.mock(
 beforeEach(() => {
   vi.mocked(getMemberPreferences).mockReset().mockResolvedValue({
     ok: true,
-    value: {
-      status: "ready",
-      preferences: {
-        effectiveTimezone: "UTC",
-        contactNameOrder: "given_family_nickname",
-        contactSortOrder: "given_name_asc",
-        fluidLayout: false,
-        locale: "en",
-        measurementSystem: "metric",
-        temperatureScale: "celsius",
-      },
-    },
+    value: { status: "ready", preferences: preferences() },
   });
 });
 
-function response(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    headers: { "content-type": "application/json" },
-    status,
+const { person: personId, workspace: workspaceId } = ids;
+const firstRunPersonId = "00000000-0000-4000-8000-000000000101";
+const session = workspaceSession({
+  member: { id: ids.member, role: "member" },
+});
+
+const SESSION = "GET /api/v1/session";
+const PROFILE = "GET /api/v1/people/:personId";
+const VIEW = "POST /api/v1/people/:personId/view";
+const VIEWED = `POST /api/v1/people/${personId}/view`;
+const FILES = "GET /api/v1/people/:personId/files";
+const GIFTS = "GET /api/v1/people/:personId/gifts";
+const AUDIT = "GET /api/v1/people/:personId/audit";
+const UI_STATE = "PATCH /api/v1/member/ui-state";
+const REMINDERS = "* /api/v1/people/:personId/reminders";
+const REST = "* /api/v1/*";
+const recorded = jsonResponse({ status: "recorded" });
+const noFiles = jsonResponse({ files: [], status: "ready" });
+const noAudit = jsonResponse({ items: [], status: "ready" });
+const noReminders = jsonResponse({
+  cadences: [],
+  reminders: [],
+  status: "ready",
+});
+const noGifts = (supportedCurrencyCodes: readonly string[] = ["USD"]) =>
+  jsonResponse({
+    debts: [],
+    gifts: [],
+    status: "ready",
+    supportedCurrencyCodes,
+  });
+
+/**
+ * Ada's profile read, with no family name unless `person` names one. The
+ * overrides are loose on purpose: the page also meets states the contract
+ * types do not list (due information "unavailable", retired section ids).
+ */
+function profileOf(
+  person: Record<string, unknown> = {},
+  rest: {
+    readonly dueInformation?: Record<string, unknown>;
+    readonly status?: "ready" | "archived";
+    readonly summary?: Record<string, unknown>;
+  } = {},
+): Record<string, unknown> {
+  const base = personProfile();
+  return {
+    ...base,
+    dueInformation: {
+      ...base.dueInformation,
+      detail: "No due information.",
+      ...rest.dueInformation,
+    },
+    person: { ...base.person, ...person },
+    status: rest.status ?? base.status,
+    ...(rest.summary ? { summary: rest.summary } : {}),
+  };
+}
+
+const lovelace = { familyName: "Lovelace" } as const;
+const unavailableDue = {
+  detail: "Due information will become available with planning.",
+  status: "unavailable",
+} as const;
+
+/**
+ * Answers the page's session and profile reads, then `routes`; anything else
+ * fails as an unreachable server would unless `routes` answers `REST`.
+ */
+function stubProfile(
+  profile: unknown = profileOf(lovelace),
+  { [REST]: rest = unreachable, ...routes }: ApiRoutes = {},
+): StubbedApi {
+  return stubApi({
+    [SESSION]: jsonResponse(session),
+    [PROFILE]: jsonResponse(profile),
+    ...routes,
+    [REST]: rest,
   });
 }
 
-const workspaceId = "00000000-0000-4000-8000-000000000003";
-const personId = "00000000-0000-4000-8000-000000000100";
-const firstRunPersonId = "00000000-0000-4000-8000-000000000101";
-const session = {
-  member: { id: "member", role: "member" },
-  principal: { userId: "user" },
-  status: "authenticated",
-  workspace: { id: workspaceId, name: "Circle" },
-  workspaces: [{ id: workspaceId, name: "Circle" }],
-};
+/** Holds every request until `released`, then fails it as unreachable. */
+const heldUntil = (released: Promise<void>): ApiHandler => (request) =>
+  released.then(() => unreachable(request));
+
+/** Each request line naming `suffix`. */
+const requested = (api: StubbedApi, suffix: string) =>
+  api.calls().filter((call) => call.includes(suffix));
 
 function markup(path = `/app/people/${personId}`): void {
   vi.stubGlobal(
@@ -63,7 +140,7 @@ function markup(path = `/app/people/${personId}`): void {
     },
   );
   history.replaceState({}, "", path);
-  document.body.innerHTML = `
+  drawShell(`
     <ul id="app-toasts" aria-live="polite" aria-label="Notifications"></ul>
     <section id="person-profile-state" tabindex="-1" hidden></section>
     <section id="person-profile-ready" aria-busy="true">
@@ -151,7 +228,7 @@ function markup(path = `/app/people/${personId}`): void {
           <section id="profile-section-audit-summary" data-profile-section="audit-summary" tabindex="-1"><h3>Audit summary</h3></section>
         </section>
       </div>
-    </section>`;
+    </section>`);
 }
 
 function deferredZoneMarkup(): void {
@@ -388,61 +465,10 @@ function zeroProfile(
     readonly summary?: Record<string, unknown>;
   } = {},
 ): Record<string, unknown> {
-  return {
-    dueInformation: {
-      detail: "No due information.",
-      openTaskCount: 0,
-      status: "ready",
-    },
-    person: {
-      familyName: "Profile",
-      givenName: "Empty",
-      id: personId,
-      isDeceased: false,
-      isPartial: false,
-      isSelf: false,
-      isStarred: false,
-      profileSections: [],
-      tagCount: 0,
-      tags: [],
-      updatedAt: "2026-08-15T08:00:00.000Z",
-    },
+  return profileOf({ familyName: "Profile", givenName: "Empty" }, {
     status: overrides.status ?? "ready",
     summary: { ...zeroSummary, ...overrides.summary },
-  };
-}
-
-function stubReadyProfile(
-  profileSections: readonly { readonly id: string; readonly status: string }[] =
-    [],
-  readySession: Record<string, unknown> = session,
-): ReturnType<typeof vi.fn> {
-  const fetchMock = vi.fn()
-    .mockResolvedValueOnce(response(readySession))
-    .mockResolvedValueOnce(response({
-      dueInformation: {
-        detail: "No due information.",
-        openTaskCount: 0,
-        status: "ready",
-      },
-      person: {
-        familyName: "Lovelace",
-        givenName: "Ada",
-        id: personId,
-        isDeceased: false,
-        isPartial: false,
-        isSelf: false,
-        isStarred: false,
-        profileSections,
-        tagCount: 0,
-        tags: [],
-        updatedAt: "2026-08-15T08:00:00.000Z",
-      },
-      status: "ready",
-    }))
-    .mockResolvedValue(undefined as never);
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
+  });
 }
 
 it("APR-008 applies membership name order to profile heading, breadcrumb, mini identity and title", async () => {
@@ -451,18 +477,13 @@ it("APR-008 applies membership name order to profile heading, breadcrumb, mini i
     ok: true,
     value: {
       status: "ready",
-      preferences: {
-        effectiveTimezone: "UTC",
+      preferences: preferences({
         contactNameOrder: "family_given_nickname",
         contactSortOrder: "family_name_asc",
-        fluidLayout: false,
-        locale: "en",
-        measurementSystem: "metric",
-        temperatureScale: "celsius",
-      },
+      }),
     },
   });
-  const fetchMock = stubReadyProfile();
+  const api = stubProfile();
   await mountPeopleProfile();
   expect(document.querySelector("#person-profile-name")?.textContent).toBe(
     "Lovelace Ada",
@@ -477,16 +498,19 @@ it("APR-008 applies membership name order to profile heading, breadcrumb, mini i
   document.querySelector<HTMLButtonElement>("#person-edit-open")!.click();
   const form = document.querySelector<HTMLFormElement>("#person-edit-form")!;
   (form.elements.namedItem("familyName") as HTMLInputElement).value = "Byron";
-  fetchMock.mockResolvedValueOnce(response({
-    status: "updated",
-    person: {
-      id: personId,
-      givenName: "Ada",
-      familyName: "Byron",
-      isPartial: false,
-      updatedAt: "2026-08-15T09:00:00.000Z",
-    },
-  }));
+  api.route(
+    "PATCH /api/v1/people/:personId",
+    jsonResponse({
+      status: "updated",
+      person: {
+        id: personId,
+        givenName: "Ada",
+        familyName: "Byron",
+        isPartial: false,
+        updatedAt: "2026-08-15T09:00:00.000Z",
+      },
+    }),
+  );
   form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   await vi.waitFor(() =>
     expect(document.querySelector("#person-profile-name")?.textContent).toBe(
@@ -500,21 +524,16 @@ it.each([0, 3])(
   "APR-006 keeps %i open tasks out of the cadence hero",
   async (openTaskCount) => {
     markup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response(session))
-        .mockResolvedValueOnce(response({
-          ...zeroProfile(),
-          dueInformation: {
-            detail:
-              `${openTaskCount} open tasks · next reminder 2026-09-20T07:00:00.000000Z`,
-            nextReminderAt: "2026-09-20T07:00:00.000000Z",
-            openTaskCount,
-            status: "ready",
-          },
-        })),
-    );
+    stubProfile({
+      ...zeroProfile(),
+      dueInformation: {
+        detail:
+          `${openTaskCount} open tasks · next reminder 2026-09-20T07:00:00.000000Z`,
+        nextReminderAt: "2026-09-20T07:00:00.000000Z",
+        openTaskCount,
+        status: "ready",
+      },
+    });
     await mountPeopleProfile();
     expect(document.querySelector("#person-profile-due-state")?.textContent)
       .toBe("Not set");
@@ -537,24 +556,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
   sessionStorage.clear();
   history.replaceState({}, "", "/");
-  document.body.innerHTML = "";
 });
 
 describe("PEOPLE-001 canonical person identity shell", () => {
   it("UXD-003B paints a busy shell before identity resolves and clears it with the hero", async () => {
     markup();
-    let releaseProfile!: (value: Response) => void;
-    const pendingProfile = new Promise<Response>((resolve) => {
-      releaseProfile = resolve;
-    });
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response(session))
-      .mockReturnValueOnce(pendingProfile)
-      .mockResolvedValue(undefined as never);
-    vi.stubGlobal("fetch", fetchMock);
+    const profile = deferred<Response>();
+    const api = stubProfile(undefined, { [PROFILE]: profile.promise });
 
     const mounting = mountPeopleProfile();
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(api.fetch).toHaveBeenCalledTimes(2));
     const ready = document.querySelector<HTMLElement>(
       "#person-profile-ready",
     )!;
@@ -568,22 +579,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(document.querySelector("#person-profile-name .skeleton")).not
       .toBeNull();
 
-    releaseProfile(response({
-      dueInformation: { detail: "No due information.", status: "ready" },
-      person: {
-        familyName: "Lovelace",
-        givenName: "Ada",
-        id: personId,
-        isDeceased: false,
-        isPartial: false,
-        isSelf: false,
-        isStarred: false,
-        tagCount: 0,
-        tags: [],
-        updatedAt: "2026-08-15T08:00:00.000Z",
-      },
-      status: "ready",
-    }));
+    profile.resolve(jsonResponse(profileOf(lovelace)));
     await mounting;
     expect(ready.hasAttribute("aria-busy")).toBe(false);
     expect(document.querySelector("#person-profile-name")?.textContent).toBe(
@@ -603,60 +599,20 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         return 1;
       }),
     );
-    const fetchMock = vi.fn(
-      (resource: string | URL | Request, init?: RequestInit) => {
-        const url = String(resource);
-        if (url.endsWith("/api/v1/session")) return response(session);
-        if (url === `/api/v1/people/${personId}?include=summary`) {
-          return response({
-            dueInformation: { detail: "No due information.", status: "ready" },
-            person: {
-              familyName: "Lovelace",
-              givenName: "Ada",
-              id: personId,
-              isDeceased: false,
-              isPartial: false,
-              isSelf: false,
-              isStarred: false,
-              tagCount: 0,
-              tags: [],
-              updatedAt: "2026-08-15T08:00:00.000Z",
-            },
-            status: "ready",
-          });
-        }
-        if (url.endsWith(`/${personId}/files`)) {
-          return response({ files: [], status: "ready" });
-        }
-        if (url.endsWith(`/${personId}/gifts`)) {
-          return response({
-            debts: [],
-            gifts: [],
-            status: "ready",
-            supportedCurrencyCodes: ["USD"],
-          });
-        }
-        if (url.includes(`/${personId}/audit`)) {
-          return response({ items: [], status: "ready" });
-        }
-        if (init?.method === "POST" && url.endsWith(`/${personId}/view`)) {
-          return response({ status: "recorded" });
-        }
-        return Promise.resolve(undefined as never);
-      },
-    );
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubProfile(undefined, {
+      [FILES]: noFiles,
+      [GIFTS]: noGifts(),
+      [AUDIT]: noAudit,
+      [VIEW]: recorded,
+    });
 
     await mountPeopleProfile();
-    const count = (suffix: string) =>
-      fetchMock.mock.calls.filter(([resource]) =>
-        String(resource).includes(suffix)
-      ).length;
+    const count = (suffix: string) => requested(api, suffix).length;
     expect(zoneObserver.observed).toHaveLength(4);
     expect(count(`/${personId}/files`)).toBe(0);
     expect(count(`/${personId}/gifts`)).toBe(0);
     expect(count(`/${personId}/audit`)).toBe(0);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(api.fetch).toHaveBeenCalledTimes(2);
     const thingsSections = [...document.querySelectorAll<HTMLElement>(
       '[data-zone="things"] [data-profile-section]',
     )];
@@ -671,7 +627,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       didTimeout: false,
       timeRemaining: () => 50,
     });
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(api.fetch).toHaveBeenCalledTimes(3));
 
     zoneObserver.activate("things");
     await vi.waitFor(() => {
@@ -695,7 +651,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
     zoneObserver.activate("admin");
     await vi.waitFor(() => expect(count(`/${personId}/audit`)).toBe(1));
-    const requests = fetchMock.mock.calls.map(([resource]) => String(resource));
+    const requests = api.fetch.mock.calls.map(([resource]) => String(resource));
     // The Things zone's two owners load their code and fetch in parallel, so
     // their order is not fixed (GAP-028); every other request is.
     expect([
@@ -719,44 +675,22 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     deferredZoneMarkup();
     const zoneObserver = stubDeferredZoneObserver();
     const archivedAt = "2026-08-15T09:00:00.000Z";
-    const fetchMock = vi.fn(
-      (resource: string | URL | Request, init?: RequestInit) => {
-        const url = String(resource);
-        if (url.endsWith("/api/v1/session")) return response(session);
-        if (url === `/api/v1/people/${personId}?include=summary`) {
-          return response(zeroProfile());
-        }
-        if (url.endsWith(`/${personId}/archive`)) {
-          return response({
-            person: {
-              familyName: "Profile",
-              givenName: "Empty",
-              id: personId,
-              isPartial: false,
-              lifecycle: "archived",
-              updatedAt: archivedAt,
-            },
-            status: "archived",
-          });
-        }
-        if (url.endsWith(`/${personId}/files`)) {
-          return response({ files: [], status: "ready" });
-        }
-        if (url.endsWith(`/${personId}/gifts`)) {
-          return response({
-            debts: [],
-            gifts: [],
-            status: "ready",
-            supportedCurrencyCodes: ["USD"],
-          });
-        }
-        if (init?.method === "POST" && url.endsWith(`/${personId}/view`)) {
-          return response({ status: "recorded" });
-        }
-        return Promise.resolve(undefined as never);
-      },
-    );
-    vi.stubGlobal("fetch", fetchMock);
+    stubProfile(zeroProfile(), {
+      "POST /api/v1/people/:personId/archive": jsonResponse({
+        person: {
+          familyName: "Profile",
+          givenName: "Empty",
+          id: personId,
+          isPartial: false,
+          lifecycle: "archived",
+          updatedAt: archivedAt,
+        },
+        status: "archived",
+      }),
+      [FILES]: noFiles,
+      [GIFTS]: noGifts(),
+      [VIEW]: recorded,
+    });
 
     await mountPeopleProfile();
     document.querySelector<HTMLButtonElement>("#person-archive")?.click();
@@ -787,113 +721,56 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     markup(`/app/people/${personId}?section=photos`);
     deferredZoneMarkup();
     stubDeferredZoneObserver();
-    const fetchMock = stubReadyProfile();
+    const api = stubProfile();
 
     await mountPeopleProfile();
 
     expect(document.activeElement).toBe(
       document.querySelector('[data-profile-section="photos"]'),
     );
-    expect(
-      fetchMock.mock.calls.filter(([resource]) =>
-        String(resource).endsWith(`/${personId}/files`)
-      ),
-    ).toHaveLength(1);
-    expect(
-      fetchMock.mock.calls.filter(([resource]) =>
-        String(resource).endsWith(`/${personId}/gifts`)
-      ),
-    ).toHaveLength(1);
+    expect(requested(api, `/${personId}/files`)).toHaveLength(1);
+    expect(requested(api, `/${personId}/gifts`)).toHaveLength(1);
   });
 
   it("UXD-003B activates the selected zone without fetching other deferred zones", async () => {
     markup(`/app/people/${personId}?view=admin`);
     deferredZoneMarkup();
     stubDeferredZoneObserver();
-    const fetchMock = stubReadyProfile();
+    const api = stubProfile();
 
     await mountPeopleProfile();
 
-    const requested = (suffix: string) =>
-      fetchMock.mock.calls.filter(([resource]) =>
-        String(resource).includes(suffix)
-      );
-    expect(requested(`/${personId}/audit`)).toHaveLength(1);
-    expect(requested(`/${personId}/files`)).toHaveLength(0);
-    expect(requested(`/${personId}/gifts`)).toHaveLength(0);
+    expect(requested(api, `/${personId}/audit`)).toHaveLength(1);
+    expect(requested(api, `/${personId}/files`)).toHaveLength(0);
+    expect(requested(api, `/${personId}/gifts`)).toHaveLength(0);
   });
 
   it("UXD-003B records the view through the timeout fallback", async () => {
     markup();
     vi.stubGlobal("requestIdleCallback", undefined);
-    const fetchMock = stubReadyProfile();
+    const api = stubProfile();
 
     await mountPeopleProfile();
 
-    expect(
-      fetchMock.mock.calls.filter(([resource, init]) =>
-        init?.method === "POST" &&
-        String(resource).endsWith(`/${personId}/view`)
-      ),
-    ).toHaveLength(1);
+    expect(requested(api, VIEWED))
+      .toHaveLength(1);
   });
 
   it("UXD-003B promotes section states only after the initial fan-out settles", async () => {
     markup();
     deferredZoneMarkup();
     vi.stubGlobal("IntersectionObserver", undefined);
-    let releaseFiles!: (value: Response) => void;
-    const pendingFiles = new Promise<Response>((resolve) => {
-      releaseFiles = resolve;
+    const files = deferred<Response>();
+    const api = stubProfile(profileOf(), {
+      [FILES]: files.promise,
+      [GIFTS]: noGifts([]),
+      [AUDIT]: noAudit,
+      [VIEW]: recorded,
     });
-    const fetchMock = vi.fn(
-      (resource: string | URL | Request, init?: RequestInit) => {
-        const url = String(resource);
-        if (url.endsWith("/api/v1/session")) return response(session);
-        if (url === `/api/v1/people/${personId}?include=summary`) {
-          return response({
-            dueInformation: { detail: "No due information.", status: "ready" },
-            person: {
-              givenName: "Ada",
-              id: personId,
-              isDeceased: false,
-              isPartial: false,
-              isSelf: false,
-              isStarred: false,
-              tagCount: 0,
-              tags: [],
-              updatedAt: "2026-08-15T08:00:00.000Z",
-            },
-            status: "ready",
-          });
-        }
-        if (url.endsWith(`/${personId}/files`)) return pendingFiles;
-        if (url.endsWith(`/${personId}/gifts`)) {
-          return response({
-            debts: [],
-            gifts: [],
-            status: "ready",
-            supportedCurrencyCodes: [],
-          });
-        }
-        if (url.includes(`/${personId}/audit`)) {
-          return response({ items: [], status: "ready" });
-        }
-        if (init?.method === "POST" && url.endsWith(`/${personId}/view`)) {
-          return response({ status: "recorded" });
-        }
-        return Promise.resolve(undefined as never);
-      },
-    );
-    vi.stubGlobal("fetch", fetchMock);
 
     const mounting = mountPeopleProfile();
     await vi.waitFor(() =>
-      expect(
-        fetchMock.mock.calls.some(([resource]) =>
-          String(resource).endsWith(`/${personId}/files`)
-        ),
-      ).toBe(true)
+      expect(requested(api, `/${personId}/files`)).not.toHaveLength(0)
     );
     // The hero's lifecycle status line is a live region from the start.
     const states = [...document.querySelectorAll<HTMLElement>(
@@ -902,7 +779,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(states.length).toBeGreaterThan(0);
     expect(states.every((state) => !state.hasAttribute("role"))).toBe(true);
 
-    releaseFiles(response({ files: [], status: "ready" }));
+    files.resolve(noFiles);
     await mounting;
     expect(states.every((state) => state.getAttribute("role") === "status"))
       .toBe(true);
@@ -915,56 +792,28 @@ describe("PEOPLE-001 canonical person identity shell", () => {
   it("UXD-002B requests summary and seeds visible and hidden rail counts before fact refresh", async () => {
     markup();
     summaryRailMarkup();
-    let releaseContact!: (value: Response) => void;
-    const pendingContact = new Promise<Response>((resolve) => {
-      releaseContact = resolve;
-    });
-    const fetchMock = vi.fn(
-      (resource: string | URL | Request, init?: RequestInit) => {
-        const url = String(resource);
-        if (url.endsWith("/api/v1/session")) return response(session);
-        if (url === `/api/v1/people/${personId}?include=summary`) {
-          return response({
-            dueInformation: {
-              detail: "No due information.",
-              openTaskCount: 0,
-              status: "ready",
-            },
-            person: {
-              givenName: "Ada",
-              id: personId,
-              isDeceased: false,
-              isPartial: false,
-              isSelf: false,
-              isStarred: false,
-              tagCount: 0,
-              tags: [],
-              updatedAt: "2026-08-15T08:00:00.000Z",
-            },
-            status: "ready",
-            summary: {
-              primaryContactMethods: [],
-              relationshipCounts: [],
-              sectionCounts: [
-                { count: 2, id: "contact-methods", status: "ready" },
-                { count: 3, id: "relationships", status: "ready" },
-                { id: "addresses", status: "hidden" },
-                { count: 1, id: "work", status: "ready" },
-                { count: 0, id: "pets", status: "ready" },
-                { count: 4, id: "food-preferences", status: "ready" },
-                { count: 0, id: "first-meeting", status: "ready" },
-              ],
-            },
-          });
-        }
-        if (url.includes("/facts/contact-methods")) return pendingContact;
-        if (init?.method === "POST" && url.endsWith("/view")) {
-          return response({ status: "recorded" });
-        }
-        return Promise.resolve(undefined as never);
+    const contact = deferred<Response>();
+    stubProfile(
+      profileOf({}, {
+        summary: {
+          primaryContactMethods: [],
+          relationshipCounts: [],
+          sectionCounts: [
+            { count: 2, id: "contact-methods", status: "ready" },
+            { count: 3, id: "relationships", status: "ready" },
+            { id: "addresses", status: "hidden" },
+            { count: 1, id: "work", status: "ready" },
+            { count: 0, id: "pets", status: "ready" },
+            { count: 4, id: "food-preferences", status: "ready" },
+            { count: 0, id: "first-meeting", status: "ready" },
+          ],
+        },
+      }),
+      {
+        "GET /api/v1/people/:personId/facts/contact-methods": contact.promise,
+        [VIEW]: recorded,
       },
     );
-    vi.stubGlobal("fetch", fetchMock);
 
     const mounting = mountPeopleProfile();
     await vi.waitFor(() =>
@@ -995,7 +844,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         ?.hasAttribute("data-rail-empty"),
     ).toBe(false);
 
-    releaseContact(response({
+    contact.resolve(jsonResponse({
       options: [],
       personUpdatedAt: "2026-08-15T08:00:00.000Z",
       records: [],
@@ -1019,35 +868,18 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("UXD-002A names the breadcrumb and renders honest vital-stat values", async () => {
     markup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response(session))
-        .mockResolvedValueOnce(response({
-          dueInformation: {
-            detail: "1 open task; next reminder tomorrow; stay in touch soon.",
-            nextReminderAt: "2026-08-30T09:00:00.000Z",
-            openTaskCount: 1,
-            status: "ready",
-            stayInTouchAt: "2026-09-01T09:00:00.000Z",
-          },
-          person: {
-            familyName: "Lovelace",
-            givenName: "Ada",
-            id: personId,
-            isDeceased: false,
-            isPartial: false,
-            isSelf: false,
-            isStarred: false,
-            lastContactAt: "2026-08-29T09:00:00.000Z",
-            nickname: "Enchantress of Numbers",
-            tagCount: 0,
-            tags: [],
-            updatedAt: "2026-08-15T08:00:00.000Z",
-          },
-          status: "ready",
-        })),
-    );
+    stubProfile(profileOf({
+      ...lovelace,
+      lastContactAt: "2026-08-29T09:00:00.000Z",
+      nickname: "Enchantress of Numbers",
+    }, {
+      dueInformation: {
+        detail: "1 open task; next reminder tomorrow; stay in touch soon.",
+        nextReminderAt: "2026-08-30T09:00:00.000Z",
+        openTaskCount: 1,
+        stayInTouchAt: "2026-09-01T09:00:00.000Z",
+      },
+    }));
 
     await mountPeopleProfile();
 
@@ -1099,54 +931,27 @@ describe("PEOPLE-001 canonical person identity shell", () => {
   it("loads a partial identity through the generated active-workspace client", async () => {
     markup();
     reminderSectionMarkup();
-    let releaseSecondary!: (value: Response) => void;
-    const pendingSecondary = new Promise<Response>((resolve) => {
-      releaseSecondary = resolve;
-    });
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response(session))
-      .mockResolvedValueOnce(response({
-        dueInformation: {
-          detail: "Due information will become available with planning.",
-          status: "unavailable",
-        },
-        person: {
-          familyName: "Lovelace",
-          givenName: "Ada",
-          id: personId,
-          isDeceased: false,
-          isPartial: true,
-          isSelf: false,
-          isStarred: false,
-          tagCount: 0,
-          tags: [],
-          updatedAt: "2026-08-15T08:00:00.000Z",
-        },
-        status: "ready",
-      }))
-      .mockImplementation((url, init) =>
-        init?.method === "POST" && String(url).endsWith("/view")
-          ? Promise.reject(new Error("recording unavailable"))
-          : pendingSecondary
-      );
-    vi.stubGlobal("fetch", fetchMock);
+    const secondary = deferred<void>();
+    const api = stubProfile(
+      profileOf({ ...lovelace, isPartial: true }, {
+        dueInformation: unavailableDue,
+      }),
+      { [VIEW]: unreachable, [REST]: heldUntil(secondary.promise) },
+    );
     const mounting = mountPeopleProfile();
     await vi.waitFor(() => {
       expect(document.querySelector("#person-profile-name")?.textContent).toBe(
         "Ada Lovelace",
       );
     });
-    expect(
-      fetchMock.mock.calls.some(([url, init]) =>
-        init?.method === "POST" && String(url).endsWith("/view")
-      ),
-    ).toBe(true);
-    releaseSecondary(undefined as never);
+    expect(requested(api, VIEWED)).not
+      .toHaveLength(0);
+    secondary.resolve();
     await mounting;
-    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+    expect(api.fetch.mock.calls[1]?.[0]).toBe(
       `/api/v1/people/${personId}?include=summary`,
     );
-    expect(fetchMock.mock.calls[1]?.[1]?.headers).toEqual({
+    expect(api.fetch.mock.calls[1]?.[1]?.headers).toEqual({
       "X-Workspace-Id": workspaceId,
       "content-type": "application/json",
     });
@@ -1166,7 +971,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         "hidden",
       ),
     ).toBe(false);
-    expect(fetchMock.mock.calls[2]?.[1]?.method).toBe("POST");
+    expect(api.fetch.mock.calls[2]?.[1]?.method).toBe("POST");
   });
 
   it("PEOPLE-006 hides the visible tag surface for a disabled module", async () => {
@@ -1177,29 +982,10 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       "data-profile-fact-section",
       "tags",
     );
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response(session))
-        .mockResolvedValueOnce(response({
-          dueInformation: {
-            detail: "No due information.",
-            status: "unavailable",
-          },
-          person: {
-            givenName: "Ada",
-            id: personId,
-            isDeceased: false,
-            isPartial: false,
-            isSelf: false,
-            isStarred: false,
-            profileSections: [{ id: "tags", status: "hidden" }],
-            tagCount: 0,
-            tags: [],
-            updatedAt: "2026-08-15T08:00:00.000Z",
-          },
-          status: "ready",
-        })),
+    stubProfile(
+      profileOf({ profileSections: [{ id: "tags", status: "hidden" }] }, {
+        dueInformation: { status: "unavailable" },
+      }),
     );
 
     await mountPeopleProfile();
@@ -1215,7 +1001,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("UXD-002C defaults invalid and missing views to All, filters zones, and restores popstate", async () => {
     markup(`/app/people/${personId}?view=unknown`);
-    stubReadyProfile();
+    stubProfile();
 
     await mountPeopleProfile();
 
@@ -1259,16 +1045,12 @@ describe("PEOPLE-001 canonical person identity shell", () => {
   it("UXD-002C3 restores a stored Timeline view without a history navigation or first-run card", async () => {
     markup();
     const replaceState = vi.spyOn(history, "replaceState");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response({
-          ...session,
-          uiState: { personWorkspaceView: "timeline" },
-        }))
-        .mockResolvedValueOnce(response(zeroProfile()))
-        .mockResolvedValue(undefined as never),
-    );
+    stubProfile(zeroProfile(), {
+      [SESSION]: jsonResponse({
+        ...session,
+        uiState: { personWorkspaceView: "timeline" },
+      }),
+    });
 
     await mountPeopleProfile();
 
@@ -1294,9 +1076,11 @@ describe("PEOPLE-001 canonical person identity shell", () => {
   it("UXD-002C3 keeps an explicit Planning deep link ahead of stored Timeline", async () => {
     markup(`/app/people/${personId}?view=planning`);
     const replaceState = vi.spyOn(history, "replaceState");
-    stubReadyProfile([], {
-      ...session,
-      uiState: { personWorkspaceView: "timeline" },
+    stubProfile(undefined, {
+      [SESSION]: jsonResponse({
+        ...session,
+        uiState: { personWorkspaceView: "timeline" },
+      }),
     });
 
     await mountPeopleProfile();
@@ -1315,52 +1099,17 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("UXD-002C3 filters immediately without persisting a click before the session resolves", async () => {
     markup();
-    let releaseSession!: (value: Response) => void;
-    const pendingSession = new Promise<Response>((resolve) => {
-      releaseSession = resolve;
+    const pendingSession = deferred<Response>();
+    const api = stubProfile(undefined, {
+      [SESSION]: pendingSession.promise,
     });
-    const fetchMock = vi.fn(
-      (resource: string | URL | Request, _init?: RequestInit) => {
-        const url = String(resource);
-        if (url === "/api/v1/session") return pendingSession;
-        if (url === `/api/v1/people/${personId}?include=summary`) {
-          return response({
-            dueInformation: {
-              detail: "No due information.",
-              openTaskCount: 0,
-              status: "ready",
-            },
-            person: {
-              familyName: "Lovelace",
-              givenName: "Ada",
-              id: personId,
-              isDeceased: false,
-              isPartial: false,
-              isSelf: false,
-              isStarred: false,
-              profileSections: [],
-              tagCount: 0,
-              tags: [],
-              updatedAt: "2026-08-15T08:00:00.000Z",
-            },
-            status: "ready",
-          });
-        }
-        return Promise.resolve(undefined as never);
-      },
-    );
-    vi.stubGlobal("fetch", fetchMock);
 
     const mounting = mountPeopleProfile();
     document.querySelector<HTMLButtonElement>(
       '[data-zone-filter="planning"]',
     )?.click();
     const earlyState = {
-      patchCount:
-        fetchMock.mock.calls.filter(([resource, init]) =>
-          String(resource) === "/api/v1/member/ui-state" &&
-          init?.method === "PATCH"
-        ).length,
+      patchCount: requested(api, UI_STATE).length,
       planningPressed: document.querySelector(
         '[data-zone-filter="planning"]',
       )?.getAttribute("aria-pressed"),
@@ -1369,7 +1118,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         .filter((zone) => !zone.hidden)
         .map((zone) => zone.dataset.zone),
     };
-    releaseSession(response(session));
+    pendingSession.resolve(jsonResponse(session));
     await mounting;
 
     expect(earlyState).toEqual({
@@ -1378,12 +1127,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       search: "?view=planning",
       visibleZones: ["planning"],
     });
-    expect(
-      fetchMock.mock.calls.filter(([resource, init]) =>
-        String(resource) === "/api/v1/member/ui-state" &&
-        init?.method === "PATCH"
-      ),
-    ).toHaveLength(0);
+    expect(requested(api, UI_STATE)).toHaveLength(0);
   });
 
   it.each([
@@ -1394,7 +1138,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     async (_name, value) => {
       markup();
       const replaceState = vi.spyOn(history, "replaceState");
-      stubReadyProfile([], value);
+      stubProfile(undefined, { [SESSION]: jsonResponse(value) });
 
       await mountPeopleProfile();
 
@@ -1405,7 +1149,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("UXD-002C3 persists a selected zone and updates the existing session cache after success", async () => {
     markup();
-    stubReadyProfile();
+    const api = stubProfile();
     await mountPeopleProfile();
     const savedAt = Date.now() - 12_000;
     sessionStorage.setItem(
@@ -1418,17 +1162,13 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         },
       }),
     );
-    const postMountFetch = vi.fn(
-      (resource: string | URL | Request, init?: RequestInit) =>
-        String(resource) === "/api/v1/member/ui-state" &&
-          init?.method === "PATCH"
-          ? response({
-            status: "ready",
-            uiState: { personWorkspaceView: "timeline" },
-          })
-          : Promise.resolve(undefined as never),
+    api.route(
+      UI_STATE,
+      jsonResponse({
+        status: "ready",
+        uiState: { personWorkspaceView: "timeline" },
+      }),
     );
-    vi.stubGlobal("fetch", postMountFetch);
 
     document.querySelector<HTMLButtonElement>(
       '[data-zone-filter="timeline"]',
@@ -1445,11 +1185,10 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         },
       });
     });
-    const patch = postMountFetch.mock.calls.find(([resource, init]) =>
-      String(resource) === "/api/v1/member/ui-state" &&
-      init?.method === "PATCH"
+    const patch = api.requests().find(({ method, url }) =>
+      `${method} ${url.pathname}` === UI_STATE
     );
-    expect(patch?.[1]).toMatchObject({
+    expect(patch?.init).toMatchObject({
       body: JSON.stringify({ personWorkspaceView: "timeline" }),
       headers: {
         "content-type": "application/json",
@@ -1461,8 +1200,9 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("UXD-002C3 keeps a rejected preference save invisible and leaves the cache honest", async () => {
     markup(`/app/people/${personId}?view=planning`);
-    stubReadyProfile();
+    const api = stubProfile();
     await mountPeopleProfile();
+    const mounted = api.calls().length;
     const cached = {
       savedAt: Date.now() - 12_000,
       session: {
@@ -1471,12 +1211,11 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       },
     };
     sessionStorage.setItem("kinship.session", JSON.stringify(cached));
-    const postMountFetch = vi.fn().mockRejectedValue(new Error("offline"));
-    vi.stubGlobal("fetch", postMountFetch);
 
+    // The save fails: nothing but the mount's reads is answered.
     document.querySelector<HTMLButtonElement>('[data-zone-filter="all"]')
       ?.click();
-    await vi.waitFor(() => expect(postMountFetch).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(api.calls().slice(mounted)).toHaveLength(1));
 
     expect(location.search).toBe("?view=all");
     expect(
@@ -1496,13 +1235,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("UXD-005B replaces empty stream zones and restores them on dismissal", async () => {
     markup(`/app/people/${personId}?section=important-dates`);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response(session))
-        .mockResolvedValueOnce(response(zeroProfile()))
-        .mockResolvedValue(undefined as never),
-    );
+    stubProfile(zeroProfile());
 
     await mountPeopleProfile();
 
@@ -1562,13 +1295,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     "UXD-005B does not present first-run for %s",
     async (_name, path, value) => {
       markup(path);
-      vi.stubGlobal(
-        "fetch",
-        vi.fn()
-          .mockResolvedValueOnce(response(session))
-          .mockResolvedValueOnce(response(value))
-          .mockResolvedValue(undefined as never),
-      );
+      stubProfile(value);
 
       await mountPeopleProfile();
 
@@ -1583,13 +1310,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     "UXD-005B exits first-run through %s navigation",
     async (path) => {
       markup();
-      vi.stubGlobal(
-        "fetch",
-        vi.fn()
-          .mockResolvedValueOnce(response(session))
-          .mockResolvedValueOnce(response(zeroProfile()))
-          .mockResolvedValue(undefined as never),
-      );
+      stubProfile(zeroProfile());
       await mountPeopleProfile();
 
       if (path === "section") {
@@ -1627,22 +1348,14 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     const birthdayClick = vi.fn();
     controls.firstMeeting.addEventListener("click", firstMeetingClick);
     controls.birthday.addEventListener("click", birthdayClick);
-    let releaseReminders!: (value: Response) => void;
-    const reminders = new Promise<Response>((resolve) => {
-      releaseReminders = resolve;
+    const reminders = deferred<Response>();
+    const api = stubProfile(zeroProfile(), {
+      [REMINDERS]: reminders.promise,
+      [REST]: recorded,
     });
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response(session))
-      .mockResolvedValueOnce(response(zeroProfile()))
-      .mockImplementation((url) =>
-        String(url).includes(`/people/${firstRunPersonId}/reminders`)
-          ? reminders
-          : Promise.resolve(response({ status: "recorded" }))
-      );
-    vi.stubGlobal("fetch", fetchMock);
 
     const mounting = mountPeopleProfile();
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    await vi.waitFor(() => expect(api.fetch).toHaveBeenCalledTimes(4));
     for (
       const action of document.querySelectorAll<HTMLButtonElement>(
         "[data-first-run-action]",
@@ -1654,9 +1367,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
     controls.firstMeeting.hidden = false;
     controls.birthday.hidden = false;
-    releaseReminders(
-      response({ cadences: [], reminders: [], status: "ready" }),
-    );
+    reminders.resolve(noReminders);
     await mounting;
     await vi.waitFor(() => expect(firstMeetingClick).toHaveBeenCalledOnce());
     expect(birthdayClick).toHaveBeenCalledOnce();
@@ -1673,19 +1384,10 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     controls.birthday.hidden = false;
     controls.birthday.disabled = true;
     controls.cadence.disabled = true;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response(session))
-        .mockResolvedValueOnce(response(zeroProfile()))
-        .mockImplementation((url) =>
-          String(url).includes(`/people/${firstRunPersonId}/reminders`)
-            ? Promise.resolve(
-              response({ cadences: [], reminders: [], status: "ready" }),
-            )
-            : Promise.resolve(response({ status: "recorded" }))
-        ),
-    );
+    stubProfile(zeroProfile(), {
+      [REMINDERS]: noReminders,
+      [REST]: recorded,
+    });
     await mountPeopleProfile();
 
     for (
@@ -1701,7 +1403,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("PRF-001 aligns the shared navigator only when opening its directory", async () => {
     markup();
-    stubReadyProfile();
+    stubProfile();
     const navigation = document.querySelector("#person-profile-sections")!;
     const container = document.createElement("div");
     container.className = "person-workspace-navigation";
@@ -1727,7 +1429,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("PRF-001 closes the section directory before focusing the selected block", async () => {
     markup();
-    stubReadyProfile();
+    stubProfile();
     const navigation = document.querySelector("#person-profile-sections")!;
     const directory = document.createElement("details");
     directory.open = true;
@@ -1747,7 +1449,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("UXD-002C writes one history entry when section navigation changes zones", async () => {
     markup();
-    stubReadyProfile();
+    stubProfile();
     const pushState = vi.spyOn(history, "pushState");
 
     await mountPeopleProfile();
@@ -1767,7 +1469,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("UXD-002C keeps All visible when section navigation does not need a zone change", async () => {
     markup();
-    stubReadyProfile();
+    stubProfile();
     const pushState = vi.spyOn(history, "pushState");
 
     await mountPeopleProfile();
@@ -1795,7 +1497,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     // The hero island draws and toggles the menu (islands/person-hero); the
     // page's navigation answers its Audit history request.
     markup();
-    stubReadyProfile();
+    stubProfile();
 
     await mountPeopleProfile();
 
@@ -1841,7 +1543,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("UXD-002C does not write history while popstate restores a section", async () => {
     markup();
-    stubReadyProfile();
+    stubProfile();
     await mountPeopleProfile();
     history.replaceState(
       {},
@@ -1865,7 +1567,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("UXD-002C activates the mapped zone before focusing a section deep link", async () => {
     markup(`/app/people/${personId}?view=planning&section=photos`);
-    stubReadyProfile();
+    stubProfile();
     const pushState = vi.spyOn(history, "pushState");
     const replaceState = vi.spyOn(history, "replaceState");
 
@@ -1890,7 +1592,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
   it("UXD-002C does not let missing filter chrome gate the person page", async () => {
     markup();
     document.querySelector(".profile-section-list")?.remove();
-    stubReadyProfile();
+    stubProfile();
 
     await mountPeopleProfile();
 
@@ -1938,7 +1640,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       },
     );
     markup();
-    stubReadyProfile();
+    stubProfile();
 
     await mountPeopleProfile();
 
@@ -1967,37 +1669,20 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("[APP-003C] renders orientation first and focuses stable section deep links", async () => {
     markup(`/app/people/${personId}?section=documents`);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response(session))
-        .mockResolvedValueOnce(response({
-          dueInformation: {
-            detail: "Due information will become available with planning.",
-            status: "unavailable",
-          },
-          person: {
-            description: "Mathematician and correspondent.",
-            familyName: "Lovelace",
-            gender: "Woman",
-            givenName: "Ada",
-            id: personId,
-            isDeceased: true,
-            isPartial: false,
-            isSelf: false,
-            isStarred: true,
-            lastContactAt: "2026-08-14T08:00:00.000Z",
-            profileSections: [{ id: "documents", status: "ready" }],
-            tagCount: 2,
-            tags: [{
-              id: "00000000-0000-4000-8000-000000000230",
-              name: "Mathematics",
-            }],
-            updatedAt: "2026-08-15T08:00:00.000Z",
-          },
-          status: "ready",
-        })),
-    );
+    stubProfile(profileOf({
+      ...lovelace,
+      description: "Mathematician and correspondent.",
+      gender: "Woman",
+      isDeceased: true,
+      isStarred: true,
+      lastContactAt: "2026-08-14T08:00:00.000Z",
+      profileSections: [{ id: "documents", status: "ready" }],
+      tagCount: 2,
+      tags: [{
+        id: "00000000-0000-4000-8000-000000000230",
+        name: "Mathematics",
+      }],
+    }, { dueInformation: unavailableDue }));
 
     await mountPeopleProfile();
 
@@ -2040,31 +1725,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("UXD-002A opens and focuses the edit affordance for the absorbed identity deep link", async () => {
     markup(`/app/people/${personId}?view=planning&section=identity-summary`);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response(session))
-        .mockResolvedValueOnce(response({
-          dueInformation: {
-            detail: "No due information.",
-            openTaskCount: 0,
-            status: "ready",
-          },
-          person: {
-            familyName: "Lovelace",
-            givenName: "Ada",
-            id: personId,
-            isDeceased: false,
-            isPartial: false,
-            isSelf: false,
-            isStarred: false,
-            tagCount: 0,
-            tags: [],
-            updatedAt: "2026-08-15T08:00:00.000Z",
-          },
-          status: "ready",
-        })),
-    );
+    stubProfile();
 
     await mountPeopleProfile();
 
@@ -2085,44 +1746,24 @@ describe("PEOPLE-001 canonical person identity shell", () => {
   it("UXD-006 explains an admin deep link to a personalization-hidden section", async () => {
     markup(`/app/people/${personId}?view=planning&section=documents`);
     reminderSectionMarkup();
-    let releaseSecondary!: (value: Response) => void;
-    const pendingSecondary = new Promise<Response>((resolve) => {
-      releaseSecondary = resolve;
-    });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response({
+    const secondary = deferred<void>();
+    stubProfile(
+      profileOf({
+        profileSections: [{ id: "documents", status: "hidden" }],
+        tagCount: 1,
+        tags: [{
+          id: "00000000-0000-4000-8000-000000000230",
+          name: "Friend",
+        }],
+      }, { dueInformation: { status: "unavailable" } }),
+      {
+        [SESSION]: jsonResponse({
           ...session,
           member: { ...session.member, role: "admin" },
-        }))
-        .mockResolvedValueOnce(response({
-          dueInformation: {
-            detail: "No due information.",
-            status: "unavailable",
-          },
-          person: {
-            givenName: "Ada",
-            id: personId,
-            isDeceased: false,
-            isPartial: false,
-            isSelf: false,
-            isStarred: false,
-            profileSections: [{ id: "documents", status: "hidden" }],
-            tagCount: 1,
-            tags: [{
-              id: "00000000-0000-4000-8000-000000000230",
-              name: "Friend",
-            }],
-            updatedAt: "2026-08-15T08:00:00.000Z",
-          },
-          status: "ready",
-        }))
-        .mockImplementation((url, init) =>
-          init?.method === "POST" && String(url).endsWith("/view")
-            ? Promise.resolve(response({ status: "recorded" }))
-            : pendingSecondary
-        ),
+        }),
+        [VIEW]: recorded,
+        [REST]: heldUntil(secondary.promise),
+      },
     );
 
     const mounting = mountPeopleProfile();
@@ -2160,7 +1801,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(document.activeElement).toBe(notice);
     const personalization = notice?.querySelector<HTMLAnchorElement>("a");
     personalization?.focus();
-    releaseSecondary(undefined as never);
+    secondary.resolve();
     await mounting;
     expect(document.activeElement).toBe(personalization);
   });
@@ -2171,41 +1812,12 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     document.querySelector<HTMLElement>(
       '[data-profile-section="documents"]',
     )!.hidden = true;
-    let resolveAudit!: (response: Response) => void;
-    const delayedAudit = new Promise<Response>((resolve) => {
-      resolveAudit = resolve;
-    });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response(session))
-        .mockResolvedValueOnce(response({
-          dueInformation: {
-            detail: "No due information.",
-            status: "unavailable",
-          },
-          person: {
-            givenName: "Ada",
-            id: personId,
-            isDeceased: false,
-            isPartial: false,
-            isSelf: false,
-            isStarred: false,
-            profileSections: [{ id: "documents", status: "ready" }],
-            tagCount: 0,
-            tags: [],
-            updatedAt: "2026-08-15T08:00:00.000Z",
-          },
-          status: "ready",
-        }))
-        .mockImplementation((url, init) => {
-          if (init?.method === "POST" && String(url).endsWith("/view")) {
-            return Promise.resolve(response({ status: "recorded" }));
-          }
-          return String(url).includes("/audit")
-            ? delayedAudit
-            : Promise.resolve(undefined as never);
-        }),
+    const audit = deferred<Response>();
+    stubProfile(
+      profileOf({ profileSections: [{ id: "documents", status: "ready" }] }, {
+        dueInformation: { status: "unavailable" },
+      }),
+      { [VIEW]: recorded, [AUDIT]: audit.promise },
     );
 
     const mounting = mountPeopleProfile();
@@ -2224,7 +1836,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
     const edit = document.querySelector<HTMLButtonElement>("#person-edit-open");
     edit?.focus();
-    resolveAudit(response({ items: [], status: "ready" }));
+    audit.resolve(noAudit);
     await mounting;
     expect(document.activeElement).toBe(edit);
     expect(notice?.hidden).toBe(true);
@@ -2233,41 +1845,11 @@ describe("PEOPLE-001 canonical person identity shell", () => {
   it("PLANNING-002 does not steal reminder form focus after delayed profile reconciliation", async () => {
     markup(`/app/people/${personId}?section=reminders`);
     reminderSectionMarkup();
-    let resolveReminders!: (response: Response) => void;
-    const delayedReminders = new Promise<Response>((resolve) => {
-      resolveReminders = resolve;
+    const delayedAudit = deferred<Response>();
+    stubProfile(profileOf({}, { dueInformation: { status: "unavailable" } }), {
+      [VIEW]: recorded,
+      [AUDIT]: delayedAudit.promise,
     });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response(session))
-        .mockResolvedValueOnce(response({
-          dueInformation: {
-            detail: "No due information.",
-            status: "unavailable",
-          },
-          person: {
-            givenName: "Ada",
-            id: personId,
-            isDeceased: false,
-            isPartial: false,
-            isSelf: false,
-            isStarred: false,
-            tagCount: 0,
-            tags: [],
-            updatedAt: "2026-08-15T08:00:00.000Z",
-          },
-          status: "ready",
-        }))
-        .mockImplementation((url, init) => {
-          if (init?.method === "POST" && String(url).endsWith("/view")) {
-            return Promise.resolve(response({ status: "recorded" }));
-          }
-          return String(url).includes("/audit")
-            ? delayedReminders
-            : Promise.resolve(undefined as never);
-        }),
-    );
 
     const mounting = mountPeopleProfile();
     await vi.waitFor(() =>
@@ -2280,10 +1862,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     )!;
     title.focus();
     title.value = "Keep this draft";
-    resolveReminders(response({
-      items: [],
-      status: "ready",
-    }));
+    delayedAudit.resolve(noAudit);
     await mounting;
 
     expect(document.activeElement).toBe(title);
@@ -2299,7 +1878,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     documents.scrollIntoView = scroll;
     // The reader sees the section, and may be pressing something inside it.
     documents.getBoundingClientRect = () => new DOMRect(0, 120, 600, 300);
-    stubReadyProfile();
+    stubProfile();
 
     await mountPeopleProfile();
 
@@ -2335,7 +1914,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         media: query,
         removeEventListener: () => undefined,
       }));
-      stubReadyProfile();
+      stubProfile();
       await mountPeopleProfile();
       const photos = document.querySelector<HTMLElement>(
         "#profile-section-photos",
@@ -2358,14 +1937,8 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       idle = callback;
       return 1;
     });
-    let recordView!: (answer: Response) => void;
-    stubReadyProfile().mockImplementation(
-      (resource: string | URL | Request, init?: RequestInit) =>
-        init?.method === "POST" &&
-          String(resource).endsWith(`/${personId}/view`)
-          ? new Promise<Response>((resolve) => recordView = resolve)
-          : Promise.resolve(undefined),
-    );
+    const recordView = deferred<Response>();
+    stubProfile(undefined, { [VIEW]: recordView.promise });
     const ready = document.querySelector<HTMLElement>("#person-profile-ready")!;
 
     await mountPeopleProfile();
@@ -2377,7 +1950,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     idle?.({ didTimeout: false, timeRemaining: () => 50 });
     await Promise.resolve();
     expect(ready.hasAttribute("data-workspace-settled")).toBe(false);
-    recordView(response({ status: "recorded" }));
+    recordView.resolve(recorded);
     await vi.waitFor(() =>
       expect(ready.hasAttribute("data-workspace-settled")).toBe(true)
     );
@@ -2390,7 +1963,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     )!;
     const scroll = vi.fn();
     documents.scrollIntoView = scroll;
-    stubReadyProfile();
+    stubProfile();
     documents.getBoundingClientRect = () =>
       new DOMRect(0, innerHeight + 400, 600, 300);
 
@@ -2404,30 +1977,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("[APP-003C] reconciles queryless and invalid section history", async () => {
     markup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response(session))
-        .mockResolvedValueOnce(response({
-          dueInformation: {
-            detail: "Due information will become available with planning.",
-            status: "unavailable",
-          },
-          person: {
-            familyName: "Lovelace",
-            givenName: "Ada",
-            id: personId,
-            isDeceased: false,
-            isPartial: false,
-            isSelf: false,
-            isStarred: false,
-            tagCount: 0,
-            tags: [],
-            updatedAt: "2026-08-15T08:00:00.000Z",
-          },
-          status: "ready",
-        })),
-    );
+    stubProfile(profileOf(lovelace, { dueInformation: unavailableDue }));
 
     await mountPeopleProfile();
     const heading = document.querySelector("#person-profile-name");
@@ -2469,32 +2019,13 @@ describe("PEOPLE-001 canonical person identity shell", () => {
   it("INTERACTION-001 / UXD-006 explains member hidden links and clears the notice for visible history", async () => {
     markup(`/app/people/${personId}?section=activities`);
     interactionSectionMarkup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response(session))
-        .mockResolvedValueOnce(response({
-          dueInformation: {
-            detail: "No due information.",
-            status: "unavailable",
-          },
-          person: {
-            givenName: "Ada",
-            id: personId,
-            isDeceased: false,
-            isPartial: false,
-            isSelf: false,
-            isStarred: false,
-            profileSections: [
-              { id: "activities", status: "hidden" },
-              { id: "notes", status: "hidden" },
-            ],
-            tagCount: 0,
-            tags: [],
-            updatedAt: "2026-08-15T08:00:00.000Z",
-          },
-          status: "ready",
-        })),
+    stubProfile(
+      profileOf({
+        profileSections: [
+          { id: "activities", status: "hidden" },
+          { id: "notes", status: "hidden" },
+        ],
+      }, { dueInformation: { status: "unavailable" } }),
     );
 
     await mountPeopleProfile();
@@ -2558,7 +2089,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       "beforeend",
       '<section data-profile-section="life-events" tabindex="-1"></section>',
     );
-    stubReadyProfile();
+    stubProfile();
 
     await mountPeopleProfile();
     const link = document.querySelector<HTMLAnchorElement>(
@@ -2594,15 +2125,9 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       ]
     ) {
       markup();
-      const fetchMock = vi.fn()
-        .mockResolvedValueOnce(response(session))
-        .mockResolvedValueOnce(
-          response({ status: state.status }, state.status),
-        );
-      vi.stubGlobal(
-        "fetch",
-        fetchMock,
-      );
+      const api = stubProfile(undefined, {
+        [PROFILE]: jsonResponse({ status: state.status }, state.status),
+      });
       await mountPeopleProfile();
       expect(document.querySelector("#person-profile-state h1")?.textContent)
         .toBe(state.heading);
@@ -2617,22 +2142,17 @@ describe("PEOPLE-001 canonical person identity shell", () => {
           "aria-busy",
         ),
       ).toBe(false);
-      expect(
-        fetchMock.mock.calls.some(([url, init]) =>
-          init?.method === "POST" && String(url).endsWith("/view")
-        ),
-      ).toBe(false);
+      expect(requested(api, VIEWED)).toHaveLength(0);
     }
 
     markup("/app/people/not-a-person");
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
+    const api = stubApi();
     await mountPeopleProfile();
     expect(document.querySelector("#person-profile-state h1")?.textContent)
       .toBe("Person not found");
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(api.fetch).not.toHaveBeenCalled();
 
-    document.body.innerHTML = "<main></main>";
+    drawShell("<main></main>");
     await expect(mountPeopleProfile()).resolves.toBeUndefined();
   });
 
@@ -2642,35 +2162,15 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       "beforeend",
       '<header class="profile-facts-heading"></header><section data-profile-section="pets"><span data-rail-count-slot><span data-profile-rail-count hidden></span></span></section>',
     );
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response(session))
-      .mockResolvedValueOnce(response({
-        dueInformation: {
-          detail: "Due information will become available with planning.",
-          status: "unavailable",
-        },
-        person: {
-          givenName: "Harriet",
-          id: personId,
-          isDeceased: false,
-          isPartial: false,
-          isSelf: false,
-          isStarred: false,
-          tagCount: 0,
-          tags: [],
-          updatedAt: "2026-08-15T08:00:00.000Z",
-        },
-        status: "archived",
-        summary: {
-          primaryContactMethods: [],
-          relationshipCounts: [],
-          sectionCounts: [{ count: 0, id: "pets", status: "ready" }],
-        },
-      }));
-    vi.stubGlobal(
-      "fetch",
-      fetchMock,
-    );
+    const api = stubProfile(profileOf({ givenName: "Harriet" }, {
+      dueInformation: unavailableDue,
+      status: "archived",
+      summary: {
+        primaryContactMethods: [],
+        relationshipCounts: [],
+        sectionCounts: [{ count: 0, id: "pets", status: "ready" }],
+      },
+    }));
     await mountPeopleProfile();
     expect(
       document.querySelector("#person-profile-archived")?.hasAttribute(
@@ -2691,11 +2191,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(document.activeElement).toBe(
       document.querySelector("#person-profile-name"),
     );
-    expect(
-      fetchMock.mock.calls.some(([url, init]) =>
-        init?.method === "POST" && String(url).endsWith("/view")
-      ),
-    ).toBe(true);
+    expect(requested(api, VIEWED)).not.toHaveLength(0);
     expect(
       document.querySelector<HTMLElement>('[data-profile-section="pets"]')
         ?.dataset.railEmpty,
@@ -2713,19 +2209,11 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       "#person-delete-open",
       "#person-restore",
     ].map((selector) => document.querySelector<HTMLButtonElement>(selector)!);
-    let releaseProfile!: (value: Response) => void;
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response(session))
-      .mockReturnValueOnce(
-        new Promise<Response>((resolve) => {
-          releaseProfile = resolve;
-        }),
-      )
-      .mockResolvedValue(undefined as never);
-    vi.stubGlobal("fetch", fetchMock);
+    const profile = deferred<Response>();
+    const api = stubProfile(undefined, { [PROFILE]: profile.promise });
 
     const mounting = mountPeopleProfile();
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(api.fetch).toHaveBeenCalledTimes(2));
     // A click before the island is wired is refused visibly, not lost.
     expect(staticToggle.disabled).toBe(true);
     staticToggle.click();
@@ -2737,7 +2225,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       true,
     ]);
 
-    releaseProfile(response(zeroProfile()));
+    profile.resolve(jsonResponse(zeroProfile()));
     await mounting;
     const hero = document.querySelector<HTMLElement>("[data-person-hero]")!;
     expect(hero.dataset.island).toBe("person-hero");
@@ -2761,12 +2249,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("REL-039 leaves lifecycle actions inert when the person cannot load", async () => {
     markup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn()
-        .mockResolvedValueOnce(response(session))
-        .mockResolvedValueOnce(response({ status: 404 }, 404)),
-    );
+    stubProfile(undefined, { [PROFILE]: jsonResponse({ status: 404 }, 404) });
     await mountPeopleProfile();
     expect(
       document.querySelector<HTMLButtonElement>("#person-delete-open")!
@@ -2776,40 +2259,23 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
   it("[PEOPLE-004] keeps lifecycle failures recoverable in the profile shell", async () => {
     markup();
-    const initial = {
-      dueInformation: { detail: "No due information.", status: "unavailable" },
-      person: {
-        familyName: "Lovelace",
-        givenName: "Ada",
-        id: personId,
-        isDeceased: false,
-        isPartial: false,
-        isSelf: false,
-        isStarred: false,
-        tagCount: 0,
-        tags: [],
-        updatedAt: "2026-08-15T08:00:00.000Z",
+    stubProfile(
+      profileOf(lovelace, { dueInformation: { status: "unavailable" } }),
+      {
+        [VIEW]: recorded,
+        "PATCH /api/v1/people/:personId": problemResponse(409, {
+          detail: "This person changed elsewhere. Reload and try again.",
+          title: "Person changed",
+          type: "https://kinship.test/problems/person-stale",
+        }),
+        "POST /api/v1/people/:personId/archive": unreachable,
+        "GET /api/v1/people/:personId/deletion-impact": problemResponse(503, {
+          detail: "Deletion impact could not be loaded.",
+          title: "Temporarily unavailable",
+          type: "https://kinship.test/problems/dependency-unavailable",
+        }),
       },
-      status: "ready",
-    };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response(session))
-      .mockResolvedValueOnce(response(initial))
-      .mockResolvedValueOnce(response({ status: "recorded" }))
-      .mockResolvedValueOnce(response({
-        detail: "This person changed elsewhere. Reload and try again.",
-        status: 409,
-        title: "Person changed",
-        type: "https://kinship.test/problems/person-stale",
-      }, 409))
-      .mockRejectedValueOnce(new Error("offline"))
-      .mockResolvedValueOnce(response({
-        detail: "Deletion impact could not be loaded.",
-        status: 503,
-        title: "Temporarily unavailable",
-        type: "https://kinship.test/problems/dependency-unavailable",
-      }, 503));
-    vi.stubGlobal("fetch", fetchMock);
+    );
     await mountPeopleProfile();
 
     const editForm = document.querySelector<HTMLFormElement>(

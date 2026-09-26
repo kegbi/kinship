@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatInstant } from "../../lib/time-presentation.ts";
 import { clearToasts } from "../../lib/toasts.ts";
 import { mountUnsavedChangesGuard } from "../../lib/unsaved-changes.ts";
@@ -17,31 +17,39 @@ import {
 } from "../../features/person/profile-summary.ts";
 import type {
   PersonProfile,
+  SectionMount,
   SectionProps,
 } from "../../features/person/section-mounts.ts";
 import { SECTION_REQUEST_EVENT } from "../../features/person/sections.ts";
+import {
+  deferred,
+  jsonResponse,
+  problemResponse,
+  stubApi,
+  unreachable,
+} from "../../testing/api.ts";
+import {
+  ids,
+  personProfile,
+  preferences,
+  revision,
+  sectionProps,
+} from "../../testing/fixtures.ts";
+import {
+  adoptMount,
+  drawShell,
+  element,
+  mountSection,
+} from "../../testing/render.tsx";
 import { mountPersonHero, personHeroMount } from "./mount.tsx";
 
-const personId = "00000000-0000-4000-8000-000000000100";
-const workspaceId = "00000000-0000-4000-8000-000000000003";
-const revision = "2026-08-15T08:00:00.000000Z";
-
-function response(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    headers: { "content-type": "application/json" },
-    status,
-  });
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => resolve = done);
-  return { promise, resolve };
-}
+const { person: personId, workspace: workspaceId } = ids;
+const PERSON = "/api/v1/people/:personId";
+const IMPACT = `GET ${PERSON}/deletion-impact`;
 
 /** The hero as the static shell draws it, every wired control disabled. */
 function markup(): HTMLElement {
-  document.body.innerHTML = `
+  drawShell(`
     <ul id="app-toasts" aria-live="polite" aria-label="Notifications"></ul>
     <section id="person-profile-ready">
       <header class="person-profile-hero">
@@ -73,67 +81,57 @@ function markup(): HTMLElement {
       <div class="zone-switcher">
         <div data-zone-mini-identity hidden><span data-zone-mini-avatar></span><span data-zone-mini-name></span></div>
       </div>
-    </section>`;
-  return document.querySelector("#person-profile-ready")!;
+    </section>`);
+  return element("#person-profile-ready");
 }
 
-function profile(
-  overrides: {
-    readonly person?: Record<string, unknown>;
-    readonly dueInformation?: Record<string, unknown>;
-    readonly status?: "archived" | "ready";
-  } = {},
-): PersonProfile {
-  return {
-    dueInformation: {
-      detail: "No due information.",
-      openTaskCount: 0,
-      status: "ready",
-      ...overrides.dueInformation,
-    },
-    person: {
-      familyName: "Lovelace",
-      givenName: "Ada",
-      id: personId,
-      isDeceased: false,
-      isPartial: false,
-      isSelf: false,
-      isStarred: false,
-      profileSections: [],
-      tagCount: 0,
-      tags: [],
-      updatedAt: revision,
-      ...overrides.person,
-    },
-    status: overrides.status ?? "ready",
-  } as unknown as PersonProfile;
-}
-
-const utc = {
-  contactNameOrder: "given_family_nickname",
-  effectiveTimezone: "UTC",
-  locale: "en",
-} as unknown as NonNullable<SectionProps["preferences"]>;
-
-const mounted: Array<() => void> = [];
-
-async function mount(
-  answer: PersonProfile = profile(),
-  preferences: SectionProps["preferences"] = utc,
-): Promise<HTMLElement> {
-  const root = document.querySelector<HTMLElement>("#person-profile-ready")!;
-  await act(async () => {
-    mounted.push(
-      await mountPersonHero(root, {
-        archived: answer.status === "archived",
-        initial: answer,
-        personId,
-        preferences,
-        workspaceId,
-      }),
-    );
+/** Ada Lovelace's profile, overriding any part of it. */
+const profile = (overrides: Parameters<typeof personProfile>[0] = {}) =>
+  personProfile({
+    ...overrides,
+    person: { familyName: "Lovelace", ...overrides?.person },
   });
-  return root;
+
+const utc = preferences();
+
+/** The person a lifecycle answer carries. */
+const personAnswer = (
+  state: "active" | "archived",
+  updatedAt: string,
+  more: object = {},
+) => ({
+  givenName: "Ada",
+  id: personId,
+  isPartial: false,
+  lifecycle: state,
+  updatedAt,
+  ...more,
+});
+
+/** A saved identity edit renaming Ada Byron. */
+const updated = (isPartial: boolean) =>
+  jsonResponse({
+    person: personAnswer("active", "2026-08-15T09:00:00.000000Z", {
+      familyName: "Byron",
+      isPartial,
+    }),
+    status: "updated",
+  });
+
+function mount(
+  answer: PersonProfile = profile(),
+  prefs: SectionProps["preferences"] = utc,
+  owner: SectionMount = mountPersonHero,
+): Promise<() => void> {
+  return mountSection(
+    owner,
+    sectionProps({
+      archived: answer.status === "archived",
+      initial: answer,
+      preferences: prefs,
+    }),
+    element("#person-profile-ready"),
+  );
 }
 
 const text = (selector: string) =>
@@ -148,18 +146,8 @@ async function openMenu() {
   }
 }
 
-beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn());
-});
-
 afterEach(() => {
-  act(() => {
-    for (const unmount of mounted.splice(0)) unmount();
-  });
-  cleanup();
   clearToasts();
-  vi.unstubAllGlobals();
-  document.body.innerHTML = "";
   document.title = "";
 });
 
@@ -248,28 +236,27 @@ describe("PEOPLE-001 person hero island", () => {
 
   it("APR-008 applies membership name order and honest placeholders", async () => {
     markup();
-    await mount(
-      profile({ person: { familyName: undefined, givenName: "" } }),
-      { ...utc, contactNameOrder: "family_given_nickname" },
+    const familyFirst = preferences({
+      contactNameOrder: "family_given_nickname",
+    });
+    const unmount = await mount(
+      // The bare fixture carries no family name.
+      personProfile({ person: { givenName: "" } }),
+      familyFirst,
     );
     expect(heading().textContent).toBe("Unnamed person");
     expect(text("#person-profile-avatar")).toBe("?");
     expect(text("[data-profile-description]")).toBe("No description saved.");
-    act(() => {
-      for (const unmount of mounted.splice(0)) unmount();
-    });
+    unmount();
     markup();
-    await mount(profile(), {
-      ...utc,
-      contactNameOrder: "family_given_nickname",
-    });
+    await mount(profile(), familyFirst);
     expect(heading().textContent).toBe("Lovelace Ada");
     expect(document.title).toBe("Lovelace Ada — Kinship");
   });
 
   it("UXD-002A renders honest vital stats from the profile answer", async () => {
     markup();
-    await mount(profile({
+    const unmount = await mount(profile({
       dueInformation: {
         nextReminderAt: "2026-08-30T09:00:00.000Z",
         openTaskCount: 3,
@@ -308,9 +295,7 @@ describe("PEOPLE-001 person hero island", () => {
       "?section=first-meeting",
     ]);
 
-    act(() => {
-      for (const unmount of mounted.splice(0)) unmount();
-    });
+    unmount();
     markup();
     await mount(profile());
     expect(text("[data-profile-last-contact]")).toBe("None recorded");
@@ -321,22 +306,19 @@ describe("PEOPLE-001 person hero island", () => {
   });
 
   it("GAP-029 renders a vital published in the mount's own task by the next microtask", async () => {
-    markup();
-    const root = document.querySelector<HTMLElement>("#person-profile-ready")!;
+    const root = markup();
     const environment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
     environment.IS_REACT_ACT_ENVIRONMENT = false;
     try {
-      const mounting = mountPersonHero(root, {
-        archived: false,
-        initial: profile(),
-        personId,
-        preferences: utc,
-        workspaceId,
-      });
+      const mounting = mountPersonHero(
+        root,
+        sectionProps({ initial: profile(), preferences: utc }),
+      );
       // A section publishing before the hero's effects have run, and with no
       // act to flush React: only microtasks pass before the assertion.
       setVitalStat("work", "Engineer");
-      mounted.push(await mounting);
+      const unmount = await mounting;
+      adoptMount(unmount);
       await Promise.resolve();
       await Promise.resolve();
       expect(text('[data-person-vital-value="work"]')).toBe("Engineer");
@@ -507,17 +489,7 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
     const family = within(form).getByRole("textbox", { name: "Family name" });
     await user.clear(family);
     await user.type(family, "Byron");
-    vi.mocked(fetch).mockResolvedValueOnce(response({
-      person: {
-        familyName: "Byron",
-        givenName: "Ada",
-        id: personId,
-        isPartial: false,
-        lifecycle: "active",
-        updatedAt: "2026-08-15T09:00:00.000000Z",
-      },
-      status: "updated",
-    }));
+    stubApi({ [`PATCH ${PERSON}`]: updated(false) });
     // The answer lands outside React's act, as in the browser, and the
     // scheduler yields after every task, as it does on a busy page: whatever
     // the heading shows when it changes, the title must already say too.
@@ -550,7 +522,6 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
   it("edits the identity, announces the revision, and focuses the renamed heading", async () => {
     const root = markup();
     await mount();
-    const fetchMock = vi.mocked(fetch);
     const revisions = vi.fn();
     document.addEventListener("person-revision-changed", revisions);
     const user = userEvent.setup();
@@ -569,24 +540,12 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
     await user.clear(family);
     await user.type(family, "Byron");
     await user.click(within(form).getByRole("checkbox"));
-    fetchMock.mockResolvedValueOnce(response({
-      person: {
-        familyName: "Byron",
-        givenName: "Ada",
-        id: personId,
-        isPartial: true,
-        lifecycle: "active",
-        updatedAt: "2026-08-15T09:00:00.000000Z",
-      },
-      status: "updated",
-    }));
+    const api = stubApi({ [`PATCH ${PERSON}`]: updated(true) });
     await user.click(within(form).getByRole("button", { name: "Save person" }));
 
     await waitFor(() => expect(heading().textContent).toBe("Ada Byron"));
-    const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe(`/api/v1/people/${personId}`);
-    expect(init?.method).toBe("PATCH");
-    expect(JSON.parse(String(init?.body))).toEqual({
+    expect(api.calls()[0]).toBe(`PATCH /api/v1/people/${personId}`);
+    expect(api.bodies()[0]).toEqual({
       expectedUpdatedAt: revision,
       familyName: "Byron",
       givenName: "Ada",
@@ -612,7 +571,6 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
   it("names a revision another section published and shows a refused save", async () => {
     markup();
     await mount();
-    const fetchMock = vi.mocked(fetch);
     act(() => {
       document.dispatchEvent(
         new CustomEvent("person-revision-changed", {
@@ -624,22 +582,25 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
     const user = userEvent.setup();
     await openMenu();
     await user.click(screen.getByRole("button", { name: "Edit person" }));
-    fetchMock.mockResolvedValueOnce(response({
-      detail: "The person changed. Reload before saving.",
-      errors: { givenName: "Given name is required." },
-      status: 409,
-      title: "Conflict",
-      type: "about:blank",
-    }, 409));
+    const api = stubApi({
+      [`PATCH ${PERSON}`]: [
+        problemResponse(409, {
+          detail: "The person changed. Reload before saving.",
+          errors: { givenName: "Given name is required." },
+          title: "Conflict",
+        }),
+        unreachable,
+      ],
+    });
     await user.click(screen.getByRole("button", { name: "Save person" }));
     await waitFor(() =>
       expect(text("#person-lifecycle-status")).toBe(
         "The person changed. Reload before saving.",
       )
     );
-    expect(
-      JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)).expectedUpdatedAt,
-    ).toBe("2026-08-16T08:00:00.000000Z");
+    expect(api.bodies()[0]).toMatchObject({
+      expectedUpdatedAt: "2026-08-16T08:00:00.000000Z",
+    });
     expect(
       screen.getByRole("textbox", { name: /Given name/ })
         .getAttribute("aria-invalid"),
@@ -649,7 +610,6 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
       false,
     );
 
-    fetchMock.mockRejectedValueOnce(new TypeError("offline"));
     await user.click(screen.getByRole("button", { name: "Save person" }));
     await waitFor(() =>
       expect(text("#person-lifecycle-status")).toBe(
@@ -703,11 +663,16 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
   it("archives with an undo toast, then restores from the banner", async () => {
     markup();
     await mount();
-    const fetchMock = vi.mocked(fetch);
     const lifecycle = vi.fn();
     document.addEventListener("person-lifecycle-changed", lifecycle);
     const archiving = deferred<Response>();
-    fetchMock.mockReturnValueOnce(archiving.promise);
+    const api = stubApi({
+      [`POST ${PERSON}/archive`]: archiving.promise,
+      [`POST ${PERSON}/restore`]: jsonResponse({
+        person: personAnswer("active", "2026-08-15T11:00:00.000000Z"),
+        status: "restored",
+      }),
+    });
     const user = userEvent.setup();
     await openMenu();
     await user.click(screen.getByRole("button", { name: "Archive person" }));
@@ -716,14 +681,8 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
       document.querySelector<HTMLButtonElement>("#person-restore")?.disabled,
     ).toBe(true);
     await act(async () => {
-      archiving.resolve(response({
-        person: {
-          givenName: "Ada",
-          id: personId,
-          isPartial: false,
-          lifecycle: "archived",
-          updatedAt: "2026-08-15T10:00:00.000000Z",
-        },
+      archiving.resolve(jsonResponse({
+        person: personAnswer("archived", "2026-08-15T10:00:00.000000Z"),
         status: "archived",
       }));
       await archiving.promise;
@@ -733,12 +692,8 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
         false,
       )
     );
-    expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      `/api/v1/people/${personId}/archive`,
-    );
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
-      expectedUpdatedAt: revision,
-    });
+    expect(api.calls()[0]).toBe(`POST /api/v1/people/${personId}/archive`);
+    expect(api.bodies()[0]).toEqual({ expectedUpdatedAt: revision });
     expect((lifecycle.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
       archived: true,
       personId,
@@ -764,22 +719,10 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
     ).toBeTruthy();
 
     // Undo restores with the revision the archive answered.
-    fetchMock.mockResolvedValueOnce(response({
-      person: {
-        givenName: "Ada",
-        id: personId,
-        isPartial: false,
-        lifecycle: "active",
-        updatedAt: "2026-08-15T11:00:00.000000Z",
-      },
-      status: "restored",
-    }));
     await user.click(toasts.getByRole("button", { name: "Undo" }));
     await waitFor(() => expect(banner.hidden).toBe(true));
-    expect(fetchMock.mock.calls[1]?.[0]).toBe(
-      `/api/v1/people/${personId}/restore`,
-    );
-    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+    expect(api.calls()[1]).toBe(`POST /api/v1/people/${personId}/restore`);
+    expect(api.bodies()[1]).toEqual({
       expectedUpdatedAt: "2026-08-15T10:00:00.000000Z",
     });
     expect(
@@ -801,13 +744,15 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
     expect(screen.getByText("Archived person · read-only").hidden).toBe(false);
     expect(document.querySelector<HTMLElement>("#person-edit-open")?.hidden)
       .toBe(true);
-    const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValueOnce(response({
-      detail: "The person changed.",
-      status: 409,
-      title: "Conflict",
-      type: "about:blank",
-    }, 409)).mockRejectedValueOnce(new TypeError("offline"));
+    stubApi({
+      [`POST ${PERSON}/restore`]: [
+        problemResponse(409, {
+          detail: "The person changed.",
+          title: "Conflict",
+        }),
+        unreachable,
+      ],
+    });
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Restore person" }));
     await waitFor(() =>
@@ -836,38 +781,25 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
   }
 
   const impactAnswer = (updatedAt = "2026-08-15T12:00:00.000000Z") =>
-    response({
+    jsonResponse({
       impact: {
         confirmation: "DELETE Ada Lovelace",
         dependentRecordPolicy: "retained",
-        person: {
-          givenName: "Ada",
-          id: personId,
-          isPartial: false,
-          lifecycle: "active",
-          updatedAt,
-        },
+        person: personAnswer("active", updatedAt),
       },
       status: "ready",
     });
 
   it("deletes after the confirmation, once however often it is pressed", async () => {
-    const root = markup();
+    markup();
     const navigate = vi.fn();
-    await act(async () => {
-      mounted.push(
-        await personHeroMount(navigate)(root, {
-          archived: false,
-          initial: profile(),
-          personId,
-          preferences: utc,
-          workspaceId,
-        }),
-      );
-    });
-    const fetchMock = vi.mocked(fetch);
+    await mount(profile(), utc, personHeroMount(navigate));
     const impact = deferred<Response>();
-    fetchMock.mockReturnValueOnce(impact.promise);
+    const deleted = deferred<Response>();
+    const api = stubApi({
+      [IMPACT]: impact.promise,
+      [`DELETE ${PERSON}`]: deleted.promise,
+    });
     const dialog = await openDeletion();
     expect(dialog.textContent).toContain("Loading deletion impact…");
     const confirm = within(dialog).getByRole("button", {
@@ -887,12 +819,10 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
     expect(confirm.disabled).toBe(false);
 
     const user = userEvent.setup();
-    const deleted = deferred<Response>();
-    fetchMock.mockReturnValueOnce(deleted.promise);
     await user.type(confirmation, "DELETE Ada Lovelace");
     await user.dblClick(confirm);
     await act(async () => {
-      deleted.resolve(response({
+      deleted.resolve(jsonResponse({
         next: "/app/people",
         personId,
         status: "deleted",
@@ -900,11 +830,9 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
       await deleted.promise;
     });
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/app/people"));
-    const deletes = fetchMock.mock.calls.filter(([, init]) =>
-      init?.method === "DELETE"
-    );
+    const deletes = api.requests().filter(({ method }) => method === "DELETE");
     expect(deletes).toHaveLength(1);
-    expect(JSON.parse(String(deletes[0]?.[1]?.body))).toEqual({
+    expect(deletes[0]?.body).toEqual({
       confirmation: "DELETE Ada Lovelace",
       expectedUpdatedAt: "2026-08-15T12:00:00.000000Z",
     });
@@ -918,8 +846,16 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
   it("keeps a refused delete in the dialog with its confirmation for a retry", async () => {
     markup();
     await mount();
-    const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValueOnce(impactAnswer());
+    const api = stubApi({
+      [IMPACT]: impactAnswer(),
+      [`DELETE ${PERSON}`]: [
+        problemResponse(422, {
+          detail: "The confirmation does not match.",
+          title: "Invalid",
+        }),
+        unreachable,
+      ],
+    });
     const dialog = await openDeletion();
     const confirmation = await within(dialog).findByLabelText("Confirmation");
     await waitFor(() => expect(document.activeElement).toBe(confirmation));
@@ -932,13 +868,7 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
     await waitFor(() =>
       expect(confirmation.getAttribute("aria-invalid")).toBe("true")
     );
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    fetchMock.mockResolvedValueOnce(response({
-      detail: "The confirmation does not match.",
-      status: 422,
-      title: "Invalid",
-      type: "about:blank",
-    }, 422)).mockRejectedValueOnce(new TypeError("offline"));
+    expect(api.fetch).toHaveBeenCalledTimes(1);
     await user.type(confirmation, "DELETE Ada");
     await user.click(confirm);
     await waitFor(() =>
@@ -957,9 +887,17 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
   it("[PEOPLE-004] cancels deletion by button or Escape and returns focus to Delete person", async () => {
     markup();
     await mount();
-    const fetchMock = vi.mocked(fetch);
     const stale = deferred<Response>();
-    fetchMock.mockReturnValueOnce(stale.promise);
+    const api = stubApi({
+      [IMPACT]: [
+        stale.promise,
+        problemResponse(503, {
+          detail: "Deletion impact is unavailable.",
+          title: "Unavailable",
+        }),
+        unreachable,
+      ],
+    });
     const user = userEvent.setup();
     let dialog = await openDeletion();
     await user.click(
@@ -986,12 +924,6 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
       await stale.promise;
     });
 
-    fetchMock.mockResolvedValueOnce(response({
-      detail: "Deletion impact is unavailable.",
-      status: 503,
-      title: "Unavailable",
-      type: "about:blank",
-    }, 503));
     dialog = await openDeletion();
     await waitFor(() =>
       expect(dialog.textContent).toContain("Deletion impact is unavailable.")
@@ -1006,15 +938,13 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
       expect(screen.queryByRole("dialog", { name: "Delete this person?" }))
         .toBeNull()
     );
-    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "DELETE"))
-      .toBe(false);
+    expect(api.calls().some((call) => call.startsWith("DELETE"))).toBe(false);
     await waitFor(() =>
       expect(document.activeElement).toBe(
         screen.getByRole("button", { name: "Delete person" }),
       )
     );
 
-    fetchMock.mockRejectedValueOnce(new TypeError("offline"));
     dialog = await openDeletion();
     await waitFor(() =>
       expect(dialog.textContent).toContain(

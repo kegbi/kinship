@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, cleanup, waitFor, within } from "@testing-library/react";
+import { act, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -8,17 +8,16 @@ import {
 } from "../profile-summary.test-helper.ts";
 import { mountUnsavedChangesGuard } from "../../../lib/unsaved-changes.ts";
 import { buttonVariants } from "@/components/ui/variants.ts";
+import { stubApi } from "../../../testing/api.ts";
 import {
+  anyRoute,
   block,
   fact,
+  factDeleted,
   factRead,
   mountFacts,
-  nextRevision,
   railBlock,
-  response,
   shell,
-  stubFetch,
-  unmountFacts,
 } from "./facts.test-helper.ts";
 import { mountFoodPreferences } from "./food.tsx";
 
@@ -28,10 +27,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   summary.stop();
-  unmountFacts();
-  cleanup();
   vi.unstubAllGlobals();
-  document.body.innerHTML = "";
 });
 
 const section = () => within(block("food-preferences"));
@@ -44,18 +40,15 @@ describe("GAP-029 food preferences island", () => {
   it("clears saved preferences and shows an honest empty section", async () => {
     shell(railBlock("food-preferences"));
     let present = true;
-    const fetch = stubFetch((_url, init) => {
-      if (init?.method === "DELETE") {
+    const api = stubApi({
+      "DELETE /api/v1/*": () => {
         present = false;
-        return response({
-          factId: "deleted",
-          personUpdatedAt: nextRevision,
-          status: "deleted",
-        });
-      }
-      return factRead(
-        present ? [fact("food-preferences", { foodPreferences: "Tea" })] : [],
-      );
+        return factDeleted();
+      },
+      "GET /api/v1/*": () =>
+        factRead(
+          present ? [fact("food-preferences", { foodPreferences: "Tea" })] : [],
+        ),
     });
     await mountFacts(mountFoodPreferences);
     const add = section().getByRole("button", {
@@ -81,9 +74,9 @@ describe("GAP-029 food preferences island", () => {
     await waitFor(() =>
       expect(stateLine().textContent).toBe("Profile fact deleted.")
     );
-    expect(fetch.calls().filter((call) => call.startsWith("DELETE")))
+    expect(api.calls().filter((call) => call.startsWith("DELETE")))
       .toHaveLength(1);
-    expect(fetch.bodies()).toEqual([{
+    expect(api.bodies()).toEqual([{
       expectedPersonUpdatedAt: "2026-08-16T12:00:00.000000Z",
       expectedUpdatedAt: "2026-08-16T12:00:00.000000Z",
       section: "food-preferences",
@@ -100,7 +93,7 @@ describe("GAP-029 food preferences island", () => {
       confirmMessage: "Discard?",
       root: document.body,
     });
-    const fetch = stubFetch(() => factRead([]));
+    const api = stubApi({ [anyRoute]: factRead([]) });
     await mountFacts(mountFoodPreferences);
     const user = userEvent.setup();
     await user.click(
@@ -121,7 +114,7 @@ describe("GAP-029 food preferences island", () => {
         )?.textContent,
       ).toBe("Enter food preferences.")
     );
-    expect(fetch.calls().some((call) => !call.startsWith("GET"))).toBe(false);
+    expect(api.calls().some((call) => !call.startsWith("GET"))).toBe(false);
     expect(unloadBlocked()).toBe(true);
   });
 
@@ -133,15 +126,15 @@ describe("GAP-029 food preferences island", () => {
       return frames.length;
     });
     vi.stubGlobal("cancelAnimationFrame", () => undefined);
-    stubFetch(() =>
-      factRead([
+    stubApi({
+      [anyRoute]: factRead([
         fact("food-preferences", {
           foodPreferences:
             "Tea; no shellfish; vegetarian meals preferred when sharing dinner",
         }),
-      ])
-    );
-    await mountFacts(mountFoodPreferences);
+      ]),
+    });
+    const unmount = await mountFacts(mountFoodPreferences);
     const text = block("food-preferences").querySelector<HTMLElement>(
       "[data-profile-fact-list] p",
     )!;
@@ -157,7 +150,7 @@ describe("GAP-029 food preferences island", () => {
     measure(32);
     expect(section().queryByRole("button", { name: /^More/ })).toBeNull();
     // The same text in a narrower block overflows its clamp.
-    unmountFacts();
+    unmount();
     shell(railBlock("food-preferences"));
     await mountFacts(mountFoodPreferences);
     const long = block("food-preferences").querySelector<HTMLElement>(

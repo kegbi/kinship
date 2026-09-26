@@ -1,24 +1,23 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { drawShell, element } from "../testing/render.tsx";
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-  document.body.replaceChildren();
-});
+afterEach(() => vi.unstubAllGlobals());
 
 function markup() {
-  document.body.innerHTML =
+  drawShell(
     `<form id="current"><input name="name" value="Saved"><textarea name="notes"></textarea></form>
     <button id="opener">Open another editor</button><form id="target" hidden><input name="name"></form>
-    <form id="hidden" hidden></form>`;
-  const current = document.querySelector<HTMLFormElement>("#current")!;
-  const target = document.querySelector<HTMLFormElement>("#target")!;
-  const field = current.querySelector("textarea")!;
-  const opener = document.querySelector<HTMLButtonElement>("#opener")!;
-  const hidden = document.querySelector<HTMLFormElement>("#hidden")!;
+    <form id="hidden" hidden></form>`,
+  );
+  const current = element<HTMLFormElement>("#current");
+  const target = element<HTMLFormElement>("#target");
+  const field = element<HTMLTextAreaElement>("textarea", current);
+  const opener = element<HTMLButtonElement>("#opener");
+  const hidden = element<HTMLFormElement>("#hidden");
   const close = vi.fn((form: HTMLFormElement) => {
     form.hidden = true;
     form.reset();

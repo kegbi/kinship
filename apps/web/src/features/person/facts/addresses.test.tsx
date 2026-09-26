@@ -1,30 +1,23 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
+import { waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { stubApi } from "../../../testing/api.ts";
+import { chooseOptions } from "../../../testing/render.tsx";
 import { mountAddresses } from "./addresses.tsx";
 import {
+  anyRoute,
   block,
   fact,
   factRead,
+  factSaved,
   mountFacts,
-  nextRevision,
   railBlock,
-  response,
   revision,
   shell,
-  stubFetch,
-  unmountFacts,
 } from "./facts.test-helper.ts";
 
 const labelId = "00000000-0000-4000-8000-000000000210";
-
-afterEach(() => {
-  unmountFacts();
-  cleanup();
-  vi.unstubAllGlobals();
-  document.body.innerHTML = "";
-});
 
 const section = () => within(block("addresses"));
 
@@ -32,23 +25,20 @@ describe("GAP-029 addresses island", () => {
   it("saves an address with a label and shows it over three lines", async () => {
     shell(railBlock("addresses"));
     let saved: object | undefined;
-    const fetch = stubFetch((url, init) => {
-      if (init?.method === "POST") {
+    const api = stubApi({
+      "POST /api/v1/*": ({ body }) => {
         saved = fact("addresses", {
-          ...JSON.parse(String(init.body)),
+          ...body as object,
           expectedPersonUpdatedAt: undefined,
         });
-        return response({
-          personUpdatedAt: nextRevision,
-          record: saved,
-          status: "saved",
-        });
-      }
-      return factRead(saved ? [saved] : [], {
-        options: url.searchParams.has("includeOptions") || saved
-          ? [{ id: labelId, kind: "contact-label", name: "Home" }]
-          : [],
-      });
+        return factSaved(saved);
+      },
+      "GET /api/v1/*": ({ url }) =>
+        factRead(saved ? [saved] : [], {
+          options: url.searchParams.has("includeOptions") || saved
+            ? [{ id: labelId, kind: "contact-label", name: "Home" }]
+            : [],
+        }),
     });
     await mountFacts(mountAddresses);
     const user = userEvent.setup();
@@ -76,8 +66,7 @@ describe("GAP-029 addresses island", () => {
       "Address labels",
     );
     await waitFor(() => expect(labels.options).toHaveLength(1));
-    labels.options[0]!.selected = true;
-    fireEvent.change(labels);
+    chooseOptions(labels, [labelId]);
     await user.click(section().getByLabelText("Primary address"));
     await user.click(
       section().getByRole("button", { name: "Save profile fact" }),
@@ -91,7 +80,7 @@ describe("GAP-029 addresses island", () => {
         ].map((line) => line.textContent),
       ).toEqual(["Home", "1 Analytical Engine Way", "London"])
     );
-    expect(fetch.bodies()[0]).toEqual({
+    expect(api.bodies()[0]).toEqual({
       city: "London",
       displayName: "Home",
       expectedPersonUpdatedAt: revision,
@@ -112,7 +101,7 @@ describe("GAP-029 addresses island", () => {
 
   it("refuses an address with no detail on its name field", async () => {
     shell(railBlock("addresses"));
-    const fetch = stubFetch(() => factRead([]));
+    const api = stubApi({ [anyRoute]: factRead([]) });
     await mountFacts(mountAddresses);
     const user = userEvent.setup();
     await user.click(section().getByRole("button", { name: "Add addresses" }));
@@ -125,7 +114,7 @@ describe("GAP-029 addresses island", () => {
       block("addresses").querySelector("[data-profile-fact-field-error]")
         ?.textContent,
     ).toBe("Enter address details.");
-    expect(fetch.calls().some((call) => call.startsWith("POST"))).toBe(false);
+    expect(api.calls().some((call) => call.startsWith("POST"))).toBe(false);
   });
 
   it("edits a saved address from its values and saves it as that record", async () => {
@@ -140,22 +129,13 @@ describe("GAP-029 addresses island", () => {
       region: "Greater London",
       street: "1 Analytical Engine Way",
     }, "00000000-0000-4000-8000-000000000401");
-    const fetch = stubFetch((_url, init) =>
-      init?.method === "PUT"
-        ? response({
-          personUpdatedAt: nextRevision,
-          record: home,
-          status: "saved",
-        })
-        : factRead([{
-          ...home,
-          selectedOptions: [{
-            id: labelId,
-            kind: "contact-label",
-            name: "Home",
-          }],
-        }])
-    );
+    const api = stubApi({
+      "PUT /api/v1/*": factSaved(home),
+      "GET /api/v1/*": factRead([{
+        ...home,
+        selectedOptions: [{ id: labelId, kind: "contact-label", name: "Home" }],
+      }]),
+    });
     await mountFacts(mountAddresses);
     const user = userEvent.setup();
     await user.click(
@@ -182,8 +162,8 @@ describe("GAP-029 addresses island", () => {
     await user.click(
       section().getByRole("button", { name: "Save profile fact" }),
     );
-    await waitFor(() => expect(fetch.bodies()).toHaveLength(1));
-    expect(fetch.bodies()[0]).toEqual({
+    await waitFor(() => expect(api.bodies()).toHaveLength(1));
+    expect(api.bodies()[0]).toEqual({
       city: "Cambridge",
       country: "United Kingdom",
       displayName: "Home",
@@ -201,8 +181,8 @@ describe("GAP-029 addresses island", () => {
 
   it("keeps the first address in view and collapses the rest", async () => {
     shell(railBlock("addresses"));
-    stubFetch(() =>
-      factRead([
+    stubApi({
+      [anyRoute]: factRead([
         fact("addresses", {
           city: "London",
           displayName: "Home",
@@ -215,8 +195,8 @@ describe("GAP-029 addresses island", () => {
           isPrimary: false,
           labelIds: [],
         }, "00000000-0000-4000-8000-000000000402"),
-      ])
-    );
+      ]),
+    });
     await mountFacts(mountAddresses);
     const items = block("addresses").querySelectorAll<HTMLLIElement>(
       "[data-profile-fact-list] > li",

@@ -9,6 +9,7 @@ import {
   MODULES,
   type TaskModule,
   TEST_AGGREGATE,
+  WEB_TEST_SUPPORT,
 } from "./manifest.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -400,5 +401,18 @@ Deno.test("[GAP-026] the web sets run and measure the React islands", async () =
   assert(
     !production.some((file) => file.endsWith(".test.tsx")),
     "an island suite is not production code",
+  );
+});
+
+Deno.test("[GAP-030] the web suites' shared test support is not production code", async () => {
+  const files = await repositoryTests();
+  const web = MODULES.find((module) => module.id === "web");
+  assert(web?.unit, "the web module declares a unit set");
+  const suite = `${WEB_TEST_SUPPORT}/testing.test.tsx`;
+  assert(unitTests(web, files).includes(suite), "root test runs its suite");
+  const production = await listProductionFiles(ROOT);
+  assert(
+    !production.some((file) => file.startsWith(`${WEB_TEST_SUPPORT}/`)),
+    "no coverage set measures the web test support",
   );
 });

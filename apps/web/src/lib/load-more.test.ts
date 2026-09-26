@@ -1,22 +1,19 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { drawShell } from "../testing/render.tsx";
 import { LOADING_LABEL, loadMoreControls, mountLoadMore } from "./load-more.ts";
 
+const controlHtml =
+  '<button data-load-more="files" hidden>Load more files</button>';
+
 function markup(count = 1): void {
-  document.body.innerHTML = Array.from(
-    { length: count },
-    () => '<button data-load-more="files" hidden>Load more files</button>',
-  ).join("");
+  drawShell(controlHtml.repeat(count));
 }
 
 function controls(): readonly HTMLButtonElement[] {
   return loadMoreControls("files");
 }
-
-afterEach(() => {
-  document.body.innerHTML = "";
-});
 
 describe("GAP-023 the load-more control", () => {
   it("stays hidden until a page answers with a cursor, and hides again after the last one", () => {
@@ -109,8 +106,9 @@ describe("GAP-023 the load-more control", () => {
   });
 
   it("moves focus to the list it extends when the last page hides it", async () => {
-    document.body.innerHTML =
-      '<ul id="file-list"><li>One</li></ul><button data-load-more="files" aria-controls="file-list" hidden>Load more files</button>';
+    drawShell(
+      '<ul id="file-list"><li>One</li></ul><button data-load-more="files" aria-controls="file-list" hidden>Load more files</button>',
+    );
     const control = mountLoadMore("files", () => {
       control.present(undefined);
       return Promise.resolve();
@@ -126,8 +124,9 @@ describe("GAP-023 the load-more control", () => {
   });
 
   it("leaves focus alone when the hidden control did not have it", () => {
-    document.body.innerHTML =
-      '<ul id="file-list"></ul><button data-load-more="files" aria-controls="file-list" hidden>Load more files</button><input id="elsewhere">';
+    drawShell(
+      '<ul id="file-list"></ul><button data-load-more="files" aria-controls="file-list" hidden>Load more files</button><input id="elsewhere">',
+    );
     const control = mountLoadMore("files", () => Promise.resolve());
     control.present("page-2");
     const elsewhere = document.getElementById("elsewhere")!;
@@ -151,7 +150,7 @@ describe("GAP-023 the load-more control", () => {
   });
 
   it("mounts without a control and stays silent", () => {
-    document.body.innerHTML = "";
+    drawShell("");
     const load = vi.fn();
     const control = mountLoadMore("files", load);
     control.present("page-2");

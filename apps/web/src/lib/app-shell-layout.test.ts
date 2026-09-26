@@ -26,6 +26,12 @@ vi.mock("./workspace-context.ts", async (original) => ({
   onSessionRevalidated: mocks.revalidated,
 }));
 
+import { deferred } from "../testing/api.ts";
+import {
+  preferences as memberPreferences,
+  workspaceSession,
+} from "../testing/fixtures.ts";
+import { drawShell, element } from "../testing/render.tsx";
 import { mountApplicationShell } from "./app-shell.ts";
 import { mountPreferenceSettings } from "./settings.ts";
 
@@ -33,51 +39,33 @@ function ready(
   workspaceId = "first",
   memberId = "member",
 ): WorkspaceSessionResolution {
+  const workspace = { id: workspaceId, name: workspaceId };
   return {
     status: "ready",
-    session: {
-      status: "authenticated",
-      principal: { userId: "user" },
-      requiredLegalDocuments: [],
-      workspace: { id: workspaceId, name: workspaceId },
+    session: workspaceSession({
       member: { id: memberId, role: "owner" },
-      workspaces: [{ id: workspaceId, name: workspaceId }],
-    },
+      workspace,
+      workspaces: [workspace],
+    }),
   };
 }
 
 function preferences(fluidLayout: boolean) {
   return {
     ok: true,
-    value: {
-      status: "ready",
-      preferences: {
-        fluidLayout,
-        contactNameOrder: "given_family_nickname",
-        contactSortOrder: "given_name_asc",
-        locale: "en",
-        temperatureScale: "celsius",
-        measurementSystem: "metric",
-        effectiveTimezone: "UTC",
-      },
-    },
+    value: { status: "ready", preferences: memberPreferences({ fluidLayout }) },
   };
 }
 
 function markup(): HTMLElement {
-  document.body.innerHTML =
-    `<section id="access-state"></section><div id="protected-shell" hidden><select id="workspace-switcher"></select><button id="member-sign-out"></button><div id="workspace-switcher-container"></div></div>`;
-  return document.querySelector<HTMLElement>("#protected-shell")!;
+  drawShell(
+    `<section id="access-state"></section><div id="protected-shell" hidden><select id="workspace-switcher"></select><button id="member-sign-out"></button><div id="workspace-switcher-container"></div></div>`,
+  );
+  return element("#protected-shell");
 }
 
 function revalidate(resolution: WorkspaceSessionResolution): void {
   mocks.revalidated.mock.calls[0]![0](resolution);
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => resolve = done);
-  return { promise, resolve };
 }
 
 beforeEach(() => {
@@ -88,10 +76,7 @@ beforeEach(() => {
   document.body.dataset.pageId = "settings.preferences";
 });
 
-afterEach(() => {
-  document.body.innerHTML = "";
-  sessionStorage.clear();
-});
+afterEach(() => sessionStorage.clear());
 
 describe("APR-010 membership application width", () => {
   it.each([true, false])(

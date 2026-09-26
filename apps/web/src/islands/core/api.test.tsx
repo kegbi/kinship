@@ -1,29 +1,11 @@
 // @vitest-environment happy-dom
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import type {
-  ApiResult,
-  ProblemDetails,
-} from "../../../../../packages/contracts/generated/auth-client.ts";
+import type { ApiResult } from "../../../../../packages/contracts/generated/auth-client.ts";
+import { deferred, problemBody } from "../../testing/api.ts";
 import { type ApiCall, settle, useApi, useLatestRequest } from "./api.ts";
 
-const problem: ProblemDetails = {
-  code: "gift_conflict",
-  detail: "That gift changed.",
-  status: 409,
-  title: "Conflict",
-  type: "https://kinship.test/problems/gift_conflict",
-};
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  return { promise, reject, resolve };
-}
+const problem = problemBody(409);
 
 describe("GAP-026 settle", () => {
   const signal = new AbortController().signal;
