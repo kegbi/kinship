@@ -2321,7 +2321,66 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     photos.scrollIntoView = glide;
     document.querySelector<HTMLAnchorElement>('[data-section-link="photos"]')
       ?.click();
-    expect(glide).toHaveBeenCalledWith({ block: "start" });
+    expect(glide).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+  });
+
+  it("REL-046 glides a section the reader picks from script, and jumps when they prefer reduced motion", async () => {
+    // The document no longer scrolls smoothly (REL-046), so the one glide the
+    // workspace keeps asks for it, and honours a reduced-motion preference.
+    for (const reduced of [false, true]) {
+      markup();
+      vi.stubGlobal("matchMedia", (query: string) => ({
+        addEventListener: () => undefined,
+        matches: reduced && query === "(prefers-reduced-motion: reduce)",
+        media: query,
+        removeEventListener: () => undefined,
+      }));
+      stubReadyProfile();
+      await mountPeopleProfile();
+      const photos = document.querySelector<HTMLElement>(
+        "#profile-section-photos",
+      )!;
+      const glide = vi.fn();
+      photos.scrollIntoView = glide;
+      document.querySelector<HTMLAnchorElement>('[data-section-link="photos"]')
+        ?.click();
+      expect(glide).toHaveBeenCalledWith({
+        behavior: reduced ? "instant" : "smooth",
+        block: "start",
+      });
+    }
+  });
+
+  it("REL-046 marks the workspace settled only once its mount and its view record have finished", async () => {
+    markup();
+    let idle: IdleRequestCallback | undefined;
+    vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) => {
+      idle = callback;
+      return 1;
+    });
+    let recordView!: (answer: Response) => void;
+    stubReadyProfile().mockImplementation(
+      (resource: string | URL | Request, init?: RequestInit) =>
+        init?.method === "POST" &&
+          String(resource).endsWith(`/${personId}/view`)
+          ? new Promise<Response>((resolve) => recordView = resolve)
+          : Promise.resolve(undefined),
+    );
+    const ready = document.querySelector<HTMLElement>("#person-profile-ready")!;
+
+    await mountPeopleProfile();
+
+    // Every section has answered, but the page still owes its view record: a
+    // navigation now would cancel a request in flight (Linux WebKit then
+    // stalled the next page's requests, REL-046).
+    expect(ready.hasAttribute("data-workspace-settled")).toBe(false);
+    idle?.({ didTimeout: false, timeRemaining: () => 50 });
+    await Promise.resolve();
+    expect(ready.hasAttribute("data-workspace-settled")).toBe(false);
+    recordView(response({ status: "recorded" }));
+    await vi.waitFor(() =>
+      expect(ready.hasAttribute("data-workspace-settled")).toBe(true)
+    );
   });
 
   it("REL-045 brings back a deep-linked section that drifted out of view, without animating", async () => {
