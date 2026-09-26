@@ -483,6 +483,33 @@ Playwright test carrying its stable flow ID.
       step: find what makes these cases slow (real timers, repeated full
       re-renders, or cold imports) and make them fast rather than raising the
       timeout.
+- [ ] **REL-048 — Today's attention queue can stay loading after its read
+      answered.** Main CI run `36271395679` on `a88429c` (GAP-041, which changed
+      no web code) failed `app-006c.spec.ts:484` (`[TODAY-001]`) on Chromium
+      only: after the spec's one-time 503 for `/today/favorite-notes` and
+      `goto("/app")`, "Needs attention" and "Upcoming" stayed on their loading
+      status and the `Complete` control for "Plan Ada's call" never appeared.
+      The trace shows `GET /today/attention` answered 200 in 173 ms, but the
+      member-preferences read `mountTodayAttention` (`lib/tasks.ts`) sends after
+      it was never issued, and no page error was recorded; the same page's
+      reconnect, favorite-notes, and recent-activity regions rendered. The spec
+      passed on Firefox and WebKit in the same run, on the GAP-041 PR run, in a
+      full local Chromium run, and 10 of 10 local Chromium repeats on `a88429c`.
+      The module keeps several operation ids, region owners, and cross-mount
+      maps for one surface, the pattern `AGENTS.md` warns against; GAP-033
+      replaces it with one island and one read slot, and its candidate must
+      include a test that an answered attention read always settles the queue.
+      This session could not rerun the job (the integration token is refused
+      rerun and dispatch), so the next push to `main` is the rerun.
+- [ ] **REL-049 — "Set a stay-in-touch cadence" never opens the cadence
+      editor.** Found reviewing GAP-031: the first-run action in
+      `lib/people-profile.ts` targets the cadence field inside
+      `[data-cadence-form]`, which `StayInTouchSection.astro` draws `hidden` and
+      nothing un-hides before the action runs, so the action returns at
+      `control.closest("[hidden]")` and focuses nothing, before and after
+      GAP-031. Fix by aiming the action at the block's add control
+      (`[data-cadence-add]`) so it opens the editor, with a focused test and the
+      `app-006b` flow unchanged.
 
 ## Just-In-Time Technical Capabilities
 
