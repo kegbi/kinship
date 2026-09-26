@@ -1,0 +1,23 @@
+---
+/** The life-events card, drawn before its owner hydrates it. */
+import PersonSection from "./PersonSection.astro";
+import type { PersonSectionEntry } from "../../features/person/sections.ts";
+import { badgeVariants, buttonVariants } from "../ui/variants.ts";
+
+interface Props {
+  readonly section: PersonSectionEntry;
+}
+
+const { section } = Astro.props;
+---
+
+<PersonSection
+  section={section}
+  class="life-events-card"
+  attributes={{ "data-person-life-events": "" }}
+  state={{ "data-life-event-state": "" }}
+>
+  <span slot="badge" data-life-event-badge class={badgeVariants({ variant: "status" })}>Loading</span>
+  <button data-life-event-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry life events</button>
+  <ol data-life-event-list class="life-event-list" aria-label="Saved life events" hidden></ol>
+</PersonSection>

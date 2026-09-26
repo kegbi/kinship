@@ -1,0 +1,80 @@
+---
+/** The important-dates rail block `lib/important-dates.ts` owns (GAP-031). */
+import PersonSection from "./PersonSection.astro";
+import type { PersonSectionEntry } from "../../features/person/sections.ts";
+import { buttonVariants, formActionsVariants } from "../ui/variants.ts";
+
+interface Props {
+  readonly section: PersonSectionEntry;
+}
+
+const { section } = Astro.props;
+---
+
+<PersonSection section={section} state={{ id: "important-dates-state" }}>
+  <button slot="action" id="important-date-add" class={buttonVariants({ className: "profile-rail-add" })} type="button" aria-label="Add important date" hidden><span aria-hidden="true">+</span></button>
+  <ul id="important-dates-list" class="important-dates-list" aria-label="Saved important dates"></ul>
+  <form method="post" id="important-date-form" class="important-date-form" hidden novalidate>
+    <input id="important-date-version" name="expectedUpdatedAt" type="hidden" />
+    <div class="form-grid">
+      <label>
+        Date type
+        <select id="important-date-kind" name="kind">
+          <option value="birthday">Birthday</option>
+          <option value="first_met">First meeting</option>
+          <option value="deceased">Date of death</option>
+          <option value="custom">Custom</option>
+        </select>
+      </label>
+      <label id="important-date-label-row" hidden>
+        Custom label
+        <input id="important-date-label" name="label" maxlength="200" />
+      </label>
+      <label>
+        Known components
+        <select id="important-date-precision" name="precision">
+          <option value="full">Year, month, and day</option>
+          <option value="year_month">Year and month</option>
+          <option value="month_day">Month and day; year unknown</option>
+          <option value="year">Year only</option>
+          <option value="month">Month only</option>
+          <option value="day">Day only</option>
+          <option value="unknown">Date unknown</option>
+        </select>
+      </label>
+      <label data-date-component="year">
+        Year
+        <input id="important-date-year" name="year" type="number" min="1" max="9999" inputmode="numeric" />
+      </label>
+      <label data-date-component="month">
+        Month
+        <select id="important-date-month" name="month">
+          <option value="">Select month</option>
+          {Array.from({ length: 12 }, (_, index) => <option value={index + 1}>{index + 1}</option>)}
+        </select>
+      </label>
+      <label data-date-component="day">
+        Day
+        <input id="important-date-day" name="day" type="number" min="1" max="31" inputmode="numeric" />
+      </label>
+    </div>
+    <label id="important-date-approximate-row" class="checkbox-row">
+      <input id="important-date-approximate" name="isYearApproximate" type="checkbox" />
+      The stated year is approximate
+    </label>
+    <label class="checkbox-row">
+      <input id="important-date-age" name="isAgeBased" type="checkbox" />
+      Show age when the year is known
+    </label>
+    <label>
+      Notes (optional)
+      <textarea id="important-date-notes" name="notes" maxlength="2000" rows="3"></textarea>
+    </label>
+    <p class="form-hint">Annual reminders are scheduled only when both month and day are known. Missing components are never invented.</p>
+    <p id="important-date-form-state" class="section-state" role="alert" tabindex="-1"></p>
+    <div class={formActionsVariants()} data-form-actions>
+      <button type="submit" class={buttonVariants()}>Save date</button>
+      <button id="important-date-cancel" class={buttonVariants({ variant: "outline" })} type="button">Cancel</button>
+    </div>
+  </form>
+</PersonSection>

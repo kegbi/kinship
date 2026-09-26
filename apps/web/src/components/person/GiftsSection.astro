@@ -1,0 +1,28 @@
+---
+/**
+ * The gifts or debts card. The gifts island (GAP-026) renders the rest of
+ * both cards, their editors and paging included, when the Things zone
+ * activates.
+ */
+import PersonSection from "./PersonSection.astro";
+import type { PersonSectionEntry } from "../../features/person/sections.ts";
+import { badgeVariants, buttonVariants } from "../ui/variants.ts";
+
+interface Props {
+  readonly section: PersonSectionEntry;
+}
+
+const { section } = Astro.props;
+const gifts = section.id === "gifts";
+---
+
+<PersonSection
+  section={section}
+  class="person-files-card"
+  attributes={{ "data-person-gifts": gifts ? "gift" : "debt" }}
+  state={{ "data-gift-state": "" }}
+>
+  <span slot="badge" data-gift-badge class={badgeVariants({ variant: "status" })}>Loading</span>
+  <button slot="action" data-gift-add class={buttonVariants({ className: "profile-section-cta" })} type="button" hidden>Add {gifts ? "gift" : "debt"}</button>
+  <ul id={`${section.id}-list`} data-gift-list class="person-file-list" aria-label={`Saved ${section.title.toLowerCase()}`}></ul>
+</PersonSection>

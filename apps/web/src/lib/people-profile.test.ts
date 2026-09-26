@@ -6,7 +6,7 @@ import { mountPeopleProfile } from "./people-profile.ts";
 import { clearToasts } from "./toasts.ts";
 
 import { getMemberPreferences } from "../../../../packages/contracts/generated/auth-client.ts";
-import { segmentVariants } from "../components/ui/variants.ts";
+import { badgeVariants, segmentVariants } from "../components/ui/variants.ts";
 
 const segment = segmentVariants();
 
@@ -68,70 +68,38 @@ function markup(path = `/app/people/${personId}`): void {
     <section id="person-profile-state" tabindex="-1" hidden></section>
     <section id="person-profile-ready" aria-busy="true">
       <header class="person-profile-hero">
-        <nav aria-label="Breadcrumb">
-          <a href="/app/people">People</a><span aria-hidden="true">/</span>
-          <span data-person-breadcrumb-name></span>
-        </nav>
-        <div id="person-profile-avatar"></div>
-        <div>
+        <div class="contents" data-person-hero>
           <h1 id="person-profile-name" tabindex="-1"><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span><span class="sr-only">Loading person…</span></h1>
-          <p id="person-profile-nickname" hidden></p>
-          <div class="person-profile-badges" role="group" aria-label="Person states">
-            <p class="state-badge calm">Identity saved</p>
-            <p id="person-profile-favorite" hidden></p>
-            <p id="person-profile-self" hidden></p>
-            <p id="person-profile-deceased" hidden></p>
-            <p id="person-profile-archived" hidden></p>
-            <p id="person-profile-partial" hidden></p>
-          </div>
-          <p data-profile-description></p>
         </div>
         <div data-person-profile-actions role="group" aria-label="Person actions">
           <button data-person-interaction-capture data-quick-capture data-interaction-intended-kind="activity" type="button">Log interaction</button>
           <button data-person-interaction-capture data-quick-capture data-interaction-intended-kind="note" type="button">Add note</button>
-          <div role="group" aria-label="Person menu">
-            <button id="person-menu-toggle" type="button" disabled aria-label="Open person menu" aria-expanded="false" aria-controls="person-menu"><span aria-hidden="true">…</span></button>
-            <div id="person-menu" hidden>
-              <button id="person-edit-open" type="button" disabled>Edit person</button>
-              <a id="person-export-vcard" hidden>Export vCard</a>
-              <button id="person-archive" type="button" disabled>Archive person</button>
-              <button id="person-audit-history" type="button">Audit history</button>
-              <button id="person-delete-open" type="button" disabled>Delete person</button>
+          <div class="contents" data-person-menu-slot>
+            <div role="group" aria-label="Person menu">
+              <button id="person-menu-toggle" type="button" disabled aria-label="Open person menu" aria-expanded="false" aria-controls="person-menu"><span aria-hidden="true">…</span></button>
+              <div id="person-menu" hidden>
+                <button id="person-edit-open" type="button" disabled>Edit person</button>
+                <button id="person-archive" type="button" disabled>Archive person</button>
+                <button id="person-audit-history" type="button" disabled>Audit history</button>
+                <button id="person-delete-open" type="button" disabled>Delete person</button>
+              </div>
             </div>
           </div>
         </div>
-        <dl data-person-vital-stats>
-          <div><dt>Age or birthday</dt><dd><a href="?section=important-dates" data-person-vital-value="birthday">Loading…</a></dd></div>
-          <div><dt>Last contact</dt><dd><a href="?section=activities" data-profile-last-contact>Loading…</a></dd></div>
-          <div><dt>Next reminder</dt><dd><a href="?section=reminders" data-person-vital-value="next-reminder">Loading…</a></dd></div>
-          <div><dt>Stay in touch</dt><dd><a href="?section=stay-in-touch"><span id="person-profile-due-state"></span></a></dd></div>
-          <div><dt>Work</dt><dd><a href="?section=work" data-person-vital-value="work">Loading…</a></dd></div>
-          <div><dt>First met</dt><dd><a href="?section=first-meeting" data-person-vital-value="first-meeting">Loading…</a></dd></div>
-        </dl>
+        <div class="contents" data-person-vitals-slot><dl data-person-vital-stats></dl></div>
         <div data-profile-fact-section="tags">
-          <ul id="person-profile-tags"></ul>
+          <span class="contents" data-person-tags-slot><ul id="person-profile-tags"></ul></span>
         </div>
-        <p id="person-lifecycle-status"></p>
-        <form id="person-edit-form" data-profile-section="identity-summary" hidden>
-          <span data-profile-field="givenName"></span>
-          <span data-profile-field="middleName"></span>
-          <span data-profile-field="familyName"></span>
-          <span data-profile-field="nickname"></span>
-          <span data-profile-field="gender"></span>
-          <input name="givenName"><input name="middleName"><input name="familyName"><input name="nickname"><input name="isPartial" type="checkbox">
-          <button type="submit">Save person</button><button id="person-edit-cancel" type="button">Cancel edit</button>
-        </form>
-        <dialog id="person-delete-dialog">
-          <form id="person-delete-form">
-            <p id="person-delete-impact"></p><input id="person-delete-confirmation">
-            <button type="submit">Confirm delete</button><button id="person-delete-cancel" type="button">Cancel delete</button>
-          </form>
-        </dialog>
+        <div class="contents" data-person-lifecycle-slot>
+          <p id="person-lifecycle-status"></p>
+          <form id="person-edit-form" data-profile-section="identity-summary" hidden></form>
+        </div>
       </header>
-      <aside data-person-archived-banner hidden>
-        <p>This person is archived. Editing is disabled.</p>
-        <button id="person-restore" type="button" disabled>Restore person</button>
-      </aside>
+      <div class="contents" data-person-archived-slot>
+        <aside data-person-archived-banner hidden>
+          <button id="person-restore" type="button" disabled>Restore person</button>
+        </aside>
+      </div>
       <nav id="person-profile-sections">
         <ul>
           <li><a href="?section=identity-summary" data-section-link="identity-summary">Identity summary</a></li>
@@ -299,8 +267,9 @@ function summaryRailMarkup(): void {
   document.querySelector("#person-profile-ready")?.insertAdjacentHTML(
     "beforeend",
     `
+      <header class="profile-facts-heading"><h2 id="profile-facts-heading">Profile facts</h2></header>
       <section data-profile-section="contact-methods" data-profile-fact-section="contact-methods" data-section-state="loading">
-        <span data-profile-rail-count hidden></span>
+        <span data-rail-count-slot><span data-profile-rail-count hidden></span></span>
         <p data-profile-fact-state></p><ul data-profile-fact-list></ul>
         <button data-profile-fact-add data-profile-fact-add-icon aria-label="Add contact methods"><span aria-hidden="true">+</span></button>
         <form data-profile-fact-form></form>
@@ -314,7 +283,7 @@ function summaryRailMarkup(): void {
         "food-preferences",
         "first-meeting",
       ].map((id) =>
-        `<section data-profile-section="${id}"><span data-profile-rail-count hidden></span></section>`
+        `<section data-profile-section="${id}"><span data-rail-count-slot><span data-profile-rail-count hidden></span></span></section>`
       ).join("")
     }`,
   );
@@ -723,7 +692,14 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
     zoneObserver.activate("admin");
     await vi.waitFor(() => expect(count(`/${personId}/audit`)).toBe(1));
-    expect(fetchMock.mock.calls.map(([resource]) => String(resource))).toEqual([
+    const requests = fetchMock.mock.calls.map(([resource]) => String(resource));
+    // The Things zone's two owners load their code and fetch in parallel, so
+    // their order is not fixed (GAP-028); every other request is.
+    expect([
+      ...requests.slice(0, 3),
+      ...requests.slice(3, 5).sort(),
+      ...requests.slice(5),
+    ]).toEqual([
       "/api/v1/session",
       `/api/v1/people/${personId}?include=summary`,
       `/api/v1/people/${personId}/view`,
@@ -916,9 +892,11 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         ),
       ).toBe(true)
     );
+    // The hero's lifecycle status line is a live region from the start.
     const states = [...document.querySelectorAll<HTMLElement>(
-      ".section-state",
+      ".section-state:not(#person-lifecycle-status)",
     )];
+    expect(states.length).toBeGreaterThan(0);
     expect(states.every((state) => !state.hasAttribute("role"))).toBe(true);
 
     releaseFiles(response({ files: [], status: "ready" }));
@@ -993,6 +971,12 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         )?.textContent,
       ).toBe("2")
     );
+    // The rail island (GAP-028) owns the counts, seeded from the summary.
+    expect(
+      document.querySelector(
+        '.profile-facts-heading[data-island="person-rail"][data-island-ready]',
+      ),
+    ).not.toBeNull();
     expect(
       document.querySelector<HTMLElement>(
         '[data-profile-section="pets"]',
@@ -1015,11 +999,14 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       status: "ready",
     }));
     await mounting;
-    expect(
-      document.querySelector(
-        '[data-profile-section="contact-methods"] [data-profile-rail-count]',
-      )?.textContent,
-    ).toBe("0");
+    // The rail island renders the refreshed count on its next commit.
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector(
+          '[data-profile-section="contact-methods"] [data-profile-rail-count]',
+        )?.textContent,
+      ).toBe("0")
+    );
     expect(
       document.querySelector<HTMLElement>(
         '[data-profile-section="contact-methods"]',
@@ -1075,7 +1062,9 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(badges?.getAttribute("aria-label")).toBe("Person states");
     const identitySaved = [...badges!.querySelectorAll<HTMLElement>("p")]
       .find((badge) => badge.textContent === "Identity saved");
-    expect(identitySaved?.className).toBe("state-badge calm");
+    expect(identitySaved?.className).toBe(
+      badgeVariants({ variant: "secondary" }),
+    );
     expect(identitySaved?.hidden).toBe(false);
     expect(
       document.querySelector('[data-person-vital-value="birthday"]')
@@ -1793,7 +1782,9 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     ).toBe("true");
   });
 
-  it("UXD-002A2 toggles and closes the person menu and reveals Admin from Audit history", async () => {
+  it("UXD-002A2 reveals Admin and focuses the audit summary from the hero's Audit history", async () => {
+    // The hero island draws and toggles the menu (islands/person-hero); the
+    // page's navigation answers its Audit history request.
     markup();
     stubReadyProfile();
 
@@ -1803,34 +1794,13 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       "#person-menu-toggle",
     )!;
     const menu = document.querySelector<HTMLElement>("#person-menu")!;
-    expect(menu.hidden).toBe(true);
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-
     toggle.click();
-    expect(menu.hidden).toBe(false);
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    toggle.click();
-    expect(menu.hidden).toBe(true);
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-
-    toggle.click();
-    document.querySelector<HTMLButtonElement>("#person-edit-open")?.click();
-    expect(menu.hidden).toBe(true);
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(document.querySelector<HTMLFormElement>("#person-edit-form")?.hidden)
-      .toBe(false);
-    expect(document.activeElement).toBe(
-      document.querySelector<HTMLInputElement>(
-        '#person-edit-form input[name="givenName"]',
-      ),
-    );
-
-    toggle.click();
+    await vi.waitFor(() => expect(menu.hidden).toBe(false));
     const auditHistory = document.querySelector<HTMLButtonElement>(
       "#person-audit-history",
     )!;
     auditHistory.click();
-    expect(menu.hidden).toBe(true);
+    await vi.waitFor(() => expect(menu.hidden).toBe(true));
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(new URLSearchParams(location.search).get("section")).toBe(
       "audit-summary",
@@ -1844,7 +1814,20 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         .filter((zone) => zone.dataset.zone !== "admin")
         .every((zone) => zone.hidden),
     ).toBe(true);
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-profile-section="audit-summary"]'),
+    );
     expect(auditHistory.closest("a")).toBeNull();
+    // A request the navigation cannot place changes nothing.
+    document.dispatchEvent(
+      new CustomEvent("person-section-requested", {
+        detail: { sectionId: "notes", view: "everything" },
+      }),
+    );
+    document.dispatchEvent(new CustomEvent("person-section-requested"));
+    expect(new URLSearchParams(location.search).get("section")).toBe(
+      "audit-summary",
+    );
   });
 
   it("UXD-002C does not write history while popstate restores a section", async () => {
@@ -2444,6 +2427,43 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(notice?.hidden).toBe(true);
   });
 
+  it("GAP-028 treats a section its owner reports turned off as hidden", async () => {
+    markup();
+    document.querySelector("#person-profile-sections ul")?.insertAdjacentHTML(
+      "beforeend",
+      '<li><a href="?section=life-events" data-section-link="life-events">Life events</a></li>',
+    );
+    document.querySelector('[data-zone="timeline"]')?.insertAdjacentHTML(
+      "beforeend",
+      '<section data-profile-section="life-events" tabindex="-1"></section>',
+    );
+    stubReadyProfile();
+
+    await mountPeopleProfile();
+    const link = document.querySelector<HTMLAnchorElement>(
+      '[data-section-link="life-events"]',
+    )!;
+    expect(link.closest("li")?.hidden).toBe(false);
+    document.dispatchEvent(
+      new CustomEvent("person-section-hidden", {
+        detail: { sectionId: "life-events" },
+      }),
+    );
+    // Another report without a section id changes nothing.
+    document.dispatchEvent(new CustomEvent("person-section-hidden"));
+    expect(link.closest("li")?.hidden).toBe(true);
+
+    history.pushState({}, "", `?section=life-events`);
+    globalThis.dispatchEvent(new PopStateEvent("popstate"));
+    const notice = document.querySelector<HTMLElement>(
+      "#person-profile-section-notice",
+    );
+    expect(notice?.hidden).toBe(false);
+    expect(notice?.textContent).toContain(
+      "Life events — turned off for this workspace.",
+    );
+  });
+
   it("renders explicit not-found, forbidden, and unavailable states", async () => {
     for (
       const state of [
@@ -2499,7 +2519,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     markup(`/app/people/${personId}?section=identity-summary`);
     document.querySelector("#person-profile-ready")?.insertAdjacentHTML(
       "beforeend",
-      '<section data-profile-section="pets"><span data-profile-rail-count hidden></span></section>',
+      '<header class="profile-facts-heading"></header><section data-profile-section="pets"><span data-rail-count-slot><span data-profile-rail-count hidden></span></span></section>',
     );
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response(session))
@@ -2561,219 +2581,12 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     ).toBe("true");
   });
 
-  it("APR-001 explicitly discards the identity draft on Cancel", async () => {
+  it("REL-039 keeps the person menu and lifecycle actions inert until the hero island wires them", async () => {
     markup();
-    stubReadyProfile();
-    await mountPeopleProfile();
-    document.querySelector<HTMLButtonElement>("#person-edit-open")!.click();
-    const form = document.querySelector<HTMLFormElement>("#person-edit-form")!;
-    const field = form.elements.namedItem("givenName") as HTMLInputElement;
-    const originalName = field.value;
-    field.value = "Discard this draft";
-    field.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(
-      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
-    ).toBe(false);
-    document.querySelector<HTMLButtonElement>("#person-edit-cancel")!.click();
-    await Promise.resolve();
-    expect(form.hidden).toBe(true);
-    expect(field.value).toBe(originalName);
-    expect(
-      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
-    ).toBe(true);
-    document.querySelector<HTMLButtonElement>("#person-edit-open")!.click();
-    field.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(
-      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
-    ).toBe(true);
-  });
-
-  it("[PEOPLE-004] edits, archives, restores, and cancels explicit deletion", async () => {
-    markup();
-    const initial = {
-      dueInformation: { detail: "No due information.", status: "unavailable" },
-      person: {
-        familyName: "Lovelace",
-        givenName: "Ada",
-        id: personId,
-        isDeceased: false,
-        isPartial: false,
-        isSelf: false,
-        isStarred: false,
-        tagCount: 0,
-        tags: [],
-        updatedAt: "2026-08-15T08:00:00.000Z",
-      },
-      status: "ready",
-    };
-    const edited = {
-      familyName: "Byron",
-      givenName: "Ada",
-      id: personId,
-      isPartial: false,
-      lifecycle: "active",
-      updatedAt: "2026-08-15T09:00:00.000Z",
-    };
-    const archived = {
-      ...edited,
-      lifecycle: "archived",
-      updatedAt: "2026-08-15T10:00:00.000Z",
-    };
-    const restored = {
-      ...edited,
-      updatedAt: "2026-08-15T11:00:00.000Z",
-    };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response(session))
-      .mockResolvedValueOnce(response(initial))
-      .mockResolvedValueOnce(response({ status: "recorded" }))
-      .mockResolvedValueOnce(response({ person: edited, status: "updated" }))
-      .mockResolvedValueOnce(response({ person: archived, status: "archived" }))
-      .mockResolvedValueOnce(response({ person: restored, status: "restored" }))
-      .mockResolvedValueOnce(response({
-        impact: {
-          confirmation: "DELETE Ada Byron",
-          dependentRecordPolicy: "retained",
-          person: restored,
-        },
-        status: "ready",
-      }));
-    vi.stubGlobal("fetch", fetchMock);
-    const lifecycleEvents: unknown[] = [];
-    const recordLifecycle = (event: Event) =>
-      lifecycleEvents.push((event as CustomEvent).detail);
-    document.addEventListener("person-lifecycle-changed", recordLifecycle);
-    await mountPeopleProfile();
-
-    document.querySelector<HTMLButtonElement>("#person-menu-toggle")?.click();
-    document.querySelector<HTMLButtonElement>("#person-edit-open")?.click();
-    const editForm = document.querySelector<HTMLFormElement>(
-      "#person-edit-form",
-    )!;
-    (editForm.elements.namedItem("familyName") as HTMLInputElement).value =
-      "Byron";
-    editForm.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(
-      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
-    ).toBe(false);
-    editForm.requestSubmit();
-    await vi.waitFor(() =>
-      expect(document.querySelector("#person-profile-name")?.textContent)
-        .toBe("Ada Byron")
-    );
-    expect(fetchMock.mock.calls[3]?.[1]?.method).toBe("PATCH");
-    expect(
-      globalThis.dispatchEvent(new Event("beforeunload", { cancelable: true })),
-    ).toBe(true);
-
-    const factRevision = "2026-08-15T09:00:00.000001Z";
-    document.dispatchEvent(
-      new CustomEvent("person-revision-changed", {
-        detail: { personUpdatedAt: factRevision },
-      }),
-    );
-    document.querySelector<HTMLButtonElement>("#person-menu-toggle")?.click();
-    document.querySelector<HTMLButtonElement>("#person-archive")?.click();
-    await vi.waitFor(() =>
-      expect(document.querySelector<HTMLElement>("#person-restore")?.hidden)
-        .toBe(false)
-    );
-    expect(
-      document.querySelector<HTMLElement>("[data-person-archived-banner]")
-        ?.hidden,
-    ).toBe(false);
-    expect(JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body))).toEqual({
-      expectedUpdatedAt: factRevision,
-    });
-    expect(document.querySelector<HTMLElement>("#person-edit-open")?.hidden)
-      .toBe(true);
-    document.querySelector<HTMLButtonElement>("#person-menu-toggle")?.click();
-    expect(document.querySelector<HTMLElement>("#person-menu")?.hidden).toBe(
-      false,
-    );
-    expect(document.querySelector<HTMLElement>("#person-archive")?.hidden)
-      .toBe(true);
-    const controlsNamed = (name: string) =>
-      [...document.querySelectorAll<HTMLElement>("button, a")].filter(
-        (control) => control.textContent?.trim() === name,
-      );
-    for (
-      const name of [
-        "Edit person",
-        "Archive person",
-        "Restore person",
-        "Delete person",
-      ]
-    ) {
-      expect(controlsNamed(name)).toHaveLength(1);
-    }
-    expect(document.querySelector("#person-menu #person-restore")).toBeNull();
-    expect(lifecycleEvents[0]).toEqual({
-      archived: true,
-      personId,
-      personUpdatedAt: archived.updatedAt,
-      state: "archived",
-    });
-    expect(document.querySelector("#app-toasts")?.textContent).toContain(
-      "Person archived. They now appear in Archived people.",
-    );
-    const undo = document.querySelector<HTMLButtonElement>(
-      "#app-toasts .app-toast-action",
-    )!;
-    expect(undo.textContent).toBe("Undo");
-    undo.click();
-    await vi.waitFor(() =>
-      expect(document.querySelector<HTMLElement>("#person-edit-open")?.hidden)
-        .toBe(false)
-    );
-    expect(fetchMock.mock.calls[5]?.[0]).toBe(
-      `/api/v1/people/${personId}/restore`,
-    );
-    expect(
-      document.querySelector<HTMLElement>("[data-person-archived-banner]")
-        ?.hidden,
-    ).toBe(true);
-    expect(document.querySelector("#app-toasts")?.textContent).toContain(
-      "Person restored. They now appear in People.",
-    );
-    expect(document.querySelector("#app-toasts .app-toast-action")).toBeNull();
-    expect(lifecycleEvents[1]).toEqual({
-      archived: false,
-      personId,
-      personUpdatedAt: restored.updatedAt,
-      state: "active",
-    });
-    document.removeEventListener("person-lifecycle-changed", recordLifecycle);
-
-    document.querySelector<HTMLButtonElement>("#person-delete-open")?.click();
-    await vi.waitFor(() =>
-      expect(document.querySelector("#person-delete-impact")?.textContent)
-        .toContain("Related records are retained")
-    );
-    document.querySelector<HTMLButtonElement>("#person-delete-cancel")?.click();
-    expect(
-      document.querySelector<HTMLDialogElement>("#person-delete-dialog")?.open,
-    )
-      .toBe(false);
-    expect(document.activeElement).toBe(
-      document.querySelector("#person-delete-open"),
-    );
-    expect(document.querySelector<HTMLElement>("#person-menu")?.hidden).toBe(
-      false,
-    );
-    expect(document.querySelector("#person-lifecycle-status")?.textContent)
-      .toContain("cancelled");
-  });
-
-  it("REL-039 keeps the person menu and lifecycle actions inert until their handlers are attached", async () => {
-    markup();
-    const toggle = document.querySelector<HTMLButtonElement>(
+    const staticToggle = document.querySelector<HTMLButtonElement>(
       "#person-menu-toggle",
     )!;
-    const deleteOpen = document.querySelector<HTMLButtonElement>(
-      "#person-delete-open",
-    )!;
-    const lifecycleActions = [
+    const staticActions = [
       "#person-edit-open",
       "#person-archive",
       "#person-delete-open",
@@ -2791,11 +2604,12 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const mounting = mountPeopleProfile();
-    expect(toggle.disabled).toBe(false);
-    toggle.click();
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(lifecycleActions.map((action) => action.disabled)).toEqual([
+    // A click before the island is wired is refused visibly, not lost.
+    expect(staticToggle.disabled).toBe(true);
+    staticToggle.click();
+    expect(staticToggle.getAttribute("aria-expanded")).toBe("false");
+    expect(staticActions.map((action) => action.disabled)).toEqual([
       true,
       true,
       true,
@@ -2804,16 +2618,24 @@ describe("PEOPLE-001 canonical person identity shell", () => {
 
     releaseProfile(response(zeroProfile()));
     await mounting;
-    expect(lifecycleActions.map((action) => action.disabled)).toEqual([
-      false,
-      false,
-      false,
-      false,
-    ]);
-    deleteOpen.click();
+    const hero = document.querySelector<HTMLElement>("[data-person-hero]")!;
+    expect(hero.dataset.island).toBe("person-hero");
+    expect(hero.hasAttribute("data-island-ready")).toBe(true);
+    const toggle = document.querySelector<HTMLButtonElement>(
+      "#person-menu-toggle",
+    )!;
+    expect(toggle).not.toBe(staticToggle);
+    expect(toggle.disabled).toBe(false);
     expect(
-      document.querySelector<HTMLDialogElement>("#person-delete-dialog")!.open,
-    ).toBe(true);
+      [
+        "#person-edit-open",
+        "#person-archive",
+        "#person-delete-open",
+        "#person-restore",
+      ].map((selector) =>
+        document.querySelector<HTMLButtonElement>(selector)!.disabled
+      ),
+    ).toEqual([false, false, false, false]);
   });
 
   it("REL-039 leaves lifecycle actions inert when the person cannot load", async () => {
@@ -2829,89 +2651,6 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       document.querySelector<HTMLButtonElement>("#person-delete-open")!
         .disabled,
     ).toBe(true);
-  });
-
-  it("[PEOPLE-004] opens a native modal and Escape cancels without deleting", async () => {
-    markup();
-    const initial = {
-      dueInformation: { detail: "No due information.", status: "unavailable" },
-      person: {
-        familyName: "Lovelace",
-        givenName: "Ada",
-        id: personId,
-        isDeceased: false,
-        isPartial: false,
-        isSelf: false,
-        isStarred: false,
-        tagCount: 0,
-        tags: [],
-        updatedAt: "2026-08-15T08:00:00.000Z",
-      },
-      status: "ready",
-    };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response(session))
-      .mockResolvedValueOnce(response(initial))
-      .mockResolvedValueOnce(response({ status: "recorded" }))
-      .mockResolvedValueOnce(response({
-        impact: {
-          confirmation: "DELETE Ada Lovelace",
-          dependentRecordPolicy: "retained",
-          person: initial.person,
-        },
-        status: "ready",
-      }));
-    vi.stubGlobal("fetch", fetchMock);
-    await mountPeopleProfile();
-
-    const trigger = document.querySelector<HTMLButtonElement>(
-      "#person-delete-open",
-    )!;
-    trigger.focus();
-    trigger.click();
-    await vi.waitFor(() =>
-      expect(document.querySelector("#person-delete-impact")?.textContent)
-        .toContain("Related records are retained")
-    );
-    const dialog = document.querySelector<HTMLDialogElement>(
-      "#person-delete-dialog",
-    )!;
-    expect(dialog.open).toBe(true);
-    expect(document.activeElement).toBe(
-      document.querySelector("#person-delete-confirmation"),
-    );
-    const confirmation = document.querySelector<HTMLInputElement>(
-      "#person-delete-confirmation",
-    )!;
-    confirmation.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        bubbles: true,
-        cancelable: true,
-        key: "Tab",
-        shiftKey: true,
-      }),
-    );
-    const cancelButton = document.querySelector<HTMLButtonElement>(
-      "#person-delete-cancel",
-    )!;
-    expect(document.activeElement).toBe(cancelButton);
-    cancelButton.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        bubbles: true,
-        cancelable: true,
-        key: "Tab",
-      }),
-    );
-    expect(document.activeElement).toBe(confirmation);
-
-    const cancel = new Event("cancel", { cancelable: true });
-    dialog.dispatchEvent(cancel);
-    expect(cancel.defaultPrevented).toBe(true);
-    expect(dialog.open).toBe(false);
-    expect(document.activeElement).toBe(trigger);
-    expect(
-      fetchMock.mock.calls.filter(([, init]) => init?.method === "DELETE"),
-    ).toHaveLength(0);
   });
 
   it("[PEOPLE-004] keeps lifecycle failures recoverable in the profile shell", async () => {

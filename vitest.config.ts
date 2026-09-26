@@ -21,6 +21,8 @@ export default defineConfig({
       provider: "v8",
       include: [
         "apps/web/src/lib/*.ts",
+        "apps/web/src/features/**/*.ts",
+        "apps/web/src/features/**/*.tsx",
         "apps/web/src/islands/**/*.ts",
         "apps/web/src/islands/**/*.tsx",
         "apps/web/src/components/ui/*.ts",

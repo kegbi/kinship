@@ -1,18 +1,9 @@
-import { formatInstant, type TimePreferences } from "./time-presentation.ts";
 import {
-  archivePerson,
-  deletePerson,
-  editPerson,
   getMemberPreferences,
   getPerson,
-  getPersonDeletionImpact,
-  type PersonDueInformation,
-  type PersonIdentity,
-  type PersonProfileIdentity,
   type PersonProfileSummary,
   type ProblemDetails,
   recordPersonView,
-  restorePerson,
   saveMemberUiState,
   type SessionContext,
 } from "../../../../packages/contracts/generated/auth-client.ts";
@@ -20,61 +11,44 @@ import {
   resolveWorkspaceSession,
   updateCachedSessionUiState,
 } from "./workspace-context.ts";
-import { mountImportantDates } from "./important-dates.ts";
-import { mountProfileFacts } from "./profile-facts.ts";
-import { mountRelationships } from "./relationships.ts";
-import { mountPersonInteractions } from "./interactions.ts";
-import { mountCommunications } from "./communications.ts";
-import { mountPersonAuditSummary } from "./audit-history.ts";
-import { mountTaskSurface } from "./tasks.ts";
-import { mountPersonReminders } from "./reminders.ts";
-import { mountPersonFiles } from "./person-files.ts";
-import { mountPersonLifeEvents } from "./person-life-events.ts";
-import { mountPersonTimeline } from "./person-timeline.ts";
-import {
-  type PersonFactRailSectionId,
-  setFirstMeetingDate,
-  setFirstMeetingPlace,
-  setRailCount,
-  setRailEmpty,
-  setVitalStat,
-} from "./person-facts-rail.ts";
-import { showToast } from "./toasts.ts";
-import {
-  markFormSaved,
-  mountUnsavedChangesGuard,
-  saveWithLockedForm,
-} from "./unsaved-changes.ts";
-
-import { displayPersonName, type PersonNameOrder } from "./person-name.ts";
+import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 import { buttonVariants } from "../components/ui/variants.ts";
+import {
+  type FilterZone,
+  filterZone,
+  personSection,
+  railSections,
+  SECTION_HIDDEN_EVENT,
+  SECTION_REQUEST_EVENT,
+  type SectionMountKind,
+  zoneSections,
+} from "../features/person/sections.ts";
+import {
+  RAIL_MOUNT,
+  SECTION_MOUNTS,
+  type SectionMountEntry,
+  sectionOwners,
+  type SectionProps,
+  TIMELINE_MOUNT,
+} from "../features/person/section-mounts.ts";
 
+/**
+ * The page's own elements. The hero, the rail summary, and every section
+ * belong to their owners (GAP-028); the page keeps the states, the section
+ * navigation, and the zones.
+ */
 interface ProfileElements {
-  readonly archived: HTMLElement;
-  readonly archivedBanner: HTMLElement;
-  readonly avatar: HTMLElement;
-  readonly breadcrumbName: HTMLElement;
-  readonly deceased: HTMLElement;
-  readonly description: HTMLElement;
-  readonly due: HTMLElement;
-  readonly favorite: HTMLElement;
-  readonly heading: HTMLElement;
-  readonly nickname: HTMLElement;
-  readonly partial: HTMLElement;
   readonly ready: HTMLElement;
   readonly sectionNotice: HTMLElement;
   readonly sections: HTMLElement;
-  readonly self: HTMLElement;
   readonly state: HTMLElement;
-  readonly tags: HTMLUListElement;
-  readonly tagsContainer: HTMLElement;
 }
 
 type ProfileState = "forbidden" | "not-found" | "unavailable";
 
 interface SectionNavigationContext {
   activateZone?: (zone: Zone) => Promise<void>;
-  readonly hiddenSectionIds: ReadonlySet<string>;
+  readonly hiddenSectionIds: Set<string>;
   memberRole: SessionContext["member"]["role"];
   readonly zoneFilter?: ZoneFilterContext;
 }
@@ -91,65 +65,24 @@ interface ZoneFilterContext {
 
 interface ZoneRegistry {
   readonly activate: (zone: Zone) => Promise<void>;
-  readonly register: (zone: Zone, mount: () => Promise<void>) => void;
+  /**
+   * Mounts the page's summaries — the hero island, which owns the identity
+   * section, and the rail summary — before any section, so every vital and
+   * count a section publishes finds its reader.
+   */
+  readonly mountSummaries: () => Promise<void>;
+  /** Mounts the rail's owners now; each owner mounts once per page. */
+  readonly mountRail: () => Promise<void>;
   readonly settled: () => Promise<void>;
 }
 
-interface ZoneRegistryEntry {
-  activation?: Promise<void>;
-  readonly mounts: Array<() => Promise<void>>;
+type SectionOwner = SectionMountEntry<SectionMountKind>;
+
+/** The filter zone `id`'s section belongs to, when `id` names a section. */
+function sectionFilterZone(id: string | null): FilterZone | undefined {
+  const entry = personSection(id);
+  return entry ? filterZone(entry) : undefined;
 }
-
-interface LifecycleElements {
-  readonly archive: HTMLButtonElement;
-  readonly deleteCancel: HTMLButtonElement;
-  readonly deleteConfirm: HTMLButtonElement;
-  readonly deleteDialog: HTMLDialogElement;
-  readonly deleteForm: HTMLFormElement;
-  readonly deleteInput: HTMLInputElement;
-  readonly deleteMessage: HTMLElement;
-  readonly deleteOpen: HTMLButtonElement;
-  readonly editCancel: HTMLButtonElement;
-  readonly editForm: HTMLFormElement;
-  readonly editOpen: HTMLButtonElement;
-  readonly restore: HTMLButtonElement;
-  readonly status: HTMLElement;
-}
-
-const summaryRailSectionIds = new Set<PersonFactRailSectionId>([
-  "contact-methods",
-  "relationships",
-  "addresses",
-  "work",
-  "pets",
-  "food-preferences",
-  "first-meeting",
-]);
-
-const SECTION_ZONE = {
-  "contact-methods": "facts",
-  addresses: "facts",
-  relationships: "facts",
-  "important-dates": "facts",
-  work: "facts",
-  pets: "facts",
-  "food-preferences": "facts",
-  "first-meeting": "facts",
-  "stay-in-touch": "facts",
-  "life-events": "timeline",
-  notes: "timeline",
-  conversations: "timeline",
-  calls: "timeline",
-  activities: "timeline",
-  tasks: "planning",
-  reminders: "planning",
-  gifts: "things",
-  debts: "things",
-  documents: "things",
-  photos: "things",
-  "audit-summary": "admin",
-  "identity-summary": "admin",
-} as const;
 
 function currentView(): ZoneView {
   const view = new URLSearchParams(globalThis.location.search).get("view");
@@ -173,7 +106,7 @@ function shouldShowPersonFirstRun(
   ) && !summary.stayInTouchAt && !summary.nextReminderAt &&
     status !== "archived" && currentView() === "all" &&
     (!requestedSection ||
-      SECTION_ZONE[requestedSection as keyof typeof SECTION_ZONE] === "facts");
+      sectionFilterZone(requestedSection) === "facts");
 }
 
 function showPersonFirstRun(): void {
@@ -259,37 +192,58 @@ function mountZoneMiniIdentity(): void {
   observer.observe(hero);
 }
 
-function createZoneRegistry(): ZoneRegistry {
-  const zones = new Map<Zone, ZoneRegistryEntry>();
-  const entry = (zone: Zone) => {
-    const current = zones.get(zone);
-    if (current) return current;
-    const created: ZoneRegistryEntry = { mounts: [] };
-    zones.set(zone, created);
-    return created;
-  };
-  const register = (zone: Zone, mount: () => Promise<void>): void => {
-    entry(zone).mounts.push(mount);
+/** The owners a stream zone activates: its sections' owners, in order. */
+function zoneOwners(zone: Zone): readonly SectionOwner[] {
+  return [
+    // The unified timeline card heads the Timeline zone.
+    ...(zone === "timeline" ? [TIMELINE_MOUNT] : []),
+    ...sectionOwners(zoneSections(zone)),
+  ];
+}
+
+/**
+ * Activates zones from the section registry (GAP-028). An owner shared by
+ * several sections, or by the rail and a zone, mounts once however many of
+ * them ask for it.
+ */
+function createZoneRegistry(
+  mountOwner: (owner: SectionOwner) => Promise<void>,
+): ZoneRegistry {
+  const owners = new Map<SectionOwner, Promise<void>>();
+  const activations = new Map<Zone, Promise<void>>();
+  const mount = (owner: SectionOwner): Promise<void> => {
+    let mounted = owners.get(owner);
+    if (!mounted) {
+      mounted = Promise.resolve().then(() => mountOwner(owner));
+      owners.set(owner, mounted);
+    }
+    return mounted;
   };
   const activate = (zone: Zone): Promise<void> => {
-    const current = entry(zone);
-    current.activation ??= Promise.all(
-      current.mounts.map((mount) => Promise.resolve().then(mount)),
-    ).then(() => undefined).finally(() => {
-      document.querySelector<HTMLElement>(`[data-zone="${zone}"]`)
-        ?.removeAttribute("aria-busy");
-    });
-    return current.activation;
+    let activation = activations.get(zone);
+    if (!activation) {
+      activation = Promise.all(zoneOwners(zone).map(mount)).then(() =>
+        undefined
+      ).finally(() => {
+        document.querySelector<HTMLElement>(`[data-zone="${zone}"]`)
+          ?.removeAttribute("aria-busy");
+      });
+      activations.set(zone, activation);
+    }
+    return activation;
   };
   return {
     activate,
-    register,
-    settled: () =>
-      Promise.all(
-        [...zones.values()].flatMap((zone) =>
-          zone.activation ? [zone.activation] : []
-        ),
-      ).then(() => undefined),
+    mountSummaries: () =>
+      Promise.all([
+        mount(SECTION_MOUNTS["identity-summary"]),
+        mount(RAIL_MOUNT),
+      ]).then(() => undefined),
+    mountRail: () =>
+      Promise.all(sectionOwners(railSections()).map(mount)).then(() =>
+        undefined
+      ),
+    settled: () => Promise.all(activations.values()).then(() => undefined),
   };
 }
 
@@ -356,53 +310,7 @@ function deferPersonView(personId: string, workspaceId: string): void {
   globalThis.setTimeout(record, 0);
 }
 
-function seedRailSummary(
-  summary: PersonProfileSummary | undefined,
-): void {
-  if (!summary) return;
-  for (const entry of summary.sectionCounts) {
-    if (!summaryRailSectionIds.has(entry.id as PersonFactRailSectionId)) {
-      continue;
-    }
-    const sectionId = entry.id as PersonFactRailSectionId;
-    if (entry.status === "hidden") {
-      setRailCount(sectionId, undefined);
-      setRailEmpty(sectionId, false);
-      continue;
-    }
-    setRailCount(sectionId, entry.count);
-    setRailEmpty(sectionId, entry.count === 0);
-  }
-}
-
 function elements(): ProfileElements | undefined {
-  const archived = document.querySelector<HTMLElement>(
-    "#person-profile-archived",
-  );
-  const archivedBanner = document.querySelector<HTMLElement>(
-    "[data-person-archived-banner]",
-  );
-  const avatar = document.querySelector<HTMLElement>("#person-profile-avatar");
-  const breadcrumbName = document.querySelector<HTMLElement>(
-    "[data-person-breadcrumb-name]",
-  );
-  const deceased = document.querySelector<HTMLElement>(
-    "#person-profile-deceased",
-  );
-  const description = document.querySelector<HTMLElement>(
-    "[data-profile-description]",
-  );
-  const due = document.querySelector<HTMLElement>("#person-profile-due-state");
-  const favorite = document.querySelector<HTMLElement>(
-    "#person-profile-favorite",
-  );
-  const heading = document.querySelector<HTMLElement>("#person-profile-name");
-  const nickname = document.querySelector<HTMLElement>(
-    "#person-profile-nickname",
-  );
-  const partial = document.querySelector<HTMLElement>(
-    "#person-profile-partial",
-  );
   const ready = document.querySelector<HTMLElement>("#person-profile-ready");
   const sectionNotice = document.querySelector<HTMLElement>(
     "#person-profile-section-notice",
@@ -410,119 +318,21 @@ function elements(): ProfileElements | undefined {
   const sections = document.querySelector<HTMLElement>(
     "#person-profile-sections",
   );
-  const self = document.querySelector<HTMLElement>("#person-profile-self");
   const state = document.querySelector<HTMLElement>("#person-profile-state");
-  const tags = document.querySelector<HTMLUListElement>("#person-profile-tags");
-  const tagsContainer = document.querySelector<HTMLElement>(
-    '[data-profile-fact-section="tags"]',
-  );
-  return archived && archivedBanner && avatar && breadcrumbName && deceased &&
-      description && due && favorite && heading && nickname && partial &&
-      ready && sectionNotice && sections && self && state && tags &&
-      tagsContainer
-    ? {
-      archived,
-      archivedBanner,
-      avatar,
-      breadcrumbName,
-      deceased,
-      description,
-      due,
-      favorite,
-      heading,
-      nickname,
-      partial,
-      ready,
-      sectionNotice,
-      sections,
-      self,
-      state,
-      tags,
-      tagsContainer,
-    }
+  return ready && sectionNotice && sections && state
+    ? { ready, sectionNotice, sections, state }
     : undefined;
+}
+
+/** The person's heading, which the hero island renders once it mounts. */
+function heading(): HTMLElement | undefined {
+  return document.querySelector<HTMLElement>("#person-profile-name") ??
+    undefined;
 }
 
 function personId(): string | undefined {
   return /^\/app\/people\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/?$/i
     .exec(globalThis.location.pathname)?.[1];
-}
-
-function lifecycleElements(): LifecycleElements | undefined {
-  const archive = document.querySelector<HTMLButtonElement>("#person-archive");
-  const deleteCancel = document.querySelector<HTMLButtonElement>(
-    "#person-delete-cancel",
-  );
-  const deleteConfirm = document.querySelector<HTMLButtonElement>(
-    '#person-delete-form button[type="submit"]',
-  );
-  const deleteDialog = document.querySelector<HTMLDialogElement>(
-    "#person-delete-dialog",
-  );
-  const deleteForm = document.querySelector<HTMLFormElement>(
-    "#person-delete-form",
-  );
-  const deleteInput = document.querySelector<HTMLInputElement>(
-    "#person-delete-confirmation",
-  );
-  const deleteMessage = document.querySelector<HTMLElement>(
-    "#person-delete-impact",
-  );
-  const deleteOpen = document.querySelector<HTMLButtonElement>(
-    "#person-delete-open",
-  );
-  const editCancel = document.querySelector<HTMLButtonElement>(
-    "#person-edit-cancel",
-  );
-  const editForm = document.querySelector<HTMLFormElement>("#person-edit-form");
-  const editOpen = document.querySelector<HTMLButtonElement>(
-    "#person-edit-open",
-  );
-  const restore = document.querySelector<HTMLButtonElement>("#person-restore");
-  const status = document.querySelector<HTMLElement>(
-    "#person-lifecycle-status",
-  );
-  return archive && deleteCancel && deleteConfirm && deleteDialog &&
-      deleteForm && deleteInput &&
-      deleteMessage &&
-      deleteOpen && editCancel && editForm && editOpen && restore && status
-    ? {
-      archive,
-      deleteCancel,
-      deleteConfirm,
-      deleteDialog,
-      deleteForm,
-      deleteInput,
-      deleteMessage,
-      deleteOpen,
-      editCancel,
-      editForm,
-      editOpen,
-      restore,
-      status,
-    }
-    : undefined;
-}
-
-function initials(person: PersonIdentity): string {
-  const values = [person.givenName, person.familyName].flatMap((value) =>
-    value ? [value] : []
-  );
-  const source = values.length > 0 ? values : [person.nickname ?? "?"];
-  return source.map((value) => value.trim().at(0) ?? "").join("").slice(0, 2)
-    .toLocaleUpperCase();
-}
-
-function renderZoneMiniIdentity(
-  person: PersonIdentity,
-  nameOrder: PersonNameOrder,
-): void {
-  const avatar = document.querySelector<HTMLElement>(
-    "[data-zone-mini-avatar]",
-  );
-  const name = document.querySelector<HTMLElement>("[data-zone-mini-name]");
-  if (avatar) avatar.textContent = initials(person);
-  if (name) name.textContent = displayPersonName(person, nameOrder);
 }
 
 function renderState(profile: ProfileElements, state: ProfileState): void {
@@ -655,10 +465,10 @@ function activateSectionZone(
   id: string | null,
 ): Zone | undefined {
   if (
-    !id || navigation.hiddenSectionIds.has(id) || !(id in SECTION_ZONE)
+    !id || navigation.hiddenSectionIds.has(id)
   ) return undefined;
-  const zone = SECTION_ZONE[id as keyof typeof SECTION_ZONE];
-  if (zone === "facts") return undefined;
+  const zone = sectionFilterZone(id);
+  if (zone === undefined || zone === "facts") return undefined;
   if (exitPersonFirstRun() && navigation.zoneFilter) {
     applyZoneView(navigation.zoneFilter, currentView());
   }
@@ -762,12 +572,13 @@ function reconcileSectionLocation(
   ) return;
   clearCurrentSection(profile);
   if (preserveInteractiveFocus && hasMeaningfulInteractiveFocus()) return;
-  profile.heading.focus({ preventScroll: true });
+  heading()?.focus({ preventScroll: true });
 }
 
 function mountSectionNavigation(
   profile: ProfileElements,
   navigation: SectionNavigationContext,
+  signal: AbortSignal,
 ): void {
   const directory = profile.sections.closest("details");
   directory?.addEventListener("toggle", () => {
@@ -787,15 +598,46 @@ function mountSectionNavigation(
     event.preventDefault();
     const url = new URL(globalThis.location.href);
     url.searchParams.set("section", id);
-    const zone = SECTION_ZONE[id as keyof typeof SECTION_ZONE];
+    const zone = sectionFilterZone(id);
     const view = currentView();
-    if (view !== "all" && zone !== "facts" && zone !== view) {
+    if (
+      view !== "all" && zone !== undefined && zone !== "facts" && zone !== view
+    ) {
       url.searchParams.set("view", zone);
     }
     globalThis.history.pushState({}, "", url);
     if (directory) directory.open = false;
     focusSection(profile, navigation, id);
   });
+  // The hero asks for a section in a view — Audit history in Admin.
+  document.addEventListener(SECTION_REQUEST_EVENT, (event) => {
+    const detail = (event as CustomEvent<{
+      readonly sectionId?: unknown;
+      readonly view?: unknown;
+    }>).detail;
+    const sectionId = detail?.sectionId;
+    const view = detail?.view;
+    if (
+      typeof sectionId !== "string" ||
+      (view !== "timeline" && view !== "planning" && view !== "things" &&
+        view !== "admin")
+    ) return;
+    const url = new URL(globalThis.location.href);
+    url.searchParams.set("section", sectionId);
+    url.searchParams.set("view", view);
+    if (navigation.zoneFilter) applyZoneView(navigation.zoneFilter, view);
+    globalThis.history.pushState({}, "", url);
+    focusSection(profile, navigation, sectionId);
+  }, { signal });
+  // An owner that finds its module turned off since the page loaded reports
+  // it, and the section is hidden from navigation like any other (GAP-028).
+  document.addEventListener(SECTION_HIDDEN_EVENT, (event) => {
+    const sectionId = (event as CustomEvent<{ readonly sectionId?: unknown }>)
+      .detail?.sectionId;
+    if (typeof sectionId !== "string") return;
+    navigation.hiddenSectionIds.add(sectionId);
+    renderSectionNavigation(profile, navigation.hiddenSectionIds);
+  }, { signal });
   globalThis.addEventListener("popstate", () => {
     if (navigation.zoneFilter) {
       const view = currentView();
@@ -803,7 +645,7 @@ function mountSectionNavigation(
       if (view !== "all") void navigation.activateZone?.(view);
     }
     reconcileSectionLocation(profile, navigation);
-  });
+  }, { signal });
 }
 
 const FIRST_RUN_ACTIONS = {
@@ -853,479 +695,28 @@ function mountPersonFirstRunActions(
   }
 }
 
-function mountPersonMenu(
-  profile: ProfileElements,
-  navigation: SectionNavigationContext,
-): void {
-  const toggle = document.querySelector<HTMLButtonElement>(
-    "#person-menu-toggle",
-  );
-  const menu = document.querySelector<HTMLElement>("#person-menu");
-  const auditHistory = document.querySelector<HTMLButtonElement>(
-    "#person-audit-history",
-  );
-  if (!toggle || !menu || !auditHistory) return;
-
-  toggle.addEventListener(
-    "click",
-    () => setPersonMenuOpen(menu.hasAttribute("hidden")),
-  );
-  menu.addEventListener("click", (event) => {
-    const item = (event.target as Element | null)?.closest("a, button");
-    if (!item || !menu.contains(item)) return;
-    setPersonMenuOpen(false);
-    if (item !== auditHistory) return;
-
-    const sectionId = "audit-summary";
-    const zone = SECTION_ZONE[sectionId];
-    const url = new URL(globalThis.location.href);
-    url.searchParams.set("section", sectionId);
-    url.searchParams.set("view", zone);
-    if (navigation.zoneFilter) {
-      applyZoneView(navigation.zoneFilter, zone);
-    }
-    globalThis.history.pushState({}, "", url);
-    focusSection(profile, navigation, sectionId);
-  });
-  // The shell renders the toggle disabled so a click before this script ran
-  // is refused visibly instead of lost (REL-039).
-  toggle.disabled = false;
-}
-
-function setPersonMenuOpen(open: boolean): void {
-  const toggle = document.querySelector<HTMLButtonElement>(
-    "#person-menu-toggle",
-  );
-  const menu = document.querySelector<HTMLElement>("#person-menu");
-  if (!toggle || !menu) return;
-  menu.hidden = !open;
-  toggle.setAttribute("aria-expanded", String(open));
-}
-
-function focusPersonMenuItem(item: HTMLElement): void {
-  setPersonMenuOpen(true);
-  item.focus();
-}
-
-function renderTags(
-  target: HTMLUListElement,
-  person: PersonProfileIdentity,
-): void {
-  target.replaceChildren();
-  if (person.tags.length === 0) {
-    const empty = document.createElement("li");
-    empty.className = "profile-tag-empty";
-    empty.textContent = "No tags saved";
-    target.append(empty);
-    return;
-  }
-  for (const tag of person.tags) {
-    const item = document.createElement("li");
-    item.textContent = tag.name;
-    target.append(item);
-  }
-  const remaining = person.tagCount - person.tags.length;
-  if (remaining > 0) {
-    const more = document.createElement("li");
-    more.textContent = `+${remaining} more`;
-    target.append(more);
-  }
-}
-
+/**
+ * Shows the resolved workspace: navigation without the sections the
+ * workspace turned off, the ready region, and focus on the requested section
+ * or the person's heading.
+ */
 function renderReady(
   profile: ProfileElements,
-  person: PersonProfileIdentity,
-  dueInformation: PersonDueInformation,
-  status: "archived" | "ready",
-  workspaceId: string,
   navigation: SectionNavigationContext,
-  nameOrder: PersonNameOrder,
-  timePreferences: TimePreferences | undefined,
 ): void {
-  const name = displayPersonName(person, nameOrder);
-  profile.heading.textContent = name;
-  profile.breadcrumbName.textContent = name;
-  profile.nickname.textContent = person.nickname ? `“${person.nickname}”` : "";
-  profile.nickname.hidden = true;
-  profile.avatar.textContent = initials(person);
-  const savedState = document.querySelector<HTMLElement>(
-    "#person-profile-saved-state",
+  // The tags editor belongs to its section; the page hides a turned-off
+  // module's editor before it loads, as the hero hides its preview.
+  const tags = document.querySelector<HTMLElement>(
+    '[data-profile-fact-section="tags"]',
   );
-  if (savedState) savedState.textContent = "Identity saved";
-  renderZoneMiniIdentity(person, nameOrder);
-  for (
-    const field of [
-      "givenName",
-      "middleName",
-      "familyName",
-      "nickname",
-      "gender",
-    ] as const
-  ) {
-    const target = document.querySelector<HTMLElement>(
-      `[data-profile-field="${field}"]`,
-    );
-    if (target) {
-      target.textContent = person[field] ||
-        (field === "gender" ? "Not set" : "Unknown");
-    }
-  }
-  profile.description.textContent = person.description ||
-    "No description saved.";
-  profile.partial.hidden = !person.isPartial;
-  profile.favorite.hidden = !person.isStarred;
-  profile.deceased.hidden = !person.isDeceased;
-  profile.self.hidden = !person.isSelf;
-  profile.archived.hidden = status !== "archived";
-  profile.due.textContent = dueInformation.stayInTouchAt
-    ? "Loading cadence…"
-    : "Not set";
-  const lastContact = document.querySelector<HTMLElement>(
-    "[data-profile-last-contact]",
-  );
-  if (lastContact) {
-    lastContact.textContent = person.lastContactAt
-      ? formatInstant(person.lastContactAt, timePreferences)
-      : "None recorded";
-  }
-  const nextReminder = document.querySelector<HTMLElement>(
-    '[data-person-vital-value="next-reminder"]',
-  );
-  if (nextReminder) {
-    nextReminder.textContent = dueInformation.nextReminderAt
-      ? formatInstant(dueInformation.nextReminderAt, timePreferences)
-      : "Not recorded";
-  }
-  setVitalStat("birthday", undefined);
-  setVitalStat("work", undefined);
-  setFirstMeetingDate(undefined);
-  setFirstMeetingPlace(undefined);
-  renderTags(profile.tags, person);
-  const tagsHidden = navigation.hiddenSectionIds.has("tags");
-  profile.tags.hidden = tagsHidden;
-  profile.tagsContainer.hidden = tagsHidden;
+  if (tags) tags.hidden = navigation.hiddenSectionIds.has("tags");
   renderSectionNavigation(profile, navigation.hiddenSectionIds);
   profile.state.hidden = true;
   profile.ready.hidden = false;
   profile.ready.removeAttribute("aria-busy");
-  const vcard = document.querySelector<HTMLAnchorElement>(
-    "#person-export-vcard",
-  );
-  if (vcard) {
-    vcard.href = `/api/v1/people/${
-      encodeURIComponent(person.id)
-    }/vcard?workspaceId=${encodeURIComponent(workspaceId)}`;
-    vcard.hidden = false;
-  }
-  document.title = `${name} — Kinship`;
   if (!focusSection(profile, navigation, currentSection(), false, true)) {
-    profile.heading.focus();
+    heading()?.focus();
   }
-}
-
-function renderLifecycleState(
-  profile: ProfileElements,
-  lifecycle: LifecycleElements,
-  state: "active" | "archived",
-): void {
-  const archived = state === "archived";
-  profile.archived.hidden = !archived;
-  profile.archivedBanner.hidden = !archived;
-  lifecycle.editOpen.hidden = archived;
-  lifecycle.archive.hidden = archived;
-  lifecycle.restore.hidden = !archived;
-  lifecycle.editForm.hidden = true;
-}
-
-function fillEditForm(
-  lifecycle: LifecycleElements,
-  person: PersonIdentity,
-): void {
-  const fields = lifecycle.editForm.elements;
-  (fields.namedItem("givenName") as HTMLInputElement).value = person.givenName;
-  (fields.namedItem("middleName") as HTMLInputElement).value =
-    person.middleName ?? "";
-  (fields.namedItem("familyName") as HTMLInputElement).value =
-    person.familyName ?? "";
-  (fields.namedItem("nickname") as HTMLInputElement).value = person.nickname ??
-    "";
-  (fields.namedItem("isPartial") as HTMLInputElement).checked =
-    person.isPartial;
-}
-
-function updateIdentity(
-  profile: ProfileElements,
-  person: PersonIdentity,
-  nameOrder: PersonNameOrder,
-): void {
-  const name = displayPersonName(person, nameOrder);
-  profile.heading.textContent = name;
-  profile.breadcrumbName.textContent = name;
-  profile.nickname.textContent = person.nickname ? `“${person.nickname}”` : "";
-  profile.nickname.hidden = true;
-  profile.avatar.textContent = initials(person);
-  renderZoneMiniIdentity(person, nameOrder);
-  for (
-    const field of [
-      "givenName",
-      "middleName",
-      "familyName",
-      "nickname",
-    ] as const
-  ) {
-    const target = document.querySelector<HTMLElement>(
-      `[data-profile-field="${field}"]`,
-    );
-    if (target) target.textContent = person[field] || "Unknown";
-  }
-  profile.partial.hidden = !person.isPartial;
-  document.title = `${name} — Kinship`;
-}
-
-function mountLifecycleActions(
-  profile: ProfileElements,
-  initialPerson: PersonProfileIdentity,
-  initialState: "archived" | "ready",
-  personId: string,
-  workspaceId: string,
-  nameOrder: PersonNameOrder,
-): () => boolean {
-  const lifecycle = lifecycleElements();
-  if (!lifecycle) return () => initialState === "archived";
-  let person: PersonIdentity = initialPerson;
-  let updatedAt = initialPerson.updatedAt;
-  let state: "active" | "archived" = initialState === "archived"
-    ? "archived"
-    : "active";
-  let deleteConfirmation = "";
-  let deleteRequestSequence = 0;
-  let deleteSubmitting = false;
-  fillEditForm(lifecycle, person);
-  renderLifecycleState(profile, lifecycle, state);
-  document.addEventListener("person-revision-changed", (event) => {
-    updatedAt = (event as CustomEvent<{
-      readonly personUpdatedAt: string;
-    }>).detail.personUpdatedAt;
-  });
-
-  const announce = (message: string): void => {
-    lifecycle.status.textContent = message;
-  };
-  const disableActions = (disabled: boolean): void => {
-    for (
-      const button of [
-        lifecycle.archive,
-        lifecycle.deleteOpen,
-        lifecycle.editOpen,
-        lifecycle.restore,
-      ]
-    ) button.disabled = disabled;
-  };
-
-  lifecycle.editOpen.addEventListener("click", () => {
-    fillEditForm(lifecycle, person);
-    lifecycle.editForm.hidden = false;
-    (lifecycle.editForm.elements.namedItem("givenName") as HTMLInputElement)
-      .focus();
-  });
-  lifecycle.editCancel.addEventListener("click", () => {
-    lifecycle.editForm.reset();
-    fillEditForm(lifecycle, person);
-    lifecycle.editForm.hidden = true;
-    focusPersonMenuItem(lifecycle.editOpen);
-    announce("Edit cancelled. No changes were saved.");
-  });
-  lifecycle.editForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const data = new FormData(lifecycle.editForm);
-    const result = await saveWithLockedForm(
-      lifecycle.editForm,
-      () =>
-        editPerson(personId, {
-          expectedUpdatedAt: updatedAt,
-          familyName: String(data.get("familyName") ?? ""),
-          givenName: String(data.get("givenName") ?? ""),
-          isPartial: data.get("isPartial") === "on",
-          middleName: String(data.get("middleName") ?? ""),
-          nickname: String(data.get("nickname") ?? ""),
-        }, workspaceId),
-    ).catch(() => undefined);
-    if (!result || !result.ok) {
-      announce(
-        result && !result.ok
-          ? result.problem.detail
-          : "Person update is temporarily unavailable.",
-      );
-      return;
-    }
-    person = result.value.person;
-    markFormSaved(lifecycle.editForm);
-    updatedAt = result.value.person.updatedAt;
-    document.dispatchEvent(
-      new CustomEvent("person-revision-changed", {
-        detail: { personUpdatedAt: updatedAt },
-      }),
-    );
-    lifecycle.editForm.hidden = true;
-    updateIdentity(profile, person, nameOrder);
-    announce("Person identity updated.");
-    profile.heading.focus();
-  });
-
-  const transition = async (action: "archive" | "restore"): Promise<void> => {
-    disableActions(true);
-    const result = await (action === "archive" ? archivePerson : restorePerson)(
-      personId,
-      { expectedUpdatedAt: updatedAt },
-      workspaceId,
-    ).catch(() => undefined);
-    disableActions(false);
-    if (!result || !result.ok) {
-      announce(
-        result && !result.ok
-          ? result.problem.detail
-          : `Person ${action} is temporarily unavailable.`,
-      );
-      return;
-    }
-    person = result.value.person;
-    updatedAt = result.value.person.updatedAt;
-    document.dispatchEvent(
-      new CustomEvent("person-revision-changed", {
-        detail: { personUpdatedAt: updatedAt },
-      }),
-    );
-    state = action === "archive" ? "archived" : "active";
-    renderLifecycleState(profile, lifecycle, state);
-    document.dispatchEvent(
-      new CustomEvent("person-lifecycle-changed", {
-        detail: {
-          archived: state === "archived",
-          personId,
-          personUpdatedAt: updatedAt,
-          state,
-        },
-      }),
-    );
-    if (action === "archive") {
-      showToast({
-        action: {
-          label: "Undo",
-          onSelect: () => void transition("restore"),
-        },
-        message: "Person archived. They now appear in Archived people.",
-        tone: "success",
-      });
-    } else {
-      showToast({
-        message: "Person restored. They now appear in People.",
-        tone: "success",
-      });
-    }
-    profile.heading.focus();
-  };
-  lifecycle.archive.addEventListener("click", () => void transition("archive"));
-  lifecycle.restore.addEventListener("click", () => void transition("restore"));
-
-  const cancelDelete = (): void => {
-    deleteRequestSequence += 1;
-    deleteSubmitting = false;
-    lifecycle.deleteConfirm.disabled = false;
-    if (lifecycle.deleteDialog.open) lifecycle.deleteDialog.close();
-    lifecycle.deleteForm.reset();
-    focusPersonMenuItem(lifecycle.deleteOpen);
-    announce("Delete cancelled. No changes were made.");
-  };
-  lifecycle.deleteCancel.addEventListener("click", cancelDelete);
-  lifecycle.deleteDialog.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    cancelDelete();
-  });
-  lifecycle.deleteDialog.addEventListener("keydown", (event) => {
-    if (event.key !== "Tab") return;
-    const controls = [
-      lifecycle.deleteInput,
-      lifecycle.deleteConfirm,
-      lifecycle.deleteCancel,
-    ].filter((control) => !control.disabled);
-    const first = controls[0];
-    const last = controls.at(-1);
-    if (!first || !last) return;
-    const active = document.activeElement;
-    if (
-      event.shiftKey &&
-      (active === first || active === lifecycle.deleteDialog ||
-        !lifecycle.deleteDialog.contains(active))
-    ) {
-      event.preventDefault();
-      last.focus();
-    } else if (
-      !event.shiftKey &&
-      (active === last || active === lifecycle.deleteDialog ||
-        !lifecycle.deleteDialog.contains(active))
-    ) {
-      event.preventDefault();
-      first.focus();
-    }
-  });
-  lifecycle.deleteOpen.addEventListener("click", async () => {
-    const requestSequence = ++deleteRequestSequence;
-    lifecycle.deleteMessage.textContent = "Loading deletion impact…";
-    lifecycle.deleteForm.reset();
-    lifecycle.deleteConfirm.disabled = true;
-    lifecycle.deleteDialog.showModal();
-    const result = await getPersonDeletionImpact(personId, workspaceId).catch(
-      () => undefined,
-    );
-    if (
-      requestSequence !== deleteRequestSequence ||
-      !lifecycle.deleteDialog.open
-    ) return;
-    if (!result || !result.ok) {
-      lifecycle.deleteMessage.textContent = result && !result.ok
-        ? result.problem.detail
-        : "Deletion impact is temporarily unavailable.";
-      return;
-    }
-    deleteConfirmation = result.value.impact.confirmation;
-    updatedAt = result.value.impact.person.updatedAt;
-    lifecycle.deleteMessage.textContent =
-      `This person will be hidden from Kinship. Related records are retained. Enter ${deleteConfirmation} to continue.`;
-    lifecycle.deleteConfirm.disabled = false;
-    lifecycle.deleteInput.focus();
-  });
-  lifecycle.deleteForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (deleteSubmitting) return;
-    deleteSubmitting = true;
-    lifecycle.deleteConfirm.disabled = true;
-    const result = await saveWithLockedForm(
-      lifecycle.deleteForm,
-      () =>
-        deletePerson(personId, {
-          confirmation: lifecycle.deleteInput.value,
-          expectedUpdatedAt: updatedAt,
-        }, workspaceId),
-    ).catch(() => undefined);
-    if (!result || !result.ok) {
-      deleteSubmitting = false;
-      lifecycle.deleteConfirm.disabled = false;
-      lifecycle.deleteMessage.textContent = result && !result.ok
-        ? result.problem.detail
-        : "Person deletion is temporarily unavailable.";
-      lifecycle.deleteInput.focus();
-      return;
-    }
-    deleteRequestSequence += 1;
-    markFormSaved(lifecycle.deleteForm);
-    lifecycle.deleteDialog.close();
-    globalThis.location.assign(result.value.next);
-  });
-  // The shell renders these actions disabled until the person has loaded and
-  // every handler above is attached, so an early click waits instead of
-  // landing on an unwired control (REL-039).
-  disableActions(false);
-  return () => state === "archived";
 }
 
 function problemState(problem: ProblemDetails): ProfileState {
@@ -1334,9 +725,15 @@ function problemState(problem: ProblemDetails): ProfileState {
   return "unavailable";
 }
 
+let profileAbort: AbortController | undefined;
+
 export async function mountPeopleProfile(): Promise<void> {
   const profile = elements();
   if (!profile) return;
+  // The hero and the rail summary show first; their code loads while the
+  // session and the person do.
+  void SECTION_MOUNTS["identity-summary"].load().catch(() => undefined);
+  void RAIL_MOUNT.load().catch(() => undefined);
   const zoneFilter = mountZoneFilter();
   mountZoneMiniIdentity();
   const id = personId();
@@ -1350,8 +747,11 @@ export async function mountPeopleProfile(): Promise<void> {
     memberRole: "member",
     ...(zoneFilter ? { zoneFilter } : {}),
   };
-  mountSectionNavigation(profile, sectionNavigation);
-  mountPersonMenu(profile, sectionNavigation);
+  // A remounted workspace retires the previous mount's page listeners.
+  profileAbort?.abort();
+  profileAbort = new AbortController();
+  const { signal } = profileAbort;
+  mountSectionNavigation(profile, sectionNavigation, signal);
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") {
     renderState(
@@ -1360,7 +760,8 @@ export async function mountPeopleProfile(): Promise<void> {
     );
     return;
   }
-  if (zoneFilter) zoneFilter.workspaceId = session.session.workspace.id;
+  const workspaceId = session.session.workspace.id;
+  if (zoneFilter) zoneFilter.workspaceId = workspaceId;
   const storedView = session.session.uiState?.personWorkspaceView;
   if (
     !new URLSearchParams(globalThis.location.search).has("view") &&
@@ -1371,19 +772,14 @@ export async function mountPeopleProfile(): Promise<void> {
     globalThis.history.replaceState({}, "", url);
     if (zoneFilter) applyZoneView(zoneFilter, storedView);
   }
-  const preferences = await getMemberPreferences(session.session.workspace.id)
+  const preferences = await getMemberPreferences(workspaceId)
     .catch(() => undefined);
-  const timePreferences = preferences?.ok
+  const memberPreferences = preferences?.ok
     ? preferences.value.preferences
     : undefined;
-  const nameOrder = preferences?.ok
-    ? preferences.value.preferences.contactNameOrder
-    : "given_family_nickname";
-  const result = await getPerson(
-    id,
-    session.session.workspace.id,
-    "summary",
-  ).catch(() => undefined);
+  const result = await getPerson(id, workspaceId, "summary").catch(() =>
+    undefined
+  );
   if (!result) {
     renderState(profile, "unavailable");
     return;
@@ -1392,166 +788,57 @@ export async function mountPeopleProfile(): Promise<void> {
     renderState(profile, problemState(result.problem));
     return;
   }
-  if (shouldShowPersonFirstRun(result.value.summary, result.value.status)) {
+  const profileAnswer = result.value;
+  if (shouldShowPersonFirstRun(profileAnswer.summary, profileAnswer.status)) {
     showPersonFirstRun();
   }
-  for (const section of result.value.person.profileSections ?? []) {
+  for (const section of profileAnswer.person.profileSections ?? []) {
     if (section.status === "hidden") {
       hiddenSectionIds.add(section.id);
     }
   }
   sectionNavigation.memberRole = session.session.member.role;
-  const isArchived = mountLifecycleActions(
-    profile,
-    result.value.person,
-    result.value.status,
-    id,
-    session.session.workspace.id,
-    nameOrder,
+  // The hero announces every lifecycle change; each owner mounted later
+  // receives the archived state current when it mounts (REL-021).
+  let archived = profileAnswer.status === "archived";
+  document.addEventListener("person-lifecycle-changed", (event) => {
+    const detail = (event as CustomEvent<{
+      readonly archived?: unknown;
+      readonly personId?: unknown;
+    }>).detail;
+    if (detail?.personId === id && typeof detail.archived === "boolean") {
+      archived = detail.archived;
+    }
+  }, { signal });
+  const sectionProps = (): SectionProps => ({
+    archived,
+    initial: profileAnswer,
+    personId: id,
+    preferences: memberPreferences,
+    workspaceId,
+  });
+  const zoneRegistry = createZoneRegistry((owner) =>
+    owner.load().then((mount) => mount(profile.ready, sectionProps())).then(
+      () => undefined,
+    )
   );
-  const zoneRegistry = createZoneRegistry();
-  const { activate, register } = zoneRegistry;
+  // A summary whose code cannot load leaves its skeleton, and every section
+  // still loads.
+  await zoneRegistry.mountSummaries().catch(() => undefined);
+  const { activate } = zoneRegistry;
   sectionNavigation.activateZone = activate;
   if (zoneFilter) zoneFilter.activate = activate;
-  register(
-    "timeline",
-    () =>
-      mountPersonTimeline({
-        timePreferences,
-        personId: id,
-        workspaceId: session.session.workspace.id,
-      }),
-  );
-  register(
-    "timeline",
-    () =>
-      mountPersonInteractions(
-        id,
-        session.session.workspace.id,
-        isArchived(),
-        {
-          activities: sectionNavigation.hiddenSectionIds.has("activities"),
-          notes: sectionNavigation.hiddenSectionIds.has("notes"),
-        },
-      ),
-  );
-  register(
-    "timeline",
-    () =>
-      mountPersonLifeEvents(
-        id,
-        session.session.workspace.id,
-        sectionNavigation.hiddenSectionIds.has("life-events"),
-      ),
-  );
-  register(
-    "timeline",
-    () =>
-      mountCommunications(
-        id,
-        session.session.workspace.id,
-        isArchived(),
-        {
-          calls: sectionNavigation.hiddenSectionIds.has("calls"),
-          conversations: sectionNavigation.hiddenSectionIds.has(
-            "conversations",
-          ),
-        },
-        timePreferences,
-      ),
-  );
-  register(
-    "planning",
-    () =>
-      mountTaskSurface({
-        timePreferences,
-        archived: isArchived(),
-        hidden: sectionNavigation.hiddenSectionIds.has("tasks"),
-        personId: id,
-        workspaceId: session.session.workspace.id,
-      }),
-  );
-  register(
-    "things",
-    () =>
-      mountPersonFiles({
-        archived: isArchived(),
-        personId: id,
-        workspaceId: session.session.workspace.id,
-      }),
-  );
-  register(
-    "things",
-    async () => {
-      // The gifts island (GAP-026) and React load with the zone, so a person
-      // page that never shows its Things pays nothing for them.
-      const { mountGiftsIsland } = await import(
-        "../islands/person-gifts/mount.tsx"
-      );
-      await mountGiftsIsland({
-        archived: isArchived(),
-        personId: id,
-        workspaceId: session.session.workspace.id,
-      });
-    },
-  );
-  register(
-    "admin",
-    () =>
-      mountPersonAuditSummary(
-        id,
-        session.session.workspace.id,
-        timePreferences,
-      ),
-  );
   const selectedView = currentView();
   if (selectedView !== "all") void activate(selectedView);
   mountZoneVisibilityActivation(activate);
-  renderReady(
-    profile,
-    result.value.person,
-    result.value.dueInformation,
-    result.value.status,
-    session.session.workspace.id,
-    sectionNavigation,
-    nameOrder,
-    timePreferences,
-  );
+  renderReady(profile, sectionNavigation);
   mountUnsavedChangesGuard({
     confirmMessage:
       "You have unsaved changes on this person. Discard them and switch workspaces?",
     root: profile.ready,
   });
-  seedRailSummary(result.value.summary);
-  deferPersonView(id, session.session.workspace.id);
-  const eagerRail = Promise.all([
-    mountImportantDates(
-      id,
-      session.session.workspace.id,
-      isArchived(),
-    ),
-    mountProfileFacts(
-      id,
-      session.session.workspace.id,
-      isArchived(),
-      result.value.person.updatedAt,
-      result.value.summary?.primaryContactMethods,
-      result.value.summary?.sectionCounts,
-    ),
-    mountRelationships(
-      id,
-      session.session.workspace.id,
-      isArchived(),
-      sectionNavigation.hiddenSectionIds.has("relationships"),
-      result.value.person.updatedAt,
-    ),
-    mountPersonReminders({
-      timePreferences,
-      archived: isArchived(),
-      personId: id,
-      workspaceId: session.session.workspace.id,
-    }),
-  ]).finally(() => {
+  deferPersonView(id, workspaceId);
+  const eagerRail = zoneRegistry.mountRail().finally(() => {
     document.querySelector<HTMLElement>(".profile-facts-rail")
       ?.removeAttribute("aria-busy");
     document.querySelector<HTMLElement>(

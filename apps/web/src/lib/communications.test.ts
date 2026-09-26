@@ -1,7 +1,11 @@
 import { formatInstant } from "./time-presentation.ts";
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  type CapturedProfileSummary,
+  captureProfileSummary,
+} from "../features/person/profile-summary.test-helper.ts";
 import { mountCommunications } from "./communications.ts";
 import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 import { buttonVariants } from "../components/ui/variants.ts";
@@ -64,6 +68,16 @@ function communicationGet(
   }
   return undefined;
 }
+
+// The hero's vitals and the rail's counts are the islands': this section
+// publishes them.
+let summary: CapturedProfileSummary;
+beforeEach(() => {
+  summary = captureProfileSummary();
+});
+afterEach(() => {
+  summary.stop();
+});
 
 describe("INTERACTION-002 person communications", () => {
   afterEach(() => {
@@ -463,7 +477,7 @@ describe("INTERACTION-002 person communications", () => {
     form.requestSubmit();
     await vi.waitFor(() => expect(saves).toBe(1));
     await vi.waitFor(() =>
-      expect(document.querySelector("[data-profile-last-contact]")?.textContent)
+      expect(summary.vital("last-contact"))
         .toBe(
           formatInstant("2026-08-20T12:00:00.000Z", {
             locale: "en",
@@ -486,7 +500,7 @@ describe("INTERACTION-002 person communications", () => {
     form.requestSubmit();
     await vi.waitFor(() => expect(saves).toBe(2));
     await vi.waitFor(() =>
-      expect(document.querySelector("[data-profile-last-contact]")?.textContent)
+      expect(summary.vital("last-contact"))
         .toBe(
           formatInstant("2026-08-22T12:00:00.000Z", {
             locale: "en",

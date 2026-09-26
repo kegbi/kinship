@@ -1,0 +1,32 @@
+---
+/** The person tasks card `lib/tasks.ts` owns (GAP-031). */
+import LoadMore from "../LoadMore.astro";
+import PersonSection from "./PersonSection.astro";
+import type { PersonSectionEntry } from "../../features/person/sections.ts";
+import { buttonVariants, formActionsVariants } from "../ui/variants.ts";
+
+interface Props {
+  readonly section: PersonSectionEntry;
+}
+
+const { section } = Astro.props;
+---
+
+<PersonSection section={section} class="tasks-section-card" state={{ "data-task-state": "" }}>
+  <button slot="action" data-task-add class={buttonVariants({ className: "profile-section-cta" })} type="button" hidden>Add task</button>
+  <button data-task-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry tasks</button>
+  <form method="post" data-task-form class="profile-fact-form task-form" hidden novalidate>
+    <label>Title <input name="title" maxlength="500" required /></label>
+    <label>Description (optional) <textarea name="description" maxlength="10000" rows="3"></textarea></label>
+    <label>Due time (optional) <input name="dueAt" type="datetime-local" /></label>
+    <label>State <select name="status"><option value="open">Open</option><option value="cancelled">Cancelled</option></select></label>
+    <p data-task-form-state class="section-state"></p>
+    <div class={formActionsVariants()} data-form-actions><button class={buttonVariants()} type="submit">Save task</button><button data-task-cancel class={buttonVariants({ variant: "outline" })} type="button">Cancel</button></div>
+  </form>
+  <div class="task-columns">
+    <div><h4>Open</h4><ul data-task-open-list class="task-list" aria-label="Open person tasks"></ul></div>
+    <div><h4>Completed</h4><ul data-task-completed-list class="task-list" aria-label="Completed person tasks"></ul></div>
+    <div><h4>Cancelled</h4><ul data-task-cancelled-list class="task-list" aria-label="Cancelled person tasks"></ul></div>
+    <LoadMore list="tasks" label="Load more tasks" />
+  </div>
+</PersonSection>

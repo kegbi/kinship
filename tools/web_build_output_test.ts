@@ -1,5 +1,5 @@
 /**
- * What `astro build` ships to the browser (GAP-026, GAP-027).
+ * What `astro build` ships to the browser (GAP-026, GAP-027, GAP-028).
  *
  * ADR 0006 lets React run only inside hydrated islands: static, public, and
  * no-JavaScript pages ship none, and every island's hydrated bytes are
@@ -7,9 +7,10 @@
  * every script a page can load — static imports, dynamic imports, and the
  * preload lists Vite writes for them — and fails when a public page can reach
  * a chunk that carries React. Protected pages load React for one island in
- * their layout, the people palette; the person page adds the gifts island,
- * which loads with its zone. Both islands' bytes are measured, so the
- * evidence line records real numbers.
+ * their layout, the people palette; the person page adds its own islands —
+ * the hero, the rail summary, the timeline, life events, and gifts — each
+ * loaded on demand. Every island's bytes are measured, so the evidence line
+ * records real numbers.
  *
  * It needs `apps/web/dist`, so it runs from the `build` verb right after
  * `astro build` rather than in the aggregate unit gate.
@@ -38,7 +39,7 @@ const PUBLIC_PAGES = [
   "terms/index.html",
 ];
 
-/** The static person shell, which also loads the lazy gifts island. */
+/** The static person shell, which loads its islands lazily. */
 const PERSON_SHELL = "internal/person-profile-shell/index.html";
 
 /** A protected page with no island of its own: Today. */
@@ -235,26 +236,34 @@ Deno.test("[GAP-027] a protected page loads React only for the people palette", 
   await logHydratedBytes("global-people-search", palette, react);
 });
 
-Deno.test("[GAP-026] the person shell loads the gifts island with its zone", async () => {
+/**
+ * The person shell's islands (GAP-026, GAP-028), each loaded on demand by the
+ * shell's script rather than shipped as a page script: the hero and the rail
+ * summary as soon as the person resolves, the timeline and life events with
+ * the Timeline zone, and gifts and debts with the Things zone.
+ */
+const PERSON_ISLANDS = [
+  "person-hero",
+  "person-rail",
+  "person-timeline",
+  "person-life-events",
+  "person-gifts",
+] as const;
+
+Deno.test("[GAP-028] the person shell loads each of its islands on demand", async () => {
   const react = await reactChunksOf(PERSON_SHELL);
   const fromPalette = await reachable([await paletteScript()]);
-  const island = await islandEntries("person-gifts");
-  assert(island.length === 1, `one gifts island entry, not ${island}`);
-  const entry = island[0]!;
   const html = await read(PERSON_SHELL);
-  assert(
-    (await reachable(chunkReferences(html, PERSON_SHELL))).has(entry),
-    "the person shell can load the gifts island",
-  );
-  assert(
-    !eagerScripts(html).has(entry),
-    "the gifts island is not a page script",
-  );
-  assert(
-    !fromPalette.has(entry),
-    "the gifts island does not load with the palette",
-  );
-  await logHydratedBytes("person-gifts", entry, react);
+  const fromShell = await reachable(chunkReferences(html, PERSON_SHELL));
+  for (const name of PERSON_ISLANDS) {
+    const island = await islandEntries(name);
+    assert(island.length === 1, `one ${name} island entry, not ${island}`);
+    const entry = island[0]!;
+    assert(fromShell.has(entry), `the person shell can load ${name}`);
+    assert(!eagerScripts(html).has(entry), `${name} is not a page script`);
+    assert(!fromPalette.has(entry), `${name} does not load with the palette`);
+    await logHydratedBytes(name, entry, react);
+  }
 });
 
 Deno.test("[GAP-027] no chunk ships cmdk's unused Radix Dialog", async () => {

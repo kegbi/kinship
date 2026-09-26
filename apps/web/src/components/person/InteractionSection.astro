@@ -1,0 +1,33 @@
+---
+/** The notes or activities card `lib/interactions.ts` owns (GAP-031). */
+import PersonSection from "./PersonSection.astro";
+import type { PersonSectionEntry } from "../../features/person/sections.ts";
+import { buttonVariants } from "../ui/variants.ts";
+
+interface Props {
+  readonly section: PersonSectionEntry;
+}
+
+const { section } = Astro.props;
+const activities = section.id === "activities";
+const prefix = activities ? "person-activities" : "person-notes";
+const title = section.title.toLowerCase();
+---
+
+<PersonSection section={section} class="interaction-section-card" state={{ id: `${prefix}-state` }}>
+  <button
+    slot="action"
+    class={buttonVariants({ className: "profile-section-cta" })}
+    data-person-interaction-capture
+    data-quick-capture
+    data-interaction-intended-kind={activities ? "activity" : "note"}
+    type="button"
+  >{activities ? "Log activity" : "Add note"}</button>
+  <ul id={`${prefix}-list`} class="interaction-list" aria-label={`Recent ${title}`} hidden></ul>
+  <button id={`${prefix}-retry`} class={buttonVariants({ variant: "outline" })} type="button" aria-controls={`${prefix}-list`} hidden>Retry {title}</button>
+  {activities && (
+    <div class="profile-section-footer">
+      <a class={buttonVariants({ variant: "outline" })} data-activity-report-link href="/app/people">Open activity report</a>
+    </div>
+  )}
+</PersonSection>

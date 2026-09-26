@@ -9,6 +9,7 @@ import {
   recordInteraction,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { buttonVariants } from "../components/ui/variants.ts";
+import { setLastContact } from "../features/person/profile-summary.ts";
 
 let communicationAbort: AbortController | undefined;
 
@@ -186,13 +187,13 @@ export async function mountCommunications(
       ? profileAttempt.value
       : undefined;
     if (refreshed?.ok) renderLists(refreshed.value);
-    const lastContact = document.querySelector<HTMLElement>(
-      "[data-profile-last-contact]",
-    );
-    if (lastContact && profile?.ok) {
-      lastContact.textContent = profile.value.person.lastContactAt
-        ? formatInstant(profile.value.person.lastContactAt, timePreferences)
-        : "None recorded";
+    // The hero shows the last contact (GAP-028).
+    if (profile?.ok) {
+      setLastContact(
+        profile.value.person.lastContactAt
+          ? formatInstant(profile.value.person.lastContactAt, timePreferences)
+          : "None recorded",
+      );
     }
     return refreshed?.ok === true && profile?.ok === true;
   };
