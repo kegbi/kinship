@@ -30,7 +30,12 @@ shows a concrete blocker. Keep the choice consistent across the application; do
 not mix Base UI and Radix primitives component by component without a documented
 architecture decision. On 2026-09-23 GAP-026 ran `shadcn init` (shadcn 4.21.0),
 which selected Base UI (`@base-ui/react`, style `base-nova`), so the vendored
-components use Base UI primitives only.
+components use Base UI primitives only. On 2026-09-26 GAP-027 recorded the one
+exception: the command palette uses `cmdk` (as shadcn's `command` does) for list
+filtering and keyboard navigation only, inside Base UI's Dialog; cmdk's internal
+Radix Dialog is not used (the web build aliases it to a stub, so it does not
+ship), and cmdk is the only permitted exception until a Base UI command
+primitive replaces it.
 
 [ADR 0006](decisions/0006-ui-stack-shadcn-react-islands.md) reinstates this
 stack after `UXD-010` removed the then-unused packages, and migrates the vanilla

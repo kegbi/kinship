@@ -10,6 +10,7 @@ import {
   listExports,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 function element<T extends Element>(selector: string): T | undefined {
   return document.querySelector<T>(selector) ?? undefined;
@@ -37,7 +38,7 @@ function renderHistory(
     if (run.status === "completed") {
       const action = document.createElement("button");
       action.type = "button";
-      action.className = "button-secondary";
+      action.className = buttonVariants({ variant: "outline" });
       action.textContent = "Prepare download";
       action.addEventListener("click", async () => {
         action.disabled = true;
@@ -52,7 +53,10 @@ function renderHistory(
           return;
         }
         const link = document.createElement("a");
-        link.className = "button-link";
+        link.className = buttonVariants({
+          className: "mt-(--space-4)",
+          shape: "pill",
+        });
         link.href = result.value.href;
         link.textContent = "Download export";
         link.setAttribute("download", "");

@@ -19,6 +19,10 @@ import {
   type TodayAttentionItem,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
+import {
+  buttonVariants,
+  formActionsVariants,
+} from "../components/ui/variants.ts";
 
 export const TASK_CHANGED_EVENT = "kinship:task-changed";
 /** The largest page the task contract serves, which is what this surface asks for. */
@@ -104,10 +108,12 @@ function renderTask(
   }
   if (mutable) {
     const actions = document.createElement("div");
-    actions.className = "form-actions";
+    actions.className = formActionsVariants({
+      className: "task-item-actions",
+    });
     const completion = document.createElement("button");
     completion.type = "button";
-    completion.className = "button-secondary";
+    completion.className = buttonVariants({ variant: "outline" });
     completion.textContent = task.status === "open" ? "Complete" : "Reopen";
     completion.addEventListener(
       "click",
@@ -117,7 +123,7 @@ function renderTask(
     if (onEdit) {
       const edit = document.createElement("button");
       edit.type = "button";
-      edit.className = "button-secondary";
+      edit.className = buttonVariants({ variant: "outline" });
       edit.textContent = "Edit task";
       edit.addEventListener("click", () => onEdit(task));
       actions.append(edit);
@@ -941,10 +947,10 @@ export async function mountTodayAttention(): Promise<void> {
         !item.person?.unavailable
       ) {
         const actions = document.createElement("div");
-        actions.className = "form-actions";
+        actions.className = formActionsVariants();
         const button = document.createElement("button");
         button.type = "button";
-        button.className = "button-secondary";
+        button.className = buttonVariants({ variant: "outline" });
         button.dataset.todayComplete = "";
         button.dataset.taskId = item.id;
         button.disabled = completionOwners.has(activeWorkspaceId);

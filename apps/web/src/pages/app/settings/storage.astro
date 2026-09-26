@@ -3,6 +3,9 @@ import Breadcrumb from "../../../components/Breadcrumb.astro";
 import SettingsNavigation from "../../../components/SettingsNavigation.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
+import {
+  buttonVariants,
+} from "../../../components/ui/variants.ts";
 ---
 <ApplicationLayout current="settings" description="Review authorized workspace storage usage and object state." pageId="settings.storage" title="Storage settings — Kinship">
   <main id="main-content" class="page-frame settings-page" tabindex="-1" data-requires-workspace-admin data-storage-settings>
@@ -17,7 +20,7 @@ export const prerender = true;
       <div><p class="eyebrow">Data settings</p><h1>Storage</h1><p>Workspace-wide file usage and provider state.</p></div>
     </header>
     <p data-storage-state class="storage-page-state" role="status" aria-live="polite"></p>
-    <button data-storage-retry class="button-secondary" type="button" hidden>Retry</button>
+    <button data-storage-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry</button>
 
     <div class="storage-settings-sections">
       <section id="usage-and-limits" class="storage-settings-section" aria-labelledby="storage-usage-heading">

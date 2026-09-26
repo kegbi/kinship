@@ -10,10 +10,16 @@ const breadcrumb = readFileSync(
 describe("breadcrumb component", () => {
   it("UXD-009 renders the shared accessible markup contract", () => {
     expect(breadcrumb).toContain('aria-label="Breadcrumb"');
-    expect(breadcrumb).toContain("<a href={entry.href}>{entry.label}</a>");
     expect(breadcrumb).toContain(
-      "<a data-breadcrumb-person href={entry.href}>",
+      "<a class={breadcrumbVariants.link} href={entry.href}>{entry.label}</a>",
     );
+    expect(breadcrumb).toContain(
+      "<a class={breadcrumbVariants.link} data-breadcrumb-person href={entry.href}>",
+    );
+    expect(breadcrumb).toContain(
+      '<nav class={cn(breadcrumbVariants.list, className)} aria-label="Breadcrumb">',
+    );
+    expect(breadcrumb).toContain('data-slot="skeleton"');
     expect(breadcrumb).toContain(
       '<span aria-hidden="true">/</span>',
     );

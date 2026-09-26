@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs";
 import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
 import { mountTaskSurface, mountTodayTasks } from "./tasks.ts";
 import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 const applicationCss = readApplicationStylesheet();
 const todayPage = readFileSync("apps/web/src/pages/app.astro", "utf8");
@@ -335,7 +336,7 @@ describe("PLANNING-001 task browser behavior", () => {
     const buttons = document.querySelectorAll<HTMLButtonElement>(
       "[data-task-open-list] button",
     );
-    expect(buttons[1]?.classList.contains("button-secondary")).toBe(true);
+    expect(buttons[1]?.className).toBe(buttonVariants({ variant: "outline" }));
     buttons[1]!.click();
     const form = document.querySelector<HTMLFormElement>("[data-task-form]")!;
     (form.elements.namedItem("title") as HTMLInputElement).value = "Updated";
@@ -885,12 +886,14 @@ describe("PLANNING-001 task browser behavior", () => {
         target.hidden
       ),
     ).toBe(true);
-    expect(todayPage.match(/today-touch-target/g)).toHaveLength(8);
-    expect(todayPage).toMatch(
-      /id="today-cadences-retry" class="button-secondary today-touch-target" type="button" hidden>Retry reconnect suggestions<\/button>/,
+    const wrappingTarget =
+      'class={buttonVariants({ variant: "outline", wrap: true })}';
+    expect(todayPage.split(wrappingTarget)).toHaveLength(9);
+    expect(todayPage).toContain(
+      `id="today-cadences-retry" ${wrappingTarget} type="button" hidden>Retry reconnect suggestions</button>`,
     );
-    expect(todayPage).toMatch(
-      /id="today-reminders-retry" class="button-secondary today-touch-target" type="button" hidden>Retry reminder state<\/button>/,
+    expect(todayPage).toContain(
+      `id="today-reminders-retry" ${wrappingTarget} type="button" hidden>Retry reminder state</button>`,
     );
     expect(
       document.querySelector("[data-today-date]")?.getAttribute("datetime"),
@@ -910,8 +913,9 @@ describe("PLANNING-001 task browser behavior", () => {
     expect(snapshotCalls()).toHaveLength(2);
     expect(document.querySelectorAll(".attention-item")).toHaveLength(0);
     expect(document.querySelector("#secondary")?.textContent).toBe("Preserved");
-    expect(applicationCss).toMatch(
-      /\.form-actions button\s*\{[^}]*min-height:\s*46px/s,
+    // The row's Complete action is an outline button: a 44px target.
+    expect(buttonVariants({ variant: "outline" }).split(" ")).toContain(
+      "min-h-11",
     );
   });
 

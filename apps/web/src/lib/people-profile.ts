@@ -47,6 +47,7 @@ import {
 } from "./unsaved-changes.ts";
 
 import { displayPersonName, type PersonNameOrder } from "./person-name.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 interface ProfileElements {
   readonly archived: HTMLElement;
@@ -202,8 +203,6 @@ function applyZoneView(filter: ZoneFilterContext, view: ZoneView): void {
   for (const button of filter.buttons) {
     const selected = button.dataset.zoneFilter === view;
     button.setAttribute("aria-pressed", String(selected));
-    button.classList.toggle("button-primary", selected);
-    button.classList.toggle("button-secondary", !selected);
   }
   for (const zone of filter.zones) {
     zone.hidden = view !== "all" && zone.dataset.zone !== view;
@@ -562,7 +561,10 @@ function renderState(profile: ProfileElements, state: ProfileState): void {
   const detail = document.createElement("p");
   detail.textContent = copy.detail;
   const link = document.createElement("a");
-  link.className = "button-link";
+  link.className = buttonVariants({
+    className: "mt-(--space-4)",
+    shape: "pill",
+  });
   link.href = copy.link;
   link.textContent = copy.linkLabel;
   profile.state.append(eyebrow, heading, detail, link);

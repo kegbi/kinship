@@ -1,4 +1,7 @@
 ---
+import { cn } from "../lib/utils.ts";
+import { breadcrumbVariants, skeletonVariants } from "./ui/variants.ts";
+
 interface BreadcrumbEntry {
   readonly href?: string;
   readonly label: string;
@@ -13,16 +16,16 @@ interface Props {
 const { class: className = "page-breadcrumb", trail } = Astro.props;
 ---
 
-<nav class={className} aria-label="Breadcrumb">
+<nav class={cn(breadcrumbVariants.list, className)} aria-label="Breadcrumb">
   {trail.map((entry, index) => (
     <>
       {index > 0 && <span aria-hidden="true">/</span>}
       {index === trail.length - 1
         ? <span aria-current="page">{entry.label}</span>
         : entry.pending
-        ? <a data-breadcrumb-person href={entry.href}><span class="skeleton skeleton-chip" aria-hidden="true"></span><span class="sr-only">{entry.label}</span></a>
+        ? <a class={breadcrumbVariants.link} data-breadcrumb-person href={entry.href}><span class={skeletonVariants({ shape: "chip" })} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">{entry.label}</span></a>
         : entry.href
-        ? <a href={entry.href}>{entry.label}</a>
+        ? <a class={breadcrumbVariants.link} href={entry.href}>{entry.label}</a>
         : null}
     </>
   ))}

@@ -23,6 +23,7 @@ export default defineConfig({
         "apps/web/src/lib/*.ts",
         "apps/web/src/islands/**/*.ts",
         "apps/web/src/islands/**/*.tsx",
+        "apps/web/src/components/ui/*.ts",
         "apps/web/src/components/ui/*.tsx",
       ],
       exclude: [

@@ -2,6 +2,9 @@
 import Breadcrumb from "../../components/Breadcrumb.astro";
 import ApplicationLayout from "../../layouts/ApplicationLayout.astro";
 export const prerender = true;
+import {
+  buttonVariants,
+} from "../../components/ui/variants.ts";
 ---
 
 <ApplicationLayout current="journal" description="Read one personal journal item." pageId="journal.item" title="Journal item — Kinship">
@@ -12,7 +15,7 @@ export const prerender = true;
     ]} />
     <header class="page-heading"><div><p class="eyebrow">Personal history · <span data-workspace-name></span></p><h1>Journal item</h1></div></header>
     <p data-journal-state class="section-state" role="status" aria-live="polite">Loading journal item…</p>
-    <button data-journal-retry class="button-secondary" type="button" hidden>Retry item</button>
+    <button data-journal-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry item</button>
     <ol data-journal-list class="journal-list" aria-label="Journal item"></ol>
   </main>
 </ApplicationLayout>

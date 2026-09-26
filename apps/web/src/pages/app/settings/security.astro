@@ -3,6 +3,10 @@ import Breadcrumb from "../../../components/Breadcrumb.astro";
 import SettingsNavigation from "../../../components/SettingsNavigation.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
+import {
+  badgeVariants,
+  cardVariants,
+} from "../../../components/ui/variants.ts";
 ---
 <ApplicationLayout current="settings" description="Review and revoke your active Kinship sessions." pageId="settings.security" title="Security & sessions — Kinship">
   <main id="main-content" class="page-frame settings-page" tabindex="-1">
@@ -14,7 +18,7 @@ export const prerender = true;
       { label: "Security & sessions" },
     ]} />
     <header class="settings-heading"><div><p class="eyebrow">Personal security</p><h1>Security &amp; sessions</h1><p>Review only your active sessions. Revoking the current session signs you out immediately.</p></div></header>
-    <section class="member-section"><div class="section-heading"><h2>Active sessions</h2><span id="session-count" class="state-badge calm">Loading…</span></div><p id="settings-status" role="status" aria-live="polite">Loading sessions securely…</p><ul id="session-list" class="member-list"></ul></section>
+    <section class={cardVariants({ className: "member-section" })}><div class="section-heading"><h2>Active sessions</h2><span id="session-count" class={badgeVariants({ variant: "secondary" })}>Loading…</span></div><p id="settings-status" role="status" aria-live="polite">Loading sessions securely…</p><ul id="session-list" class="member-list"></ul></section>
       </div>
     </div>
   </main>

@@ -21,66 +21,7 @@
   gap: var(--space-5);
 }
 
-.skeleton {
-  background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-3) 50%,
-    var(--surface-2) 100%);
-  background-size: 200% 100%;
-  animation: skeleton-sweep 1.4s ease-in-out infinite;
-  border-radius: var(--radius-sm);
-}
-
-.skeleton-lines {
-  display: grid;
-  width: 100%;
-  gap: var(--space-2);
-}
-
-.skeleton-line {
-  display: block;
-  width: 100%;
-  height: .9rem;
-}
-
-.skeleton-line-80 {
-  width: 80%;
-}
-
-.skeleton-line-60 {
-  width: 60%;
-}
-
-.skeleton-avatar {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
-}
-
-.skeleton-chip {
-  display: inline-block;
-  width: 5rem;
-  height: 1.5rem;
-  border-radius: var(--radius-pill);
-}
-
-@keyframes skeleton-sweep {
-  from {
-    background-position: 200% 0;
-  }
-
-  to {
-    background-position: -200% 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .skeleton {
-    animation: none;
-  }
-}
-
-.person-workspace button,
-.person-workspace a:is(.button-primary, .button-secondary, .button-danger) {
+.person-workspace button {
   align-items: center;
   box-sizing: border-box;
   display: inline-flex;
@@ -102,37 +43,20 @@
   white-space: normal;
 }
 
-.person-workspace button {
-  border-color: var(--line-strong);
-  color: var(--ink-1);
-  background: var(--surface-1);
+/* A button without a variant looks like the outline one. */
+@layer legacy-defaults {
+  .person-workspace button {
+    border-color: var(--line-strong);
+    color: var(--ink-1);
+    background: var(--surface-1);
+  }
 }
 
-.person-workspace .button-primary {
-  border-color: var(--ink-1);
-  color: var(--ink-inverse);
-  background: var(--ink-1);
-}
-
-.person-workspace .button-secondary {
-  border-color: var(--line-strong);
-  color: var(--ink-1);
-  background: var(--surface-1);
-}
-
-.person-workspace .button-danger {
-  border-color: var(--accent);
-  color: var(--ink-inverse);
-  background: var(--accent);
-}
-
-.person-workspace button:hover,
-.person-workspace a:is(.button-primary, .button-secondary, .button-danger):hover {
+.person-workspace button:hover {
   filter: brightness(.96);
 }
 
-.person-workspace button:disabled,
-.person-workspace a:is(.button-primary, .button-secondary, .button-danger)[aria-disabled="true"] {
+.person-workspace button:disabled {
   cursor: not-allowed;
   opacity: .55;
   pointer-events: none;
@@ -155,20 +79,7 @@
 }
 
 .person-profile-breadcrumb {
-  display: flex;
   grid-column: 1 / -1;
-  gap: var(--space-2);
-  align-items: center;
-  color: var(--ink-2);
-  font-size: .82rem;
-  font-weight: 600;
-}
-
-.person-profile-breadcrumb a {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  text-underline-offset: .2em;
 }
 
 .person-profile-avatar {
@@ -205,15 +116,11 @@
   letter-spacing: -.025em;
 }
 
-#person-profile-name .skeleton-line {
+#person-profile-name [data-slot="skeleton"] {
   width: 12rem;
 }
 
-.person-profile-breadcrumb .skeleton-chip {
-  width: 7rem;
-}
-
-.person-vital-stats .skeleton-line {
+.person-vital-stats [data-slot="skeleton"] {
   min-width: 5rem;
 }
 
@@ -255,7 +162,7 @@
   box-shadow: var(--shadow-2);
 }
 
-.person-workspace .person-menu-popover > :is(button, a:is(.button-primary, .button-secondary, .button-danger)) {
+.person-workspace .person-menu-popover > :is(button, a) {
   width: 100%;
   min-height: 44px;
   padding: var(--space-3);
@@ -265,12 +172,12 @@
   text-align: left;
 }
 
-.person-workspace .person-menu-popover > :is(button, a:is(.button-primary, .button-secondary, .button-danger)).button-danger {
+.person-workspace .person-menu-popover > .person-menu-danger {
   color: var(--danger);
   background: var(--surface-1);
 }
 
-.person-workspace .person-menu-popover > :is(button, a:is(.button-primary, .button-secondary, .button-danger)):hover {
+.person-workspace .person-menu-popover > :is(button, a):hover {
   background: var(--surface-3);
   filter: none;
 }
@@ -286,11 +193,6 @@
 
 .person-profile-badges p {
   margin: 0;
-}
-
-.state-badge.favorite {
-  color: var(--warning);
-  background: var(--warning-soft);
 }
 
 .person-profile-description {
@@ -405,23 +307,10 @@
   gap: var(--space-3);
 }
 
-.person-lifecycle-buttons button,
-.person-lifecycle-buttons a:is(.button-primary, .button-secondary, .button-danger) {
+.person-lifecycle-buttons button {
   min-height: 44px;
   padding: var(--space-3) var(--space-4);
   border-radius: 999px;
-}
-
-.person-lifecycle-buttons .button-primary {
-  border-color: var(--ink-1);
-  color: var(--ink-inverse);
-  background: var(--ink-1);
-}
-
-.person-lifecycle-buttons .button-danger {
-  border-color: var(--accent);
-  color: var(--ink-inverse);
-  background: var(--accent);
 }
 
 .person-lifecycle-buttons button:disabled {
@@ -798,7 +687,7 @@
   scroll-margin-top: 10.5rem;
 }
 
-.person-zone .profile-section-card > :is(button, a)[class*="button-"] {
+.person-zone .profile-section-card > :is(button, a) {
   justify-self: start;
 }
 
@@ -828,7 +717,7 @@
   flex-wrap: wrap;
 }
 
-.person-workspace .person-timeline-filters > button:is(.button-primary, .button-secondary) {
+.person-workspace .person-timeline-filters > button {
   min-width: 44px;
   min-height: 44px;
   flex: 0 1 auto;
@@ -912,8 +801,8 @@
   list-style: none;
 }
 
-.person-workspace .person-timeline > button:is(.button-primary, .button-secondary, .button-danger)[data-timeline-more],
-.person-workspace .person-timeline > button:is(.button-primary, .button-secondary, .button-danger)[data-timeline-retry] {
+.person-workspace .person-timeline > button[data-timeline-more],
+.person-workspace .person-timeline > button[data-timeline-retry] {
   justify-self: start;
 }
 
@@ -1042,20 +931,20 @@
   grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
 }
 
-.profile-rail-block :is(.important-date-actions, .form-actions) {
+.profile-rail-block .important-date-actions {
   flex-wrap: wrap;
 }
 
-.profile-rail-block :is(a, button):is(.button-primary, .button-secondary, .button-danger).profile-rail-summary-control {
+.person-workspace .profile-rail-block :is(a, button).profile-rail-summary-control {
   min-width: 44px;
   min-height: 44px;
 }
 
-.profile-rail-block :is(a, button):is(.button-primary, .button-secondary, .button-danger).profile-contact-copy {
+.person-workspace .profile-rail-block :is(a, button).profile-contact-copy {
   padding-inline: var(--space-3);
 }
 
-.profile-rail-block :is(a, button):is(.button-primary, .button-secondary, .button-danger).profile-rail-expander {
+.person-workspace .profile-rail-block :is(a, button).profile-rail-expander {
   width: auto;
   min-height: 36px;
   margin-top: var(--space-1);
@@ -1067,12 +956,12 @@
   font-size: .8rem;
 }
 
-.profile-rail-block :is(a, button):is(.button-primary, .button-secondary, .button-danger).profile-rail-expander:hover {
+.person-workspace .profile-rail-block :is(a, button).profile-rail-expander:hover {
   background: var(--accent-soft);
   filter: none;
 }
 
-.profile-rail-block :is(a, button):is(.button-primary, .button-secondary, .button-danger).profile-rail-summary-control:not(.profile-rail-expander):not(.profile-contact-copy) {
+.person-workspace .profile-rail-block :is(a, button).profile-rail-summary-control:not(.profile-rail-expander):not(.profile-contact-copy) {
   min-height: 32px;
   padding: var(--space-1) var(--space-2);
   border-color: transparent;
@@ -1225,13 +1114,13 @@
   filter: none;
 }
 
-.person-workspace .profile-rail-block :is(.profile-fact-actions, .important-date-actions, .relationship-row-editor) > button.button-danger {
+.person-workspace .profile-rail-block :is(.profile-fact-actions, .important-date-actions, .relationship-row-editor) > button.profile-rail-remove {
   border-color: color-mix(in srgb, var(--danger) 22%, transparent);
   color: var(--danger);
   background: color-mix(in srgb, var(--danger-soft) 60%, transparent);
 }
 
-.person-workspace .profile-rail-block :is(.profile-fact-actions, .important-date-actions, .relationship-row-editor) > button.button-danger:hover {
+.person-workspace .profile-rail-block :is(.profile-fact-actions, .important-date-actions, .relationship-row-editor) > button.profile-rail-remove:hover {
   color: var(--danger-strong);
   background: var(--danger-soft);
 }
@@ -1520,20 +1409,6 @@
   letter-spacing: -.005em;
 }
 
-/* Status chips stay calm unless the card itself is in trouble. */
-.person-zone .profile-section-card > .profile-section-heading .state-badge {
-  padding: var(--space-1) var(--space-2);
-  color: var(--ink-2);
-  background: var(--surface-sunken);
-  font-size: .66rem;
-  white-space: nowrap;
-}
-
-.person-zone .profile-section-card:is([data-section-state="error"], [data-section-state="forbidden"], [data-section-state="unavailable"]) > .profile-section-heading .state-badge {
-  color: var(--accent-hover);
-  background: var(--accent-soft);
-}
-
 .person-zone .profile-section-card:not(.person-timeline) {
   display: grid;
   gap: var(--space-3);
@@ -1627,7 +1502,7 @@
   border-top: 1px solid var(--line-hairline);
 }
 
-.person-workspace .profile-section-footer > a:is(.button-primary, .button-secondary, .button-danger) {
+.person-workspace .profile-section-footer > a {
   min-height: 40px;
   padding: var(--space-2) var(--space-4) var(--space-2) var(--space-3);
   border-color: transparent;
@@ -1639,7 +1514,7 @@
   text-underline-offset: .2em;
 }
 
-.person-workspace .profile-section-footer > a:is(.button-primary, .button-secondary, .button-danger):hover {
+.person-workspace .profile-section-footer > a:hover {
   background: var(--accent-soft);
   filter: none;
 }
@@ -1743,7 +1618,7 @@
   line-height: 1.45;
 }
 
-.tasks-section-card .task-item > .form-actions {
+.tasks-section-card .task-item > .task-item-actions {
   grid-column: 2;
   grid-row: 1 / span 3;
   gap: var(--space-1);
@@ -1751,7 +1626,7 @@
   flex-direction: column;
 }
 
-.person-workspace .tasks-section-card .task-item > .form-actions > button {
+.person-workspace .tasks-section-card .task-item > .task-item-actions > button {
   min-height: 34px;
   padding: var(--space-1) var(--space-2);
   border-color: transparent;
@@ -1760,13 +1635,13 @@
   font-size: .78rem;
 }
 
-.person-workspace .tasks-section-card .task-item > .form-actions > button:hover {
+.person-workspace .tasks-section-card .task-item > .task-item-actions > button:hover {
   color: var(--ink-1);
   background: color-mix(in srgb, var(--ink-1) 8%, transparent);
   filter: none;
 }
 
-.person-workspace .tasks-section-card .task-item > .form-actions > button:first-child {
+.person-workspace .tasks-section-card .task-item > .task-item-actions > button:first-child {
   border-color: var(--line-strong);
   color: var(--ink-1);
   background: var(--surface-1);
@@ -1867,11 +1742,7 @@
   line-height: 1.35;
 }
 
-.person-file-list > li > div:first-child > .state-badge {
-  margin-top: var(--space-1);
-}
-
-.person-file-list > li > .form-actions {
+.person-file-list > li > .person-file-actions {
   gap: var(--space-1);
   margin-left: auto;
   align-items: center;
@@ -1879,7 +1750,7 @@
   flex-wrap: nowrap;
 }
 
-.person-file-list > li > .form-actions select {
+.person-file-list > li > .person-file-actions select {
   min-height: 34px;
   padding: var(--space-1) var(--space-5) var(--space-1) var(--space-2);
   border: 1px solid var(--line-1);
@@ -1890,7 +1761,7 @@
   font-size: .78rem;
 }
 
-.person-workspace .person-file-list > li > .form-actions > :is(button, a):is(.button-primary, .button-secondary, .button-danger) {
+.person-workspace .person-file-list > li > .person-file-actions > :is(button, a) {
   min-height: 34px;
   padding: var(--space-1) var(--space-2);
   border-color: transparent;
@@ -1900,17 +1771,17 @@
   white-space: nowrap;
 }
 
-.person-workspace .person-file-list > li > .form-actions > :is(button, a):is(.button-primary, .button-secondary, .button-danger):hover {
+.person-workspace .person-file-list > li > .person-file-actions > :is(button, a):hover {
   color: var(--ink-1);
   background: color-mix(in srgb, var(--ink-1) 8%, transparent);
   filter: none;
 }
 
-.person-workspace .person-file-list > li > .form-actions > .button-danger {
+.person-workspace .person-file-list > li > .person-file-actions > .person-file-remove {
   color: var(--danger);
 }
 
-.person-workspace .person-file-list > li > .form-actions > .button-danger:hover {
+.person-workspace .person-file-list > li > .person-file-actions > .person-file-remove:hover {
   color: var(--danger-strong);
   background: var(--danger-soft);
 }
@@ -2140,63 +2011,6 @@
   line-height: 1.3;
 }
 
-.form-actions {
-  display: flex;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-
-.form-actions button {
-  min-height: 46px;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--ink-1);
-  border-radius: var(--radius-md);
-  color: var(--ink-inverse);
-  background: var(--ink-1);
-  cursor: pointer;
-}
-
-.person-workspace .form-actions a:is(.button-primary, .button-secondary, .button-danger) {
-  min-height: 46px;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-}
-
-.form-actions button.secondary-action {
-  color: var(--ink-1);
-  background: var(--surface-1);
-}
-
-.form-actions a.button-primary,
-.form-actions a.button-secondary,
-.form-actions a.button-danger,
-.form-actions button.button-primary,
-.form-actions button.button-secondary,
-.form-actions button.button-danger {
-  min-height: 46px;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  line-height: 1.2;
-}
-
-.form-actions .button-primary {
-  border-color: var(--ink-1);
-  color: var(--ink-inverse);
-  background: var(--ink-1);
-}
-
-.form-actions .button-secondary {
-  border-color: var(--line-strong);
-  color: var(--ink-1);
-  background: var(--surface-1);
-}
-
-.form-actions .button-danger {
-  border-color: var(--accent);
-  color: var(--ink-inverse);
-  background: var(--accent);
-}
-
 .person-form [aria-invalid="true"] {
   border-color: var(--danger);
 }
@@ -2263,7 +2077,7 @@
 }
 
 .important-date-actions,
-.important-date-form .form-actions {
+.important-date-form [data-form-actions] {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
@@ -2432,11 +2246,6 @@
   background: var(--accent-soft);
 }
 
-.state-badge.archived {
-  color: var(--warning);
-  background: var(--warning-soft);
-}
-
 .people-directory-page {
   width: min(var(--application-width, 1120px), calc(100% - 2rem));
 }
@@ -2457,10 +2266,6 @@
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
-}
-
-.directory-heading-actions .button-link {
-  margin-top: 0;
 }
 
 .people-directory-controls {
@@ -2803,7 +2608,7 @@
     justify-content: stretch;
   }
 
-  .directory-heading-actions .button-link {
+  .directory-heading-actions > a {
     flex: 1;
     justify-content: center;
   }

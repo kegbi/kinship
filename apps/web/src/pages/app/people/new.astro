@@ -2,6 +2,10 @@
 import Breadcrumb from "../../../components/Breadcrumb.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
+import {
+  buttonVariants,
+  formActionsVariants,
+} from "../../../components/ui/variants.ts";
 ---
 
 <ApplicationLayout
@@ -53,14 +57,14 @@ export const prerender = true;
       <section id="duplicate-warning" class="duplicate-warning" role="alert" tabindex="-1" hidden>
         <h2>Possible duplicate</h2>
         <p id="duplicate-detail"></p>
-        <div class="form-actions">
-          <button id="create-anyway" type="button" class="secondary-action">Create anyway</button>
-          <button id="review-person" type="button">Review the names</button>
+        <div class={formActionsVariants()}>
+          <button id="create-anyway" type="button" class={buttonVariants({ variant: "outline" })}>Create anyway</button>
+          <button id="review-person" type="button" class={buttonVariants()}>Review the names</button>
         </div>
       </section>
-      <div class="form-actions">
-        <button id="save-person" type="submit">Save person</button>
-        <button id="save-add-another" type="submit" class="secondary-action">Save and add another</button>
+      <div class={formActionsVariants()}>
+        <button id="save-person" type="submit" class={buttonVariants()}>Save person</button>
+        <button id="save-add-another" type="submit" class={buttonVariants({ variant: "outline" })}>Save and add another</button>
       </div>
       <p id="people-create-status" role="status" aria-live="polite"></p>
     </form>

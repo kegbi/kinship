@@ -1072,7 +1072,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     gateway image builds green; gates fmt:check, lint, check,
     check:architecture, contracts:check.
 
-- [ ] **GAP-027 — shadcn component set and shell islands.** M. Depends: 026.
+- [x] **GAP-027 — shadcn component set and shell islands.** M. Depends: 026.
   - Scope: build the Kinship primitives from shadcn/ui: button, card, badge,
     breadcrumb, segmented filter, dialog, alert dialog, sheet, dropdown menu,
     command palette, select/combobox, table, skeleton, tooltip. Static Astro
@@ -1080,10 +1080,34 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     card classes) so static and island markup share one definition. Move the two
     `ApplicationLayout.astro` dialogs and the global people search / command
     palette to islands. Delete the duplicated `.button-*`, `.card`,
-    `.state-badge`, `.form-actions` and dialog CSS they replace.
+    `.state-badge`, `.form-actions` and dialog CSS they replace. Quick capture's
+    dialog moves with interactions in GAP-031 so the surface keeps one owner.
   - Verify: axe and keyboard E2E for the palette, the dialogs, and the settings
     pages; stylesheet contract tests updated; visual check at 390, 768, and
     1440.
+  - Delivered 2026-09-26: `apps/web/src/components/ui/variants.ts` is the one
+    source of button, segmented-filter, badge, card, field, form-action,
+    breadcrumb, and skeleton classes, consumed by the vendored React components,
+    84 Astro call sites, and 19 vanilla modules, over the UXD-001 tokens;
+    vendored on Base UI: button, badge, dialog, and command (`cmdk` 1.1.1, whose
+    unused Radix Dialog is aliased to a stub and guarded out of every chunk by
+    `tools/web_build_output_test.ts`, recorded as the one primitive-family
+    exception in `technology-baseline.md`); card, breadcrumb, skeleton, and the
+    segmented filter use variant classes in static markup, and alert dialog,
+    sheet, dropdown menu, select, tooltip, and table are deferred until a
+    surface uses them; the global people search and command palette is an island
+    (110,755 B gzip hydrated on protected pages) with its 20 vanilla tests
+    rewritten as 30 role-based island tests and `lib/global-people-search.ts`
+    deleted; about 500 lines of duplicated `.button-*`, `.state-badge`,
+    `.form-actions`, card, search-dialog, skeleton, and breadcrumb CSS are
+    deleted, with element defaults moved to a `legacy-defaults` layer beneath
+    the utilities; `legacy-look.ts` is gone; Quick capture's dialog moves with
+    interactions in GAP-031; 100 files changed (+3673/-2703); web tests 821, web
+    coverage 93.69/85.57/90.54/95.55, every Deno set unchanged; visual check at
+    390, 768, and 1440 shows only a 2 px shorter form-action button; Chromium
+    E2E 57 passed, WebKit and Firefox 15 each on the palette, shell, settings,
+    and profile specs; build and web and gateway images green; gates fmt:check,
+    lint, check, check:architecture (14), contracts:check.
 
 - [ ] **GAP-028 — Person profile section registry.** L. Depends: 026, 027.
   - Scope: a data-driven section registry (`id`, zone, component, visibility
@@ -1117,11 +1141,11 @@ project once. Full three-browser E2E and image builds run at the end of Phases
   - Verify: all web tests green; migrated suites shorter.
 
 - [ ] **GAP-031 — Stateful person surfaces as islands.** L. Depends: 028, 030.
-  - Scope: migrate interactions, communications, tasks, reminders,
-    relationships, and important dates to islands. Surfaces with non-trivial
-    state use `useReducer` with reducers unit-tested without the DOM, one owner
-    per surface per `AGENTS.md`. Delete each vanilla module and its tests as its
-    island lands.
+  - Scope: migrate interactions and the Quick capture dialog, communications,
+    tasks, reminders, relationships, and important dates to islands. Surfaces
+    with non-trivial state use `useReducer` with reducers unit-tested without
+    the DOM, one owner per surface per `AGENTS.md`. Delete each vanilla module
+    and its tests as its island lands.
   - Verify: reducer tests; the interactions, tasks, reminders, relationships,
     and important-dates E2E flows green.
 

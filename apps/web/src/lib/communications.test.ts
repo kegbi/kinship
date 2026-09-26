@@ -4,6 +4,7 @@ import { formatInstant } from "./time-presentation.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountCommunications } from "./communications.ts";
 import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 const workspaceId = "00000000-0000-4000-8000-000000000003";
 const personId = "00000000-0000-4000-8000-000000000100";
@@ -334,7 +335,8 @@ describe("INTERACTION-002 person communications", () => {
     ];
     expect(
       rows.every((row) =>
-        row.querySelector("button")?.classList.contains("button-danger")
+        row.querySelector("button")?.className ===
+          buttonVariants({ variant: "destructive" })
       ),
     ).toBe(true);
     rows[0]!.querySelector<HTMLTextAreaElement>("textarea")!.value = "Hello";

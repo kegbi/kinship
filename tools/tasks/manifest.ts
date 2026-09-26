@@ -1582,6 +1582,7 @@ export const MODULES: readonly TaskModule[] = [
         "apps/web/src/lib/*.ts",
         "apps/web/src/islands/**/*.ts",
         "apps/web/src/islands/**/*.tsx",
+        "apps/web/src/components/ui/*.ts",
         "apps/web/src/components/ui/*.tsx",
       ],
     },
@@ -1702,7 +1703,7 @@ export const MODULES: readonly TaskModule[] = [
     id: "web-build",
     onDemand: {
       reason:
-        "GAP-026 proves what `astro build` ships to the browser — public pages load no React, and the gifts island's hydrated bytes — so it reads apps/web/dist and can only run after a build. The `build` verb runs it right after `astro build`.",
+        "GAP-026 and GAP-027 prove what `astro build` ships to the browser — public pages load no React, the palette and gifts islands' hydrated bytes, and the Tailwind utilities the variants compile to — so it reads apps/web/dist and can only run after a build. The `build` verb runs it right after `astro build`.",
     },
     unit: {
       tests: ["tools/web_build_output_test.ts"],

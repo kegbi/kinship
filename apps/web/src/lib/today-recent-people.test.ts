@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountTodayRecentPeople } from "./today-recent-people.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 const workspaceId = "00000000-0000-4000-8000-000000000003";
 const personId = "00000000-0000-4000-8000-000000000100";
@@ -74,8 +75,11 @@ describe("TODAY-001 actual recently viewed people", () => {
         `/app/people/${personId}`,
         "/app/people/00000000-0000-4000-8000-000000000101",
       ]);
-    expect(links.every((link) => link.classList.contains("today-touch-target")))
-      .toBe(true);
+    expect(
+      links.every((link) =>
+        link.className === buttonVariants({ variant: "outline", wrap: true })
+      ),
+    ).toBe(true);
     expect(document.body.textContent).toContain("Archived");
   });
 

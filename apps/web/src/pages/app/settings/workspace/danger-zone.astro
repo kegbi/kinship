@@ -3,6 +3,9 @@ import Breadcrumb from "../../../../components/Breadcrumb.astro";
 import SettingsNavigation from "../../../../components/SettingsNavigation.astro";
 import ApplicationLayout from "../../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
+import {
+  buttonVariants,
+} from "../../../../components/ui/variants.ts";
 ---
 <ApplicationLayout current="settings" description="Reset or delete the active workspace with current impact confirmation." pageId="settings.workspace-danger" title="Workspace danger zone — Kinship">
   <main id="main-content" class="page-frame settings-page" tabindex="-1" data-requires-workspace-owner data-workspace-danger>
@@ -17,8 +20,8 @@ export const prerender = true;
     <header class="settings-heading"><div><p class="eyebrow">Workspace security</p><h1>Workspace danger zone</h1><p>These actions affect only <strong data-workspace-name></strong>.</p></div></header>
     <p data-danger-status class="section-state" role="status" aria-live="polite">Loading current impact…</p>
     <section aria-labelledby="impact-heading"><h2 id="impact-heading">Current impact</h2><dl data-danger-counts class="impact-grid" hidden></dl><p><strong data-danger-sessions>0</strong> active sessions will be revoked.</p></section>
-    <section aria-labelledby="reset-heading"><h2 id="reset-heading">Reset CRM data</h2><p>Removes people and all delivered CRM history, files, imports, exports, and custom vocabularies. Workspace identity, members, preferences, and module visibility remain.</p><form method="post" data-danger-reset><p>Type <code data-reset-confirmation></code> exactly.</p><label>Reset confirmation<input name="confirmation" maxlength="300" autocomplete="off" required /></label><label>Current password<input name="password" type="password" maxlength="1024" autocomplete="current-password" required /></label><button class="button-danger" type="submit" disabled>Reset workspace data</button></form></section>
-    <section aria-labelledby="delete-heading"><h2 id="delete-heading">Delete workspace</h2><p>Deletes the workspace, memberships, sessions, and all CRM data. A minimal deletion-security result and pending object-cleanup state are retained.</p><form method="post" data-danger-delete><p>Type <code data-delete-confirmation></code> exactly.</p><label>Deletion confirmation<input name="confirmation" maxlength="300" autocomplete="off" required /></label><label>Current password<input name="password" type="password" maxlength="1024" autocomplete="current-password" required /></label><button class="button-danger" type="submit" disabled>Delete workspace</button></form></section>
+    <section aria-labelledby="reset-heading"><h2 id="reset-heading">Reset CRM data</h2><p>Removes people and all delivered CRM history, files, imports, exports, and custom vocabularies. Workspace identity, members, preferences, and module visibility remain.</p><form method="post" data-danger-reset><p>Type <code data-reset-confirmation></code> exactly.</p><label>Reset confirmation<input name="confirmation" maxlength="300" autocomplete="off" required /></label><label>Current password<input name="password" type="password" maxlength="1024" autocomplete="current-password" required /></label><button class={buttonVariants({ variant: "destructive" })} type="submit" disabled>Reset workspace data</button></form></section>
+    <section aria-labelledby="delete-heading"><h2 id="delete-heading">Delete workspace</h2><p>Deletes the workspace, memberships, sessions, and all CRM data. A minimal deletion-security result and pending object-cleanup state are retained.</p><form method="post" data-danger-delete><p>Type <code data-delete-confirmation></code> exactly.</p><label>Deletion confirmation<input name="confirmation" maxlength="300" autocomplete="off" required /></label><label>Current password<input name="password" type="password" maxlength="1024" autocomplete="current-password" required /></label><button class={buttonVariants({ variant: "destructive" })} type="submit" disabled>Delete workspace</button></form></section>
       </div>
     </div>
   </main>

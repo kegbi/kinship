@@ -31,6 +31,10 @@ import {
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 import { insertProfileRailExpander } from "./profile-rail-expander.ts";
 import { showToast } from "./toasts.ts";
+import {
+  buttonVariants,
+  formActionsVariants,
+} from "../components/ui/variants.ts";
 
 interface FactElements {
   readonly add: HTMLButtonElement;
@@ -121,7 +125,7 @@ function checkbox(labelText: string, name: string): HTMLLabelElement {
 function actionButton(text: string, marker: string): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "button-secondary";
+  button.className = buttonVariants({ variant: "outline" });
   button.textContent = text;
   button.dataset[marker] = "";
   return button;
@@ -160,14 +164,15 @@ function controls(
   form: HTMLFormElement,
 ): { cancel: HTMLButtonElement; save: HTMLButtonElement } {
   const actions = document.createElement("div");
-  actions.className = "form-actions";
+  actions.className = formActionsVariants();
+  actions.dataset.formActions = "";
   const save = document.createElement("button");
-  save.className = "button-primary";
+  save.className = buttonVariants();
   save.type = "submit";
   save.textContent = "Save profile fact";
   const cancel = document.createElement("button");
   cancel.type = "button";
-  cancel.className = "button-secondary";
+  cancel.className = buttonVariants({ variant: "outline" });
   cancel.textContent = "Cancel";
   actions.append(save, cancel);
   form.append(actions);
@@ -681,7 +686,10 @@ function insertProfileRailTextClamp(
     ) return;
     const control = document.createElement("button");
     control.type = "button";
-    control.className = "button-secondary profile-rail-summary-control";
+    control.className = buttonVariants({
+      className: "profile-rail-summary-control",
+      variant: "outline",
+    });
     const suffix = document.createElement("span");
     suffix.className = "sr-only";
     suffix.textContent = ` ${section.replaceAll("-", " ")}`;
@@ -1414,8 +1422,10 @@ export async function mountProfileFacts(
           if (primary) {
             const copyButton = document.createElement("button");
             copyButton.type = "button";
-            copyButton.className =
-              "button-secondary profile-rail-summary-control profile-contact-copy";
+            copyButton.className = buttonVariants({
+              className: "profile-rail-summary-control profile-contact-copy",
+              variant: "outline",
+            });
             copyButton.textContent = "Copy";
             copyButton.setAttribute("aria-label", `Copy ${value}`);
             copyButton.addEventListener("click", async () => {
@@ -1463,7 +1473,7 @@ export async function mountProfileFacts(
         if (!archived && snapshot.status !== "archived") {
           const edit = document.createElement("button");
           edit.type = "button";
-          edit.className = "button-secondary";
+          edit.className = buttonVariants({ variant: "outline" });
           setQuietLabel(edit, "Edit", summary(record, snapshot.options));
           edit.addEventListener("click", async () => {
             if (!requestRailEditorOpen(target.form, true, edit)) return;
@@ -1486,7 +1496,10 @@ export async function mountProfileFacts(
           if (section !== "tags") {
             const remove = document.createElement("button");
             remove.type = "button";
-            remove.className = "button-danger";
+            remove.className = buttonVariants({
+              className: "profile-rail-remove",
+              variant: "destructive",
+            });
             setQuietLabel(
               remove,
               section === "food-preferences" ? "Clear" : "Delete",
@@ -1573,12 +1586,12 @@ export async function mountProfileFacts(
       pagination.setAttribute("aria-label", `${section} fact pages`);
       const previousFacts = document.createElement("button");
       previousFacts.type = "button";
-      previousFacts.className = "button-secondary";
+      previousFacts.className = buttonVariants({ variant: "outline" });
       previousFacts.dataset.profileFactPrevious = "";
       previousFacts.textContent = `Previous ${section.replaceAll("-", " ")}`;
       const moreFacts = document.createElement("button");
       moreFacts.type = "button";
-      moreFacts.className = "button-secondary";
+      moreFacts.className = buttonVariants({ variant: "outline" });
       moreFacts.dataset.profileFactMore = "";
       moreFacts.textContent = `Next ${section.replaceAll("-", " ")}`;
       const pageCursors: Array<string | undefined> = [undefined];
@@ -1662,7 +1675,7 @@ export async function mountProfileFacts(
         ?.focus();
     };
     const cancel = target.form.querySelector<HTMLButtonElement>(
-      '.form-actions button[type="button"]',
+      '[data-form-actions] button[type="button"]',
     );
     if (cancel) {
       cancel.onclick = () => {

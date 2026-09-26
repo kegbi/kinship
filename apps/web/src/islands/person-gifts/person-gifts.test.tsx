@@ -3,6 +3,7 @@ import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountGiftsIsland } from "./mount.tsx";
+import { buttonVariants } from "@/components/ui/variants.ts";
 
 const personId = "00000000-0000-4000-8000-000000000001";
 const workspaceId = "00000000-0000-4000-8000-000000000002";
@@ -653,7 +654,7 @@ describe("GIFTS-001 person gifts and debts", () => {
     const giftStatus = ideaStatus.getByRole("button", {
       name: "Change status",
     });
-    expect(giftStatus.classList.contains("button-secondary")).toBe(true);
+    expect(giftStatus.className).toBe(buttonVariants({ variant: "outline" }));
     await user.selectOptions(
       ideaStatus.getByRole("combobox", { name: "Next status for Idea" }),
       "given",

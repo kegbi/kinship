@@ -12,6 +12,7 @@ import {
   WORKSPACE_CHANGE_REQUEST_EVENT,
   type WorkspaceChangeRequestDetail,
 } from "./workspace-context.ts";
+import { badgeVariants } from "../components/ui/variants.ts";
 
 export const PERSONALIZATION_SECTIONS: readonly {
   readonly id: PersonalizationSection;
@@ -680,7 +681,7 @@ export async function mountPersonalization(): Promise<void> {
         }
       } else {
         const fixed = document.createElement("span");
-        fixed.className = "state-badge calm";
+        fixed.className = badgeVariants({ variant: "secondary" });
         fixed.textContent = item.readOnly === true
           ? "Read-only shared option"
           : "Shared required option";

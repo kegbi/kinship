@@ -1,6 +1,10 @@
 ---
 import ApplicationLayout from "../../layouts/ApplicationLayout.astro";
 export const prerender = false;
+import {
+  buttonVariants,
+  formActionsVariants,
+} from "../../components/ui/variants.ts";
 ---
 
 <ApplicationLayout current="today" description="Review and accept required legal document versions." pageId="compliance.accept" title="Required legal review — Kinship">
@@ -12,8 +16,8 @@ export const prerender = false;
       <p data-compliance-version></p>
       <article data-compliance-content class="legal-document"></article>
       <label class="checkbox-row"><input data-compliance-confirm type="checkbox" /> I have reviewed and accept this exact version.</label>
-      <div class="form-actions">
-        <button data-compliance-accept class="button-primary" type="button" disabled>Accept and continue</button>
+      <div class={formActionsVariants()}>
+        <button data-compliance-accept class={buttonVariants()} type="button" disabled>Accept and continue</button>
         <button data-compliance-decline type="button">Not now</button>
       </div>
     </section>

@@ -1,6 +1,12 @@
 ---
 import ApplicationLayout from "../layouts/ApplicationLayout.astro";
 export const prerender = true;
+import {
+  badgeVariants,
+  buttonVariants,
+  cardVariants,
+  formActionsVariants,
+} from "../components/ui/variants.ts";
 ---
 
 <ApplicationLayout
@@ -19,13 +25,13 @@ export const prerender = true;
       <p class="honesty-note">Tasks, reminders, important dates, and stay-in-touch cadence are ordered in your effective time zone.</p>
     </header>
 
-    <section class="today-section attention-section" aria-labelledby="attention-heading">
+    <section class={cardVariants({ className: "today-section attention-section" })} aria-labelledby="attention-heading">
       <div class="section-heading">
         <div>
           <p class="section-kicker">Current priorities</p>
           <h2 id="attention-heading">Needs attention</h2>
         </div>
-        <span class="state-badge">Overdue · today · next 7 days</span>
+        <span class={badgeVariants()}>Overdue · today · next 7 days</span>
       </div>
       <p id="today-attention-state" class="section-state" role="status" aria-live="polite">Loading relationship priorities…</p>
       <div class="attention-groups">
@@ -38,49 +44,49 @@ export const prerender = true;
         <li><strong>Record the first interaction or note.</strong><span>Keep the context you want to remember.</span></li>
         <li><strong>Create a task, reminder, or stay-in-touch cadence.</strong><span>Planning work appears here when it becomes due.</span></li>
       </ol></div>
-      <button id="today-attention-retry" class="button-secondary today-touch-target" type="button" hidden>Retry attention</button>
+      <button id="today-attention-retry" class={buttonVariants({ variant: "outline", wrap: true })} type="button" hidden>Retry attention</button>
       <p class="projection-note">Task completion here uses the same planning action as the person and global task surfaces.</p>
     </section>
 
-    <section class="today-section" aria-labelledby="reconnect-heading">
-      <div class="section-heading"><h2 id="reconnect-heading">People to reconnect</h2><span class="state-badge calm">Stay-in-touch cadence</span></div>
+    <section class={cardVariants({ className: "today-section" })} aria-labelledby="reconnect-heading">
+      <div class="section-heading"><h2 id="reconnect-heading">People to reconnect</h2><span class={badgeVariants({ variant: "secondary" })}>Stay-in-touch cadence</span></div>
       <p id="today-cadences-state" class="section-state" role="status" aria-live="polite">Loading reconnect suggestions…</p>
       <ul id="today-cadences-list" class="task-list" aria-label="People due for contact"></ul>
-      <button id="today-cadences-retry" class="button-secondary today-touch-target" type="button" hidden>Retry reconnect suggestions</button>
+      <button id="today-cadences-retry" class={buttonVariants({ variant: "outline", wrap: true })} type="button" hidden>Retry reconnect suggestions</button>
       <div class="reminder-delivery-state" aria-labelledby="reminder-delivery-heading">
         <h3 id="reminder-delivery-heading">Reminder delivery state</h3>
         <p id="today-reminders-state" class="section-state" role="status" aria-live="polite">Loading reminder state…</p>
         <ul id="today-reminders-list" class="task-list" aria-label="Reminder delivery states"></ul>
       </div>
-      <button id="today-reminders-retry" class="button-secondary today-touch-target" type="button" hidden>Retry reminder state</button>
+      <button id="today-reminders-retry" class={buttonVariants({ variant: "outline", wrap: true })} type="button" hidden>Retry reminder state</button>
     </section>
 
-    <section class="today-section" aria-labelledby="upcoming-heading">
-      <div class="section-heading"><h2 id="upcoming-heading">Upcoming</h2><span class="state-badge calm">Remainder through 30 days</span></div>
+    <section class={cardVariants({ className: "today-section" })} aria-labelledby="upcoming-heading">
+      <div class="section-heading"><h2 id="upcoming-heading">Upcoming</h2><span class={badgeVariants({ variant: "secondary" })}>Remainder through 30 days</span></div>
       <p id="today-upcoming-state" class="section-state" role="status" aria-live="polite">Loading upcoming work…</p>
       <ul id="today-upcoming-list" class="task-list" aria-label="Upcoming relationship work"></ul>
-      <div class="form-actions"><button id="today-upcoming-retry" class="button-secondary today-touch-target" type="button" hidden>Retry upcoming</button><a class="button-secondary today-touch-target" href="/app/tasks">Open all tasks</a></div>
+      <div class={formActionsVariants()}><button id="today-upcoming-retry" class={buttonVariants({ variant: "outline", wrap: true })} type="button" hidden>Retry upcoming</button><a class={buttonVariants({ variant: "outline", wrap: true })} href="/app/tasks">Open all tasks</a></div>
     </section>
 
-    <section id="today-recent-people-region" class="today-section" aria-labelledby="recent-people-heading" data-region-state="loading">
-      <div class="section-heading"><h2 id="recent-people-heading">Recently viewed people</h2><span id="today-recent-people-badge" class="state-badge calm">Loading</span></div>
+    <section id="today-recent-people-region" class={cardVariants({ className: "today-section" })} aria-labelledby="recent-people-heading" data-region-state="loading">
+      <div class="section-heading"><h2 id="recent-people-heading">Recently viewed people</h2><span id="today-recent-people-badge" class={badgeVariants({ variant: "secondary" })}>Loading</span></div>
       <p id="today-recent-people-state" class="section-state" role="status" aria-live="polite" tabindex="-1">Loading recently viewed people…</p>
       <ul id="today-recent-people-list" class="task-list" aria-label="Recently viewed people"></ul>
-      <button id="today-recent-people-retry" class="button-secondary today-touch-target" type="button" hidden>Retry recent people</button>
+      <button id="today-recent-people-retry" class={buttonVariants({ variant: "outline", wrap: true })} type="button" hidden>Retry recent people</button>
     </section>
 
-    <section id="today-favorite-notes-region" class="today-section" aria-labelledby="favorite-notes-heading">
-      <div class="section-heading"><h2 id="favorite-notes-heading">Favorite notes</h2><span class="state-badge calm">Reference</span></div>
+    <section id="today-favorite-notes-region" class={cardVariants({ className: "today-section" })} aria-labelledby="favorite-notes-heading">
+      <div class="section-heading"><h2 id="favorite-notes-heading">Favorite notes</h2><span class={badgeVariants({ variant: "secondary" })}>Reference</span></div>
       <p id="today-favorite-notes-state" class="section-state" aria-live="polite">Loading favorite notes…</p>
       <ul id="today-favorite-notes" class="interaction-list" aria-label="Favorite notes"></ul>
-      <button id="today-favorite-notes-retry" class="button-secondary today-touch-target" type="button" hidden>Retry favorite notes</button>
+      <button id="today-favorite-notes-retry" class={buttonVariants({ variant: "outline", wrap: true })} type="button" hidden>Retry favorite notes</button>
     </section>
 
-    <section id="today-recent-activity-region" class="today-section" aria-labelledby="activity-heading">
-      <div class="section-heading"><h2 id="activity-heading">Recent activity</h2><span class="state-badge calm">Latest 20</span></div>
+    <section id="today-recent-activity-region" class={cardVariants({ className: "today-section" })} aria-labelledby="activity-heading">
+      <div class="section-heading"><h2 id="activity-heading">Recent activity</h2><span class={badgeVariants({ variant: "secondary" })}>Latest 20</span></div>
       <p id="today-recent-activity-state" class="section-state" aria-live="polite">Loading recent activity…</p>
       <ul id="today-recent-activity" class="interaction-list" aria-label="Recent activities and notes"></ul>
-      <button id="today-recent-activity-retry" class="button-secondary today-touch-target" type="button" hidden>Retry recent activity</button>
+      <button id="today-recent-activity-retry" class={buttonVariants({ variant: "outline", wrap: true })} type="button" hidden>Retry recent activity</button>
     </section>
   </main>
 </ApplicationLayout>

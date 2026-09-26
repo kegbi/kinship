@@ -2,8 +2,19 @@
 import ApplicationLayout from "../../layouts/ApplicationLayout.astro";
 import LoadMore from "../../components/LoadMore.astro";
 import SectionIcon, { type SectionIconName } from "../../components/SectionIcon.astro";
+import {
+  badgeVariants,
+  breadcrumbVariants,
+  buttonVariants,
+  formActionsVariants,
+  segmentVariants,
+  skeletonLinesVariants,
+  skeletonVariants,
+} from "../../components/ui/variants.ts";
 
 export const prerender = true;
+
+const segment = segmentVariants();
 
 const sections = [
   ["identity-summary", "Identity summary"],
@@ -82,39 +93,39 @@ const railSections = [
 
     <section id="person-profile-ready" class="person-workspace" aria-labelledby="person-profile-name" aria-busy="true">
       <header class="person-profile-hero">
-        <nav class="person-profile-breadcrumb" aria-label="Breadcrumb">
-          <a href="/app/people">People</a>
+        <nav class={`${breadcrumbVariants.list} person-profile-breadcrumb`} aria-label="Breadcrumb">
+          <a class={breadcrumbVariants.link} href="/app/people">People</a>
           <span aria-hidden="true">/</span>
-          <span data-person-breadcrumb-name aria-current="page"><span class="skeleton skeleton-chip" aria-hidden="true"></span><span class="sr-only">Loading person…</span></span>
+          <span data-person-breadcrumb-name aria-current="page"><span class={skeletonVariants({ className: "w-28", shape: "chip" })} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading person…</span></span>
         </nav>
 
-        <div id="person-profile-avatar" class="person-profile-avatar" aria-hidden="true"><span class="skeleton skeleton-avatar" aria-hidden="true"></span></div>
+        <div id="person-profile-avatar" class="person-profile-avatar" aria-hidden="true"><span class={skeletonVariants({ shape: "avatar" })} data-slot="skeleton" aria-hidden="true"></span></div>
         <div class="person-profile-heading">
           <div class="person-profile-title">
-            <h1 id="person-profile-name" tabindex="-1"><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span><span class="sr-only">Loading person…</span></h1>
+            <h1 id="person-profile-name" tabindex="-1"><span class={skeletonVariants({ shape: "line-60" })} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading person…</span></h1>
             <p id="person-profile-nickname" hidden></p>
           </div>
           <div class="person-profile-badges" role="group" aria-label="Person states">
-            <p id="person-profile-saved-state" class="state-badge calm"><span class="skeleton skeleton-chip" aria-hidden="true"></span><span class="sr-only">Loading person state…</span></p>
-            <p id="person-profile-favorite" class="state-badge favorite" hidden>Favorite</p>
-            <p id="person-profile-self" class="state-badge calm" hidden>Your person record</p>
-            <p id="person-profile-deceased" class="state-badge" hidden>Deceased</p>
-            <p id="person-profile-archived" class="state-badge archived" hidden>Archived person · read-only</p>
-            <p id="person-profile-partial" class="state-badge" hidden>Partial identity · unknown values preserved</p>
+            <p id="person-profile-saved-state" class={badgeVariants({ variant: "secondary" })}><span class={skeletonVariants({ shape: "chip" })} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading person state…</span></p>
+            <p id="person-profile-favorite" class={badgeVariants({ variant: "warning" })} hidden>Favorite</p>
+            <p id="person-profile-self" class={badgeVariants({ variant: "secondary" })} hidden>Your person record</p>
+            <p id="person-profile-deceased" class={badgeVariants()} hidden>Deceased</p>
+            <p id="person-profile-archived" class={badgeVariants({ variant: "warning" })} hidden>Archived person · read-only</p>
+            <p id="person-profile-partial" class={badgeVariants()} hidden>Partial identity · unknown values preserved</p>
           </div>
-          <p class="person-profile-description" data-profile-description><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span></span><span class="sr-only">Loading person description…</span></p>
+          <p class="person-profile-description" data-profile-description><span class={skeletonLinesVariants} aria-hidden="true"><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span></span><span class="sr-only">Loading person description…</span></p>
         </div>
 
         <div class="person-profile-actions" data-person-profile-actions role="group" aria-label="Person actions">
           <button
-            class="button-primary"
+            class={buttonVariants()}
             data-person-interaction-capture
             data-quick-capture
             data-interaction-intended-kind="activity"
             type="button"
           >Log interaction</button>
           <button
-            class="button-secondary"
+            class={buttonVariants({ variant: "outline" })}
             data-person-interaction-capture
             data-quick-capture
             data-interaction-intended-kind="note"
@@ -123,7 +134,7 @@ const railSections = [
           <div class="person-menu" role="group" aria-label="Person menu">
             <button
               id="person-menu-toggle"
-              class="button-secondary"
+              class={buttonVariants({ variant: "outline" })}
               type="button"
               aria-label="Open person menu"
               aria-expanded="false"
@@ -131,11 +142,11 @@ const railSections = [
               disabled
             ><span aria-hidden="true">…</span></button>
             <div id="person-menu" class="person-menu-popover" hidden>
-              <button id="person-edit-open" class="button-secondary" type="button" disabled>Edit person</button>
-              <a id="person-export-vcard" class="button-secondary" href="/app/people" download hidden>Export vCard</a>
-              <button id="person-archive" class="button-secondary" type="button" disabled>Archive person</button>
-              <button id="person-audit-history" class="button-secondary" type="button">Audit history</button>
-              <button id="person-delete-open" class="button-danger" type="button" disabled>Delete person</button>
+              <button id="person-edit-open" class={buttonVariants({ variant: "outline" })} type="button" disabled>Edit person</button>
+              <a id="person-export-vcard" class={buttonVariants({ variant: "outline" })} href="/app/people" download hidden>Export vCard</a>
+              <button id="person-archive" class={buttonVariants({ variant: "outline" })} type="button" disabled>Archive person</button>
+              <button id="person-audit-history" class={buttonVariants({ variant: "outline" })} type="button">Audit history</button>
+              <button id="person-delete-open" class={buttonVariants({ className: "person-menu-danger", variant: "destructive" })} type="button" disabled>Delete person</button>
             </div>
           </div>
         </div>
@@ -143,34 +154,34 @@ const railSections = [
         <dl class="person-vital-stats" data-person-vital-stats>
           <div>
             <dt>Age or birthday</dt>
-            <dd><a href="?section=important-dates" data-person-vital-value="birthday"><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="sr-only">Loading birthday…</span></a></dd>
+            <dd><a href="?section=important-dates" data-person-vital-value="birthday"><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading birthday…</span></a></dd>
           </div>
           <div>
             <dt>Last contact</dt>
-            <dd><a href="?section=activities" data-profile-last-contact><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="sr-only">Loading last contact…</span></a></dd>
+            <dd><a href="?section=activities" data-profile-last-contact><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading last contact…</span></a></dd>
           </div>
           <div>
             <dt>Next reminder</dt>
-            <dd><a href="?section=reminders" data-person-vital-value="next-reminder"><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="sr-only">Loading next reminder…</span></a></dd>
+            <dd><a href="?section=reminders" data-person-vital-value="next-reminder"><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading next reminder…</span></a></dd>
           </div>
           <div>
             <dt>Stay in touch</dt>
-            <dd><a href="?section=stay-in-touch"><span id="person-profile-due-state" role="status"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="sr-only">Loading due information…</span></span></a></dd>
+            <dd><a href="?section=stay-in-touch"><span id="person-profile-due-state" role="status"><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading due information…</span></span></a></dd>
           </div>
           <div>
             <dt>Work</dt>
-            <dd><a href="?section=work" data-person-vital-value="work"><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span><span class="sr-only">Loading work…</span></a></dd>
+            <dd><a href="?section=work" data-person-vital-value="work"><span class={skeletonVariants({ shape: "line-60" })} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading work…</span></a></dd>
           </div>
           <div>
             <dt>First met</dt>
-            <dd><a href="?section=first-meeting" data-person-vital-value="first-meeting"><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="sr-only">Loading first meeting…</span></a></dd>
+            <dd><a href="?section=first-meeting" data-person-vital-value="first-meeting"><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading first meeting…</span></a></dd>
           </div>
         </dl>
 
         <div class="person-hero-tags" data-profile-fact-section="tags" data-section-state="loading" aria-busy="true">
           <ul id="person-profile-tags" class="profile-tag-list" aria-label="Person tags"></ul>
-          <p data-profile-fact-state class="section-state"><span class="sr-only">Loading tag assignments…</span><span class="skeleton skeleton-chip" aria-hidden="true"></span></p>
-          <button data-profile-fact-add class="button-secondary" type="button" hidden>Edit tags</button>
+          <p data-profile-fact-state class="section-state"><span class="sr-only">Loading tag assignments…</span><span class={skeletonVariants({ shape: "chip" })} data-slot="skeleton" aria-hidden="true"></span></p>
+          <button data-profile-fact-add class={buttonVariants({ variant: "outline" })} type="button" hidden>Edit tags</button>
           <form method="post" data-profile-fact-form class="profile-fact-form" hidden novalidate></form>
         </div>
 
@@ -200,8 +211,8 @@ const railSections = [
           </div>
           <label class="checkbox-row"><input name="isPartial" type="checkbox" /> This is a partial identity</label>
           <div class="person-lifecycle-buttons">
-            <button class="button-primary" type="submit">Save person</button>
-            <button id="person-edit-cancel" class="button-secondary" type="button">Cancel edit</button>
+            <button class={buttonVariants()} type="submit">Save person</button>
+            <button id="person-edit-cancel" class={buttonVariants({ variant: "outline" })} type="button">Cancel edit</button>
           </div>
         </form>
 
@@ -211,8 +222,8 @@ const railSections = [
             <p id="person-delete-impact" role="status">Loading deletion impact…</p>
             <label>Confirmation <input id="person-delete-confirmation" name="confirmation" autocomplete="off" required /></label>
             <div class="person-lifecycle-buttons">
-              <button class="button-danger" type="submit">Confirm delete</button>
-              <button id="person-delete-cancel" class="button-secondary" type="button">Cancel delete</button>
+              <button class={buttonVariants({ variant: "destructive" })} type="submit">Confirm delete</button>
+              <button id="person-delete-cancel" class={buttonVariants({ variant: "outline" })} type="button">Cancel delete</button>
             </div>
           </form>
         </dialog>
@@ -220,7 +231,7 @@ const railSections = [
 
       <aside class="person-archived-banner" data-person-archived-banner hidden>
         <p><strong>This person is archived.</strong> Editing is disabled.</p>
-        <button id="person-restore" class="button-secondary" type="button" disabled>Restore person</button>
+        <button id="person-restore" class={buttonVariants({ variant: "outline" })} type="button" disabled>Restore person</button>
       </aside>
 
       <div class="person-workspace-navigation">
@@ -240,11 +251,11 @@ const railSections = [
               <span class="zone-mini-name" data-zone-mini-name></span>
             </div>
             <div class="zone-filter" role="group" aria-label="Filter person sections">
-              <button class="button-primary" data-zone-filter="all" type="button" aria-pressed="true">All</button>
-              <button class="button-secondary" data-zone-filter="timeline" type="button" aria-pressed="false">Timeline</button>
-              <button class="button-secondary" data-zone-filter="planning" type="button" aria-pressed="false">Planning</button>
-              <button class="button-secondary" data-zone-filter="things" type="button" aria-pressed="false">Things</button>
-              <button class="button-secondary" data-zone-filter="admin" type="button" aria-pressed="false">Admin</button>
+              <button class={segment} data-zone-filter="all" type="button" aria-pressed="true">All</button>
+              <button class={segment} data-zone-filter="timeline" type="button" aria-pressed="false">Timeline</button>
+              <button class={segment} data-zone-filter="planning" type="button" aria-pressed="false">Planning</button>
+              <button class={segment} data-zone-filter="things" type="button" aria-pressed="false">Things</button>
+              <button class={segment} data-zone-filter="admin" type="button" aria-pressed="false">Admin</button>
             </div>
           </div>
       </div>
@@ -271,9 +282,9 @@ const railSections = [
                     <SectionIcon name="important-dates" class="profile-rail-icon" />
                     <h3 id="profile-section-important-dates-heading">Important dates</h3>
                     <span class="profile-rail-count" data-profile-rail-count hidden></span>
-                    <button id="important-date-add" class="button-primary profile-rail-add" type="button" aria-label="Add important date" hidden><span aria-hidden="true">+</span></button>
+                    <button id="important-date-add" class={buttonVariants({ className: "profile-rail-add" })} type="button" aria-label="Add important date" hidden><span aria-hidden="true">+</span></button>
                   </header>
-                  <p id="important-dates-state" class="section-state" tabindex="-1"><span class="sr-only">Loading important dates…</span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span></p>
+                  <p id="important-dates-state" class="section-state" tabindex="-1"><span class="sr-only">Loading important dates…</span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span></p>
                   <ul id="important-dates-list" class="important-dates-list" aria-label="Saved important dates"></ul>
                   <form method="post" id="important-date-form" class="important-date-form" hidden novalidate>
                     <input id="important-date-version" name="expectedUpdatedAt" type="hidden" />
@@ -333,9 +344,9 @@ const railSections = [
                     </label>
                     <p class="form-hint">Annual reminders are scheduled only when both month and day are known. Missing components are never invented.</p>
                     <p id="important-date-form-state" class="section-state" role="alert" tabindex="-1"></p>
-                    <div class="form-actions">
-                      <button type="submit" class="button-primary">Save date</button>
-                      <button id="important-date-cancel" class="button-secondary" type="button">Cancel</button>
+                    <div class={formActionsVariants()} data-form-actions>
+                      <button type="submit" class={buttonVariants()}>Save date</button>
+                      <button id="important-date-cancel" class={buttonVariants({ variant: "outline" })} type="button">Cancel</button>
                     </div>
                   </form>
                 </section>
@@ -354,19 +365,19 @@ const railSections = [
                     <SectionIcon name="relationships" class="profile-rail-icon" />
                     <h3 id="profile-section-relationships-heading">Relationships</h3>
                     <span class="profile-rail-count" data-profile-rail-count hidden></span>
-                    <button id="relationship-add" class="button-primary profile-rail-add" type="button" aria-label="Add relationship" hidden><span aria-hidden="true">+</span></button>
+                    <button id="relationship-add" class={buttonVariants({ className: "profile-rail-add" })} type="button" aria-label="Add relationship" hidden><span aria-hidden="true">+</span></button>
                   </header>
-                  <p id="relationships-state" data-rail-editor-feedback class="section-state" tabindex="-1"><span class="sr-only">Loading relationships…</span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span></p>
+                  <p id="relationships-state" data-rail-editor-feedback class="section-state" tabindex="-1"><span class="sr-only">Loading relationships…</span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span></p>
                   <ul id="relationships-list" class="profile-fact-list" aria-label="Saved relationships" tabindex="-1"></ul>
-                  <nav class="form-actions" aria-label="Relationship pages">
-                    <button id="relationships-previous" class="button-secondary" type="button" hidden>Previous relationships</button>
-                    <button id="relationships-load-more" class="button-secondary" type="button" hidden>Next relationships</button>
+                  <nav class={formActionsVariants()} aria-label="Relationship pages">
+                    <button id="relationships-previous" class={buttonVariants({ variant: "outline" })} type="button" hidden>Previous relationships</button>
+                    <button id="relationships-load-more" class={buttonVariants({ variant: "outline" })} type="button" hidden>Next relationships</button>
                   </nav>
                   <form method="post" id="relationship-form" class="profile-fact-form" hidden novalidate>
                     <fieldset>
                       <legend>Choose an existing person</legend>
                       <label>Search people <input id="relationship-person-search" type="search" maxlength="200" /></label>
-                      <button id="relationship-person-search-button" class="button-secondary" type="button">Search people</button>
+                      <button id="relationship-person-search-button" class={buttonVariants({ variant: "outline" })} type="button">Search people</button>
                       <label>Related person <select id="relationship-target" name="targetPersonId"><option value="">Select existing person</option></select></label>
                     </fieldset>
                     <fieldset>
@@ -379,21 +390,21 @@ const railSections = [
                     <fieldset>
                       <legend>Relationship type</legend>
                       <label>Search relationship types <input id="relationship-type-search" type="search" maxlength="200" /></label>
-                      <button id="relationship-type-search-button" class="button-secondary" type="button">Search relationship types</button>
+                      <button id="relationship-type-search-button" class={buttonVariants({ variant: "outline" })} type="button">Search relationship types</button>
                       <label>Relationship type <select id="relationship-type" name="relationshipTypeId" required><option value="">Select relationship type</option></select></label>
-                      <nav class="form-actions" aria-label="Relationship type pages">
-                        <button id="relationship-types-previous" class="button-secondary" type="button" hidden>Previous relationship types</button>
-                        <button id="relationship-types-next" class="button-secondary" type="button" hidden>Next relationship types</button>
+                      <nav class={formActionsVariants()} aria-label="Relationship type pages">
+                        <button id="relationship-types-previous" class={buttonVariants({ variant: "outline" })} type="button" hidden>Previous relationship types</button>
+                        <button id="relationship-types-next" class={buttonVariants({ variant: "outline" })} type="button" hidden>Next relationship types</button>
                       </nav>
                     </fieldset>
                     <div id="relationship-duplicate-choices" role="group" aria-label="Possible duplicate person choices" hidden>
                       <p>A person with this name may already exist.</p>
-                      <button id="relationship-select-existing" class="button-secondary" type="button">Select existing person</button>
-                      <button id="relationship-create-anyway" class="button-secondary" type="button">Create anyway</button>
+                      <button id="relationship-select-existing" class={buttonVariants({ variant: "outline" })} type="button">Select existing person</button>
+                      <button id="relationship-create-anyway" class={buttonVariants({ variant: "outline" })} type="button">Create anyway</button>
                     </div>
-                    <div class="form-actions">
-                      <button class="button-primary" type="submit">Save relationship</button>
-                      <button id="relationship-cancel" class="button-secondary" type="button">Cancel</button>
+                    <div class={formActionsVariants()} data-form-actions>
+                      <button class={buttonVariants()} type="submit">Save relationship</button>
+                      <button id="relationship-cancel" class={buttonVariants({ variant: "outline" })} type="button">Cancel</button>
                     </div>
                   </form>
                 </section>
@@ -412,9 +423,9 @@ const railSections = [
                     <SectionIcon name="stay-in-touch" class="profile-rail-icon" />
                     <h3 id="profile-section-stay-in-touch-heading">Stay in touch</h3>
                     <span class="profile-rail-count" data-profile-rail-count hidden></span>
-                    <button data-cadence-add class="button-primary profile-rail-add" type="button" aria-label="Add stay-in-touch cadence" hidden><span aria-hidden="true">+</span></button>
+                    <button data-cadence-add class={buttonVariants({ className: "profile-rail-add" })} type="button" aria-label="Add stay-in-touch cadence" hidden><span aria-hidden="true">+</span></button>
                   </header>
-                  <p data-cadence-state data-rail-editor-feedback class="section-state" tabindex="-1"><span class="sr-only">Loading stay-in-touch cadence…</span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span></p>
+                  <p data-cadence-state data-rail-editor-feedback class="section-state" tabindex="-1"><span class="sr-only">Loading stay-in-touch cadence…</span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span></p>
                   <ul data-cadence-list class="task-list" aria-label="Stay-in-touch cadence"></ul>
                   <form method="post" data-cadence-form class="profile-fact-form" hidden novalidate>
                     <label>Reconnect every <input name="intervalCount" type="number" min="1" max="100" value="1" required /></label>
@@ -426,7 +437,7 @@ const railSections = [
                         <option value="day">Day</option>
                       </select>
                     </label>
-                    <div class="form-actions"><button class="button-primary" type="submit">Save cadence</button><button data-cadence-cancel class="button-secondary" type="button">Cancel</button></div>
+                    <div class={formActionsVariants()} data-form-actions><button class={buttonVariants()} type="submit">Save cadence</button><button data-cadence-cancel class={buttonVariants({ variant: "outline" })} type="button">Cancel</button></div>
                   </form>
                 </section>
               )
@@ -447,13 +458,13 @@ const railSections = [
                     <button
                       data-profile-fact-add
                       data-profile-fact-add-icon
-                      class="button-primary profile-rail-add"
+                      class={buttonVariants({ className: "profile-rail-add" })}
                       type="button"
                       aria-label={`Add ${title.toLowerCase()}`}
                       hidden
                     ><span aria-hidden="true">+</span></button>
                   </header>
-                  <p data-profile-fact-state class="section-state" tabindex="-1"><span class="sr-only">Loading {title.toLowerCase()}…</span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span></p>
+                  <p data-profile-fact-state class="section-state" tabindex="-1"><span class="sr-only">Loading {title.toLowerCase()}…</span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span></p>
                   <ul data-profile-fact-list class="profile-fact-list" aria-label={`Saved ${title.toLowerCase()}`}></ul>
                   <form method="post" data-profile-fact-form class="profile-fact-form" hidden novalidate></form>
                 </section>
@@ -466,11 +477,11 @@ const railSections = [
             <h2 id="person-first-run-heading">Start this person's story</h2>
             <p>Nothing is recorded for this person yet. These three make everything else useful.</p>
             <div class="person-first-run-actions" role="group" aria-label="First actions">
-              <button class="button-primary" data-first-run-action="first-meeting" type="button">Log how you met</button>
-              <button class="button-secondary" data-first-run-action="important-dates" type="button">Add a birthday</button>
-              <button class="button-secondary" data-first-run-action="stay-in-touch" type="button">Set a stay-in-touch cadence</button>
+              <button class={buttonVariants()} data-first-run-action="first-meeting" type="button">Log how you met</button>
+              <button class={buttonVariants({ variant: "outline" })} data-first-run-action="important-dates" type="button">Add a birthday</button>
+              <button class={buttonVariants({ variant: "outline" })} data-first-run-action="stay-in-touch" type="button">Set a stay-in-touch cadence</button>
             </div>
-            <button class="button-secondary" data-first-run-dismiss type="button">Show all sections</button>
+            <button class={buttonVariants({ variant: "outline" })} data-first-run-dismiss type="button">Show all sections</button>
           </section>
           {streamZones.map(([zone, zoneTitle, zoneSectionIds]) => (
             <section class="person-zone" data-zone={zone} aria-labelledby={`person-zone-${zone}-heading`} aria-busy="true">
@@ -483,17 +494,17 @@ const railSections = [
                       <div class="profile-section-title"><h3 id="person-timeline-heading">Everything, in order</h3></div>
                     </header>
                     <div class="person-timeline-filters" role="group" aria-label="Filter timeline by type">
-                      <button class="button-primary" data-timeline-filter="all" type="button" aria-pressed="true" disabled>All types</button>
-                      <button class="button-secondary" data-timeline-filter="note" type="button" aria-pressed="false" disabled>Notes</button>
-                      <button class="button-secondary" data-timeline-filter="call" type="button" aria-pressed="false" disabled>Calls</button>
-                      <button class="button-secondary" data-timeline-filter="conversation" type="button" aria-pressed="false" disabled>Conversations</button>
-                      <button class="button-secondary" data-timeline-filter="activity" type="button" aria-pressed="false" disabled>Activities</button>
-                      <button class="button-secondary" data-timeline-filter="life-event" type="button" aria-pressed="false" disabled>Life events</button>
+                      <button class={segment} data-timeline-filter="all" type="button" aria-pressed="true" disabled>All types</button>
+                      <button class={segment} data-timeline-filter="note" type="button" aria-pressed="false" disabled>Notes</button>
+                      <button class={segment} data-timeline-filter="call" type="button" aria-pressed="false" disabled>Calls</button>
+                      <button class={segment} data-timeline-filter="conversation" type="button" aria-pressed="false" disabled>Conversations</button>
+                      <button class={segment} data-timeline-filter="activity" type="button" aria-pressed="false" disabled>Activities</button>
+                      <button class={segment} data-timeline-filter="life-event" type="button" aria-pressed="false" disabled>Life events</button>
                     </div>
-                    <p data-timeline-state class="section-state"><span class="sr-only">Loading the timeline…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
+                    <p data-timeline-state class="section-state"><span class="sr-only">Loading the timeline…</span><span class={skeletonLinesVariants} aria-hidden="true"><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-60" })} data-slot="skeleton" aria-hidden="true"></span></span></p>
                     <ul data-timeline-list class="person-timeline-list" aria-label="Person timeline"></ul>
-                    <button data-timeline-more class="button-secondary" type="button" hidden>Load older events</button>
-                    <button data-timeline-retry class="button-secondary" type="button" hidden>Retry the timeline</button>
+                    <button data-timeline-more class={buttonVariants({ variant: "outline" })} type="button" hidden>Load older events</button>
+                    <button data-timeline-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry the timeline</button>
                   </section>
                 )
                 : null}
@@ -512,12 +523,12 @@ const railSections = [
                   <SectionIcon name={sectionIcons[id]} class="profile-section-glyph" />
                   <div class="profile-section-title">
                     <h3 id={`profile-section-${id}-heading`}>{title}</h3>
-                    <span data-communication-badge class="state-badge">Loading</span>
+                    <span data-communication-badge class={badgeVariants({ variant: "status" })}>Loading</span>
                   </div>
-                  <button data-communication-add class="button-primary profile-section-cta" type="button" hidden>{id === "calls" ? "Log call" : "Log conversation"}</button>
+                  <button data-communication-add class={buttonVariants({ className: "profile-section-cta" })} type="button" hidden>{id === "calls" ? "Log call" : "Log conversation"}</button>
                 </header>
-                <p data-communication-state class="section-state"><span class="sr-only">Loading {title.toLowerCase()}…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
-                <button data-communication-load-retry class="button-secondary" type="button" hidden>Retry loading communications</button>
+                <p data-communication-state class="section-state"><span class="sr-only">Loading {title.toLowerCase()}…</span><span class={skeletonLinesVariants} aria-hidden="true"><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-60" })} data-slot="skeleton" aria-hidden="true"></span></span></p>
+                <button data-communication-load-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry loading communications</button>
                 <ul data-communication-list class="interaction-list" aria-label={`Recent ${title.toLowerCase()}`} hidden></ul>
                 <form method="post" data-communication-form class="profile-fact-form" hidden novalidate>
                   <label>When it happened <input name="happenedAt" type="datetime-local" required /></label>
@@ -535,11 +546,11 @@ const railSections = [
                         <label>Specific contact method (optional) <select name="contactMethodId"><option value="">No specific method</option></select></label>
                         <label>Title (optional) <input name="title" maxlength="500" /></label>
                         <div data-message-rows></div>
-                        <button data-add-message class="button-secondary" type="button">Add message</button>
+                        <button data-add-message class={buttonVariants({ variant: "outline" })} type="button">Add message</button>
                       </>
                     )}
                   <p data-communication-form-state class="section-state" role="alert" tabindex="-1"></p>
-                  <div class="form-actions"><button class="button-primary" type="submit">Save {id === "calls" ? "call" : "conversation"}</button><button data-communication-cancel class="button-secondary" type="button">Cancel</button><button data-communication-refresh class="button-secondary" type="button" hidden>Retry refresh</button></div>
+                  <div class={formActionsVariants()} data-form-actions><button class={buttonVariants()} type="submit">Save {id === "calls" ? "call" : "conversation"}</button><button data-communication-cancel class={buttonVariants({ variant: "outline" })} type="button">Cancel</button><button data-communication-refresh class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry refresh</button></div>
                 </form>
               </section>
             )
@@ -559,7 +570,7 @@ const railSections = [
                     <h3 id={`profile-section-${id}-heading`}>{title}</h3>
                   </div>
                   <button
-                    class="button-primary profile-section-cta"
+                    class={buttonVariants({ className: "profile-section-cta" })}
                     data-person-interaction-capture
                     data-quick-capture
                     data-interaction-intended-kind={id === "activities" ? "activity" : "note"}
@@ -569,7 +580,7 @@ const railSections = [
                 <p
                   id={id === "activities" ? "person-activities-state" : "person-notes-state"}
                   class="section-state"
-                ><span class="sr-only">Loading {title.toLowerCase()}…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
+                ><span class="sr-only">Loading {title.toLowerCase()}…</span><span class={skeletonLinesVariants} aria-hidden="true"><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-60" })} data-slot="skeleton" aria-hidden="true"></span></span></p>
                 <ul
                   id={id === "activities" ? "person-activities-list" : "person-notes-list"}
                   class="interaction-list"
@@ -578,14 +589,14 @@ const railSections = [
                 ></ul>
                 <button
                   id={id === "activities" ? "person-activities-retry" : "person-notes-retry"}
-                  class="button-secondary"
+                  class={buttonVariants({ variant: "outline" })}
                   type="button"
                   aria-controls={id === "activities" ? "person-activities-list" : "person-notes-list"}
                   hidden
                 >Retry {title.toLowerCase()}</button>
                 {id === "activities" && (
                   <div class="profile-section-footer">
-                    <a class="button-secondary" data-activity-report-link href="/app/people">Open activity report</a>
+                    <a class={buttonVariants({ variant: "outline" })} data-activity-report-link href="/app/people">Open activity report</a>
                   </div>
                 )}
               </section>
@@ -605,11 +616,11 @@ const railSections = [
                   <SectionIcon name="life-events" class="profile-section-glyph" />
                   <div class="profile-section-title">
                     <h3 id="profile-section-life-events-heading">Life events</h3>
-                    <span data-life-event-badge class="state-badge">Loading</span>
+                    <span data-life-event-badge class={badgeVariants({ variant: "status" })}>Loading</span>
                   </div>
                 </header>
-                <p data-life-event-state class="section-state"><span class="sr-only">Loading life events…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
-                <button data-life-event-retry class="button-secondary" type="button" hidden>Retry life events</button>
+                <p data-life-event-state class="section-state"><span class="sr-only">Loading life events…</span><span class={skeletonLinesVariants} aria-hidden="true"><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-60" })} data-slot="skeleton" aria-hidden="true"></span></span></p>
+                <button data-life-event-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry life events</button>
                 <ol data-life-event-list class="life-event-list" aria-label="Saved life events" hidden></ol>
               </section>
             )
@@ -626,17 +637,17 @@ const railSections = [
                 <header class="profile-section-heading">
                   <SectionIcon name="tasks" class="profile-section-glyph" />
                   <div class="profile-section-title"><h3 id="profile-section-tasks-heading">Tasks</h3></div>
-                  <button data-task-add class="button-primary profile-section-cta" type="button" hidden>Add task</button>
+                  <button data-task-add class={buttonVariants({ className: "profile-section-cta" })} type="button" hidden>Add task</button>
                 </header>
-                <p data-task-state class="section-state"><span class="sr-only">Loading tasks…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
-                <button data-task-retry class="button-secondary" type="button" hidden>Retry tasks</button>
+                <p data-task-state class="section-state"><span class="sr-only">Loading tasks…</span><span class={skeletonLinesVariants} aria-hidden="true"><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-60" })} data-slot="skeleton" aria-hidden="true"></span></span></p>
+                <button data-task-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry tasks</button>
                 <form method="post" data-task-form class="profile-fact-form task-form" hidden novalidate>
                   <label>Title <input name="title" maxlength="500" required /></label>
                   <label>Description (optional) <textarea name="description" maxlength="10000" rows="3"></textarea></label>
                   <label>Due time (optional) <input name="dueAt" type="datetime-local" /></label>
                   <label>State <select name="status"><option value="open">Open</option><option value="cancelled">Cancelled</option></select></label>
                   <p data-task-form-state class="section-state"></p>
-                  <div class="form-actions"><button class="button-primary" type="submit">Save task</button><button data-task-cancel class="button-secondary" type="button">Cancel</button></div>
+                  <div class={formActionsVariants()} data-form-actions><button class={buttonVariants()} type="submit">Save task</button><button data-task-cancel class={buttonVariants({ variant: "outline" })} type="button">Cancel</button></div>
                 </form>
                 <div class="task-columns">
                   <div><h4>Open</h4><ul data-task-open-list class="task-list" aria-label="Open person tasks"></ul></div>
@@ -659,9 +670,9 @@ const railSections = [
                 <header class="profile-section-heading">
                   <SectionIcon name="reminders" class="profile-section-glyph" />
                   <div class="profile-section-title"><h3 id="profile-section-reminders-heading">Reminders</h3></div>
-                  <button data-reminder-add class="button-primary profile-section-cta" type="button" hidden>Add reminder</button>
+                  <button data-reminder-add class={buttonVariants({ className: "profile-section-cta" })} type="button" hidden>Add reminder</button>
                 </header>
-                <p data-reminder-state class="section-state"><span class="sr-only">Loading reminders…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
+                <p data-reminder-state class="section-state"><span class="sr-only">Loading reminders…</span><span class={skeletonLinesVariants} aria-hidden="true"><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-60" })} data-slot="skeleton" aria-hidden="true"></span></span></p>
                 <ul id="person-reminder-list" data-reminder-list class="task-list reminder-list" aria-label="Person reminders"></ul>
                 <LoadMore list="reminders" label="Load more reminders" controls="person-reminder-list" />
                 <form method="post" data-reminder-form class="profile-fact-form" hidden novalidate>
@@ -678,7 +689,7 @@ const railSections = [
                     </select>
                   </label>
                   <label>Every <input name="recurrenceInterval" type="number" min="1" max="100" value="1" required /></label>
-                  <div class="form-actions"><button class="button-primary" type="submit">Save reminder</button><button data-reminder-cancel class="button-secondary" type="button">Cancel</button></div>
+                  <div class={formActionsVariants()} data-form-actions><button class={buttonVariants()} type="submit">Save reminder</button><button data-reminder-cancel class={buttonVariants({ variant: "outline" })} type="button">Cancel</button></div>
                 </form>
               </section>
             )
@@ -697,11 +708,11 @@ const railSections = [
                   <SectionIcon name={sectionIcons[id]} class="profile-section-glyph" />
                   <div class="profile-section-title">
                     <h3 id={`profile-section-${id}-heading`}>{title}</h3>
-                    <span data-gift-badge class="state-badge">Loading</span>
+                    <span data-gift-badge class={badgeVariants({ variant: "status" })}>Loading</span>
                   </div>
-                  <button data-gift-add class="button-primary profile-section-cta" type="button" hidden>Add {id === "gifts" ? "gift" : "debt"}</button>
+                  <button data-gift-add class={buttonVariants({ className: "profile-section-cta" })} type="button" hidden>Add {id === "gifts" ? "gift" : "debt"}</button>
                 </header>
-                <p data-gift-state class="section-state"><span class="sr-only">Loading {title.toLowerCase()}…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
+                <p data-gift-state class="section-state"><span class="sr-only">Loading {title.toLowerCase()}…</span><span class={skeletonLinesVariants} aria-hidden="true"><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-60" })} data-slot="skeleton" aria-hidden="true"></span></span></p>
                 {/* The gifts island (GAP-026) renders the rest of both cards, their
                     editors and paging included, when the Things zone activates. */}
                 <ul id={`${id}-list`} data-gift-list class="person-file-list" aria-label={`Saved ${title.toLowerCase()}`}></ul>
@@ -722,12 +733,12 @@ const railSections = [
                   <SectionIcon name={sectionIcons[id]} class="profile-section-glyph" />
                   <div class="profile-section-title">
                     <h3 id={`profile-section-${id}-heading`}>{title}</h3>
-                    <span data-file-badge class="state-badge">Loading</span>
+                    <span data-file-badge class={badgeVariants({ variant: "status" })}>Loading</span>
                   </div>
-                  <button data-file-add class="button-primary profile-section-cta" type="button" hidden>Attach {id === "photos" ? "photo" : "document"}</button>
+                  <button data-file-add class={buttonVariants({ className: "profile-section-cta" })} type="button" hidden>Attach {id === "photos" ? "photo" : "document"}</button>
                 </header>
-                <p data-file-state class="section-state"><span class="sr-only">Loading {title.toLowerCase()}…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
-                <button data-file-refresh class="button-secondary" type="button" hidden>Retry loading</button>
+                <p data-file-state class="section-state"><span class="sr-only">Loading {title.toLowerCase()}…</span><span class={skeletonLinesVariants} aria-hidden="true"><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-60" })} data-slot="skeleton" aria-hidden="true"></span></span></p>
+                <button data-file-refresh class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry loading</button>
                 <ul id={`${id}-list`} data-file-list class="person-file-list" aria-label={`Saved ${title.toLowerCase()}`}></ul>
                 <LoadMore list="files" label="Load more files" controls={`${id}-list`} />
                 <form method="post" data-file-form class="profile-fact-form" hidden novalidate>
@@ -742,9 +753,9 @@ const railSections = [
                     />
                   </label>
                   <p class="form-hint">Maximum file size: 10 MB.</p>
-                  <div class="form-actions">
-                    <button class="button-primary" type="submit">Upload</button>
-                    <button data-file-cancel class="button-secondary" type="button">Cancel</button>
+                  <div class={formActionsVariants()} data-form-actions>
+                    <button class={buttonVariants()} type="submit">Upload</button>
+                    <button data-file-cancel class={buttonVariants({ variant: "outline" })} type="button">Cancel</button>
                   </div>
                 </form>
               </section>
@@ -764,14 +775,14 @@ const railSections = [
                   <SectionIcon name="audit" class="profile-section-glyph" />
                   <div class="profile-section-title">
                     <h3 id="profile-section-audit-summary-heading">Audit summary</h3>
-                    <span data-person-audit-badge class="state-badge">Loading</span>
+                    <span data-person-audit-badge class={badgeVariants({ variant: "status" })}>Loading</span>
                   </div>
                 </header>
-                <p data-person-audit-state class="section-state"><span class="sr-only">Loading authorized audit summary…</span><span class="skeleton-lines" aria-hidden="true"><span class="skeleton skeleton-line" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-80" aria-hidden="true"></span><span class="skeleton skeleton-line skeleton-line-60" aria-hidden="true"></span></span></p>
+                <p data-person-audit-state class="section-state"><span class="sr-only">Loading authorized audit summary…</span><span class={skeletonLinesVariants} aria-hidden="true"><span class={skeletonVariants()} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton" aria-hidden="true"></span><span class={skeletonVariants({ shape: "line-60" })} data-slot="skeleton" aria-hidden="true"></span></span></p>
                 <ol data-person-audit-list class="audit-event-list" aria-label="Recent authorized person audit events"></ol>
-                <div class="form-actions">
-                  <a data-person-audit-link class="button-secondary" href="/app/people" hidden>Open full audit history</a>
-                  <button data-person-audit-retry class="button-secondary" type="button" hidden>Retry audit summary</button>
+                <div class={formActionsVariants()} data-form-actions>
+                  <a data-person-audit-link class={buttonVariants({ variant: "outline" })} href="/app/people" hidden>Open full audit history</a>
+                  <button data-person-audit-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry audit summary</button>
                 </div>
               </section>
             )
@@ -787,7 +798,7 @@ const railSections = [
                 <header class="profile-section-heading">
                   <div class="profile-section-title">
                     <h3 id={`profile-section-${id}-heading`}>{title}</h3>
-                    <span class="state-badge">Unavailable</span>
+                    <span class={badgeVariants({ variant: "status" })}>Unavailable</span>
                   </div>
                 </header>
                 <p>This section is not available yet. No empty result is being inferred and no saved data has changed.</p>

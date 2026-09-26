@@ -7,6 +7,9 @@ interface Props {
 
 const { lifecycle } = Astro.props;
 const archived = lifecycle === "archived";
+import {
+  buttonVariants,
+} from "./ui/variants.ts";
 ---
 
 <main
@@ -29,10 +32,10 @@ const archived = lifecycle === "archived";
     </div>
     <div class="directory-heading-actions">
       {archived
-        ? <a class="button-link secondary-link" href="/app/people">View active people</a>
+        ? <a class={buttonVariants({ className: "secondary-link", shape: "pill", variant: "outline" })} href="/app/people">View active people</a>
         : <>
-            <a class="button-link" href="/app/people/new">Add person</a>
-            <a class="button-link secondary-link" href="/app/people/archived">View archived people</a>
+            <a class={buttonVariants({ shape: "pill" })} href="/app/people/new">Add person</a>
+            <a class={buttonVariants({ className: "secondary-link", shape: "pill", variant: "outline" })} href="/app/people/archived">View archived people</a>
           </>}
     </div>
   </header>
@@ -91,7 +94,7 @@ const archived = lifecycle === "archived";
     <div>
       <h2>No people found</h2>
       <p>Try a different name, tag, or sort.</p>
-      {!archived && <a class="button-link" href="/app/people/new">Add a person</a>}
+      {!archived && <a class={buttonVariants({ className: "mt-(--space-4)", shape: "pill" })} href="/app/people/new">Add a person</a>}
     </div>
   </section>
 

@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
 import { useContractForm } from "../core/index.ts";
-import { LEGACY_BUTTON, LEGACY_INPUT, LEGACY_TEXTAREA } from "./legacy-look.ts";
+import { formActionsVariants } from "@/components/ui/variants.ts";
 import {
   debtForm,
   type DebtFormValues,
@@ -44,19 +44,18 @@ function EditorActions(
   props: { readonly disabled: boolean; readonly onCancel: () => void },
 ) {
   return (
-    <div className="form-actions">
+    <div className={formActionsVariants()}>
       <Button
-        className={`button-primary ${LEGACY_BUTTON}`}
         disabled={props.disabled}
         type="submit"
       >
         Save
       </Button>
       <Button
-        className={`button-secondary ${LEGACY_BUTTON}`}
         data-gift-cancel=""
         onClick={props.onCancel}
         type="button"
+        variant="outline"
       >
         Cancel
       </Button>
@@ -108,7 +107,6 @@ export function GiftEditor(
       <label>
         Gift name{" "}
         <Input
-          className={LEGACY_INPUT}
           {...form.register("name")}
           {...name.control}
           disabled={props.gated}
@@ -130,7 +128,6 @@ export function GiftEditor(
         <label>
           Event time (optional){" "}
           <Input
-            className={LEGACY_INPUT}
             {...form.register("eventAt")}
             disabled={props.gated}
             type="datetime-local"
@@ -139,7 +136,6 @@ export function GiftEditor(
         <label>
           Amount (optional){" "}
           <Input
-            className={LEGACY_INPUT}
             {...form.register("amount")}
             {...amount.control}
             disabled={props.gated}
@@ -188,7 +184,6 @@ export function GiftEditor(
       <label>
         Link (optional){" "}
         <Input
-          className={LEGACY_INPUT}
           {...form.register("url")}
           {...url.control}
           disabled={props.gated}
@@ -200,7 +195,6 @@ export function GiftEditor(
       <label>
         Notes (optional){" "}
         <Textarea
-          className={LEGACY_TEXTAREA}
           {...form.register("comment")}
           disabled={props.gated}
           maxLength={10000}
@@ -264,7 +258,6 @@ export function DebtEditor(
         <label>
           Amount{" "}
           <Input
-            className={LEGACY_INPUT}
             {...form.register("amount")}
             {...amount.control}
             disabled={props.gated}
@@ -292,7 +285,6 @@ export function DebtEditor(
       <label>
         Reason (optional){" "}
         <Textarea
-          className={LEGACY_TEXTAREA}
           {...form.register("reason")}
           {...reason.control}
           disabled={props.gated}

@@ -22,6 +22,16 @@ const profilePage = readFileSync(
   resolve("apps/web/src/pages/internal/person-profile-shell.astro"),
   "utf8",
 );
+const paletteIsland = readFileSync(
+  resolve(
+    "apps/web/src/islands/global-people-search/global-people-search.tsx",
+  ),
+  "utf8",
+);
+const islandStyles = readFileSync(
+  resolve("apps/web/src/styles/islands.css"),
+  "utf8",
+);
 const profileController = readFileSync(
   resolve("apps/web/src/lib/people-profile.ts"),
   "utf8",
@@ -54,10 +64,21 @@ describe("people form layout regressions", () => {
     );
     expect(applicationLayout.match(/aria-label="Find a person"/g))
       .toHaveLength(2);
+    // The header draws the finder statically; the palette island takes it
+    // over and names its dialog the same way (GAP-027).
+    expect(applicationLayout).toContain("data-global-people-search");
     expect(applicationLayout).toContain(
-      '<h2 id="global-people-search-heading">Find a person</h2>',
+      'import { mountGlobalPeopleSearch } from "../islands/global-people-search/mount.tsx";',
+    );
+    expect(applicationLayout).not.toContain(
+      '<dialog id="global-people-search-dialog"',
+    );
+    expect(paletteIsland).toContain('const LABEL = "Find a person";');
+    expect(paletteIsland).toMatch(
+      /<DialogTitle[^>]*>\s*\{LABEL\}\s*<\/DialogTitle>/,
     );
     expect(applicationLayout).toContain('placeholder="Search people…"');
+    expect(paletteIsland).toContain('placeholder="Search people…"');
   });
 
   it("aligns directory controls to their first field row and styles retry actions", () => {
@@ -89,50 +110,56 @@ describe("people form layout regressions", () => {
   });
 
   it("uses one profile action treatment for buttons and links", () => {
+    // Every profile button and action link draws with a Kinship variant from
+    // components/ui/variants.ts (GAP-027): a button or a segmented filter.
     const unclassifiedButtons = [
       ...profilePage.matchAll(/<button\b[\s\S]*?<\/button>/g),
     ].flatMap(([button]) =>
-      /^<button\b[^>]*\bclass="[^"]*\bbutton-(?:primary|secondary|danger)\b[^>]*>/s
+      /^<button\b[^>]*\bclass=\{(?:buttonVariants\(|segment\})[^>]*>/s
           .test(button)
         ? []
         : [button.match(/^<button\b[^>]*>/s)?.[0] ?? button]
     );
     expect(unclassifiedButtons).toEqual([]);
+    const outline = String
+      .raw`class=\{buttonVariants\(\{ variant: "outline" \}\)\}`;
     expect(profilePage).toMatch(
-      /<a[^>]*id="person-export-vcard"[^>]*class="button-secondary"[^>]*>Export vCard<\/a>/,
-    );
-    expect(profilePage).toMatch(
-      /<a[^>]*class="button-secondary"[^>]*data-activity-report-link[^>]*>Open activity report<\/a>/,
-    );
-    expect(profilePage).toMatch(
-      /<button[^>]*data-profile-fact-add[^>]*class="button-secondary"[^>]*>Edit tags<\/button>/,
+      new RegExp(
+        `<a[^>]*id="person-export-vcard"[^>]*${outline}[^>]*>Export vCard</a>`,
+      ),
     );
     expect(profilePage).toMatch(
-      /<button[^>]*data-life-event-retry[^>]*class="button-secondary"[^>]*>Retry life events<\/button>/,
+      new RegExp(
+        `<a[^>]*${outline}[^>]*data-activity-report-link[^>]*>Open activity report</a>`,
+      ),
+    );
+    expect(profilePage).toMatch(
+      new RegExp(
+        `<button[^>]*data-profile-fact-add[^>]*${outline}[^>]*>Edit tags</button>`,
+      ),
+    );
+    expect(profilePage).toMatch(
+      new RegExp(
+        `<button[^>]*data-life-event-retry[^>]*${outline}[^>]*>Retry life events</button>`,
+      ),
+    );
+    // The workspace keeps its button box, and a button without a variant
+    // takes the outline colours from a default the variants draw over.
+    expect(applicationStyles).toMatch(
+      /\.person-workspace button\s*\{[^}]*align-items:\s*center;[^}]*box-sizing:\s*border-box;[^}]*display:\s*inline-flex;[^}]*justify-content:\s*center;[^}]*min-height:\s*44px;[^}]*padding:[^;]+;[^}]*border-width:\s*1px;[^}]*border-style:\s*solid;[^}]*border-radius:[^;]+;[^}]*cursor:\s*pointer;[^}]*font-weight:[^;]+;[^}]*line-height:[^;]+;[^}]*text-decoration:\s*none;/s,
     );
     expect(applicationStyles).toMatch(
-      /\.person-workspace button,\s*\.person-workspace a:is\(\.button-primary,\s*\.button-secondary,\s*\.button-danger\)\s*\{[^}]*align-items:\s*center;[^}]*box-sizing:\s*border-box;[^}]*display:\s*inline-flex;[^}]*justify-content:\s*center;[^}]*min-height:\s*44px;[^}]*padding:[^;]+;[^}]*border-width:\s*1px;[^}]*border-style:\s*solid;[^}]*border-radius:[^;]+;[^}]*cursor:\s*pointer;[^}]*font-weight:[^;]+;[^}]*line-height:[^;]+;[^}]*text-decoration:\s*none;/s,
+      /@layer legacy-defaults\s*\{\s*\.person-workspace button\s*\{[^}]*border-color:[^;]+;[^}]*color:[^;]+;[^}]*background:[^;]+;/s,
     );
     expect(applicationStyles).toMatch(
-      /\.person-workspace button\s*\{[^}]*border-color:[^;]+;[^}]*color:[^;]+;[^}]*background:[^;]+;/s,
+      /\.person-workspace button:disabled\s*\{[^}]*cursor:\s*not-allowed;[^}]*opacity:/s,
     );
     expect(applicationStyles).toMatch(
-      /\.person-workspace button:disabled,\s*\.person-workspace a:is\(\.button-primary,\s*\.button-secondary,\s*\.button-danger\)\[aria-disabled="true"\]\s*\{[^}]*cursor:\s*not-allowed;[^}]*opacity:/s,
+      /\.person-lifecycle-buttons button\s*\{[^}]*min-height:\s*44px;[^}]*padding:[^;]+;[^}]*border-radius:\s*999px;/s,
     );
-    expect(applicationStyles).toMatch(
-      /\.person-workspace \.form-actions a:is\(\.button-primary,\s*\.button-secondary,\s*\.button-danger\)\s*\{[^}]*min-height:\s*46px;[^}]*padding:[^;]+;[^}]*border-radius:[^;]+;/s,
+    expect(applicationStyles).not.toMatch(
+      /\.button-(?:primary|secondary|danger|link)\b/,
     );
-    expect(applicationStyles).toMatch(
-      /\.person-lifecycle-buttons button,\s*\.person-lifecycle-buttons a:is\(\.button-primary,\s*\.button-secondary,\s*\.button-danger\)\s*\{[^}]*min-height:\s*44px;[^}]*padding:[^;]+;[^}]*border-radius:\s*999px;/s,
-    );
-    for (const variant of ["primary", "secondary", "danger"]) {
-      expect(applicationStyles).toMatch(
-        new RegExp(
-          `\\.person-workspace\\s+\\.button-${variant}\\s*\\{[^}]*border-color:[^;]+;[^}]*color:[^;]+;[^}]*background:[^;]+;`,
-          "s",
-        ),
-      );
-    }
   });
 
   it("UXD-002A2 keeps two peer actions and moves lifecycle actions into one person menu", () => {
@@ -176,13 +203,16 @@ describe("people form layout regressions", () => {
       /\.person-menu-popover\s*\{[^}]*position:\s*absolute;[^}]*top:\s*calc\(100% \+ \.65rem\);[^}]*right:\s*0;/s,
     );
     const menuItemSelector =
-      ".person-workspace .person-menu-popover > :is(button, a:is(.button-primary, .button-secondary, .button-danger))";
+      ".person-workspace .person-menu-popover > :is(button, a)";
     expect(applicationStyles).toContain(`${menuItemSelector} {`);
     expect(applicationStyles).toMatch(
-      /\.person-workspace \.person-menu-popover > :is\(button, a:is\(\.button-primary, \.button-secondary, \.button-danger\)\)\s*\{[^}]*width:\s*100%;[^}]*justify-content:\s*flex-start;/s,
+      /\.person-workspace \.person-menu-popover > :is\(button, a\)\s*\{[^}]*width:\s*100%;[^}]*justify-content:\s*flex-start;/s,
+    );
+    expect(menu).toContain(
+      'id="person-delete-open" class={buttonVariants({ className: "person-menu-danger", variant: "destructive" })}',
     );
     expect(applicationStyles).toContain(
-      `${menuItemSelector}.button-danger {\n  color: var(--danger);`,
+      ".person-workspace .person-menu-popover > .person-menu-danger {\n  color: var(--danger);",
     );
     expect(applicationStyles).toContain(
       `${menuItemSelector}:hover {`,
@@ -483,7 +513,7 @@ describe("people form layout regressions", () => {
     expect(readyTag).toContain('aria-busy="true"');
     expect(profilePage).not.toContain("Opening person…");
     expect(profilePage).toMatch(
-      /<h1 id="person-profile-name"[^>]*>[\s\S]*?class="[^"]*skeleton[^"]*"[^>]*aria-hidden="true"[\s\S]*?Loading person…[\s\S]*?<\/h1>/,
+      /<h1 id="person-profile-name"[^>]*>[\s\S]*?class=\{skeletonVariants\([^)]*\)\} data-slot="skeleton" aria-hidden="true"[\s\S]*?Loading person…[\s\S]*?<\/h1>/,
     );
 
     const initialSectionStates = [
@@ -507,17 +537,15 @@ describe("people form layout regressions", () => {
       /id="person-delete-impact"[^>]*role="status"/,
     );
 
-    expect(applicationStyles).toMatch(
-      /\.skeleton\s*\{[^}]*linear-gradient\(90deg, var\(--surface-2\) 0%, var\(--surface-3\) 50%,\s*var\(--surface-2\) 100%\);[^}]*background-size:\s*200% 100%;[^}]*animation:\s*skeleton-sweep 1\.4s ease-in-out infinite;/s,
+    // The sweep is the skeleton variant's `animate-skeleton`, which stops for
+    // reduced motion (`motion-reduce:animate-none`, pinned in variants.test).
+    expect(islandStyles).toContain(
+      "--animate-skeleton: skeleton-sweep 1.4s ease-in-out infinite;",
     );
-    expect(applicationStyles).toMatch(/@keyframes skeleton-sweep\s*\{/);
-    expect(applicationStyles).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.skeleton\s*\{[^}]*animation:\s*none;/,
+    expect(islandStyles).toMatch(/@keyframes skeleton-sweep\s*\{/);
+    expect(profilePage).toContain('skeletonVariants({ shape: "avatar" })');
+    expect(profilePage).toContain(
+      'skeletonVariants({ className: "w-28", shape: "chip" })',
     );
-    expect(applicationStyles).toMatch(
-      /\.skeleton-line\s*\{[^}]*height:\s*\.9rem;/s,
-    );
-    expect(applicationStyles).toContain(".skeleton-avatar");
-    expect(applicationStyles).toContain(".skeleton-chip");
   });
 });

@@ -12,6 +12,7 @@ import {
   getDavSubscriptions,
   synchronizeDavSubscription,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 function status(
   subscription: Subscription,
@@ -69,7 +70,7 @@ function render(
   sync.addEventListener("click", () => mutate(sync, "sync"));
   const disable = document.createElement("button");
   disable.type = "button";
-  disable.className = "button-secondary";
+  disable.className = buttonVariants({ variant: "outline" });
   disable.textContent = subscription.isActive ? "Disable" : "Disabled";
   disable.disabled = !subscription.isActive;
   disable.addEventListener("click", () => mutate(disable, "disable"));

@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountProfileFacts } from "./profile-facts.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 import { requestWorkspaceChange } from "./workspace-context.ts";
 
@@ -216,7 +217,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
       }),
     )).toBe(false);
     foodForm.querySelector<HTMLButtonElement>(
-      '.form-actions button[type="button"]',
+      '[data-form-actions] button[type="button"]',
     )!.click();
     [...pets.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
       button.textContent === "Edit Mochi"
@@ -473,7 +474,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
       form.requestSubmit();
       await vi.waitFor(() => expect(food.dataset.sectionState).toBe("error"));
       const edit = food.querySelector<HTMLButtonElement>(
-        "[data-profile-fact-list] .button-secondary",
+        "[data-profile-fact-list] .bg-card",
       )!;
       const opener = action === "add" ? add : edit;
       const retry = food.querySelector<HTMLButtonElement>(
@@ -527,12 +528,12 @@ describe("PEOPLE-006 profile-fact sections", () => {
       expect(add.disabled).toBe(false);
       if (outcome === "failure") expect(retry.disabled).toBe(false);
       neighbor.querySelector<HTMLButtonElement>(
-        '.form-actions button[type="button"]',
+        '[data-form-actions] button[type="button"]',
       )!.click();
       const restoredOpener = action === "add"
         ? add
         : food.querySelector<HTMLButtonElement>(
-          "[data-profile-fact-list] .button-secondary",
+          "[data-profile-fact-list] .bg-card",
         )!;
       expect(restoredOpener.disabled).toBe(false);
       restoredOpener.click();
@@ -619,7 +620,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
     }
     const active = decision === "declined" ? form : targetForm;
     active.querySelector<HTMLButtonElement>(
-      '.form-actions button[type="button"]',
+      '[data-form-actions] button[type="button"]',
     )!.click();
     expect(active.hidden).toBe(true);
     expect(document.activeElement).toBe(
@@ -974,8 +975,10 @@ describe("PEOPLE-006 profile-fact sections", () => {
     expect(item.querySelector(".profile-fact-value")?.textContent).toBe(value);
     const actions = item.querySelector(".profile-fact-actions")!;
     expect(actions).not.toBeNull();
-    const edit = actions.querySelector<HTMLButtonElement>(".button-secondary")!;
-    const remove = actions.querySelector<HTMLButtonElement>(".button-danger")!;
+    const edit = actions.querySelector<HTMLButtonElement>(".bg-card")!;
+    const remove = actions.querySelector<HTMLButtonElement>(
+      ".profile-rail-remove",
+    )!;
     expect(edit.firstChild?.textContent).toBe("Edit");
     expect(edit.querySelector(".sr-only")?.textContent).toBe(
       ` Personal email: ${value}`,
@@ -2301,7 +2304,12 @@ describe("PEOPLE-006 profile-fact sections", () => {
       "[data-profile-fact-list] button:last-child",
     )!;
     expect(clear.textContent).toBe("Clear food preferences");
-    expect(clear.classList.contains("button-danger")).toBe(true);
+    expect(clear.className).toBe(
+      buttonVariants({
+        className: "profile-rail-remove",
+        variant: "destructive",
+      }),
+    );
     clear.click();
     clear.click();
     await vi.waitFor(() =>
@@ -2679,7 +2687,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
     const more = document.querySelector<HTMLButtonElement>(
       "[data-profile-fact-more]",
     )!;
-    expect(more.classList.contains("button-secondary")).toBe(true);
+    expect(more.className).toBe(buttonVariants({ variant: "outline" }));
     expect(more.hidden).toBe(false);
     more.click();
     await vi.waitFor(() =>
@@ -2694,7 +2702,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
     const previous = document.querySelector<HTMLButtonElement>(
       "[data-profile-fact-previous]",
     )!;
-    expect(previous.classList.contains("button-secondary")).toBe(true);
+    expect(previous.className).toBe(buttonVariants({ variant: "outline" }));
     expect(previous.hidden).toBe(false);
     previous.click();
     await vi.waitFor(() =>
@@ -2711,8 +2719,8 @@ describe("PEOPLE-006 profile-fact sections", () => {
     const continuationEdit = [...document.querySelectorAll<HTMLButtonElement>(
       "[data-profile-fact-list] button",
     )].find((button) => button.textContent?.includes("person-50@example.test"));
-    expect(continuationEdit?.classList.contains("button-secondary")).toBe(
-      true,
+    expect(continuationEdit?.className).toBe(
+      buttonVariants({ variant: "outline" }),
     );
     continuationEdit?.click();
     await vi.waitFor(() =>
@@ -3193,7 +3201,7 @@ describe("PEOPLE-006 profile-fact sections", () => {
       ).toBe("Preferred")
     );
     const cancel = contactRoot.querySelector<HTMLButtonElement>(
-      '.form-actions button[type="button"]',
+      '[data-form-actions] button[type="button"]',
     )!;
     cancel.click();
     expect(contactRoot.querySelector("[data-profile-fact-state]")?.textContent)

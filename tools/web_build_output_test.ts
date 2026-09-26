@@ -1,13 +1,15 @@
 /**
- * What `astro build` ships to the browser (GAP-026).
+ * What `astro build` ships to the browser (GAP-026, GAP-027).
  *
  * ADR 0006 lets React run only inside hydrated islands: static, public, and
  * no-JavaScript pages ship none, and every island's hydrated bytes are
  * measured. This suite reads the client output the build just wrote, follows
  * every script a page can load — static imports, dynamic imports, and the
  * preload lists Vite writes for them — and fails when a public page can reach
- * a chunk that carries React. It also measures the gifts island, which loads
- * with its zone on the person page, so the evidence line records real bytes.
+ * a chunk that carries React. Protected pages load React for one island in
+ * their layout, the people palette; the person page adds the gifts island,
+ * which loads with its zone. Both islands' bytes are measured, so the
+ * evidence line records real numbers.
  *
  * It needs `apps/web/dist`, so it runs from the `build` verb right after
  * `astro build` rather than in the aggregate unit gate.
@@ -36,8 +38,11 @@ const PUBLIC_PAGES = [
   "terms/index.html",
 ];
 
-/** The one entry that may load React: the static person shell. */
+/** The static person shell, which also loads the lazy gifts island. */
 const PERSON_SHELL = "internal/person-profile-shell/index.html";
+
+/** A protected page with no island of its own: Today. */
+const TODAY = "app/index.html";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -140,16 +145,68 @@ Deno.test("[GAP-026] public pages ship no React", async () => {
   }
 });
 
-Deno.test("[GAP-026] no page script but the person shell's can reach React", async () => {
+/** The chunks whose source names island `name` as a string. */
+async function islandEntries(name: string): Promise<string[]> {
+  const pattern = new RegExp(`["'\`]${name}["'\`]`);
+  const entries: string[] = [];
+  for await (const entry of Deno.readDir(new URL("_astro/", CLIENT))) {
+    const chunk = `_astro/${entry.name}`;
+    if (!entry.name.endsWith(".js")) continue;
+    if (pattern.test(await read(chunk))) entries.push(chunk);
+  }
+  return entries.sort();
+}
+
+/** The layout script that mounts the people palette on every protected page. */
+async function paletteScript(): Promise<string> {
+  const entries = await islandEntries("global-people-search");
+  assert(entries.length === 1, `one palette island entry, not ${entries}`);
+  const entry = entries[0]!;
+  assert(
+    /ApplicationLayout\.astro_astro_type_script_/.test(entry),
+    `the palette mounts from the application layout, not ${entry}`,
+  );
+  return entry;
+}
+
+function eagerScripts(html: string): Set<string> {
+  return new Set(
+    [...html.matchAll(/<script\b[^>]*\bsrc="\/(_astro\/[\w.-]+\.js)"/g)].map((
+      [, chunk],
+    ) => chunk!),
+  );
+}
+
+async function logHydratedBytes(
+  name: string,
+  entry: string,
+  react: readonly string[],
+): Promise<void> {
+  const runtime = [...await reachable([entry])].filter((chunk) =>
+    chunk !== entry && react.includes(chunk)
+  ).sort();
+  const entryBytes = await gzipSize(entry);
+  let runtimeBytes = 0;
+  for (const chunk of runtime) runtimeBytes += await gzipSize(chunk);
+  console.log(
+    `${name} island hydrated bytes (gzip): entry ${entry} ${entryBytes} B + React runtime ${
+      runtime.join(", ")
+    } ${runtimeBytes} B = ${entryBytes + runtimeBytes} B`,
+  );
+}
+
+Deno.test("[GAP-027] no page script but the palette's and the person shell's can reach React", async () => {
   // Pages rendered on demand (auth resets, invitations) have no HTML in the
   // client output, but their scripts do: every page script is checked.
-  const shell = new Set(chunkReferences(await read(PERSON_SHELL)));
+  const palette = await paletteScript();
   let scripts = 0;
   for await (const entry of Deno.readDir(new URL("_astro/", CLIENT))) {
     const chunk = `_astro/${entry.name}`;
     if (!/.astro_astro_type_script_.*.js$/.test(entry.name)) continue;
     scripts += 1;
-    if (shell.has(chunk)) continue;
+    if (chunk === palette || /^person-profile-shell\./.test(entry.name)) {
+      continue;
+    }
     for (const loaded of await reachable([chunk])) {
       assert(
         !carriesReact(await read(loaded)),
@@ -160,57 +217,137 @@ Deno.test("[GAP-026] no page script but the person shell's can reach React", asy
   assert(scripts > 10, `the build wrote page scripts, found ${scripts}`);
 });
 
-Deno.test("[GAP-026] the person shell loads React only with its lazy gifts island", async () => {
-  // The control: the detector does find React where an island needs it.
-  const react = await reactChunksOf(PERSON_SHELL);
-  assert(react.length > 0, "the person shell can load the gifts island");
-  const html = await read(PERSON_SHELL);
-  const eager = new Set(
-    [...html.matchAll(/<script\b[^>]*\bsrc="\/(_astro\/[\w.-]+\.js)"/g)].map((
-      [, chunk],
-    ) => chunk!),
+Deno.test("[GAP-027] a protected page loads React only for the people palette", async () => {
+  const palette = await paletteScript();
+  const react = await reactChunksOf(TODAY);
+  assert(react.length > 0, "Today can load the palette island");
+  assert(
+    eagerScripts(await read(TODAY)).has(palette),
+    "Today mounts the palette from its layout",
   );
+  const fromPalette = await reachable([palette]);
   for (const chunk of react) {
     assert(
-      !eager.has(chunk),
-      `${chunk} carries React but loads with the page instead of the island`,
+      fromPalette.has(chunk),
+      `${chunk} carries React outside the palette`,
     );
   }
-
-  const island: string[] = [];
-  for await (const entry of Deno.readDir(new URL("_astro/", CLIENT))) {
-    const chunk = `_astro/${entry.name}`;
-    if (!entry.name.endsWith(".js")) continue;
-    if (/["'`]person-gifts["'`]/.test(await read(chunk))) island.push(chunk);
-  }
-  assert(island.length === 1, `one gifts island entry, not ${island}`);
-  const entry = island[0]!;
-  const loads = await reachable([entry]);
-  const runtime = [...loads].filter((chunk) => chunk !== entry).filter(
-    (chunk) => react.includes(chunk),
-  );
-  const entryBytes = await gzipSize(entry);
-  let runtimeBytes = 0;
-  for (const chunk of runtime) runtimeBytes += await gzipSize(chunk);
-  console.log(
-    `person-gifts island hydrated bytes (gzip): entry ${entry} ${entryBytes} B + React runtime ${
-      runtime.join(", ")
-    } ${runtimeBytes} B = ${entryBytes + runtimeBytes} B`,
-  );
+  await logHydratedBytes("global-people-search", palette, react);
 });
 
-Deno.test("[GAP-026] no Tailwind utility shares a name with a hand-written class", async () => {
-  // Tailwind generates a utility for every candidate word in the island
-  // sources. One named like a class the existing stylesheets style would
-  // restyle every vanilla element that carries it.
+Deno.test("[GAP-026] the person shell loads the gifts island with its zone", async () => {
+  const react = await reactChunksOf(PERSON_SHELL);
+  const fromPalette = await reachable([await paletteScript()]);
+  const island = await islandEntries("person-gifts");
+  assert(island.length === 1, `one gifts island entry, not ${island}`);
+  const entry = island[0]!;
+  const html = await read(PERSON_SHELL);
+  assert(
+    (await reachable(chunkReferences(html, PERSON_SHELL))).has(entry),
+    "the person shell can load the gifts island",
+  );
+  assert(
+    !eagerScripts(html).has(entry),
+    "the gifts island is not a page script",
+  );
+  assert(
+    !fromPalette.has(entry),
+    "the gifts island does not load with the palette",
+  );
+  await logHydratedBytes("person-gifts", entry, react);
+});
+
+Deno.test("[GAP-027] no chunk ships cmdk's unused Radix Dialog", async () => {
+  // cmdk attaches a Radix-based Command.Dialog the palette never renders;
+  // astro.config.mjs aliases it to a stub so Radix's dialog, focus scope,
+  // dismissable layer, and scroll lock stay beside Base UI, not in the build.
+  const markers = [
+    "DismissableLayer",
+    "FocusScope",
+    "data-radix",
+    "RemoveScroll",
+  ];
+  for await (const entry of Deno.readDir(new URL("_astro/", CLIENT))) {
+    if (!entry.name.endsWith(".js")) continue;
+    const source = await read(`_astro/${entry.name}`);
+    const found = markers.filter((marker) => source.includes(marker));
+    assert(
+      found.length === 0,
+      `_astro/${entry.name} ships Radix Dialog (${found.join(", ")})`,
+    );
+  }
+});
+
+/**
+ * The body of the built `@layer utilities { … }` block. The protected pages'
+ * stylesheet bundles the hand-written CSS and the Tailwind layers into one
+ * file (GAP-027), so the block is cut out by its braces.
+ */
+async function utilitiesLayer(): Promise<string> {
   let built = "";
   for await (const entry of Deno.readDir(new URL("_astro/", CLIENT))) {
     if (!entry.name.endsWith(".css")) continue;
     const css = await read(`_astro/${entry.name}`);
-    if (css.includes("@layer utilities")) built = css;
+    if (/@layer utilities\s*\{/.test(css)) built = css;
   }
-  assert(built.length > 0, "the build wrote the island utilities");
-  const utilities = built.slice(built.indexOf("@layer utilities"));
+  assert(built.length > 0, "the build wrote the Tailwind utilities");
+  const open = built.indexOf("{", built.search(/@layer utilities\s*\{/));
+  let depth = 0;
+  for (let index = open; index < built.length; index += 1) {
+    if (built[index] === "{") depth += 1;
+    else if (built[index] === "}" && --depth === 0) {
+      return built.slice(open + 1, index);
+    }
+  }
+  throw new Error("the utilities layer is not closed");
+}
+
+Deno.test("[GAP-027] the Kinship variants compile to utilities over the tokens", async () => {
+  // Representative classes of every variant in components/ui/variants.ts,
+  // and the declaration each must produce.
+  const utilities = (await utilitiesLayer()).replace(/\s+/g, " ")
+    .replaceAll(": ", ":");
+  const expected: readonly (readonly [string, string])[] = [
+    [String.raw`.min-h-11{`, "min-height:calc(var(--spacing) * 11)"],
+    [String.raw`.px-\(--space-4\){`, "padding-inline:var(--space-4)"],
+    [String.raw`.py-\(--space-3\){`, "padding-block:var(--space-3)"],
+    [String.raw`.rounded-\[\.65rem\]{`, "border-radius:.65rem"],
+    [String.raw`.bg-primary{`, "background-color:var(--primary)"],
+    [String.raw`.border-input{`, "border-color:var(--input)"],
+    [String.raw`.bg-\(--accent\){`, "background-color:var(--accent)"],
+    [String.raw`.p-\(--pad-card\){`, "padding:var(--pad-card)"],
+    [
+      String.raw`.border-\(--line-hairline\){`,
+      "border-color:var(--line-hairline)",
+    ],
+    [String.raw`.animate-skeleton{`, "animation:var(--animate-skeleton)"],
+    [
+      String.raw`.aria-pressed\:bg-primary[aria-pressed=true]{`,
+      "background-color:var(--primary)",
+    ],
+    [String.raw`.motion-reduce\:animate-none{`, "animation:none"],
+    [
+      String
+        .raw`:where([data-section-state=error]) .in-data-\[section-state\=error\]\:bg-\(--accent-soft\){`,
+      "background-color:var(--accent-soft)",
+    ],
+  ];
+  for (const [selector, declaration] of expected) {
+    const at = utilities.indexOf(selector);
+    assert(at >= 0, `${selector} is generated`);
+    assert(
+      utilities.slice(at + selector.length).startsWith(declaration),
+      `${selector} declares ${declaration}`,
+    );
+  }
+});
+
+Deno.test("[GAP-026] no Tailwind utility shares a name with a hand-written class", async () => {
+  // Tailwind generates a utility for every candidate word in the scanned
+  // sources, which include the Astro templates and the vanilla modules
+  // (GAP-027). One named like a class the existing stylesheets style would
+  // restyle every vanilla element that carries it.
+  const utilities = await utilitiesLayer();
   const generated = new Set(
     [...utilities.matchAll(/\.((?:\.|[\w-])+)/g)].map(([, name]) => name!),
   );

@@ -2,13 +2,17 @@
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 import LoadMore from "../../../components/LoadMore.astro";
 export const prerender = true;
+import {
+  buttonVariants,
+  formActionsVariants,
+} from "../../../components/ui/variants.ts";
 ---
 
 <ApplicationLayout current="journal" description="Maintain ordered personal journal posts, day ratings, and linked activities." pageId="journal.index" title="Journal — Kinship">
   <main id="main-content" class="page-frame journal-page" tabindex="-1">
-    <header class="page-heading"><div><p class="eyebrow">Personal history · <span data-workspace-name></span></p><h1>Journal</h1></div><button data-journal-add class="button-primary" type="button">Add item</button></header>
+    <header class="page-heading"><div><p class="eyebrow">Personal history · <span data-workspace-name></span></p><h1>Journal</h1></div><button data-journal-add class={buttonVariants()} type="button">Add item</button></header>
     <p data-journal-state class="section-state" role="status" aria-live="polite">Loading journal…</p>
-    <button data-journal-retry class="button-secondary" type="button" hidden>Retry journal</button>
+    <button data-journal-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry journal</button>
     <form method="post" data-journal-form class="profile-fact-form journal-form" hidden novalidate>
       <h2>Journal item</h2>
       <label>Item type <select name="type"><option value="post">Post</option><option value="day-rating">Day rating</option><option value="activity">Linked activity</option></select></label>
@@ -20,7 +24,7 @@ export const prerender = true;
       <label data-journal-rating hidden>Comment (optional) <textarea name="comment" maxlength="10000" rows="3"></textarea></label>
       <label data-journal-activity hidden>Activity <select name="activityId" required><option value="" disabled selected>Loading activities…</option></select></label>
       <p data-journal-form-state class="section-state" role="status" aria-live="polite"></p>
-      <div class="form-actions"><button class="button-primary" type="submit">Save item</button><button data-journal-cancel type="button">Cancel</button></div>
+      <div class={formActionsVariants()}><button class={buttonVariants()} type="submit">Save item</button><button class={buttonVariants()} data-journal-cancel type="button">Cancel</button></div>
     </form>
     <ol id="journal-timeline" data-journal-list class="journal-list" aria-label="Journal timeline"></ol>
     <LoadMore list="journal" label="Load more journal items" controls="journal-timeline" />

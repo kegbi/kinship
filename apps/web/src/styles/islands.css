@@ -1,27 +1,37 @@
 /*
- * Tailwind CSS v4 for the React islands (ADR 0006).
+ * Tailwind CSS v4 for the application (ADR 0006, GAP-027).
  *
  * Only Tailwind's theme and utilities layers are imported. Preflight is left
  * out on purpose: its element resets (margins, list styles, button and form
  * appearance) would restyle every existing page wherever the hand-written CSS
  * relies on browser defaults. Everything here is layered, and the existing
- * stylesheets are not, so they keep winning wherever both speak.
+ * stylesheets are not, so they keep winning wherever both speak — except for
+ * the element defaults they declare in `legacy-defaults`, the lowest layer,
+ * which a primitive's variant classes (`components/ui/variants.ts`) must beat.
+ * application.css declares the same order, whichever of the two loads first.
  *
- * Utilities are generated only for class names written in the islands and the
- * vendored shadcn/ui components, never for words that happen to appear in the
- * vanilla modules or the Astro templates.
+ * Utilities are generated for the class names written in the islands, the
+ * vendored shadcn/ui components and their variants, the Astro templates, and
+ * the vanilla modules, which all draw with the same variant classes. Tests
+ * are not scanned. `tools/web_build_output_test.ts` fails the build when a
+ * generated utility shares a name with a hand-written class.
  *
  * The colours are the shadcn/ui theme variables tokens.css maps onto the
  * UXD-001 tokens, so Tailwind and the existing CSS share one source.
  */
 
-@layer theme, base, components, utilities;
+@layer legacy-defaults, theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
 
 @source "../islands";
-@source "../components/ui";
-@source not "../islands/**/*.test.tsx";
+@source "../components";
+@source "../layouts";
+@source "../pages";
+@source "../lib";
+@source not "../**/*.test.ts";
+@source not "../**/*.test.tsx";
+@source not "../lib/*.test-helper.ts";
 
 /* The design system's theme choice: an explicit `data-theme`, else the OS. */
 @custom-variant dark {
@@ -62,4 +72,19 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
   --font-sans: "Inter Variable", Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+/* The skeleton sweep (`skeletonVariants`); reduced motion stops it. */
+@theme {
+  --animate-skeleton: skeleton-sweep 1.4s ease-in-out infinite;
+
+  @keyframes skeleton-sweep {
+    from {
+      background-position: 200% 0;
+    }
+
+    to {
+      background-position: -200% 0;
+    }
+  }
 }

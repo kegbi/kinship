@@ -41,6 +41,10 @@ const categories = [
     ],
   },
 ] as const;
+import {
+  badgeVariants,
+  cardVariants,
+} from "../../../components/ui/variants.ts";
 ---
 
 <ApplicationLayout
@@ -71,7 +75,7 @@ const categories = [
 
       <div class="settings-groups">
         {categories.map((category) => (
-          <section id={category.title.toLowerCase()} class="settings-group" aria-labelledby={`${category.title.toLowerCase()}-heading`}>
+          <section id={category.title.toLowerCase()} class={cardVariants({ className: "settings-group" })} aria-labelledby={`${category.title.toLowerCase()}-heading`}>
             <header>
               <p class="scope-label">{category.title === "Personal" ? "Personal scope" : "Workspace scope"}</p>
               <h2 id={`${category.title.toLowerCase()}-heading`}>{category.title}</h2>
@@ -81,14 +85,14 @@ const categories = [
               {category.items.map(([title, description, search, href]) => (
                 <article class="settings-card" data-settings-item data-search={`${category.title} ${title} ${search}`} data-requires-workspace-owner={title === "Workspace danger zone" ? "true" : undefined} data-requires-workspace-admin={title === "Members" || title === "General" || title === "Personalization" || title === "Storage" || title === "Import" || title === "Audit history" ? "true" : undefined}>
                   <div><h3>{title}</h3><p>{description}</p></div>
-                  {href ? <a class="planned-label settings-card-link" href={href}>Open</a> : <span class="planned-label">Planned</span>}
+                  {href ? <a class={badgeVariants({ className: "settings-card-link", variant: "secondary" })} href={href}>Open</a> : <span class={badgeVariants({ variant: "secondary" })}>Planned</span>}
                 </article>
               ))}
             </div>
           </section>
         ))}
 
-        <section id="billing" class="settings-group optional-group" aria-labelledby="billing-heading">
+        <section id="billing" class={cardVariants({ className: "settings-group optional-group" })} aria-labelledby="billing-heading">
           <header>
             <p class="scope-label">Optional workspace scope</p>
             <h2 id="billing-heading">Billing</h2>
@@ -96,7 +100,7 @@ const categories = [
           </header>
           <article class="settings-card" data-settings-item data-search="billing invoices subscription optional">
             <div><h3>Billing &amp; invoices</h3><p>No billing provider or entitlement is enabled.</p></div>
-            <span class="planned-label">Not enabled</span>
+            <span class={badgeVariants({ variant: "secondary" })}>Not enabled</span>
           </article>
         </section>
         <p id="settings-no-results" class="empty-search" role="status" hidden>No settings match that search.</p>

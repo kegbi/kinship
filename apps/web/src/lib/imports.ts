@@ -14,6 +14,7 @@ import {
 import { IMPORT_SOURCE_MAX_BYTES } from "../../../../packages/contracts/imports.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 import { bindSubmitEarly } from "./early-submit.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 function element<T extends Element>(selector: string): T | undefined {
   return document.querySelector<T>(selector) ?? undefined;
@@ -261,7 +262,11 @@ export async function mountImports(): Promise<void> {
       return;
     }
     const link = document.createElement("a");
-    link.className = "button-link secondary-link";
+    link.className = buttonVariants({
+      className: "secondary-link mt-(--space-4)",
+      shape: "pill",
+      variant: "outline",
+    });
     link.href = `/app/settings/import/${result.value.importId}`;
     link.textContent = "Open import report";
     commit.replaceWith(link);

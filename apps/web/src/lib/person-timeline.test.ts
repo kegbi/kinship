@@ -2,6 +2,9 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountPersonTimeline } from "./person-timeline.ts";
+import { segmentVariants } from "../components/ui/variants.ts";
+
+const segment = segmentVariants();
 
 const personId = "00000000-0000-4000-8000-000000000100";
 const workspaceId = "00000000-0000-4000-8000-000000000300";
@@ -17,12 +20,12 @@ function markup(): HTMLElement {
   document.body.innerHTML = `
     <section id="person-timeline" class="profile-section-card person-timeline">
       <div class="person-timeline-filters" role="group" aria-label="Filter timeline by type">
-        <button class="button-primary" data-timeline-filter="all" type="button" aria-pressed="true" disabled>All types</button>
-        <button class="button-secondary" data-timeline-filter="note" type="button" aria-pressed="false" disabled>Notes</button>
-        <button class="button-secondary" data-timeline-filter="call" type="button" aria-pressed="false" disabled>Calls</button>
-        <button class="button-secondary" data-timeline-filter="conversation" type="button" aria-pressed="false" disabled>Conversations</button>
-        <button class="button-secondary" data-timeline-filter="activity" type="button" aria-pressed="false" disabled>Activities</button>
-        <button class="button-secondary" data-timeline-filter="life-event" type="button" aria-pressed="false" disabled>Life events</button>
+        <button class="${segment}" data-timeline-filter="all" type="button" aria-pressed="true" disabled>All types</button>
+        <button class="${segment}" data-timeline-filter="note" type="button" aria-pressed="false" disabled>Notes</button>
+        <button class="${segment}" data-timeline-filter="call" type="button" aria-pressed="false" disabled>Calls</button>
+        <button class="${segment}" data-timeline-filter="conversation" type="button" aria-pressed="false" disabled>Conversations</button>
+        <button class="${segment}" data-timeline-filter="activity" type="button" aria-pressed="false" disabled>Activities</button>
+        <button class="${segment}" data-timeline-filter="life-event" type="button" aria-pressed="false" disabled>Life events</button>
       </div>
       <p data-timeline-state class="section-state">Loading the timeline…</p>
       <ul data-timeline-list class="person-timeline-list"></ul>
@@ -447,12 +450,12 @@ describe("merged person timeline", () => {
     );
     expect(String(fetchMock.mock.calls[1]?.[0])).not.toContain("cursor");
     expect(notes.getAttribute("aria-pressed")).toBe("true");
-    expect(notes.classList.contains("button-primary")).toBe(true);
+    expect(notes.className).toBe(segment);
     const all = root.querySelector<HTMLButtonElement>(
       '[data-timeline-filter="all"]',
     )!;
     expect(all.getAttribute("aria-pressed")).toBe("false");
-    expect(all.classList.contains("button-secondary")).toBe(true);
+    expect(all.className).toBe(segment);
   });
 
   it("reloads when a changed timeline includes the mounted person", async () => {

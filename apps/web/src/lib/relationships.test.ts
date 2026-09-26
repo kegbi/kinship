@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 import { mountRelationships } from "./relationships.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 const workspaceId = "00000000-0000-4000-8000-000000000003";
 const personId = "00000000-0000-4000-8000-000000000100";
@@ -1365,7 +1366,7 @@ describe("relationship profile section", () => {
       .find((item) =>
         item.textContent === "Save relationship with Ada Lovelace"
       )!;
-    expect(save.classList.contains("button-primary")).toBe(true);
+    expect(save.className).toBe(buttonVariants());
     save.click();
     await vi.waitFor(() =>
       expect(document.querySelector("#relationships-state")?.textContent)
@@ -1373,7 +1374,12 @@ describe("relationship profile section", () => {
     );
     const unlink = [...document.querySelectorAll<HTMLButtonElement>("button")]
       .find((item) => item.textContent === "Unlink Ada Lovelace")!;
-    expect(unlink.classList.contains("button-danger")).toBe(true);
+    expect(unlink.className).toBe(
+      buttonVariants({
+        className: "profile-rail-remove",
+        variant: "destructive",
+      }),
+    );
     unlink.click();
     await vi.waitFor(() =>
       expect(document.querySelector("#relationships-state")?.textContent)

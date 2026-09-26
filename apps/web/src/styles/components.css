@@ -17,103 +17,6 @@
   background: var(--surface, var(--surface-1));
 }
 
-.global-people-search-dialog {
-  width: min(42rem, calc(100% - 2rem));
-  max-width: none;
-  max-height: calc(100dvh - 2rem);
-  overflow: auto;
-  padding: 0;
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius-lg);
-  color: var(--ink-1);
-  background: var(--surface-1);
-  box-shadow: var(--shadow-2);
-}
-
-.global-people-search-dialog::backdrop {
-  background: color-mix(in srgb, var(--ink-1) 55%, transparent);
-}
-
-.global-people-search-palette {
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-5);
-}
-
-.global-people-search-palette > header {
-  display: flex;
-  gap: var(--space-4);
-  align-items: start;
-  justify-content: space-between;
-}
-
-.global-people-search-palette h2,
-.global-people-search-palette .section-kicker {
-  margin: 0;
-}
-
-.global-people-search-input-slot {
-  min-width: 0;
-}
-
-.global-people-search-results {
-  display: grid;
-  gap: var(--space-1);
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.global-people-search-results [role="option"] {
-  display: grid;
-  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
-  gap: var(--space-3);
-  min-width: 0;
-  min-height: 52px;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  align-items: center;
-  cursor: pointer;
-}
-
-.global-people-search-results [role="option"][aria-selected="true"] {
-  background: var(--surface-sunken);
-}
-
-.people-search-avatar {
-  display: grid;
-  width: 2.5rem;
-  aspect-ratio: 1;
-  place-items: center;
-  border-radius: 50%;
-  color: var(--ink-inverse);
-  background: var(--positive);
-  font-size: .75rem;
-  font-weight: 700;
-}
-
-.people-search-identity {
-  display: grid;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.people-search-identity > span {
-  color: var(--ink-2);
-  font-size: .82rem;
-}
-
-.people-search-add-option {
-  grid-template-columns: 2.5rem minmax(0, 1fr) !important;
-}
-
-.people-search-empty {
-  margin: 0;
-  padding: var(--space-3);
-  color: var(--ink-2);
-}
-
 .interaction-capture-dialog::backdrop {
   background: color-mix(in srgb, var(--ink-1) 55%, transparent);
 }
@@ -195,10 +98,6 @@
   font-weight: 700;
 }
 
-.audit-filters .form-actions {
-  grid-column: 1 / -1;
-}
-
 .audit-event-list {
   display: grid;
   gap: var(--space-3);
@@ -222,10 +121,6 @@
 .audit-event time {
   color: var(--muted, var(--ink-2));
   font-size: 0.9rem;
-}
-
-.audit-event .state-badge {
-  justify-self: start;
 }
 
 @media (max-width: 42rem) {

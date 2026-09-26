@@ -18,6 +18,7 @@ import {
 } from "./person-facts-rail.ts";
 import { insertProfileRailExpander } from "./profile-rail-expander.ts";
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 interface ImportantDateElements {
   readonly add: HTMLButtonElement;
@@ -380,12 +381,15 @@ function render(
       actions.className = "important-date-actions";
       const edit = document.createElement("button");
       edit.type = "button";
-      edit.className = "button-secondary";
+      edit.className = buttonVariants({ variant: "outline" });
       setQuietLabel(edit, "Edit", title(date));
       edit.addEventListener("click", () => onEdit(date, edit));
       const remove = document.createElement("button");
       remove.type = "button";
-      remove.className = "button-danger";
+      remove.className = buttonVariants({
+        className: "profile-rail-remove",
+        variant: "destructive",
+      });
       setQuietLabel(remove, "Delete", title(date));
       remove.addEventListener("click", () => onDelete(date, remove));
       actions.append(edit, remove);

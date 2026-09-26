@@ -340,22 +340,6 @@
   padding: clamp(var(--space-6), 6vw, var(--space-8)) 0 var(--space-8);
 }
 
-.page-breadcrumb {
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
-  color: var(--ink-2);
-  font-size: .82rem;
-  font-weight: 600;
-}
-
-.page-breadcrumb a {
-  display: inline-flex;
-  min-height: 44px;
-  align-items: center;
-  text-underline-offset: .2em;
-}
-
 .page-heading {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(16rem, 25rem);
@@ -489,15 +473,6 @@
 
   .member-popover {
     width: calc(100vw - 1rem);
-  }
-
-  .global-people-search-dialog {
-    width: calc(100% - 1rem);
-    max-height: calc(100dvh - 1rem);
-  }
-
-  .global-people-search-palette {
-    padding: var(--space-4);
   }
 
   .page-frame {

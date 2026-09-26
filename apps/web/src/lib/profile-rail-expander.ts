@@ -1,3 +1,4 @@
+import { buttonVariants } from "../components/ui/variants.ts";
 interface ProfileRailExpanderOptions {
   readonly accessibleSuffix: string;
   readonly collapsedLabel: string;
@@ -13,8 +14,10 @@ export function insertProfileRailExpander(
   if (collapsedItems.length === 0) return undefined;
   const expander = document.createElement("button");
   expander.type = "button";
-  expander.className =
-    "button-secondary profile-rail-summary-control profile-rail-expander";
+  expander.className = buttonVariants({
+    className: "profile-rail-summary-control profile-rail-expander",
+    variant: "outline",
+  });
   expander.dataset[options.datasetKey] = "";
   const suffix = document.createElement("span");
   suffix.className = "sr-only";

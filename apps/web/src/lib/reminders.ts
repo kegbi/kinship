@@ -19,6 +19,7 @@ import {
 import { resolveWorkspaceSession } from "./workspace-context.ts";
 import { setRailCount, setRailEmpty } from "./person-facts-rail.ts";
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 let todayRemindersAbort: AbortController | undefined;
 const TODAY_RECONNECT_RECORDED_EVENT = "kinship:today-reconnect-recorded";
@@ -63,7 +64,7 @@ function reminderItem(
   if (mutable && reminder.isActive) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "button-secondary";
+    button.className = buttonVariants({ variant: "outline" });
     button.textContent = "Disable reminder";
     button.addEventListener("click", () => disable(reminder.id));
     item.append(button);
@@ -490,7 +491,10 @@ function todayCadence(
   if (!item.person.archived) {
     const capture = document.createElement("button");
     capture.type = "button";
-    capture.className = "button-secondary today-touch-target";
+    capture.className = buttonVariants({
+      variant: "outline",
+      wrap: true,
+    });
     capture.disabled = true;
     capture.dataset.quickCapture = "";
     capture.dataset.todayReconnectCapture = "";
