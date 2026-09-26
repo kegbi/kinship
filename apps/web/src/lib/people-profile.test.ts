@@ -6,6 +6,9 @@ import { mountPeopleProfile } from "./people-profile.ts";
 import { clearToasts } from "./toasts.ts";
 
 import { getMemberPreferences } from "../../../../packages/contracts/generated/auth-client.ts";
+import { segmentVariants } from "../components/ui/variants.ts";
+
+const segment = segmentVariants();
 
 vi.mock(
   "../../../../packages/contracts/generated/auth-client.ts",
@@ -146,11 +149,11 @@ function markup(path = `/app/people/${personId}`): void {
             <span data-zone-mini-avatar></span><span data-zone-mini-name></span>
           </div>
           <div role="group" aria-label="Filter person sections">
-            <button class="button-primary" data-zone-filter="all" type="button" aria-pressed="true">All</button>
-            <button class="button-secondary" data-zone-filter="timeline" type="button" aria-pressed="false">Timeline</button>
-            <button class="button-secondary" data-zone-filter="planning" type="button" aria-pressed="false">Planning</button>
-            <button class="button-secondary" data-zone-filter="things" type="button" aria-pressed="false">Things</button>
-            <button class="button-secondary" data-zone-filter="admin" type="button" aria-pressed="false">Admin</button>
+            <button class="${segment}" data-zone-filter="all" type="button" aria-pressed="true">All</button>
+            <button class="${segment}" data-zone-filter="timeline" type="button" aria-pressed="false">Timeline</button>
+            <button class="${segment}" data-zone-filter="planning" type="button" aria-pressed="false">Planning</button>
+            <button class="${segment}" data-zone-filter="things" type="button" aria-pressed="false">Things</button>
+            <button class="${segment}" data-zone-filter="admin" type="button" aria-pressed="false">Admin</button>
            </div>
          </div>
         <section id="person-first-run" class="person-first-run" aria-labelledby="person-first-run-heading" hidden>
@@ -1227,13 +1230,13 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     )!;
     expect(location.search).toBe("?view=unknown");
     expect(all.getAttribute("aria-pressed")).toBe("true");
-    expect(all.classList.contains("button-primary")).toBe(true);
+    expect(all.className).toBe(segment);
     expect(zones.every((zone) => !zone.hidden)).toBe(true);
 
     planning.click();
     expect(new URLSearchParams(location.search).get("view")).toBe("planning");
     expect(planning.getAttribute("aria-pressed")).toBe("true");
-    expect(planning.classList.contains("button-primary")).toBe(true);
+    expect(planning.className).toBe(segment);
     expect(
       document.querySelector<HTMLElement>('[data-zone="planning"]')?.hidden,
     ).toBe(false);

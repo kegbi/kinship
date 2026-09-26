@@ -1030,7 +1030,7 @@ export async function mountActivityReport(
     const session = await resolveWorkspaceSession();
     if (abort.signal.aborted || current !== generation) return;
     if (session.status !== "ready") {
-      if (personCrumb?.querySelector(".skeleton")) {
+      if (personCrumb?.querySelector('[data-slot="skeleton"]')) {
         personCrumb.textContent = "Person";
       }
       state.textContent = "Activity report unavailable.";
@@ -1053,7 +1053,7 @@ export async function mountActivityReport(
     ).catch(() => undefined);
     if (abort.signal.aborted || current !== generation) return;
     if (!result?.ok) {
-      if (personCrumb?.querySelector(".skeleton")) {
+      if (personCrumb?.querySelector('[data-slot="skeleton"]')) {
         personCrumb.textContent = "Person";
       }
       state.textContent = result && !result.ok && result.problem.status === 404

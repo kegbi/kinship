@@ -40,6 +40,11 @@ import {
 } from "../../../../../packages/contracts/generated/auth-client.ts";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button } from "@/components/ui/button.tsx";
+import {
+  formActionsVariants,
+  skeletonLinesVariants,
+  skeletonVariants,
+} from "@/components/ui/variants.ts";
 import { SECTION_ICON_PATHS } from "../../lib/section-icons.ts";
 import {
   LoadMore,
@@ -48,7 +53,6 @@ import {
   useLatestRequest,
 } from "../core/index.ts";
 import { DebtEditor, GiftEditor, type SaveOutcome } from "./forms.tsx";
-import { LEGACY_BADGE, LEGACY_BUTTON } from "./legacy-look.ts";
 import {
   attachmentChoices,
   countText,
@@ -377,15 +381,12 @@ function Surface(
         </span>
         <div className="profile-section-title">
           <h3 id={`profile-section-${id}-heading`}>{title}</h3>
-          <Badge
-            className={`state-badge ${LEGACY_BADGE}`}
-            data-gift-badge=""
-          >
+          <Badge data-gift-badge="" variant="status">
             {badge}
           </Badge>
         </div>
         <Button
-          className={`button-primary profile-section-cta ${LEGACY_BUTTON}`}
+          className="profile-section-cta"
           data-gift-add=""
           hidden={props.archived || props.editor !== null}
           onClick={props.onAdd}
@@ -402,11 +403,11 @@ function Surface(
         {state ?? <LoadingState plural={plural} />}
       </p>
       <Button
-        className={`button-secondary ${LEGACY_BUTTON}`}
         data-gift-retry=""
         hidden={props.list.status !== "error"}
         onClick={props.onRetry}
         type="button"
+        variant="outline"
       >
         Retry loading
       </Button>
@@ -435,16 +436,15 @@ function LoadingState(props: { readonly plural: string }) {
   return (
     <>
       <span className="sr-only">Loading {props.plural}…</span>
-      <span aria-hidden="true" className="skeleton-lines">
-        <span aria-hidden="true" className="skeleton skeleton-line" />
-        <span
-          aria-hidden="true"
-          className="skeleton skeleton-line skeleton-line-80"
-        />
-        <span
-          aria-hidden="true"
-          className="skeleton skeleton-line skeleton-line-60"
-        />
+      <span aria-hidden="true" className={skeletonLinesVariants}>
+        {(["line", "line-80", "line-60"] as const).map((shape) => (
+          <span
+            aria-hidden="true"
+            className={skeletonVariants({ shape })}
+            data-slot="skeleton"
+            key={shape}
+          />
+        ))}
       </span>
     </>
   );
@@ -462,11 +462,12 @@ function StatusChange(
 ) {
   const [next, setNext] = useState(props.options[0] ?? "");
   return (
-    <div className="form-actions">
+    <div className={formActionsVariants({ className: "person-file-actions" })}>
       <select
         {...props.selectData}
         aria-label={`Next status for ${props.label}`}
-        onChange={(event) => setNext(event.target.value)}
+        onChange={(event) =>
+          setNext(event.target.value)}
         value={next}
       >
         {props.options.map((status) => (
@@ -475,9 +476,9 @@ function StatusChange(
       </select>
       <Button
         {...props.saveData}
-        className={`button-secondary ${LEGACY_BUTTON}`}
         onClick={() => void props.onChange(next)}
         type="button"
+        variant="outline"
       >
         Change status
       </Button>

@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 import { mountPersonReminders, mountTodayReminders } from "./reminders.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 const applicationCss = readApplicationStylesheet();
 
@@ -1211,8 +1212,8 @@ describe("PLANNING-002 reminder browser behavior", () => {
     expect(
       document.querySelector<HTMLButtonElement>(
         "[data-reminder-list] button",
-      )?.classList.contains("button-secondary"),
-    ).toBe(true);
+      )?.className,
+    ).toBe(buttonVariants({ variant: "outline" }));
 
     document.dispatchEvent(
       new CustomEvent("person-lifecycle-changed", {
@@ -1603,9 +1604,12 @@ describe("PLANNING-002 reminder browser behavior", () => {
     expect(reconnect?.textContent).toBe("Log interaction");
     expect(reconnect?.dataset.interactionPersonId).toBe(personId);
     expect(reconnect?.dataset.interactionIntendedKind).toBe("activity");
-    expect(reconnect?.classList).toContain("today-touch-target");
-    expect(getComputedStyle(reconnect!).minHeight).toBe("44px");
-    expect(getComputedStyle(reconnect!).minWidth).toBe("44px");
+    // A 44px target in both directions that wraps a long name.
+    expect(reconnect?.className).toBe(
+      buttonVariants({ variant: "outline", wrap: true }),
+    );
+    expect(reconnect?.classList).toContain("min-h-11");
+    expect(reconnect?.classList).toContain("min-w-11");
     expect(cadenceRows[1]?.querySelector("button")).toBeNull();
   });
 

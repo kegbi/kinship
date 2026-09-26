@@ -367,7 +367,7 @@ describe("GOVERNANCE-002 audit history UI", () => {
     document.body.innerHTML = `${historyMarkup()}
       <nav aria-label="Breadcrumb">
         <a href="/app/people">People</a><span aria-hidden="true">/</span>
-        <a data-breadcrumb-person href="/app/people/${personId}"><span class="skeleton skeleton-chip" aria-hidden="true"></span><span class="sr-only">Loading person…</span></a><span aria-hidden="true">/</span>
+        <a data-breadcrumb-person href="/app/people/${personId}"><span data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading person…</span></a><span aria-hidden="true">/</span>
         <span aria-current="page">Audit history</span>
       </nav>`;
     history.replaceState({}, "", `/app/people/${personId}/audit`);

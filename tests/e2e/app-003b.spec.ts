@@ -7,6 +7,7 @@ import {
 import axe from "axe-core";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { waitForIsland } from "./support/islands.ts";
 import { settleNavigation } from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
@@ -252,6 +253,7 @@ test(
       values ('${adaId}'::uuid, '${foreignTagId}'::uuid);
     `);
 
+    await waitForIsland(page, "global-people-search");
     const globalSearch = page.getByRole("combobox", {
       name: "Find a person",
     });
@@ -264,6 +266,7 @@ test(
 
     await settleNavigation(page);
     await page.goto("/app/people");
+    await waitForIsland(page, "global-people-search");
     const peopleNavigation = page.getByRole("link", {
       exact: true,
       name: "People",
@@ -289,6 +292,7 @@ test(
     await expect(importCommand).toBeVisible();
     await commandInput.press("Enter");
     await expect(page).toHaveURL(/\/app\/settings\/import$/);
+    await waitForIsland(page, "global-people-search");
 
     const logCommandInput = page.getByRole("combobox", {
       name: "Find a person",
@@ -306,6 +310,7 @@ test(
     await expect(quickCaptureDialog).toBeVisible();
     await quickCaptureDialog.getByRole("button", { name: "Cancel" }).click();
     await page.goto("/app/people");
+    await waitForIsland(page, "global-people-search");
 
     await page.getByRole("combobox", { name: "Find a person" }).fill(
       "Marie Dupont",

@@ -3,6 +3,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
+import {
+  buttonVariants,
+  formActionsVariants,
+} from "../components/ui/variants.ts";
 
 const applicationCss = readApplicationStylesheet();
 const tokensCss = readFileSync("apps/web/src/styles/tokens.css", "utf8");
@@ -492,115 +496,72 @@ describe("application control presentation", () => {
     );
   });
 
-  it("presents primary, secondary, and danger anchors and buttons consistently", () => {
-    mountStyles();
+  it("presents primary, secondary, and danger anchors and buttons from one variant definition", () => {
+    // GAP-027: the look lives in components/ui/variants.ts, which static,
+    // vanilla, and island markup all call; no stylesheet redraws it.
+    expect(applicationCss).not.toMatch(
+      /\.(?:button-(?:primary|secondary|danger|link)|state-badge|form-actions)\b/,
+    );
     const openAllClasses = todayPage.match(
-      /<a class="([^"]+)" href="\/app\/tasks">Open all tasks<\/a>/,
+      /<a class=\{([^}]+\})\)\} href="\/app\/tasks">Open all tasks<\/a>/,
     )?.[1];
-    expect(openAllClasses).toBeTruthy();
-
-    const controls = [
-      ["button", "button-primary"],
-      ["a", "button-primary"],
-      ["button", "button-secondary"],
-      ["a", openAllClasses!],
-      ["button", "button-danger"],
-      ["a", "button-danger"],
-    ] as const;
-    for (const [tagName, className] of controls) {
-      const control = document.createElement(tagName);
-      control.className = className;
-      control.textContent = className.includes("today-touch-target")
-        ? "Open all tasks"
-        : "Action";
-      document.body.append(control);
-      const computed = getComputedStyle(control);
-      expect(computed.display).toBe("inline-flex");
-      expect(computed.alignItems).toBe("center");
-      expect(computed.justifyContent).toBe("center");
-      expect(computed.minHeight).toBe("44px");
-      expect(computed.paddingTop).toBe("12px");
-      expect(computed.paddingRight).toBe("16px");
-      expect(computed.borderRadius).toBe("10.4px");
-      expect(computed.fontWeight).toBe("600");
-      expect(computed.lineHeight).toBe("1.2");
-      if (tagName === "a") expect(computed.textDecoration).toBe("none");
+    expect(openAllClasses).toBe(
+      'buttonVariants({ variant: "outline", wrap: true }',
+    );
+    for (const variant of ["default", "outline", "destructive"] as const) {
+      const classes = buttonVariants({ variant }).split(" ");
+      // A button and a link that names the same variant draw the same box:
+      // a 44px target, 12px by 16px padding, a .65rem radius, semibold text
+      // on a 1.2 line, never underlined.
+      for (
+        const token of [
+          "inline-flex",
+          "items-center",
+          "justify-center",
+          "min-h-11",
+          "py-(--space-3)",
+          "px-(--space-4)",
+          "rounded-[.65rem]",
+          "font-semibold",
+          "leading-[1.2]",
+          "no-underline",
+          "disabled:opacity-55",
+          "disabled:cursor-not-allowed",
+          "aria-disabled:opacity-55",
+          "aria-disabled:pointer-events-none",
+        ]
+      ) expect(classes).toContain(token);
     }
-
-    const openAll = document.body.querySelector<HTMLElement>(
-      "a.today-touch-target",
-    )!;
-    expect(getComputedStyle(openAll).paddingRight).toBe("16px");
-    expect(
-      getComputedStyle(document.body.querySelector(".button-primary")!)
-        .backgroundColor,
-    ).toBe("#20352d");
-    expect(
-      getComputedStyle(document.body.querySelector(".button-danger")!)
-        .backgroundColor,
-    ).toBe("#a44730");
-
-    const disabledButton = document.body.querySelector<HTMLButtonElement>(
-      "button.button-primary",
-    )!;
-    disabledButton.disabled = true;
-    expect(Number(getComputedStyle(disabledButton).opacity)).toBe(.55);
-    expect(getComputedStyle(disabledButton).cursor).toBe("not-allowed");
-    const disabledLink = document.body.querySelector<HTMLAnchorElement>(
-      "a.button-danger",
-    )!;
-    disabledLink.setAttribute("aria-disabled", "true");
-    expect(Number(getComputedStyle(disabledLink).opacity)).toBe(.55);
-    expect(getComputedStyle(disabledLink).pointerEvents).toBe("none");
+    // Primary is ink (#20352d) and danger the accent (#a44730).
+    expect(tokensCss).toMatch(/--primary:\s*var\(--ink-1\);/);
+    expect(tokensCss).toMatch(/--ink-1:\s*#20352d;/);
+    expect(buttonVariants().split(" ")).toContain("bg-primary");
+    expect(tokensCss).toMatch(/--accent:\s*#a44730;/);
+    expect(buttonVariants({ variant: "destructive" }).split(" ")).toContain(
+      "bg-(--accent)",
+    );
   });
 
   it("keeps semantic buttons and links aligned inside mixed form action rows", () => {
-    mountStyles();
+    expect(formActionsVariants()).toBe("flex flex-wrap gap-(--space-3)");
     const row = document.createElement("div");
-    row.className = "form-actions";
-    for (const variant of ["primary", "secondary", "danger"] as const) {
+    row.className = formActionsVariants();
+    for (const variant of ["default", "outline", "destructive"] as const) {
       for (const tagName of ["button", "a"] as const) {
         const control = document.createElement(tagName);
-        control.className = `button-${variant}`;
-        control.textContent = `${variant} ${tagName}`;
+        control.className = buttonVariants({ variant });
+        control.dataset.variant = variant;
         row.append(control);
       }
     }
     document.body.append(row);
-
-    for (const variant of ["primary", "secondary", "danger"] as const) {
+    for (const variant of ["default", "outline", "destructive"] as const) {
       const [button, link] = [
-        row.querySelector<HTMLElement>(`button.button-${variant}`)!,
-        row.querySelector<HTMLElement>(`a.button-${variant}`)!,
+        row.querySelector<HTMLElement>(`button[data-variant="${variant}"]`)!,
+        row.querySelector<HTMLElement>(`a[data-variant="${variant}"]`)!,
       ];
-      const buttonStyle = getComputedStyle(button);
-      const linkStyle = getComputedStyle(link);
-      for (
-        const property of [
-          "minHeight",
-          "paddingTop",
-          "paddingRight",
-          "borderRadius",
-          "lineHeight",
-        ] as const
-      ) {
-        expect(buttonStyle[property]).toBe(linkStyle[property]);
-      }
-      expect(buttonStyle.color).toBe(linkStyle.color);
-      expect(buttonStyle.backgroundColor).toBe(linkStyle.backgroundColor);
+      expect(button.className).toBe(link.className);
     }
-    expect(
-      getComputedStyle(row.querySelector(".button-primary")!)
-        .backgroundColor,
-    ).toBe("#20352d");
-    expect(
-      getComputedStyle(row.querySelector(".button-secondary")!)
-        .backgroundColor,
-    ).toBe("#fffdf8");
-    expect(
-      getComputedStyle(row.querySelector(".button-danger")!)
-        .backgroundColor,
-    ).toBe("#a44730");
   });
 
   it("styles ordinary single and multiple selects without forcing a caret on multiple selects", () => {
@@ -634,9 +595,15 @@ describe("application control presentation", () => {
 
   it("keeps keyboard focus outside interactive content, including programmatic menu controls", () => {
     mountStyles();
-    const buttons = ["primary", "secondary", "danger"].map((variant) => {
+    const buttons = (["default", "outline", "destructive"] as const).map((
+      variant,
+    ) => {
       const button = document.createElement("button");
-      button.className = `button-${variant}`;
+      button.className = buttonVariants({ variant });
+      // The focus ring is the application's; no variant draws its own.
+      expect(button.className).not.toMatch(
+        /(?:^|\s)(?:\S*:)?(?:outline|ring)-/,
+      );
       return button;
     });
     const input = document.createElement("input");

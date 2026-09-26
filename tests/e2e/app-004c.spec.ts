@@ -1770,8 +1770,8 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
   const deleteContact = contacts.getByRole("button", {
     name: "Delete Email: ada@example.test",
   });
-  await expect(editContact).toHaveClass(/\bbutton-secondary\b/);
-  await expect(deleteContact).toHaveClass(/\bbutton-danger\b/);
+  await expect(editContact).toHaveClass(/(?:^|\s)bg-card(?:\s|$)/);
+  await expect(deleteContact).toHaveClass(/\bprofile-rail-remove\b/);
   const [editContactStyle, deleteContactStyle] = await Promise.all([
     controlPresentation(editContact),
     controlPresentation(deleteContact),

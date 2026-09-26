@@ -8,6 +8,7 @@ import {
   listProfileFacts,
   recordInteraction,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 let communicationAbort: AbortController | undefined;
 
@@ -59,7 +60,7 @@ function messageRow(): HTMLElement {
   contentLabel.append(content);
   const remove = document.createElement("button");
   remove.type = "button";
-  remove.className = "button-danger";
+  remove.className = buttonVariants({ variant: "destructive" });
   remove.textContent = "Remove message";
   remove.addEventListener("click", () => row.remove());
   row.append(legend, directionLabel, timeLabel, contentLabel, remove);

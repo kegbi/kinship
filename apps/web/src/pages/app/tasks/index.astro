@@ -2,6 +2,10 @@
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 import LoadMore from "../../../components/LoadMore.astro";
 export const prerender = true;
+import {
+  buttonVariants,
+  formActionsVariants,
+} from "../../../components/ui/variants.ts";
 ---
 
 <ApplicationLayout
@@ -13,15 +17,15 @@ export const prerender = true;
   <main id="main-content" class="page-frame tasks-page" tabindex="-1">
     <header class="page-heading">
       <div><p class="eyebrow">Planning · <span data-workspace-name></span></p><h1>Tasks</h1></div>
-      <button data-task-add class="button-primary" type="button" disabled>Add task</button>
+      <button data-task-add class={buttonVariants()} type="button" disabled>Add task</button>
     </header>
     <section class="task-filters" aria-label="Task filters">
       <label>State <select data-task-status-filter><option value="">All states</option><option value="open">Open</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></label>
       <label>Person <select data-task-person-filter><option value="">All people and workspace tasks</option></select></label>
-      <button data-task-people-more class="button-secondary" type="button" hidden>Load more people</button>
+      <button data-task-people-more class={buttonVariants({ variant: "outline" })} type="button" hidden>Load more people</button>
     </section>
     <p data-task-state class="section-state" role="status" aria-live="polite">Loading tasks…</p>
-    <button data-task-retry class="button-secondary" type="button" hidden>Retry tasks</button>
+    <button data-task-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry tasks</button>
     <form method="post" data-task-form class="profile-fact-form task-form" hidden novalidate>
       <h2>Task details</h2>
       <label>Title <input name="title" maxlength="500" required /></label>
@@ -30,7 +34,7 @@ export const prerender = true;
       <label>Person (optional) <select name="personId"><option value="">Workspace task</option></select></label>
       <label>State <select name="status"><option value="open">Open</option><option value="cancelled">Cancelled</option></select></label>
       <p data-task-form-state class="section-state" role="status" aria-live="polite"></p>
-      <div class="form-actions"><button class="button-primary" type="submit">Save task</button><button data-task-cancel type="button">Cancel</button></div>
+      <div class={formActionsVariants()}><button class={buttonVariants()} type="submit">Save task</button><button class={buttonVariants()} data-task-cancel type="button">Cancel</button></div>
     </form>
     <div class="task-columns">
       <section aria-labelledby="open-tasks-heading"><h2 id="open-tasks-heading">Open</h2><ul data-task-open-list class="task-list" aria-label="Open tasks"></ul></section>

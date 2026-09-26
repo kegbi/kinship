@@ -1,5 +1,6 @@
 import { getTodayRecentPeople } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
+import { badgeVariants, buttonVariants } from "../components/ui/variants.ts";
 
 let recentPeopleAbort: AbortController | undefined;
 
@@ -57,13 +58,16 @@ export async function mountTodayRecentPeople(): Promise<void> {
     list.replaceChildren(...result.value.people.map((person) => {
       const item = document.createElement("li");
       const link = document.createElement("a");
-      link.className = "button-secondary today-touch-target";
+      link.className = buttonVariants({
+        variant: "outline",
+        wrap: true,
+      });
       link.href = `/app/people/${encodeURIComponent(person.id)}`;
       link.textContent = person.name;
       item.append(link);
       if (person.archived) {
         const lifecycle = document.createElement("span");
-        lifecycle.className = "state-badge calm";
+        lifecycle.className = badgeVariants({ variant: "secondary" });
         lifecycle.textContent = "Archived";
         item.append(lifecycle);
       }

@@ -105,7 +105,7 @@ describe("GAP-026 island theme", () => {
     expect(islands).toMatch(/--color-accent:\s*var\(--accent-soft\);/);
   });
 
-  it("adds Tailwind in layers, without preflight, scanning only islands", () => {
+  it("adds Tailwind in layers, without preflight, scanning the sources but no test", () => {
     expect(islands).not.toMatch(/preflight/);
     expect(islands).not.toMatch(/@import\s+["']tailwindcss["']/);
     const imports = [...islands.matchAll(/^@import\s+([^;]+);/gm)].map((
@@ -120,9 +120,20 @@ describe("GAP-026 island theme", () => {
     )
       .toEqual([
         '"../islands"',
-        '"../components/ui"',
-        'not "../islands/**/*.test.tsx"',
+        '"../components"',
+        '"../layouts"',
+        '"../pages"',
+        '"../lib"',
+        'not "../**/*.test.ts"',
+        'not "../**/*.test.tsx"',
+        'not "../lib/*.test-helper.ts"',
       ]);
+    // Both stylesheets declare one layer order, lowest first, so whichever
+    // loads first the element defaults sit beneath the utilities (GAP-027).
+    const order = "@layer legacy-defaults, theme, base, components, utilities;";
+    expect(islands).toContain(order);
+    expect(readFileSync(resolve(styles, "application.css"), "utf8"))
+      .toContain(order);
     for (const name of SHADCN_VARIABLES) {
       if (name === "--radius") continue;
       expect(islands).toContain(`--color-${name.slice(2)}: var(${name});`);

@@ -18,6 +18,7 @@ import {
   setRailState,
 } from "./person-facts-rail.ts";
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 interface Elements {
   readonly add: HTMLButtonElement;
@@ -337,7 +338,7 @@ export async function mountRelationships(
           controls.className = "relationship-row-editor";
           const save = document.createElement("button");
           save.type = "button";
-          save.className = "button-primary";
+          save.className = buttonVariants();
           setQuietLabel(save, "Save", `relationship with ${name}`);
           const selectable = () =>
             Boolean(editor.value) && !editor.selectedOptions[0]?.disabled;
@@ -373,7 +374,10 @@ export async function mountRelationships(
           };
           const remove = document.createElement("button");
           remove.type = "button";
-          remove.className = "button-danger";
+          remove.className = buttonVariants({
+            className: "profile-rail-remove",
+            variant: "destructive",
+          });
           setQuietLabel(remove, "Unlink", name);
           remove.onclick = async () => {
             const result = await deleteRelationship(personId, relationship.id, {
@@ -410,8 +414,10 @@ export async function mountRelationships(
       expanderItem.className = "relationship-summary-expander";
       const expander = document.createElement("button");
       expander.type = "button";
-      expander.className =
-        "button-secondary profile-rail-summary-control profile-rail-expander";
+      expander.className = buttonVariants({
+        className: "profile-rail-summary-control profile-rail-expander",
+        variant: "outline",
+      });
       const suffix = document.createElement("span");
       suffix.className = "sr-only";
       suffix.textContent = " relationships";

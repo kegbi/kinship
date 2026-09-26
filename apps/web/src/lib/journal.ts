@@ -17,6 +17,10 @@ import {
   saveJournalDayRating,
   updateJournalPost,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import {
+  buttonVariants,
+  formActionsVariants,
+} from "../components/ui/variants.ts";
 
 interface JournalElements {
   readonly add: HTMLButtonElement | undefined;
@@ -139,10 +143,11 @@ function renderItem(
     ? item.dayRating.comment ?? ""
     : "Activity linked to this timeline.";
   const actions = document.createElement("div");
-  actions.className = "form-actions";
+  actions.className = formActionsVariants();
   if (item.type === "post") {
     const edit = document.createElement("button");
     edit.type = "button";
+    edit.className = buttonVariants();
     edit.textContent = "Edit";
     edit.addEventListener("click", () => {
       const form = document.querySelector<HTMLFormElement>(
@@ -166,6 +171,7 @@ function renderItem(
   }
   const remove = document.createElement("button");
   remove.type = "button";
+  remove.className = buttonVariants();
   remove.textContent = "Remove";
   remove.addEventListener("click", async () => {
     remove.disabled = true;

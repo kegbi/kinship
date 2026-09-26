@@ -9,6 +9,7 @@ import {
 import { registerRailEditors, requestRailEditorOpen } from "./rail-editors.ts";
 import { mountUnsavedChangesGuard } from "./unsaved-changes.ts";
 import type { ImportantDate } from "../../../../packages/contracts/generated/auth-client.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 const workspaceId = "00000000-0000-4000-8000-000000000003";
 const personId = "00000000-0000-4000-8000-000000000100";
@@ -709,10 +710,15 @@ describe("PEOPLE-005 important-date presentation", () => {
       .toContain("First meeting");
     expect(document.querySelector("#important-dates-list")?.textContent)
       .toContain("No reminder scheduled");
-    expect(button("Edit Custom date").classList.contains("button-secondary"))
-      .toBe(true);
-    expect(button("Delete Custom date").classList.contains("button-danger"))
-      .toBe(true);
+    expect(button("Edit Custom date").className).toBe(
+      buttonVariants({ variant: "outline" }),
+    );
+    expect(button("Delete Custom date").className).toBe(
+      buttonVariants({
+        className: "profile-rail-remove",
+        variant: "destructive",
+      }),
+    );
 
     button("Edit Custom date").click();
     await Promise.resolve();

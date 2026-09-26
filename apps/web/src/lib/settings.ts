@@ -24,6 +24,7 @@ import {
   type WorkspaceChangeRequestDetail,
 } from "./workspace-context.ts";
 import { bindSubmitEarly } from "./early-submit.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 let activeBeforeUnload: ((event: Event) => void) | undefined;
 let activeWorkspaceChangeRequest: ((event: Event) => void) | undefined;
@@ -456,6 +457,7 @@ export async function mountSecuritySettings(): Promise<void> {
       copy.append(title, detail);
       const button = document.createElement("button");
       button.type = "button";
+      button.className = buttonVariants();
       button.textContent = session.current ? "Revoke and sign out" : "Revoke";
       button.addEventListener("click", async () => {
         button.disabled = true;

@@ -22,10 +22,13 @@ interface Props {
 }
 
 const { controls, label, list } = Astro.props;
+import {
+  buttonVariants,
+} from "./ui/variants.ts";
 ---
 
 <button
-  class="button-secondary load-more"
+  class={buttonVariants({ className: "load-more", variant: "outline" })}
   data-load-more={list}
   type="button"
   aria-controls={controls}

@@ -2,6 +2,10 @@
 import Breadcrumb from "../../components/Breadcrumb.astro";
 import ApplicationLayout from "../../layouts/ApplicationLayout.astro";
 export const prerender = true;
+import {
+  buttonVariants,
+  formActionsVariants,
+} from "../../components/ui/variants.ts";
 ---
 
 <ApplicationLayout
@@ -28,16 +32,16 @@ export const prerender = true;
       <label>Action <input name="action" type="search" maxlength="200" placeholder="people.person-updated" /></label>
       <label>From <input name="from" type="datetime-local" /></label>
       <label>Before <input name="to" type="datetime-local" /></label>
-      <div class="form-actions">
-        <button class="button-primary" type="submit">Apply filters</button>
-        <button data-audit-clear class="button-secondary" type="button">Clear filters</button>
+      <div class={formActionsVariants({ className: "col-span-full" })}>
+        <button class={buttonVariants()} type="submit">Apply filters</button>
+        <button data-audit-clear class={buttonVariants({ variant: "outline" })} type="button">Clear filters</button>
       </div>
     </form>
     <p data-audit-state class="section-state" role="status" aria-live="polite">Loading audit history…</p>
     <ol data-audit-list class="audit-event-list" aria-label="Person audit events in immutable newest-first order"></ol>
-    <div class="form-actions">
-      <button data-audit-more class="button-secondary" type="button" hidden>Load older events</button>
-      <button data-audit-retry class="button-secondary" type="button" hidden>Retry audit history</button>
+    <div class={formActionsVariants()}>
+      <button data-audit-more class={buttonVariants({ variant: "outline" })} type="button" hidden>Load older events</button>
+      <button data-audit-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry audit history</button>
     </div>
   </main>
 </ApplicationLayout>

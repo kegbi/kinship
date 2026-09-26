@@ -11,6 +11,7 @@ import {
   type WorkspaceMembers,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 interface MemberElements {
   readonly form: HTMLFormElement;
@@ -100,6 +101,7 @@ async function renderManagement(
     active.value = member.status;
     const save = document.createElement("button");
     save.type = "button";
+    save.className = buttonVariants();
     save.textContent = "Save";
     save.addEventListener("click", async () => {
       save.disabled = true;

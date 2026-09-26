@@ -9,6 +9,7 @@
  */
 
 import { useLayoutEffect, useRef, useState } from "react";
+import { buttonVariants } from "@/components/ui/variants.ts";
 
 export const LOADING_LABEL = "Loading…";
 
@@ -53,7 +54,7 @@ export function LoadMore(
       aria-busy={loading ? "true" : undefined}
       aria-controls={props.controls}
       aria-disabled={loading ? "true" : undefined}
-      className="button-secondary load-more"
+      className={buttonVariants({ className: "load-more", variant: "outline" })}
       data-load-more={props.list}
       hidden={hidden}
       onClick={() => void activate()}

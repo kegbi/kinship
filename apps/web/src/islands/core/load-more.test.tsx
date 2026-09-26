@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LoadMore } from "./load-more.tsx";
+import { buttonVariants } from "@/components/ui/variants.ts";
 
 afterEach(cleanup);
 
@@ -61,7 +62,9 @@ describe("GAP-026 LoadMore", () => {
     );
     expect(control().hidden).toBe(true);
     expect(control().getAttribute("aria-controls")).toBe("rows");
-    expect(control().className).toBe("button-secondary load-more");
+    expect(control().className).toBe(
+      buttonVariants({ className: "load-more", variant: "outline" }),
+    );
   });
 
   it("passes the offered cursor, announces the load, and refuses a second click", async () => {

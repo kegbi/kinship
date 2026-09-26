@@ -1,3 +1,10 @@
+/*
+ * The cascade layers, lowest first (GAP-027). `legacy-defaults` holds the element
+ * defaults a primitive's variant classes must beat; everything else in these
+ * stylesheets stays unlayered and keeps winning where it speaks. islands.css
+ * declares the same order.
+ */
+@layer legacy-defaults, theme, base, components, utilities;
 @import "./fonts.css";
 @import "./tokens.css";
 @import "./base.css";

@@ -2261,7 +2261,7 @@ describe("INTERACTION-001 browser behavior", () => {
       "beforeend",
       `<nav aria-label="Breadcrumb">
         <a href="/app/people">People</a><span aria-hidden="true">/</span>
-        <a data-breadcrumb-person href="/app/people/${personId}"><span class="skeleton skeleton-chip" aria-hidden="true"></span><span class="sr-only">Loading person…</span></a><span aria-hidden="true">/</span>
+        <a data-breadcrumb-person href="/app/people/${personId}"><span data-slot="skeleton" aria-hidden="true"></span><span class="sr-only">Loading person…</span></a><span aria-hidden="true">/</span>
         <span aria-current="page">Activity report</span>
       </nav>
       <p id="activity-report-state"></p><h1 id="activity-report-heading"></h1><ul id="activity-report-list"></ul>`,

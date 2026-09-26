@@ -12,6 +12,7 @@ import {
   listWorkspaceAudit,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 import { resolveWorkspaceSession } from "./workspace-context.ts";
+import { badgeVariants } from "../components/ui/variants.ts";
 
 let historyAbort: AbortController | undefined;
 let summaryAbort: AbortController | undefined;
@@ -91,7 +92,7 @@ function renderEvent(
   item.append(heading, context, details, timestamp);
   if (event.redacted) {
     const redacted = document.createElement("span");
-    redacted.className = "state-badge";
+    redacted.className = badgeVariants({ className: "justify-self-start" });
     redacted.textContent = "Redacted";
     item.append(redacted);
   }
@@ -156,7 +157,7 @@ export async function mountAuditHistory(personId?: string): Promise<void> {
     const session = await resolveWorkspaceSession();
     if (abort.signal.aborted || current !== generation) return;
     if (session.status !== "ready") {
-      if (personId && personCrumb?.querySelector(".skeleton")) {
+      if (personId && personCrumb?.querySelector('[data-slot="skeleton"]')) {
         personCrumb.textContent = "Person";
       }
       more.disabled = false;
@@ -184,7 +185,7 @@ export async function mountAuditHistory(personId?: string): Promise<void> {
     if (abort.signal.aborted || current !== generation) return;
     more.disabled = false;
     if (!result?.ok) {
-      if (personId && personCrumb?.querySelector(".skeleton")) {
+      if (personId && personCrumb?.querySelector('[data-slot="skeleton"]')) {
         personCrumb.textContent = "Person";
       }
       let retryable = true;

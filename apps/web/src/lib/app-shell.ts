@@ -12,6 +12,7 @@ import {
   setActiveWorkspace,
 } from "./workspace-context.ts";
 import { clearToasts, showToast } from "./toasts.ts";
+import { buttonVariants } from "../components/ui/variants.ts";
 
 type Navigate = (path: string) => void;
 
@@ -66,7 +67,10 @@ function renderAccessFailure(elements: ShellElements): void {
   copy.textContent =
     "Your session is missing, expired, revoked, or no longer active in this workspace.";
   const link = document.createElement("a");
-  link.className = "button-link";
+  link.className = buttonVariants({
+    className: "mt-(--space-4)",
+    shape: "pill",
+  });
   link.href = "/auth/sign-in";
   link.textContent = "Go to sign-in";
   elements.access.append(heading, copy, link);
@@ -83,7 +87,10 @@ function renderSessionUnavailable(elements: ShellElements): void {
   copy.textContent =
     "We could not confirm your active workspace. Any saved workspace choice is unchanged.";
   const retry = document.createElement("button");
-  retry.className = "button-link";
+  retry.className = buttonVariants({
+    className: "mt-(--space-4)",
+    shape: "pill",
+  });
   retry.type = "button";
   retry.textContent = "Try again";
   retry.addEventListener("click", () => globalThis.location.reload());
@@ -146,7 +153,10 @@ function renderRouteForbidden(elements: ShellElements): void {
     ? "Only workspace owners and admins can review audit history."
     : "Only workspace owners and admins can view members and invitations.";
   const link = document.createElement("a");
-  link.className = "button-link";
+  link.className = buttonVariants({
+    className: "mt-(--space-4)",
+    shape: "pill",
+  });
   link.href = document.body.dataset.pageId === "people.audit"
     ? "/app/people"
     : "/app/settings";

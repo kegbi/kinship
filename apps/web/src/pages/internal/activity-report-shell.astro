@@ -2,6 +2,9 @@
 import Breadcrumb from "../../components/Breadcrumb.astro";
 import ApplicationLayout from "../../layouts/ApplicationLayout.astro";
 export const prerender = true;
+import {
+  buttonVariants,
+} from "../../components/ui/variants.ts";
 ---
 
 <ApplicationLayout
@@ -21,16 +24,16 @@ export const prerender = true;
         <p class="eyebrow">Person activity report · <span data-workspace-name></span></p>
         <h1 id="activity-report-heading" tabindex="-1">Loading activity report…</h1>
       </div>
-      <button class="button-primary" data-quick-capture type="button">Record interaction</button>
+      <button class={buttonVariants()} data-quick-capture type="button">Record interaction</button>
     </header>
     <form class="activity-report-filter" method="get">
       <label>Year <input name="year" type="number" min="1" max="9999" inputmode="numeric" /></label>
-      <button class="button-secondary" type="submit">Filter report</button>
+      <button class={buttonVariants({ variant: "outline" })} type="submit">Filter report</button>
       <a href="?">Clear year</a>
     </form>
     <p id="activity-report-state" class="section-state" role="status" aria-live="polite">Loading activities and notes…</p>
     <ol id="activity-report-list" class="interaction-list" aria-label="Activities and notes in reverse chronological order"></ol>
-    <button id="activity-report-more" class="button-secondary" type="button" hidden>Load more</button>
+    <button id="activity-report-more" class={buttonVariants({ variant: "outline" })} type="button" hidden>Load more</button>
   </main>
 </ApplicationLayout>
 

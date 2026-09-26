@@ -1,10 +1,3 @@
-.today-section {
-  padding: var(--pad-card);
-  border: 1px solid var(--line-hairline);
-  border-radius: var(--radius-lg);
-  background: var(--surface-1);
-}
-
 .today-section p {
   color: var(--ink-2);
   line-height: 1.6;
@@ -23,24 +16,6 @@
   font-size: 1.15rem;
   font-weight: 700;
   line-height: 1.3;
-}
-
-.state-badge,
-.planned-label {
-  display: inline-flex;
-  flex: none;
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-pill);
-  color: var(--accent-hover);
-  background: var(--accent-soft);
-  font-size: .7rem;
-  font-weight: 700;
-}
-
-.state-badge.calm,
-.planned-label {
-  color: var(--ink-2);
-  background: var(--positive-soft);
 }
 
 .success-loop {
@@ -201,10 +176,6 @@
 
 .settings-group {
   scroll-margin-top: 6rem;
-  padding: var(--pad-card);
-  border: 1px solid var(--line-hairline);
-  border-radius: var(--radius-lg);
-  background: var(--surface-1);
 }
 
 .settings-card-grid {
@@ -243,9 +214,6 @@
 
 .secondary-link {
   justify-self: end;
-  border: 1px solid var(--line-strong);
-  color: var(--ink-1);
-  background: var(--surface-1);
 }
 
 .settings-card-link {
@@ -555,13 +523,6 @@
   max-width: var(--application-width, 72rem);
 }
 
-.member-section {
-  padding: var(--pad-card);
-  border: 1px solid var(--line-hairline);
-  border-radius: var(--radius-lg);
-  background: var(--surface-1);
-}
-
 .member-section h2 {
   margin: 0;
   font-size: 1.15rem;
@@ -628,17 +589,6 @@
   align-items: center;
   justify-content: space-between;
   background: var(--surface-2);
-}
-
-.member-list button,
-.settings-form button {
-  min-height: 44px;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--ink-1);
-  border-radius: .65rem;
-  color: var(--ink-inverse);
-  background: var(--ink-1);
-  cursor: pointer;
 }
 
 .detail-settings {
@@ -732,10 +682,6 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-4);
   max-width: 54rem;
-  padding: var(--pad-card);
-  border: 1px solid var(--line-hairline);
-  border-radius: var(--radius-lg);
-  background: var(--surface-1);
 }
 
 .settings-form label {
@@ -842,13 +788,6 @@
   padding: var(--space-3) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: .5rem;
-}
-
-.lifecycle-form .button-danger {
-  min-height: 44px;
-  border-color: var(--accent);
-  color: var(--ink-inverse);
-  background: var(--accent);
 }
 
 .member-list li > span:first-child {

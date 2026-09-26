@@ -6,6 +6,11 @@ import {
   removePersonFile,
   uploadPersonFile,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import {
+  badgeVariants,
+  buttonVariants,
+  formActionsVariants,
+} from "../components/ui/variants.ts";
 
 interface FileSection {
   readonly add: HTMLButtonElement;
@@ -76,9 +81,10 @@ function render(
     const detail = document.createElement("p");
     detail.textContent = `${file.filename} · ${readableSize(file.byteSize)}`;
     const state = document.createElement("span");
-    state.className = `state-badge${
-      file.status === "available" ? " calm" : ""
-    }`;
+    state.className = badgeVariants({
+      className: "mt-(--space-1)",
+      variant: file.status === "available" ? "secondary" : "default",
+    });
     state.textContent = file.status === "available"
       ? "Available"
       : file.status === "missing"
@@ -89,17 +95,22 @@ function render(
     summary.append(title, detail, state);
     item.append(summary);
     const actions = document.createElement("div");
-    actions.className = "form-actions";
+    actions.className = formActionsVariants({
+      className: "person-file-actions",
+    });
     if (file.status === "available") {
       const open = document.createElement("a");
-      open.className = "button-secondary";
+      open.className = buttonVariants({ variant: "outline" });
       open.href = personFileContentUrl(file.personId, file.fileId);
       open.textContent = "Download";
       actions.append(open);
     }
     if (!archived) {
       const remove = document.createElement("button");
-      remove.className = "button-danger";
+      remove.className = buttonVariants({
+        className: "person-file-remove",
+        variant: "destructive",
+      });
       remove.dataset.fileRemove = file.fileId;
       remove.type = "button";
       remove.textContent = "Remove";

@@ -3,6 +3,9 @@ import Breadcrumb from "../../../components/Breadcrumb.astro";
 import SettingsNavigation from "../../../components/SettingsNavigation.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
+import {
+  buttonVariants,
+} from "../../../components/ui/variants.ts";
 ---
 
 <ApplicationLayout
@@ -38,7 +41,7 @@ export const prerender = true;
       <header><p class="scope-label">Shown once</p><h2 id="api-secret-heading">Copy your token now</h2></header>
       <p>This secret cannot be shown again after you leave or dismiss this view.</p>
       <div class="api-secret-control"><input data-api-secret aria-label="New API token secret" readonly /><button data-api-copy type="button">Copy</button></div>
-      <button data-api-dismiss class="button-secondary" type="button">I have saved it</button>
+      <button data-api-dismiss class={buttonVariants({ variant: "outline" })} type="button">I have saved it</button>
     </section>
 
     <section class="api-access-section" aria-labelledby="api-token-list-heading">

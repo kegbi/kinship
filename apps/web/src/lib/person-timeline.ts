@@ -195,8 +195,6 @@ function applyFilter(
   for (const button of filters) {
     const pressed = button.dataset.timelineFilter === selected;
     button.setAttribute("aria-pressed", String(pressed));
-    button.classList.toggle("button-primary", pressed);
-    button.classList.toggle("button-secondary", !pressed);
   }
 }
 

@@ -3,6 +3,10 @@ import Breadcrumb from "../../../components/Breadcrumb.astro";
 import SettingsNavigation from "../../../components/SettingsNavigation.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
+import {
+  badgeVariants,
+  cardVariants,
+} from "../../../components/ui/variants.ts";
 ---
 
 <ApplicationLayout
@@ -27,7 +31,7 @@ export const prerender = true;
       </div>
     </header>
 
-    <section class="member-section invite-panel" aria-labelledby="invite-heading">
+    <section class={cardVariants({ className: "member-section invite-panel" })} aria-labelledby="invite-heading">
       <div class="section-heading">
         <div><p class="section-kicker">Single-use access</p><h2 id="invite-heading">Invite a member</h2></div>
       </div>
@@ -40,20 +44,20 @@ export const prerender = true;
       <p id="invitation-status" class="inline-status" role="status" aria-live="polite"></p>
     </section>
 
-    <section class="member-section" aria-labelledby="active-members-heading">
-      <div class="section-heading"><h2 id="active-members-heading">Active members</h2><span id="member-count" class="state-badge calm">Loading…</span></div>
+    <section class={cardVariants({ className: "member-section" })} aria-labelledby="active-members-heading">
+      <div class="section-heading"><h2 id="active-members-heading">Active members</h2><span id="member-count" class={badgeVariants({ variant: "secondary" })}>Loading…</span></div>
       <div id="members-state" class="list-state" role="status" aria-live="polite">Loading active members securely…</div>
       <ul id="member-list" class="member-list" hidden></ul>
     </section>
 
-    <section class="member-section" aria-labelledby="member-admin-heading">
-      <div class="section-heading"><h2 id="member-admin-heading">Member administration</h2><span class="state-badge calm">Role-safe</span></div>
+    <section class={cardVariants({ className: "member-section" })} aria-labelledby="member-admin-heading">
+      <div class="section-heading"><h2 id="member-admin-heading">Member administration</h2><span class={badgeVariants({ variant: "secondary" })}>Role-safe</span></div>
       <p id="managed-state" class="list-state" role="status" aria-live="polite">Loading role controls…</p>
       <ul id="managed-list" class="member-list managed-list" hidden></ul>
     </section>
 
-    <section class="member-section" aria-labelledby="pending-invitations-heading">
-      <div class="section-heading"><h2 id="pending-invitations-heading">Pending invitations</h2><span id="invitation-count" class="state-badge calm">Loading…</span></div>
+    <section class={cardVariants({ className: "member-section" })} aria-labelledby="pending-invitations-heading">
+      <div class="section-heading"><h2 id="pending-invitations-heading">Pending invitations</h2><span id="invitation-count" class={badgeVariants({ variant: "secondary" })}>Loading…</span></div>
       <div id="pending-state" class="list-state" role="status" aria-live="polite">Loading pending invitations…</div>
       <ul id="pending-list" class="member-list" hidden></ul>
     </section>
