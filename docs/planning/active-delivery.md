@@ -60,7 +60,9 @@ prerequisite queues.
   are fixed as `REL-032`, `REL-033`, and `REL-039` through `REL-045` (`REL-034`,
   `REL-035`, `REL-036`, and `REL-038` stay parked). On 2026-09-26 the product
   owner removed AI assistance (GAP-054, DG-08) from scope and paused the plan
-  after REL-045; the next ticket is GAP-030.
+  after REL-045; it resumed the same day with `REL-046` and GAP-030. GAP-041 has
+  an unreviewed candidate on the `gap/GAP-041` branch, built on `f18ff843`; the
+  next tickets are its review and GAP-031.
 - User-directed follow-up: responsive person blocks, focus-border repair, then
   an evidence-backed application repair plan and execution in a clean task.
 - Remaining repair statuses and execution order belong to the
@@ -469,6 +471,19 @@ Playwright test carrying its stable flow ID.
       and the `createPerson` helpers in `app-004d` and `app-005a` wait for it
       before leaving. No assertion changed and no retry, sleep, or timeout was
       added.
+- [ ] **REL-047 — Web unit tests near the 5-second limit time out under machine
+      load.** On 2026-09-26, while Docker builds and a second vitest run shared
+      the machine, `apps/web/src/features/person/facts/fact-editor.test.tsx`
+      timed out in one to five of its
+      `APR-003 locks add/edit during post-save
+      Retry…` cases (about 1.8 s
+      each when idle) and `apps/web/src/lib/people-profile.test.ts` timed out in
+      its first case (`APR-008 applies membership name order…`, 2.4 to 2.8 s
+      cold). The same timeout reproduced on `main` at `f18ff843` without the
+      GAP-030 changes, so it predates them. CI has not failed on it yet. Next
+      step: find what makes these cases slow (real timers, repeated full
+      re-renders, or cold imports) and make them fast rather than raising the
+      timeout.
 
 ## Just-In-Time Technical Capabilities
 
