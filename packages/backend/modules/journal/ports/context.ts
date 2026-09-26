@@ -9,6 +9,8 @@
  * directory depend on nothing outside journal.
  */
 
+import type { Correlation } from "../../../shared-kernel/telemetry.ts";
+
 /**
  * The unit of work a port runs inside.
  *
@@ -21,7 +23,7 @@ export interface JournalTransaction {
 }
 
 /** Who is acting, as the workspace already established them. */
-export interface JournalActor {
+export interface JournalActor extends Correlation {
   readonly memberId: string;
   readonly role: "admin" | "member" | "owner";
   readonly userId: string;

@@ -8,6 +8,7 @@
  */
 
 import type { DavRole } from "../domain/dav_rules.ts";
+import type { Correlation } from "../../../shared-kernel/telemetry.ts";
 
 /**
  * The unit of work a port runs inside.
@@ -21,7 +22,7 @@ export interface DavTransaction {
 }
 
 /** Who is acting, as the workspace already established them. */
-export interface DavActor {
+export interface DavActor extends Correlation {
   readonly memberId: string;
   readonly role: DavRole;
   readonly userId: string;

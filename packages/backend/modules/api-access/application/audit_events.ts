@@ -12,6 +12,7 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
+import { correlationOf } from "../../../shared-kernel/telemetry.ts";
 import type { ApiTokenAudit } from "../ports/audit.ts";
 
 export function describeApiTokenEvent(
@@ -26,6 +27,7 @@ export function describeApiTokenEvent(
     subjectType: "api_token",
     visibleOnDashboard: false,
     workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
   };
 }
 

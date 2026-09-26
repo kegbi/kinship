@@ -138,7 +138,7 @@ const RELATIONSHIP_UUID_KEYS = new Set([
 ]);
 
 type SanitizedDetail =
-  | { readonly accepted: false; readonly redacted: true }
+  | { readonly accepted: false; readonly redacted: boolean }
   | {
     readonly accepted: true;
     readonly redacted: boolean;
@@ -194,6 +194,10 @@ function sanitizeDetail(
   key: string,
   value: unknown,
 ): SanitizedDetail {
+  // The request or job run that caused the event (GAP-039) is operational
+  // correlation the governance writer adds to every correlated payload. It is
+  // not product history, so it is dropped without marking the event redacted.
+  if (key === "requestId") return { accepted: false, redacted: false };
   if (eventAction === "people.person-created" && key === "isPartial") {
     return booleanDetail(value);
   }

@@ -1,17 +1,20 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
-import type {
-  AuditEvent,
-  AuditEventAssertion,
-  AuditEventRecorder,
-  AuditEventWrite,
-  ConditionalAuditEventWrite,
+import {
+  type AuditEvent,
+  type AuditEventAssertion,
+  type AuditEventRecorder,
+  type AuditEventWrite,
+  auditPayload,
+  type ConditionalAuditEventWrite,
 } from "../../../../shared-kernel/audit_event.ts";
 
 /**
  * The single writer for `crm.audit_events`. It replaced twenty-two adapter
  * classes that each carried its own copy of this insert and of the
- * postcondition that re-reads it.
+ * postcondition that re-reads it. Every statement stores and compares the
+ * payload `auditPayload` builds, so an event's request correlation lands in
+ * `payload.requestId` the same way on every path.
  */
 export class PostgresAuditEventRecorder implements AuditEventRecorder {
   async record(command: AuditEventWrite): Promise<string> {
@@ -27,7 +30,7 @@ export class PostgresAuditEventRecorder implements AuditEventRecorder {
         ${event.subjectType},
         ${event.subjectId ?? null}::uuid,
         ${event.action},
-        ${JSON.stringify(event.payload)}::text::jsonb,
+        ${JSON.stringify(auditPayload(event))}::text::jsonb,
         ${event.occurredAt},
         ${event.visibleOnDashboard},
         ${command.createdAt === "now" ? sql`now()` : sql`${event.occurredAt}`}
@@ -54,7 +57,7 @@ export class PostgresAuditEventRecorder implements AuditEventRecorder {
         ${event.subjectType}::text,
         ${event.subjectId ?? null}::uuid,
         ${event.action}::text,
-        ${JSON.stringify(event.payload)}::text::jsonb,
+        ${JSON.stringify(auditPayload(event))}::text::jsonb,
         ${event.occurredAt}::timestamptz,
         ${event.visibleOnDashboard}::boolean,
         ${
@@ -90,7 +93,7 @@ export class PostgresAuditEventRecorder implements AuditEventRecorder {
       event.subjectId ?? null
     }::uuid
         and event.action = ${event.action}
-        and event.payload = ${JSON.stringify(event.payload)}::text::jsonb
+        and event.payload = ${JSON.stringify(auditPayload(event))}::text::jsonb
         and event.occurred_at = ${event.occurredAt}
         and event.visible_on_dashboard = ${event.visibleOnDashboard}
         and ${

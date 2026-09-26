@@ -2,6 +2,7 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
+import { correlationOf } from "../../../shared-kernel/telemetry.ts";
 
 export type ExportAuditAction = "completed" | "downloaded" | "requested";
 
@@ -10,6 +11,7 @@ export interface ExportAudit {
     readonly action: ExportAuditAction;
     readonly actor: {
       readonly memberId: string;
+      readonly requestId?: string | undefined;
       readonly workspaceId: string;
     };
     readonly exportId: string;
@@ -20,6 +22,7 @@ export interface ExportAudit {
   recordPersonDownload(command: {
     readonly actor: {
       readonly memberId: string;
+      readonly requestId?: string | undefined;
       readonly workspaceId: string;
     };
     readonly occurredAt: Date;
@@ -40,6 +43,7 @@ export function describeExportEvent(
     subjectType: "data_export",
     visibleOnDashboard: false,
     workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
   };
 }
 
@@ -56,6 +60,7 @@ export function describePersonDownloadEvent(
     subjectType: "person",
     visibleOnDashboard: false,
     workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
   };
 }
 

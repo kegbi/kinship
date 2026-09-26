@@ -8,6 +8,7 @@
  */
 
 import type { ApiTokenRole } from "../domain/token_rules.ts";
+import type { Correlation } from "../../../shared-kernel/telemetry.ts";
 
 /**
  * The unit of work a port runs inside.
@@ -21,7 +22,7 @@ export interface ApiTokenTransaction {
 }
 
 /** Who is acting, as the workspace already established them. */
-export interface ApiTokenActor {
+export interface ApiTokenActor extends Correlation {
   readonly memberId: string;
   readonly role: ApiTokenRole;
   readonly userId: string;

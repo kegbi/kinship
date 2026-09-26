@@ -12,6 +12,7 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
+import { correlationOf } from "../../../shared-kernel/telemetry.ts";
 import type {
   RelationshipAudit,
   RelationshipAuditCommand,
@@ -37,6 +38,7 @@ export function describeRelationshipEvent(
     subjectType: "relationship",
     visibleOnDashboard: true,
     workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
   };
 }
 

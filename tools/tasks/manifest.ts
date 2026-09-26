@@ -394,6 +394,8 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/shared-kernel/result_test.ts",
         "packages/backend/shared-kernel/transaction_test.ts",
         "packages/backend/shared-kernel/validation_test.ts",
+        "packages/backend/shared-kernel/telemetry_test.ts",
+        "packages/backend/shared-kernel/audit_event_test.ts",
       ],
     },
     coverage: {
@@ -407,6 +409,8 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/shared-kernel/result_test.ts",
         "packages/backend/shared-kernel/transaction_test.ts",
         "packages/backend/shared-kernel/validation_test.ts",
+        "packages/backend/shared-kernel/telemetry_test.ts",
+        "packages/backend/shared-kernel/audit_event_test.ts",
       ],
       include: ["packages/backend/shared-kernel"],
     },
@@ -458,6 +462,9 @@ export const MODULES: readonly TaskModule[] = [
         // configuration the files suite used to carry (GAP-024).
         "apps/api/failures_test.ts",
         "apps/api/file_storage_config_test.ts",
+        // Every module's audit description forwards the actor's request
+        // identifier (GAP-039).
+        "apps/api/audit_correlation_test.ts",
         "packages/backend/modules/workspaces/transport/http/authentication_test.ts",
         "packages/backend/modules/files/transport/http/routes_test.ts",
         "packages/http-kit/body_limit_test.ts",
@@ -512,6 +519,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/platform/postgres/rows_test.ts",
         "packages/backend/platform/postgres/timestamps_test.ts",
         "packages/backend/platform/postgres/transactions_test.ts",
+        "packages/backend/platform/telemetry/json_logger_test.ts",
         "packages/backend/modules/api-access/authentication_subject_test.ts",
         "packages/backend/read-models/activity-report/activity_report_test.ts",
         "packages/backend/read-models/audit-history/audit_history_test.ts",
@@ -636,6 +644,9 @@ export const MODULES: readonly TaskModule[] = [
         // configuration the files suite used to carry (GAP-024).
         "apps/api/failures_test.ts",
         "apps/api/file_storage_config_test.ts",
+        // Every module's audit description forwards the actor's request
+        // identifier (GAP-039).
+        "apps/api/audit_correlation_test.ts",
         "packages/backend/modules/workspaces/transport/http/authentication_test.ts",
         "packages/backend/modules/import-export/transport/http/exports_test.ts",
         "packages/backend/modules/files/transport/http/routes_test.ts",
@@ -698,6 +709,8 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/shared-kernel/result_test.ts",
         "packages/backend/shared-kernel/transaction_test.ts",
         "packages/backend/shared-kernel/validation_test.ts",
+        "packages/backend/shared-kernel/telemetry_test.ts",
+        "packages/backend/shared-kernel/audit_event_test.ts",
         "packages/backend/platform/postgres/config_test.ts",
         "packages/backend/platform/postgres/errors_test.ts",
         "packages/backend/platform/postgres/lifecycle_impact_test.ts",
@@ -706,6 +719,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/platform/postgres/rows_test.ts",
         "packages/backend/platform/postgres/timestamps_test.ts",
         "packages/backend/platform/postgres/transactions_test.ts",
+        "packages/backend/platform/telemetry/json_logger_test.ts",
         "packages/backend/modules/api-access/authentication_subject_test.ts",
         "packages/backend/modules/api-access/domain/token_rules_test.ts",
         "packages/backend/modules/governance/domain/legal_rules_test.ts",

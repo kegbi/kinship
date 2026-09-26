@@ -21,6 +21,11 @@ import {
   WORKSPACE_HEADER,
   workspaceScopedActor,
 } from "./session.ts";
+import {
+  REQUEST_ID_HEADER,
+  requestId,
+  type RequestIdEnv,
+} from "./request_id.ts";
 
 const member = fixtureActor();
 
@@ -319,5 +324,86 @@ Deno.test("[GAP-020] one reading lets an outage through as a throw", async () =>
     (await anonymous.json() as { readonly resolved: string | null }).resolved,
     null,
     "no cookie is still nobody, and costs no read",
+  );
+});
+
+Deno.test("[GAP-039] the actor carries this request's identifier into the use case", async () => {
+  const app = new Hono<RequestIdEnv>();
+  app.use(requestId());
+  const routes = new Hono<ActorEnv>();
+  routes.use(sessionActor(coordinator([])));
+  routes.get("/who", async (context) => {
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const scoped = await workspaceScopedActor(
+      context,
+      coordinator([]),
+      undefined,
+    );
+    const read = await readActor(context, coordinator([]));
+    return context.json({
+      actor,
+      read: read?.requestId,
+      scoped: scoped?.requestId,
+    });
+  });
+
+  app.route("/", routes);
+
+  const response = await app.request("http://localhost/who", {
+    headers: {
+      Cookie: "kinship_session=token",
+      [REQUEST_ID_HEADER]: "gateway-3f2a9c0d",
+    },
+  });
+  const body = await response.json() as {
+    readonly actor: SessionActor;
+    readonly read?: string;
+    readonly scoped?: string;
+  };
+
+  assertEquals(
+    body.actor.requestId,
+    "gateway-3f2a9c0d",
+    "the gateway's identifier is the actor's correlation",
+  );
+  assertEquals(
+    Object.keys(body.actor).sort().join(","),
+    "memberId,requestId,role,userId,workspaceId",
+    "the membership and its correlation, nothing else",
+  );
+  assertEquals(
+    [body.read, body.scoped],
+    ["gateway-3f2a9c0d", "gateway-3f2a9c0d"],
+    "every actor reading carries the same identifier",
+  );
+});
+
+Deno.test("[GAP-039] a token-authenticated actor carries the request identifier too", async () => {
+  const app = new Hono<RequestIdEnv>();
+  app.use(requestId({ generate: () => "minted-7" }));
+  const routes = new Hono<ActorEnv>();
+  routes.use(sessionActor(coordinator([])));
+  routes.get("/token", async (context) => {
+    const actor = await tokenOrSessionActor(context, {
+      scope: "people:read",
+      tokens: {
+        authenticate: () =>
+          Promise.resolve({ actor: member, status: "authenticated" }),
+      },
+    });
+    return context.json({ requestId: actor?.requestId ?? null });
+  });
+
+  app.route("/", routes);
+
+  const response = await app.request("http://localhost/token", {
+    headers: { Authorization: "Bearer kinship_pat_token" },
+  });
+
+  assertEquals(
+    await response.json(),
+    { requestId: "minted-7" },
+    "a minted identifier reaches a token actor as well",
   );
 });

@@ -2,6 +2,7 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
+import { correlationOf } from "../../../shared-kernel/telemetry.ts";
 
 export type ImportAuditAction = "committed" | "started" | "validated";
 
@@ -10,6 +11,7 @@ export interface ImportAudit {
     readonly action: ImportAuditAction;
     readonly actor: {
       readonly memberId: string;
+      readonly requestId?: string | undefined;
       readonly workspaceId: string;
     };
     readonly importId: string;
@@ -31,6 +33,7 @@ export function describeImportEvent(
     subjectType: "data_import",
     visibleOnDashboard: false,
     workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
   };
 }
 

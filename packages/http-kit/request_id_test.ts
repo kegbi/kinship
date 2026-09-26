@@ -83,3 +83,30 @@ Deno.test("[GAP-019] the minted identifier is unique per request", async () => {
     "two requests are told apart",
   );
 });
+
+Deno.test("[GAP-039] a route that answers with its own Response still echoes the identifier", async () => {
+  const app = new Hono<RequestIdEnv>();
+  app.use(requestId());
+  app.get(
+    "/download",
+    () =>
+      new Response("BEGIN:VCARD", {
+        headers: { "Content-Type": "text/vcard" },
+      }),
+  );
+
+  const response = await app.request("http://localhost/download", {
+    headers: { [REQUEST_ID_HEADER]: "gateway-download-1" },
+  });
+
+  assertEquals(
+    response.headers.get(REQUEST_ID_HEADER),
+    "gateway-download-1",
+    "a download is correlated like every other answer",
+  );
+  assertEquals(
+    response.headers.get("Content-Type"),
+    "text/vcard",
+    "and keeps its own headers",
+  );
+});

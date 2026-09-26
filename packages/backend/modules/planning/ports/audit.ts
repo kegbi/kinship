@@ -50,6 +50,8 @@ export interface ReminderDeliveryAudit {
     readonly action: "delivered" | "failed";
     readonly occurrence: ClaimedReminderOccurrence;
     readonly occurredAt: Date;
+    /** The job run that delivered it, when the worker correlates its runs. */
+    readonly requestId?: string | undefined;
     readonly transaction: PlanningTransaction;
   }): Promise<void>;
 }

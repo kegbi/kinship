@@ -11,6 +11,7 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
+import { correlationOf } from "../../../shared-kernel/telemetry.ts";
 import type { FileAudit } from "../ports/audit.ts";
 
 export function describeFileEvent(
@@ -26,6 +27,7 @@ export function describeFileEvent(
     subjectType: "file",
     visibleOnDashboard: command.action !== "read",
     workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
   };
 }
 

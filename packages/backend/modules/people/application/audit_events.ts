@@ -12,6 +12,7 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
+import { correlationOf } from "../../../shared-kernel/telemetry.ts";
 import type { PersonLifecycleAction } from "../domain/lifecycle_rules.ts";
 import type {
   ImportantDateAudit,
@@ -33,6 +34,7 @@ export function describePersonCreatedEvent(
     subjectType: "person",
     visibleOnDashboard: true,
     workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
   };
 }
 
@@ -85,6 +87,7 @@ export function describePersonLifecycleEvent(
     subjectType: "person",
     visibleOnDashboard: true,
     workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
   };
 }
 
@@ -142,6 +145,7 @@ export function describeImportantDateEvent(
     subjectType: "person_date",
     visibleOnDashboard: true,
     workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
   };
 }
 
@@ -180,6 +184,7 @@ export function describeProfileFactEvent(
     subjectType: "person_profile_fact",
     visibleOnDashboard: true,
     workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
   };
 }
 

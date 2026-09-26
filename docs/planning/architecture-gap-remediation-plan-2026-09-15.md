@@ -1213,7 +1213,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
 
 ### Phase 6 — Infrastructure and operations
 
-- [ ] **GAP-039 — Telemetry port and correlation.** M. Depends: 019.
+- [x] **GAP-039 — Telemetry port and correlation.** M. Depends: 019.
   - Scope: `packages/backend/platform/telemetry/` (`Logger`, `Metrics`, `Tracer`
     ports; JSON stdout adapter; redaction of the forbidden fields in
     `private-production-profile.json`); request ID accepted from the gateway or
@@ -1222,6 +1222,25 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     `observability.md` to describe what exists.
   - Verify: log-shape unit tests; `gateway_log_capture_test` extended to prove
     the ID crosses the gateway.
+  - Delivered 2026-09-26: the `Logger` port, the `Correlation` value, and the
+    closed `LogEvent` catalogue (`api.request`, `worker.job`) live in
+    `packages/backend/shared-kernel/telemetry.ts`, with the JSON stdout adapter
+    and its redaction in `packages/backend/platform/telemetry/json_logger.ts`
+    (unknown events refused, undeclared fields and out-of-class values stripped,
+    so identifiers, credentials, query strings, and free-form errors never
+    print; failures carry codes); the HTTP kit logs through the port with
+    `api.request` byte-identical; the gateway generates `$request_id`, replaces
+    any client value when forwarding `X-Request-Id` to the API, and logs it; the
+    ID rides every session, workspace-scoped, read, and token actor into the
+    audit describers and reaches `audit_events.payload.requestId` (no schema
+    change), which the audit-history read model hides; the reminder worker gives
+    each claimed occurrence its own ID shared by its `worker.job` line and its
+    delivery audit; download routes now echo `X-Request-Id` too; metrics and
+    tracing ports are deliberately not added and `observability.md` records what
+    would trigger them; 47 files changed plus 6 new; unit green, integration
+    130/0, every coverage set unchanged or higher except the REL-038 file,
+    `contracts:check` 123 and 126, build and images green, Chromium E2E 57
+    passed; gates fmt:check, lint, check, check:architecture (14).
 
 - [ ] **GAP-040 — Gateway hardening.** M. Depends: 039.
   - Scope: `limit_req_zone`/`limit_conn_zone` on `/api/v1/` and auth routes,

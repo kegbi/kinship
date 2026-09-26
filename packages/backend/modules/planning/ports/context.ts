@@ -13,6 +13,8 @@
  * hands out, so the application passes what it was given without translating.
  */
 
+import type { Correlation } from "../../../shared-kernel/telemetry.ts";
+
 /**
  * The unit of work a port runs inside.
  *
@@ -25,7 +27,7 @@ export interface PlanningTransaction {
 }
 
 /** Who is acting, as the workspace already established them. */
-export interface PlanningActor {
+export interface PlanningActor extends Correlation {
   readonly memberId: string;
   readonly role: "admin" | "member" | "owner";
   readonly userId: string;

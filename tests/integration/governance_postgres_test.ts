@@ -191,6 +191,8 @@ Deno.test("GOVERNANCE-002 PostgreSQL keeps authorized audit tenant-safe, redacte
       JSON.stringify(createdBody)
     }`,
   );
+  // GAP-039: the identifier the gateway forwards reaches the audit row.
+  const requestId = `gap039-${suffix}`;
   const personalization = await configured.app.request(
     "http://localhost/api/v1/settings/personalization/tags",
     {
@@ -199,11 +201,27 @@ Deno.test("GOVERNANCE-002 PostgreSQL keeps authorized audit tenant-safe, redacte
         "content-type": "application/json",
         cookie: owner.cookie,
         origin: "http://localhost",
+        "X-Request-Id": requestId,
       },
       method: "POST",
     },
   );
   assert(personalization.status === 200, "actual personalization writer runs");
+  const [correlated] = await sql<{ readonly request_id: string | null }[]>`
+    select payload->>'requestId' as request_id
+    from crm.audit_events
+    where workspace_id = ${owner.workspaceId}::uuid
+      and action = 'workspace-personalization-updated'
+    order by created_at desc
+    limit 1
+  `;
+  assert(
+    personalization.headers.get("X-Request-Id") === requestId &&
+      correlated?.request_id === requestId,
+    `the request identifier did not reach the audit payload: ${
+      JSON.stringify(correlated)
+    }`,
+  );
   const personalizationAudit = await configured.app.request(
     "http://localhost/api/v1/audit-events?action=workspace-personalization-updated",
     { headers: { cookie: owner.cookie } },
@@ -218,7 +236,8 @@ Deno.test("GOVERNANCE-002 PostgreSQL keeps authorized audit tenant-safe, redacte
     personalizationAudit.status === 200 &&
       personalizationBody.items[0]?.details.action === "create" &&
       personalizationBody.items[0]?.details.section === "tags" &&
-      personalizationBody.items[0]?.redacted === false,
+      personalizationBody.items[0]?.redacted === false &&
+      !JSON.stringify(personalizationBody).includes(requestId),
     `actual personalization audit payload was lost: ${
       JSON.stringify(personalizationBody)
     }`,

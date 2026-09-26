@@ -8,9 +8,9 @@
  * the shape they agree on cannot live there — ten modules restated it by hand
  * until it moved here.
  *
- * This module is types only: it declares no writer, imports nothing, and runs
- * nothing, so the kernel stays a leaf and the concrete recorder is still built
- * at a composition root.
+ * This module declares no writer and imports nothing, so the kernel stays a
+ * leaf and the concrete recorder is still built at a composition root. Its one
+ * function, `auditPayload`, is the pure rule every writer stores a payload by.
  */
 
 export interface AuditTransaction {
@@ -24,10 +24,29 @@ export interface AuditEvent {
   readonly occurredAt: Date;
   readonly payload: Readonly<Record<string, unknown>>;
   readonly personId?: string | undefined;
+  /**
+   * The request or job run that caused the event (GAP-039). It is operational
+   * correlation, not product history: the writer stores it as
+   * `payload.requestId`, and the audit-history read model never shows it.
+   */
+  readonly requestId?: string | undefined;
   readonly subjectId?: string | undefined;
   readonly subjectType: string;
   readonly visibleOnDashboard: boolean;
   readonly workspaceId?: string | undefined;
+}
+
+/**
+ * The `payload` column an event is stored with: the module's own payload and,
+ * when the event is correlated, its `requestId`, which a module payload cannot
+ * overwrite. `audit_events.payload` is `jsonb`, so correlation needs no column.
+ */
+export function auditPayload(
+  event: AuditEvent,
+): Readonly<Record<string, unknown>> {
+  return event.requestId
+    ? { ...event.payload, requestId: event.requestId }
+    : event.payload;
 }
 
 /**

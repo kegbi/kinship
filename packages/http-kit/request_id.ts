@@ -41,12 +41,18 @@ export function requestId(
     context.set("requestId", identifier);
     context.header(REQUEST_ID_HEADER, identifier);
     await next();
+    // A route that answers with a `Response` of its own — a download — drops
+    // the header set above, so the answer is stamped again once it is known.
+    context.res.headers.set(REQUEST_ID_HEADER, identifier);
   };
 }
 
-/** This request's identifier, or nothing when the middleware is not mounted. */
-export function requestIdOf(
-  context: Context<RequestIdEnv>,
-): string | undefined {
-  return context.get("requestId");
+/**
+ * This request's identifier, or nothing when the middleware is not mounted.
+ *
+ * It takes any context: a module's router is typed by the variables its own
+ * middleware sets, yet it runs inside the application that set this one.
+ */
+export function requestIdOf(context: Context): string | undefined {
+  return (context as Context<RequestIdEnv>).get("requestId");
 }

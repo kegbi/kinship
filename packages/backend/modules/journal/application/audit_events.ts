@@ -12,6 +12,7 @@ import type {
   AuditEvent,
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
+import { correlationOf } from "../../../shared-kernel/telemetry.ts";
 import type { JournalAudit } from "../ports/audit.ts";
 
 export function describeJournalEvent(
@@ -26,6 +27,7 @@ export function describeJournalEvent(
     subjectType: "journal_item",
     visibleOnDashboard: true,
     workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
   };
 }
 

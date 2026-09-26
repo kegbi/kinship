@@ -9,6 +9,8 @@
  * directory depend on nothing outside relationships.
  */
 
+import type { Correlation } from "../../../shared-kernel/telemetry.ts";
+
 /**
  * The unit of work a port runs inside.
  *
@@ -21,7 +23,7 @@ export interface RelationshipTransaction {
 }
 
 /** Who is acting, as the workspace already established them. */
-export interface RelationshipActor {
+export interface RelationshipActor extends Correlation {
   readonly memberId: string;
   readonly role: "admin" | "member" | "owner";
   readonly userId: string;
