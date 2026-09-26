@@ -738,4 +738,16 @@ describe("application control presentation", () => {
       /@media \(forced-colors: active\)[\s\S]*\.profile-section-card:focus-visible[^}]*text-decoration-color:\s*Highlight;/,
     );
   });
+
+  it("REL-046 never animates document scrolling, so a control stops moving before the next click lands", () => {
+    // `scroll-behavior: smooth` turns every focus reveal and every
+    // scroll-into-view (the browser's, a keyboard user's, or an automation
+    // retry's) into a multi-frame glide, so a click aimed at a control lands
+    // on whatever slides under the pointer. A section the reader picks glides
+    // from script instead (`people-profile.ts`).
+    mountStyles();
+    expect(getComputedStyle(document.documentElement).scrollBehavior)
+      .not.toBe("smooth");
+    expect(applicationCss).not.toMatch(/scroll-behavior:\s*smooth/);
+  });
 });

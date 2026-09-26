@@ -437,6 +437,38 @@ Playwright test carrying its stable flow ID.
       own session read fails. An audit of the person-page modules and the
       settings, journal, tasks, and compliance pages found no other control
       visible and enabled before its handler across an await. No spec changed.
+- [x] **REL-046 — Linux WebKit loses clicks to a gliding page and stalls after a
+      spec leaves a person page early.** Each recent main run failed one WebKit
+      flow. Run `36225990339` on `0855ba9c` failed `app-005c.spec.ts:146`
+      (`[GOVERNANCE-002]`, already recorded under REL-045) and, on its second
+      attempt, `app-004c.spec.ts:1597` (`[PEOPLE-006]`, "Clicking the checkbox
+      did not change its state" on `Primary for this contact type`); run
+      `36242267071` on `3210bd20` failed `app-004d.spec.ts:67`
+      (`[RELATIONSHIP-001]`, `Save person` never left `/app/people/new`) and, on
+      its second attempt, `app-004c.spec.ts:808` (`[PEOPLE-006]` APR-003, the
+      pets `Retry` never became disabled). In the three click traces the
+      document scrolls between Playwright's pointer retries with no DOM change
+      (`2016` to `501`, `428`, `837`, and `889`; `622` to `71`, `213`, and
+      `549`): `base.css` gave the document `scroll-behavior: smooth`, which
+      turns every focus reveal and every `scrollIntoView` without an explicit
+      behavior, including Playwright's retry scrolls, into a glide, so each
+      retry aimed at a control still moving and the last click landed off it.
+      REL-045 removed the workspace's own deep-link glide that set off the
+      audit-history retries, not the glide under them. In the `app-004d` trace
+      the save handler did run (`Saving person…`, `POST /api/v1/people` sent)
+      but neither it nor the page's session and preference reads were ever
+      answered, while `Quick capture` waited on that session; the helper's
+      `goto` had left the previous person page while its section code and
+      deferred view record were still loading, and cancelling them was the last
+      network activity before the stall. Delivered 2026-09-26: the application
+      document no longer scrolls smoothly, and a stylesheet test keeps it so;
+      the one glide the workspace keeps, a section the reader picks, asks for it
+      from script and jumps under reduced motion. The workspace marks
+      `data-workspace-settled` once its first sections have answered and its
+      view is recorded, `support/navigation.ts` exports `settlePersonWorkspace`,
+      and the `createPerson` helpers in `app-004d` and `app-005a` wait for it
+      before leaving. No assertion changed and no retry, sleep, or timeout was
+      added.
 
 ## Just-In-Time Technical Capabilities
 

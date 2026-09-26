@@ -2,9 +2,12 @@
   box-sizing: border-box;
 }
 
-html {
-  scroll-behavior: smooth;
-}
+/*
+ * REL-046: the document scrolls instantly. Smooth document scrolling turned every
+ * focus reveal and scroll-into-view into a glide that moved controls under a
+ * pending click; the one glide the app keeps (a section the reader picks on
+ * the person workspace) asks for it from script.
+ */
 
 body {
   min-width: 320px;

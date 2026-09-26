@@ -302,15 +302,19 @@ function afterFirstPaint(): Promise<void> {
   });
 }
 
-function deferPersonView(personId: string, workspaceId: string): void {
-  const record = () => {
-    void recordPersonView(personId, workspaceId).catch(() => undefined);
-  };
-  if (typeof globalThis.requestIdleCallback === "function") {
-    globalThis.requestIdleCallback(record);
-    return;
-  }
-  globalThis.setTimeout(record, 0);
+/** Records the view once the page is idle; resolves when that has answered. */
+function deferPersonView(personId: string, workspaceId: string): Promise<void> {
+  return new Promise((resolve) => {
+    const record = () => {
+      void recordPersonView(personId, workspaceId).catch(() => undefined)
+        .finally(resolve);
+    };
+    if (typeof globalThis.requestIdleCallback === "function") {
+      globalThis.requestIdleCallback(record);
+      return;
+    }
+    globalThis.setTimeout(record, 0);
+  });
 }
 
 function elements(): ProfileElements | undefined {
@@ -487,11 +491,13 @@ function activateSectionZone(
 
 /**
  * Why the page moves to a section (REL-045). The reader `navigate`s: the
- * section glides into place. The page `load`s a deep link: it jumps there, so
- * no animation is still running when the reader reaches for the section's
- * controls. Every zone has `settle`d: the reader may already be pressing
- * something, so their focus stays, a section they can see stays where it is,
- * and one that drifted out of view jumps back.
+ * section glides into place (asked for here, since the document itself never
+ * scrolls smoothly, REL-046), or jumps for a reader who prefers reduced motion.
+ * The page `load`s a deep link: it jumps there, so no animation is still
+ * running when the reader reaches for the section's controls. Every zone has
+ * `settle`d: the reader may already be pressing something, so their focus
+ * stays, a section they can see stays where it is, and one that drifted out of
+ * view jumps back.
  */
 type SectionPlacement = "navigate" | "load" | "settle";
 
@@ -563,12 +569,20 @@ function focusSection(
   }
   if (preserveInteractiveFocus && hasMeaningfulInteractiveFocus()) return true;
   if (placement === "navigate") {
-    target.scrollIntoView?.({ block: "start" });
+    target.scrollIntoView?.({
+      behavior: prefersReducedMotion() ? "instant" : "smooth",
+      block: "start",
+    });
   } else if (placement === "load" || !inViewport(target)) {
     target.scrollIntoView?.({ behavior: "instant", block: "start" });
   }
   target.focus({ preventScroll: true });
   return true;
+}
+
+function prefersReducedMotion(): boolean {
+  return globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ??
+    false;
 }
 
 /** Whether any of `element` is inside the viewport. */
@@ -854,7 +868,7 @@ export async function mountPeopleProfile(): Promise<void> {
       "You have unsaved changes on this person. Discard them and switch workspaces?",
     root: profile.ready,
   });
-  deferPersonView(id, workspaceId);
+  const viewRecorded = deferPersonView(id, workspaceId);
   const eagerRail = zoneRegistry.mountRail().finally(() => {
     document.querySelector<HTMLElement>(".profile-facts-rail")
       ?.removeAttribute("aria-busy");
@@ -867,4 +881,10 @@ export async function mountPeopleProfile(): Promise<void> {
   await zoneRegistry.settled();
   promoteSectionStatusRegions();
   reconcileSectionLocation(profile, sectionNavigation, "settle");
+  // REL-046: the workspace has nothing left in flight once its first sections
+  // have answered and its view is recorded. Leaving earlier cancels those
+  // requests, which on Linux WebKit left the next page's requests unanswered.
+  void viewRecorded.then(() =>
+    profile.ready.setAttribute("data-workspace-settled", "")
+  );
 }
