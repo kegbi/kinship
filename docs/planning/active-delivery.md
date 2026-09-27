@@ -54,15 +54,14 @@ prerequisite queues.
   next ticket, GAP-025, needs the product owner's decision on the UI stack
   before it starts.
 - Phase 4 of that plan is under way under ADR 0006 (shadcn/ui in React islands):
-  GAP-025 through GAP-031 and GAP-033 are integrated, and GAP-039 and GAP-040
-  from Phase 6 ran in parallel and are integrated too. The CI workflow runs on
-  every push to `main`; the first-run Linux faults and the E2E intermittents
-  found on the way are fixed as `REL-032`, `REL-033`, and `REL-039` through
-  `REL-045` (`REL-034`, `REL-035`, `REL-036`, and `REL-038` stay parked). On
-  2026-09-26 the product owner removed AI assistance (GAP-054, DG-08) from scope
-  and paused the plan after REL-045; it resumed the same day with `REL-046` and
-  GAP-030. GAP-041 from Phase 6 is integrated too; the next ticket is GAP-032,
-  then the Phase 4 checkpoint.
+  GAP-025 through GAP-033 are integrated, and GAP-039 and GAP-040 from Phase 6
+  ran in parallel and are integrated too. The CI workflow runs on every push to
+  `main`; the first-run Linux faults and the E2E intermittents found on the way
+  are fixed as `REL-032`, `REL-033`, and `REL-039` through `REL-045` (`REL-034`,
+  `REL-035`, `REL-036`, and `REL-038` stay parked). On 2026-09-26 the product
+  owner removed AI assistance (GAP-054, DG-08) from scope and paused the plan
+  after REL-045; it resumed the same day with `REL-046` and GAP-030. GAP-041
+  from Phase 6 is integrated too; the Phase 4 checkpoint is next.
 - User-directed follow-up: responsive person blocks, focus-border repair, then
   an evidence-backed application repair plan and execution in a clean task.
 - Remaining repair statuses and execution order belong to the

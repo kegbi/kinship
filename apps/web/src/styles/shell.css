@@ -74,17 +74,6 @@
   background: var(--surface-sunken);
 }
 
-.future-nav {
-  gap: var(--space-1);
-  color: var(--ink-2);
-  cursor: not-allowed;
-}
-
-.future-nav small {
-  font-size: .58rem;
-  text-transform: uppercase;
-}
-
 .global-search {
   min-width: 0;
   width: 100%;
@@ -465,10 +454,6 @@
 
   .primary-nav > * {
     padding-inline: var(--space-3);
-  }
-
-  .future-nav small {
-    display: none;
   }
 
   .member-popover {

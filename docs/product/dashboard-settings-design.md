@@ -262,6 +262,60 @@ particular:
   mobile;
 - respect reduced motion and maintain usable focus/contrast in all themes.
 
+### Stylesheet Ownership
+
+Every style has one owner (GAP-032). Paths are under `apps/web/src/`.
+
+- `styles/tokens.css`: the design tokens (colour, surface, line, space, radius,
+  shadow, focus) for light and dark, and the shadcn/ui theme variables mapped
+  onto them. It is the only application stylesheet allowed colour literals.
+- `styles/islands.css`: the Tailwind theme and utilities layers, the `dark`
+  variant, and the `@theme` mapping of the shadcn/ui variables. It has no
+  hand-written selectors.
+- `components/ui/variants.ts`: the one source of the shared primitives' classes
+  (button, badge, card, field, form actions, breadcrumb, skeleton).
+- The `legacy-defaults` layer: element defaults beneath the Tailwind utilities,
+  declared in `styles/base.css` and `styles/person-chrome.css`, so a primitive's
+  variant classes win over them.
+- `styles/fonts.css`: the Inter Variable face, imported by every layout's
+  stylesheet.
+- `styles/application.css`: the authenticated layout's entry. It declares the
+  layer order and imports the stylesheets below in cascade order.
+- `styles/base.css`: application element defaults, focus, forms, and access
+  states.
+- `styles/shell.css`: the application shell (header, primary navigation, search,
+  member menu, page frame, toasts).
+- `styles/settings.css`: the settings index, personalization, members, API
+  access, storage, imports, and lifecycle pages, with their phone layout, and
+  the section headings and success list Today shares with them.
+- `styles/components.css`: the add-a-person and person page widths, the
+  quick-capture dialog, interaction lists, the activity report filter, and the
+  audit history page.
+- `styles/person-chrome.css`: the person workspace's shared chrome (navigation,
+  section directory, zone switcher, zone headings, section cards, the rail
+  editors' phone sheet, and the section form the journal and tasks page reuse).
+- `styles/person-hero.css`, `styles/person-rail.css`,
+  `styles/person-timeline.css`, `styles/person-planning.css`,
+  `styles/person-things.css`, and `styles/person-admin.css`: one person
+  workspace zone each, as `features/person/sections.ts` names them.
+- `styles/people.css`: the people directory and add-a-person pages.
+- `styles/pages.css`: Today's attention groups, the task board the tasks page,
+  Today, and the planning zone share, the journal, and the compliance page.
+- `styles/overrides.css`: the select caret and reduced motion, which must follow
+  every component stylesheet.
+- `styles/public.css` and `styles/auth.css`: the public pages and the
+  authentication pages; each is its layout's only stylesheet.
+
+New styles go, in order of preference, into Tailwind utilities written in the
+island or Astro markup; into `components/ui/variants.ts` when they belong to a
+shared primitive; and into a person zone stylesheet only for person-workspace
+layout that utilities cannot express. Tokens change only in `tokens.css`. A
+hand-written rule must style something a production source can draw
+(`lib/stylesheet-liveness.test.ts`), and a Tailwind utility may not share a name
+with a hand-written class (`tools/web_build_output_test.ts`). A rule moves
+between stylesheets only when its cascade order against every rule that can meet
+it on one element is kept.
+
 ## Change Control
 
 The following are fixed and require synchronized updates to this document,

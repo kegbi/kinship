@@ -1,0 +1,369 @@
+/*
+ * The people directory (`/app/people`) and add-a-person (`/app/people/new`)
+ * (GAP-032). `.form-error-summary` is also the settings forms' error summary.
+ */
+
+.person-form {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--pad-card);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+.name-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.name-grid label,
+.name-field {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.name-grid label {
+  font-size: .82rem;
+  font-weight: 600;
+}
+
+.field-label {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.field-label small,
+.name-grid > .name-field > small,
+.partial-person-control small {
+  color: var(--ink-3);
+  font-size: .72rem;
+}
+
+.name-grid input {
+  min-height: 48px;
+  padding: var(--space-3) var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.partial-person-control {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--line-1);
+  border-radius: .75rem;
+  align-items: start;
+  background: var(--surface-2);
+}
+
+.partial-person-control input {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.partial-person-copy {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.form-error-summary,
+.duplicate-warning {
+  padding: var(--space-4);
+  border: 1px solid var(--accent);
+  border-radius: .75rem;
+  color: var(--danger-strong);
+  background: var(--accent-soft);
+}
+
+.duplicate-warning h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.person-form [aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.person-form [aria-invalid="true"]:not(:focus) {
+  outline: 2px solid color-mix(in srgb, var(--danger) 20%, transparent);
+}
+
+.people-directory-page {
+  width: min(var(--application-width, 1120px), calc(100% - 2rem));
+}
+
+.people-directory-heading {
+  align-items: end;
+}
+
+.people-directory-heading p {
+  max-width: 42rem;
+  color: var(--ink-2);
+  line-height: 1.55;
+}
+
+.directory-heading-actions {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.people-directory-controls {
+  display: grid;
+  grid-template-columns: minmax(16rem, 1fr) minmax(18rem, .75fr) minmax(10rem,
+    .35fr) auto;
+  gap: var(--space-3);
+  margin: var(--space-6) 0 var(--space-5);
+  padding: var(--space-4);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-lg);
+  align-items: start;
+  background: var(--surface-1);
+}
+
+@media (max-width: 1050px) {
+  .people-directory-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.people-directory-controls label {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--ink-2);
+  font-size: .78rem;
+  font-weight: 700;
+}
+
+.people-directory-controls > button[type="submit"] {
+  margin-top: var(--space-5);
+}
+
+.directory-tag-picker {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  gap: var(--space-2);
+}
+
+.directory-tag-picker legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.directory-tag-search {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) auto;
+  gap: var(--space-2);
+}
+
+.directory-tag-search button,
+.directory-tag-pagination button {
+  min-height: 42px;
+  padding: var(--space-2) var(--space-3);
+  font-size: .75rem;
+}
+
+.directory-tag-pagination {
+  display: flex;
+  min-height: 1.5rem;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.directory-tag-pagination p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: .72rem;
+}
+
+.people-directory-controls input,
+.people-directory-controls select,
+.people-directory-controls button,
+.directory-pagination button,
+.directory-error button {
+  min-height: 48px;
+  padding: var(--space-3) var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.people-directory-controls button,
+.directory-pagination button,
+.directory-error button {
+  border-color: var(--ink-1);
+  color: var(--ink-inverse);
+  background: var(--ink-1);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.people-directory-controls :disabled,
+.directory-pagination button:disabled {
+  cursor: wait;
+  opacity: .62;
+}
+
+.directory-state {
+  display: flex;
+  gap: var(--space-4);
+  min-height: 11rem;
+  padding: var(--pad-card);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-lg);
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: var(--surface-1);
+}
+
+.directory-state h2,
+.directory-state p {
+  margin: 0;
+}
+
+.directory-state h2 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.directory-state p {
+  margin-top: var(--space-2);
+  color: var(--ink-2);
+}
+
+.directory-loading-mark {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--line-2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: directory-spin .8s linear infinite;
+}
+
+@keyframes directory-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.directory-error {
+  border-color: var(--accent-line);
+  background: var(--danger-soft);
+}
+
+.directory-error button {
+  margin-top: var(--space-4);
+}
+
+.people-directory-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.people-directory-list > li {
+  min-width: 0;
+}
+
+.person-directory-link {
+  display: grid;
+  min-height: 9rem;
+  padding: var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--ink-1) 14%, transparent);
+  border-radius: .9rem;
+  align-content: start;
+  background: var(--surface-1);
+  box-shadow: 0 .5rem 1.5rem color-mix(
+    in srgb,
+    var(--ink-1) 5%,
+    transparent
+  );
+  text-decoration: none;
+}
+
+.person-directory-link:hover {
+  border-color: var(--ink-2);
+  transform: translateY(-1px);
+}
+
+.person-directory-link h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.directory-person-details {
+  margin: var(--space-2) 0 0;
+  color: var(--ink-2);
+  font-size: .82rem;
+}
+
+.directory-person-tags {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  flex-wrap: wrap;
+  list-style: none;
+}
+
+.directory-person-tags li {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  color: var(--ink-2);
+  background: var(--positive-soft);
+  font-size: .7rem;
+  font-weight: 600;
+}
+
+.directory-pagination {
+  display: flex;
+  margin-top: var(--space-4);
+  justify-content: center;
+}
+
+@media (max-width: 760px) {
+  .people-directory-controls,
+  .people-directory-list {
+    grid-template-columns: 1fr;
+  }
+
+  .directory-heading-actions {
+    justify-content: stretch;
+  }
+
+  .directory-heading-actions > a {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .name-grid {
+    grid-template-columns: 1fr;
+  }
+}

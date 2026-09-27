@@ -11,9 +11,11 @@
  * application.css declares the same order, whichever of the two loads first.
  *
  * Utilities are generated for the class names written in the islands, the
- * vendored shadcn/ui components and their variants, the Astro templates, and
- * the vanilla modules, which all draw with the same variant classes. Tests
- * are not scanned. `tools/web_build_output_test.ts` fails the build when a
+ * feature surfaces, the vendored shadcn/ui components and their variants, the
+ * Astro templates, and `lib`, which all draw with the same variant classes.
+ * Tests are not scanned; `lib/stylesheet-liveness.test.ts` fails when a
+ * production source that writes class names is not scanned.
+ * `tools/web_build_output_test.ts` fails the build when a
  * generated utility shares a name with a hand-written class.
  *
  * The colours are the shadcn/ui theme variables tokens.css maps onto the
@@ -29,9 +31,10 @@
 @source "../layouts";
 @source "../pages";
 @source "../lib";
+@source "../features";
 @source not "../**/*.test.ts";
 @source not "../**/*.test.tsx";
-@source not "../lib/*.test-helper.ts";
+@source not "../**/*.test-helper.ts";
 
 /* The design system's theme choice: an explicit `data-theme`, else the OS. */
 @custom-variant dark {

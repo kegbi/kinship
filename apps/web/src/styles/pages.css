@@ -1,0 +1,147 @@
+/*
+ * Today, tasks, journal, and compliance (GAP-032): the task board the tasks
+ * page, Today, and the person planning zone share, Today's attention groups,
+ * the journal list, and the legal document page.
+ */
+
+.task-filters,
+.task-columns {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+
+.task-columns h4 {
+  font-size: .875rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.task-filters {
+  align-items: end;
+  background: var(--surface, var(--surface-1));
+  border: 1px solid var(--line, var(--line-1));
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+.task-list {
+  display: grid;
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.attention-groups {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-block: var(--space-4);
+}
+
+.attention-groups h3 {
+  margin-block: 0 var(--space-3);
+}
+
+.task-item,
+.attention-item {
+  background: var(--surface, var(--surface-1));
+  border: 1px solid var(--line, var(--line-1));
+  border-radius: 0.9rem;
+  padding: var(--space-4);
+}
+
+.task-item h3,
+.task-item p,
+.attention-item .attention-title,
+.attention-item p {
+  margin-block: 0 var(--space-2);
+}
+
+.attention-title {
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.today-touch-target {
+  display: inline-flex;
+  max-inline-size: 100%;
+  min-width: 44px;
+  min-height: 44px;
+  padding: var(--space-3) var(--space-3);
+  border: 1px solid var(--ink-1);
+  border-radius: .65rem;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-1);
+  background: var(--surface-1);
+  cursor: pointer;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+@media (max-width: 760px) {
+  .attention-groups {
+    grid-template-columns: 1fr;
+  }
+}
+
+.task-meta {
+  color: var(--muted, var(--ink-2));
+  font-size: 0.9rem;
+}
+
+.task-form {
+  margin-block: var(--space-4);
+}
+
+.journal-form {
+  margin-block: var(--space-4);
+}
+
+.journal-list {
+  display: grid;
+  gap: var(--space-3);
+  list-style: none;
+  margin: var(--space-4) 0;
+  padding: 0;
+}
+
+.journal-list li {
+  background: var(--surface, var(--surface-1));
+  border: 1px solid var(--line, var(--line-1));
+  border-left: 0.3rem solid var(--positive);
+  border-radius: 0.5rem;
+  padding: var(--space-4);
+}
+
+.journal-list h2,
+.journal-list p {
+  margin-block: 0 var(--space-2);
+}
+
+.journal-list time {
+  color: var(--muted, var(--ink-2));
+  display: block;
+  font-size: 0.9rem;
+  margin-block-end: var(--space-2);
+}
+
+.compliance-page {
+  margin-inline: auto;
+  max-width: 52rem;
+}
+
+.compliance-page .legal-document {
+  border-block: 1px solid var(--line, var(--line-1));
+  line-height: 1.75;
+  margin-block: var(--space-5);
+  max-height: min(55vh, 36rem);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding-block: var(--space-5);
+  white-space: pre-wrap;
+}

@@ -1,0 +1,667 @@
+/*
+ * The person workspace's shared chrome (GAP-032): the page state card, the
+ * workspace button base, the sticky navigation and section directory, the zone
+ * switcher, the zone headings, the section cards and their headings, glyphs,
+ * add actions, empty states and footers, the phone sheet the shell template
+ * opens rail editors in, and the section form every zone's editors use (the
+ * journal and the tasks page reuse `.profile-fact-form`).
+ * Zones live in `features/person/sections.ts`; each zone's own rules follow in
+ * person-hero.css through person-admin.css.
+ */
+
+.person-profile-state {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--pad-card);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+.person-profile-state h1 {
+  margin: 0;
+  font-family: Georgia, serif;
+  font-size: 1.75rem;
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -.01em;
+}
+
+.person-workspace {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.person-workspace button {
+  align-items: center;
+  box-sizing: border-box;
+  display: inline-flex;
+  justify-content: center;
+  max-width: 100%;
+  min-height: 44px;
+  padding: var(--space-3) var(--space-4);
+  border-width: 1px;
+  border-style: solid;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-align: center;
+  text-decoration: none;
+  white-space: normal;
+}
+
+/* A button without a variant looks like the outline one. */
+@layer legacy-defaults {
+  .person-workspace button {
+    border-color: var(--line-strong);
+    color: var(--ink-1);
+    background: var(--surface-1);
+  }
+}
+
+.person-workspace button:hover {
+  filter: brightness(.96);
+}
+
+.person-workspace button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+  pointer-events: none;
+}
+
+.person-zone .profile-section-heading h3 {
+  margin: 0;
+  font-size: .95rem;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: .01em;
+}
+
+.profile-section-heading .section-kicker {
+  margin-bottom: var(--space-1);
+}
+
+.section-state {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.section-state.unavailable {
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--accent);
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--surface-1) 70%, transparent);
+}
+
+.person-workspace-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.person-workspace-navigation {
+  --person-navigation-top: 6rem;
+  position: sticky;
+  top: var(--person-navigation-top);
+  z-index: 3;
+  display: flex;
+  gap: var(--space-3);
+  min-width: 0;
+  padding-block: var(--space-2);
+  align-items: center;
+  background: var(--surface-page);
+}
+
+.profile-section-directory {
+  flex: none;
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+.profile-section-directory summary {
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: var(--space-3);
+  border-radius: .65rem;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.profile-section-directory nav {
+  position: absolute;
+  inset: 100% 0 auto;
+  box-sizing: border-box;
+  max-height: calc(100dvh - var(--person-navigation-top) - 100% -
+    var(--space-3));
+  padding: var(--space-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-2);
+}
+
+.profile-section-directory nav ul {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .1rem;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.profile-section-directory nav a {
+  display: flex;
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  align-items: center;
+  color: var(--ink-2);
+  font-size: .82rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.profile-section-directory nav a:hover,
+.profile-section-directory nav a[aria-current="location"] {
+  color: var(--ink-1);
+  background: var(--surface-sunken);
+}
+
+.profile-section-notice {
+  margin: var(--space-3) var(--space-3) var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--warning) 25%, transparent);
+  border-radius: .65rem;
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.profile-section-notice a {
+  color: inherit;
+  font-weight: 700;
+}
+
+.profile-section-list {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.person-first-run {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+  flex-direction: column;
+  align-items: flex-start;
+  background: var(--surface-1);
+  box-shadow: var(--shadow-1);
+}
+
+.person-first-run h2,
+.person-first-run p {
+  margin: 0;
+}
+
+.person-first-run h2 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.person-first-run-actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.zone-switcher {
+  display: flex;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scroll-padding-inline: var(--space-1);
+  align-items: center;
+  background: var(--surface-page);
+}
+
+.zone-mini-identity {
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+  align-items: center;
+  flex: 0 1 auto;
+  font-weight: 700;
+}
+
+.zone-mini-identity[hidden] {
+  display: none;
+}
+
+.zone-mini-avatar {
+  display: grid;
+  width: 1.5rem;
+  aspect-ratio: 1;
+  border-radius: var(--radius-pill);
+  place-items: center;
+  color: var(--ink-inverse);
+  background: var(--accent);
+  font-size: .65rem;
+}
+
+.zone-mini-name {
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zone-filter {
+  display: flex;
+  gap: var(--space-1);
+  min-width: max-content;
+  padding: var(--space-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+.zone-filter button {
+  flex: none;
+  scroll-snap-align: start;
+}
+
+.person-zone {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  align-items: start;
+}
+
+.person-zone[hidden] {
+  display: none;
+}
+
+.person-zone > h2 {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.profile-section-card {
+  min-width: 0;
+  scroll-margin-top: 6.5rem;
+  padding: var(--pad-card);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  overflow-wrap: anywhere;
+}
+
+.person-zone .profile-section-card {
+  scroll-margin-top: 10.5rem;
+}
+
+.person-zone .profile-section-card > :is(button, a) {
+  justify-self: start;
+}
+
+.person-zone .profile-section-card > .section-state:empty {
+  display: none;
+}
+
+.person-zone .profile-section-card > .profile-section-heading {
+  margin-bottom: var(--space-3);
+}
+
+/* ---------------------------------------------------------------------------
+   Section chrome. Every block carries a glyph beside its heading, the rail
+   keeps a dense tinted treatment, and the streams keep roomy white cards with
+   the add action in the heading — the density contrast Monica used to make
+   one person page read as organised.
+   ------------------------------------------------------------------------- */
+.section-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+}
+
+.section-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Stream cards: glyph + title + add action in one heading row. */
+.person-zone .profile-section-card > .profile-section-heading {
+  display: flex;
+  gap: var(--space-2) var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line-hairline);
+}
+
+.person-zone .profile-section-card > .profile-section-heading > .profile-section-title {
+  display: flex;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+  align-items: center;
+  flex: 1 1 8rem;
+  flex-wrap: wrap;
+}
+
+.person-zone .profile-section-card > .profile-section-heading > .profile-section-cta {
+  margin-left: auto;
+}
+
+.person-zone .profile-section-card > .profile-section-heading h3 {
+  letter-spacing: -.005em;
+}
+
+.person-zone .profile-section-card > .profile-fact-form {
+  margin-top: 0;
+}
+
+.profile-section-glyph {
+  width: 2.25rem;
+  aspect-ratio: 1;
+  padding: var(--space-2);
+  box-sizing: border-box;
+  border-radius: .65rem;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.person-zone[data-zone="planning"] .profile-section-glyph {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.person-zone[data-zone="things"] .profile-section-glyph {
+  color: var(--positive);
+  background: var(--positive-soft);
+}
+
+.person-zone[data-zone="admin"] .profile-section-glyph {
+  color: var(--ink-2);
+  background: var(--surface-sunken);
+}
+
+.person-workspace .profile-section-cta {
+  min-height: 40px;
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-3);
+  border-color: var(--line-strong);
+  border-radius: var(--radius-pill);
+  color: var(--ink-1);
+  background: var(--surface-1);
+  font-size: .82rem;
+  white-space: nowrap;
+}
+
+/* A drawn plus, not text: generated text would join the accessible name. */
+.person-workspace .profile-section-cta::before {
+  content: "";
+  flex: none;
+  width: .7em;
+  height: .7em;
+  margin-right: var(--space-2);
+  background:
+    linear-gradient(currentColor, currentColor) center / 2px 100% no-repeat,
+    linear-gradient(currentColor, currentColor) center / 100% 2px no-repeat;
+}
+
+.person-workspace .profile-section-cta:hover,
+.person-workspace .profile-section-cta:focus-visible {
+  border-color: var(--ink-1);
+  color: var(--ink-inverse);
+  background: var(--ink-1);
+  filter: none;
+}
+
+.person-zone .profile-section-card > .section-state {
+  color: var(--ink-3);
+  font-size: .85rem;
+}
+
+/* Monica's blank box: a calm centred prompt instead of a bare sentence. */
+.person-zone .profile-section-card[data-section-state="empty"] > .section-state {
+  padding: var(--space-4);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-md);
+  color: var(--ink-2);
+  background: var(--surface-2);
+  text-align: center;
+}
+
+.person-zone .profile-section-card > .profile-section-footer {
+  display: flex;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line-hairline);
+}
+
+.person-workspace .profile-section-footer > a {
+  min-height: 40px;
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-3);
+  border-color: transparent;
+  border-radius: var(--radius-pill);
+  color: var(--accent);
+  background: transparent;
+  font-size: .85rem;
+  text-decoration: underline;
+  text-underline-offset: .2em;
+}
+
+.person-workspace .profile-section-footer > a:hover {
+  background: var(--accent-soft);
+  filter: none;
+}
+
+.person-zone > h2 {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  color: var(--ink-2);
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.person-zone > h2::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-1);
+}
+
+.person-zone .profile-section-card > :is(ul, ol)[hidden] {
+  display: none;
+}
+
+@media (min-width: 1200px) {
+  .person-workspace-layout {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  }
+
+  .person-zone {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .person-zone .profile-section-card:has(form:not([hidden])) {
+    grid-column: 1 / -1;
+  }
+}
+
+.profile-section-card:focus {
+  outline: none;
+}
+
+.profile-section-card:focus-visible > .profile-section-heading :is(h2, h3) {
+  text-decoration: underline;
+  text-decoration-color: var(--focus-ring);
+  text-decoration-thickness: 2px;
+  text-underline-offset: .2em;
+}
+
+@media (forced-colors: active) {
+  .profile-section-card:focus-visible > .profile-section-heading :is(h2, h3) {
+    text-decoration-color: Highlight;
+  }
+}
+
+.profile-section-heading {
+  display: flex;
+  gap: var(--space-4);
+  align-items: start;
+  justify-content: space-between;
+}
+
+.unavailable-section-card > p {
+  margin: var(--space-4) 0 0;
+  color: var(--ink-2);
+  line-height: 1.6;
+}
+
+.profile-fact-form {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.profile-fact-form[hidden] {
+  display: none;
+}
+
+.profile-fact-form label {
+  display: grid;
+  font-weight: 700;
+  gap: var(--space-1);
+}
+
+.profile-fact-form input,
+.profile-fact-form select,
+.profile-fact-form textarea {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+}
+
+.profile-fact-form input:not([type="checkbox"]):not([type="radio"]),
+.profile-fact-form select,
+.profile-fact-form textarea {
+  padding: var(--space-3) var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: .65rem;
+  color: inherit;
+  background: var(--surface-1);
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.profile-fact-form input:not([type="checkbox"]):not([type="radio"]),
+.profile-fact-form select {
+  min-height: 44px;
+}
+
+.profile-fact-form textarea {
+  min-height: 6rem;
+  resize: vertical;
+}
+
+.profile-fact-form select[multiple] {
+  min-height: 7rem;
+}
+
+.profile-fact-form .checkbox-row {
+  align-items: center;
+  display: flex;
+  font-weight: 600;
+}
+
+.profile-fact-form .checkbox-row input {
+  width: auto;
+}
+
+@media (max-width: 1050px) {
+  .person-workspace-navigation {
+    --person-navigation-top: var(--space-2);
+  }
+}
+
+@media (max-width: 760px) {
+  .person-workspace-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .person-workspace-navigation {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .zone-switcher {
+    scroll-snap-type: x proximity;
+  }
+
+  .profile-section-directory nav ul {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .profile-section-directory nav a {
+    min-height: 44px;
+  }
+
+  .person-zone .profile-section-card {
+    scroll-margin-top: 9rem;
+  }
+
+  html:has(.profile-rail-dialog[open]) {
+    overflow: hidden;
+  }
+
+  .profile-rail-dialog::backdrop {
+    background: color-mix(in srgb, var(--ink-1) 38%, transparent);
+  }
+
+  .profile-rail-dialog {
+    position: fixed;
+    inset: auto 0 0;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: none;
+    max-height: 80dvh;
+    margin: 0;
+    padding: var(--pad-card);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    background: var(--surface-1);
+    color: var(--ink-1);
+    box-shadow: var(--shadow-2);
+  }
+
+  .profile-rail-dialog h2 {
+    margin: 0 0 var(--space-4);
+    font-size: 1.125rem;
+  }
+
+  .profile-rail-dialog > form {
+    margin: 0;
+  }
+}

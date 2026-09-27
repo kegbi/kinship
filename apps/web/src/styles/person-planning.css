@@ -1,0 +1,139 @@
+/*
+ * The person workspace's planning zone (GAP-032): the person's task card and
+ * reminders ledger. The task board itself is in pages.css.
+ */
+
+/* Task groups: kicker headings with the row count implied by content. */
+.tasks-section-card .task-columns {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.tasks-section-card .task-columns > div {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.tasks-section-card .task-columns h4 {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.tasks-section-card .task-list:empty::after {
+  content: "None";
+  color: var(--ink-3);
+  font-size: .82rem;
+}
+
+.tasks-section-card .task-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3);
+  align-items: start;
+  border-color: var(--line-hairline);
+  background: var(--surface-2);
+}
+
+.tasks-section-card .task-item h3 {
+  grid-column: 1;
+  margin: 0;
+  font-size: .95rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.tasks-section-card .task-item p {
+  grid-column: 1;
+  margin: 0;
+  font-size: .85rem;
+  line-height: 1.45;
+}
+
+.tasks-section-card .task-item > .task-item-actions {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  gap: var(--space-1);
+  align-self: center;
+  flex-direction: column;
+}
+
+.person-workspace .tasks-section-card .task-item > .task-item-actions > button {
+  min-height: 34px;
+  padding: var(--space-1) var(--space-2);
+  border-color: transparent;
+  color: var(--ink-2);
+  background: transparent;
+  font-size: .78rem;
+}
+
+.person-workspace .tasks-section-card .task-item > .task-item-actions > button:hover {
+  color: var(--ink-1);
+  background: color-mix(in srgb, var(--ink-1) 8%, transparent);
+  filter: none;
+}
+
+.person-workspace .tasks-section-card .task-item > .task-item-actions > button:first-child {
+  border-color: var(--line-strong);
+  color: var(--ink-1);
+  background: var(--surface-1);
+}
+
+/* Reminders: a compact ledger row like Monica's reminder table. */
+.reminder-list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3) 0;
+  align-items: center;
+  border-bottom: 1px solid var(--line-hairline);
+}
+
+.reminder-list > li:first-child {
+  padding-top: 0;
+}
+
+.reminder-list > li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.reminder-list h3 {
+  grid-column: 1;
+  margin: 0;
+  font-size: .95rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.reminder-list p {
+  grid-column: 1;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: .82rem;
+}
+
+.person-workspace .reminder-list > li > button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-height: 34px;
+  padding: var(--space-1) var(--space-2);
+  border-color: transparent;
+  color: var(--ink-2);
+  background: transparent;
+  font-size: .78rem;
+}
+
+.person-workspace .reminder-list > li > button:hover {
+  color: var(--ink-1);
+  background: color-mix(in srgb, var(--ink-1) 8%, transparent);
+  filter: none;
+}
+
+.optimistic-save {
+  color: var(--ink-3);
+}

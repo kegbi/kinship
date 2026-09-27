@@ -21,13 +21,15 @@ const layoutPaths = [
   "apps/web/src/layouts/AuthLayout.astro",
   "apps/web/src/layouts/PublicLayout.astro",
 ] as const;
-const nonTokenStylesheetPaths = [
-  "apps/web/src/styles/base.css",
-  "apps/web/src/styles/shell.css",
-  "apps/web/src/styles/settings.css",
-  "apps/web/src/styles/components.css",
-  "apps/web/src/styles/person.css",
-] as const;
+/** Every stylesheet application.css imports except the fonts and tokens. */
+const applicationImports = readFileSync(
+  "apps/web/src/styles/application.css",
+  "utf8",
+);
+const nonTokenStylesheetPaths = Array.from(
+  applicationImports.matchAll(/^@import\s+"\.\/([\w-]+\.css)";$/gm),
+  ([, file]) => `apps/web/src/styles/${file}`,
+).filter((path) => !/\/(?:fonts|tokens)\.css$/.test(path));
 const cssNamedColors = [
   "aliceblue",
   "antiquewhite",
@@ -202,7 +204,7 @@ const approvedPageLevelSpacing = [
     // The application page frame keeps responsive padding with grid-aligned endpoints.
   },
   {
-    path: "apps/web/src/styles/person.css",
+    path: "apps/web/src/styles/person-hero.css",
     selector: ".person-profile-hero",
     property: "padding",
     value: "clamp(var(--pad-card), 4vw, var(--space-6))",
@@ -225,21 +227,21 @@ const spacingExceptions = [
     // The accessibility clipping offset is geometry, not visual rhythm.
   },
   {
-    path: "apps/web/src/styles/person.css",
+    path: "apps/web/src/styles/person-chrome.css",
     selector: ".person-workspace-layout",
     property: "gap",
     value: "1.25rem",
     // Review §7.5 fixes the 900–1199px person workspace gap at this value.
   },
   {
-    path: "apps/web/src/styles/person.css",
+    path: "apps/web/src/styles/person-chrome.css",
     selector: ".profile-section-directory nav ul",
     property: "gap",
     value: ".1rem",
     // Compact rail navigation relies on link padding for its visible separation.
   },
   {
-    path: "apps/web/src/styles/person.css",
+    path: "apps/web/src/styles/people.css",
     selector: ".directory-tag-picker legend",
     property: "margin",
     value: "-1px",
@@ -331,6 +333,17 @@ function mountStyles(): void {
 afterEach(() => {
   document.head.innerHTML = "";
   document.body.innerHTML = "";
+});
+
+describe("the stylesheets the invariants read", () => {
+  it("are every application.css import except the fonts and tokens", () => {
+    const everyImport = applicationImports.match(/^@import\b/gm) ?? [];
+    expect(nonTokenStylesheetPaths.length).toBeGreaterThan(0);
+    expect(nonTokenStylesheetPaths).toHaveLength(everyImport.length - 2);
+    expect(nonTokenStylesheetPaths).toContain(
+      "apps/web/src/styles/person-chrome.css",
+    );
+  });
 });
 
 describe("application control presentation", () => {

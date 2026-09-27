@@ -124,9 +124,10 @@ describe("GAP-026 island theme", () => {
         '"../layouts"',
         '"../pages"',
         '"../lib"',
+        '"../features"',
         'not "../**/*.test.ts"',
         'not "../**/*.test.tsx"',
-        'not "../lib/*.test-helper.ts"',
+        'not "../**/*.test-helper.ts"',
       ]);
     // Both stylesheets declare one layer order, lowest first, so whichever
     // loads first the element defaults sit beneath the utilities (GAP-027).

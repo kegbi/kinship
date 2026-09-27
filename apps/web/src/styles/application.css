@@ -11,4 +11,13 @@
 @import "./shell.css";
 @import "./settings.css";
 @import "./components.css";
-@import "./person.css";
+@import "./person-chrome.css";
+@import "./person-hero.css";
+@import "./person-rail.css";
+@import "./person-timeline.css";
+@import "./person-planning.css";
+@import "./person-things.css";
+@import "./person-admin.css";
+@import "./people.css";
+@import "./pages.css";
+@import "./overrides.css";

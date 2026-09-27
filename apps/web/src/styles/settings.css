@@ -828,3 +828,118 @@
   border-radius: .9rem;
   text-align: center;
 }
+
+@media (max-width: 760px) {
+  .api-token-form,
+  .api-secret-control {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-page {
+    width: calc(100% - 1rem);
+    padding-top: var(--space-6);
+  }
+
+  .personalization-layout {
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+  }
+
+  .personalization-nav {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .personalization-create,
+  .personalization-entry-form {
+    grid-template-columns: 1fr;
+  }
+
+  .personalization-entry-form p,
+  .personalization-actions {
+    grid-column: auto;
+  }
+
+  .settings-heading,
+  .settings-layout {
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+  }
+
+  .settings-local-nav {
+    position: static;
+    display: flex;
+    gap: var(--space-1);
+    padding: var(--space-2);
+    overflow-x: auto;
+  }
+
+  .settings-local-nav p {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  .settings-local-nav a {
+    flex: none;
+  }
+
+  .settings-destination-nav {
+    display: none;
+  }
+
+  .settings-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .storage-metrics,
+  .storage-object-state {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .import-counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .import-history li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .storage-search-form > div,
+  .storage-results li {
+    grid-template-columns: 1fr;
+  }
+
+  .storage-results code {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .invitation-form {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-form {
+    grid-template-columns: 1fr;
+  }
+
+  .invitation-form button,
+  .secondary-link {
+    width: 100%;
+    min-height: 44px;
+    justify-self: stretch;
+  }
+
+  .section-heading {
+    align-items: center;
+  }
+
+  .managed-list li,
+  .member-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

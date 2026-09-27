@@ -18,7 +18,7 @@ const createPage = readFileSync(
 );
 const applicationStyles = readApplicationStylesheet();
 const personStyles = readFileSync(
-  resolve("apps/web/src/styles/person.css"),
+  resolve("apps/web/src/styles/person-chrome.css"),
   "utf8",
 );
 const applicationLayout = readFileSync(

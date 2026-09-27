@@ -1255,12 +1255,43 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     test:unit and test:coverage all passed. The gateway log-capture fixture
     passed in a copy that trusts this environment's proxy.
 
-- [ ] **GAP-032 — Stylesheet retirement.** M. Depends: 027, 028.
+- [x] **GAP-032 — Stylesheet retirement.** M. Depends: 027, 028.
   - Scope: delete the CSS that migrated surfaces no longer use. Split what
     remains of `person.css` by zone. Document stylesheet ownership (the tokens
     file, the Tailwind layer, the remaining component CSS) in
     `docs/product/dashboard-settings-design.md`.
   - Verify: stylesheet contract tests; visual check at 390, 768, and 1440.
+  - Delivered 2026-09-27: `person.css` (2,857 lines) is split into one
+    stylesheet per workspace zone plus shared chrome (`person-chrome`, `-hero`,
+    `-rail`, `-timeline`, `-planning`, `-things`, `-admin`). Its non-person
+    rules moved to `people.css` (directory and add-a-person), `pages.css`
+    (Today, tasks, journal, compliance), and `overrides.css`, which stays last.
+    The settings phone rules joined `settings.css`.
+    - Dead CSS: nine dead selectors are deleted (`.future-nav`,
+      `.created-person`, `.profile-next-step`, and one independent-load note);
+      the islands kept the class names, so little else was dead. A declaration
+      comparison of the old and new sheets shows only those removals and two
+      selector lists split per owner, with no reordered pair able to change the
+      cascade.
+    - New guard: `lib/stylesheet-liveness.test.ts` fails on any selector no
+      source can produce and on any production directory Tailwind does not scan.
+    - Tailwind scan fix: `islands.css` now scans `features/`. It had been missed
+      since the islands moved there, so the audit badge's `justify-self-start`
+      and the file badge's `mt-(--space-1)` came back; test helpers stay
+      excluded.
+    - Tests and docs: `application-controls.test.ts` checks every imported
+      stylesheet instead of five, and `dashboard-settings-design.md` records
+      stylesheet ownership and where new styles go.
+    - Visual check: 78 screenshots at 390, 768, and 1440 px in light and dark,
+      from plain copies, compared with every element's computed style. The 30
+      captures that changed differ only by those two restored utilities; the
+      rest are pixel-identical.
+    - Evidence: 20 files changed (+3,374/-2,890). Web tests 1,299, web coverage
+      98.66/95.40/99.43/99.87. Chromium and WebKit passed 56 on `app-003c`,
+      `app-004c`, `app-002c`, `app-002e`, `app-005c`, `prf-002`, `public-home`,
+      and `auth-001`.
+    - Gates: build (14 web-build tests), fmt:check, lint, check,
+      check:architecture (14).
 
 - [x] **GAP-033 — Migrate the remaining surfaces and retire the vanilla DOM
       layer.** L. Depends: 029, 031.

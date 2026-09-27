@@ -1,0 +1,29 @@
+/*
+ * The person workspace's admin zone (GAP-032): the audit summary card. The
+ * audit history page is in components.css.
+ */
+
+/* Audit rows: quieter metadata under a firm heading. */
+.audit-summary-card .audit-event-list {
+  margin: 0;
+}
+
+.audit-summary-card .audit-event {
+  padding: var(--space-3);
+  border-color: var(--line-hairline);
+  background: var(--surface-2);
+}
+
+.audit-summary-card .audit-event strong {
+  font-size: .92rem;
+}
+
+.audit-summary-card .audit-event p {
+  color: var(--ink-2);
+  font-size: .82rem;
+  overflow-wrap: anywhere;
+}
+
+.audit-summary-card .audit-event time {
+  font-size: .78rem;
+}

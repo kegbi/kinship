@@ -1,0 +1,213 @@
+/*
+ * The person workspace's timeline zone (GAP-032): the merged timeline, its
+ * filters and rows, life events, and the notes and communication summary
+ * cards.
+ */
+
+.person-timeline {
+  display: grid;
+  gap: var(--space-4);
+  grid-column: 1 / -1;
+}
+
+.person-timeline[data-timeline-state="error"] {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.person-timeline-filters {
+  display: flex;
+  gap: var(--space-2);
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.person-workspace .person-timeline-filters > button {
+  min-width: 44px;
+  min-height: 44px;
+  flex: 0 1 auto;
+}
+
+.person-timeline-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.person-timeline-list > li {
+  min-width: 0;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.person-timeline-list summary {
+  display: grid;
+  grid-template-columns: minmax(9rem, auto) minmax(7rem, auto) minmax(0, 1fr);
+  gap: var(--space-3);
+  min-height: 44px;
+  padding: var(--space-3);
+  align-items: center;
+  cursor: pointer;
+}
+
+.person-timeline-date {
+  grid-column: 1;
+  grid-row: 1;
+  color: var(--ink-2);
+  font-size: .875rem;
+  font-weight: 700;
+}
+
+.person-timeline-type {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: start;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  color: var(--ink-1);
+  background: var(--surface-sunken);
+  font-size: .8rem;
+  font-weight: 700;
+}
+
+.person-timeline-summary-excerpt {
+  display: -webkit-box;
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.person-timeline-list details > :is(strong, p) {
+  display: block;
+  margin: 0 var(--space-4) var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+.person-timeline-list details > p {
+  color: var(--ink-2);
+  line-height: 1.55;
+}
+
+.person-timeline-list > li > details > ul {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 var(--space-4) var(--space-3);
+  padding: 0;
+  color: var(--ink-2);
+  line-height: 1.55;
+  list-style: none;
+}
+
+.person-workspace .person-timeline > button[data-timeline-more],
+.person-workspace .person-timeline > button[data-timeline-retry] {
+  justify-self: start;
+}
+
+@media (max-width: 760px) {
+  .person-timeline-list summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .person-timeline-date {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .person-timeline-type {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .person-timeline-summary-excerpt {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+.person-zone .profile-section-card:not(.person-timeline) {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+}
+
+.person-zone .profile-section-card:not(.person-timeline) > .profile-section-heading {
+  margin-bottom: 0;
+}
+
+/* Timeline rows: the type chip carries the zone colour so kinds scan quickly. */
+.person-timeline-list > li {
+  background: var(--surface-1);
+}
+
+.person-timeline-list > li[data-timeline-kind="note"] .person-timeline-type {
+  color: var(--positive);
+  background: var(--positive-soft);
+}
+
+.person-timeline-list > li[data-timeline-kind="call"] .person-timeline-type,
+.person-timeline-list > li[data-timeline-kind="conversation"] .person-timeline-type {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.person-timeline-list > li[data-timeline-kind="activity"] .person-timeline-type,
+.person-timeline-list > li[data-timeline-kind="life-event"] .person-timeline-type {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.person-timeline-list summary:hover {
+  background: var(--surface-2);
+}
+
+.person-timeline-list > li > details[open] > summary {
+  border-bottom: 1px solid var(--line-hairline);
+}
+
+/* Life events keep the stream card row treatment. */
+.life-event-list li {
+  border-color: var(--line-hairline);
+}
+
+/* Summary cards whose records live in the timeline stay short and calm. */
+.interaction-section-card,
+.communication-section-card {
+  align-content: start;
+}
+
+.life-event-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.life-event-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-4);
+  align-items: baseline;
+  padding: var(--space-3);
+  border: 1px solid var(--line-hairline);
+  border-radius: 0.5rem;
+  background: var(--surface-2);
+}
+
+.life-event-list time,
+.life-event-list p {
+  color: var(--ink-2);
+}
+
+.life-event-list p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
