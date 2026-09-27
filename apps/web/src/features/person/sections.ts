@@ -205,6 +205,32 @@ export const SECTION_HIDDEN_EVENT = "person-section-hidden";
  */
 export const SECTION_REQUEST_EVENT = "person-section-requested";
 
+/**
+ * The sections the section navigation links to (GAP-047), in registry order:
+ * each one the page rendered — `rendered` holds the ids it drew — that the
+ * workspace has not turned off. A link never points at a section that is not
+ * there to receive it.
+ */
+export function navigableSections(
+  rendered: ReadonlySet<string>,
+  hidden: ReadonlySet<string>,
+): readonly PersonSectionEntry<PersonSectionId>[] {
+  return PERSON_SECTIONS.filter((entry) =>
+    rendered.has(entry.id) && !hidden.has(entry.id)
+  );
+}
+
+/**
+ * Whether the workspace turned `entry` off: its profile module is among the
+ * `hidden` ones. A section without a visibility key is always shown.
+ */
+export function sectionTurnedOff(
+  entry: PersonSectionEntry,
+  hidden: ReadonlySet<string>,
+): boolean {
+  return entry.visibilityKey !== null && hidden.has(entry.visibilityKey);
+}
+
 /** The entry for `id`, when `id` names a section. */
 export function personSection(
   id: string | null | undefined,

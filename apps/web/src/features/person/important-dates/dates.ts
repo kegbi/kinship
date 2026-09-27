@@ -321,7 +321,12 @@ export type DatesAction =
     readonly message: string;
   }
   | { readonly type: "lifecycle"; readonly archived: boolean }
-  | { readonly type: "open"; readonly date?: ImportantDate }
+  | {
+    readonly type: "open";
+    readonly date?: ImportantDate;
+    /** The kind a new date starts as; a birthday unless named (GAP-047). */
+    readonly kind?: DateKind;
+  }
   | { readonly type: "close"; readonly focus?: boolean }
   | { readonly type: "kind"; readonly kind: DateKind }
   | { readonly type: "precision"; readonly precision: DatePrecision }
@@ -382,7 +387,7 @@ export function datesReducer(
         editor: {
           ...(action.date ? { date: action.date } : {}),
           generation: (state.editor?.generation ?? 0) + 1,
-          kind: action.date?.kind ?? "birthday",
+          kind: action.date?.kind ?? action.kind ?? "birthday",
           precision: action.date?.precision ?? "full",
         },
         focus: focus(state, "field"),

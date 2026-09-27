@@ -21,6 +21,7 @@ import type { RailSectionId } from "./sections.ts";
 
 export type CapturedVital =
   | "birthday"
+  | "deceased"
   | "first-meeting"
   | "last-contact"
   | "next-reminder"
@@ -75,6 +76,8 @@ export function captureProfileSummary(): CapturedProfileSummary {
       switch (slot) {
         case "birthday":
           return hero.birthday ?? NOT_RECORDED;
+        case "deceased":
+          return hero.deceased ?? NOT_RECORDED;
         case "work":
           return hero.work ?? NOT_RECORDED;
         case "first-meeting":

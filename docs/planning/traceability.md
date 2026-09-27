@@ -19,9 +19,9 @@ The current baseline contains:
 - 32 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
   still planned with an empty `testRefs` array, consistent with its withheld
   optional module; and
-- 37 Playwright specs under `tests/e2e/`. Flow specs are named
+- 38 Playwright specs under `tests/e2e/`. Flow specs are named
   `<feature>.<FLOW-ID>.spec.ts` (GAP-036); specs with no flow keep a feature
-  name. The flows' `testRefs` name 35 of them; `perf.PERF-001.spec.ts` and
+  name. The flows' `testRefs` name 36 of them; `perf.PERF-001.spec.ts` and
   `public-home.spec.ts` prove no catalog flow.
 
 Verified against `docs/architecture/module-boundaries.yaml`,

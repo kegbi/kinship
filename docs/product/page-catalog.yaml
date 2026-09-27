@@ -214,6 +214,33 @@ pages:
     # controls; `editing`, `saving`, and `validation-error` belong to its one
     # editor, and `stale` is a save or removal refused for an old revision.
     sectionStates:
+      # GAP-047: the hero's identity editor. `editing` is the open editor,
+      # `saving` a save in flight, `validation-error` a refused field such as
+      # an archived gender option, `stale` a save refused for an old revision,
+      # and `read-only` an archived person, whose editor does not open.
+      identity-summary:
+        - ready
+        - editing
+        - saving
+        - validation-error
+        - stale
+        - read-only
+      # GAP-047: each section the workspace can turn off has `hidden`. Its
+      # card and navigation link are absent, and a `?section=` deep link to it
+      # lands on the workspace with the quiet "This section is hidden in this
+      # workspace" notice.
+      contact-methods: [loading, ready, empty, error, forbidden, hidden]
+      addresses: [loading, ready, empty, error, forbidden, hidden]
+      relationships: [loading, ready, empty, error, forbidden, hidden]
+      first-meeting: [loading, ready, empty, error, forbidden, hidden]
+      work: [loading, ready, empty, error, forbidden, hidden]
+      food-preferences: [loading, ready, empty, error, forbidden, hidden]
+      pets: [loading, ready, empty, error, forbidden, hidden]
+      notes: [loading, ready, empty, error, forbidden, hidden]
+      conversations: [loading, ready, empty, error, forbidden, hidden]
+      calls: [loading, ready, empty, error, forbidden, hidden]
+      activities: [loading, ready, empty, error, forbidden, hidden]
+      tasks: [loading, ready, empty, error, forbidden, hidden]
       life-events:
         - loading
         - ready

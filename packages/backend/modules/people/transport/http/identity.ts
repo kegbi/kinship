@@ -115,8 +115,17 @@ export function createIdentityRoutes(
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.people.edit(actor, personId.data, {
+      ...(input.data.description === undefined
+        ? {}
+        : { description: input.data.description }),
       expectedUpdatedAt: input.data.expectedUpdatedAt,
       ...(input.data.familyName ? { familyName: input.data.familyName } : {}),
+      ...(input.data.genderOptionId === undefined
+        ? {}
+        : { genderOptionId: input.data.genderOptionId }),
+      ...(input.data.isDeceased === undefined
+        ? {}
+        : { isDeceased: input.data.isDeceased }),
       givenName: input.data.givenName,
       isPartial: input.data.isPartial,
       ...(input.data.middleName ? { middleName: input.data.middleName } : {}),

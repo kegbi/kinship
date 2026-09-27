@@ -1825,7 +1825,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(notice?.getAttribute("role")).toBe("status");
     expect(notice?.hidden).toBe(false);
     expect(notice?.textContent).toContain(
-      "Documents — turned off for this workspace.",
+      "Documents — this section is hidden in this workspace.",
     );
     expect(notice?.querySelector("a")?.textContent).toBe(
       "Open personalization",
@@ -2104,7 +2104,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     );
     expect(document.activeElement).toBe(notice);
     expect(notice?.textContent).toContain(
-      "Activities — turned off for this workspace.",
+      "Activities — this section is hidden in this workspace.",
     );
     expect(notice?.textContent).toContain(
       "A workspace owner or admin can turn this section back on.",
@@ -2137,7 +2137,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(document.activeElement).toBe(notice);
     expect(notice?.hidden).toBe(false);
     expect(notice?.textContent).toContain(
-      "Notes — turned off for this workspace.",
+      "Notes — this section is hidden in this workspace.",
     );
     expect(document.querySelectorAll("[data-section-link][aria-current]"))
       .toHaveLength(0);
@@ -2182,7 +2182,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     );
     expect(notice?.hidden).toBe(false);
     expect(notice?.textContent).toContain(
-      "Life events — turned off for this workspace.",
+      "Life events — this section is hidden in this workspace.",
     );
   });
 
@@ -2462,7 +2462,7 @@ describe("GAP-033 person workspace renders only what the shell drew", () => {
     )!;
     expect(notice.hidden).toBe(false);
     expect(notice.textContent).toBe(
-      "Documents — turned off for this workspace.",
+      "Documents — this section is hidden in this workspace.",
     );
     expect(notice.querySelector("a")).toBeNull();
   });
@@ -2478,5 +2478,126 @@ describe("GAP-033 person workspace renders only what the shell drew", () => {
     stray.click();
     await Promise.resolve();
     expect(document.activeElement).toBe(before);
+  });
+});
+
+describe("GAP-047 turned-off sections and the section navigation", () => {
+  /** Every visible navigation link, and whether its target is on the page. */
+  function linkTargets(): readonly (readonly [string, boolean])[] {
+    return [
+      ...document.querySelectorAll<HTMLAnchorElement>("[data-section-link]"),
+    ].filter((link) => !link.closest<HTMLElement>("li")!.hidden).map(
+      (link) => {
+        const id = link.dataset.sectionLink!;
+        const target = document.querySelector<HTMLElement>(
+          `[data-profile-section="${id}"]`,
+        );
+        return [
+          id,
+          target !== null && target.dataset.sectionState !== "hidden",
+        ] as const;
+      },
+    );
+  }
+
+  it("draws no card and mounts no owner for a turned-off section", async () => {
+    markup();
+    summaryRailMarkup();
+    interactionSectionMarkup();
+    // Work drawn as fully as contact methods, so only its module keeps it off.
+    const contacts = document.querySelector<HTMLElement>(
+      '[data-profile-section="contact-methods"]',
+    )!;
+    document.querySelector('[data-profile-section="work"]')!.replaceWith(
+      document.createRange().createContextualFragment(
+        contacts.outerHTML.replaceAll("contact-methods", "work").replaceAll(
+          "Contact methods",
+          "Work",
+        ),
+      ),
+    );
+    const api = stubProfile(
+      profileOf({
+        profileSections: [
+          { id: "work", status: "hidden" },
+          { id: "notes", status: "hidden" },
+          { id: "activities", status: "hidden" },
+          { id: "life-events", status: "hidden" },
+          { id: "calls", status: "hidden" },
+          { id: "conversations", status: "hidden" },
+        ],
+      }, { dueInformation: unavailableDue }),
+      { [VIEW]: recorded },
+    );
+
+    await mountPersonWorkspace();
+    const work = document.querySelector<HTMLElement>(
+      '[data-profile-section="work"]',
+    )!;
+    expect(work.hidden).toBe(true);
+    expect(work.dataset.sectionState).toBe("hidden");
+    expect(requested(api, "/facts/work")).toHaveLength(0);
+    // Every timeline section is off, so neither the timeline nor the notes
+    // and activities owner asks for anything.
+    expect(requested(api, "/timeline")).toHaveLength(0);
+    expect(requested(api, "/activities")).toHaveLength(0);
+    expect(requested(api, "/notes")).toHaveLength(0);
+    // A shown neighbour still loads.
+    expect(requested(api, "/facts/contact-methods")).not.toHaveLength(0);
+  });
+
+  it("links only to sections the page shows", async () => {
+    markup();
+    summaryRailMarkup();
+    // A link whose section the page never drew, and one the workspace hides.
+    document.querySelector("#person-profile-sections ul")?.insertAdjacentHTML(
+      "beforeend",
+      `<li><a href="?section=gifts" data-section-link="gifts">Gifts</a></li>
+       <li><a href="?section=work" data-section-link="work">Work</a></li>
+       <li><a href="?section=pets" data-section-link="pets">Pets</a></li>`,
+    );
+    stubProfile(
+      profileOf({ profileSections: [{ id: "work", status: "hidden" }] }, {
+        dueInformation: unavailableDue,
+      }),
+      { [VIEW]: recorded },
+    );
+
+    await mountPersonWorkspace();
+    const targets = linkTargets();
+    expect(targets.map(([id]) => id)).toContain("pets");
+    expect(targets.map(([id]) => id)).not.toContain("gifts");
+    expect(targets.map(([id]) => id)).not.toContain("work");
+    // No navigation target lacks a matching rendered section.
+    expect(targets.filter(([, shown]) => !shown)).toEqual([]);
+  });
+
+  it("lands a deep link to a turned-off section on the quiet hidden state", async () => {
+    markup(`/app/people/${personId}?section=work`);
+    summaryRailMarkup();
+    document.querySelector("#person-profile-sections ul")?.insertAdjacentHTML(
+      "beforeend",
+      `<li><a href="?section=work" data-section-link="work">Work</a></li>`,
+    );
+    stubProfile(
+      profileOf({ profileSections: [{ id: "work", status: "hidden" }] }, {
+        dueInformation: unavailableDue,
+      }),
+      { [VIEW]: recorded },
+    );
+
+    await mountPersonWorkspace();
+    const notice = document.querySelector<HTMLElement>(
+      "#person-profile-section-notice",
+    )!;
+    expect(notice.hidden).toBe(false);
+    expect(notice.textContent).toContain(
+      "Work — this section is hidden in this workspace.",
+    );
+    expect(document.activeElement).toBe(notice);
+    expect(
+      document.querySelector<HTMLElement>('[data-profile-section="work"]')
+        ?.hidden,
+    ).toBe(true);
   });
 });

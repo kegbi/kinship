@@ -234,6 +234,8 @@ export type PersonFile = components["schemas"]["PersonFile"];
 export type PersonLifecycleIdentity =
   components["schemas"]["PersonLifecycleIdentity"];
 
+export type PersonGenderOption = components["schemas"]["PersonGenderOption"];
+
 export type PersonEditInput = components["schemas"]["PersonEditInput"];
 
 export type PersonTransitionInput =

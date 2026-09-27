@@ -4,10 +4,12 @@ import { describe, expect, it } from "vitest";
 import { personProfileSectionId } from "../../../../../packages/contracts/schemas/people.ts";
 import {
   filterZone,
+  navigableSections,
   PERSON_SECTIONS,
   personSection,
   RAIL_SECTION_ORDER,
   railSections,
+  sectionTurnedOff,
   STREAM_ZONES,
   zoneSections,
 } from "./sections.ts";
@@ -103,5 +105,33 @@ describe("GAP-028 person section registry", () => {
     expect(personSection("work")?.title).toBe("Work");
     expect(personSection("tags")).toBeUndefined();
     expect(personSection(null)).toBeUndefined();
+  });
+});
+
+describe("GAP-047 section navigation and visibility", () => {
+  const all = new Set<string>(PERSON_SECTIONS.map((section) => section.id));
+
+  it("links to every rendered section the workspace has not turned off", () => {
+    expect(navigableSections(all, new Set()).map((section) => section.id))
+      .toEqual([...all]);
+    const links = navigableSections(
+      new Set([...all].filter((id) => id !== "photos")),
+      new Set(["work", "notes"]),
+    ).map((section) => section.id);
+    expect(links).not.toContain("photos");
+    expect(links).not.toContain("work");
+    expect(links).not.toContain("notes");
+    expect(links).toHaveLength(all.size - 3);
+    // No navigation target lacks a rendered section of the same id.
+    for (const id of links) expect(all.has(id)).toBe(true);
+  });
+
+  it("turns off only a section keyed to a hidden module", () => {
+    const hidden = new Set(["work", "important-dates"]);
+    expect(sectionTurnedOff(personSection("work")!, hidden)).toBe(true);
+    expect(sectionTurnedOff(personSection("pets")!, hidden)).toBe(false);
+    // A section without a visibility key is always shown.
+    expect(sectionTurnedOff(personSection("important-dates")!, hidden))
+      .toBe(false);
   });
 });

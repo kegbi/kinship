@@ -2877,10 +2877,13 @@ export interface components {
             readonly stayInTouchAt?: string;
         };
         readonly PersonEditInput: {
+            readonly description?: string;
             /** Format: date-time */
             readonly expectedUpdatedAt: string;
             readonly familyName?: string;
+            readonly genderOptionId?: string | "";
             readonly givenName: string;
+            readonly isDeceased?: boolean;
             readonly isPartial: boolean;
             readonly middleName?: string;
             readonly nickname?: string;
@@ -2910,6 +2913,12 @@ export interface components {
             readonly nextCursor?: string;
             /** @constant */
             readonly status: "ready";
+        };
+        readonly PersonGenderOption: {
+            readonly archived: boolean;
+            /** Format: uuid */
+            readonly id: string;
+            readonly name: string;
         };
         readonly PersonIdentity: {
             readonly familyName?: string;
@@ -3001,10 +3010,14 @@ export interface components {
             readonly status: "updated" | "archived" | "restored";
         };
         readonly PersonLifecycleIdentity: {
+            readonly description?: string;
             readonly familyName?: string;
+            /** Format: uuid */
+            readonly genderOptionId?: string;
             readonly givenName: string;
             /** Format: uuid */
             readonly id: string;
+            readonly isDeceased: boolean;
             readonly isPartial: boolean;
             /** @enum {string} */
             readonly lifecycle: "active" | "archived" | "deleted";
@@ -3026,6 +3039,8 @@ export interface components {
             readonly description?: string;
             readonly familyName?: string;
             readonly gender?: string;
+            /** Format: uuid */
+            readonly genderOptionId?: string;
             readonly givenName: string;
             /** Format: uuid */
             readonly id: string;
@@ -3073,6 +3088,7 @@ export interface components {
             readonly status: "ready" | "archived";
             readonly person: components["schemas"]["PersonProfileIdentity"];
             readonly dueInformation: components["schemas"]["PersonDueInformation"];
+            readonly genderOptions?: readonly components["schemas"]["PersonGenderOption"][];
             readonly summary?: components["schemas"]["PersonProfileSummary"];
         };
         readonly PersonRelationshipCount: {

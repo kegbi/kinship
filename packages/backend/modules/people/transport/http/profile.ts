@@ -203,6 +203,7 @@ export function createProfileRoutes(
     context.header("Cache-Control", "private, no-store");
     return context.json({
       dueInformation: result.dueInformation,
+      ...(result.genderOptions ? { genderOptions: result.genderOptions } : {}),
       person: withAvatarDescriptor(result.person),
       status: result.status,
       ...(includeSummary && result.summary ? { summary: result.summary } : {}),

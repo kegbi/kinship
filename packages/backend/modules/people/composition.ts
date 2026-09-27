@@ -41,6 +41,7 @@ import {
   personAvatarAuditFrom,
   type PersonAvatarImages,
   personCreatedAuditFrom,
+  type PersonGenderOptions,
   personLifecycleAuditFrom,
   profileFactAuditFrom,
   type ProfileFactWorkspaceBoundary,
@@ -65,6 +66,8 @@ export function personBoundary(): PostgresRelationshipPersonBoundary {
 export interface PeoplePorts {
   /** The files module's avatar uploads, which the avatar is stored with. */
   readonly avatarImages: PersonAvatarImages;
+  /** The workspace gender vocabulary an edited identity refers to. */
+  readonly genderOptions: PersonGenderOptions;
   /** Planning's publisher for the reminders a person's dates imply. */
   readonly importantDatePublisher: ImportantDatePublisher;
   /** The workspace vocabulary a profile fact is validated against. */
@@ -104,6 +107,7 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
       actors: shared.actors,
       audit: personLifecycleAuditFrom(shared.audit),
       clock: shared.clock,
+      genders: ports.genderOptions,
       repository: new PostgresPersonLifecycleRepository(),
       transaction: shared.peopleTransaction,
     }),

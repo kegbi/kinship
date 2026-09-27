@@ -56,7 +56,12 @@ export type HeroAction =
   | { readonly type: "edit-opened" }
   | { readonly type: "edit-cancelled" }
   | { readonly type: "edit-failed"; readonly detail: string }
-  | { readonly type: "edit-saved"; readonly person: PersonLifecycleIdentity }
+  | {
+    readonly type: "edit-saved";
+    readonly person: PersonLifecycleIdentity;
+    /** The name of the gender option the edit chose, when it chose one. */
+    readonly gender?: string | undefined;
+  }
   | { readonly type: "revision-changed"; readonly updatedAt: string }
   | { readonly type: "transition-started" }
   | { readonly type: "transition-failed"; readonly detail: string }
@@ -103,20 +108,42 @@ export function initialHeroState(
   };
 }
 
-/** The profile identity with the fields a lifecycle answer carries. */
+/**
+ * The profile identity with the fields a lifecycle answer carries. The answer
+ * names the gender option but not its name: an unchanged option keeps the
+ * name the profile read, and a new one takes `gender`, the name the editor
+ * chose it by (GAP-047).
+ */
 function merged(
   identity: HeroIdentity,
   person: PersonLifecycleIdentity,
+  gender?: string,
 ): HeroIdentity {
   const {
+    description: _description,
     familyName: _familyName,
+    gender: previousGender,
+    genderOptionId: previousOption,
     middleName: _middleName,
     nickname: _nickname,
     ...rest
   } = identity;
+  const genderName = person.genderOptionId === previousOption
+    ? previousGender
+    : person.genderOptionId === undefined
+    ? undefined
+    : gender;
   return {
     ...rest,
+    ...(person.description === undefined
+      ? {}
+      : { description: person.description }),
+    ...(genderName === undefined ? {} : { gender: genderName }),
+    ...(person.genderOptionId === undefined
+      ? {}
+      : { genderOptionId: person.genderOptionId }),
     givenName: person.givenName,
+    isDeceased: person.isDeceased,
     isPartial: person.isPartial,
     updatedAt: person.updatedAt,
     ...(person.familyName === undefined
@@ -151,7 +178,7 @@ export function heroReducer(state: HeroState, action: HeroAction): HeroState {
       return {
         ...state,
         editing: false,
-        identity: merged(state.identity, action.person),
+        identity: merged(state.identity, action.person, action.gender),
         status: "Person identity updated.",
         updatedAt: action.person.updatedAt,
       };

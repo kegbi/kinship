@@ -22,6 +22,7 @@ export type {
 export type {
   DeletePersonInput,
   EditPersonInput,
+  GenderOptionInspection,
   PersonLifecycleAction,
   PersonLifecycleRecord,
   PersonLifecycleState,
@@ -55,6 +56,7 @@ export type {
   ProfileFactAudit,
 } from "./ports/audit.ts";
 export type { PeopleActor, PeopleTransaction } from "./ports/context.ts";
+export type { PersonGenderOptions } from "./ports/gender_options.ts";
 export type {
   AvatarImageInput,
   PersonAvatarImages,

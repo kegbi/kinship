@@ -1,12 +1,13 @@
-import { sql } from "kysely";
+import { type RawBuilder, sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import {
   UNIQUE_CONFLICT,
   writeWithUniqueConflict,
 } from "../../../../platform/postgres/transactions.ts";
-import type {
-  PersonalizationEntry,
-  PersonalizationSection,
+import {
+  type PersonalizationEntry,
+  type PersonalizationSection,
+  PROFILE_MODULE_DEFAULTS,
 } from "../../domain/personalization_rules.ts";
 import type {
   PersonalizationRepository,
@@ -94,6 +95,52 @@ const VOCABULARIES: Partial<Record<PersonalizationSection, Vocabulary>> = {
     table: "relationship_types",
   },
 };
+
+/**
+ * The profile modules a workspace has no row for yet (GAP-047), as rows: the
+ * defaults every workspace starts from, each under an identifier derived from
+ * the workspace and the key, so a listed default can be changed by id and its
+ * first change writes the row under that same id. `updated_at` is the epoch
+ * until then, which is the revision a change of the default must name.
+ */
+function defaultProfileModules(workspaceId: string): RawBuilder<unknown> {
+  const defaults = sql.join(
+    PROFILE_MODULE_DEFAULTS.map((module, index) =>
+      sql`(${module.key}::text, ${module.name}::text, ${index + 1}::int)`
+    ),
+  );
+  return sql`
+    select overlay(overlay(md5(${`kinship.profile-module.v1:${workspaceId}:`}
+        || defaults.key) placing '4' from 13) placing '8' from 17)::uuid as id,
+      ${workspaceId}::uuid as workspace_id, defaults.key,
+      defaults.name, null::text as translation_key, true as is_active,
+      false as can_delete, defaults.sort_order,
+      timestamptz 'epoch' as updated_at
+    from (values ${defaults}) as defaults (key, name, sort_order)
+    where not exists (select 1 from crm.workspace_profile_modules stored
+      where stored.workspace_id = ${workspaceId}::uuid
+        and stored.key = defaults.key)`;
+}
+
+/** Where a section's entries are read from: its table, or for profile
+ * modules its rows together with the defaults it has no row for. */
+function vocabularySource(
+  section: PersonalizationSection,
+  vocabulary: Vocabulary,
+  workspaceId: string,
+) {
+  if (section !== "profile-modules") {
+    return sql.table(`crm.${vocabulary.table}`);
+  }
+  return sql`(
+    select stored.id, stored.workspace_id, stored.key, stored.name,
+      stored.translation_key, stored.is_active, stored.can_delete,
+      stored.sort_order, stored.updated_at
+    from crm.workspace_profile_modules stored
+    where stored.workspace_id = ${workspaceId}::uuid
+    union all ${defaultProfileModules(workspaceId)}
+  )`;
+}
 
 function profileModuleKey(name: string): string | undefined {
   const key = name.toLowerCase().replace(/[^a-z0-9]+/g, "-")
@@ -212,7 +259,9 @@ export class PostgresWorkspacePersonalization
         ? sql.raw("v.reverse_label")
         : sql.raw("null")
     }::text as "reverseLabel"
-      from ${sql.table(`crm.${vocabulary.table}`)} as v
+      from ${
+      vocabularySource(command.section, vocabulary, command.workspaceId)
+    } as v
       where v.workspace_id = ${command.workspaceId}::uuid
       order by ${sql.raw(orderExpression)}
     `.execute(databaseFromSession(command.transaction));
@@ -300,15 +349,20 @@ export class PostgresWorkspacePersonalization
         return { status: "invalid" };
       }
       if (moduleKey) {
+        // A default section with no row yet clashes like a stored one.
         const duplicateKey = await sql<{ readonly duplicate: boolean }>`
-          select exists(select 1 from crm.workspace_profile_modules
-            where workspace_id = ${command.workspaceId}::uuid
-              and key = ${moduleKey}) as duplicate
+          select exists(select 1 from ${
+          vocabularySource(command.section, vocabulary, command.workspaceId)
+        } as v
+            where v.workspace_id = ${command.workspaceId}::uuid
+              and v.key = ${moduleKey}) as duplicate
         `.execute(database);
         if (duplicateKey.rows[0]?.duplicate) return { status: "conflict" };
       }
       const duplicate = await sql<{ readonly duplicate: boolean }>`
-        select exists(select 1 from ${sql.table(`crm.${vocabulary.table}`)} v
+        select exists(select 1 from ${
+        vocabularySource(command.section, vocabulary, command.workspaceId)
+      } v
           where v.workspace_id = ${command.workspaceId}::uuid
             and lower(${sql.raw(vocabulary.name)}) = lower(${
         command.name ?? ""
@@ -373,6 +427,22 @@ export class PostgresWorkspacePersonalization
       return inspected.status === "ready"
         ? { entry: inspected.entry, status: "saved" }
         : inspected;
+    }
+    if (command.section === "profile-modules" && command.action === "update") {
+      // A default's first change writes its row, at the default's revision
+      // (the epoch) but created now, so the change below applies to it like
+      // to any other row.
+      await sql`
+        insert into crm.workspace_profile_modules (id, workspace_id, key, name,
+          translation_key, is_active, can_delete, sort_order, created_at,
+          updated_at)
+        select missing.id, missing.workspace_id, missing.key, missing.name,
+          missing.translation_key, missing.is_active, missing.can_delete,
+          missing.sort_order, now(), missing.updated_at
+        from (${defaultProfileModules(command.workspaceId)}) as missing
+        where missing.id = ${command.id}::uuid
+        on conflict do nothing
+      `.execute(database);
     }
     const locked = await sql<{ readonly id: string }>`
       select id::text from ${sql.table(`crm.${vocabulary.table}`)}

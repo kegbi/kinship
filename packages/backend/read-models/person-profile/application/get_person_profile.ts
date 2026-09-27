@@ -100,6 +100,8 @@ export interface PersonProfileIdentity {
   readonly description?: string;
   readonly familyName?: string;
   readonly gender?: string;
+  /** The workspace gender option the person is described with (GAP-047). */
+  readonly genderOptionId?: string;
   readonly givenName: string;
   readonly id: string;
   readonly isDeceased: boolean;
@@ -149,6 +151,17 @@ export interface PersonLifeEvent {
   readonly updatedAt: string;
 }
 
+/**
+ * One choice the identity editor offers from the workspace's gender
+ * vocabulary (GAP-047): every current option, and an archived one only while
+ * it is the person's own.
+ */
+export interface PersonGenderOption {
+  readonly archived: boolean;
+  readonly id: string;
+  readonly name: string;
+}
+
 /** A current choice from the workspace's life-event type vocabulary. */
 export interface PersonLifeEventType {
   readonly id: string;
@@ -158,12 +171,14 @@ export interface PersonLifeEventType {
 export type PersonProfileRepositoryResult =
   | {
     readonly dueInformation: PersonDueProjection;
+    readonly genderOptions?: readonly PersonGenderOption[];
     readonly person: PersonProfileIdentity;
     readonly status: "ready";
     readonly summary?: PersonProfileSummaryProjection;
   }
   | {
     readonly dueInformation: PersonDueProjection;
+    readonly genderOptions?: readonly PersonGenderOption[];
     readonly person: PersonProfileIdentity;
     readonly status: "archived";
     readonly summary?: PersonProfileSummaryProjection;
@@ -193,6 +208,7 @@ export interface PersonProfileRepository extends PersonTimelineRepository {
 export type GetPersonProfileResult =
   | {
     readonly dueInformation: PersonDueInformation;
+    readonly genderOptions?: readonly PersonGenderOption[];
     readonly person: PersonProfileIdentity;
     readonly status: "ready" | "archived";
     readonly summary?: PersonProfileSummary;
@@ -288,6 +304,9 @@ export function createPersonProfile(dependencies: {
       const due = dueInformation(result.dueInformation);
       return {
         dueInformation: due,
+        ...(result.genderOptions
+          ? { genderOptions: result.genderOptions }
+          : {}),
         person: {
           ...result.person,
           tagCount: tagsHidden ? 0 : result.person.tagCount,

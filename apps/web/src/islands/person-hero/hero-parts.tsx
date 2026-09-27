@@ -12,6 +12,7 @@
  */
 
 import type { Ref, RefObject, SubmitEvent } from "react";
+import type { PersonGenderOption } from "../../../../../packages/contracts/generated/auth-client.ts";
 import type { FieldError } from "react-hook-form";
 import type { z } from "zod";
 import {
@@ -26,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog.tsx";
 import { Input } from "@/components/ui/input.tsx";
+import { Textarea } from "@/components/ui/textarea.tsx";
 import { buttonVariants } from "@/components/ui/variants.ts";
 import {
   firstMeetingText,
@@ -162,8 +164,19 @@ export function PersonMenu(
 
 const NOT_RECORDED = "Not recorded";
 
-export function VitalStats(props: { readonly facts: HeroFacts }) {
+/**
+ * The vital stats. A vital whose section the workspace turned off is left
+ * out, and one that only links to such a section keeps its value without the
+ * link (GAP-047), so the hero never points at a section that is not there.
+ */
+export function VitalStats(
+  props: {
+    readonly facts: HeroFacts;
+    readonly hiddenSections: ReadonlySet<string>;
+  },
+) {
   const { facts } = props;
+  const hidden = props.hiddenSections;
   return (
     <dl className="person-vital-stats" data-person-vital-stats="">
       <div>
@@ -177,9 +190,13 @@ export function VitalStats(props: { readonly facts: HeroFacts }) {
       <div>
         <dt>Last contact</dt>
         <dd>
-          <a data-profile-last-contact="" href="?section=activities">
-            {facts.lastContact}
-          </a>
+          {hidden.has("activities")
+            ? <span data-profile-last-contact="">{facts.lastContact}</span>
+            : (
+              <a data-profile-last-contact="" href="?section=activities">
+                {facts.lastContact}
+              </a>
+            )}
         </dd>
       </div>
       <div>
@@ -200,25 +217,29 @@ export function VitalStats(props: { readonly facts: HeroFacts }) {
           </a>
         </dd>
       </div>
-      <div>
-        <dt>Work</dt>
-        <dd>
-          <a data-person-vital-value="work" href="?section=work">
-            {facts.work ?? NOT_RECORDED}
-          </a>
-        </dd>
-      </div>
-      <div>
-        <dt>First met</dt>
-        <dd>
-          <a
-            data-person-vital-value="first-meeting"
-            href="?section=first-meeting"
-          >
-            {firstMeetingText(facts) ?? NOT_RECORDED}
-          </a>
-        </dd>
-      </div>
+      {hidden.has("work") ? null : (
+        <div>
+          <dt>Work</dt>
+          <dd>
+            <a data-person-vital-value="work" href="?section=work">
+              {facts.work ?? NOT_RECORDED}
+            </a>
+          </dd>
+        </div>
+      )}
+      {hidden.has("first-meeting") ? null : (
+        <div>
+          <dt>First met</dt>
+          <dd>
+            <a
+              data-person-vital-value="first-meeting"
+              href="?section=first-meeting"
+            >
+              {firstMeetingText(facts) ?? NOT_RECORDED}
+            </a>
+          </dd>
+        </div>
+      )}
     </dl>
   );
 }
@@ -258,8 +279,11 @@ export type DeletionForm = ContractForm<DeletionValues, DeletionOutput>;
 /** The editor's fields for `identity`. */
 export function identityValues(identity: HeroIdentity): IdentityValues {
   return {
+    description: identity.description ?? "",
     familyName: identity.familyName ?? "",
+    genderOptionId: identity.genderOptionId ?? "",
     givenName: identity.givenName,
+    isDeceased: identity.isDeceased,
     isPartial: identity.isPartial,
     middleName: identity.middleName ?? "",
     nickname: identity.nickname ?? "",
@@ -288,6 +312,11 @@ const IDENTITY_FIELDS: readonly {
 
 export interface IdentityEditorProps {
   readonly identity: HeroIdentity;
+  /**
+   * The workspace's gender options (GAP-047): the current ones, and an
+   * archived one only while it is the person's own.
+   */
+  readonly genderOptions: readonly PersonGenderOption[];
   readonly open: boolean;
   readonly form: IdentityForm;
   readonly formRef: Ref<HTMLFormElement>;
@@ -296,9 +325,24 @@ export interface IdentityEditorProps {
 }
 
 export function IdentityEditor(
-  { form, formRef, identity, onCancel, onSubmit, open }: IdentityEditorProps,
+  {
+    form,
+    formRef,
+    genderOptions,
+    identity,
+    onCancel,
+    onSubmit,
+    open,
+  }: IdentityEditorProps,
 ) {
   const { errors } = form.formState;
+  const described = (name: "description" | "genderOptionId") =>
+    errors[name]?.message
+      ? {
+        "aria-describedby": `person-edit-${name}-error`,
+        "aria-invalid": true,
+      }
+      : {};
   return (
     <form
       aria-label="Edit person"
@@ -345,9 +389,46 @@ export function IdentityEditor(
           );
         })}
       </div>
+      <div className="form-grid">
+        <label>
+          Gender{" "}
+          <select
+            {...form.register("genderOptionId")}
+            {...described("genderOptionId")}
+          >
+            <option value="">Not set</option>
+            {genderOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.archived ? `${option.name} (archived)` : option.name}
+              </option>
+            ))}
+          </select>
+          <FieldMessage
+            error={errors.genderOptionId}
+            id="person-edit-genderOptionId-error"
+          />
+        </label>
+        <label>
+          Description{" "}
+          <Textarea
+            {...form.register("description")}
+            {...described("description")}
+            maxLength={2000}
+            rows={3}
+          />
+          <FieldMessage
+            error={errors.description}
+            id="person-edit-description-error"
+          />
+        </label>
+      </div>
       <label className="checkbox-row">
         <input {...form.register("isPartial")} type="checkbox" />{" "}
         This is a partial identity
+      </label>
+      <label className="checkbox-row">
+        <input {...form.register("isDeceased")} type="checkbox" />{" "}
+        This person has died
       </label>
       <div className="person-lifecycle-buttons">
         <Button type="submit">Save person</Button>

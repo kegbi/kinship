@@ -8,6 +8,7 @@ export type {
   GetPersonProfileResult,
   PersonDueInformation,
   PersonDueProjection,
+  PersonGenderOption,
   PersonLifeEvent,
   PersonLifeEventPrecision,
   PersonLifeEventType,

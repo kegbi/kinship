@@ -56,6 +56,9 @@ import {
 } from "../../../lib/unsaved-changes.ts";
 import { Quiet } from "../facts/fact-list.tsx";
 import {
+  DATE_REQUEST_EVENT,
+  type ImportantDateRequest,
+  setDeceasedDate,
   setFirstMeetingDate,
   setRailCount,
   setRailEmpty,
@@ -128,6 +131,8 @@ function publishDates(dates: readonly ImportantDate[], now: Date): void {
   setFirstMeetingDate(
     firstMeeting ? formatImportantDate(firstMeeting) : undefined,
   );
+  const deceased = dates.find((date) => date.kind === "deceased");
+  setDeceasedDate(deceased ? formatImportantDate(deceased) : undefined);
 }
 
 const STATE_ID = "important-dates-state";
@@ -219,14 +224,42 @@ export function ImportantDates(props: ImportantDatesProps) {
     },
   );
 
-  const open = (date: ImportantDate | undefined, opener: HTMLElement) => {
+  const open = (
+    date: ImportantDate | undefined,
+    opener: HTMLElement,
+    kind: DateKind,
+  ) => {
     const element = form.current;
-    if (!element || !requestRailEditorOpen(element, true, opener)) return;
+    if (!element || !requestRailEditorOpen(element, true, opener)) {
+      return false;
+    }
     element.reset();
     // The field takes focus inside the opening click: Firefox draws a script
     // focus ring only while it handles the keyboard input that asked for it.
-    flushSync(() => dispatch(date ? { date, type: "open" } : { type: "open" }));
+    flushSync(() =>
+      dispatch(
+        date ? { date, type: "open" } : { kind, type: "open" },
+      )
+    );
+    return true;
   };
+
+  // The hero marked the person deceased (GAP-047): the date of death is
+  // recorded here, through this block's own route — the one already saved is
+  // edited rather than a second one added.
+  // A request it cannot take — still loading, failed, or declined at the
+  // unsaved-changes prompt — is left unanswered, and the hero keeps focus.
+  useDocumentEvent<CustomEvent<Partial<ImportantDateRequest> | null>>(
+    DATE_REQUEST_EVENT,
+    (event) => {
+      if (event.detail?.kind !== "deceased") return;
+      if (state.status !== "ready" || state.archived) return;
+      const saved = state.dates.find((candidate) =>
+        candidate.kind === "deceased"
+      );
+      if (open(saved, root, "deceased")) event.detail.opened?.();
+    },
+  );
 
   const cancel = () => {
     form.current?.reset();
@@ -313,7 +346,7 @@ export function ImportantDates(props: ImportantDatesProps) {
       className="profile-rail-add"
       hidden={!ready || archived}
       id="important-date-add"
-      onClick={(event) => open(undefined, event.currentTarget)}
+      onClick={(event) => open(undefined, event.currentTarget, "birthday")}
       ref={addButton}
       type="button"
     >
@@ -353,7 +386,8 @@ export function ImportantDates(props: ImportantDatesProps) {
             {archived ? null : (
               <div className="important-date-actions">
                 <Button
-                  onClick={(event) => open(date, event.currentTarget)}
+                  onClick={(event) =>
+                    open(date, event.currentTarget, date.kind)}
                   type="button"
                   variant="outline"
                 >

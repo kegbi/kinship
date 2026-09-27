@@ -13,7 +13,11 @@
  */
 
 import type { ValidationErrors } from "../../../shared-kernel/result.ts";
-import { isInstant, optionalText } from "../../../shared-kernel/validation.ts";
+import {
+  isInstant,
+  optionalText,
+  uuid,
+} from "../../../shared-kernel/validation.ts";
 import { displayName } from "./person_name.ts";
 
 export type PersonLifecycleState = "active" | "archived" | "deleted";
@@ -21,11 +25,18 @@ export type PersonLifecycleAction = "archive" | "delete" | "edit" | "restore";
 /** The two actions that only move a person between active and archived. */
 export type PersonTransition = "archive" | "restore";
 
+/** The longest description a person may carry (GAP-047). */
+export const MAX_DESCRIPTION_LENGTH = 2_000;
+
 /** A person as the lifecycle rules read them. */
 export interface PersonLifecycleRecord {
+  readonly description?: string;
   readonly familyName?: string;
+  /** The workspace gender option the person is described with. */
+  readonly genderOptionId?: string;
   readonly givenName: string;
   readonly id: string;
+  readonly isDeceased: boolean;
   readonly isPartial: boolean;
   readonly lifecycle: PersonLifecycleState;
   readonly middleName?: string;
@@ -33,11 +44,21 @@ export interface PersonLifecycleRecord {
   readonly updatedAt: string;
 }
 
-/** The names an edit proposes, with the revision it was composed against. */
+/**
+ * The identity an edit proposes, with the revision it was composed against.
+ *
+ * The names are replaced whole, as they always were. The description, the
+ * gender option, and the deceased state (GAP-047) are kept when the edit
+ * leaves them out, so a caller that only knows names — a DAV sync — never
+ * erases them; empty text is the request to clear one.
+ */
 export interface EditPersonInput {
+  readonly description?: string;
   readonly expectedUpdatedAt: string;
   readonly familyName?: string;
+  readonly genderOptionId?: string;
   readonly givenName: string;
+  readonly isDeceased?: boolean;
   readonly isPartial: boolean;
   readonly middleName?: string;
   readonly nickname?: string;
@@ -85,9 +106,16 @@ export function normalizeEditPersonInput(
   const middleName = optionalText(input.middleName);
   const nickname = optionalText(input.nickname);
   return {
+    ...(input.description === undefined
+      ? {}
+      : { description: input.description.trim() }),
     expectedUpdatedAt: input.expectedUpdatedAt,
     ...(familyName ? { familyName } : {}),
+    ...(input.genderOptionId === undefined
+      ? {}
+      : { genderOptionId: input.genderOptionId.trim() }),
     givenName: input.givenName.trim(),
+    ...(input.isDeceased === undefined ? {} : { isDeceased: input.isDeceased }),
     isPartial: input.isPartial,
     ...(middleName ? { middleName } : {}),
     ...(nickname ? { nickname } : {}),
@@ -109,7 +137,67 @@ export function validateEditPersonInput(
   if (!isInstant(input.expectedUpdatedAt)) {
     return { expectedUpdatedAt: "Refresh this person before saving." };
   }
+  if ((input.description?.length ?? 0) > MAX_DESCRIPTION_LENGTH) {
+    return {
+      description: "Keep the description to 2,000 characters or fewer.",
+    };
+  }
+  if (input.genderOptionId && !uuid(input.genderOptionId)) {
+    return { genderOptionId: FOREIGN_GENDER_OPTION };
+  }
   return {};
+}
+
+const FOREIGN_GENDER_OPTION = "Choose a gender option from this workspace.";
+
+/** What the workspace said about the gender option an edit asks for. */
+export type GenderOptionInspection =
+  | { readonly status: "not-found" }
+  | { readonly archived: boolean; readonly status: "ready" };
+
+/** What an edit does to the person's gender option. */
+export type GenderChoice =
+  | { readonly status: "clear" | "inspect" | "keep" | "set" }
+  | {
+    readonly errors: ValidationErrors;
+    readonly status: "validation-error";
+  };
+
+/**
+ * Whether the gender option an edit names may be kept (GAP-047).
+ *
+ * Leaving the option out, or naming the one already saved, keeps it — even
+ * when an administrator has archived it since, because an archived option
+ * stays on the people who have it. A different option must belong to this
+ * workspace and still be current; `inspect` asks the caller to look it up and
+ * call again with what the workspace answered.
+ */
+export function genderChoice(
+  current: PersonLifecycleRecord,
+  requested: string | undefined,
+  inspection: GenderOptionInspection | undefined,
+): GenderChoice {
+  if (requested === undefined || requested === current.genderOptionId) {
+    return { status: "keep" };
+  }
+  if (requested === "") return { status: "clear" };
+  if (!inspection) return { status: "inspect" };
+  if (inspection.status === "not-found") {
+    return {
+      errors: { genderOptionId: FOREIGN_GENDER_OPTION },
+      status: "validation-error",
+    };
+  }
+  if (inspection.archived) {
+    return {
+      errors: {
+        genderOptionId:
+          "That gender option was archived. Choose a current option.",
+      },
+      status: "validation-error",
+    };
+  }
+  return { status: "set" };
 }
 
 /**

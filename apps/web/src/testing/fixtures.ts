@@ -9,6 +9,7 @@
 
 import type {
   PersonDueInformation,
+  PersonGenderOption,
   PersonProfileIdentity,
   PersonProfileSummary,
   ResolvedMemberPreferences,
@@ -51,6 +52,7 @@ export function personIdentity(
 /** What `GET /api/v1/people/:personId` answers. */
 export interface PersonProfileAnswer {
   readonly dueInformation: PersonDueInformation;
+  readonly genderOptions?: readonly PersonGenderOption[];
   readonly status: "ready" | "archived";
   readonly person: PersonProfileIdentity;
   readonly summary?: PersonProfileSummary;
@@ -73,6 +75,7 @@ export function personProfile(
   overrides: {
     readonly person?: Partial<PersonProfileIdentity>;
     readonly dueInformation?: Partial<PersonDueInformation>;
+    readonly genderOptions?: readonly PersonGenderOption[];
     readonly status?: "ready" | "archived";
     readonly summary?: PersonProfileSummary;
   } = {},
@@ -84,6 +87,9 @@ export function personProfile(
       status: "ready",
       ...overrides.dueInformation,
     },
+    ...(overrides.genderOptions
+      ? { genderOptions: overrides.genderOptions }
+      : {}),
     person: personIdentity(overrides.person),
     status: overrides.status ?? "ready",
     ...(overrides.summary ? { summary: overrides.summary } : {}),

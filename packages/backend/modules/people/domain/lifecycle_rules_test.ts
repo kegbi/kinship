@@ -3,6 +3,7 @@ import {
   deletionConfirmation,
   deletionDecision,
   editDecision,
+  genderChoice,
   normalizeEditPersonInput,
   type PersonLifecycleRecord,
   type PersonLifecycleState,
@@ -21,6 +22,7 @@ function person(
     familyName: "Lovelace",
     givenName: "Ada",
     id: "00000000-0000-4000-8000-000000000001",
+    isDeceased: false,
     isPartial: false,
     lifecycle,
     updatedAt: revision,
@@ -157,6 +159,7 @@ Deno.test("[GAP-015] deletion names the person it is about to delete", () => {
     deletionConfirmation({
       givenName: "",
       id: "00000000-0000-4000-8000-000000000002",
+      isDeceased: false,
       isPartial: true,
       lifecycle: "active",
       nickname: "Addy",
@@ -196,5 +199,120 @@ Deno.test("[GAP-015] deletion is confirmed by phrase, then by revision", () => {
     }),
     { status: "proceed" },
     "an archived person can still be deleted",
+  );
+});
+
+Deno.test("[GAP-047] an edit keeps what it leaves out and clears what it empties", () => {
+  assertEquals(
+    normalizeEditPersonInput({
+      expectedUpdatedAt: revision,
+      givenName: "Ada",
+      isPartial: false,
+    }),
+    { expectedUpdatedAt: revision, givenName: "Ada", isPartial: false },
+    "an edit naming no description, gender, or deceased state keeps them",
+  );
+  assertEquals(
+    normalizeEditPersonInput({
+      description: "  Mathematician  ",
+      expectedUpdatedAt: revision,
+      genderOptionId: " 00000000-0000-4000-8000-000000000301 ",
+      givenName: "Ada",
+      isDeceased: true,
+      isPartial: false,
+    }),
+    {
+      description: "Mathematician",
+      expectedUpdatedAt: revision,
+      genderOptionId: "00000000-0000-4000-8000-000000000301",
+      givenName: "Ada",
+      isDeceased: true,
+      isPartial: false,
+    },
+  );
+  assertEquals(
+    normalizeEditPersonInput({
+      description: "   ",
+      expectedUpdatedAt: revision,
+      genderOptionId: "",
+      givenName: "Ada",
+      isDeceased: false,
+      isPartial: false,
+    }),
+    {
+      description: "",
+      expectedUpdatedAt: revision,
+      genderOptionId: "",
+      givenName: "Ada",
+      isDeceased: false,
+      isPartial: false,
+    },
+    "empty text is kept as the request to clear the value",
+  );
+});
+
+Deno.test("[GAP-047] an edit bounds the description and names a real option", () => {
+  assertEquals(
+    validateEditPersonInput({
+      description: "x".repeat(2001),
+      expectedUpdatedAt: revision,
+      givenName: "Ada",
+      isPartial: false,
+    }),
+    { description: "Keep the description to 2,000 characters or fewer." },
+  );
+  assertEquals(
+    validateEditPersonInput({
+      expectedUpdatedAt: revision,
+      genderOptionId: "not-an-option",
+      givenName: "Ada",
+      isPartial: false,
+    }),
+    { genderOptionId: "Choose a gender option from this workspace." },
+  );
+  assertEquals(
+    validateEditPersonInput({
+      description: "x".repeat(2000),
+      expectedUpdatedAt: revision,
+      genderOptionId: "",
+      givenName: "Ada",
+      isPartial: false,
+    }),
+    {},
+  );
+});
+
+Deno.test("[GAP-047] a gender choice must be current unless it is unchanged", () => {
+  const current = person("active", {
+    genderOptionId: "00000000-0000-4000-8000-000000000301",
+  });
+  assertEquals(genderChoice(current, undefined, undefined), { status: "keep" });
+  assertEquals(genderChoice(current, "", undefined), { status: "clear" });
+  assertEquals(
+    genderChoice(current, "00000000-0000-4000-8000-000000000301", undefined),
+    { status: "keep" },
+    "keeping an option that has since been archived is allowed",
+  );
+  const requested = "00000000-0000-4000-8000-000000000302";
+  assertEquals(genderChoice(current, requested, undefined), {
+    status: "inspect",
+  });
+  assertEquals(genderChoice(current, requested, { status: "not-found" }), {
+    errors: { genderOptionId: "Choose a gender option from this workspace." },
+    status: "validation-error",
+  });
+  assertEquals(
+    genderChoice(current, requested, { archived: true, status: "ready" }),
+    {
+      errors: {
+        genderOptionId:
+          "That gender option was archived. Choose a current option.",
+      },
+      status: "validation-error",
+    },
+  );
+  assertEquals(
+    genderChoice(current, requested, { archived: false, status: "ready" }),
+    { status: "set" },
   );
 });

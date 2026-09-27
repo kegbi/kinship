@@ -826,6 +826,7 @@ export function createConfiguredApiApp(
   });
   const people = composePeople(shared, {
     avatarImages: avatarImages(files.files),
+    genderOptions: configuration.genders,
     importantDatePublisher: personDateReminderPublisher(
       shared,
       configuration.reminderDelivery,

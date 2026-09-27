@@ -121,6 +121,9 @@ export function withAvatarDescriptor<
 export function lifecycleIdentity(person: PersonLifecycleRecord) {
   return {
     ...identity(person),
+    ...(person.description ? { description: person.description } : {}),
+    ...(person.genderOptionId ? { genderOptionId: person.genderOptionId } : {}),
+    isDeceased: person.isDeceased,
     lifecycle: person.lifecycle,
     updatedAt: person.updatedAt,
   };

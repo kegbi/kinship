@@ -79,6 +79,12 @@ export const personHeroMount = (
       archived={props.archived}
       dueInformation={profile.dueInformation}
       facts={facts}
+      genderOptions={profile.genderOptions ?? []}
+      hiddenSections={new Set(
+        profile.person.profileSections?.flatMap((section) =>
+          section.status === "hidden" ? [section.id] : []
+        ),
+      )}
       identity={profile.person}
       personId={props.personId}
       preferences={props.preferences}

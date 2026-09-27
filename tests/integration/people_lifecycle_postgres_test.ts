@@ -24,6 +24,7 @@ import { PostgresPeopleTransaction } from "../../packages/backend/modules/people
 import { PostgresPersonLifecycleRepository } from "../../packages/backend/modules/people/adapters/postgres/person_lifecycle_repository.ts";
 import { PostgresRelationshipPersonBoundary } from "../../packages/backend/modules/people/adapters/postgres/relationship_person_boundary.ts";
 import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
+import { PostgresGenderOptionBoundary } from "../../packages/backend/modules/workspaces/adapters/postgres/gender_option_boundary.ts";
 import { PostgresRelationshipWorkspaceBoundary } from "../../packages/backend/modules/workspaces/adapters/postgres/relationship_workspace_boundary.ts";
 import { PostgresRelationshipRepository } from "../../packages/backend/modules/relationships/adapters/postgres/relationship_repository.ts";
 import { PostgresPersonDateReminderPublisher } from "../../packages/backend/modules/planning/adapters/postgres/person_date_reminders.ts";
@@ -34,6 +35,7 @@ import {
   createPerson,
   createStaleActorFixture,
   getPerson,
+  importantDateRequest,
   people,
   peopleConnection,
   profileFacts,
@@ -305,6 +307,7 @@ Deno.test({
       actors,
       audit: personLifecycleAuditFrom(new PostgresAuditEventRecorder()),
       clock: { now: () => fixedClock },
+      genders: new PostgresGenderOptionBoundary(),
       repository: new PostgresPersonLifecycleRepository(),
       transaction: new PostgresPeopleTransaction(peopleConnection.db),
     });
@@ -580,6 +583,7 @@ Deno.test({
       actors,
       audit: personLifecycleAuditFrom(new PostgresAuditEventRecorder()),
       clock: { now: () => new Date() },
+      genders: new PostgresGenderOptionBoundary(),
       repository: new PostgresPersonLifecycleRepository(),
       transaction: new PostgresPeopleTransaction(peopleConnection.db),
     });
@@ -702,6 +706,226 @@ Deno.test({
     assert(
       unchanged?.given_name === actor.personName,
       "a revoked member renamed the person",
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "[GAP-047] PostgreSQL identity edits save the description, gender, and deceased state within the workspace",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const owner = await register(
+      `identity-owner-${crypto.randomUUID()}@example.test`,
+      "Identity circle",
+    );
+    const foreign = await register(
+      `identity-foreign-${crypto.randomUUID()}@example.test`,
+      "Foreign identity circle",
+    );
+    const created = await createPerson(owner, {
+      givenName: "Ada",
+      isPartial: false,
+    });
+    const personId = (await created.json() as {
+      readonly person: { readonly id: string };
+    }).person.id;
+    const option = async (workspaceId: string, name: string, order: number) =>
+      (await sql<{ readonly id: string }[]>`
+        insert into crm.gender_options (workspace_id, name, sort_order)
+        values (${workspaceId}, ${name}, ${order}) returning id::text
+      `)[0]!.id;
+    const woman = await option(owner.workspaceId, "Woman", 1);
+    const other = await option(owner.workspaceId, "Another option", 2);
+    const retired = await option(owner.workspaceId, "Retired option", 3);
+    await sql`update crm.gender_options set is_archived = true
+      where id = ${retired}`;
+    const foreignOption = await option(foreign.workspaceId, "Elsewhere", 1);
+    const revision = async () =>
+      (await (await getPerson(owner, personId)).json() as {
+        readonly person: { readonly updatedAt: string };
+      }).person.updatedAt;
+    const edit = async (
+      fixture: typeof owner,
+      body: Readonly<Record<string, unknown>>,
+      expectedUpdatedAt?: string,
+    ) =>
+      await configured.app.request(
+        `http://localhost/api/v1/people/${personId}`,
+        {
+          body: JSON.stringify({
+            expectedUpdatedAt: expectedUpdatedAt ?? await revision(),
+            givenName: "Ada",
+            isPartial: false,
+            ...body,
+          }),
+          headers: {
+            "content-type": "application/json",
+            cookie: fixture.cookie,
+            origin: "http://localhost",
+            "X-Workspace-Id": fixture.workspaceId,
+          },
+          method: "PATCH",
+        },
+      );
+    const stored = async () =>
+      (await sql<{
+        readonly description: string | null;
+        readonly gender_option_id: string | null;
+        readonly is_deceased: boolean;
+      }[]>`select description, gender_option_id::text, is_deceased
+        from crm.people where id = ${personId}`)[0]!;
+
+    const before = await revision();
+    const saved = await edit(owner, {
+      description: "  Wrote the first program  ",
+      genderOptionId: woman,
+      isDeceased: true,
+    }, before);
+    const savedBody = await saved.json() as {
+      readonly person: {
+        readonly description?: string;
+        readonly genderOptionId?: string;
+        readonly isDeceased: boolean;
+      };
+    };
+    assert(
+      saved.status === 200 &&
+        savedBody.person.description === "Wrote the first program" &&
+        savedBody.person.genderOptionId === woman &&
+        savedBody.person.isDeceased,
+      "the wider identity is saved and answered",
+    );
+    const row = await stored();
+    assert(
+      row.description === "Wrote the first program" &&
+        row.gender_option_id === woman && row.is_deceased,
+      "the person row holds the description, option, and deceased state",
+    );
+    const [audit] = await sql<{ readonly count: number }[]>`
+      select count(*)::int as count from crm.audit_events
+      where workspace_id = ${owner.workspaceId}
+        and action = 'people.person-updated' and subject_id = ${personId}`;
+    assert(audit?.count === 1, "the edit is audited under its existing name");
+    assert(
+      (await edit(owner, { description: "Late" }, before)).status === 409,
+      "an edit composed against the old revision is refused",
+    );
+
+    const profile = await (await getPerson(owner, personId)).json() as {
+      readonly genderOptions: readonly {
+        readonly archived: boolean;
+        readonly id: string;
+      }[];
+      readonly person: {
+        readonly gender?: string;
+        readonly genderOptionId?: string;
+        readonly isDeceased: boolean;
+      };
+    };
+    assert(
+      profile.person.gender === "Woman" &&
+        profile.person.genderOptionId === woman && profile.person.isDeceased,
+      "the profile reads the saved identity back",
+    );
+    assert(
+      profile.genderOptions.map((choice) => choice.id).join() ===
+        `${woman},${other}`,
+      "the editor is offered the current options, in order, and no archived one",
+    );
+
+    for (const genderOptionId of [foreignOption, retired]) {
+      const refused = await edit(owner, { genderOptionId });
+      const problem = await refused.json() as {
+        readonly errors?: Readonly<Record<string, string>>;
+      };
+      assert(
+        refused.status === 400 && problem.errors?.genderOptionId !== undefined,
+        "a foreign or archived option is refused with a field error",
+      );
+    }
+    assert((await stored()).gender_option_id === woman, "nothing changed");
+
+    await sql`update crm.gender_options set is_archived = true
+      where id = ${woman}`;
+    assert(
+      (await edit(owner, { genderOptionId: woman, givenName: "Augusta" }))
+        .status === 200,
+      "an option archived after it was chosen can be kept",
+    );
+    const keptProfile = await (await getPerson(owner, personId)).json() as {
+      readonly genderOptions: readonly {
+        readonly archived: boolean;
+        readonly id: string;
+      }[];
+    };
+    assert(
+      keptProfile.genderOptions.some((choice) =>
+        choice.id === woman && choice.archived
+      ),
+      "the person's own archived option stays offered so it can be kept",
+    );
+
+    // More current options than the editor lists: the person's own, sorted
+    // past the cap, is still offered, once, so no edit clears it silently.
+    await sql`update crm.gender_options set is_archived = false
+      where id = ${woman}`;
+    await sql`update crm.gender_options set sort_order = 1000
+      where id = ${woman}`;
+    await sql`insert into crm.gender_options (workspace_id, name, sort_order)
+      select ${owner.workspaceId}, 'Filler ' || n, n
+      from generate_series(1, 101) n`;
+    const capped = await (await getPerson(owner, personId)).json() as {
+      readonly genderOptions: readonly { readonly id: string }[];
+    };
+    assert(
+      capped.genderOptions.filter((choice) => choice.id === woman).length ===
+        1,
+      "the person's own current option past the cap is offered exactly once",
+    );
+
+    assert((await edit(owner, {})).status === 200, "a names-only edit saves");
+    const kept = await stored();
+    assert(
+      kept.description === "Wrote the first program" &&
+        kept.gender_option_id === woman && kept.is_deceased,
+      "fields an edit leaves out are kept",
+    );
+    const deceasedDate = await importantDateRequest(owner, personId, "POST", {
+      day: 27,
+      isAgeBased: false,
+      isYearApproximate: false,
+      kind: "deceased",
+      month: 11,
+      precision: "month_day",
+    });
+    assert(
+      deceasedDate.status === 201,
+      "a date of death with an unknown year is recorded through the dates route",
+    );
+    assert(
+      (await edit(owner, {
+        description: "",
+        genderOptionId: "",
+        isDeceased: false,
+      })).status === 200,
+      "empty text and false clear the wider identity",
+    );
+    const cleared = await stored();
+    const [dates] = await sql<{ readonly count: number }[]>`
+      select count(*)::int as count from crm.person_dates
+      where person_id = ${personId} and kind = 'deceased'`;
+    assert(
+      cleared.description === null && cleared.gender_option_id === null &&
+        !cleared.is_deceased && dates?.count === 1,
+      "clearing deceased leaves the recorded date of death in place",
+    );
+
+    const concealed = await edit(foreign, { description: "Foreign" });
+    assert(
+      concealed.status === 404 && (await stored()).description === null,
+      "another workspace cannot edit this person",
     );
   },
 });

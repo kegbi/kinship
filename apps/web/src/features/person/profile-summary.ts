@@ -179,6 +179,7 @@ export type HeroFactChange =
   | {
     readonly slot:
       | "birthday"
+      | "deceased"
       | "first-meeting-date"
       | "first-meeting-place"
       | "work";
@@ -192,6 +193,8 @@ export type HeroFactChange =
 
 export interface HeroFacts {
   readonly birthday?: string;
+  /** The date of death the important dates hold (GAP-047). */
+  readonly deceased?: string;
   readonly work?: string;
   readonly firstMeetingDate?: string;
   readonly firstMeetingPlace?: string;
@@ -204,12 +207,14 @@ export interface HeroFacts {
 
 type OptionalFact =
   | "birthday"
+  | "deceased"
   | "firstMeetingDate"
   | "firstMeetingPlace"
   | "work";
 
 const OPTIONAL_SLOTS = {
   birthday: "birthday",
+  deceased: "deceased",
   "first-meeting-date": "firstMeetingDate",
   "first-meeting-place": "firstMeetingPlace",
   work: "work",
@@ -289,6 +294,44 @@ export function setVitalStat(
   text: string | undefined,
 ): void {
   publish<HeroFactChange>(HERO_FACTS_EVENT, { slot, text });
+}
+
+/** The date of death the hero shows beside the deceased state (GAP-047). */
+export function setDeceasedDate(text: string | undefined): void {
+  publish<HeroFactChange>(HERO_FACTS_EVENT, { slot: "deceased", text });
+}
+
+/**
+ * The document event the hero sends, with `{ kind, opened }`, to have the
+ * important dates open their editor on that kind of date (GAP-047): the date
+ * of death, once a member marks the person deceased. The date is written
+ * through the important dates' own route, never the hero's. A listener that
+ * opened its editor, and so took focus, calls `opened`.
+ */
+export const DATE_REQUEST_EVENT = "person-important-date-requested";
+
+/** What a date request carries. */
+export interface ImportantDateRequest {
+  readonly kind: "deceased";
+  /** Called by the listener that opened its editor for the request. */
+  readonly opened: () => void;
+}
+
+/**
+ * Asks the important dates to record a date of death. Answers whether an
+ * editor opened for it — false while the dates are loading or failed, or when
+ * the member declined to discard another editor's draft — so the caller can
+ * keep focus where it belongs.
+ */
+export function requestImportantDate(kind: "deceased"): boolean {
+  let opened = false;
+  publish<ImportantDateRequest>(DATE_REQUEST_EVENT, {
+    kind,
+    opened: () => {
+      opened = true;
+    },
+  });
+  return opened;
 }
 
 /** The first meeting's date, which the vital prefers to its place. */

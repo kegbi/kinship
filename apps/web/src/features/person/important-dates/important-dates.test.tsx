@@ -14,6 +14,7 @@ import type { ImportantDate } from "../../../../../../packages/contracts/generat
 import { buttonVariants } from "@/components/ui/variants.ts";
 import { expectNoAxeViolations } from "../../../testing/a11y.ts";
 import {
+  deferred,
   jsonResponse,
   problemResponse,
   stubApi,
@@ -30,6 +31,7 @@ import {
   type CapturedProfileSummary,
   captureProfileSummary,
 } from "../profile-summary.test-helper.ts";
+import { requestImportantDate } from "../profile-summary.ts";
 import {
   IMPORTANT_DATES_ISLAND,
   mountImportantDates,
@@ -815,5 +817,107 @@ describe("PEOPLE-005 important-date island", () => {
     );
     expect(day.hasAttribute("aria-invalid")).toBe(false);
     expect(form().hidden).toBe(false);
+  });
+});
+
+describe("GAP-047 the date of death", () => {
+  it("publishes the date of death to the hero", async () => {
+    shell();
+    stubApi({
+      [listRoute]: listed([
+        date({ day: 27, kind: "deceased", month: 11, precision: "month_day" }),
+      ]),
+    });
+    await mount();
+    expect(summary.vital("deceased")).toBe("November 27 (year unknown)");
+  });
+
+  it("opens a date-of-death editor when the hero asks for one", async () => {
+    shell();
+    stubApi({ [listRoute]: listed([]) });
+    await mount();
+    let opened = false;
+    act(() => {
+      opened = requestImportantDate("deceased");
+    });
+    expect(opened).toBe(true);
+    expect(form().hidden).toBe(false);
+    expect(within(form()).getByLabelText<HTMLSelectElement>("Date type").value)
+      .toBe("deceased");
+    expect(form().contains(document.activeElement)).toBe(true);
+  });
+
+  it("edits the date of death already recorded instead of adding another", async () => {
+    shell();
+    stubApi({
+      [listRoute]: listed([
+        date({ day: 27, kind: "deceased", month: 11, precision: "month_day" }),
+      ]),
+    });
+    await mount();
+    act(() => requestImportantDate("deceased"));
+    expect(form().hidden).toBe(false);
+    expect(
+      within(form()).getByLabelText<HTMLInputElement>("Day").value,
+    ).toBe("27");
+  });
+
+  it("ignores a request for any other kind of date", async () => {
+    shell();
+    stubApi({ [listRoute]: listed([]) });
+    await mount();
+    act(() => {
+      document.dispatchEvent(
+        new CustomEvent("person-important-date-requested", {
+          detail: { kind: "birthday" },
+        }),
+      );
+      document.dispatchEvent(
+        new CustomEvent("person-important-date-requested"),
+      );
+    });
+    expect(form().hidden).toBe(true);
+  });
+
+  it("reports a request it could not take: loading, failed, or declined", async () => {
+    shell();
+    const held = deferred<Response>();
+    stubApi({ [listRoute]: held.promise });
+    const mounting = mount();
+    expect(requestImportantDate("deceased")).toBe(false);
+    held.resolve(problemResponse(503, { detail: "Dates unavailable." }));
+    await mounting;
+    let opened = true;
+    act(() => {
+      opened = requestImportantDate("deceased");
+    });
+    expect(opened).toBe(false);
+    expect(form().hidden).toBe(true);
+  });
+
+  it("reports a request declined at the unsaved-changes prompt", async () => {
+    shell();
+    stubApi({ [listRoute]: listed([]) });
+    await mount();
+    discardRequests(() => true);
+    const foreign = foreignEditor();
+    registerRailEditors([foreign], () => undefined);
+    fireEvent.input(foreign.querySelector("input")!, {
+      target: { value: "Foreign draft" },
+    });
+    let opened = true;
+    act(() => {
+      opened = requestImportantDate("deceased");
+    });
+    expect(opened).toBe(false);
+    expect(form().hidden).toBe(true);
+  });
+
+  it("ignores the request while the person is archived", async () => {
+    shell();
+    stubApi({ [listRoute]: listed([], "archived") });
+    await mount(true);
+    act(() => requestImportantDate("deceased"));
+    expect(form().hidden).toBe(true);
   });
 });

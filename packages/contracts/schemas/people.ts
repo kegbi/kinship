@@ -459,9 +459,12 @@ export const personDeleted = z.strictObject({
 }).meta({ id: "PersonDeleted" });
 
 export const personLifecycleIdentity = z.strictObject({
+  description: z.string().optional(),
   familyName: z.string().optional(),
+  genderOptionId: z.uuid().optional(),
   givenName: z.string(),
   id: z.uuid(),
+  isDeceased: z.boolean(),
   isPartial: z.boolean(),
   lifecycle: z.enum(["active", "archived", "deleted"]),
   middleName: z.string().optional(),
@@ -486,10 +489,18 @@ export const personDueInformation = z.strictObject({
   stayInTouchAt: z.iso.datetime({ offset: true }).optional(),
 }).meta({ id: "PersonDueInformation" });
 
+/**
+ * An identity edit. The names are replaced whole; the description, gender
+ * option, and deceased state (GAP-047) are kept when left out, and empty
+ * text clears the description or the gender option.
+ */
 export const personEditInput = z.strictObject({
+  description: z.string().trim().max(2000).optional(),
   expectedUpdatedAt: z.iso.datetime({ offset: true }),
   familyName: z.string().trim().max(200).optional(),
+  genderOptionId: z.union([z.uuid(), z.literal("")]).optional(),
   givenName: z.string().trim().max(200),
+  isDeceased: z.boolean().optional(),
   isPartial: z.boolean(),
   middleName: z.string().trim().max(200).optional(),
   nickname: z.string().trim().max(200).optional(),
@@ -614,6 +625,7 @@ export const personProfileIdentity = z.strictObject({
   description: z.string().optional(),
   familyName: z.string().optional(),
   gender: z.string().optional(),
+  genderOptionId: z.uuid().optional(),
   givenName: z.string(),
   id: z.uuid(),
   isDeceased: z.boolean(),
@@ -658,10 +670,22 @@ export const personProfileSummary = z.strictObject({
   stayInTouchAt: z.iso.datetime({ offset: true }).optional(),
 }).meta({ id: "PersonProfileSummary" });
 
+/**
+ * One choice from the workspace's gender vocabulary (GAP-047). An archived
+ * option is listed only while it is the person's own, so it can be kept.
+ */
+export const personGenderOption = z.strictObject({
+  archived: z.boolean(),
+  id: z.uuid(),
+  name: z.string(),
+}).meta({ id: "PersonGenderOption" });
+
 export const personReady = z.strictObject({
   status: z.enum(["ready", "archived"]),
   person: personProfileIdentity,
   dueInformation: personDueInformation,
+  /** The options the identity editor offers, current ones first. */
+  genderOptions: z.array(personGenderOption).max(101).optional(),
   summary: personProfileSummary.optional(),
 }).meta({ id: "PersonReady" });
 

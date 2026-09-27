@@ -19,6 +19,7 @@ import type {
   PersonDeletionImpact,
   PersonDueInformation,
   PersonEditInput,
+  PersonGenderOption,
   PersonIdentity,
   PersonInput,
   PersonLifecycleIdentity,
@@ -105,6 +106,7 @@ export function getPerson(
   ApiResult<
     {
       readonly dueInformation: PersonDueInformation;
+      readonly genderOptions?: readonly PersonGenderOption[];
       readonly status: "ready" | "archived";
       readonly person: PersonProfileIdentity;
       readonly summary?: PersonProfileSummary;

@@ -2,7 +2,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { personIdentity, profileSummary } from "../../testing/fixtures.ts";
 import {
+  DATE_REQUEST_EVENT,
   firstMeetingText,
+  HERO_FACTS_EVENT,
   type HeroFacts,
   heroFactsFromProfile,
   heroFactsReducer,
@@ -10,6 +12,8 @@ import {
   railCountText,
   railSummaryFromProfile,
   railSummaryReducer,
+  requestImportantDate,
+  setDeceasedDate,
   setRailCount,
   summaryStore,
   tagPreview,
@@ -161,5 +165,39 @@ describe("GAP-029 summary store", () => {
     store.stop();
     setRailCount("work", 5);
     expect(store.get().work?.count).toBe(2);
+  });
+});
+
+describe("GAP-047 the date of death", () => {
+  it("folds the date of death the important dates publish, and clears it", () => {
+    const facts = heroFactsFromProfile(
+      person,
+      { detail: "", openTaskCount: 0, status: "ready" },
+      false,
+      (instant) => instant,
+    );
+    const store = summaryStore(HERO_FACTS_EVENT, heroFactsReducer, facts);
+    setDeceasedDate("27 November");
+    expect(store.get().deceased).toBe("27 November");
+    setDeceasedDate(undefined);
+    expect(store.get()).not.toHaveProperty("deceased");
+    store.stop();
+  });
+
+  it("asks the important dates to record a date of death", () => {
+    const listener = vi.fn();
+    document.addEventListener(DATE_REQUEST_EVENT, listener);
+    expect(requestImportantDate("deceased")).toBe(false);
+    expect(listener).toHaveBeenCalledOnce();
+    expect((listener.mock.calls[0]![0] as CustomEvent).detail).toMatchObject({
+      kind: "deceased",
+    });
+    document.removeEventListener(DATE_REQUEST_EVENT, listener);
+    // A listener that opens an editor says so, and the request reports it.
+    const opener = (event: Event) =>
+      (event as CustomEvent<{ readonly opened: () => void }>).detail.opened();
+    document.addEventListener(DATE_REQUEST_EVENT, opener);
+    expect(requestImportantDate("deceased")).toBe(true);
+    document.removeEventListener(DATE_REQUEST_EVENT, opener);
   });
 });

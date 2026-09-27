@@ -17859,6 +17859,10 @@
       "PersonEditInput": {
         "type": "object",
         "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
           "expectedUpdatedAt": {
             "type": "string",
             "format": "date-time"
@@ -17867,9 +17871,23 @@
             "type": "string",
             "maxLength": 200
           },
+          "genderOptionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "const": ""
+              }
+            ]
+          },
           "givenName": {
             "type": "string",
             "maxLength": 200
+          },
+          "isDeceased": {
+            "type": "boolean"
           },
           "isPartial": {
             "type": "boolean"
@@ -17981,6 +17999,27 @@
         "required": [
           "files",
           "status"
+        ],
+        "additionalProperties": false
+      },
+      "PersonGenderOption": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "archived",
+          "id",
+          "name"
         ],
         "additionalProperties": false
       },
@@ -18332,8 +18371,15 @@
       "PersonLifecycleIdentity": {
         "type": "object",
         "properties": {
+          "description": {
+            "type": "string"
+          },
           "familyName": {
             "type": "string"
+          },
+          "genderOptionId": {
+            "type": "string",
+            "format": "uuid"
           },
           "givenName": {
             "type": "string"
@@ -18341,6 +18387,9 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "isDeceased": {
+            "type": "boolean"
           },
           "isPartial": {
             "type": "boolean"
@@ -18367,6 +18416,7 @@
         "required": [
           "givenName",
           "id",
+          "isDeceased",
           "isPartial",
           "lifecycle",
           "updatedAt"
@@ -18415,6 +18465,10 @@
           },
           "gender": {
             "type": "string"
+          },
+          "genderOptionId": {
+            "type": "string",
+            "format": "uuid"
           },
           "givenName": {
             "type": "string"
@@ -18612,6 +18666,13 @@
           },
           "dueInformation": {
             "$ref": "#/components/schemas/PersonDueInformation"
+          },
+          "genderOptions": {
+            "maxItems": 101,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonGenderOption"
+            }
           },
           "summary": {
             "$ref": "#/components/schemas/PersonProfileSummary"

@@ -23,6 +23,7 @@ import {
   deletionDecision,
   editDecision,
   type EditPersonInput,
+  genderChoice,
   normalizeEditPersonInput,
   type PersonLifecycleAction,
   type PersonLifecycleRecord,
@@ -33,6 +34,7 @@ import {
   validateEditPersonInput,
 } from "../domain/lifecycle_rules.ts";
 import type { PersonLifecycleAudit } from "../ports/audit.ts";
+import type { PersonGenderOptions } from "../ports/gender_options.ts";
 import type {
   PeopleActor,
   PeopleTransaction,
@@ -55,6 +57,8 @@ export interface PersonLifecycleDependencies {
   readonly actors: ActorRevalidation;
   readonly audit: PersonLifecycleAudit;
   readonly clock: Clock;
+  /** The workspace gender vocabulary an edited identity refers to. */
+  readonly genders: PersonGenderOptions;
   readonly repository: PersonLifecycleRepository;
   readonly transaction: PeopleTransactionRunner;
 }
@@ -177,6 +181,19 @@ export function createPersonLifecycle(
     if (locked.status !== "ready") return failure(locked);
     const decision = editDecision(locked.person, input.expectedUpdatedAt);
     if (decision.status !== "proceed") return { status: decision.status };
+    let gender = genderChoice(locked.person, input.genderOptionId, undefined);
+    if (gender.status === "inspect") {
+      gender = genderChoice(
+        locked.person,
+        input.genderOptionId,
+        await dependencies.genders.inspect({
+          genderOptionId: input.genderOptionId!,
+          transaction,
+          workspaceId: actor.workspaceId,
+        }),
+      );
+    }
+    if (gender.status === "validation-error") return gender;
     const { expectedUpdatedAt, ...identity } = input;
     const person = await change(
       actor,

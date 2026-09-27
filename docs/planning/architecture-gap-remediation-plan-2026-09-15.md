@@ -1800,13 +1800,44 @@ require a synchronized schema v8 and are called out explicitly.
     - Gates: fmt:check, lint, check, check:architecture (14), contracts:check,
       unit, integration, and build.
 
-- [ ] **GAP-047 — Identity editing breadth and section visibility preferences.**
+- [x] **GAP-047 — Identity editing breadth and section visibility preferences.**
       M. Depends: 028. Flow extends `PEOPLE-005`.
   - Scope: edit description, gender, deceased/date, nickname, and other read
     view identity states per the API contract; `workspace_profile_modules`
     drives which sections render (registry visibility key) with a settings
     surface under personalization; dead section-nav links removed.
   - Verify: unit, integration, E2E.
+  - Delivered 2026-09-27: this extends `PEOPLE-004`, which owns the hero
+    identity editor, with alternate outcomes added to `PEOPLE-005`,
+    `WORKSPACE-003`, and `PEOPLE-003`. No schema change.
+    - The identity PATCH now also takes description, gender option, and
+      deceased. Fields left out keep their values, so DAV sync never erases
+      them. A new gender choice must be current and in the workspace. An
+      unchanged archived choice is kept. The options come through a `workspaces`
+      boundary port.
+    - Marking a person deceased hands off to the important-dates editor for the
+      date of death, which writes through the dates route only. Clearing
+      deceased keeps the date.
+    - `workspace_profile_modules` controls which of 13 switchable person
+      sections render, from the existing
+      `/app/settings/personalization?section=profile-modules` section. Defaults
+      resolve without rows, and the first change writes the row. Core sections
+      cannot be deleted. Reordering is stored for the settings list, and the
+      person workspace keeps its rail order.
+    - Hidden sections are neither drawn nor mounted, and the section nav comes
+      from a pure `navigableSections`, so no link is dead. A deep link to a
+      hidden section shows a quiet notice.
+    - Evidence: integration cases for foreign or archived options, a stale
+      revision, omitted fields, the deceased date, cross-workspace (404) and
+      member (403) negatives, default rows, a clash with a default name, and
+      more than 100 options. The `identity.PEOPLE-004` spec with the person,
+      personalization, and life-event specs passed 36/36 on Chromium and WebKit
+      before the review amendment.
+    - Still owed: the amendment's browser changes (the omitted gender field and
+      focus fallbacks) are unit-covered, and E2E must rerun once local Docker
+      can pull base images again.
+    - Gates: fmt:check, lint, check, check:architecture (14), contracts:check,
+      unit, integration, and build.
 
 - [ ] **GAP-048 — Cross-entity search.** M-L. Depends: 022. Flow `SEARCH-001`.
   - Scope: `search` read model over people, notes, activities, journal posts,

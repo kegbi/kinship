@@ -1,4 +1,5 @@
 import { PERSON_SECTIONS } from "../apps/web/src/features/person/sections.ts";
+import { PROFILE_MODULE_DEFAULTS } from "../packages/backend/modules/workspaces/public.ts";
 import { problemBody } from "../packages/http-kit/problem.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -948,5 +949,17 @@ Deno.test("[REL-015] settings profile reserves alerts for validation", async () 
     lifecycleBlockers !== undefined &&
       !/\brole=["']alert["']/.test(lifecycleBlockers),
     "standing lifecycle blockers are not an alert",
+  );
+});
+
+Deno.test("[GAP-047] personalization lists exactly the sections the workspace can switch off", () => {
+  const switchable = PERSON_SECTIONS.flatMap((section) =>
+    section.visibilityKey ? [[section.visibilityKey, section.title]] : []
+  );
+  assert(
+    JSON.stringify(
+      PROFILE_MODULE_DEFAULTS.map((module) => [module.key, module.name]),
+    ) === JSON.stringify(switchable),
+    "each switchable registry section is a default profile module, in registry order and under its title",
   );
 });

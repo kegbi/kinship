@@ -32,11 +32,16 @@ import { mountUnsavedChangesGuard } from "../../lib/unsaved-changes.ts";
 import {
   type FilterZone,
   filterZone,
+  navigableSections,
+  PERSON_SECTIONS,
   personSection,
+  type PersonSectionEntry,
+  type PersonSectionId,
   railSections,
   SECTION_HIDDEN_EVENT,
   SECTION_REQUEST_EVENT,
   type SectionMountKind,
+  sectionTurnedOff,
   zoneSections,
 } from "./sections.ts";
 import {
@@ -219,13 +224,47 @@ function mountZoneMiniIdentity(): void {
   observer.observe(hero);
 }
 
-/** The owners a stream zone activates: its sections' owners, in order. */
-function zoneOwners(zone: Zone): readonly SectionOwner[] {
+/**
+ * The sections of `sections` the workspace shows: a section whose profile
+ * module is turned off is neither drawn nor mounted (GAP-047).
+ */
+function shownSections<Id extends PersonSectionId>(
+  sections: readonly PersonSectionEntry<Id>[],
+  hidden: ReadonlySet<string>,
+): readonly PersonSectionEntry<Id>[] {
+  return sections.filter((entry) => !sectionTurnedOff(entry, hidden));
+}
+
+/**
+ * The owners a stream zone activates: its shown sections' owners, in order.
+ * The unified timeline card heads the Timeline zone while any of its
+ * sections is shown.
+ */
+function zoneOwners(
+  zone: Zone,
+  hidden: ReadonlySet<string>,
+): readonly SectionOwner[] {
+  const sections = shownSections(zoneSections(zone), hidden);
   return [
-    // The unified timeline card heads the Timeline zone.
-    ...(zone === "timeline" ? [TIMELINE_MOUNT] : []),
-    ...sectionOwners(zoneSections(zone)),
+    ...(zone === "timeline" && sections.length > 0 ? [TIMELINE_MOUNT] : []),
+    ...sectionOwners(sections),
   ];
+}
+
+/**
+ * Takes every section the workspace turned off out of the page before any
+ * owner mounts (GAP-047): its card is hidden and says so, so neither the
+ * reader nor assistive technology meets an empty card.
+ */
+function hideTurnedOffSections(hidden: ReadonlySet<string>): void {
+  for (const entry of PERSON_SECTIONS) {
+    if (!sectionTurnedOff(entry, hidden)) continue;
+    const card = section(entry.id);
+    if (!card) continue;
+    card.hidden = true;
+    card.setAttribute("data-section-state", "hidden");
+    card.removeAttribute("aria-busy");
+  }
 }
 
 /**
@@ -235,6 +274,7 @@ function zoneOwners(zone: Zone): readonly SectionOwner[] {
  */
 function createZoneRegistry(
   mountOwner: (owner: SectionOwner) => Promise<void>,
+  hidden: ReadonlySet<string>,
 ): ZoneRegistry {
   const owners = new Map<SectionOwner, Promise<void>>();
   const activations = new Map<Zone, Promise<void>>();
@@ -249,7 +289,7 @@ function createZoneRegistry(
   const activate = (zone: Zone): Promise<void> => {
     let activation = activations.get(zone);
     if (!activation) {
-      activation = Promise.all(zoneOwners(zone).map(mount)).then(() =>
+      activation = Promise.all(zoneOwners(zone, hidden).map(mount)).then(() =>
         undefined
       ).finally(() => {
         document.querySelector<HTMLElement>(`[data-zone="${zone}"]`)
@@ -267,8 +307,10 @@ function createZoneRegistry(
         mount(RAIL_MOUNT),
       ]).then(() => undefined),
     mountRail: () =>
-      Promise.all([...sectionOwners(railSections()), TAGS_MOUNT].map(mount))
-        .then(() => undefined),
+      Promise.all(
+        [...sectionOwners(shownSections(railSections(), hidden)), TAGS_MOUNT]
+          .map(mount),
+      ).then(() => undefined),
     settled: () => Promise.all(activations.values()).then(() => undefined),
   };
 }
@@ -456,7 +498,7 @@ function showHiddenSectionNotice(
 ): void {
   const title = link.textContent!.trim();
   profile.sectionNotice.replaceChildren(
-    `${title} — turned off for this workspace.`,
+    `${title} — this section is hidden in this workspace.`,
   );
   if (memberRole === "owner" || memberRole === "admin") {
     const template = document.getElementById(SECTION_NOTICE_LINK_TEMPLATE_ID);
@@ -475,16 +517,28 @@ function showHiddenSectionNotice(
   profile.sectionNotice.hidden = false;
 }
 
+/**
+ * Shows a link for each section the page drew and the workspace shows, and
+ * none for any other (GAP-047): the navigation never links to a section that
+ * is turned off or not on the page.
+ */
 function renderSectionNavigation(
   profile: ProfileElements,
   hiddenSectionIds: ReadonlySet<string>,
 ): void {
+  const rendered = new Set(
+    [...document.querySelectorAll<HTMLElement>("[data-profile-section]")]
+      .map((candidate) => candidate.dataset.profileSection!),
+  );
+  const linked = new Set<string>(
+    navigableSections(rendered, hiddenSectionIds).map((entry) => entry.id),
+  );
   for (
     const link of profile.sections.querySelectorAll<HTMLAnchorElement>(
       "[data-section-link]",
     )
   ) {
-    link.closest<HTMLElement>("li")!.hidden = hiddenSectionIds.has(
+    link.closest<HTMLElement>("li")!.hidden = !linked.has(
       link.dataset.sectionLink!,
     );
   }
@@ -880,10 +934,13 @@ export async function mountPersonWorkspace(): Promise<void> {
     preferences: memberPreferences,
     workspaceId,
   });
-  const zoneRegistry = createZoneRegistry((owner) =>
-    owner.load().then((mount) => mount(profile.ready, sectionProps())).then(
-      () => undefined,
-    )
+  hideTurnedOffSections(hiddenSectionIds);
+  const zoneRegistry = createZoneRegistry(
+    (owner) =>
+      owner.load().then((mount) => mount(profile.ready, sectionProps())).then(
+        () => undefined,
+      ),
+    hiddenSectionIds,
   );
   // A summary whose code cannot load leaves its skeleton, and every section
   // still loads.

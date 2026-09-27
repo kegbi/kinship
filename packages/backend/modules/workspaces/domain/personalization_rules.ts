@@ -40,6 +40,30 @@ export const PERSONALIZATION_SECTIONS = [
 
 export type PersonalizationSection = typeof PERSONALIZATION_SECTIONS[number];
 
+/**
+ * The person-workspace sections a workspace may switch off or reorder
+ * (GAP-047), in the order the workspace shows them: each one's
+ * `workspace_profile_modules.key` and the name it is listed under. A section
+ * with no row of its own is visible, in this order, and cannot be deleted; its
+ * first change writes the row. The person workspace's section registry keys
+ * the same sections (`apps/web/src/features/person/sections.ts`).
+ */
+export const PROFILE_MODULE_DEFAULTS = [
+  { key: "contact-methods", name: "Contact methods" },
+  { key: "addresses", name: "Addresses" },
+  { key: "relationships", name: "Relationships" },
+  { key: "first-meeting", name: "First meeting" },
+  { key: "work", name: "Work" },
+  { key: "food-preferences", name: "Food preferences" },
+  { key: "pets", name: "Pets" },
+  { key: "life-events", name: "Life events" },
+  { key: "notes", name: "Notes" },
+  { key: "conversations", name: "Conversations" },
+  { key: "calls", name: "Calls" },
+  { key: "activities", name: "Activities" },
+  { key: "tasks", name: "Tasks" },
+] as const;
+
 /** The sections that are fixed: nothing is created in or deleted from them. */
 const FIXED_SECTIONS: readonly PersonalizationSection[] = [
   "emotion-options",

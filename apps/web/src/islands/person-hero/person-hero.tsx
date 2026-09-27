@@ -38,6 +38,8 @@ import {
   editPerson,
   getPersonDeletionImpact,
   type PersonDueInformation,
+  type PersonEditInput,
+  type PersonGenderOption,
   type PersonLifecycleIdentity,
   removePersonAvatar,
   replacePersonAvatar,
@@ -52,9 +54,10 @@ import {
   markFormSaved,
   saveWithLockedForm,
 } from "../../lib/unsaved-changes.ts";
-import type {
-  HeroFacts,
-  SummaryStore,
+import {
+  type HeroFacts,
+  requestImportantDate,
+  type SummaryStore,
 } from "../../features/person/profile-summary.ts";
 import { SECTION_REQUEST_EVENT } from "../../features/person/sections.ts";
 import { settle, useContractForm, useDocumentEvent } from "../core/index.ts";
@@ -98,6 +101,10 @@ export interface PersonHeroProps {
   readonly dueInformation: PersonDueInformation;
   readonly archived: boolean;
   readonly tagsHidden: boolean;
+  /** The workspace's gender options the identity editor offers (GAP-047). */
+  readonly genderOptions: readonly PersonGenderOption[];
+  /** The sections the workspace turned off, whose vitals stay out. */
+  readonly hiddenSections: ReadonlySet<string>;
   readonly preferences?: ResolvedMemberPreferences | undefined;
   readonly slots: HeroSlots;
   /**
@@ -119,8 +126,25 @@ type FocusTarget =
 
 const browserNavigate = (path: string) => globalThis.location.assign(path);
 
+/**
+ * What the editor saves: every field it holds, less the gender option when it
+ * still names `savedOption`, the option the person already has (GAP-047).
+ */
+function savedValues(
+  values: IdentityOutput,
+  savedOption: string,
+): Omit<PersonEditInput, "expectedUpdatedAt"> {
+  const { genderOptionId, ...rest } = values as Omit<
+    PersonEditInput,
+    "expectedUpdatedAt"
+  >;
+  const chosen = genderOptionId ?? "";
+  return chosen === savedOption ? rest : { ...rest, genderOptionId: chosen };
+}
+
 export function PersonHero(props: PersonHeroProps) {
   const { personId, preferences, slots, workspaceId } = props;
+  const { genderOptions } = props;
   const navigate = props.navigate ?? browserNavigate;
   const [state, dispatch] = useReducer(
     heroReducer,
@@ -207,6 +231,15 @@ export function PersonHero(props: PersonHeroProps) {
       () =>
         settle(() =>
           editPerson(personId, {
+            // The editor validates with this route's own schema and always
+            // holds the description and deceased state, so each is saved as
+            // it stands (GAP-047). The gender option is sent only when the
+            // member changed it: the route keeps one left out, so an option
+            // the list could not show is never cleared by another edit.
+            ...(savedValues(
+              values,
+              latest.current.identity.genderOptionId ?? "",
+            )),
             expectedUpdatedAt: latest.current.updatedAt,
             familyName: values.familyName ?? "",
             givenName: values.givenName,
@@ -226,10 +259,29 @@ export function PersonHero(props: PersonHeroProps) {
       return;
     }
     const person = answer.data.person;
+    const wasDeceased = latest.current.identity.isDeceased;
     markFormSaved(form);
     announceRevision(person.updatedAt);
-    focus.current = "heading";
-    dispatch({ person, type: "edit-saved" });
+    // Newly marked deceased with no date of death recorded, the important
+    // dates open their editor on one and take focus there; the date is saved
+    // through their own route (GAP-047).
+    const askForDate = person.isDeceased && !wasDeceased &&
+      props.facts.get().deceased === undefined;
+    focus.current = askForDate ? undefined : "heading";
+    flushSync(() =>
+      dispatch({
+        gender: genderOptions.find((option) =>
+          option.id === person.genderOptionId
+        )?.name,
+        person,
+        type: "edit-saved",
+      })
+    );
+    // An editor that could not open leaves focus on the renamed heading
+    // rather than on the body the closed form dropped it to.
+    if (askForDate && !requestImportantDate("deceased")) {
+      heading.current?.focus();
+    }
   };
 
   // The file field takes focus inside the opening click, so a keyboard user
@@ -468,6 +520,13 @@ export function PersonHero(props: PersonHeroProps) {
             Deceased
           </p>
           <p
+            className={badgeVariants({ variant: "secondary" })}
+            hidden={!identity.isDeceased || facts.deceased === undefined}
+            id="person-profile-deceased-date"
+          >
+            {facts.deceased ? `Date of death: ${facts.deceased}` : ""}
+          </p>
+          <p
             className={badgeVariants({ variant: "warning" })}
             hidden={!state.archived}
             id="person-profile-archived"
@@ -507,7 +566,10 @@ export function PersonHero(props: PersonHeroProps) {
         />,
         slots.menu,
       )}
-      {createPortal(<VitalStats facts={facts} />, slots.vitals)}
+      {createPortal(
+        <VitalStats facts={facts} hiddenSections={props.hiddenSections} />,
+        slots.vitals,
+      )}
       {createPortal(<TagList tags={facts.tags} />, slots.tags)}
       {createPortal(
         <>
@@ -522,6 +584,7 @@ export function PersonHero(props: PersonHeroProps) {
           <IdentityEditor
             form={editor}
             formRef={editForm}
+            genderOptions={genderOptions}
             identity={identity}
             onCancel={cancelEditor}
             onSubmit={(event: SubmitEvent<HTMLFormElement>) =>

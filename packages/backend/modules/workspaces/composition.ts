@@ -26,6 +26,7 @@ import {
 } from "./adapters/postgres/actor_revalidation.ts";
 import { PostgresWorkspaceCurrencyBoundary } from "./adapters/postgres/currency_boundary.ts";
 import { PostgresInteractionWorkspaceBoundary } from "./adapters/postgres/interaction_workspace_boundary.ts";
+import { PostgresGenderOptionBoundary } from "./adapters/postgres/gender_option_boundary.ts";
 import { PostgresLifeEventWorkspaceBoundary } from "./adapters/postgres/life_event_workspace_boundary.ts";
 import { PostgresMemberUiStateRepository } from "./adapters/postgres/member_ui_state.ts";
 import { PostgresPersonalLifecycleMemberships } from "./adapters/postgres/personal_lifecycle.ts";
@@ -156,6 +157,7 @@ export function workspaceTransactionRunner(
 export function composeWorkspaceBoundaries() {
   return {
     currencies: new PostgresWorkspaceCurrencyBoundary(),
+    genders: new PostgresGenderOptionBoundary(),
     interactions: new PostgresInteractionWorkspaceBoundary(),
     lifeEvents: new PostgresLifeEventWorkspaceBoundary(),
     personalization: new PostgresWorkspacePersonalization(),

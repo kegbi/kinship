@@ -29,6 +29,7 @@ const lifecycle = (
 ) => ({
   givenName: "Ada",
   id: identity.id,
+  isDeceased: false,
   isPartial: true,
   lifecycle: "active" as const,
   updatedAt: "2026-08-15T09:00:00.000000Z",
@@ -251,5 +252,61 @@ describe("GAP-045 hero avatar state", () => {
     });
     expect(state.avatarEditing).toBe(false);
     expect(state.identity.avatar).toBe(identity.avatar);
+  });
+});
+
+describe("GAP-047 the wider identity", () => {
+  it("takes the description, gender, and deceased state an edit saved", () => {
+    const optionId = "00000000-0000-4000-8000-000000000301";
+    const state = heroReducer(start(), {
+      gender: "Non-binary",
+      person: lifecycle({
+        description: "Wrote the first program",
+        genderOptionId: optionId,
+        isDeceased: true,
+      }),
+      type: "edit-saved",
+    });
+    expect(state.identity).toMatchObject({
+      description: "Wrote the first program",
+      gender: "Non-binary",
+      genderOptionId: optionId,
+      isDeceased: true,
+    });
+  });
+
+  it("clears what the saved answer no longer carries", () => {
+    const optionId = "00000000-0000-4000-8000-000000000301";
+    const described = initialHeroState({
+      ...identity,
+      description: "Old",
+      genderOptionId: optionId,
+      isDeceased: true,
+    }, false);
+    const state = heroReducer(described, {
+      person: lifecycle(),
+      type: "edit-saved",
+    });
+    expect(state.identity).not.toHaveProperty("description");
+    expect(state.identity).not.toHaveProperty("genderOptionId");
+    expect(state.identity).not.toHaveProperty("gender");
+    expect(state.identity.isDeceased).toBe(false);
+  });
+
+  it("keeps the gender's name while its option is unchanged", () => {
+    const optionId = "00000000-0000-4000-8000-000000000301";
+    const described = initialHeroState(
+      { ...identity, genderOptionId: optionId },
+      false,
+    );
+    const state = heroReducer(described, {
+      archived: true,
+      person: lifecycle({ genderOptionId: optionId }),
+      type: "transition-succeeded",
+    });
+    expect(state.identity).toMatchObject({
+      gender: "Woman",
+      genderOptionId: optionId,
+    });
   });
 });

@@ -903,6 +903,15 @@ function EntryRow(
                   onRevert={props.onRevert}
                   shown={rules.revertShown}
                 />
+                {props.section === "profile-modules" && !capabilities.delete
+                  ? (
+                    // A person-workspace section is turned off, never
+                    // deleted (GAP-047).
+                    <span className={badgeVariants({ variant: "secondary" })}>
+                      Core section · cannot be deleted
+                    </span>
+                  )
+                  : null}
                 {capabilities.disable
                   ? (
                     <button

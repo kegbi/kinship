@@ -10,6 +10,7 @@ import {
 import { UNNAMED_PERSON } from "../../../../modules/people/public.ts";
 import {
   PERSON_PROFILE_TAG_PREVIEW_LIMIT,
+  type PersonGenderOption,
   type PersonLifeEvent,
   type PersonLifeEventPrecision,
   type PersonLifeEventType,
@@ -37,6 +38,8 @@ interface PersonProfileRow {
   readonly description: string | null;
   readonly family_name: string | null;
   readonly gender: string | null;
+  readonly gender_option_id: string | null;
+  readonly gender_options: readonly PersonGenderOption[];
   readonly given_name: string | null;
   readonly id: string | null;
   readonly is_deceased: boolean | null;
@@ -132,6 +135,7 @@ function identity(row: PersonProfileRow): PersonProfileIdentity | undefined {
       description: row.description,
       familyName: row.family_name,
       gender: row.gender,
+      genderOptionId: row.gender_option_id,
     }),
     givenName: row.given_name,
     id: row.id,
@@ -303,7 +307,9 @@ export class PostgresPersonProfileRepository
     const result = await sql<PersonProfileRow>`
       select person.id::text, person.given_name, person.middle_name,
         person.family_name, person.nickname, person.description,
-        gender.name as gender, person.is_partial, person.is_starred,
+        gender.name as gender, gender.id::text as gender_option_id,
+        coalesce(gender_choices.options, '[]'::jsonb) as gender_options,
+        person.is_partial, person.is_starred,
         person.is_deceased, person.archived_at,
         avatar.background_color as avatar_background_color,
         case when avatar.source = 'file' then avatar_file.id::text end
@@ -327,6 +333,26 @@ export class PostgresPersonProfileRepository
       left join crm.gender_options gender
         on gender.id = person.gender_option_id
         and gender.workspace_id = workspace.id
+      left join lateral (
+        select jsonb_agg(jsonb_build_object(
+          'archived', choice.is_archived, 'id', choice.id::text,
+          'name', choice.name
+        ) order by choice.is_archived, choice.sort_order, lower(choice.name),
+          choice.id) as options
+        from (
+          (select current_option.* from crm.gender_options current_option
+            where current_option.workspace_id = workspace.id
+              and not current_option.is_archived
+            order by current_option.sort_order, lower(current_option.name),
+              current_option.id
+            limit 100)
+          union
+          -- The person's own option is always offered, archived or past
+          -- the cap, so the editor never falls back to "Not set" (GAP-047).
+          select own.* from crm.gender_options own
+          where own.id = gender.id
+        ) choice
+      ) gender_choices on person.id is not null
       left join crm.person_avatars avatar on avatar.person_id = person.id
       left join crm.files avatar_file on avatar_file.id = avatar.file_id
         and avatar_file.workspace_id = workspace.id
@@ -417,6 +443,7 @@ export class PostgresPersonProfileRepository
         openTaskCount: row.open_task_count,
         ...pickDefined({ stayInTouchAt: row.stay_in_touch_at }),
       },
+      genderOptions: row.gender_options,
       person,
       status: row.archived_at ? "archived" : "ready",
       ...(command.includeSummary

@@ -411,3 +411,46 @@ Deno.test("[PEOPLE-007] the profile identity carries the person's avatar record"
     "the avatar record reaches the reader unchanged",
   );
 });
+
+Deno.test("[GAP-047] the profile offers the identity editor its gender options", async () => {
+  const woman = fixtures.uuid(801);
+  const retired = fixtures.uuid(802);
+  const profile = createPersonProfile({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
+    repository: {
+      get: () =>
+        Promise.resolve({
+          dueInformation: { openTaskCount: 0 },
+          genderOptions: [
+            { archived: false, id: woman, name: "Woman" },
+            { archived: true, id: retired, name: "Retired option" },
+          ],
+          person: {
+            gender: "Retired option",
+            genderOptionId: retired,
+            givenName: "Ada",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            tagCount: 0,
+            tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
+          },
+          status: "ready",
+        }),
+      listLifeEvents,
+      listTimeline,
+    },
+  });
+  const result = await profile.get(actor, personId);
+  assert(result.status === "ready", "the profile is ready");
+  assert(
+    result.person.genderOptionId === retired &&
+      result.genderOptions?.map((option) => option.id).join() ===
+        `${woman},${retired}`,
+    "the saved option and the choices reach the reader unchanged",
+  );
+});

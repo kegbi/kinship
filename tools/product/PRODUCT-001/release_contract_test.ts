@@ -342,7 +342,13 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
     ["AUTH-005", ["tests/e2e/personal-lifecycle.AUTH-005.spec.ts"]],
     ["WORKSPACE-001", ["tests/e2e/settings.AUTH-004.spec.ts"]],
     ["WORKSPACE-002", ["tests/e2e/workspace-lifecycle.WORKSPACE-002.spec.ts"]],
-    ["WORKSPACE-003", ["tests/e2e/personalization.WORKSPACE-003.spec.ts"]],
+    [
+      "WORKSPACE-003",
+      [
+        "tests/e2e/personalization.WORKSPACE-003.spec.ts",
+        "tests/e2e/identity.PEOPLE-004.spec.ts",
+      ],
+    ],
     ["PEOPLE-001", ["tests/e2e/people-create.PEOPLE-001.spec.ts"]],
     [
       "PEOPLE-002",
@@ -356,10 +362,23 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
       [
         "tests/e2e/person-workspace.PEOPLE-003.spec.ts",
         "tests/e2e/person-shell.PEOPLE-003.spec.ts",
+        "tests/e2e/identity.PEOPLE-004.spec.ts",
       ],
     ],
-    ["PEOPLE-004", ["tests/e2e/person-lifecycle.PEOPLE-004.spec.ts"]],
-    ["PEOPLE-005", ["tests/e2e/important-dates.PEOPLE-005.spec.ts"]],
+    [
+      "PEOPLE-004",
+      [
+        "tests/e2e/person-lifecycle.PEOPLE-004.spec.ts",
+        "tests/e2e/identity.PEOPLE-004.spec.ts",
+      ],
+    ],
+    [
+      "PEOPLE-005",
+      [
+        "tests/e2e/important-dates.PEOPLE-005.spec.ts",
+        "tests/e2e/identity.PEOPLE-004.spec.ts",
+      ],
+    ],
     ["PEOPLE-006", ["tests/e2e/profile-facts.PEOPLE-006.spec.ts"]],
     ["PEOPLE-007", ["tests/e2e/avatars.PEOPLE-007.spec.ts"]],
     ["RELATIONSHIP-001", ["tests/e2e/relationships.RELATIONSHIP-001.spec.ts"]],

@@ -7,6 +7,8 @@ import { clearToasts } from "../../features/shell/toasts/toasts.ts";
 import { TOAST_REGION } from "../../testing/shell.ts";
 import { mountUnsavedChangesGuard } from "../../lib/unsaved-changes.ts";
 import {
+  DATE_REQUEST_EVENT,
+  setDeceasedDate,
   setFirstMeetingDate,
   setFirstMeetingPlace,
   setLastContact,
@@ -103,6 +105,7 @@ const personAnswer = (
 ) => ({
   givenName: "Ada",
   id: personId,
+  isDeceased: false,
   isPartial: false,
   lifecycle: state,
   updatedAt,
@@ -541,16 +544,22 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
     const family = within(form).getByRole("textbox", { name: "Family name" });
     await user.clear(family);
     await user.type(family, "Byron");
-    await user.click(within(form).getByRole("checkbox"));
+    await user.click(
+      within(form).getByRole("checkbox", {
+        name: "This is a partial identity",
+      }),
+    );
     const api = stubApi({ [`PATCH ${PERSON}`]: updated(true) });
     await user.click(within(form).getByRole("button", { name: "Save person" }));
 
     await waitFor(() => expect(heading().textContent).toBe("Ada Byron"));
     expect(api.calls()[0]).toBe(`PATCH /api/v1/people/${personId}`);
     expect(api.bodies()[0]).toEqual({
+      description: "",
       expectedUpdatedAt: revision,
       familyName: "Byron",
       givenName: "Ada",
+      isDeceased: false,
       isPartial: true,
       middleName: "",
       nickname: "",
@@ -1085,5 +1094,274 @@ describe("PEOPLE-007 person hero avatar", () => {
     expect(
       screen.queryByRole("button", { name: "Change avatar" }),
     ).toBeNull();
+  });
+});
+
+describe("GAP-047 the identity editor's breadth", () => {
+  const woman = "00000000-0000-4000-8000-000000000301";
+  const man = "00000000-0000-4000-8000-000000000302";
+  const retired = "00000000-0000-4000-8000-000000000303";
+  const genderOptions = [
+    { archived: false, id: woman, name: "Woman" },
+    { archived: false, id: man, name: "Man" },
+  ];
+
+  async function openEditor() {
+    await openMenu();
+    await userEvent.setup().click(
+      screen.getByRole("button", { name: "Edit person" }),
+    );
+    return screen.getByRole("form", { name: "Edit person" });
+  }
+
+  it("edits the description, gender, and deceased state, then asks for the date of death", async () => {
+    markup();
+    await mount(profile({
+      genderOptions,
+      person: {
+        description: "Mathematician",
+        gender: "Woman",
+        genderOptionId: woman,
+      },
+    }));
+    const requests = vi.fn();
+    document.addEventListener(DATE_REQUEST_EVENT, requests);
+    const user = userEvent.setup();
+    const form = await openEditor();
+    const description = within(form).getByRole("textbox", {
+      name: "Description",
+    });
+    expect(description).toHaveProperty("value", "Mathematician");
+    const gender = within(form).getByRole("combobox", { name: "Gender" });
+    expect(gender).toHaveProperty("value", woman);
+    await user.clear(description);
+    await user.type(description, "Wrote the first program");
+    await user.selectOptions(gender, man);
+    await user.click(
+      within(form).getByRole("checkbox", { name: "This person has died" }),
+    );
+    const api = stubApi({
+      [`PATCH ${PERSON}`]: jsonResponse({
+        person: personAnswer("active", "2026-08-15T09:00:00.000000Z", {
+          description: "Wrote the first program",
+          familyName: "Lovelace",
+          genderOptionId: man,
+          isDeceased: true,
+        }),
+        status: "updated",
+      }),
+    });
+    await user.click(within(form).getByRole("button", { name: "Save person" }));
+    await waitFor(() => expect(form.hidden).toBe(true));
+    expect(api.bodies()[0]).toMatchObject({
+      description: "Wrote the first program",
+      genderOptionId: man,
+      isDeceased: true,
+    });
+    expect(text("[data-profile-description]")).toBe(
+      "Wrote the first program",
+    );
+    expect(text('[data-profile-field="gender"]')).toBe("Man");
+    expect(screen.getByText("Deceased", { exact: true }).hidden).toBe(false);
+    expect(requests).toHaveBeenCalledOnce();
+    expect((requests.mock.calls[0]![0] as CustomEvent).detail).toMatchObject({
+      kind: "deceased",
+    });
+    // Nothing took the date of death, so focus stays in the hero.
+    expect(document.activeElement).toBe(heading());
+    document.removeEventListener(DATE_REQUEST_EVENT, requests);
+  });
+
+  it("shows the date of death and asks for none already recorded", async () => {
+    markup();
+    await mount(profile({ genderOptions }));
+    act(() => setDeceasedDate("November 27 (year unknown)"));
+    expect(
+      document.querySelector<HTMLElement>("#person-profile-deceased-date")
+        ?.hidden,
+    ).toBe(true);
+    const requests = vi.fn();
+    document.addEventListener(DATE_REQUEST_EVENT, requests);
+    const user = userEvent.setup();
+    const form = await openEditor();
+    await user.click(
+      within(form).getByRole("checkbox", { name: "This person has died" }),
+    );
+    stubApi({
+      [`PATCH ${PERSON}`]: jsonResponse({
+        person: personAnswer("active", "2026-08-15T09:00:00.000000Z", {
+          familyName: "Lovelace",
+          isDeceased: true,
+        }),
+        status: "updated",
+      }),
+    });
+    await user.click(within(form).getByRole("button", { name: "Save person" }));
+    await waitFor(() => expect(form.hidden).toBe(true));
+    expect(text("#person-profile-deceased-date")).toBe(
+      "Date of death: November 27 (year unknown)",
+    );
+    expect(
+      document.querySelector<HTMLElement>("#person-profile-deceased-date")
+        ?.hidden,
+    ).toBe(false);
+    expect(requests).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(heading());
+    document.removeEventListener(DATE_REQUEST_EVENT, requests);
+  });
+
+  it("offers an archived option only as the person's own, and says so", async () => {
+    markup();
+    await mount(profile({
+      genderOptions: [
+        ...genderOptions,
+        { archived: true, id: retired, name: "Retired" },
+      ],
+      person: { gender: "Retired", genderOptionId: retired },
+    }));
+    const form = await openEditor();
+    const gender = within(form).getByRole("combobox", { name: "Gender" });
+    expect(gender).toHaveProperty("value", retired);
+    expect(
+      within(gender).getAllByRole("option").map((option) => option.textContent),
+    ).toEqual(["Not set", "Woman", "Man", "Retired (archived)"]);
+  });
+
+  it("shows the refused option's field message", async () => {
+    markup();
+    await mount(profile({ genderOptions }));
+    const user = userEvent.setup();
+    const form = await openEditor();
+    await user.selectOptions(
+      within(form).getByRole("combobox", { name: "Gender" }),
+      man,
+    );
+    stubApi({
+      [`PATCH ${PERSON}`]: problemResponse(400, {
+        detail: "Review the highlighted identity fields and try again.",
+        errors: {
+          genderOptionId:
+            "That gender option was archived. Choose a current option.",
+        },
+      }),
+    });
+    await user.click(within(form).getByRole("button", { name: "Save person" }));
+    await waitFor(() =>
+      expect(
+        within(form).getByText(
+          "That gender option was archived. Choose a current option.",
+        ),
+      ).toBeTruthy()
+    );
+    expect(form.hidden).toBe(false);
+  });
+
+  it("keeps the hero whole when the sections behind its vitals are turned off", async () => {
+    markup();
+    await mount(profile({
+      person: {
+        profileSections: [
+          { id: "work", status: "hidden" },
+          { id: "first-meeting", status: "hidden" },
+          { id: "activities", status: "hidden" },
+        ],
+      },
+    }));
+    const vitals = element("[data-person-vital-stats]");
+    expect(vitals.textContent).not.toContain("Work");
+    expect(vitals.textContent).not.toContain("First met");
+    expect(vitals.querySelector('a[href="?section=activities"]')).toBeNull();
+    expect(vitals.textContent).toContain("Last contact");
+    expect(vitals.querySelector('a[href="?section=important-dates"]'))
+      .not.toBeNull();
+  });
+
+  it("asks for no date of death when the person was already deceased", async () => {
+    markup();
+    await mount(profile({ genderOptions, person: { isDeceased: true } }));
+    const requests = vi.fn();
+    document.addEventListener(DATE_REQUEST_EVENT, requests);
+    const user = userEvent.setup();
+    const form = await openEditor();
+    await user.type(
+      within(form).getByRole("textbox", { name: "Description" }),
+      "Remembered",
+    );
+    stubApi({
+      [`PATCH ${PERSON}`]: jsonResponse({
+        person: personAnswer("active", "2026-08-15T09:00:00.000000Z", {
+          description: "Remembered",
+          familyName: "Lovelace",
+          isDeceased: true,
+        }),
+        status: "updated",
+      }),
+    });
+    await user.click(within(form).getByRole("button", { name: "Save person" }));
+    await waitFor(() => expect(form.hidden).toBe(true));
+    expect(requests).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(heading());
+    document.removeEventListener(DATE_REQUEST_EVENT, requests);
+  });
+
+  it("leaves an unchanged gender out of the save, so it is never cleared", async () => {
+    markup();
+    // The saved option is not among those offered, as when it sorts past
+    // the list's cap: the select cannot show it.
+    await mount(profile({
+      genderOptions,
+      person: { gender: "Unlisted", genderOptionId: retired },
+    }));
+    const user = userEvent.setup();
+    const form = await openEditor();
+    await user.type(
+      within(form).getByRole("textbox", { name: "Nickname" }),
+      "Addy",
+    );
+    const api = stubApi({
+      [`PATCH ${PERSON}`]: jsonResponse({
+        person: personAnswer("active", "2026-08-15T09:00:00.000000Z", {
+          familyName: "Lovelace",
+          genderOptionId: retired,
+          nickname: "Addy",
+        }),
+        status: "updated",
+      }),
+    });
+    await user.click(within(form).getByRole("button", { name: "Save person" }));
+    await waitFor(() => expect(form.hidden).toBe(true));
+    expect(api.bodies()[0]).not.toHaveProperty("genderOptionId");
+    expect(api.bodies()[0]).toMatchObject({ nickname: "Addy" });
+    expect(text('[data-profile-field="gender"]')).toBe("Unlisted");
+  });
+
+  it("keeps focus on the new place when the important dates take the date of death", async () => {
+    markup();
+    await mount(profile({ genderOptions }));
+    const taker = document.createElement("button");
+    document.body.append(taker);
+    const take = (event: Event) => {
+      taker.focus();
+      (event as CustomEvent<{ readonly opened: () => void }>).detail.opened();
+    };
+    document.addEventListener(DATE_REQUEST_EVENT, take);
+    const user = userEvent.setup();
+    const form = await openEditor();
+    await user.click(
+      within(form).getByRole("checkbox", { name: "This person has died" }),
+    );
+    stubApi({
+      [`PATCH ${PERSON}`]: jsonResponse({
+        person: personAnswer("active", "2026-08-15T09:00:00.000000Z", {
+          familyName: "Lovelace",
+          isDeceased: true,
+        }),
+        status: "updated",
+      }),
+    });
+    await user.click(within(form).getByRole("button", { name: "Save person" }));
+    await waitFor(() => expect(form.hidden).toBe(true));
+    expect(document.activeElement).toBe(taker);
+    document.removeEventListener(DATE_REQUEST_EVENT, take);
   });
 });

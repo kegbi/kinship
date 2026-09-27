@@ -1287,3 +1287,44 @@ describe("WORKSPACE-003 personalization drafts", () => {
     expect(draftSnapshot(form)).toBe(baseline);
   });
 });
+
+describe("GAP-047 person-workspace sections", () => {
+  it("marks a core section as locked and still lets it be turned off", async () => {
+    shell("profile-modules");
+    const work = entry({
+      canDelete: false,
+      capabilities: {
+        delete: false,
+        disable: true,
+        editValue: false,
+        rename: true,
+        reorder: true,
+        replace: false,
+        setDefault: false,
+      },
+      name: "Work",
+      readOnly: false,
+      updatedAt: "1970-01-01T00:00:00Z",
+    });
+    const api = stubApi({
+      [LIST]: [
+        listed("profile-modules", [work]),
+        listed("profile-modules", [{ ...work, isActive: false }]),
+      ],
+      [SESSION]: session,
+      [UPDATE]: jsonResponse({ entry: work, status: "saved" }),
+    });
+    await mount();
+    const row = rowOf("Name for Work");
+    expect(within(row).getByText("Core section · cannot be deleted"))
+      .toBeTruthy();
+    expect(within(row).queryByRole("button", { name: "Delete" })).toBeNull();
+    click(button(row, "Disable"));
+    await waitFor(() => expect(status().textContent).toBe("Option updated."));
+    expect(writes(api.requests())).toMatchObject([{
+      body: { expectedUpdatedAt: "1970-01-01T00:00:00Z", isActive: false },
+      method: "PATCH",
+    }]);
+    expect(button(rowOf("Name for Work"), "Enable")).toBeTruthy();
+  });
+});

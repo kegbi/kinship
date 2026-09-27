@@ -140,7 +140,10 @@ export type {
   PersonalizationDependencies,
   PersonalizationManagement,
 } from "./application/personalization.ts";
-export { PERSONALIZATION_SECTIONS } from "./domain/personalization_rules.ts";
+export {
+  PERSONALIZATION_SECTIONS,
+  PROFILE_MODULE_DEFAULTS,
+} from "./domain/personalization_rules.ts";
 export type {
   PersonalizationEntry,
   PersonalizationItemCapabilities,

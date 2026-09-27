@@ -16,11 +16,13 @@ function fake(lifecycle: "active" | "archived" | "deleted" = "active") {
     familyName: "Lovelace",
     givenName: "Ada",
     id: personId,
+    isDeceased: false,
     isPartial: false,
     lifecycle,
     updatedAt,
   };
   let audits = 0;
+  const inspected: string[] = [];
   const dependencies: PersonLifecycleDependencies = {
     actors: { revalidate: () => Promise.resolve("active") },
     audit: {
@@ -31,6 +33,18 @@ function fake(lifecycle: "active" | "archived" | "deleted" = "active") {
       },
     },
     clock: fixedClock("2026-08-15T09:00:00.000Z"),
+    genders: {
+      inspect: (command) => {
+        inspected.push(command.genderOptionId);
+        return Promise.resolve(
+          command.genderOptionId === archivedOption
+            ? { archived: true, status: "ready" as const }
+            : command.genderOptionId === currentOption
+            ? { archived: false, status: "ready" as const }
+            : { status: "not-found" as const },
+        );
+      },
+    },
     repository: {
       assertPostcondition: () => Promise.resolve(),
       lock: () => Promise.resolve({ person: current, status: "ready" }),
@@ -43,8 +57,18 @@ function fake(lifecycle: "active" | "archived" | "deleted" = "active") {
             : current.familyName
             ? { familyName: current.familyName }
             : {}),
+          ...(command.input?.description
+            ? { description: command.input.description }
+            : {}),
+          ...(command.input?.genderOptionId
+            ? { genderOptionId: command.input.genderOptionId }
+            : current.genderOptionId &&
+                command.input?.genderOptionId === undefined
+            ? { genderOptionId: current.genderOptionId }
+            : {}),
           givenName: command.input?.givenName ?? current.givenName,
           id: current.id,
+          isDeceased: command.input?.isDeceased ?? current.isDeceased,
           isPartial: command.input?.isPartial ?? current.isPartial,
           lifecycle: command.action === "archive"
             ? "archived"
@@ -63,8 +87,19 @@ function fake(lifecycle: "active" | "archived" | "deleted" = "active") {
         work({ opaque: undefined }),
     },
   };
-  return { audits: () => audits, dependencies };
+  return {
+    audits: () => audits,
+    dependencies,
+    inspected: () => inspected,
+    seed: (person: Partial<PersonLifecycleRecord>) => {
+      current = { ...current, ...person };
+    },
+  };
 }
+
+const currentOption = "00000000-0000-4000-8000-000000000301";
+const archivedOption = "00000000-0000-4000-8000-000000000302";
+const foreignOption = "00000000-0000-4000-8000-000000000303";
 
 Deno.test("PEOPLE-004 rejects editing an archived person before mutation", async () => {
   let changed = false;
@@ -75,6 +110,7 @@ Deno.test("PEOPLE-004 rejects editing an archived person before mutation", async
       record: () => Promise.resolve("00000000-0000-4000-8000-000000000200"),
     },
     clock: fixedClock("2026-08-15T09:00:00.000Z"),
+    genders: { inspect: () => Promise.resolve({ status: "not-found" }) },
     repository: {
       assertPostcondition: () => Promise.resolve(),
       lock: () =>
@@ -84,6 +120,7 @@ Deno.test("PEOPLE-004 rejects editing an archived person before mutation", async
             familyName: "Lovelace",
             givenName: "Ada",
             id: personId,
+            isDeceased: false,
             isPartial: false,
             lifecycle: "archived" as const,
             updatedAt,
@@ -251,4 +288,80 @@ Deno.test("PEOPLE-004 returns indistinguishable missing and explicit forbidden s
       .previewDeletion(actor, personId);
     assert(result.status === status, `${status} is preserved`);
   }
+});
+
+Deno.test("[GAP-047] an edit saves the description, gender, and deceased state", async () => {
+  const context = fake();
+  const people = createPersonLifecycle(context.dependencies);
+  const result = await people.edit(actor, personId, {
+    description: "  Wrote the first program  ",
+    expectedUpdatedAt: updatedAt,
+    genderOptionId: currentOption,
+    givenName: "Ada",
+    isDeceased: true,
+    isPartial: false,
+  });
+  assert(result.status === "updated", "the wider identity is saved");
+  assert(
+    result.person.description === "Wrote the first program" &&
+      result.person.genderOptionId === currentOption &&
+      result.person.isDeceased && context.audits() === 1,
+    "the description is trimmed, the option set, and the edit audited once",
+  );
+  assert(
+    context.inspected().join() === currentOption,
+    "a newly chosen option is looked up in the workspace",
+  );
+});
+
+Deno.test("[GAP-047] an edit refuses a foreign or archived option but keeps a saved one", async () => {
+  const context = fake();
+  const people = createPersonLifecycle(context.dependencies);
+  for (const genderOptionId of [foreignOption, archivedOption]) {
+    const refused = await people.edit(actor, personId, {
+      expectedUpdatedAt: updatedAt,
+      genderOptionId,
+      givenName: "Ada",
+      isPartial: false,
+    });
+    assert(
+      refused.status === "validation-error" &&
+        "genderOptionId" in refused.errors && context.audits() === 0,
+      `${genderOptionId} is refused before any write`,
+    );
+  }
+  context.seed({ genderOptionId: archivedOption });
+  const kept = await people.edit(actor, personId, {
+    expectedUpdatedAt: updatedAt,
+    genderOptionId: archivedOption,
+    givenName: "Augusta",
+    isPartial: false,
+  });
+  assert(
+    kept.status === "updated" && kept.person.genderOptionId === archivedOption,
+    "an option archived after it was chosen stays on the person",
+  );
+  assert(
+    context.inspected().length === 2,
+    "an unchanged option is not looked up again",
+  );
+});
+
+Deno.test("[GAP-047] a stale edit of the wider identity changes nothing", async () => {
+  const context = fake();
+  const result = await createPersonLifecycle(context.dependencies).edit(
+    actor,
+    personId,
+    {
+      description: "Later",
+      expectedUpdatedAt: "2026-08-15T07:00:00.000Z",
+      givenName: "Ada",
+      isDeceased: true,
+      isPartial: false,
+    },
+  );
+  assert(
+    result.status === "stale" && context.audits() === 0,
+    "an edit composed against an older revision is refused",
+  );
 });

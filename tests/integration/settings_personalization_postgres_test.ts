@@ -482,16 +482,16 @@ Deno.test({
       "profile module rejects an empty derived key without row or audit",
     );
     const profileModule = await createOption("profile-modules", {
-      name: "Contact methods",
+      name: "Social profiles",
     });
     const equivalentProfileModule = await settingsRequest(
       owner.cookie,
       "/api/v1/settings/personalization/profile-modules",
-      { body: { name: "Contact-methods" }, method: "POST" },
+      { body: { name: "Social-profiles" }, method: "POST" },
     );
     const [equivalentModuleCount] = await sql<{ readonly count: number }[]>`
       select count(*)::int as count from crm.workspace_profile_modules
-      where workspace_id = ${owner.workspaceId} and key = 'contact-methods'`;
+      where workspace_id = ${owner.workspaceId} and key = 'social-profiles'`;
     assert(
       equivalentProfileModule.status === 409 &&
         equivalentModuleCount?.count === 1,
@@ -514,7 +514,7 @@ Deno.test({
       where id = ${profileModule.id}`;
     assert(
       renamedProfileModule.status === 200 &&
-        renamedModuleRow?.key === "contact-methods" &&
+        renamedModuleRow?.key === "social-profiles" &&
         renamedModuleRow.name === "Ways to connect",
       "profile module display rename preserves its stable create-time key",
     );
@@ -1422,6 +1422,216 @@ Deno.test({
       globalList.readOnly && !globalList.capabilities.create &&
         globalList.entries.every((entry) => entry.readOnly),
       "global pet categories explicitly declare read-only capabilities",
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "[GAP-047] PostgreSQL profile sections resolve without rows and materialize on their first change",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const owner = await register(
+      "profile-sections-owner@example.test",
+      "Profile sections circle",
+    );
+    const foreign = await register(
+      "profile-sections-foreign@example.test",
+      "Foreign sections circle",
+    );
+    const memberIdentity = await register(
+      "profile-sections-member@example.test",
+      "Profile sections member home",
+    );
+    await addMembership(memberIdentity, owner.workspaceId, "member");
+    const memberCookie = (await signIn(
+      "profile-sections-member@example.test",
+      owner.workspaceId,
+    )).headers.get("set-cookie")?.split(";")[0];
+    assert(memberCookie, "member session created");
+    type Entry = {
+      readonly canDelete: boolean;
+      readonly capabilities: { readonly delete: boolean };
+      readonly id: string;
+      readonly isActive: boolean;
+      readonly name: string;
+      readonly sortOrder: number;
+      readonly updatedAt: string;
+    };
+    const list = async (fixture = owner) =>
+      (await (await settingsRequest(
+        fixture.cookie,
+        "/api/v1/settings/personalization/profile-modules",
+      )).json() as { readonly entries: readonly Entry[] }).entries;
+    const rows = async (workspaceId: string) =>
+      await sql<{
+        readonly can_delete: boolean;
+        readonly id: string;
+        readonly is_active: boolean;
+        readonly key: string;
+      }[]>`select id::text, key, is_active, can_delete
+        from crm.workspace_profile_modules
+        where workspace_id = ${workspaceId} order by key`;
+    const patch = (
+      cookie: string,
+      entry: Entry,
+      body: Record<string, unknown>,
+    ) =>
+      settingsRequest(
+        cookie,
+        `/api/v1/settings/personalization/profile-modules/${entry.id}`,
+        {
+          body: { expectedUpdatedAt: entry.updatedAt, ...body },
+          method: "PATCH",
+          workspaceId: owner.workspaceId,
+        },
+      );
+
+    const resolved = await list();
+    assert(
+      resolved.map((entry) => entry.name).join() === [
+        "Contact methods",
+        "Addresses",
+        "Relationships",
+        "First meeting",
+        "Work",
+        "Food preferences",
+        "Pets",
+        "Life events",
+        "Notes",
+        "Conversations",
+        "Calls",
+        "Activities",
+        "Tasks",
+      ].join(),
+      "every switchable person section is listed, in workspace order",
+    );
+    assert(
+      resolved.every((entry) =>
+        entry.isActive && !entry.canDelete && !entry.capabilities.delete
+      ),
+      "a section without a row is visible and locked against deletion",
+    );
+    assert(
+      (await rows(owner.workspaceId)).length === 0 &&
+        JSON.stringify((await list()).map((entry) => entry.id)) ===
+          JSON.stringify(resolved.map((entry) => entry.id)),
+      "reading resolves the defaults without writing, under stable ids",
+    );
+    const work = resolved.find((entry) => entry.name === "Work")!;
+    const foreignWork = (await list(foreign)).find((entry) =>
+      entry.name === "Work"
+    )!;
+    assert(foreignWork.id !== work.id, "each workspace has its own ids");
+
+    assert(
+      (await patch(memberCookie, work, { isActive: false })).status === 403,
+      "an ordinary member cannot hide a section",
+    );
+    const crossWorkspace = await settingsRequest(
+      foreign.cookie,
+      `/api/v1/settings/personalization/profile-modules/${work.id}`,
+      {
+        body: { expectedUpdatedAt: work.updatedAt, isActive: false },
+        method: "PATCH",
+      },
+    );
+    assert(
+      crossWorkspace.status === 404 &&
+        (await rows(owner.workspaceId)).length === 0 &&
+        (await rows(foreign.workspaceId)).length === 0,
+      "another workspace cannot hide this workspace's section",
+    );
+
+    for (const name of ["Work", " addresses ", "Life-events"]) {
+      const clash = await settingsRequest(
+        owner.cookie,
+        "/api/v1/settings/personalization/profile-modules",
+        { body: { name }, method: "POST" },
+      );
+      assert(
+        clash.status === 409 && (await rows(owner.workspaceId)).length === 0,
+        `${name} clashes with a default section and creates no row`,
+      );
+    }
+
+    const hidden = await patch(owner.cookie, work, { isActive: false });
+    assert(hidden.status === 200, "the owner hides a section");
+    const [created] = await sql<{ readonly recent: boolean }[]>`
+      select created_at > now() - interval '1 hour' as recent
+      from crm.workspace_profile_modules where id = ${work.id}`;
+    assert(
+      created?.recent === true,
+      "a materialized default records when it was written",
+    );
+    const stored = await rows(owner.workspaceId);
+    assert(
+      stored.length === 1 && stored[0]?.key === "work" &&
+        stored[0].id === work.id && !stored[0].is_active &&
+        !stored[0].can_delete,
+      "the first change materializes the section's row under its listed id",
+    );
+    assert(
+      (await patch(owner.cookie, work, { isActive: true })).status === 409,
+      "a change composed against the unsaved default is stale now",
+    );
+    const person = crypto.randomUUID();
+    await sql`insert into crm.people (id, workspace_id, given_name)
+      values (${person}, ${owner.workspaceId}, 'Hidden work')`;
+    const profile = async () =>
+      (await (await settingsRequest(
+        owner.cookie,
+        `/api/v1/people/${person}`,
+      )).json() as {
+        readonly person: {
+          readonly profileSections: readonly {
+            readonly id: string;
+            readonly status: string;
+          }[];
+        };
+      }).person.profileSections;
+    assert(
+      (await profile()).find((section) => section.id === "work")?.status ===
+        "hidden",
+      "the person workspace hides the section",
+    );
+
+    const notes = resolved.find((entry) => entry.name === "Notes")!;
+    assert(
+      (await patch(owner.cookie, notes, { sortOrder: 0 })).status === 200,
+      "a section is reordered",
+    );
+    const reordered = await list();
+    assert(
+      reordered[0]?.id === notes.id && reordered.length === resolved.length,
+      "the reordered section leads the list and nothing is duplicated",
+    );
+    const refused = await settingsRequest(
+      owner.cookie,
+      `/api/v1/settings/personalization/profile-modules/${work.id}`,
+      {
+        body: {
+          expectedUpdatedAt: reordered.find((entry) => entry.id === work.id)!
+            .updatedAt,
+        },
+        method: "DELETE",
+      },
+    );
+    assert(
+      refused.status !== 200 && (await rows(owner.workspaceId)).length === 2,
+      "a core section cannot be deleted",
+    );
+    const shown = await patch(
+      owner.cookie,
+      reordered.find((entry) => entry.id === work.id)!,
+      { isActive: true },
+    );
+    assert(
+      shown.status === 200 &&
+        (await profile()).find((section) => section.id === "work")?.status ===
+          "ready",
+      "turning the section back on shows it again",
     );
   },
 });

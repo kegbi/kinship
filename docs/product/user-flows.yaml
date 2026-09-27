@@ -241,12 +241,14 @@ flows:
       - Preview references before replacing, disabling, or deleting an option.
       - Apply the change through the module that owns the affected records.
       - Keep data in disabled profile modules and refresh affected forms and projections.
+      - List every switchable person-workspace section, visible until its first change writes its row; turn it off or on, never delete it. Reorder is stored for the settings list; the person workspace keeps its rail order.
     alternateOutcomes: [
       option-in-use-requires-replacement,
       required-default,
       duplicate-name,
       cross-workspace-option,
       member-forbidden,
+      core-section-not-deletable,
     ]
     result: Workspace terminology and profile composition change without deleting person history or bypassing module boundaries.
     auditEffect: workspace-personalization-updated
@@ -256,7 +258,10 @@ flows:
     testLayers: [unit, integration, e2e]
     e2e: {
       required: true,
-      testRefs: [tests/e2e/personalization.WORKSPACE-003.spec.ts],
+      testRefs: [
+        tests/e2e/personalization.WORKSPACE-003.spec.ts,
+        tests/e2e/identity.PEOPLE-004.spec.ts,
+      ],
     }
 
   - id: TODAY-001
@@ -363,6 +368,7 @@ flows:
       partial-person-reconciliation,
       section-error,
       person-not-found,
+      hidden-section-deep-link,
     ]
     result: Nearly all person-specific information is available on one canonical route.
     auditEffect: none
@@ -383,6 +389,7 @@ flows:
       testRefs: [
         tests/e2e/person-workspace.PEOPLE-003.spec.ts,
         tests/e2e/person-shell.PEOPLE-003.spec.ts,
+        tests/e2e/identity.PEOPLE-004.spec.ts,
       ],
     }
 
@@ -395,12 +402,18 @@ flows:
     preconditions: [person-in-active-workspace]
     steps:
       - Check the action-specific permission and current lifecycle state.
+      - Edit every identity state the workspace shows — names, nickname, description, gender from the workspace vocabulary, partial, and deceased — in the one hero editor at the revision it was opened with.
+      - On marking the person deceased, open the important dates on the date of death, which is written through their own route.
       - Apply the state transition atomically.
       - Refresh the profile and relevant people list.
     alternateOutcomes: [
       archived-write-rejected,
       delete-confirmation-cancelled,
       cross-workspace-id,
+      gender-option-archived,
+      deceased-unknown-year,
+      deceased-cleared-date-kept,
+      stale-revision,
     ]
     result: The lifecycle state is explicit and dependent records follow canonical policy.
     auditEffect: person-updated-archived-restored-or-deleted
@@ -410,7 +423,10 @@ flows:
     testLayers: [unit, integration, e2e]
     e2e: {
       required: true,
-      testRefs: [tests/e2e/person-lifecycle.PEOPLE-004.spec.ts],
+      testRefs: [
+        tests/e2e/person-lifecycle.PEOPLE-004.spec.ts,
+        tests/e2e/identity.PEOPLE-004.spec.ts,
+      ],
     }
 
   - id: PEOPLE-005
@@ -430,6 +446,8 @@ flows:
       month-only,
       approximate-year,
       invalid-calendar-date,
+      date-of-death-from-identity-editor,
+      deceased-cleared-date-kept,
     ]
     result: Display and scheduling preserve the exact stated precision.
     auditEffect: person-date-updated
@@ -439,7 +457,10 @@ flows:
     testLayers: [unit, integration, schema, e2e]
     e2e: {
       required: true,
-      testRefs: [tests/e2e/important-dates.PEOPLE-005.spec.ts],
+      testRefs: [
+        tests/e2e/important-dates.PEOPLE-005.spec.ts,
+        tests/e2e/identity.PEOPLE-004.spec.ts,
+      ],
     }
 
   - id: PEOPLE-006

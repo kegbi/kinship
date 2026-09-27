@@ -14,6 +14,7 @@ Deno.test("PEOPLE-004 HTTP exposes versioned edit, archive, restore, impact, and
     familyName: "Lovelace",
     givenName: "Ada",
     id: "00000000-0000-4000-8000-000000000100",
+    isDeceased: false,
     isPartial: false,
     lifecycle: "active" as const,
     updatedAt: "2026-08-15T08:00:00.000Z",
@@ -113,4 +114,89 @@ Deno.test("PEOPLE-004 HTTP maps lifecycle conflicts without leaking dependencies
     );
     assert(response.status === scenario.expected, "lifecycle result maps");
   }
+});
+
+Deno.test("[GAP-047] HTTP passes the wider identity through and answers with it", async () => {
+  const received: unknown[] = [];
+  const person = {
+    description: "Wrote the first program",
+    genderOptionId: "00000000-0000-4000-8000-000000000301",
+    givenName: "Ada",
+    id: "00000000-0000-4000-8000-000000000100",
+    isDeceased: true,
+    isPartial: false,
+    lifecycle: "active" as const,
+    updatedAt: "2026-08-15T09:00:00.000Z",
+  };
+  const app = createPeopleRoutes(services({
+    create: () => Promise.reject(new Error("must not create")),
+    edit: (_actor, _personId, input) => {
+      received.push(input);
+      return Promise.resolve({ person, status: "updated" });
+    },
+  }));
+  const patch = (body: Record<string, unknown>) =>
+    app.request(
+      "http://localhost/api/v1/people/00000000-0000-4000-8000-000000000100",
+      {
+        body: JSON.stringify({
+          expectedUpdatedAt: "2026-08-15T08:00:00.000Z",
+          givenName: "Ada",
+          isPartial: false,
+          ...body,
+        }),
+        headers,
+        method: "PATCH",
+      },
+    );
+  const saved = await patch({
+    description: " Wrote the first program ",
+    genderOptionId: person.genderOptionId,
+    isDeceased: true,
+  });
+  assertStatus(saved, 200, "the wider edit is accepted");
+  const body = await saved.json() as { readonly person: typeof person };
+  assert(
+    body.person.description === person.description &&
+      body.person.genderOptionId === person.genderOptionId &&
+      body.person.isDeceased === true,
+    "the answer carries the saved identity",
+  );
+  assertStatus(await patch({ description: "", genderOptionId: "" }), 200);
+  assertStatus(await patch({}), 200);
+  assert(
+    JSON.stringify(received) === JSON.stringify([
+      {
+        description: "Wrote the first program",
+        expectedUpdatedAt: "2026-08-15T08:00:00.000Z",
+        genderOptionId: person.genderOptionId,
+        isDeceased: true,
+        givenName: "Ada",
+        isPartial: false,
+      },
+      {
+        description: "",
+        expectedUpdatedAt: "2026-08-15T08:00:00.000Z",
+        genderOptionId: "",
+        givenName: "Ada",
+        isPartial: false,
+      },
+      {
+        expectedUpdatedAt: "2026-08-15T08:00:00.000Z",
+        givenName: "Ada",
+        isPartial: false,
+      },
+    ]),
+    "empty text clears and an absent field is kept",
+  );
+  for (
+    const invalid of [
+      { genderOptionId: "not-an-option" },
+      { description: "x".repeat(2001) },
+      { isDeceased: "yes" },
+    ]
+  ) {
+    assertStatus(await patch(invalid), 400, "malformed identity is refused");
+  }
+  assert(received.length === 3, "a malformed edit reaches no use case");
 });
