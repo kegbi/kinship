@@ -81,6 +81,24 @@ prerequisite queues.
     `REL-051` are fixed, and `REL-047`, `REL-049`, `REL-052`, `REL-053`, and
     `REL-054` stay parked. The next work is GAP-036 and GAP-037, then the Phase
     5 checkpoint.
+- Phase 5 (GAP-034 through GAP-037) and Phase 6 (GAP-039 through GAP-043) are
+  integrated, and so are GAP-044 through GAP-047 from Phase 7, up to `534c3f1`.
+  The optional GAP-038 is skipped.
+  - The checkpoint ran locally on `534c3f1`, a clean copy of main that trusts
+    the session proxy CA only for its image builds. Everything passed:
+    - `test:unit` and `test:coverage`, with every set at or above its floor (web
+      at 98.69/95.61/99.45/99.86);
+    - `test:integration`: 196 passed, 0 failed;
+    - the api, web, and gateway production images;
+    - the three-browser E2E suite: 184 passed across 62 Chromium, 62 Firefox,
+      and 62 WebKit tests, with `perf-001`'s two own skips;
+    - `test:schema:matrix` on PostgreSQL 18.4 and 17.10 for schema v8.
+  - Main CI could not confirm it. From `9766905` on, every push fails within
+    seconds without being given a runner, which points to the repository's
+    GitHub Actions account rather than the code. The product owner accepted
+    local gates as the checkpoint evidence, and CI confirmation stays owed.
+  - `REL-055` through `REL-060` were found on the way and stay parked. The next
+    work is GAP-048 through GAP-053, then the Phase 7 checkpoint.
 - User-directed follow-up: responsive person blocks, focus-border repair, then
   an evidence-backed application repair plan and execution in a clean task.
 - Remaining repair statuses and execution order belong to the
