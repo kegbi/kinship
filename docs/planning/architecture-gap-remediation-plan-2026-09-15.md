@@ -1493,9 +1493,8 @@ project once. Full three-browser E2E and image builds run at the end of Phases
         after `destroy()`. The transport now tears down the socket and settles
         the operation itself, still answering 503 `files_unavailable`.
     - Object storage: `files_object_store_postgres_test.ts` runs the timeout
-      (`docker pause`), missing-object (410), and quarantined-object (423)
-      cases against a disposable pinned RustFS that is removed even when setup
-      fails.
+      (`docker pause`), missing-object (410), and quarantined-object (423) cases
+      against a disposable pinned RustFS that is removed even when setup fails.
     - Worker: `apps/worker/main.ts` exports `runWorker` with the same start,
       signal, and shutdown behaviour and gains a unit suite (8 tests, 97.5%
       lines).
@@ -1504,10 +1503,10 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     - Coverage: every Deno set is equal or higher. The branch rows rose for
       activity-report (84.0 to 96.2), audit-history (86.7 to 97.3),
       journal-timeline (90.6 to 100), and Today tasks (75.0 to 90.0), and
-      `tools/migrations/main.ts` and `apps/worker/main.ts` are measured for
-      the first time.
-    - Evidence: integration 167 passed and 0 failed (142 before), root
-      test:unit and test:coverage passed.
+      `tools/migrations/main.ts` and `apps/worker/main.ts` are measured for the
+      first time.
+    - Evidence: integration 167 passed and 0 failed (142 before), root test:unit
+      and test:coverage passed.
     - Gates: fmt:check, lint, check, check:architecture (14), contracts:check.
 
 - [ ] **GAP-038 — Visual regression baseline.** S-M. Depends: 036. Optional.
