@@ -168,6 +168,7 @@ pages:
       - PLANNING-002
       - FILES-001
       - GIFTS-001
+      - JOURNAL-002
     sections:
       - identity-summary
       - important-dates
@@ -199,6 +200,7 @@ pages:
       - log-call
       - log-conversation
       - add-note
+      - add-life-event
       - add-task
       - add-reminder
       - attach-file
@@ -206,6 +208,24 @@ pages:
       - archive
       - restore
       - delete
+    # JOURNAL-002: the life-events section's own states beyond the page's
+    # authenticated defaults. `read-only` is an archived person's list without
+    # controls; `editing`, `saving`, and `validation-error` belong to its one
+    # editor, and `stale` is a save or removal refused for an old revision.
+    sectionStates:
+      life-events:
+        - loading
+        - ready
+        - empty
+        - error
+        - forbidden
+        - not-found
+        - hidden
+        - read-only
+        - editing
+        - saving
+        - validation-error
+        - stale
     separatePersonPages:
       - people.activity-report
       - people.audit

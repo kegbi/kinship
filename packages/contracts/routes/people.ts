@@ -29,7 +29,11 @@ import {
   personEditInput,
   personInput,
   personLifecycleChanged,
+  personLifeEventChanged,
+  personLifeEventDeleted,
+  personLifeEventInput,
   personLifeEventsReady,
+  personLifeEventUpdateInput,
   personReady,
   personTimelinePage,
   personTransitionInput,
@@ -543,6 +547,97 @@ export const listPersonLifeEvents = defineRoute({
   },
 });
 
+/**
+ * Recording, editing, and removing a life event (JOURNAL-002). The journal
+ * module owns `life_events` and serves these three; they sit beside the read
+ * above because they are one section of the person's page.
+ */
+export const createPersonLifeEvent = defineRoute({
+  method: "post",
+  path: "/api/v1/people/{personId}/life-events",
+  operationId: "createPersonLifeEvent",
+  security: [{ kinship_session: [] }],
+  request: {
+    params: z.object({
+      personId: uuid,
+    }),
+    headers: originAndWorkspaceHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": personLifeEventInput,
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Life event recorded on a current-workspace person",
+      content: {
+        "application/json": personLifeEventChanged,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const updatePersonLifeEvent = defineRoute({
+  method: "patch",
+  path: "/api/v1/people/{personId}/life-events/{lifeEventId}",
+  operationId: "updatePersonLifeEvent",
+  security: [{ kinship_session: [] }],
+  request: {
+    params: z.object({
+      personId: uuid,
+      lifeEventId: uuid,
+    }),
+    headers: originAndWorkspaceHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": personLifeEventUpdateInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Life event replaced at the expected revision",
+      content: {
+        "application/json": personLifeEventChanged,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const deletePersonLifeEvent = defineRoute({
+  method: "delete",
+  path: "/api/v1/people/{personId}/life-events/{lifeEventId}",
+  operationId: "deletePersonLifeEvent",
+  security: [{ kinship_session: [] }],
+  request: {
+    params: z.object({
+      personId: uuid,
+      lifeEventId: uuid,
+    }),
+    headers: originAndWorkspaceHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": personTransitionInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Life event removed at the expected revision",
+      content: {
+        "application/json": personLifeEventDeleted,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
 export const restorePerson = defineRoute({
   method: "post",
   path: "/api/v1/people/{personId}/restore",
@@ -662,6 +757,9 @@ export const PEOPLE_ROUTES: readonly RouteDescriptor[] = [
   deleteProfileFact,
   updateProfileFact,
   listPersonLifeEvents,
+  createPersonLifeEvent,
+  updatePersonLifeEvent,
+  deletePersonLifeEvent,
   restorePerson,
   listPersonTimeline,
   recordPersonView,

@@ -25,6 +25,7 @@ import {
 } from "./adapters/postgres/actor_revalidation.ts";
 import { PostgresWorkspaceCurrencyBoundary } from "./adapters/postgres/currency_boundary.ts";
 import { PostgresInteractionWorkspaceBoundary } from "./adapters/postgres/interaction_workspace_boundary.ts";
+import { PostgresLifeEventWorkspaceBoundary } from "./adapters/postgres/life_event_workspace_boundary.ts";
 import { PostgresMemberUiStateRepository } from "./adapters/postgres/member_ui_state.ts";
 import { PostgresPersonalLifecycleMemberships } from "./adapters/postgres/personal_lifecycle.ts";
 import { PostgresWorkspacePersonalization } from "./adapters/postgres/personalization.ts";
@@ -144,6 +145,7 @@ export function composeWorkspaceBoundaries() {
   return {
     currencies: new PostgresWorkspaceCurrencyBoundary(),
     interactions: new PostgresInteractionWorkspaceBoundary(),
+    lifeEvents: new PostgresLifeEventWorkspaceBoundary(),
     personalization: new PostgresWorkspacePersonalization(),
     profileFacts: new PostgresProfileFactConfiguration(),
     relationships: new PostgresRelationshipWorkspaceBoundary(),

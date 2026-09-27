@@ -23,3 +23,20 @@ export type {
   JournalManagementDependencies,
 } from "./application/journal_management.ts";
 export { journalAuditFrom } from "./application/audit_events.ts";
+export type {
+  LifeEventValue,
+  StoredLifeEvent,
+} from "./domain/life_event_rules.ts";
+export type { LifeEventAudit } from "./ports/audit.ts";
+export type { LifeEventRepository } from "./ports/life_event_repository.ts";
+export { createLifeEventManagement } from "./application/life_events.ts";
+export type {
+  LifeEventCreateResult,
+  LifeEventDeleteInput,
+  LifeEventDeleteResult,
+  LifeEventManagement,
+  LifeEventManagementDependencies,
+  LifeEventUpdateInput,
+  LifeEventUpdateResult,
+} from "./application/life_events.ts";
+export { lifeEventAuditFrom } from "./application/audit_events.ts";

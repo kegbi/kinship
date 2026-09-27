@@ -26,7 +26,10 @@ import {
   communicationAuditFrom,
   interactionAuditFrom,
 } from "../../packages/backend/modules/interactions/public.ts";
-import { journalAuditFrom } from "../../packages/backend/modules/journal/public.ts";
+import {
+  journalAuditFrom,
+  lifeEventAuditFrom,
+} from "../../packages/backend/modules/journal/public.ts";
 import {
   importantDateAuditFrom,
   personCreatedAuditFrom,
@@ -167,6 +170,18 @@ const WRITERS: ReadonlyArray<readonly [string, Writer]> = [
       occurredAt: OCCURRED_AT,
       transaction,
     } as never)],
+  [
+    "journal life event",
+    (recorder, actor) =>
+      lifeEventAuditFrom(recorder).record({
+        action: "updated",
+        actor,
+        lifeEventId: SUBJECT,
+        occurredAt: OCCURRED_AT,
+        personId: PERSON,
+        transaction,
+      }),
+  ],
   [
     "people person created",
     (recorder, actor) =>

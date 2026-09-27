@@ -1,5 +1,5 @@
 /**
- * Mounting the life-events card into the person shell (GAP-028). It
+ * Mounting the life-events card into the person shell (GAP-028, JOURNAL-002). It
  * activates with the Timeline zone, and the zone's settle waits for its first
  * read, as it did for the vanilla module.
  */
@@ -28,6 +28,7 @@ export const mountPersonLifeEvents: SectionMount = (container, props) => {
       section,
       PERSON_LIFE_EVENTS_ISLAND,
       <PersonLifeEvents
+        archived={props.archived}
         hidden={sectionHidden(props, "life-events")}
         onSettled={() => resolve(unmount)}
         personId={props.personId}

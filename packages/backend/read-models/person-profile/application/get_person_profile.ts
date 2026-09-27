@@ -140,7 +140,16 @@ export interface PersonLifeEvent {
   readonly id: string;
   readonly name?: string;
   readonly note?: string;
+  readonly typeId?: string;
   readonly typeName?: string;
+  /** The revision an edit or removal of this event must name. */
+  readonly updatedAt: string;
+}
+
+/** A current choice from the workspace's life-event type vocabulary. */
+export interface PersonLifeEventType {
+  readonly id: string;
+  readonly name: string;
 }
 
 export type PersonProfileRepositoryResult =
@@ -168,8 +177,12 @@ export interface PersonProfileRepository extends PersonTimelineRepository {
   listLifeEvents(
     command: PersonProfileActor & { readonly personId: string },
   ): Promise<
-    | { readonly events: readonly PersonLifeEvent[]; readonly status: "ready" }
-    | { readonly events: readonly PersonLifeEvent[]; readonly status: "hidden" }
+    | {
+      readonly events: readonly PersonLifeEvent[];
+      readonly status: "hidden" | "ready";
+      /** What an editor may choose from; archived types are left out. */
+      readonly types: readonly PersonLifeEventType[];
+    }
     | Failure<"not-found" | "forbidden">
   >;
 }

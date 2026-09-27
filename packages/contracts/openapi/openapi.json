@@ -6545,6 +6545,389 @@
             }
           }
         }
+      },
+      "post": {
+        "operationId": "createPersonLifeEvent",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonLifeEventInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Life event recorded on a current-workspace person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonLifeEventChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{personId}/life-events/{lifeEventId}": {
+      "patch": {
+        "operationId": "updatePersonLifeEvent",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "lifeEventId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonLifeEventUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Life event replaced at the expected revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonLifeEventChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deletePersonLifeEvent",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "lifeEventId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonTransitionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Life event removed at the expected revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonLifeEventDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/people/{personId}/relationships": {
@@ -17350,13 +17733,42 @@
           "note": {
             "type": "string"
           },
+          "typeId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "typeName": {
             "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
           "date",
-          "id"
+          "id",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "PersonLifeEventChanged": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/PersonLifeEvent"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "created",
+              "updated"
+            ]
+          }
+        },
+        "required": [
+          "event",
+          "status"
         ],
         "additionalProperties": false
       },
@@ -17400,6 +17812,141 @@
         ],
         "additionalProperties": false
       },
+      "PersonLifeEventDeleted": {
+        "type": "object",
+        "properties": {
+          "lifeEventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "deleted"
+          }
+        },
+        "required": [
+          "lifeEventId",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "PersonLifeEventInput": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "month": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "precision": {
+            "type": "string",
+            "enum": [
+              "day",
+              "full",
+              "month",
+              "month_day",
+              "unknown",
+              "year",
+              "year_month"
+            ]
+          },
+          "typeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "year": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9999
+          }
+        },
+        "required": [
+          "precision"
+        ],
+        "additionalProperties": false
+      },
+      "PersonLifeEventType": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "PersonLifeEventUpdateInput": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "month": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "precision": {
+            "type": "string",
+            "enum": [
+              "day",
+              "full",
+              "month",
+              "month_day",
+              "unknown",
+              "year",
+              "year_month"
+            ]
+          },
+          "typeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "year": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9999
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "precision",
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      },
       "PersonLifeEventsReady": {
         "type": "object",
         "properties": {
@@ -17416,11 +17963,19 @@
               "hidden",
               "ready"
             ]
+          },
+          "types": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonLifeEventType"
+            }
           }
         },
         "required": [
           "events",
-          "status"
+          "status",
+          "types"
         ],
         "additionalProperties": false
       },

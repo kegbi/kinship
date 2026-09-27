@@ -85,7 +85,10 @@ import type {
   InteractionManagement,
 } from "../../packages/backend/modules/interactions/public.ts";
 import { composeJournal } from "../../packages/backend/modules/journal/composition.ts";
-import type { JournalManagement } from "../../packages/backend/modules/journal/public.ts";
+import type {
+  JournalManagement,
+  LifeEventManagement,
+} from "../../packages/backend/modules/journal/public.ts";
 import { composeOperations } from "../../packages/backend/modules/operations/composition.ts";
 import {
   composePeople,
@@ -210,6 +213,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly gifts?: GiftManagement;
   readonly journal?: JournalManagement;
   readonly journalTimeline?: JournalTimeline;
+  readonly lifeEvents?: LifeEventManagement;
   readonly imports?: ImportManagement;
   readonly exports?: ExportManagement;
   readonly legal?: LegalAcceptance;
@@ -465,6 +469,7 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
           createJournalRoutes({
             browserSecurity: services.browserSecurity,
             journal: services.journal,
+            ...(services.lifeEvents ? { lifeEvents: services.lifeEvents } : {}),
             protectedSessions: services.protectedSessions,
             timeline: services.journalTimeline,
           }),
@@ -801,6 +806,8 @@ export function createConfiguredApiApp(
   });
   const journal = composeJournal(shared, {
     activities: journalActivityBoundary(),
+    people: persons,
+    workspace: configuration.lifeEvents,
   });
   const files = composeFiles(shared, {
     giftTarget: giftAttachmentTarget(),
@@ -901,6 +908,7 @@ export function createConfiguredApiApp(
     journal: journal.journal,
     journalTimeline: composeJournalTimeline(shared),
     legal: governance.legal,
+    lifeEvents: journal.lifeEvents,
     ...(logger ? { logger } : {}),
     memberUiState: workspaces.memberUiState,
     passwordRecovery: identity.passwordRecovery,

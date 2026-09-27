@@ -29,6 +29,7 @@ const EXPECTED_FLOW_IDS = [
   "FILES-001",
   "GIFTS-001",
   "JOURNAL-001",
+  "JOURNAL-002",
   "IMPORT-001",
   "EXPORT-001",
   "API-001",
@@ -380,6 +381,7 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
     ],
     ["GIFTS-001", ["tests/e2e/gifts.GIFTS-001.spec.ts"]],
     ["JOURNAL-001", ["tests/e2e/journal.JOURNAL-001.spec.ts"]],
+    ["JOURNAL-002", ["tests/e2e/life-events.JOURNAL-002.spec.ts"]],
     ["GOVERNANCE-001", ["tests/e2e/legal-acceptance.GOVERNANCE-001.spec.ts"]],
     ["IMPORT-001", ["tests/e2e/monica-import.IMPORT-001.spec.ts"]],
     ["EXPORT-001", ["tests/e2e/export.EXPORT-001.spec.ts"]],
@@ -411,7 +413,7 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
   }
   assertEquals(
     JSON.stringify(priorityTotals),
-    JSON.stringify({ P0: 17, P1: 10, P2: 3 }),
+    JSON.stringify({ P0: 17, P1: 11, P2: 3 }),
     "priority totals",
   );
 
@@ -663,7 +665,7 @@ Deno.test("PRODUCT-001 AC-02 accepts catalog-derived milestone meanings", () => 
   );
   assertNotMatches(
     milestones,
-    /\b(?:17 P0|10 P1|30 flows?)\b/i,
+    /\b(?:17 P0|11 P1|31 flows?)\b/i,
     "milestone authority is not a fixed count",
   );
 
@@ -734,7 +736,7 @@ Deno.test("PRODUCT-001 AC-03 synchronizes subordinate planning without delivery 
   );
   assertIncludes(
     planningReadme,
-    "30 total: 17 P0, 10 P1, and 3 P2",
+    "31 total: 17 P0, 11 P1, and 3 P2",
     "planning catalog totals",
   );
   assertIncludes(
@@ -760,7 +762,7 @@ Deno.test("PRODUCT-001 AC-03 synchronizes subordinate planning without delivery 
 
   assertIncludes(
     traceIntro,
-    "30 required flows: 17 P0, 10 P1, and 3 P2",
+    "31 required flows: 17 P0, 11 P1, and 3 P2",
     "traceability catalog totals",
   );
   assertNotMatches(
@@ -784,7 +786,6 @@ Deno.test("PRODUCT-001 AC-04 keeps deferred product gates explicit and undecided
   const deferred = markdownSection(release, "Deferred Product Gates");
   for (
     const expected of [
-      /life-event (?:mutation )?flow/i,
       /operations (?:user interface|UI)/i,
       /page\.flowIds/i,
       /state inheritance/i,
@@ -801,6 +802,18 @@ Deno.test("PRODUCT-001 AC-04 keeps deferred product gates explicit and undecided
   ) {
     assertMatches(deferred, expected, `deferred gate ${expected}`);
   }
+  // GAP-046 resolved the life-event gate with a stable flow, so it is no
+  // longer one of the undecided bullets and the resolution names the flow.
+  assertNotMatches(
+    deferred,
+    /^- [^\n]*life-event/im,
+    "the resolved life-event gate is not listed as undecided",
+  );
+  assertMatches(
+    deferred,
+    /life-event mutation flow gate is resolved[^.]*`JOURNAL-002`/i,
+    "the life-event gate names the flow that resolved it",
+  );
   assertMatches(
     deferred,
     /no (?:new )?stable ID/i,

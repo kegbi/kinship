@@ -15,13 +15,13 @@ The current baseline contains:
 - 39 cataloged pages (30 `static-shell-islands`, 5 `on-demand`, 4 `static`), all
   implemented, except `settings.billing`, which the catalog marks as an optional
   module and Phase 10 `APP-010C` withholds;
-- 30 required flows: 17 P0, 10 P1, and 3 P2;
-- 29 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
+- 31 required flows: 17 P0, 11 P1, and 3 P2;
+- 30 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
   still planned with an empty `testRefs` array, consistent with its withheld
   optional module; and
-- 34 Playwright specs under `tests/e2e/`. Flow specs are named
+- 35 Playwright specs under `tests/e2e/`. Flow specs are named
   `<feature>.<FLOW-ID>.spec.ts` (GAP-036); specs with no flow keep a feature
-  name. The flows' `testRefs` name 32 of them; `perf.PERF-001.spec.ts` and
+  name. The flows' `testRefs` name 33 of them; `perf.PERF-001.spec.ts` and
   `public-home.spec.ts` prove no catalog flow.
 
 Verified against `docs/architecture/module-boundaries.yaml`,
@@ -52,7 +52,7 @@ repository, adapter, or transport implementation.
 | `people`        | core     |                                                                2 | Person identity and profile facts, contact methods, locations, organizations, tags, and pets                                                                                     | Tenant-safe repositories, partial dates, archive/restore/delete, `PEOPLE-*` E2E                 |
 | `relationships` | core     |                                                                2 | Directional relationship graph; romantic metadata only if DG-07 accepts its product behavior                                                                                     | Directionality, uniqueness, permissions, archive interactions, `RELATIONSHIP-001`               |
 | `interactions`  | core     |                                                                3 | Notes, activities, calls, conversations, messages, participants, and emotions                                                                                                    | Composition and authorization tests, immutable audit effects, interaction E2E                   |
-| `journal`       | core     |                                                                6 | Journal posts, ratings, and ordered items; person life-event mutations remain unscheduled pending a stable flow contract                                                         | Ordering/concurrency and person projection tests; `JOURNAL-001` E2E                             |
+| `journal`       | core     |                                                                6 | Journal posts, ratings, and ordered items; person life-event writes through `JOURNAL-002`                                                                                        | Ordering/concurrency and life-event tests; `JOURNAL-001`/`-002` E2E                             |
 | `planning`      | core     |                                                                4 | Tasks, reminder rules/occurrences, stay-in-touch cadence, and worker work                                                                                                        | Clock/time-zone/DST suites, claim/retry/idempotency/process-death proof, planning E2E           |
 | `files`         | core     |                                                                5 | Metadata, object lifecycle, authorized retrieval, and person/gift links                                                                                                          | Object failure, quarantine/missing states, tenant-safe download, storage-limit tests            |
 | `gifts`         | core     |                                                                5 | Gifts, gift ideas/history, debts, and attachment coordination                                                                                                                    | Amount/currency invariants, file coordination, person-local `GIFTS-001` E2E                     |
@@ -79,11 +79,11 @@ still invokes the owning module's public use case.
 | Read model         | Begins | Complete | Consumers and acceptance                                                                                                                                              |
 | ------------------ | -----: | -------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `people-directory` |      1 |        1 | People list/search/archive states; tenant, pagination, ordering, and query-budget tests                                                                               |
-| `person-profile`   |      1 |        6 | Starts as a typed shell; completion is Slice 6 after every enabled core section is present; `PEOPLE-003` is accepted there while life-event mutation remains deferred |
+| `person-profile`   |      1 |        6 | Starts as a typed shell; completion is Slice 6 after every enabled core section is present; `PEOPLE-003` is accepted there; its life-event edits follow `JOURNAL-002` |
 | `activity-report`  |      3 |        3 | Scale-heavy person-specific interaction report with permission and pagination proof                                                                                   |
 | `audit-history`    |      3 |        3 | Person/workspace audit query composition arrives in Slice 3; governance audit writes begin with Slice 1 mutations                                                     |
 | `today`            |      1 |        4 | Starts as onboarding/empty shell; complete semantic queue and inline owning-module actions arrive in Slice 4                                                          |
-| `journal-timeline` |      3 |        6 | Interaction history can seed the projection; journal ordering determines Slice 6 completion while uncataloged life-event mutation remains deferred                    |
+| `journal-timeline` |      3 |        6 | Interaction history can seed the projection; journal ordering determines Slice 6 completion; `JOURNAL-002` life-event edits refresh it                                |
 
 ## Flow-To-Slice Matrix
 
@@ -116,6 +116,7 @@ and exercise the production-like gateway, not an internal service URL.
 | `FILES-001`        | P0       |              5 | profile, storage settings                        | Upload/link/download/remove with limits, authorization, missing/quarantined objects                     |
 | `GIFTS-001`        | P1       |              5 | person profile                                   | Gifts, debts, amounts/currencies, and attachment coordination                                           |
 | `JOURNAL-001`      | P1       |              6 | journal index/item, person profile               | Post/rating/ordered items and person-linked display                                                     |
+| `JOURNAL-002`      | P1       |              6 | person profile                                   | Add/edit/remove life events: precision, revision, archived read-only, and cross-workspace rejection     |
 | `IMPORT-001`       | P0       |              7 | import index/new/report                          | Detect, stage, dry-run, validate, commit atomically, rerun idempotently, handle attachments safely      |
 | `EXPORT-001`       | P0       |              7 | export settings, person profile                  | Authorized workspace/person exports, manifests, vCard and portable round-trip checks                    |
 | `API-001`          | P2       |              8 | API access settings                              | Create/scoped use/revoke tokens without weakening interactive auth                                      |
@@ -124,7 +125,7 @@ and exercise the production-like gateway, not an internal service URL.
 | `GOVERNANCE-002`   | P1       |              3 | person audit, profile, workspace audit           | Authorized history, redaction, ordering, and forbidden cases                                            |
 | `BILLING-001`      | P2       |              8 | billing settings                                 | Optional entitlement and provider workflow with module disabled by default                              |
 
-For the current 30-flow snapshot, this assignment places all 17 P0 and all 10 P1
+For the current 31-flow snapshot, this assignment places all 17 P0 and all 11 P1
 flows at or before Slice 7, so the accepted MVP and Core feature complete cuts
 coincide there. The milestone meanings remain distinct and future catalog
 changes regenerate their membership and maximum slice. Slice 4 is the accepted
@@ -171,9 +172,10 @@ static-shell/island behavior. The roadmap recommends the former.
 
 These are product-contract decisions, not implementation liberties:
 
-1. Decide whether to add a stable flow for creating/editing/removing a person
-   life event. Until that contract exists, life-event mutation UI/API is
-   unscheduled and no current flow or milestone may treat it as covered.
+1. Resolved 2026-09-27 (GAP-046): `JOURNAL-002` "Maintain a person's life
+   events" is the stable flow for adding, editing, and removing a life event
+   from the person workspace's Life events section; see
+   `docs/product/user-flows.yaml`.
 2. Add an operations/admin page and flow with explicit operator permissions, or
    remove the user-facing administration promise from Slice 8.
 3. Define whether `page.flowIds` lists every flow that visits a page or only the

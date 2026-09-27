@@ -10,7 +10,7 @@ import * as fixtures from "../../../testing/fixtures.ts";
 const actor = fixtures.actor();
 const personId = fixtures.personId();
 const listLifeEvents: PersonProfileRepository["listLifeEvents"] = () =>
-  Promise.resolve({ events: [], status: "ready" });
+  Promise.resolve({ events: [], status: "ready", types: [] });
 const listTimeline: PersonProfileRepository["listTimeline"] = () =>
   Promise.resolve({ items: [], status: "ready" });
 
@@ -353,8 +353,10 @@ Deno.test("[PEOPLE-003] person life events use the read-only profile boundary", 
             date: { month: 12, precision: "year_month", year: 1843 },
             id: crypto.randomUUID(),
             name: "Published Notes",
+            updatedAt: "2026-09-27T10:00:00.000000Z",
           }],
           status: "ready",
+          types: [],
         });
       },
       listTimeline,

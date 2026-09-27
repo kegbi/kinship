@@ -3,6 +3,7 @@ import {
   DATE_PRECISIONS,
   type DatePrecision,
   isRealCalendarDate,
+  partialDateErrors,
 } from "./partial_date.ts";
 import { assert } from "../testing/assert.ts";
 
@@ -57,4 +58,56 @@ Deno.test("[GAP-006] month lengths and leap years are honoured", () => {
   assert(isRealCalendarDate(2026, 4, 30), "April accepts its last day");
   assert(!isRealCalendarDate(2026, 13, 1), "month 13 is not a month");
   assert(!isRealCalendarDate(2026, 0, 1), "month 0 is not a month");
+});
+
+Deno.test("[GAP-046] a partial date carries exactly its precision's real components", () => {
+  assert(
+    Object.keys(partialDateErrors({ precision: "unknown" })).length === 0,
+    "an unknown date names nothing and is valid",
+  );
+  assert(
+    Object.keys(
+      partialDateErrors({ day: 29, month: 2, precision: "full", year: 2024 }),
+    ).length === 0,
+    "a leap day in a leap year is a date",
+  );
+  assert(
+    Object.keys(
+      partialDateErrors({ day: 29, month: 2, precision: "month_day" }),
+    )
+      .length === 0,
+    "a month and day without a year may be a leap day",
+  );
+  const contradicted = partialDateErrors({
+    precision: "month_day",
+    year: 1990,
+  });
+  assert(
+    contradicted.year === "Remove year; it contradicts month_day precision." &&
+      contradicted.month === "Enter month for month_day precision." &&
+      contradicted.day === "Enter day for month_day precision.",
+    "a component outside the precision, and one it lacks, are both named",
+  );
+  const ranged = partialDateErrors({
+    day: 32,
+    month: 13,
+    precision: "full",
+    year: 0,
+  });
+  assert(
+    ranged.year === "Enter a year from 1 through 9999." &&
+      ranged.month === "Enter a month from 1 through 12." &&
+      ranged.day === "Enter a day from 1 through 31.",
+    "each out-of-range component is named",
+  );
+  assert(
+    partialDateErrors({ day: 31, month: 4, precision: "full", year: 2026 })
+      .day === "Enter a real calendar date.",
+    "April 31st is refused",
+  );
+  assert(
+    partialDateErrors({ day: 1.5, precision: "day" }).day ===
+      "Enter a day from 1 through 31.",
+    "a fractional day is not a day",
+  );
 });

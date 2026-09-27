@@ -609,6 +609,13 @@ Playwright test carrying its stable flow ID.
       acceptance navigates straight to `/app/compliance?next=…` instead of
       loading Today first, with a unit test; never by lengthening the timeout.
 
+- [ ] **REL-055 — The life-events "Add life event" button stays enabled during a
+      save.** Found reviewing GAP-046: the section header's button sits outside
+      the editor form and is not locked by `rowControlsDisabled`. If a member
+      opens a new editor while a save is in flight and accepts the discard
+      prompt, the late `saved` answer closes the fresh editor. Disable or hide
+      the button while `state.editor?.busy`, with a reducer or island test.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.

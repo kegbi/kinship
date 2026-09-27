@@ -505,13 +505,59 @@ export const personLifeEvent = z.strictObject({
   id: z.uuid(),
   name: z.string().optional(),
   note: z.string().optional(),
+  typeId: z.uuid().optional(),
   typeName: z.string().optional(),
+  updatedAt: z.iso.datetime({ offset: true }),
 }).meta({ id: "PersonLifeEvent" });
+
+/** One choice from the workspace's current life-event type vocabulary. */
+export const personLifeEventType = z.strictObject({
+  id: z.uuid(),
+  name: z.string(),
+}).meta({ id: "PersonLifeEventType" });
 
 export const personLifeEventsReady = z.strictObject({
   events: z.array(personLifeEvent).max(100),
   status: z.enum(["hidden", "ready"]),
+  types: z.array(personLifeEventType).max(100),
 }).meta({ id: "PersonLifeEventsReady" });
+
+/**
+ * What a member writes to record a life event (JOURNAL-002): the calendar
+ * components its precision declares, and a name, a type, or both.
+ */
+export const personLifeEventInput = z.strictObject({
+  day: z.number().int().min(1).max(31).optional(),
+  month: z.number().int().min(1).max(12).optional(),
+  name: z.string().trim().max(200).optional(),
+  note: z.string().trim().max(10000).optional(),
+  precision: z.enum([
+    "day",
+    "full",
+    "month",
+    "month_day",
+    "unknown",
+    "year",
+    "year_month",
+  ]),
+  typeId: z.uuid().optional(),
+  year: z.number().int().min(1).max(9999).optional(),
+}).meta({ id: "PersonLifeEventInput" });
+
+/** An edit replaces the event's value while it still has this revision. */
+export const personLifeEventUpdateInput = personLifeEventInput.extend({
+  expectedUpdatedAt: z.iso.datetime({ offset: true }),
+}).meta({ id: "PersonLifeEventUpdateInput" });
+
+export const personLifeEventChanged = z.strictObject({
+  event: personLifeEvent,
+  status: z.enum(["created", "updated"]),
+}).meta({ id: "PersonLifeEventChanged" });
+
+export const personLifeEventDeleted = z.strictObject({
+  lifeEventId: z.uuid(),
+  status: z.literal("deleted"),
+}).meta({ id: "PersonLifeEventDeleted" });
 
 export const personLifecycleChanged = z.strictObject({
   person: personLifecycleIdentity,

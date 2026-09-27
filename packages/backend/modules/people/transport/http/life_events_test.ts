@@ -25,8 +25,10 @@ Deno.test("[PEOPLE-003] HTTP reads person life events through the profile projec
             date: { month: 12, precision: "year_month", year: 1843 },
             id: "00000000-0000-4000-8000-000000000200",
             name: "Published Notes",
+            updatedAt: "2026-09-27T10:00:00.000000Z",
           }],
           status: "ready",
+          types: [],
         });
       },
     },
@@ -113,7 +115,8 @@ Deno.test("[PEOPLE-003] HTTP returns the non-disclosing hidden life-event projec
     undefined,
     undefined,
     {
-      listLifeEvents: () => Promise.resolve({ events: [], status: "hidden" }),
+      listLifeEvents: () =>
+        Promise.resolve({ events: [], status: "hidden", types: [] }),
     },
   ));
 

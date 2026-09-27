@@ -701,6 +701,42 @@ flows:
     testLayers: [unit, integration, e2e]
     e2e: { required: true, testRefs: [tests/e2e/journal.JOURNAL-001.spec.ts] }
 
+  - id: JOURNAL-002
+    title: Maintain a person's life events
+    deliveryStatus: delivered
+    priority: P1
+    actor: crm-writer
+    trigger: The member adds, edits, or removes a life event from the person workspace's Life events section.
+    preconditions: [person-in-active-workspace, life-events-module-enabled]
+    steps:
+      - Open the person workspace's Life events section.
+      - Enter a name, a current workspace life-event type, or both, with the known date components and explicit precision.
+      - Save a new event, edit one at its current revision, or remove one after confirmation, through the journal module.
+      - Show the change in the section and the person's timeline without leaving the workspace.
+    alternateOutcomes: [
+      missing-name-and-type,
+      contradictory-date-components,
+      invalid-calendar-date,
+      archived-type-not-offered,
+      stale-revision,
+      archived-person-read-only,
+      cross-workspace-person-or-type-rejected,
+      life-events-module-disabled,
+      # Removing a life event also deletes reminders attached to it (the v7
+      # foreign key cascades); the remove confirmation says so.
+      removal-deletes-attached-reminders,
+    ]
+    result: The person's life events keep exactly their stated precision and appear in the timeline.
+    auditEffect: journal-life-event-created-updated-or-removed
+    pageIds: [people.profile]
+    moduleIds: [journal, people, workspaces]
+    permissions: [journal.write]
+    testLayers: [unit, integration, e2e]
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/life-events.JOURNAL-002.spec.ts],
+    }
+
   - id: IMPORT-001
     title: Import Monica data safely and idempotently
     deliveryStatus: delivered

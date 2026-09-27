@@ -163,6 +163,12 @@ export type {
   WorkspaceRelationshipTypeRecord,
 } from "./ports/relationship_boundary.ts";
 export type {
+  LifeEventWorkspaceBoundary,
+  LifeEventWorkspaceInspection,
+  LifeEventWorkspaceTransaction,
+  WorkspaceLifeEventType,
+} from "./ports/life_event_boundary.ts";
+export type {
   InteractionWorkspaceActor,
   InteractionWorkspaceBoundary,
   InteractionWorkspaceTransaction,

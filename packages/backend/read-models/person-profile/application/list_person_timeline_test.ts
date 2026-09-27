@@ -9,7 +9,7 @@ import * as fixtures from "../../../testing/fixtures.ts";
 const actor = fixtures.actor();
 const personId = fixtures.personId();
 const listLifeEvents: PersonProfileRepository["listLifeEvents"] = () =>
-  Promise.resolve({ events: [], status: "ready" });
+  Promise.resolve({ events: [], status: "ready", types: [] });
 
 Deno.test("[UXD-002C2A] person timeline bounds filters and round-trips its opaque cursor", async () => {
   const timestamps = {

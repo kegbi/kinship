@@ -95,7 +95,10 @@ import { importSourceInvalid } from "../../packages/backend/modules/import-expor
 import { possibleDuplicate } from "../../packages/backend/modules/people/transport/http/routes.ts";
 import { replacementRequired } from "../../packages/backend/modules/workspaces/transport/http/settings.ts";
 import { GIFT_FAILURES } from "../../packages/backend/modules/gifts/transport/http/routes.ts";
-import { JOURNAL_FAILURES } from "../../packages/backend/modules/journal/transport/http/routes.ts";
+import {
+  JOURNAL_FAILURES,
+  LIFE_EVENT_FAILURES,
+} from "../../packages/backend/modules/journal/transport/http/routes.ts";
 import {
   PLANNING_PROBLEMS,
   REMINDER_FAILURES,
@@ -166,6 +169,22 @@ Deno.test("[GAP-019] the journal failure table is what journal.ts answered", () 
       "(fallback) | 503 | journal_unavailable | Journal unavailable | The journal is temporarily unavailable.",
     ].join("\n"),
     "journal problems",
+  );
+});
+
+Deno.test("[JOURNAL-002] the life-event failure table names life events", () => {
+  assertEquals(
+    pinned(LIFE_EVENT_FAILURES),
+    [
+      "archived-write-rejected | 409 | archived_write_rejected | Archived person is read-only | Restore this person before changing life events.",
+      "forbidden | 403 | life_events_forbidden | Life events unavailable | Your active workspace membership or profile configuration no longer permits this change.",
+      "hidden | 403 | life_events_forbidden | Life events unavailable | Your active workspace membership or profile configuration no longer permits this change.",
+      "not-found | 404 | life_event_not_found | Life event not found | The person or life event does not exist in the active workspace.",
+      "stale | 409 | life_event_stale | Life event changed | Refresh the life events before trying again.",
+      "unavailable | 503 | life_events_unavailable | Life events unavailable | Life events are temporarily unavailable.",
+      "(fallback) | 400 | validation_failed | Invalid life event | Review the name, type, precision, and known date components.",
+    ].join("\n"),
+    "life-event problems",
   );
 });
 

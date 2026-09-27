@@ -22,6 +22,9 @@ import type {
   PersonInput,
   PersonLifecycleIdentity,
   PersonLifeEvent,
+  PersonLifeEventInput,
+  PersonLifeEventType,
+  PersonLifeEventUpdateInput,
   PersonProfileIdentity,
   PersonProfileSummary,
   PersonTimelineKind,
@@ -121,12 +124,67 @@ export function listPersonLifeEvents(
     {
       readonly events: readonly PersonLifeEvent[];
       readonly status: "hidden" | "ready";
+      readonly types: readonly PersonLifeEventType[];
     }
   >
 > {
   return request(`/api/v1/people/${encodeURIComponent(personId)}/life-events`, {
     headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
   });
+}
+
+export function createPersonLifeEvent(
+  personId: string,
+  input: PersonLifeEventInput,
+  workspaceId?: string,
+): Promise<
+  ApiResult<{ readonly event: PersonLifeEvent; readonly status: "created" }>
+> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/life-events`, {
+    method: "POST",
+    headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+    body: JSON.stringify(input),
+  });
+}
+
+export function updatePersonLifeEvent(
+  personId: string,
+  lifeEventId: string,
+  input: PersonLifeEventUpdateInput,
+  workspaceId?: string,
+): Promise<
+  ApiResult<{ readonly event: PersonLifeEvent; readonly status: "updated" }>
+> {
+  return request(
+    `/api/v1/people/${encodeURIComponent(personId)}/life-events/${
+      encodeURIComponent(lifeEventId)
+    }`,
+    {
+      method: "PATCH",
+      headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function deletePersonLifeEvent(
+  personId: string,
+  lifeEventId: string,
+  input: PersonTransitionInput,
+  workspaceId?: string,
+): Promise<
+  ApiResult<{ readonly lifeEventId: string; readonly status: "deleted" }>
+> {
+  return request(
+    `/api/v1/people/${encodeURIComponent(personId)}/life-events/${
+      encodeURIComponent(lifeEventId)
+    }`,
+    {
+      method: "DELETE",
+      headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 export function listPersonTimeline(

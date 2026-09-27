@@ -424,6 +424,14 @@ export type PersonLifeEventPrecision =
 
 export type PersonLifeEvent = components["schemas"]["PersonLifeEvent"];
 
+export type PersonLifeEventType = components["schemas"]["PersonLifeEventType"];
+
+export type PersonLifeEventInput =
+  components["schemas"]["PersonLifeEventInput"];
+
+export type PersonLifeEventUpdateInput =
+  components["schemas"]["PersonLifeEventUpdateInput"];
+
 export type PersonTimelineKind =
   | "activity"
   | "call"

@@ -15,9 +15,8 @@
  */
 
 import {
-  componentShape,
   type DatePrecision,
-  isRealCalendarDate,
+  partialDateErrors,
 } from "../../../../shared-kernel/partial_date.ts";
 import type { ValidationErrors } from "../../../../shared-kernel/result.ts";
 import { optionalText } from "../../../../shared-kernel/validation.ts";
@@ -78,40 +77,13 @@ export function normalizeImportantDate(
 /**
  * The field errors a normalized value carries.
  *
- * The components are checked against the precision first, then range-checked,
- * and only a month and day that both survived are asked whether they name a
- * real calendar day — a February 30th is a different mistake from a month 13.
+ * The components follow the shared kernel's partial-date rule; what is left
+ * here is what only an important date says — its flags, label, and notes.
  */
 export function validateImportantDate(
   value: ImportantDateValue,
 ): ValidationErrors {
-  const errors: Record<string, string> = {};
-  const expected = componentShape[value.precision];
-  for (const component of ["year", "month", "day"] as const) {
-    const present = value[component] !== undefined;
-    if (present !== expected.includes(component)) {
-      errors[component] = present
-        ? `Remove ${component}; it contradicts ${value.precision} precision.`
-        : `Enter ${component} for ${value.precision} precision.`;
-    }
-  }
-  if (
-    value.year !== undefined &&
-    (!Number.isInteger(value.year) || value.year < 1 || value.year > 9999)
-  ) errors.year = "Enter a year from 1 through 9999.";
-  if (
-    value.month !== undefined &&
-    (!Number.isInteger(value.month) || value.month < 1 || value.month > 12)
-  ) errors.month = "Enter a month from 1 through 12.";
-  if (
-    value.day !== undefined &&
-    (!Number.isInteger(value.day) || value.day < 1 || value.day > 31)
-  ) errors.day = "Enter a day from 1 through 31.";
-  if (
-    value.month !== undefined && value.day !== undefined &&
-    !errors.month && !errors.day &&
-    !isRealCalendarDate(value.year ?? 2000, value.month, value.day)
-  ) errors.day = "Enter a real calendar date.";
+  const errors = partialDateErrors(value);
   if (value.isYearApproximate && value.year === undefined) {
     errors.isYearApproximate = "An approximate year still needs a year value.";
   }

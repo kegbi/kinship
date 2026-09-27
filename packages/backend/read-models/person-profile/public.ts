@@ -10,6 +10,7 @@ export type {
   PersonDueProjection,
   PersonLifeEvent,
   PersonLifeEventPrecision,
+  PersonLifeEventType,
   PersonPrimaryContactMethod,
   PersonProfile,
   PersonProfileActor,

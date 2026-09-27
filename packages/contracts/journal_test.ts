@@ -175,3 +175,86 @@ Deno.test("[JOURNAL-001] generated contract exposes journal routes and client", 
     "journal client does not preserve discriminated items and server-derived deletion",
   );
 });
+
+Deno.test("[JOURNAL-002] generated contract exposes exact life-event writes", async () => {
+  const document = JSON.parse(
+    await Deno.readTextFile("packages/contracts/openapi/openapi.json"),
+  ) as {
+    paths: Record<
+      string,
+      Record<string, {
+        operationId?: string;
+        requestBody?: {
+          content?: { "application/json"?: { schema?: { $ref?: string } } };
+        };
+        responses?: Record<string, {
+          content?: { "application/json"?: { schema?: { $ref?: string } } };
+        }>;
+      }>
+    >;
+    components: {
+      schemas: Record<string, {
+        additionalProperties?: boolean;
+        required?: readonly string[];
+      }>;
+    };
+  };
+  const collection = "/api/v1/people/{personId}/life-events";
+  const item = `${collection}/{lifeEventId}`;
+  for (
+    const [path, method, operation, body, status, response] of [
+      [
+        collection,
+        "post",
+        "createPersonLifeEvent",
+        "PersonLifeEventInput",
+        "201",
+        "PersonLifeEventChanged",
+      ],
+      [
+        item,
+        "patch",
+        "updatePersonLifeEvent",
+        "PersonLifeEventUpdateInput",
+        "200",
+        "PersonLifeEventChanged",
+      ],
+      [
+        item,
+        "delete",
+        "deletePersonLifeEvent",
+        "PersonTransitionInput",
+        "200",
+        "PersonLifeEventDeleted",
+      ],
+    ] as const
+  ) {
+    const described = document.paths[path]?.[method];
+    assert(described?.operationId === operation, `${operation} missing`);
+    assert(
+      described.requestBody?.content?.["application/json"]?.schema?.$ref ===
+          `#/components/schemas/${body}` &&
+        described.responses?.[status]?.content?.["application/json"]?.schema
+            ?.$ref === `#/components/schemas/${response}` &&
+        described.responses?.["409"] !== undefined,
+      `${operation} lacks its exact body, success, or conflict answer`,
+    );
+  }
+  assert(
+    sameMembers(
+      document.components.schemas.PersonLifeEventUpdateInput?.required,
+      ["expectedUpdatedAt", "precision"],
+    ) &&
+      document.components.schemas.PersonLifeEventInput
+          ?.additionalProperties === false &&
+      sameMembers(document.components.schemas.PersonLifeEventsReady?.required, [
+        "events",
+        "status",
+        "types",
+      ]) &&
+      document.components.schemas.PersonLifeEvent?.required?.includes(
+        "updatedAt",
+      ),
+    "life-event writes must name the revision they replace",
+  );
+});

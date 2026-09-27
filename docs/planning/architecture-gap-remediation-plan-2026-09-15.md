@@ -1708,13 +1708,36 @@ require a synchronized schema v8 and are called out explicitly.
     Monica avatars.
   - Verify: unit, integration (missing-object case), E2E.
 
-- [ ] **GAP-046 — Life-event create, edit, delete.** M. Depends: 017, 028. Flow
+- [x] **GAP-046 — Life-event create, edit, delete.** M. Depends: 017, 028. Flow
       `JOURNAL-002`.
   - Scope: resolve the deferred flow decision in `traceability.md` #1; `journal`
     use case with life-event type vocabulary from `workspaces`; API
     `POST/PATCH/DELETE /people/:id/life-events`; profile section editor using
     the form kit; audit.
   - Verify: unit, integration (cross-workspace negative), E2E.
+  - Delivered 2026-09-27: flow `JOURNAL-002` resolves deferred decision #1 in
+    `traceability.md`.
+    - The `journal` module owns create, edit, and remove use cases for
+      `life_events`. They read the type vocabulary through the `workspaces`
+      facade, validate dates with the shared kernel's partial-date rules, keep
+      archived people read-only, and record
+      `journal.life-event-created/updated/deleted` audit events.
+    - `POST /people/{personId}/life-events`, and `PATCH` and `DELETE` on
+      `/people/{personId}/life-events/{lifeEventId}`, are in the contract
+      registry and the generated client (126 documented, 129 mounted).
+    - The person workspace's Life events section has an "Add life event" control
+      and an editor on the island kit, driven by a pure reducer. List controls
+      lock while a save or removal is in flight, and the timeline and summary
+      refresh after each change.
+    - Removing an event also deletes the reminders attached to it, through the
+      v7 `ON DELETE CASCADE`. The remove confirmation says so, the flow lists it
+      as an alternate outcome, and an integration test pins it.
+    - Evidence: journal integration suites with cross-workspace, permission,
+      archived, validation, cascade, and 100-type vocabulary cases; the
+      `life-events.JOURNAL-002` spec with PEOPLE-003, PEOPLE-004, and PEOPLE-006
+      on Chromium and WebKit.
+    - Gates: fmt:check, lint, check, check:architecture (14), contracts:check,
+      unit, integration, and build.
 
 - [ ] **GAP-047 — Identity editing breadth and section visibility preferences.**
       M. Depends: 028. Flow extends `PEOPLE-005`.

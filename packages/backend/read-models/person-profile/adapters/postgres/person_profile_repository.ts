@@ -12,6 +12,7 @@ import {
   PERSON_PROFILE_TAG_PREVIEW_LIMIT,
   type PersonLifeEvent,
   type PersonLifeEventPrecision,
+  type PersonLifeEventType,
   type PersonPrimaryContactMethod,
   type PersonProfileIdentity,
   type PersonProfileRepository,
@@ -61,6 +62,7 @@ interface PersonLifeEventsRow {
   readonly events: readonly PersonLifeEvent[];
   readonly module_is_active: boolean;
   readonly person_id: string | null;
+  readonly types: readonly PersonLifeEventType[];
 }
 
 interface PersonTimelineContextRow {
@@ -421,7 +423,8 @@ export class PostgresPersonProfileRepository
     const result = await sql<PersonLifeEventsRow>`
       select person.id::text as person_id,
         coalesce(profile_module.is_active, true) as module_is_active,
-        coalesce(history.events, '[]'::jsonb) as events
+        coalesce(history.events, '[]'::jsonb) as events,
+        coalesce(vocabulary.types, '[]'::jsonb) as types
       from (select ${command.workspaceId}::uuid as id) workspace
       left join crm.people person
         on person.id = ${command.personId}::uuid
@@ -434,7 +437,9 @@ export class PostgresPersonProfileRepository
           'id', event.id::text,
           'name', event.name,
           'note', event.note,
+          'typeId', event.life_event_type_id::text,
           'typeName', event_type.name,
+          'updatedAt', ${instantColumn("event.updated_at")},
           'date', jsonb_strip_nulls(jsonb_build_object(
             'precision', event.precision,
             'year', event.year,
@@ -461,11 +466,32 @@ export class PostgresPersonProfileRepository
           on event_type.id = event.life_event_type_id
           and event_type.workspace_id = workspace.id
       ) history on true
+      left join lateral (
+        select jsonb_agg(jsonb_build_object(
+          'id', choice.id::text, 'name', choice.name
+        ) order by choice.sort_order, choice.name, choice.id) as types
+        from (
+          select candidate.id, candidate.sort_order,
+            coalesce(nullif(candidate.name, ''), 'Life event') as name
+          from crm.life_event_types candidate
+          where candidate.workspace_id = workspace.id and not candidate.is_archived
+            and person.id is not null
+            and coalesce(profile_module.is_active, true)
+          order by candidate.sort_order, name, candidate.id
+          -- The contract bounds the vocabulary at 100 choices. An event whose
+          -- type sorts past them is still named by typeName, and its editor
+          -- offers that type as "(archived)"; the journal use case accepts it
+          -- because the event already carries it.
+          limit 100
+        ) choice
+      ) vocabulary on true
     `.execute(this.database);
     const row = result.rows[0]!;
     if (!row.person_id) return { status: "not-found" };
-    if (!row.module_is_active) return { events: [], status: "hidden" };
-    return { events: row.events, status: "ready" };
+    if (!row.module_is_active) {
+      return { events: [], status: "hidden", types: [] };
+    }
+    return { events: row.events, status: "ready", types: row.types };
   }
 
   async listTimeline(

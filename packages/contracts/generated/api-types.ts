@@ -745,11 +745,27 @@ export interface paths {
         };
         readonly get: operations["listPersonLifeEvents"];
         readonly put?: never;
-        readonly post?: never;
+        readonly post: operations["createPersonLifeEvent"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
         readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/people/{personId}/life-events/{lifeEventId}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete: operations["deletePersonLifeEvent"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch: operations["updatePersonLifeEvent"];
         readonly trace?: never;
     };
     readonly "/api/v1/people/{personId}/relationships": {
@@ -2892,7 +2908,16 @@ export interface components {
             readonly id: string;
             readonly name?: string;
             readonly note?: string;
+            /** Format: uuid */
+            readonly typeId?: string;
             readonly typeName?: string;
+            /** Format: date-time */
+            readonly updatedAt: string;
+        };
+        readonly PersonLifeEventChanged: {
+            readonly event: components["schemas"]["PersonLifeEvent"];
+            /** @enum {string} */
+            readonly status: "created" | "updated";
         };
         readonly PersonLifeEventDate: {
             readonly day?: number;
@@ -2903,10 +2928,46 @@ export interface components {
             readonly precision: "day" | "full" | "month" | "month_day" | "unknown" | "year" | "year_month";
             readonly year?: number;
         };
+        readonly PersonLifeEventDeleted: {
+            /** Format: uuid */
+            readonly lifeEventId: string;
+            /** @constant */
+            readonly status: "deleted";
+        };
+        readonly PersonLifeEventInput: {
+            readonly day?: number;
+            readonly month?: number;
+            readonly name?: string;
+            readonly note?: string;
+            /** @enum {string} */
+            readonly precision: "day" | "full" | "month" | "month_day" | "unknown" | "year" | "year_month";
+            /** Format: uuid */
+            readonly typeId?: string;
+            readonly year?: number;
+        };
+        readonly PersonLifeEventType: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly name: string;
+        };
+        readonly PersonLifeEventUpdateInput: {
+            readonly day?: number;
+            readonly month?: number;
+            readonly name?: string;
+            readonly note?: string;
+            /** @enum {string} */
+            readonly precision: "day" | "full" | "month" | "month_day" | "unknown" | "year" | "year_month";
+            /** Format: uuid */
+            readonly typeId?: string;
+            readonly year?: number;
+            /** Format: date-time */
+            readonly expectedUpdatedAt: string;
+        };
         readonly PersonLifeEventsReady: {
             readonly events: readonly components["schemas"]["PersonLifeEvent"][];
             /** @enum {string} */
             readonly status: "hidden" | "ready";
+            readonly types: readonly components["schemas"]["PersonLifeEventType"][];
         };
         readonly PersonLifecycleChanged: {
             readonly person: components["schemas"]["PersonLifecycleIdentity"];
@@ -8309,6 +8370,263 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly createPersonLifeEvent: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly personId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["PersonLifeEventInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Life event recorded on a current-workspace person */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PersonLifeEventChanged"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly deletePersonLifeEvent: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly personId: string;
+                readonly lifeEventId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["PersonTransitionInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Life event removed at the expected revision */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PersonLifeEventDeleted"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly updatePersonLifeEvent: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly personId: string;
+                readonly lifeEventId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["PersonLifeEventUpdateInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Life event replaced at the expected revision */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PersonLifeEventChanged"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

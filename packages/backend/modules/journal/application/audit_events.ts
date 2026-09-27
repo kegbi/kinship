@@ -13,7 +13,7 @@ import type {
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
 import { correlationOf } from "../../../shared-kernel/telemetry.ts";
-import type { JournalAudit } from "../ports/audit.ts";
+import type { JournalAudit, LifeEventAudit } from "../ports/audit.ts";
 
 export function describeJournalEvent(
   command: Parameters<JournalAudit["record"]>[0],
@@ -39,6 +39,37 @@ export function journalAuditFrom(
       recorder.record({
         event: describeJournalEvent(command),
         missing: "Journal audit insert failed.",
+        transaction: command.transaction,
+      }),
+  };
+}
+
+/** The row a life-event write stores: `journal.life-event-<action>`. */
+export function describeLifeEventEvent(
+  command: Parameters<LifeEventAudit["record"]>[0],
+): AuditEvent {
+  return {
+    action: `journal.life-event-${command.action}`,
+    actorMemberId: command.actor.memberId,
+    occurredAt: command.occurredAt,
+    payload: {},
+    personId: command.personId,
+    subjectId: command.lifeEventId,
+    subjectType: "life_event",
+    visibleOnDashboard: true,
+    workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
+  };
+}
+
+export function lifeEventAuditFrom(
+  recorder: AuditEventRecorder,
+): LifeEventAudit {
+  return {
+    record: (command) =>
+      recorder.record({
+        event: describeLifeEventEvent(command),
+        missing: "Life-event audit insert failed.",
         transaction: command.transaction,
       }),
   };

@@ -115,14 +115,14 @@ inventory to ordinary members.
 
 ## Slice 6: Journal And Governance
 
-Flows: `JOURNAL-001`, `GOVERNANCE-001`, and `PEOPLE-003`.
+Flows: `JOURNAL-001`, `JOURNAL-002`, `GOVERNANCE-001`, and `PEOPLE-003`.
 
 Deliver journal posts, day ratings, ordered journal items, legal-document
 acceptance, and the necessary global navigation. Keep person-linked history
 visible in the person workspace without making Journal a people submodule.
 Complete `PEOPLE-003` here only after every enabled core person section exists
-and its read contract passes. This acceptance does not authorize an uncataloged
-life-event mutation flow.
+and its read contract passes. `JOURNAL-002` adds, edits, and removes a person's
+life events from the Life events section through the journal module.
 
 ## Slice 7: Data Lifecycle, Import, And Export
 
@@ -191,8 +191,6 @@ distinct. Production ready is independent of every feature-completion label.
 PRODUCT-001 chooses no branch and adds no new stable ID for the following
 follow-up decisions:
 
-- the life-event mutation flow, priority, page association, observable outcomes,
-  E2E contract, and effect on later core-completeness scope;
 - an operations user interface, stable page/flow IDs, permissions, states, and
   E2E contract;
 - whether `page.flowIds` is exhaustive or primary-only;
@@ -204,6 +202,9 @@ follow-up decisions:
 
 These gaps remain undecided. Current catalog identities, priorities, delivery
 statuses, page associations, and public-page empty `flowIds` remain unchanged.
+
+The former life-event mutation flow gate is resolved: GAP-046 added
+`JOURNAL-002` (P1, Slice 6, `people.profile`).
 
 ## Slice Acceptance
 

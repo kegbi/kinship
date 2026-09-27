@@ -126,7 +126,9 @@ test("[PEOPLE-003] reads the complete canonical person workspace", {
   await expect(publishedNotesTimelineRow).toHaveCount(1);
   await expect(publishedNotesTimelineRow).toContainText("December 1843");
   await expect(publishedNotesTimelineRow).toContainText("Published Notes");
-  await expect(history.getByRole("button", { name: /add/i })).toHaveCount(0);
+  // JOURNAL-002 made life events editable from this section.
+  await expect(history.getByRole("button", { name: "Add life event" }))
+    .toBeVisible();
 
   const tasks = page.locator("#profile-section-tasks");
   const openTasks = tasks.locator("[data-task-open-list] > li");

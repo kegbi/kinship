@@ -3,7 +3,8 @@
  *
  * The timeline is a read model and the posts, day ratings, and activity links
  * are the journal module's writes; this file is only the seven routes between
- * them and the browser. The problem responder, the session cookie, the origin
+ * them and the browser, plus the three life-event writes `life_events.ts`
+ * serves (JOURNAL-002). The problem responder, the session cookie, the origin
  * check, and the kernel status map came from `packages/http-kit` (GAP-019). The routes are
  * mounted from `packages/contracts/routes/journal.ts` (GAP-022), which is why
  * the post update reads `itemId`: the document names that parameter on both
@@ -12,7 +13,7 @@
  */
 
 import { Hono } from "hono";
-import type { JournalManagement } from "../../public.ts";
+import type { JournalManagement, LifeEventManagement } from "../../public.ts";
 import type { createProtectedSessionCoordinator } from "../../../workspaces/public.ts";
 import type { JournalTimeline } from "../../../../read-models/journal-timeline/public.ts";
 import {
@@ -48,11 +49,16 @@ import {
   parseQuery,
   parseValue,
 } from "../../../../../http-kit/validate.ts";
+import { createLifeEventRoutes } from "./life_events.ts";
+
+export { LIFE_EVENT_FAILURES } from "./life_events.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface JournalHttpServices {
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly journal: JournalManagement;
+  /** A person's life events (JOURNAL-002), when the root composed them. */
+  readonly lifeEvents?: LifeEventManagement;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
   readonly timeline: JournalTimeline;
 }
@@ -220,5 +226,15 @@ export function createJournalRoutes(
       return context.json(result);
     },
   );
+  if (services.lifeEvents) {
+    routes.route(
+      "/",
+      createLifeEventRoutes({
+        browserSecurity: services.browserSecurity,
+        lifeEvents: services.lifeEvents,
+        protectedSessions: services.protectedSessions,
+      }),
+    );
+  }
   return routes;
 }

@@ -23,3 +23,19 @@ export interface JournalAudit {
     readonly transaction: JournalTransaction;
   }): Promise<string>;
 }
+
+/**
+ * What a life-event write records. The event is named by its identifier and
+ * the person it belongs to, so the person's audit history lists it; a
+ * deletion has nothing else left to describe.
+ */
+export interface LifeEventAudit {
+  record(command: {
+    readonly action: "created" | "deleted" | "updated";
+    readonly actor: JournalActor;
+    readonly lifeEventId: string;
+    readonly occurredAt: Date;
+    readonly personId: string;
+    readonly transaction: JournalTransaction;
+  }): Promise<string>;
+}
