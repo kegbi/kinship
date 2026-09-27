@@ -1,4 +1,8 @@
-import { applyCanonicalSchema } from "./baseline.ts";
+import {
+  applyCanonicalSchema,
+  type CanonicalSchemaArtifacts,
+  type SchemaAction,
+} from "./baseline.ts";
 import { resolveDatabaseUrl } from "../../packages/backend/platform/postgres/config.ts";
 
 const v1SchemaPath = new URL(
@@ -54,14 +58,11 @@ const migrationV6ToV7Path = new URL(
   import.meta.url,
 );
 
-if (import.meta.main) {
-  const databaseUrl = resolveDatabaseUrl(Deno.env);
-  if (!databaseUrl) {
-    throw new Error(
-      "DATABASE_URL or complete PG connection fields are required",
-    );
-  }
-  const action = await applyCanonicalSchema(databaseUrl, {
+/** Reads every immutable schema artifact the runner verifies and applies. */
+export async function readCanonicalArtifacts(): Promise<
+  CanonicalSchemaArtifacts
+> {
+  return {
     migrationV1ToV2: await Deno.readTextFile(migrationPath),
     migrationV2ToV3: await Deno.readTextFile(migrationV2ToV3Path),
     migrationV3ToV4: await Deno.readTextFile(migrationV3ToV4Path),
@@ -75,6 +76,25 @@ if (import.meta.main) {
     v5Sql: await Deno.readTextFile(v5SchemaPath),
     v6Sql: await Deno.readTextFile(v6SchemaPath),
     v7Sql: await Deno.readTextFile(v7SchemaPath),
-  });
-  console.log(`Canonical schema v7: ${action}`);
+  };
+}
+
+/** Brings the configured database to canonical schema v7, or refuses. */
+export async function runMigration(
+  environment: { get(name: string): string | undefined },
+): Promise<Exclude<SchemaAction, "reject">> {
+  const databaseUrl = resolveDatabaseUrl(environment);
+  if (!databaseUrl) {
+    throw new Error(
+      "DATABASE_URL or complete PG connection fields are required",
+    );
+  }
+  return await applyCanonicalSchema(
+    databaseUrl,
+    await readCanonicalArtifacts(),
+  );
+}
+
+if (import.meta.main) {
+  console.log(`Canonical schema v7: ${await runMigration(Deno.env)}`);
 }

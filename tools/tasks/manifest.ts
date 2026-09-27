@@ -374,12 +374,15 @@ export const OPERATOR_SCRIPTS: readonly OperatorScript[] = [
 
 /**
  * Every PostgreSQL-backed integration file runs under one disposable project,
- * so one permission set covers the whole suite.
+ * so one permission set covers the whole suite. `docker` is granted for the
+ * object-store fault suite alone (GAP-037), which starts, pauses, and removes
+ * its own pinned RustFS container.
  */
 export const INTEGRATION_PERMISSIONS: Permissions = {
   read: [...SCHEMA_READS],
   env: [...APPLICATION_DATABASE_ENV],
   net: "all",
+  run: ["docker"],
 };
 
 // --- Modules -------------------------------------------------------------
@@ -608,6 +611,7 @@ export const MODULES: readonly TaskModule[] = [
       "tests/integration/authentication_budget_postgres_test.ts",
       "tests/integration/authentication_sign_in_postgres_test.ts",
       "tests/integration/files_postgres_test.ts",
+      "tests/integration/files_object_store_postgres_test.ts",
       "tests/integration/governance_postgres_test.ts",
       "tests/integration/interactions_activities_postgres_test.ts",
       "tests/integration/interactions_communications_postgres_test.ts",
@@ -622,6 +626,9 @@ export const MODULES: readonly TaskModule[] = [
       "tests/integration/settings_preferences_postgres_test.ts",
       "tests/integration/settings_personalization_postgres_test.ts",
       "tests/integration/time_preferences_postgres_test.ts",
+      "tests/integration/migrations_postgres_test.ts",
+      "tests/integration/read_models_reports_postgres_test.ts",
+      "tests/integration/read_models_today_postgres_test.ts",
     ],
     coverage: {
       directory: "deno",
@@ -843,6 +850,7 @@ export const MODULES: readonly TaskModule[] = [
         "tests/integration/authentication_budget_postgres_test.ts",
         "tests/integration/authentication_sign_in_postgres_test.ts",
         "tests/integration/files_postgres_test.ts",
+        "tests/integration/files_object_store_postgres_test.ts",
         "tests/integration/gifts_postgres_test.ts",
         "tests/integration/governance_postgres_test.ts",
         "tests/integration/import_postgres_test.ts",
@@ -866,6 +874,9 @@ export const MODULES: readonly TaskModule[] = [
         "tests/integration/settings_preferences_postgres_test.ts",
         "tests/integration/settings_personalization_postgres_test.ts",
         "tests/integration/time_preferences_postgres_test.ts",
+        "tests/integration/migrations_postgres_test.ts",
+        "tests/integration/read_models_reports_postgres_test.ts",
+        "tests/integration/read_models_today_postgres_test.ts",
       ],
     },
   },
@@ -987,6 +998,7 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "packages/backend/modules/planning/transport/http/routes_test.ts",
         "apps/worker/composition_test.ts",
+        "apps/worker/main_test.ts",
         "packages/backend/modules/planning/domain/cadence_test.ts",
         "packages/backend/modules/planning/domain/cursors_test.ts",
         "packages/backend/modules/planning/domain/delivery_rules_test.ts",
@@ -1059,6 +1071,7 @@ export const MODULES: readonly TaskModule[] = [
         "tests/integration/planning_reminders_postgres_test.ts",
         "tests/integration/planning_cadences_postgres_test.ts",
         "tests/integration/planning_delivery_postgres_test.ts",
+        "tests/integration/read_models_today_postgres_test.ts",
       ],
       include: [
         "packages/backend/modules/planning/transport/http/routes.ts",
@@ -1277,7 +1290,9 @@ export const MODULES: readonly TaskModule[] = [
       ],
       permissions: {
         // The object-storage suite runs the S3 transport against a loopback
-        // HTTP server it starts itself.
+        // HTTP server it starts itself, and through the S3 client, whose
+        // stream library reads `READABLE_STREAM` when it loads (GAP-037).
+        env: ["READABLE_STREAM"],
         net: ["127.0.0.1"],
       },
     },
@@ -1535,6 +1550,7 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "packages/backend/modules/workspaces/transport/http/workspace_lifecycle_test.ts",
         "apps/worker/composition_test.ts",
+        "apps/worker/main_test.ts",
         "packages/backend/modules/workspaces/domain/workspace_lifecycle_rules_test.ts",
         "packages/backend/modules/workspaces/application/workspace_lifecycle_test.ts",
         "packages/contracts/workspace_lifecycle_test.ts",

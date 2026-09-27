@@ -72,6 +72,7 @@ export class PostgresTodayRemindersRepository
           from crm.reminder_occurrences occurrence
           join crm.reminders reminder on reminder.id = occurrence.reminder_id
           join crm.people person on person.id = reminder.person_id
+            and person.workspace_id = reminder.workspace_id
           where reminder.workspace_id = ${command.workspaceId}::uuid
             and (reminder.is_active or occurrence.visible_at is not null)
             and reminder.deleted_at is null

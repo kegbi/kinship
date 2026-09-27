@@ -502,7 +502,7 @@ Playwright test carrying its stable flow ID.
       step: find what makes these cases slow (real timers, repeated full
       re-renders, or cold imports) and make them fast rather than raising the
       timeout.
-- [ ] **REL-048 — Today's attention queue can stay loading after its read
+- [x] **REL-048 — Today's attention queue can stay loading after its read
       answered.** Main CI run `36271395679` on `a88429c` (GAP-041, which changed
       no web code) failed `app-006c.spec.ts:484` (`[TODAY-001]`) on Chromium
       only: after the spec's one-time 503 for `/today/favorite-notes` and
@@ -519,7 +519,12 @@ Playwright test carrying its stable flow ID.
       replaces it with one island and one read slot, and its candidate must
       include a test that an answered attention read always settles the queue.
       This session could not rerun the job (the integration token is refused
-      rerun and dispatch), so the next push to `main` is the rerun.
+      rerun and dispatch), so the next push to `main` is the rerun. Delivered
+      2026-09-27 by GAP-033: the attention queue is one island with one read
+      slot and a pure reducer in which every read settles every region it marked
+      loading, proved by a reducer test over every read sequence and an island
+      test with a failed preferences read and a superseded first read; every
+      main run since passed `app-006c` on all three browsers.
 - [ ] **REL-049 — "Set a stay-in-touch cadence" never opens the cadence
       editor.** Found reviewing GAP-031: the first-run action in
       `lib/people-profile.ts` targets the cadence field inside

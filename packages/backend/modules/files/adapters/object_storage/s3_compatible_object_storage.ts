@@ -17,17 +17,38 @@ export function createObjectStorageRequestTransport(
           ...requestArguments: unknown[]
         ) => http.ClientRequest
       )(...args);
+      // The timeout covers the whole exchange: it runs until the response
+      // body ends, closes, or errors, so a store that stalls before its
+      // headers or part-way through a body is cut off alike.
+      let errored = false;
+      let response: http.IncomingMessage | undefined;
       const timeout = setTimeout(() => {
-        request.destroy(
-          new Error(`Object storage request timed out after ${timeoutMs}ms.`),
+        const error = new Error(
+          `Object storage request timed out after ${timeoutMs}ms.`,
         );
+        request.socket?.destroy();
+        request.destroy(error);
+        response?.destroy(error);
+        // Destroying a request on a reused keep-alive socket does not always
+        // report an error, which would leave the caller waiting forever. Once
+        // the destroy has had its turn to report, the pending operation is
+        // settled here if it did not.
+        setImmediate(() => {
+          if (!errored && !response) request.emit("error", error);
+        });
       }, timeoutMs);
       const clearRequestTimeout = () => clearTimeout(timeout);
-      request.once("error", clearRequestTimeout);
-      request.once("response", (response) => {
-        response.once("close", clearRequestTimeout);
-        response.once("end", clearRequestTimeout);
-        response.once("error", clearRequestTimeout);
+      // A listener for the request's whole life: a late report from the torn
+      // down socket after the operation settled is expected, not uncaught.
+      request.on("error", () => {
+        errored = true;
+        clearRequestTimeout();
+      });
+      request.once("response", (received) => {
+        response = received;
+        received.once("close", clearRequestTimeout);
+        received.once("end", clearRequestTimeout);
+        received.once("error", clearRequestTimeout);
       });
       return request;
     }) as typeof http.request,

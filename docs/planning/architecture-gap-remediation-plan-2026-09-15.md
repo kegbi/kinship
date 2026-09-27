@@ -1468,7 +1468,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
       that trusts this environment's proxy), fmt:check, lint, check,
       check:architecture (14), contracts:check.
 
-- [ ] **GAP-037 — Coverage gaps: read models, worker, storage faults,
+- [x] **GAP-037 — Coverage gaps: read models, worker, storage faults,
       migrations.** M. Depends: 035.
   - Scope: Postgres integration tests for activity-report, audit-history,
     journal-timeline, and the five today repositories (tenancy negatives
@@ -1477,6 +1477,38 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     pinned RustFS in `files_postgres_test`; migration runner tests for `drift`
     and `v6 → v7` upgrade paths.
   - Verify: coverage includes `apps/worker/main.ts`; new suites green.
+  - Delivered 2026-09-27: new PostgreSQL suites cover the activity-report,
+    audit-history, and journal-timeline read models and the five Today
+    repositories. Each has cross-workspace negatives that assert the foreign
+    data is absent, plus revoked, member, and falsely claimed role negatives.
+    - Two production defects the new tests exposed are fixed, each with a
+      failing test first:
+      - Tenant leak: Today reminders joined a reminder's person without a
+        workspace guard, so a reminder linked across workspaces named the other
+        workspace's person. The join is now guarded and drops the row, as
+        attention does. A sweep of every join in those read models found no
+        other gap.
+      - Stalled read: the object-store request timeout did not end a read that
+        stalled on a kept-alive socket, because Deno's `node:http` stays silent
+        after `destroy()`. The transport now tears down the socket and settles
+        the operation itself, still answering 503 `files_unavailable`.
+    - Object storage: `files_object_store_postgres_test.ts` runs the timeout
+      (`docker pause`), missing-object (410), and quarantined-object (423)
+      cases against a disposable pinned RustFS that is removed even when setup
+      fails.
+    - Worker: `apps/worker/main.ts` exports `runWorker` with the same start,
+      signal, and shutdown behaviour and gains a unit suite (8 tests, 97.5%
+      lines).
+    - Migrations: the runner's drift, foreign-schema, changed-artifact, and
+      v6-to-v7 upgrade paths run on scratch databases.
+    - Coverage: every Deno set is equal or higher. The branch rows rose for
+      activity-report (84.0 to 96.2), audit-history (86.7 to 97.3),
+      journal-timeline (90.6 to 100), and Today tasks (75.0 to 90.0), and
+      `tools/migrations/main.ts` and `apps/worker/main.ts` are measured for
+      the first time.
+    - Evidence: integration 167 passed and 0 failed (142 before), root
+      test:unit and test:coverage passed.
+    - Gates: fmt:check, lint, check, check:architecture (14), contracts:check.
 
 - [ ] **GAP-038 — Visual regression baseline.** S-M. Depends: 036. Optional.
   - Scope: Playwright `toHaveScreenshot` for Today, directory, profile, settings

@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { Client as MinioClient } from "minio";
 import type { AddressInfo } from "node:net";
 import {
   createObjectStorageRequestTransport,
@@ -111,4 +112,76 @@ Deno.test("[FILES-001] S3-compatible adapter creates its private bucket once and
     failure = error;
   }
   assert(failure instanceof Error, "non-missing object errors propagate");
+});
+
+Deno.test("[FILES-001] GAP-037 a store that accepts but never replies settles the read at the configured timeout", async () => {
+  // A raw TCP listener that answers the bucket probe on a kept-alive
+  // connection and then goes silent: it still accepts and reads every later
+  // request but never writes a byte back, the way a paused store behaves.
+  const listener = Deno.listen({ hostname: "127.0.0.1", port: 0 });
+  const accepted: Deno.Conn[] = [];
+  let answered = false;
+  const accepting = (async () => {
+    for await (const connection of listener) {
+      accepted.push(connection);
+      (async () => {
+        const buffer = new Uint8Array(16_384);
+        while (await connection.read(buffer) !== null) {
+          if (answered) continue;
+          answered = true;
+          await connection.write(
+            new TextEncoder().encode(
+              "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n" +
+                "Connection: keep-alive\r\n\r\n",
+            ),
+          );
+        }
+      })().catch(() => undefined);
+    }
+  })();
+  const storage = new S3CompatibleObjectStorage(
+    new MinioClient({
+      accessKey: "access",
+      endPoint: "127.0.0.1",
+      port: listener.addr.port,
+      region: "us-east-1",
+      secretKey: "secret-value",
+      transport: createObjectStorageRequestTransport(false, 100),
+      useSSL: false,
+    }) as unknown as ConstructorParameters<typeof S3CompatibleObjectStorage>[0],
+    "stalled-files",
+  );
+  let guard: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const started = Date.now();
+    const outcome = await Promise.race([
+      storage.get({ key: "objects/stalled" }).then(
+        () => "resolved",
+        (error: unknown) => error,
+      ),
+      new Promise<string>((resolve) => {
+        guard = setTimeout(() => resolve("still pending"), 5_000);
+      }),
+    ]);
+    assert(
+      outcome instanceof Error &&
+        outcome.message === "Object storage request timed out after 100ms.",
+      `a stalled read did not settle with the timeout: ${String(outcome)}`,
+    );
+    assert(
+      Date.now() - started < 2_000,
+      "the stalled read outlived its configured timeout",
+    );
+  } finally {
+    clearTimeout(guard);
+    listener.close();
+    for (const connection of accepted) {
+      try {
+        connection.close();
+      } catch {
+        // The adapter already tore the socket down.
+      }
+    }
+    await accepting.catch(() => undefined);
+  }
 });
