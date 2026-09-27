@@ -7,7 +7,10 @@ import {
 import axe from "axe-core";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { settleNavigation } from "./support/navigation.ts";
+import {
+  settleNavigation,
+  settlePersonWorkspace,
+} from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -189,6 +192,7 @@ test(
     await page.getByRole("button", { name: "Save person", exact: true })
       .click();
     await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
+    await settlePersonWorkspace(page);
     const canonicalPersonUrl = page.url();
     await expect(page.locator("body")).toHaveAttribute(
       "data-page-id",
@@ -239,6 +243,7 @@ test(
     await expect(duplicate).toBeVisible();
     await page.getByRole("button", { name: "Create anyway" }).click();
     await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
+    await settlePersonWorkspace(page);
 
     const workspaceId = databaseValue(
       `select w.id::text from crm.workspaces w join crm.users u on u.id = w.created_by_user_id where u.email = ${

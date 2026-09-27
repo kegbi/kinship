@@ -321,6 +321,30 @@ describe("PEOPLE-005 important-date island", () => {
     expect(summary.vital("birthday")).toBe("February 29 (year unknown)");
   });
 
+  it("REL-051 focuses the first field while the opening click is still handled", async () => {
+    shell();
+    stubApi({ [listRoute]: listed([date()]) });
+    await mount();
+    // Firefox shows a script focus ring only while it handles the keyboard
+    // input that asked for it, so the field takes focus inside that click.
+    let focused: Element | null = null;
+    const record = () => focused = document.activeElement;
+    document.addEventListener("click", record);
+    try {
+      act(() => add().click());
+      expect(focused).toBe(within(form()).getByLabelText("Date type"));
+      act(() => element<HTMLButtonElement>("#important-date-cancel").click());
+      focused = null;
+      act(() =>
+        block().getByRole<HTMLButtonElement>("button", { name: /^Edit / })
+          .click()
+      );
+      expect(focused).toBe(within(form()).getByLabelText("Date type"));
+    } finally {
+      document.removeEventListener("click", record);
+    }
+  });
+
   it("keeps a precision's hidden components out of what it sends", async () => {
     shell();
     const api = stubApi({

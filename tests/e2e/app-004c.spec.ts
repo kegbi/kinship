@@ -8,7 +8,10 @@ import {
 import axe from "axe-core";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { settleNavigation } from "./support/navigation.ts";
+import {
+  settleNavigation,
+  settlePersonWorkspace,
+} from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -277,6 +280,7 @@ test(
     await page.getByRole("button", { name: "Save person", exact: true })
       .click();
     await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
+    await settlePersonWorkspace(page);
     const profilePath = new URL(page.url()).pathname;
     const heroCadence = page.locator("#person-profile-due-state");
     const nextReminder = page.locator(
@@ -690,6 +694,7 @@ test(
       await page.getByRole("button", { name: "Save person", exact: true })
         .click();
       await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
+      await settlePersonWorkspace(page);
     }
     const relationships = page.locator("#profile-section-relationships");
     const form = relationships.locator("#relationship-form");

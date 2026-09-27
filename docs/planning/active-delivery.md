@@ -529,6 +529,28 @@ Playwright test carrying its stable flow ID.
       by design. No assertion changed and no retry, sleep, or timeout was added.
       The four specs passed on Chromium and WebKit, twice each.
 
+- [x] **REL-051 — The important-dates island lost Firefox's focus ring, and more
+      specs left a person workspace mid-load.** Main CI run `36278743014` on
+      `2f49606` (GAP-031) failed two `app-004c` flows. On Firefox,
+      `app-004c.spec.ts:669` (`[PEOPLE-006]` APR-004) found no 2 px focus
+      outline on the important-dates sheet's `Cancel` after a keyboard open; it
+      reproduced locally every time. The vanilla module focused the date type
+      field inside the add button's click, while the island only queued its
+      `open` action there, so the field took focus after the click and Firefox,
+      which draws a script focus ring only while it handles the keyboard input
+      that asked for it, stopped matching `:focus-visible` for that focus and
+      the spec's later one. On WebKit, `app-004c.spec.ts:689` never saw "Given
+      name" on `/app/people/new`: its loop left the person it had just created
+      mid-load, the REL-046 and REL-050 class. Delivered 2026-09-27: the island
+      commits its `open` with `flushSync`, so the field is focused inside the
+      opening click again, with a unit test that fails without it; a scan for a
+      person arrival followed by a spec `goto` or `reload` added
+      `settlePersonWorkspace` at seven more sites (`app-003a` two, `app-004a`,
+      `app-004c` two, `app-005b`, `app-005c`), leaving the sites that
+      deliberately hold a section read open. No assertion changed and no retry,
+      sleep, or timeout was added. `app-004c` in full with the touched specs
+      passed 12 of 12 on each of Firefox, WebKit, and Chromium; web tests 1,043.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.

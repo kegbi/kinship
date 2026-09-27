@@ -5,7 +5,10 @@ import {
   test,
 } from "@playwright/test";
 import axe from "axe-core";
-import { settleNavigation } from "./support/navigation.ts";
+import {
+  settleNavigation,
+  settlePersonWorkspace,
+} from "./support/navigation.ts";
 
 const mailOrigin = process.env.TEST_MAIL_ORIGIN ?? "http://127.0.0.1:18025";
 const origin = process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321";
@@ -98,6 +101,7 @@ test(
     await page.getByRole("button", { name: "Save person", exact: true })
       .click();
     await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
+    await settlePersonWorkspace(page);
     await expect(
       page.getByRole("heading", { level: 1, name: "Ada Lovelace" }),
     ).toBeVisible();

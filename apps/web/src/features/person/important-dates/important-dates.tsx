@@ -223,7 +223,9 @@ export function ImportantDates(props: ImportantDatesProps) {
     const element = form.current;
     if (!element || !requestRailEditorOpen(element, true, opener)) return;
     element.reset();
-    dispatch(date ? { date, type: "open" } : { type: "open" });
+    // The field takes focus inside the opening click: Firefox draws a script
+    // focus ring only while it handles the keyboard input that asked for it.
+    flushSync(() => dispatch(date ? { date, type: "open" } : { type: "open" }));
   };
 
   const cancel = () => {
