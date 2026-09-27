@@ -53,15 +53,34 @@ prerequisite queues.
   each module's `transport/http/` and the HTTP kit in `packages/http-kit`; the
   next ticket, GAP-025, needs the product owner's decision on the UI stack
   before it starts.
-- Phase 4 of that plan is under way under ADR 0006 (shadcn/ui in React islands):
-  GAP-025 through GAP-033 are integrated, and GAP-039 and GAP-040 from Phase 6
-  ran in parallel and are integrated too. The CI workflow runs on every push to
-  `main`; the first-run Linux faults and the E2E intermittents found on the way
-  are fixed as `REL-032`, `REL-033`, and `REL-039` through `REL-045` (`REL-034`,
-  `REL-035`, `REL-036`, and `REL-038` stay parked). On 2026-09-26 the product
-  owner removed AI assistance (GAP-054, DG-08) from scope and paused the plan
-  after REL-045; it resumed the same day with `REL-046` and GAP-030. GAP-041
-  from Phase 6 is integrated too; the Phase 4 checkpoint is next.
+- Phase 4 ran under ADR 0006 (shadcn/ui in React islands), and GAP-039 and
+  GAP-040 from Phase 6 ran in parallel and are integrated too. The CI workflow
+  runs on every push to `main`; the first-run Linux faults and the E2E
+  intermittents found on the way are fixed as `REL-032`, `REL-033`, and
+  `REL-039` through `REL-045` (`REL-034`, `REL-035`, `REL-036`, and `REL-038`
+  stay parked). On 2026-09-26 the product owner removed AI assistance (GAP-054,
+  DG-08) from scope and paused the plan after REL-045; it resumed the same day
+  with `REL-046` and GAP-030. GAP-041 from Phase 6 is integrated too.
+- Phase 4 of that plan (GAP-025 through GAP-033, under ADR 0006) is integrated
+  at `84ed13bd`, and GAP-034 and GAP-035 from Phase 5 at `f37d444`. Every
+  application surface is now a React island or static Astro, public pages ship
+  no React, and no production module outside `components/ui/` builds DOM with
+  `document.createElement`.
+  - Local checkpoint on `84ed13bd`: root `check` and root `test` passed (1,299
+    vitest, 844 Deno tests including integration 130/0 and the gateway
+    log-capture fixture). The GAP-033 candidate passed `test:coverage` (every
+    set above its floor, web 98.64/95.38/99.43/99.86), `contracts:check` (123
+    documented, 126 mounted), `check:architecture` (14 baseline entries,
+    unchanged), and `build` (14 web-build tests).
+  - Main CI on `84ed13bd` passed every job but one WebKit flow, `app-008b`,
+    parked as the `REL-054` watch.
+  - Main CI on `f37d444` passed every job: static gates, unit and coverage,
+    PostgreSQL integration, schema, the api, web, and gateway images, and the
+    three-browser E2E matrix (169 passed, `perf-001`'s two own skips).
+  - `REL-047` through `REL-054` were found on the way; `REL-048`, `REL-050`, and
+    `REL-051` are fixed, and `REL-047`, `REL-049`, `REL-052`, `REL-053`, and
+    `REL-054` stay parked. The next work is GAP-036 and GAP-037, then the Phase
+    5 checkpoint.
 - User-directed follow-up: responsive person blocks, focus-border repair, then
   an evidence-backed application repair plan and execution in a clean task.
 - Remaining repair statuses and execution order belong to the
