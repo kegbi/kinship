@@ -14,7 +14,7 @@
  * it would stringify instead.
  */
 
-import { type RawBuilder, sql } from "kysely";
+import { type Expression, type RawBuilder, sql } from "kysely";
 
 /**
  * Six fractional digits, matching the precision the canonical schema stores
@@ -52,4 +52,15 @@ export function millisecondInstantColumn(
   return sql.raw(
     `to_char(${expression} at time zone 'UTC', '${MILLISECOND_INSTANT_FORMAT}')`,
   );
+}
+
+/**
+ * `instantColumn` for a query built with Kysely's query builder: the same
+ * projection around a typed expression, such as `eb.ref("gift.created_at")`,
+ * so the type checker holds the column to the generated schema.
+ */
+export function instantOf(expression: Expression<Date>): RawBuilder<string> {
+  return sql<string>`to_char(${expression} at time zone 'UTC', '${
+    sql.raw(INSTANT_FORMAT)
+  }')`;
 }

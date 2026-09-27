@@ -9,7 +9,7 @@
  *   deno run ... tools/tasks/run.ts <verb> [--module=<id>] [extra arguments]
  *
  * Verbs: all, unit, integration, contract, coverage, architecture, check,
- * build, ops.
+ * build, ops, schema-types.
  */
 
 import { withDisposablePostgres } from "../postgres_gate.ts";
@@ -137,6 +137,34 @@ async function runUnit(requested: string | undefined): Promise<void> {
   }
 }
 
+/** The generated Kysely types, beside the platform adapter that uses them. */
+const DATABASE_TYPES_DIRECTORY = "packages/backend/platform/postgres/generated";
+
+/**
+ * Derives the generated Kysely types from `environment.DATABASE_URL`, a
+ * database the gate has just migrated, or with `check` compares them
+ * byte-for-byte with the committed file and fails on any difference.
+ */
+export function databaseTypesArguments(check: boolean): string[] {
+  return [
+    "run",
+    // The generator's dependencies read their colour and TypeScript switches
+    // from the environment as they load, as `contracts:check`'s do.
+    "--allow-env",
+    "--allow-net=127.0.0.1",
+    `--allow-read=${DATABASE_TYPES_DIRECTORY}`,
+    ...(check ? [] : [`--allow-write=${DATABASE_TYPES_DIRECTORY}`]),
+    "tools/schema/database_types.ts",
+    ...(check ? ["--check"] : []),
+  ];
+}
+
+async function runSchemaTypes(check: boolean): Promise<void> {
+  await withDisposablePostgres((environment) =>
+    deno(databaseTypesArguments(check), environment)
+  );
+}
+
 async function runIntegration(requested: string | undefined): Promise<void> {
   const modules = requested === undefined
     ? MODULES.filter((module) => module.integration?.length)
@@ -148,12 +176,15 @@ async function runIntegration(requested: string | undefined): Promise<void> {
       `No integration suite is declared for ${requested ?? "the repository"}.`,
     );
   }
-  await withDisposablePostgres((environment) =>
-    deno(
+  await withDisposablePostgres(async (environment) => {
+    // The freshly migrated database is the canonical DDL, so the committed
+    // types must match it before any suite writes a row.
+    await deno(databaseTypesArguments(true), environment);
+    await deno(
       ["test", ...permissionFlags(INTEGRATION_PERMISSIONS), ...suites],
       environment,
-    )
-  );
+    );
+  });
 }
 
 async function runContract(requested: string | undefined): Promise<void> {
@@ -340,12 +371,14 @@ async function main(): Promise<void> {
       return await runBuild();
     case "ops":
       return await runOperator(rest);
+    case "schema-types":
+      return await runSchemaTypes(rest.includes("--check"));
     default:
       throw new TaskFailure(
         1,
         `Unknown verb ${
           verb ?? "(none)"
-        }. Use all, unit, integration, contract, coverage, architecture, check, build, or ops.`,
+        }. Use all, unit, integration, contract, coverage, architecture, check, build, ops, or schema-types.`,
       );
   }
 }

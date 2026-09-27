@@ -208,8 +208,11 @@ the target module's `public.ts`; paths into `domain`, `application`, `ports`,
 
 ## Generated And Canonical Files
 
-- Generated database types live under an explicit generated path and are never
-  edited by hand.
+- Generated database types live in
+  `packages/backend/platform/postgres/generated/database.ts` and are never
+  edited by hand. `tools/tasks/run.ts schema-types` derives them from a database
+  migrated to the canonical DDL, and `test:integration` fails on drift. Adapters
+  may import them; application, domain, and ports never do.
 - Generated API client/types live in `packages/contracts/generated` and may be
   imported by the web application.
 - OpenAPI artifacts are checked in and checked for drift.

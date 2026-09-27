@@ -1,7 +1,16 @@
-import type { RawNode } from "kysely";
+import {
+  DummyDriver,
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler,
+  type RawNode,
+} from "kysely";
+import type { Database } from "./database.ts";
 import {
   INSTANT_FORMAT,
   instantColumn,
+  instantOf,
   MILLISECOND_INSTANT_FORMAT,
   millisecondInstantColumn,
 } from "./timestamps.ts";
@@ -38,5 +47,28 @@ Deno.test("[GAP-010] an expression may be any SQL, not only a column", () => {
   assert(
     MILLISECOND_INSTANT_FORMAT === `YYYY-MM-DD"T"HH24:MI:SS.MS"Z"`,
     `the narrower format keeps three digits, received ${MILLISECOND_INSTANT_FORMAT}`,
+  );
+});
+
+Deno.test("[GAP-042] a typed column renders the same instant projection", () => {
+  const database = new Kysely<Database>({
+    dialect: {
+      createAdapter: () => new PostgresAdapter(),
+      createDriver: () => new DummyDriver(),
+      createIntrospector: (db) => new PostgresIntrospector(db),
+      createQueryCompiler: () => new PostgresQueryCompiler(),
+    },
+  });
+  const compiled = database.selectFrom("crm.gifts as gift")
+    .select((eb) => instantOf(eb.ref("gift.created_at")).as("created_at"))
+    .compile();
+  assert(
+    compiled.sql ===
+      `select to_char("gift"."created_at" at time zone 'UTC', '${INSTANT_FORMAT}') as "created_at" from "crm"."gifts" as "gift"`,
+    `the typed projection must render the shared fragment, received ${compiled.sql}`,
+  );
+  assert(
+    compiled.parameters.length === 0,
+    "a timestamp projection binds no parameters",
   );
 });

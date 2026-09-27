@@ -17,6 +17,7 @@
       "apps/web/.astro/",
       "apps/web/dist/",
       "docs/planning/tickets/",
+      "packages/backend/platform/postgres/generated/",
       "packages/contracts/generated/"
     ],
     "include": [
@@ -84,10 +85,12 @@
     "@std/yaml": "jsr:@std/yaml@1.2.0",
     "hono": "npm:hono@4.13.1",
     "kysely": "npm:kysely@0.29.4",
+    "kysely-codegen": "npm:kysely-codegen@0.20.0",
     "kysely-postgres-js": "npm:kysely-postgres-js@3.0.0",
     "postgres": "npm:postgres@3.4.9",
     "minio": "npm:minio@8.0.7",
     "openapi-typescript": "npm:openapi-typescript@7.13.0",
+    "typescript": "npm:typescript@5.9.3",
     "zod": "npm:zod@4.4.3",
     "zod-openapi": "npm:zod-openapi@6.0.2"
   },

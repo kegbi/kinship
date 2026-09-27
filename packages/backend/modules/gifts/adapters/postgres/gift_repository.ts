@@ -1,10 +1,22 @@
-import { type RawBuilder, sql } from "kysely";
+import { type ExpressionBuilder, type Selectable, sql } from "kysely";
+import type { Database } from "../../../../platform/postgres/database.ts";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
-import { databaseFromSession } from "../../../../platform/postgres/session.ts";
-import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
+import { schemaDatabaseFromSession } from "../../../../platform/postgres/session.ts";
+import { instantOf } from "../../../../platform/postgres/timestamps.ts";
 import type { GiftPageAnchor } from "../../domain/cursors.ts";
-import type { StoredDebt, StoredGift } from "../../domain/gift_rules.ts";
+import type {
+  DebtDirection,
+  DebtStatus,
+  GiftStatus,
+  StoredDebt,
+  StoredGift,
+} from "../../domain/gift_rules.ts";
 import type { GiftRepository } from "../../ports/gift_repository.ts";
+
+/*
+ * Every query here is built against the generated `Database`, so `deno check`
+ * holds each table, column, and written value to the canonical DDL.
+ */
 
 interface GiftRow {
   readonly amount: string | null;
@@ -34,19 +46,63 @@ interface DebtRow {
   readonly updated_at: string;
 }
 
-const giftColumns = sql`
-  gift.id::text, gift.person_id::text, gift.recipient_person_id::text,
-  gift.name, gift.url, gift.comment, gift.status,
-  gift.event_at::text, gift.amount::text, gift.currency_code,
-  ${instantColumn("gift.created_at")} as created_at,
-  ${instantColumn("gift.updated_at")} as updated_at
-`;
-const debtColumns = sql`
-  debt.id::text, debt.person_id::text, debt.direction, debt.status,
-  debt.amount::text, debt.currency_code, debt.reason, debt.settled_at::text,
-  ${instantColumn("debt.created_at")} as created_at,
-  ${instantColumn("debt.updated_at")} as updated_at
-`;
+/**
+ * A row as a query sees it under the alias `gift` or `debt`, whether it was
+ * read from its table or returned by the statement that wrote it.
+ */
+type GiftSource = Selectable<Database["crm.gifts"]>;
+type DebtSource = Selectable<Database["crm.debts"]>;
+
+/** The projection every gift query returns, one column per `GiftRow` field. */
+function giftColumns<DB extends { gift: GiftSource }>(
+  eb: ExpressionBuilder<DB, "gift">,
+) {
+  return [
+    eb.cast<string>(eb.ref("gift.id"), "text").as("id"),
+    eb.cast<string>(eb.ref("gift.person_id"), "text").as("person_id"),
+    eb.cast<string | null>(eb.ref("gift.recipient_person_id"), "text")
+      .as("recipient_person_id"),
+    eb.ref("gift.name").as("name"),
+    eb.ref("gift.url").as("url"),
+    eb.ref("gift.comment").as("comment"),
+    eb.ref("gift.status").as("status"),
+    eb.cast<string | null>(eb.ref("gift.event_at"), "text").as("event_at"),
+    eb.cast<string | null>(eb.ref("gift.amount"), "text").as("amount"),
+    eb.ref("gift.currency_code").as("currency_code"),
+    instantOf(eb.ref("gift.created_at")).as("created_at"),
+    instantOf(eb.ref("gift.updated_at")).as("updated_at"),
+  ];
+}
+
+/** The projection every debt query returns, one column per `DebtRow` field. */
+function debtColumns<DB extends { debt: DebtSource }>(
+  eb: ExpressionBuilder<DB, "debt">,
+) {
+  return [
+    eb.cast<string>(eb.ref("debt.id"), "text").as("id"),
+    eb.cast<string>(eb.ref("debt.person_id"), "text").as("person_id"),
+    eb.ref("debt.direction").as("direction"),
+    eb.ref("debt.status").as("status"),
+    eb.cast<string>(eb.ref("debt.amount"), "text").as("amount"),
+    eb.ref("debt.currency_code").as("currency_code"),
+    eb.ref("debt.reason").as("reason"),
+    eb.cast<string | null>(eb.ref("debt.settled_at"), "text").as("settled_at"),
+    instantOf(eb.ref("debt.created_at")).as("created_at"),
+    instantOf(eb.ref("debt.updated_at")).as("updated_at"),
+  ];
+}
+
+/** The text columns the schema constrains to the domain's vocabularies. */
+type GiftVocabulary = { readonly status: GiftStatus };
+type DebtVocabulary = {
+  readonly direction: DebtDirection;
+  readonly status: DebtStatus;
+};
+
+/** A page anchor's instant, compared as the `timestamptz` it was read from. */
+function anchorInstant(anchor: GiftPageAnchor) {
+  return sql<Date>`${anchor.updatedAt}::timestamptz`;
+}
 
 function gift(row: GiftRow): StoredGift {
   return {
@@ -77,23 +133,6 @@ function debt(row: DebtRow): StoredDebt {
   };
 }
 
-/**
- * Where the caller resumes, written out rather than as a row comparison
- * because the order mixes directions: newer rows first, and ties broken by an
- * ascending identifier.
- */
-function resumeAfter(
-  table: "debt" | "gift",
-  after: GiftPageAnchor | undefined,
-): RawBuilder<unknown> {
-  if (!after) return sql``;
-  const updatedAt = sql.raw(`${table}.updated_at`);
-  const id = sql.raw(`${table}.id`);
-  return sql`and (${updatedAt} < ${after.updatedAt}::timestamptz
-    or (${updatedAt} = ${after.updatedAt}::timestamptz
-      and ${id} > ${after.id}::uuid))`;
-}
-
 /** The anchor of the page after this one, when one more row was read. */
 function anchorOf(
   rows: readonly { readonly id: string; readonly updated_at: string }[],
@@ -106,6 +145,8 @@ function anchorOf(
     : undefined;
 }
 
+type Session = Parameters<GiftRepository["list"]>[0]["transaction"];
+
 /**
  * The subject of every gift or debt: a person this workspace still owns. The
  * actor's own standing is `ActorRevalidation`'s question, asked by
@@ -113,21 +154,35 @@ function anchorOf(
  */
 async function personStatus(command: {
   readonly personId: string;
-  readonly transaction: Parameters<GiftRepository["list"]>[0]["transaction"];
+  readonly transaction: Session;
   readonly workspaceId: string;
   readonly lock?: boolean;
 }): Promise<"active" | "archived" | "not-found"> {
-  const result = await sql<{ readonly archived: boolean }>`
-    select person.archived_at is not null as archived
-    from crm.people person
-    where person.id = ${command.personId}::uuid
-      and person.workspace_id = ${command.workspaceId}::uuid
-      and person.deleted_at is null
-    ${command.lock ? sql`for update of person` : sql``}
-  `.execute(databaseFromSession(command.transaction));
-  return result.rows[0]
-    ? (result.rows[0].archived ? "archived" : "active")
-    : "not-found";
+  const row = await schemaDatabaseFromSession(command.transaction)
+    .selectFrom("crm.people as person")
+    .select((eb) => eb("person.archived_at", "is not", null).as("archived"))
+    .where("person.id", "=", command.personId)
+    .where("person.workspace_id", "=", command.workspaceId)
+    .where("person.deleted_at", "is", null)
+    .$if(command.lock === true, (query) => query.forUpdate("person"))
+    .executeTakeFirst();
+  return row ? (row.archived ? "archived" : "active") : "not-found";
+}
+
+/** Whether the intended recipient is a live person of the same workspace. */
+async function recipientExists(command: {
+  readonly recipientPersonId: string;
+  readonly transaction: Session;
+  readonly workspaceId: string;
+}): Promise<boolean> {
+  const row = await schemaDatabaseFromSession(command.transaction)
+    .selectFrom("crm.people as recipient")
+    .select((eb) => eb.lit(1).as("found"))
+    .where("recipient.id", "=", command.recipientPersonId)
+    .where("recipient.workspace_id", "=", command.workspaceId)
+    .where("recipient.deleted_at", "is", null)
+    .executeTakeFirst();
+  return row !== undefined;
 }
 
 export class PostgresGiftRepository implements GiftRepository {
@@ -140,31 +195,39 @@ export class PostgresGiftRepository implements GiftRepository {
         status: status === "archived" ? "archived-write-rejected" : "not-found",
       };
     }
-    const result = await sql<GiftRow>`
-      with inserted as (
-        insert into crm.gifts (
-          id, workspace_id, person_id, recipient_person_id, name, url,
-          comment, status, event_at, amount, currency_code, created_at, updated_at
-        )
-        select ${command.id}::uuid, ${command.workspaceId}::uuid,
-          ${command.personId}::uuid,
-          ${command.recipientPersonId ?? null}::uuid, ${command.name},
-          ${command.url ?? null}, ${command.comment ?? null}, ${command.status},
-          ${command.eventAt ?? null}::timestamptz,
-          ${command.amount ?? null}::numeric, ${command.currencyCode ?? null},
-          ${command.occurredAt}, ${command.occurredAt}
-        where ${command.recipientPersonId ?? null}::uuid is null or exists (
-          select 1 from crm.people recipient
-          where recipient.id = ${command.recipientPersonId ?? null}::uuid
-            and recipient.workspace_id = ${command.workspaceId}::uuid
-            and recipient.deleted_at is null
-        )
-        returning *
-      )
-      select ${giftColumns} from inserted gift
-    `.execute(databaseFromSession(command.transaction));
-    return result.rows[0]
-      ? { gift: gift(result.rows[0]), status: "created" }
+    if (
+      command.recipientPersonId !== undefined &&
+      !await recipientExists({
+        recipientPersonId: command.recipientPersonId,
+        transaction: command.transaction,
+        workspaceId: command.workspaceId,
+      })
+    ) {
+      return { status: "not-found" };
+    }
+    const row = await schemaDatabaseFromSession(command.transaction)
+      .with("inserted", (database) =>
+        database.insertInto("crm.gifts").values({
+          amount: command.amount ?? null,
+          comment: command.comment ?? null,
+          created_at: command.occurredAt,
+          currency_code: command.currencyCode ?? null,
+          event_at: command.eventAt ?? null,
+          id: command.id,
+          name: command.name,
+          person_id: command.personId,
+          recipient_person_id: command.recipientPersonId ?? null,
+          status: command.status,
+          updated_at: command.occurredAt,
+          url: command.url ?? null,
+          workspace_id: command.workspaceId,
+        }).returningAll())
+      .selectFrom("inserted as gift")
+      .select(giftColumns)
+      .$narrowType<GiftVocabulary>()
+      .executeTakeFirst();
+    return row
+      ? { gift: gift(row), status: "created" }
       : { status: "not-found" };
   }
 
@@ -177,22 +240,27 @@ export class PostgresGiftRepository implements GiftRepository {
         status: status === "archived" ? "archived-write-rejected" : "not-found",
       };
     }
-    const result = await sql<DebtRow>`
-      with inserted as (
-        insert into crm.debts (
-          id, workspace_id, person_id, direction, status, amount,
-          currency_code, reason, settled_at, created_at, updated_at
-        ) values (
-          ${command.id}::uuid, ${command.workspaceId}::uuid,
-          ${command.personId}::uuid, ${command.direction}, ${command.status},
-          ${command.amount}::numeric, ${command.currencyCode ?? null},
-          ${command.reason ?? null}, ${command.settledAt ?? null},
-          ${command.occurredAt}, ${command.occurredAt}
-        ) returning *
-      ) select ${debtColumns} from inserted debt
-    `.execute(databaseFromSession(command.transaction));
-    return result.rows[0]
-      ? { debt: debt(result.rows[0]), status: "created" }
+    const row = await schemaDatabaseFromSession(command.transaction)
+      .with("inserted", (database) =>
+        database.insertInto("crm.debts").values({
+          amount: command.amount,
+          created_at: command.occurredAt,
+          currency_code: command.currencyCode ?? null,
+          direction: command.direction,
+          id: command.id,
+          person_id: command.personId,
+          reason: command.reason ?? null,
+          settled_at: command.settledAt ?? null,
+          status: command.status,
+          updated_at: command.occurredAt,
+          workspace_id: command.workspaceId,
+        }).returningAll())
+      .selectFrom("inserted as debt")
+      .select(debtColumns)
+      .$narrowType<DebtVocabulary>()
+      .executeTakeFirst();
+    return row
+      ? { debt: debt(row), status: "created" }
       : { status: "not-found" };
   }
 
@@ -205,17 +273,16 @@ export class PostgresGiftRepository implements GiftRepository {
         status: status === "archived" ? "archived-write-rejected" : "not-found",
       };
     }
-    const result = await sql<GiftRow>`
-      select ${giftColumns}
-      from crm.gifts gift
-      where gift.workspace_id = ${command.workspaceId}::uuid
-        and gift.person_id = ${command.personId}::uuid
-        and gift.id = ${command.id}::uuid
-      for update of gift
-    `.execute(databaseFromSession(command.transaction));
-    return result.rows[0]
-      ? { gift: gift(result.rows[0]), status: "found" }
-      : { status: "not-found" };
+    const row = await schemaDatabaseFromSession(command.transaction)
+      .selectFrom("crm.gifts as gift")
+      .select(giftColumns)
+      .$narrowType<GiftVocabulary>()
+      .where("gift.workspace_id", "=", command.workspaceId)
+      .where("gift.person_id", "=", command.personId)
+      .where("gift.id", "=", command.id)
+      .forUpdate("gift")
+      .executeTakeFirst();
+    return row ? { gift: gift(row), status: "found" } : { status: "not-found" };
   }
 
   async findDebt(
@@ -227,17 +294,16 @@ export class PostgresGiftRepository implements GiftRepository {
         status: status === "archived" ? "archived-write-rejected" : "not-found",
       };
     }
-    const result = await sql<DebtRow>`
-      select ${debtColumns}
-      from crm.debts debt
-      where debt.workspace_id = ${command.workspaceId}::uuid
-        and debt.person_id = ${command.personId}::uuid
-        and debt.id = ${command.id}::uuid
-      for update of debt
-    `.execute(databaseFromSession(command.transaction));
-    return result.rows[0]
-      ? { debt: debt(result.rows[0]), status: "found" }
-      : { status: "not-found" };
+    const row = await schemaDatabaseFromSession(command.transaction)
+      .selectFrom("crm.debts as debt")
+      .select(debtColumns)
+      .$narrowType<DebtVocabulary>()
+      .where("debt.workspace_id", "=", command.workspaceId)
+      .where("debt.person_id", "=", command.personId)
+      .where("debt.id", "=", command.id)
+      .forUpdate("debt")
+      .executeTakeFirst();
+    return row ? { debt: debt(row), status: "found" } : { status: "not-found" };
   }
 
   async list(
@@ -246,33 +312,62 @@ export class PostgresGiftRepository implements GiftRepository {
     if (await personStatus(command) === "not-found") {
       return { status: "not-found" };
     }
-    const database = databaseFromSession(command.transaction);
-    const gifts = await sql<GiftRow>`
-      select ${giftColumns}
-      from crm.gifts gift
-      where gift.workspace_id = ${command.workspaceId}::uuid
-        and gift.person_id = ${command.personId}::uuid
-        ${resumeAfter("gift", command.giftAfter)}
-      order by gift.updated_at desc, gift.id
-      limit ${command.limit + 1}
-    `.execute(database);
-    const debts = await sql<DebtRow>`
-      select ${debtColumns}
-      from crm.debts debt
-      where debt.workspace_id = ${command.workspaceId}::uuid
-        and debt.person_id = ${command.personId}::uuid
-        ${resumeAfter("debt", command.debtAfter)}
-      order by debt.updated_at desc, debt.id
-      limit ${command.limit + 1}
-    `.execute(database);
-    const giftPage = gifts.rows.slice(0, command.limit);
-    const debtPage = debts.rows.slice(0, command.limit);
+    const database = schemaDatabaseFromSession(command.transaction);
+    // Where each page resumes is written out rather than as a row comparison
+    // because the order mixes directions: newer rows first, and ties broken
+    // by an ascending identifier.
+    let giftQuery = database.selectFrom("crm.gifts as gift")
+      .select(giftColumns)
+      .$narrowType<GiftVocabulary>()
+      .where("gift.workspace_id", "=", command.workspaceId)
+      .where("gift.person_id", "=", command.personId);
+    const giftAfter = command.giftAfter;
+    if (giftAfter) {
+      giftQuery = giftQuery.where((eb) =>
+        eb.or([
+          eb("gift.updated_at", "<", anchorInstant(giftAfter)),
+          eb.and([
+            eb("gift.updated_at", "=", anchorInstant(giftAfter)),
+            eb("gift.id", ">", giftAfter.id),
+          ]),
+        ])
+      );
+    }
+    const gifts = await giftQuery
+      .orderBy("gift.updated_at", "desc")
+      .orderBy("gift.id")
+      .limit(command.limit + 1)
+      .execute();
+    let debtQuery = database.selectFrom("crm.debts as debt")
+      .select(debtColumns)
+      .$narrowType<DebtVocabulary>()
+      .where("debt.workspace_id", "=", command.workspaceId)
+      .where("debt.person_id", "=", command.personId);
+    const debtAfter = command.debtAfter;
+    if (debtAfter) {
+      debtQuery = debtQuery.where((eb) =>
+        eb.or([
+          eb("debt.updated_at", "<", anchorInstant(debtAfter)),
+          eb.and([
+            eb("debt.updated_at", "=", anchorInstant(debtAfter)),
+            eb("debt.id", ">", debtAfter.id),
+          ]),
+        ])
+      );
+    }
+    const debts = await debtQuery
+      .orderBy("debt.updated_at", "desc")
+      .orderBy("debt.id")
+      .limit(command.limit + 1)
+      .execute();
+    const giftPage = gifts.slice(0, command.limit);
+    const debtPage = debts.slice(0, command.limit);
     return {
       debts: debtPage.map(debt),
       gifts: giftPage.map(gift),
       ...pickDefined({
-        nextDebt: anchorOf(debts.rows, debtPage, command.limit),
-        nextGift: anchorOf(gifts.rows, giftPage, command.limit),
+        nextDebt: anchorOf(debts, debtPage, command.limit),
+        nextGift: anchorOf(gifts, giftPage, command.limit),
       }),
       status: "ready",
     };
@@ -287,20 +382,19 @@ export class PostgresGiftRepository implements GiftRepository {
         status: status === "archived" ? "archived-write-rejected" : "not-found",
       };
     }
-    const result = await sql<GiftRow>`
-      with updated as (
-        update crm.gifts set status = ${command.status},
-          updated_at = ${command.occurredAt}
-        where id = ${command.id}::uuid
-          and workspace_id = ${command.workspaceId}::uuid
-          and person_id = ${command.personId}::uuid
-        returning *
-      ) select ${giftColumns}
-        from updated gift
-    `.execute(databaseFromSession(command.transaction));
-    return result.rows[0]
-      ? { gift: gift(result.rows[0]), status: "saved" }
-      : { status: "not-found" };
+    const row = await schemaDatabaseFromSession(command.transaction)
+      .with("updated", (database) =>
+        database.updateTable("crm.gifts")
+          .set({ status: command.status, updated_at: command.occurredAt })
+          .where("id", "=", command.id)
+          .where("workspace_id", "=", command.workspaceId)
+          .where("person_id", "=", command.personId)
+          .returningAll())
+      .selectFrom("updated as gift")
+      .select(giftColumns)
+      .$narrowType<GiftVocabulary>()
+      .executeTakeFirst();
+    return row ? { gift: gift(row), status: "saved" } : { status: "not-found" };
   }
 
   async saveDebt(
@@ -312,19 +406,22 @@ export class PostgresGiftRepository implements GiftRepository {
         status: status === "archived" ? "archived-write-rejected" : "not-found",
       };
     }
-    const result = await sql<DebtRow>`
-      with updated as (
-        update crm.debts set status = ${command.status},
-          settled_at = ${command.settledAt ?? null},
-          updated_at = ${command.occurredAt}
-        where id = ${command.id}::uuid
-          and workspace_id = ${command.workspaceId}::uuid
-          and person_id = ${command.personId}::uuid
-        returning *
-      ) select ${debtColumns} from updated debt
-    `.execute(databaseFromSession(command.transaction));
-    return result.rows[0]
-      ? { debt: debt(result.rows[0]), status: "saved" }
-      : { status: "not-found" };
+    const row = await schemaDatabaseFromSession(command.transaction)
+      .with("updated", (database) =>
+        database.updateTable("crm.debts")
+          .set({
+            settled_at: command.settledAt ?? null,
+            status: command.status,
+            updated_at: command.occurredAt,
+          })
+          .where("id", "=", command.id)
+          .where("workspace_id", "=", command.workspaceId)
+          .where("person_id", "=", command.personId)
+          .returningAll())
+      .selectFrom("updated as debt")
+      .select(debtColumns)
+      .$narrowType<DebtVocabulary>()
+      .executeTakeFirst();
+    return row ? { debt: debt(row), status: "saved" } : { status: "not-found" };
   }
 }

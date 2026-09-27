@@ -284,6 +284,7 @@ export const TOOL_ENTRYPOINTS = [
   "tools/e2e.ts",
   "tools/postgres_gate.ts",
   "tools/schema/validate_postgres.ts",
+  "tools/schema/database_types.ts",
   "tools/contracts/build.ts",
   "tools/tasks/run.ts",
   ARCHITECTURE_CHECKER,
@@ -554,6 +555,7 @@ export const MODULES: readonly TaskModule[] = [
         "tools/migrations/baseline_test.ts",
         "tools/postgres_gate_test.ts",
         "tools/product/PRODUCT-001/release_contract_test.ts",
+        "tools/schema/database_types_test.ts",
       ],
       permissions: {
         read: [
@@ -644,8 +646,11 @@ export const MODULES: readonly TaskModule[] = [
       // GAP-021 split the people, settings, and invitation suites into one
       // file per concern, and what they share moved into `.test-helper.ts`
       // modules beside them. Those are scaffolding, not the code this set
-      // measures.
-      exclude: [...COVERAGE_EXCLUDES_WITH_HELPERS],
+      // measures. The generated Kysely types are derived output (GAP-042).
+      exclude: [
+        ...COVERAGE_EXCLUDES_WITH_HELPERS,
+        "packages/backend/platform/postgres/generated/",
+      ],
       permissions: {
         read: [
           ...API_CONFIGURATION_READS,

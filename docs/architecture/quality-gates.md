@@ -103,7 +103,7 @@ while proving every test file is reachable from root `test`.
 | `deno task build`                                           | the contracts check, the entry-point type check, the Astro build                   |
 | `deno task test`                                            | every unit module, then integration, then the contracts check                      |
 | `deno task test:unit [--module=<id>]`                       | the unit sets                                                                      |
-| `deno task test:integration [--module=<id>]`                | the PostgreSQL suites on a disposable Compose project                              |
+| `deno task test:integration [--module=<id>]`                | the Kysely type drift check, then the PostgreSQL suites, on a disposable project   |
 | `deno task test:contract [--module=<id>]`                   | the contract view over the unit sets plus `contracts:check`                        |
 | `deno task test:coverage [--module=<id>]`                   | the measured sets against the 80% threshold                                        |
 | `deno task test:e2e [Playwright arguments]`                 | Playwright against the production-like Compose stack                               |
@@ -118,6 +118,29 @@ while proving every test file is reachable from root `test`.
 
 Tests run through the test verbs, never by appending targets, redirections,
 shell separators, or fallback commands to `deno task check`.
+
+### Generated Kysely types
+
+`packages/backend/platform/postgres/generated/database.ts` holds the Kysely
+types of every `crm` table, keyed `crm.<table>` with snake_case columns, as
+`kysely-codegen` (pinned in `deno.json`) introspects them from a disposable
+database the repository's migration runner has just migrated. The canonical DDL
+stays the only schema source; the file is derived output, never edited by hand,
+excluded from `deno fmt` and from coverage, and exported to adapters as
+`Database` from `platform/postgres/database.ts`. Regenerate it after a schema
+version change with the task runner's `schema-types` verb, which needs no
+`deno.json` task of its own:
+
+```sh
+DENO_NO_PACKAGE_JSON=1 deno run --allow-read --allow-run=deno,docker,pnpm \
+  tools/tasks/run.ts schema-types          # add --check to compare only
+```
+
+`deno task test:integration` regenerates the types in memory from its own
+freshly migrated database before any suite runs and fails unless they match the
+committed file byte for byte, so CI's `integration` job fails whenever the DDL
+and the generated types differ. The gifts adapters build their queries against
+`Database`; the other modules adopt it in their own tickets.
 
 `check:architecture` runs
 [`tools/architecture/check_boundaries.ts`](../../tools/architecture/check_boundaries.ts),
@@ -299,7 +322,8 @@ already named in `AGENTS.md`, including:
 - repeatable teardown or tested down/restore procedure;
 - schema catalog introspection against the audited table, column, constraint,
   index, and foreign-key expectations;
-- generated Kysely type drift detection;
+- generated Kysely type drift detection (in place: the `test:integration` drift
+  check above);
 - rejection of every cross-workspace relationship path;
 - Monica import idempotency and complete table/column mapping fixtures;
 - all partial-date precisions and invalid combinations;
@@ -310,11 +334,11 @@ already named in `AGENTS.md`, including:
 Run these tests against PostgreSQL, not an in-memory substitute or SQLite
 compatibility layer.
 
-The baseline harness covers the database-enforceable subset now. Generated
-Kysely drift, cross-workspace application rejection, complete importer
-semantics, time-zone-aware reminder generation, object-store behavior, and
-credential activation require application code and must be added without
-weakening the existing database checks.
+The baseline harness covers the database-enforceable subset now, and
+`test:integration` checks generated Kysely drift. Cross-workspace application
+rejection, complete importer semantics, time-zone-aware reminder generation,
+object-store behavior, and credential activation require application code and
+must be added without weakening the existing database checks.
 
 ## Deno Dependency and Security Gates
 
@@ -384,7 +408,7 @@ and then runs the same `deno task` verbs a developer runs locally.
 | ------------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `static`           | every run               | `fmt:check`, `lint`, `check:architecture`, `check`, `contracts:check`, `test:contract`, and `deps:audit` (reported in full, failing at high severity) |
 | `unit`             | every run               | `test:unit`, then `test:coverage` against the 80% thresholds                                                                                          |
-| `integration`      | every run               | `test:integration`, which provisions its own disposable PostgreSQL 18.4 project and applies the versioned migrations                                  |
+| `integration`      | every run               | `test:integration` on its own disposable PostgreSQL 18.4 project: the migrations, the Kysely type drift check, then the suites                        |
 | `schema`           | every run               | `test:schema` against the pinned PostgreSQL image                                                                                                     |
 | `e2e-chromium`     | pull requests           | `test:e2e --project=chromium` against the Compose stack, uploading Playwright traces on failure                                                       |
 | `e2e-all-browsers` | `main`, nightly, manual | the whole Chromium, Firefox, and WebKit matrix                                                                                                        |
