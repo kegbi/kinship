@@ -25,6 +25,7 @@ pre-commit:
         - "{.agents/skills/run-tdd-ticket-loop,.codex/agents}/**/*.md"
         - ".github/workflows/*.yml"
         - "AGENTS.md"
+        - "CLAUDE.md"
         - "README.md"
         - "compose.schema-test.yaml"
         - "deno.json"
@@ -35,7 +36,6 @@ pre-commit:
       exclude:
         - "apps/web/.astro/**"
         - "apps/web/dist/**"
-        - "docs/planning/tickets/**"
         - "packages/contracts/generated/**"
       # Never `deno fmt`: pre-commit reports, it does not rewrite or restage.
       run: deno fmt --check {staged_files}

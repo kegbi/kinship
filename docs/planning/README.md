@@ -12,8 +12,10 @@ This directory maps the path from the schema-and-contract baseline to the
 Personal CRM. [`active-delivery.md`](active-delivery.md) is the authoritative
 near-term queue. The larger roadmap and operations documents are coverage and
 release references, not a list of prerequisites for starting application code.
-The existing `tickets/` tree is historical evidence from the retired workflow;
-new tickets do not use its packets, IDs, dispatch files, or evidence logs.
+The retired workflow's `tickets/` tree of packets, dispatch files, and evidence
+logs was removed from the working tree by GAP-043; it remains readable at the
+branch `archive/planning-tickets-2026-09-27`. New tickets do not use its
+packets, IDs, dispatch files, or evidence logs.
 
 The current user-requested follow-up is the
 [application repair plan](application-repair-plan-2026-09-05.md), covering

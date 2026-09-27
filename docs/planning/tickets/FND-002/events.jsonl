@@ -1,7 +1,0 @@
-{"sequence":1,"from":"planned","to":"ready","round":0,"actorRunId":"FND-002/orchestrator/r0/a16b5b61-a6c8-4366-8752-d530fa3a6d74","evidenceRef":"ticket.json","revision":"603f6621809f61fab70bc29b8b4a9252ebcecb27"}
-{"sequence":2,"from":"ready","to":"red","round":1,"actorRunId":"FND-002/implementer/r1/e2edf3bf-a445-4fc2-8ba4-3fffb9681804","evidenceRef":"evidence/round-01-red.log","revision":"d7924f77019cbf77a4e8fedc6d7bc82afa70c78f"}
-{"sequence":3,"from":"red","to":"green","round":1,"actorRunId":"FND-002/implementer/r1/e2edf3bf-a445-4fc2-8ba4-3fffb9681804","evidenceRef":"evidence/round-01-green.log","revision":"820fb4cd5c45e7b4b6a0e748f602c657d4c2cb61"}
-{"sequence":4,"from":"green","to":"refactor","round":1,"actorRunId":"FND-002/implementer/r1/e2edf3bf-a445-4fc2-8ba4-3fffb9681804","evidenceRef":"evidence/round-01-refactor.log","revision":"820fb4cd5c45e7b4b6a0e748f602c657d4c2cb61"}
-{"sequence":5,"from":"refactor","to":"review","round":1,"actorRunId":"FND-002/orchestrator/r0/a16b5b61-a6c8-4366-8752-d530fa3a6d74","evidenceRef":"results/round-01.json","revision":"820fb4cd5c45e7b4b6a0e748f602c657d4c2cb61"}
-{"sequence":6,"from":"review","to":"accepted","round":1,"actorRunId":"FND-002/orchestrator/r0/a16b5b61-a6c8-4366-8752-d530fa3a6d74","evidenceRef":"acceptance.md","revision":"820fb4cd5c45e7b4b6a0e748f602c657d4c2cb61"}
-{"sequence":7,"from":"accepted","to":"integrated","round":1,"actorRunId":"FND-002/orchestrator/r0/a16b5b61-a6c8-4366-8752-d530fa3a6d74","evidenceRef":"integration.md","revision":"aa3d49495b0b3137230270962c8aca3b5a740c3b"}

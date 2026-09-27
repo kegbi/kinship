@@ -1637,7 +1637,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
       six generator tests and a timestamps test; gifts unit 30.
     - Gates: fmt:check, lint, check, check:architecture (14), contracts:check.
 
-- [ ] **GAP-043 — Documentation sync and repository hygiene.** S-M. Depends:
+- [x] **GAP-043 — Documentation sync and repository hygiene.** S-M. Depends:
       013, 025.
   - Scope: rewrite `repository-layout.md` to the real tree (kernel, per-module
     `composition.ts`, `testing/`, `tests/support`, `tools/tasks`); update
@@ -1648,6 +1648,36 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     `AGENTS.md`; `git rm` `docs/planning/tickets/**` after tagging an archive
     ref; refresh `traceability.md` counts.
   - Verify: `check:architecture` schema validation green; docs reviewed.
+  - Delivered 2026-09-27: `repository-layout.md` is rewritten to the real tree.
+    - Backend: the shared kernel, `platform/`, per-module and per-read-model
+      `composition.ts`, `packages/backend/testing/`, and `packages/http-kit`.
+    - Web: `features`, `islands/core`, `components/ui`, `lib`, and `testing`.
+    - Tests and tools: `tests/support`, `tests/e2e/support`, `tools/tasks`, and
+      the generated-artefact locations.
+    - It also states what does not exist, including the never-defined import
+      aliases.
+    - `quality-gates.md`: lists the real tasks, runner verbs, CI jobs, and
+      checker rules, and keeps unmet targets as targets, among them
+      `astro check` warnings.
+    - `module-boundaries.yaml` comments:
+      - label the actor-revalidation exception;
+      - record the gifts attachment-target port;
+      - say that `publishes`/`consumes` are synchronous direct calls until an
+        outbox schema version exists;
+      - list the four kernel contracts not yet in `allowedContents`.
+    - `AGENTS.md`: the UI-stack sentence matches ADR 0006 and the Base UI and
+      `cmdk` decisions in `technology-baseline.md`, with every other line
+      unchanged.
+    - `CLAUDE.md` points to `AGENTS.md`.
+    - `traceability.md` counts are refreshed from the catalogues: 15 modules and
+      6 read models, 39 pages, 30 flows, and 34 specs.
+    - `docs/planning/tickets/` (194 files) is removed. It is preserved on the
+      branch `archive/planning-tickets-2026-09-27` at `ff2ec7a` (a tag push is
+      refused by this environment's proxy), and the planning README points
+      there.
+    - Evidence: 203 paths changed.
+    - Gates: fmt:check, lint, check, check:architecture (14), contracts:check,
+      and 83 documentation-contract tool tests.
 
 ### Phase 7 — Missing user-required functionality
 

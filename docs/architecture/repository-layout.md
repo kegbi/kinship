@@ -2,89 +2,132 @@
 
 ## Status
 
-Accepted before scaffolding. Exact dependencies are intentionally absent. The
-first executable scaffold may add files inside this shape but may not weaken its
-public/private boundaries without an architecture decision.
+Accepted before scaffolding and rewritten by GAP-043 to the tree as it stands
+after the architecture-gap remediation (GAP-001 through GAP-041). Exact
+dependencies live in `deno.json`, `package.json`, and their lockfiles, not here.
+A change may add files inside this shape but may not weaken its public/private
+boundaries without an architecture decision.
 
 ## Canonical Shape
 
 ```text
 apps/
-  api/
+  api/                  composition root, entry point, API configuration
     main.ts
     composition.ts
+    app.ts              the default-configured app
+    personalization_router.ts
   worker/
-    main.ts
+    main.ts             runWorker: start, signals, shutdown
     composition.ts
   web/
-    components.json
-    src/
-      pages/
-      layouts/
-      components/
-        ui/
-        person/
-      features/
-        person/
-          facts/
-      islands/
-        core/
-      lib/
+    astro.config.mjs
+    components.json       shadcn CLI configuration
     public/
+    src/
+      pages/              Astro routes (app/, auth/, invite/, internal/ shells)
+      layouts/
+      components/         static Astro components
+        ui/               vendored shadcn/ui components (Base UI)
+        person/           the person shell's per-section partials
+      features/<area>/    one product area's islands, hooks, pure helpers
+      islands/
+        core/             the island kit (mountIsland, IslandRoot, forms, API)
+        <island>/         islands not yet filed under an area
+      lib/                cross-cutting non-UI helpers only
+      styles/
+      testing/            the web suites' shared test support
 
 packages/
   backend/
-    bootstrap/
-    shared-kernel/
+    shared-kernel/        pure contracts every unit may import
     platform/
+      composition.ts      the shared composition context type
+      postgres/           session, transactions, rows, errors, workspace scope
+      telemetry/          the JSON stdout logger adapter
     modules/
       <module-id>/
         domain/
         application/
         ports/
         adapters/
-          postgres/
+          postgres/       plus other adapter families where needed
         transport/
           http/
+            routes.ts
         composition.ts
         public.ts
     read-models/
       <read-model-id>/
-    testing/
+        application/
+        adapters/
+          postgres/
+        composition.ts
+        public.ts
+    testing/              backend test support (assert, fixtures, fakes)
   contracts/
-    openapi/
-    generated/
-  http-kit/
+    routes/               route descriptors, one file per area
+    schemas/              pure Zod schemas the web may import
+    client/               source of the generated client
+    openapi/openapi.json  checked-in OpenAPI document
+    generated/            generated client and API types
+    registry.ts           defineRoute and the route registry
+  http-kit/               shared HTTP machinery for module routes
+
+gateway/                  nginx configuration for the public entry point
 
 tests/
-  e2e/
-  fixtures/
-  support/
+  integration/            PostgreSQL suites (`<area>_postgres_test.ts`)
+  support/                integration support (database, api, fixtures)
+  e2e/                    Playwright specs (`<feature>.<FLOW-ID>.spec.ts`)
+    support/              E2E fixtures, mail, sign-in, page objects
 
 tools/
-  architecture/
-  contracts/
-  schema/
-  workflows/
+  tasks/                  manifest.ts, run.ts, manifest_test.ts
+  architecture/           check_boundaries.ts, its baseline and suite, and the
+                          remaining ticket-named contract suites
+  contracts/              OpenAPI and client generator
+  schema/                 canonical schema harness
+  migrations/             migration runner
+  operations/             private-production preflight, probe, recovery
+  product/                catalog and flow-traceability contract suites
+  performance/
+  *.ts                    E2E launcher, dev launcher, PostgreSQL gate, and
+                          repository contract suites (gateway, pipeline,
+                          configuration, web build output, source hygiene)
 ```
+
+Every module in `module-boundaries.yaml` except the optional `billing` exists.
+`identity` serves no HTTP of its own, so it has no `transport/`; `operations`
+has only adapters, `composition.ts`, and `public.ts`, because it has no
+application layer yet. Read models carry no `domain/`, `ports/`, or
+`transport/`.
 
 Directories are created only when a real implementation needs them. Empty module
 scaffolds are forbidden because they create apparent architecture without
-executable boundaries.
+executable boundaries. No `packages/backend/bootstrap/`, `tests/fixtures/`, or
+`tools/workflows/` directory exists: composition lives in the roots and each
+unit's `composition.ts`, shared fixtures live in the support folders above, and
+CI lives in `.github/workflows/ci.yml` and `lefthook.yml`.
 
 ## Entry Points
 
 - `apps/api/main.ts` and `apps/worker/main.ts` are executable entry points.
 - Their adjacent `composition.ts` files are composition roots. The declared
-  roots are the list in `module-boundaries.yaml`, and they are the only files
-  that may instantiate concrete adapters.
+  roots are the list in `module-boundaries.yaml`, which also names the
+  private-production preflight. Outside tests, only those roots and each unit's
+  own `composition.ts` instantiate concrete adapters.
 - Each backend module exposes exactly one code-level public entry point:
   `packages/backend/modules/<module-id>/public.ts`. It carries types, use-case
   factories, and pure helpers; it never re-exports a value from `adapters/`.
 - A module that owns adapters also has
-  `packages/backend/modules/<module-id>/composition.ts`. It builds that module's
-  adapters and returns the module's facades and outbound ports, and only a
-  declared composition root may import it.
+  `packages/backend/modules/<module-id>/composition.ts`. It exports
+  `compose<Module>(shared, ports)`, where `shared` is the one
+  `SharedComposition` context typed in
+  `packages/backend/platform/composition.ts` and `ports` are the facades and
+  ports of other modules the root hands it. It builds that module's adapters and
+  returns the module's facades and outbound ports, and only a declared
+  composition root may import it. Every module and read model on disk has one.
 - A module that serves HTTP has
   `packages/backend/modules/<module-id>/transport/http/routes.ts`. It exports
   the module's route factories and their service types, and it is the one
@@ -92,9 +135,11 @@ executable boundaries.
   imports another module's `transport/`.
 - Read models expose their own public entry point and remain query-only. One
   with adapters composes them the same way.
-- `apps/api` holds only the composition root, its entry points, and the
-  configuration it reads; the routes live in their modules and the shared HTTP
-  machinery lives in `packages/http-kit`.
+- `apps/api` holds only the composition root, its entry points, the
+  configuration it reads, and the cross-cutting wiring no single module owns
+  (the personalization router and the authentication response equalizer); the
+  routes live in their modules and the shared HTTP machinery lives in
+  `packages/http-kit`.
 - `apps/web` consumes generated contracts. It never imports `packages/backend`.
   Besides the generated client it may import `packages/contracts/schemas` (the
   `contracts-schemas` token in `module-boundaries.yaml`), the pure Zod schemas
@@ -137,6 +182,24 @@ one module may not use a private import from another module as a convenience.
 
 ## Layer Contents
 
+### Shared kernel
+
+`packages/backend/shared-kernel/` holds the pure contracts every layer may
+import and that import nothing outside the kernel: the clock, identifiers,
+results and failures, partial dates, pagination cursors, validation helpers, the
+transaction runner, the audit event recorder contract, and the `Logger` port
+with its closed telemetry event catalogue. It has no I/O and no generic
+repository, and its coverage set carries a 95% threshold.
+
+### Platform
+
+`packages/backend/platform/` holds infrastructure shared by adapters and
+composition roots: the shared composition context, the PostgreSQL session,
+transaction, row, error, timestamp, workspace-scope, display-name,
+reference-counter, and lifecycle-impact helpers under `postgres/`, and the JSON
+stdout logger with its redaction under `telemetry/`. Domain, application, and
+ports never import it.
+
 ### Domain
 
 Entities, value objects, invariants, pure policies, domain errors, and domain
@@ -152,8 +215,8 @@ input and output types are explicit.
 ### Ports
 
 Capability-specific interfaces owned by their consumer. Examples are
-`PersonRepository`, `Clock`, `FileObjectStore`, and `ReminderDelivery`; a
-generic repository base class is forbidden.
+`PeopleRepository`, `ObjectStorage`, `ReminderDeliveryProvider`, and the
+kernel's `Clock`; a generic repository base class is forbidden.
 
 ### Adapters
 
@@ -192,19 +255,17 @@ and audit views. Their cross-module access is allowlisted in
 
 ## Import Names
 
-The scaffold should define stable aliases without using aliases to conceal an
-illegal import:
-
-```text
-@app/          apps and composition roots
-@backend/      backend package root
-@contracts/    OpenAPI and generated process contracts
-@test/         shared test fixtures and harnesses
-```
-
-Inside a module, relative imports are preferred. Cross-module imports must name
-the target module's `public.ts`; paths into `domain`, `application`, `ports`,
-`adapters`, or `transport` of another module are always illegal.
+The backend, contracts, tools, and tests define no import aliases; every import
+is a relative path, so an illegal import is always visible in the path itself.
+The one alias is `@/`, which `apps/web/tsconfig.json`, the Astro Vite
+configuration, and `vitest.config.ts` map to `apps/web/src/` for the vendored
+shadcn/ui components and the islands that import them; it never leaves
+`apps/web`. Cross-module imports must name the target module's `public.ts`;
+paths into `domain`, `application`, `ports`, `adapters`, or `transport` of
+another module are always illegal, apart from a declared composition root
+importing a unit's `composition.ts` or `transport/http/routes.ts`.
+`tools/architecture/check_boundaries.ts` resolves every relative import and
+enforces these rules.
 
 ## Generated And Canonical Files
 
@@ -213,18 +274,32 @@ the target module's `public.ts`; paths into `domain`, `application`, `ports`,
   edited by hand. `tools/tasks/run.ts schema-types` derives them from a database
   migrated to the canonical DDL, and `test:integration` fails on drift. Adapters
   may import them; application, domain, and ports never do.
-- Generated API client/types live in `packages/contracts/generated` and may be
-  imported by the web application.
-- OpenAPI artifacts are checked in and checked for drift.
-- The canonical schema bundle remains outside generator and formatter write
-  targets.
+- `deno task contracts:generate` writes
+  `packages/contracts/openapi/openapi.json` and `packages/contracts/generated/`
+  (`api-types.ts` and `auth-client.ts`) from the route descriptors and
+  `packages/contracts/client/`. They are checked in, and
+  `deno task contracts:check` fails on drift. Only `apps/web` and `tests/e2e`
+  consume the generated client.
+- The canonical schema bundle under `personal-crm-schema/` remains outside
+  generator and formatter write targets.
 - A generated-file header names its generator command and source artifact.
+- Build and test output stays untracked: `apps/web/dist/`, `apps/web/.astro/`,
+  `.coverage/`, and `.artifacts/`.
 
 ## Tests
 
-Unit and adapter contract tests may be colocated with the production code they
-exercise. Cross-module integration tests live at the narrowest shared boundary.
-Browser workflows live under `tests/e2e` and carry IDs from
+Unit and adapter contract tests are colocated with the production code they
+exercise (the backend placement rule is in
+[`quality-gates.md`](quality-gates.md)). Every test file is reachable from
+[`tools/tasks/manifest.ts`](../../tools/tasks/manifest.ts), and none has two
+unit homes. PostgreSQL integration suites live in `tests/integration/` and share
+`tests/support/`: `database.ts` (the pool, `truncate`, `resetDatabase`, and the
+revocable-actor and membership helpers), `api.ts` (register, verify, sign in,
+and workspace-scoped requests over the in-process app), and `fixtures.ts`
+(people and important dates through the API). A family's own shared setup sits
+beside its suites as a `<family>.test-helper.ts`. Web suites sit beside their
+components as `*.test.ts(x)` and run under Vitest. Browser workflows live under
+`tests/e2e` and carry IDs from
 [`docs/product/user-flows.yaml`](../product/user-flows.yaml). A spec is named
 `<feature>.<FLOW-ID>.spec.ts` for the primary flow it proves (for example
 `reminders.PLANNING-002.spec.ts`); a spec without a flow keeps its feature name

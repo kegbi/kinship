@@ -2,6 +2,13 @@ schemaVersion: 1
 decisionStatus: accepted
 schemaSource: personal-crm-schema/v7/personal_crm_schema_v7.sql
 
+# Beside the categories below, reviewed tickets placed four contracts in the
+# kernel: text and value validation (`validation.ts`, GAP-006), the transaction
+# port and its unavailable-failure runner (`transaction.ts`, GAP-007), the audit
+# event recorder contract (`audit_event.ts`, GAP-011), and the `Logger` port
+# with its closed event catalogue (`telemetry.ts`, GAP-039). All are pure types
+# or I/O-free functions. They are not yet reflected in `allowedContents`;
+# extending the allowlist needs architecture review.
 sharedKernel:
   path: packages/backend/shared-kernel
   allowedContents:
@@ -28,7 +35,10 @@ compositionRoots:
 
 # The only cross-module table reads the manifest approves by name. Each entry
 # narrows `table-foreign-read` for exactly one adapter file and the tables it
-# names; the owning module must still be a declared dependency.
+# names; the owning module must still be a declared dependency. The single
+# entry is the actor-revalidation exception (GAP-008, GAP-009): every other
+# module revalidates its actor through the `ActorRevalidation` port on the
+# workspaces facade instead of joining `crm.users` itself.
 approvedCrossModuleReads:
   - adapter: packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts
     module: workspaces
@@ -88,6 +98,13 @@ layerRules:
   frontendMayImport: [contracts-generated, contracts-schemas, frontend-code]
   forbiddenCrossModuleTargets: [domain, application, ports, adapters, transport]
 
+# `publishes` and `consumes` name the intended domain events. No event bus or
+# outbox exists yet: until a synchronized schema version adds an outbox table,
+# every edge that is implemented is a synchronous direct call through a port
+# the producer declares and a composition root fills from the consumer (today
+# the people, interactions, and workspaces reminder publishers, each backed by
+# planning in `apps/api/composition.ts`). An event listed here without such a
+# port is not delivered.
 modules:
   - id: identity
     path: packages/backend/modules/identity
@@ -246,6 +263,11 @@ modules:
       - person_file_links
       - gift_file_links
     publicEntryPoints: [packages/backend/modules/files/public.ts]
+    # The gift attachment-target port (GAP-009): files never reads `crm.gifts`.
+    # `ports/gift_attachment.ts` declares `GiftAttachmentTarget`, exported from
+    # files' `public.ts`; gifts implements it in
+    # `adapters/postgres/gift_attachment_target.ts` and the API composition root
+    # injects it into `composeFiles`, so the edge stays gifts -> files.
     allowedModuleDependencies: [people, workspaces]
     publishes: [files.file-attached, files.file-missing, files.file-removed]
     consumes: [people.person-archived]

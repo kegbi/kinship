@@ -16,12 +16,12 @@
     "exclude": [
       "apps/web/.astro/",
       "apps/web/dist/",
-      "docs/planning/tickets/",
       "packages/backend/platform/postgres/generated/",
       "packages/contracts/generated/"
     ],
     "include": [
       "AGENTS.md",
+      "CLAUDE.md",
       "README.md",
       "apps/",
       "compose.schema-test.yaml",

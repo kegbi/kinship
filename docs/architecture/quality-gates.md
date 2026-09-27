@@ -18,10 +18,15 @@ The canonical workflow inventory is
 [`docs/product/user-flows.yaml`](../product/user-flows.yaml), and the canonical
 page inventory is
 [`docs/product/page-catalog.yaml`](../product/page-catalog.yaml). E2E tests
-carry their flow ID in a Playwright annotation or title. Once implemented, the
-required CI gate must reject unknown IDs, delivered required flows without
-tests, shipped routes missing from the page catalog, and catalog references to
-unknown pages or modules.
+carry their flow ID in a Playwright annotation or title. The required gate must
+reject unknown IDs, delivered required flows without tests, shipped routes
+missing from the page catalog, and catalog references to unknown pages or
+modules. Today `tools/product/flow_traceability_test.ts` (GAP-036) covers the
+flow half: a required flow's missing or unannotated `testRefs`, a delivered flow
+without a reference, and a spec annotation whose flow omits that spec, and
+`tools/product/PRODUCT-001/release_contract_test.ts` checks the catalogs'
+priorities, slices, and page ownership. No gate yet compares the shipped routes
+with the page catalog.
 
 Coverage is necessary but does not prove test-first development. It cannot
 replace the RED evidence required below.
@@ -90,8 +95,8 @@ operational protocol is
 one runs — module test sets, coverage includes, permission sets, check and build
 targets — and [`tools/tasks/run.ts`](../../tools/tasks/run.ts) composes the
 concrete command. Adding a suite means editing the manifest, never a task
-string, and `tools/tasks/manifest_test.ts` holds the vocabulary at 26 verbs
-while proving every test file is reachable from root `test`.
+string, and `tools/tasks/manifest_test.ts` caps the vocabulary at 26 verbs while
+proving every test file is reachable from root `test`.
 
 | Command                                                     | What it runs                                                                       |
 | ----------------------------------------------------------- | ---------------------------------------------------------------------------------- |
@@ -100,7 +105,7 @@ while proving every test file is reachable from root `test`.
 | `deno task lint`                                            | `deno lint` plus ESLint over `apps/web/src`                                        |
 | `deno task check`                                           | the architecture gate, `deno check` over every manifest target, then `astro check` |
 | `deno task check:architecture`                              | the module-boundary checker against its baseline                                   |
-| `deno task build`                                           | the contracts check, the entry-point type check, the Astro build                   |
+| `deno task build`                                           | the contracts check, the entry-point type check, the Astro build, `web-build`      |
 | `deno task test`                                            | every unit module, then integration, then the contracts check                      |
 | `deno task test:unit [--module=<id>]`                       | the unit sets                                                                      |
 | `deno task test:integration [--module=<id>]`                | the Kysely type drift check, then the PostgreSQL suites, on a disposable project   |
@@ -113,8 +118,18 @@ while proving every test file is reachable from root `test`.
 | `deno task deps:audit`                                      | `deno audit`                                                                       |
 | `deno task dev`, `deno task dev:api`, `deno task dev:web`   | the local run targets                                                              |
 | `deno task migration:apply`                                 | the versioned migration bundle                                                     |
-| `deno task ops <script>`                                    | the operator scripts declared in the manifest                                      |
+| `deno task ops <script>`                                    | the operator scripts `probe`, `recovery`, and `preflight`                          |
 | `deno task test:repro:astro-readiness`                      | the on-demand Astro readiness reproduction                                         |
+
+Every verb that calls `tools/tasks/run.ts` passes it one runner verb: `all`
+(`test`), `unit`, `integration`, `contract`, `coverage`, `architecture`
+(`check:architecture`), `check`, `build`, and `ops`. `--module=<id>` selects one
+manifest module; without it `unit` and `coverage` walk the manifest's declared
+aggregate order and skip on-demand modules such as `web-build` (run by `build`)
+and `repro-astro-readiness` (run by `test:repro:astro-readiness`). The web
+modules run Vitest; every other module runs `deno test` with the permissions the
+manifest declares for it. `integration`, and each coverage set that measures
+integration suites, run inside a disposable PostgreSQL Compose project.
 
 Tests run through the test verbs, never by appending targets, redirections,
 shell separators, or fallback commands to `deno task check`.
@@ -144,20 +159,24 @@ and the generated types differ. The gifts adapters build their queries against
 
 `check:architecture` runs
 [`tools/architecture/check_boundaries.ts`](../../tools/architecture/check_boundaries.ts),
-the generic boundary checker GAP-005 added. It validates
-`module-boundaries.yaml` against its JSON Schema, proves every canonical table
-has exactly one owning module, enforces the manifest's `layerRules` over the
-import graph, measures every `crm.<table>` token in a module's `adapters/`
-against that module's `ownsTables` and the tables of its declared dependencies,
-and reports dependency cycles. The violations the repository already had are
-recorded in
-[`tools/architecture/boundary-baseline.json`](../../tools/architecture/boundary-baseline.json);
-the gate fails both on a violation missing from that file and on an entry in it
-that no longer occurs, so the baseline can only shrink. `deno task check` runs
-it first, before the slower type checks, and the CI static job runs it as its
-own step. The few remaining `tools/architecture/<TICKET>/` suites assert
-documentation clauses and behavioral invariants the checker's rules cannot
-express, so they stay in the unit sets.
+the generic boundary checker GAP-005 added. Its seven rules validate
+`module-boundaries.yaml` against
+[`module-boundaries.schema.json`](module-boundaries.schema.json), prove every
+canonical table has exactly one owning module, enforce the manifest's
+`layerRules` over the import graph, measure every `crm.<table>` token in a
+module's `adapters/` against that module's `ownsTables` and the tables of its
+declared dependencies (narrowed only by `approvedCrossModuleReads`), report
+dependency cycles, allow only declared composition roots to import a unit's
+`composition.ts` (GAP-013), and refuse a `public.ts` that re-exports an adapter
+value. The violations the repository already had are recorded in
+[`tools/architecture/boundary-baseline.json`](../../tools/architecture/boundary-baseline.json),
+which holds 14 ordinary reads of a declared dependency's tables; the gate fails
+both on a violation missing from that file and on an entry in it that no longer
+occurs, so the baseline can only shrink. `deno task check` runs it first, before
+the slower type checks, and the CI static job runs it as its own step. The few
+remaining `tools/architecture/<TICKET>/` suites assert documentation clauses and
+behavioral invariants the checker's rules cannot express, so they stay in the
+unit sets.
 
 ### Dependency bootstrap
 
@@ -237,8 +256,11 @@ every small local function. Validate `unknown` at process and persistence
 boundaries and use branded IDs for aggregate identifiers.
 
 Deno lint should enable strict rules intentionally rather than relying only on
-its recommended default set. A project lint plugin and graph check should
-enforce at least:
+its recommended default set. Today `deno.json` enables the `recommended` tag
+plus `eqeqeq`, and no project lint plugin exists: the graph checker behind
+`check:architecture` enforces the import, layer, table, cycle, composition, and
+public-surface rules, and the remaining items below are still targets rather
+than gates. Together they should enforce at least:
 
 - no cross-module imports into private folders;
 - no module-to-module adapter or repository imports;
@@ -260,15 +282,19 @@ on an unstable CLI JSON format without a pinned compatibility test; use a
 reviewed module-graph library or a repository-owned parser selected during
 scaffolding.
 
-Test custom lint rules with Deno's lint-plugin test API. Keep an explicit,
-minimal allowlist for read models and composition roots.
+Test custom lint rules with Deno's lint-plugin test API once one exists. Keep an
+explicit, minimal allowlist for read models and composition roots; today those
+are `readModels[].sourceModules`, `compositionRoots`, and
+`approvedCrossModuleReads` in `module-boundaries.yaml`.
 
-Deno lint does not parse `.astro` templates. Once the frontend scaffold exists,
-its gate must also run `astro check` with warnings treated as failures and a
-targeted ESLint flat configuration for `eslint-plugin-astro`, Astro
-accessibility rules, and the official React hooks rules on interactive islands.
-Do not duplicate all generic TypeScript style rules in ESLint; Deno remains
-their canonical owner.
+Deno lint does not parse `.astro` templates. `deno task check` therefore also
+runs `astro check`, although its warnings do not fail the gate yet (the accepted
+requirement is warnings treated as failures), and `deno task lint` runs a
+targeted ESLint flat configuration
+([`eslint.config.js`](../../eslint.config.js)) over `apps/web/src` for
+`eslint-plugin-astro`, Astro accessibility rules, and the official React hooks
+rules on interactive islands. Do not duplicate all generic TypeScript style
+rules in ESLint; Deno remains their canonical owner.
 
 ## Test Layers
 
@@ -340,20 +366,34 @@ rejection, complete importer semantics, time-zone-aware reminder generation,
 object-store behavior, and credential activation require application code and
 must be added without weakening the existing database checks.
 
+Apart from generated-type drift, those application-boundary proofs now run in
+`deno task test:integration`: cross-workspace negatives in the module and
+read-model suites (GAP-037), the `IMPORT-001` suite's atomicity, idempotency,
+and inactive legacy credentials, time-zone-aware reminder generation in the
+planning suites, and object-store timeout, missing-object, and
+quarantined-object cases against a pinned RustFS
+(`files_object_store_postgres_test.ts`).
+
 ## Deno Dependency and Security Gates
 
-CI should use a pinned Deno runtime and execute:
+CI's Deno version matches the one pinned in `.tool-versions`, and CI executes:
 
-- frozen dependency installation with `deno ci`;
+- frozen dependency installation (`deno task deps:deno`, `deno task deps:node`);
 - `deno fmt --check` only on owned, supported paths;
-- `deno lint` including the architecture plugin;
-- `deno check` over every backend entry point and tool;
-- `deno test` with leak detection and randomized ordering where useful;
-- coverage reporting with 80% line, branch, and function thresholds;
-- `deno audit` and a documented vulnerability exception process;
-- a dependency freshness policy and review of `deno outdated` output;
-- verification that npm lifecycle-script permissions and Deno runtime
-  permissions match explicit allowlists.
+- `deno lint` with the recommended rules plus `eqeqeq` (no architecture plugin;
+  the boundary checker runs as `check:architecture`);
+- `deno check` over every manifest target: entry points, tools, and tests;
+- `deno test` with Deno's default leak detection;
+- coverage reporting with 80% line, branch, and function thresholds (95% for the
+  shared kernel and the domain sets);
+- `deno audit`, failing at high severity, with the documented exceptions above.
+
+Still targets rather than gates: `astro check` warnings treated as failures,
+randomized test ordering, a dependency freshness review of `deno outdated`, and
+an executable check that npm lifecycle-script decisions (`allowBuilds` in
+`pnpm-workspace.yaml`) and Deno runtime permissions match explicit allowlists.
+`minimumDependencyAge` in `deno.json` and `minimumReleaseAge` in
+`pnpm-workspace.yaml` hold new versions back for 72 hours.
 
 Tests should run with the smallest permissions that fit their layer. A test
 unexpectedly requiring broad filesystem, network, environment, subprocess, FFI,
@@ -387,9 +427,9 @@ Lefthook is pinned as an exact dev dependency and configured in
 `lefthook install`, is denied in `pnpm-workspace.yaml`, and the configuration
 sets `no_auto_install`: one `.git` directory is shared by every worktree of this
 repository, so installing the hooks stays the explicit developer action
-`pnpm exec lefthook install`. The verb vocabulary is capped at 25, so there is
-no `hooks:install` task. Hooks are convenience feedback and remain bypassable;
-CI is authoritative.
+`pnpm exec lefthook install`. `TASK_BUDGET` in `tools/tasks/manifest_test.ts`
+caps the verb vocabulary at 26, so there is no `hooks:install` task. Hooks are
+convenience feedback and remain bypassable; CI is authoritative.
 
 Hooks improve feedback time but are bypassable. Protected-branch rules and
 required CI checks enforce the contract. A repository-local `.githooks`
@@ -425,7 +465,8 @@ installation stays frozen, that the pinned Deno version and the Node image
 version match `.tool-versions`, and that every command either names a declared
 `deno.json` task or a declared dependency binary.
 
-Named by the tickets that add them, still missing: the workflow and page catalog
-coverage gate, container image scanning, and artifact publication. Upload
-coverage, test, OpenAPI, and migration verification artifacts on failure as
-those gates arrive.
+The flow catalog gate runs inside `test:unit` (see the coverage contract above).
+Still missing: the page-catalog route gate, container image scanning, and
+artifact publication beyond the Playwright traces the E2E jobs upload on
+failure. Upload coverage, test, OpenAPI, and migration verification artifacts on
+failure as those gates arrive.

@@ -116,10 +116,14 @@ implementation. The active work order is
 The accepted implementation baseline is Docker Compose, PostgreSQL, a Deno
 backend, Astro as a static-first frontend, TypeScript throughout application
 code, current stable shadcn/ui components for interactive UI, and automated
-unit, integration, contract, and end-to-end tests. React is permitted only where
-shadcn/ui or an interactive Astro island requires it. Do not turn the
-application into an always-server-rendered SPA without an explicit architecture
-decision.
+unit, integration, contract, and end-to-end tests. Per
+[ADR 0006](docs/architecture/decisions/0006-ui-stack-shadcn-react-islands.md),
+interactive UI is source-owned shadcn/ui and React runs only inside hydrated
+Astro islands; static, public, and no-JavaScript pages ship no React.
+[`technology-baseline.md`](docs/architecture/technology-baseline.md) records the
+one primitive family, Base UI, and the one permitted exception to it, the
+command palette's `cmdk` list. Do not turn the application into an
+always-server-rendered SPA without an explicit architecture decision.
 
 <!-- deno-fmt-ignore -->
 The production-like frontend topology keeps `web` as a private Astro renderer for exactly the page catalog's `on-demand` routes. The gateway serves static, prerendered, and fingerprinted output, forwards `/api/v1/*` to the private `api`, and is the only public entry point. Development alone may override `web` to run `astro dev`.

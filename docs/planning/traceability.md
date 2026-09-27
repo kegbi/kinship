@@ -9,20 +9,30 @@ contract.
 
 The current baseline contains:
 
-- 15 backend modules and 6 read models;
-- 39 cataloged pages, all implemented, except `settings.billing`, which the
-  catalog marks as an optional module and Phase 10 `APP-010C` withholds;
-- 30 required flows: 17 P0, 10 P1, and 3 P2; and
+- 15 backend modules and 6 read models in `module-boundaries.yaml`; 14 modules
+  and all 6 read models exist under `packages/backend`, the optional `billing`
+  module being the one not built;
+- 39 cataloged pages (30 `static-shell-islands`, 5 `on-demand`, 4 `static`), all
+  implemented, except `settings.billing`, which the catalog marks as an optional
+  module and Phase 10 `APP-010C` withholds;
+- 30 required flows: 17 P0, 10 P1, and 3 P2;
 - 29 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
   still planned with an empty `testRefs` array, consistent with its withheld
-  optional module.
+  optional module; and
+- 34 Playwright specs under `tests/e2e/`. Flow specs are named
+  `<feature>.<FLOW-ID>.spec.ts` (GAP-036); specs with no flow keep a feature
+  name. The flows' `testRefs` name 32 of them; `perf.PERF-001.spec.ts` and
+  `public-home.spec.ts` prove no catalog flow.
 
-Verified against `docs/product/page-catalog.yaml` and
-`docs/product/user-flows.yaml` on 2026-08-29 while integrating
+Verified against `docs/architecture/module-boundaries.yaml`,
+`docs/product/page-catalog.yaml`, `docs/product/user-flows.yaml`, and
+`tests/e2e/` on 2026-09-27 by GAP-043; the earlier count was taken on 2026-08-29
+while integrating
 [`ux-design-review-2026-08-29.md`](../validation/ux-design-review-2026-08-29.md)
-§5.3 item 5. The five cataloged dynamic routes are served by the internal shell
-and gateway-rewrite pattern rather than by separate Astro routes; that is an
-implementation shape, not a coverage gap.
+§5.3 item 5. `tools/product/flow_traceability_test.ts` keeps the `testRefs` and
+the specs' `flow` annotations in agreement. The five cataloged dynamic routes
+are served by the internal shell and gateway-rewrite pattern rather than by
+separate Astro routes; that is an implementation shape, not a coverage gap.
 
 The slice column below is the **accepted slice in which the complete contract is
 accepted**, not necessarily the first slice in which a shell or dependency is
