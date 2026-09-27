@@ -5,7 +5,6 @@ import {
 import {
   exportAuditFrom,
 } from "../../packages/backend/modules/governance/public.ts";
-import postgres from "postgres";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
@@ -33,6 +32,13 @@ import {
   PostgresActorRevalidation,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
+import {
+  openSql,
+  requireDatabaseUrl,
+  revocableActor,
+  revokeMembership,
+} from "../support/database.ts";
+import { apiSupport, type SignedInFixture } from "../support/api.ts";
 
 class CapturedStorage implements ObjectStorage {
   readonly bucket = "export-test";
@@ -66,9 +72,8 @@ async function sha256(bytes: Uint8Array): Promise<string> {
   ).join("");
 }
 
-const databaseUrl = Deno.env.get("DATABASE_URL");
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
-const sql = postgres(databaseUrl, { max: 2, onnotice: () => undefined });
+const databaseUrl = requireDatabaseUrl();
+const sql = openSql(databaseUrl);
 const mail = new CapturedVerificationMail();
 const storage = new CapturedStorage();
 const configured = createConfiguredApiApp(
@@ -80,69 +85,15 @@ const configured = createConfiguredApiApp(
   undefined,
   storage,
 );
-const password = "correct horse battery staple";
-
-interface Fixture {
-  readonly cookie: string;
-  readonly memberId: string;
-  readonly workspaceId: string;
-}
-async function register(email: string): Promise<Fixture> {
-  assert(
-    (await configured.app.request("http://localhost/api/v1/registrations", {
-      body: JSON.stringify({
-        email,
-        firstName: "Export",
-        lastName: "Admin",
-        password,
-        workspaceName: email,
-      }),
-      headers: { "content-type": "application/json" },
-      method: "POST",
-    })).status === 202,
-    "export fixture registers",
-  );
-  const token = mail.latestToken(email);
-  assert(token, "verification token captured");
-  assert(
-    (await configured.app.request(
-      "http://localhost/api/v1/email-verifications",
-      {
-        body: JSON.stringify({ token }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      },
-    )).status === 200,
-    "export fixture verifies",
-  );
-  const signed = await configured.app.request(
-    "http://localhost/api/v1/sessions",
-    {
-      body: JSON.stringify({ email, password }),
-      headers: {
-        "content-type": "application/json",
-        origin: "http://localhost",
-      },
-      method: "POST",
-    },
-  );
-  const body = await signed.json() as {
-    member: { id: string };
-    workspace: { id: string };
-  };
-  const cookie = signed.headers.get("set-cookie")?.split(";")[0];
-  assert(signed.status === 200 && cookie, "export fixture signs in");
-  return { cookie, memberId: body.member.id, workspaceId: body.workspace.id };
-}
-function request(fixture: Fixture, path: string, method: "GET" | "POST") {
-  return configured.app.request(`http://localhost${path}`, {
-    headers: {
-      cookie: fixture.cookie,
-      origin: "http://localhost",
-      "X-Workspace-Id": fixture.workspaceId,
-    },
-    method,
-  });
+const api = apiSupport(configured.app, mail, sql);
+const register = (email: string) =>
+  api.register(email, email, { firstName: "Export", lastName: "Admin" });
+function request(
+  fixture: SignedInFixture,
+  path: string,
+  method: "GET" | "POST",
+) {
+  return api.request(fixture, path, method);
 }
 
 Deno.test("[EXPORT-001] PostgreSQL export is portable, private, and tenant-safe", async () => {
@@ -404,51 +355,6 @@ Deno.test("[EXPORT-001] PostgreSQL export is portable, private, and tenant-safe"
 
 // --- GAP-009 -------------------------------------------------------------
 
-/**
- * A workspace whose only member can be revoked mid-test. The actor is built
- * directly so the use case is exercised without the session layer refusing
- * first.
- */
-async function revocableActor(name: string): Promise<{
-  readonly memberId: string;
-  readonly personId: string;
-  readonly role: "owner";
-  readonly userId: string;
-  readonly workspaceId: string;
-}> {
-  const userId = crypto.randomUUID();
-  const workspaceId = crypto.randomUUID();
-  const memberId = crypto.randomUUID();
-  const personId = crypto.randomUUID();
-  await sql.begin(async (transaction) => {
-    await transaction`
-      insert into crm.users (id, email, first_name, status)
-      values (${userId}, ${`${name}@example.test`}, 'Revocable', 'active')
-    `;
-    await transaction`
-      insert into crm.workspaces (id, name, status, created_by_user_id)
-      values (${workspaceId}, ${name}, 'active', ${userId})
-    `;
-    await transaction`
-      insert into crm.workspace_members (
-        id, workspace_id, user_id, role, status, joined_at
-      ) values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active', now())
-    `;
-    await transaction`
-      insert into crm.people (id, workspace_id, created_by_member_id, given_name)
-      values (${personId}, ${workspaceId}, ${memberId}, 'Revocation subject')
-    `;
-  });
-  return { memberId, personId, role: "owner", userId, workspaceId };
-}
-
-async function revokeMembership(memberId: string): Promise<void> {
-  await sql`
-    update crm.workspace_members set status = 'left', left_at = now()
-    where id = ${memberId}
-  `;
-}
-
 Deno.test({
   name: "[EXPORT-001] GAP-009 a revoked member cannot start or list exports",
   sanitizeOps: false,
@@ -457,6 +363,7 @@ Deno.test({
     const connection = connectDatabase(databaseUrl);
     try {
       const actor = await revocableActor(
+        sql,
         `export-revocation-${crypto.randomUUID()}`,
       );
       const storage = new CapturedStorage();
@@ -479,7 +386,7 @@ Deno.test({
       const allowed = await exports.list(actor);
       assert(allowed.status === "ready", "an active member lists exports");
 
-      await revokeMembership(actor.memberId);
+      await revokeMembership(sql, actor.memberId);
 
       const refusedCreate = await exports.createWorkspace(actor);
       const refusedList = await exports.list(actor);

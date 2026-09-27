@@ -1,4 +1,3 @@
-import postgres from "postgres";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
@@ -21,17 +20,15 @@ import {
   PostgresWorkspaceRegistration,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/registration_repository.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
+import {
+  openSql,
+  requireDatabaseUrl,
+  resetDatabase,
+} from "../support/database.ts";
+import { apiSupport } from "../support/api.ts";
 
-const databaseUrl = Deno.env.get("DATABASE_URL");
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required for integration tests");
-}
-
-const sql = postgres(databaseUrl, {
-  max: 2,
-  onnotice: () => undefined,
-  prepare: false,
-});
+const databaseUrl = requireDatabaseUrl();
+const sql = openSql(databaseUrl, { prepare: false });
 const capturedMail = new CapturedVerificationMail();
 const configured = createConfiguredApiApp(
   databaseUrl,
@@ -40,21 +37,12 @@ const configured = createConfiguredApiApp(
 );
 const postconditionConnection = connectDatabase(databaseUrl);
 
-async function reset(): Promise<void> {
-  await sql`truncate table crm.users, crm.workspaces, crm.audit_events restart identity cascade`;
-}
+const api = apiSupport(configured.app, capturedMail, sql);
 
-async function register(email: string): Promise<Response> {
-  return await configured.app.request("http://localhost/api/v1/registrations", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      email,
-      firstName: "Ada",
-      lastName: "Lovelace",
-      password: "correct horse battery staple",
-      workspaceName: "Ada's circle",
-    }),
+function register(email: string): Promise<Response> {
+  return api.submitRegistration(email, "Ada's circle", {
+    firstName: "Ada",
+    lastName: "Lovelace",
   });
 }
 
@@ -64,7 +52,7 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
-    await reset();
+    await resetDatabase(sql);
     const response = await register("Owner@Example.test");
     assert(
       response.status === 202,
@@ -397,7 +385,7 @@ Deno.test({
       "each workspace owns one isolated copy of the exact defaults",
     );
 
-    await reset();
+    await resetDatabase(sql);
     const expiredEmail = "expired@example.test";
     assert(
       (await register(expiredEmail)).status === 202,
@@ -428,7 +416,7 @@ Deno.test({
       "expired verification must not activate identity or handoff",
     );
 
-    await reset();
+    await resetDatabase(sql);
     const legacyId = crypto.randomUUID();
     await sql`
       insert into crm.users (id, email, password_hash, first_name, status, email_verified_at)
@@ -477,7 +465,7 @@ Deno.test({
       "imported active/unverified identity without app token is untouched",
     );
 
-    await reset();
+    await resetDatabase(sql);
     const racingEmail = "resend-verify-race@example.test";
     assert((await register(racingEmail)).status === 202, "race fixture exists");
     const racingToken = capturedMail.latestToken(racingEmail);
@@ -515,7 +503,7 @@ Deno.test({
       "concurrent resend and verification serialize to one verified handoff",
     );
 
-    await reset();
+    await resetDatabase(sql);
     const failingMailApp = createConfiguredApiApp(
       databaseUrl,
       { sendVerification: () => Promise.reject(new Error("provider down")) },
@@ -562,7 +550,7 @@ Deno.test({
       await failingMailApp.close();
     }
 
-    await reset();
+    await resetDatabase(sql);
     assert(
       (await register("postconditions@example.test")).status === 202,
       "postcondition fixture registration succeeds",

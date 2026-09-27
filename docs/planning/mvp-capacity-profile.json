@@ -92,7 +92,7 @@
     ],
     "worker": [
       {
-        "path": "tests/integration/planning_postgres_test.ts",
+        "path": "tests/integration/planning_delivery_postgres_test.ts",
         "markers": [
           "regeneration cannot overwrite a concurrent claim",
           "recovers an expired confirmed claim after disable"

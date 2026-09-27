@@ -1,4 +1,3 @@
-import postgres from "postgres";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
@@ -23,6 +22,13 @@ import {
   PostgresAuditEventRecorder,
 } from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
+import {
+  openSql,
+  requireDatabaseUrl,
+  revocableActor,
+  revokeMembership,
+} from "../support/database.ts";
+import { apiSupport, type SignedInFixture } from "../support/api.ts";
 
 function deferred() {
   let resolve!: () => void;
@@ -39,15 +45,13 @@ async function assertPending(
   assert(!settled, message);
 }
 
-const databaseUrl = Deno.env.get("DATABASE_URL");
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
-const sql = postgres(databaseUrl, { max: 2, onnotice: () => undefined });
+const databaseUrl = requireDatabaseUrl();
+const sql = openSql(databaseUrl);
 const mail = new CapturedVerificationMail();
 const keyset = {
   activeKeyId: "test",
   keys: new Map([["test", new Uint8Array(32).fill(0x69)]]),
 };
-const password = "correct horse battery staple";
 
 class DurableDav implements DavRemoteClient {
   mode: "auth" | "conflict" | "delete" | "good" | "partial" | "updated" =
@@ -139,76 +143,23 @@ let configured = createConfiguredApiApp(
   keyset,
 );
 
-interface Fixture {
-  readonly cookie: string;
-  readonly workspaceId: string;
-}
-
-async function register(
-  email: string,
-  workspaceName: string,
-): Promise<Fixture> {
-  const registered = await configured.app.request(
-    "http://localhost/api/v1/registrations",
-    {
-      body: JSON.stringify({
-        email,
-        firstName: "DAV",
-        lastName: "Tester",
-        password,
-        workspaceName,
-      }),
-      headers: { "content-type": "application/json" },
-      method: "POST",
-    },
-  );
-  assert(registered.status === 202, "DAV fixture registers");
-  const token = mail.latestToken(email);
-  assert(token, "verification token captured");
-  assert(
-    (await configured.app.request(
-      "http://localhost/api/v1/email-verifications",
-      {
-        body: JSON.stringify({ token }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      },
-    )).status === 200,
-    "DAV fixture verifies",
-  );
-  const signed = await configured.app.request(
-    "http://localhost/api/v1/sessions",
-    {
-      body: JSON.stringify({ email, password }),
-      headers: {
-        "content-type": "application/json",
-        origin: "http://localhost",
-      },
-      method: "POST",
-    },
-  );
-  const body = await signed.json() as { workspace: { id: string } };
-  const cookie = signed.headers.get("set-cookie")?.split(";")[0];
-  assert(signed.status === 200 && cookie, "DAV fixture signs in");
-  return { cookie, workspaceId: body.workspace.id };
-}
+// `configured` is replaced when a test restarts the app, so the support
+// resolves it on every request.
+const api = apiSupport(
+  { request: (input, init) => configured.app.request(input, init) },
+  mail,
+  sql,
+);
+const register = (email: string, workspaceName: string) =>
+  api.register(email, workspaceName, { firstName: "DAV", lastName: "Tester" });
 
 function request(
-  fixture: Fixture,
+  fixture: SignedInFixture,
   path: string,
   method: "DELETE" | "GET" | "POST" = "GET",
   body?: unknown,
 ) {
-  return configured.app.request(`http://localhost${path}`, {
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    headers: {
-      "content-type": "application/json",
-      cookie: fixture.cookie,
-      origin: "http://localhost",
-      "X-Workspace-Id": fixture.workspaceId,
-    },
-    method,
-  });
+  return api.request(fixture, path, method, body);
 }
 
 Deno.test("[INTEGRATION-001] PostgreSQL DAV checkpoints isolate tenants and recover retry/restart", async () => {
@@ -903,51 +854,6 @@ Deno.test("[INTEGRATION-001] PostgreSQL DAV checkpoints isolate tenants and reco
 
 // --- GAP-009 -------------------------------------------------------------
 
-/**
- * A workspace whose only member can be revoked mid-test. The actor is built
- * directly so the use case is exercised without the session layer refusing
- * first.
- */
-async function revocableActor(name: string): Promise<{
-  readonly memberId: string;
-  readonly personId: string;
-  readonly role: "owner";
-  readonly userId: string;
-  readonly workspaceId: string;
-}> {
-  const userId = crypto.randomUUID();
-  const workspaceId = crypto.randomUUID();
-  const memberId = crypto.randomUUID();
-  const personId = crypto.randomUUID();
-  await sql.begin(async (transaction) => {
-    await transaction`
-      insert into crm.users (id, email, first_name, status)
-      values (${userId}, ${`${name}@example.test`}, 'Revocable', 'active')
-    `;
-    await transaction`
-      insert into crm.workspaces (id, name, status, created_by_user_id)
-      values (${workspaceId}, ${name}, 'active', ${userId})
-    `;
-    await transaction`
-      insert into crm.workspace_members (
-        id, workspace_id, user_id, role, status, joined_at
-      ) values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active', now())
-    `;
-    await transaction`
-      insert into crm.people (id, workspace_id, created_by_member_id, given_name)
-      values (${personId}, ${workspaceId}, ${memberId}, 'Revocation subject')
-    `;
-  });
-  return { memberId, personId, role: "owner", userId, workspaceId };
-}
-
-async function revokeMembership(memberId: string): Promise<void> {
-  await sql`
-    update crm.workspace_members set status = 'left', left_at = now()
-    where id = ${memberId}
-  `;
-}
-
 Deno.test({
   name:
     "[INTEGRATION-001] GAP-009 a revoked member cannot configure a DAV subscription",
@@ -957,6 +863,7 @@ Deno.test({
     const connection = connectDatabase(databaseUrl);
     try {
       const actor = await revocableActor(
+        sql,
         `dav-revocation-${crypto.randomUUID()}`,
       );
       const repository = new PostgresDavRepository(
@@ -969,7 +876,7 @@ Deno.test({
         "an active owner is authorized for DAV",
       );
 
-      await revokeMembership(actor.memberId);
+      await revokeMembership(sql, actor.memberId);
 
       assert(
         !await repository.authorize(actor),

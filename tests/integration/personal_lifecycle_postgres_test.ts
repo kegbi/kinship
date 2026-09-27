@@ -1,29 +1,30 @@
-import postgres from "postgres";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
+import {
+  addMembership as addMembershipFor,
+  openSql,
+  requireDatabaseUrl,
+  resetDatabase,
+} from "../support/database.ts";
+import {
+  apiSupport,
+  originHeaders,
+  PASSWORD as password,
+} from "../support/api.ts";
 
-const databaseUrl = Deno.env.get("DATABASE_URL");
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
-const sql = postgres(databaseUrl, {
-  max: 4,
-  onnotice: () => undefined,
-  prepare: false,
-});
+const databaseUrl = requireDatabaseUrl();
+const sql = openSql(databaseUrl, { max: 4, prepare: false });
 const mail = new CapturedVerificationMail();
 const configured = createConfiguredApiApp(
   databaseUrl,
   mail,
   browserSecurityPolicy("test", "http://localhost"),
 );
-const password = "correct horse battery staple";
-const originHeaders = {
-  "content-type": "application/json",
-  origin: "http://localhost",
-};
+const api = apiSupport(configured.app, mail, sql);
 
 interface IdentityFixture {
   readonly cookie: string;
@@ -38,84 +39,22 @@ async function register(
   email: string,
   workspaceName: string,
 ): Promise<IdentityFixture> {
-  const registered = await configured.app.request(
-    "http://localhost/api/v1/registrations",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        email,
-        firstName: "Lifecycle",
-        lastName: "Member",
-        password,
-        workspaceName,
-      }),
-    },
-  );
-  assert(registered.status === 202, `${email} registers`);
-  const token = mail.latestToken(email);
-  assert(token, `${email} verification captured`);
-  assert(
-    (await configured.app.request(
-      "http://localhost/api/v1/email-verifications",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token }),
-      },
-    )).status === 200,
-    `${email} verifies`,
-  );
-  const signed = await signIn(email);
-  const body = await signed.json() as {
-    readonly member: { readonly id: string };
-    readonly workspace: { readonly id: string };
-  };
-  const cookie = signed.headers.get("set-cookie")?.split(";")[0];
-  const [user] = await sql<{ readonly id: string }[]>`
-    select id::text from crm.users where email = ${email}
-  `;
-  assert(signed.status === 200 && cookie && user, `${email} signs in`);
-  return {
-    cookie,
-    email,
-    memberId: body.member.id,
-    userId: user.id,
-    workspaceId: body.workspace.id,
-    workspaceName,
-  };
-}
-
-async function signIn(email: string, workspaceId?: string): Promise<Response> {
-  return await configured.app.request("http://localhost/api/v1/sessions", {
-    method: "POST",
-    headers: originHeaders,
-    body: JSON.stringify({
-      email,
-      password,
-      ...(workspaceId ? { workspaceId } : {}),
-    }),
+  const signedIn = await api.register(email, workspaceName, {
+    firstName: "Lifecycle",
+    lastName: "Member",
   });
+  return { ...signedIn, email, workspaceName };
 }
 
-async function addMembership(
+const signIn = (email: string, workspaceId?: string) =>
+  api.signIn(email, { workspaceId });
+
+const addMembership = (
   identity: IdentityFixture,
   workspaceId: string,
   role: "admin" | "member" | "owner",
   status: "active" | "suspended" = "active",
-): Promise<string> {
-  const memberId = crypto.randomUUID();
-  await sql`
-    insert into crm.workspace_members (
-      id, workspace_id, user_id, role, status, joined_at, created_at, updated_at
-    ) values (
-      ${memberId}, ${workspaceId}, ${identity.userId}, ${role}, ${status},
-      now(), now(), now()
-    )
-  `;
-  await sql`insert into crm.member_preferences (member_id) values (${memberId})`;
-  return memberId;
-}
+) => addMembershipFor(sql, identity.userId, workspaceId, role, status);
 
 async function lifecycleRequest(
   identity: Pick<IdentityFixture, "cookie" | "workspaceId">,
@@ -148,7 +87,10 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
-    await sql`truncate table crm.users, crm.workspaces, crm.audit_events, crm.legal_documents, crm.workspace_lifecycle_records restart identity cascade`;
+    await resetDatabase(sql, [
+      "crm.legal_documents",
+      "crm.workspace_lifecycle_records",
+    ]);
     const owner = await register(
       "workspace-danger@example.test",
       "Danger circle",
@@ -402,7 +344,7 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
-    await sql`truncate table crm.users, crm.workspaces, crm.audit_events, crm.legal_documents restart identity cascade`;
+    await resetDatabase(sql, ["crm.legal_documents"]);
     const first = await register("leave-first@example.test", "Shared circle");
     const second = await register("leave-second@example.test", "Second home");
     await addMembership(second, first.workspaceId, "owner");
@@ -451,7 +393,7 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
-    await sql`truncate table crm.users, crm.workspaces, crm.audit_events, crm.legal_documents restart identity cascade`;
+    await resetDatabase(sql, ["crm.legal_documents"]);
     const owner = await register(
       "step-up-owner@example.test",
       "Step-up circle",
@@ -588,7 +530,7 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
-    await sql`truncate table crm.users, crm.workspaces, crm.audit_events, crm.legal_documents restart identity cascade`;
+    await resetDatabase(sql, ["crm.legal_documents"]);
     await sql`
       create or replace function crm.delay_owner_removal()
       returns trigger language plpgsql as $$
@@ -672,7 +614,7 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
-    await sql`truncate table crm.users, crm.workspaces, crm.audit_events, crm.legal_documents restart identity cascade`;
+    await resetDatabase(sql, ["crm.legal_documents"]);
     const deleting = await register("delete-me@example.test", "Primary circle");
     const neighbor = await register("neighbor@example.test", "Neighbor circle");
     await addMembership(neighbor, deleting.workspaceId, "owner");
@@ -859,7 +801,7 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
-    await sql`truncate table crm.users, crm.workspaces, crm.audit_events, crm.legal_documents restart identity cascade`;
+    await resetDatabase(sql, ["crm.legal_documents"]);
     const owner = await register(
       "final-owner@example.test",
       "Protected circle",

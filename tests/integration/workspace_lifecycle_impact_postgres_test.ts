@@ -11,7 +11,6 @@
  * workspace seeded through the owning modules so each join path carries a row.
  */
 
-import postgres from "postgres";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
@@ -56,14 +55,19 @@ import {
   PostgresRelationshipWorkspaceLifecycleImpact,
 } from "../../packages/backend/modules/relationships/adapters/postgres/workspace_lifecycle_impact.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
+import {
+  openSql,
+  requireDatabaseUrl,
+  resetDatabase,
+} from "../support/database.ts";
+import {
+  apiSupport,
+  type HttpMethod,
+  type SignedInFixture,
+} from "../support/api.ts";
 
-const databaseUrl = Deno.env.get("DATABASE_URL");
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
-const sql = postgres(databaseUrl, {
-  max: 4,
-  onnotice: () => undefined,
-  prepare: false,
-});
+const databaseUrl = requireDatabaseUrl();
+const sql = openSql(databaseUrl, { max: 4, prepare: false });
 const connection = connectDatabase(databaseUrl);
 const mail = new CapturedVerificationMail();
 const configured = createConfiguredApiApp(
@@ -71,11 +75,7 @@ const configured = createConfiguredApiApp(
   mail,
   browserSecurityPolicy("test", "http://localhost"),
 );
-const password = "correct horse battery staple";
-const jsonHeaders = {
-  "content-type": "application/json",
-  origin: "http://localhost",
-};
+const api = apiSupport(configured.app, mail, sql);
 
 /** The wiring `apps/api/composition.ts` gives the lifecycle use case. */
 const impact: Readonly<Record<string, WorkspaceLifecycleCascadeParticipant>> = {
@@ -110,88 +110,31 @@ async function inspectAll(workspaceId: string): Promise<Contributions> {
   });
 }
 
-interface Fixture {
-  readonly cookie: string;
-  readonly memberId: string;
-  readonly workspaceId: string;
-}
+type Fixture = SignedInFixture;
 
 /** A workspace with nothing in it, on a database with nothing else in it. */
 async function freshWorkspace(
   email: string,
   workspaceName: string,
 ): Promise<Fixture> {
-  await sql`truncate table crm.users, crm.workspaces, crm.audit_events
-    restart identity cascade`;
-  const registered = await configured.app.request(
-    "http://localhost/api/v1/registrations",
-    {
-      body: JSON.stringify({
-        email,
-        firstName: "Impact",
-        lastName: "Owner",
-        password,
-        workspaceName,
-      }),
-      headers: { "content-type": "application/json" },
-      method: "POST",
-    },
-  );
-  assert(registered.status === 202, `${email} registers`);
-  const token = mail.latestToken(email);
-  assert(token, `${email} verification captured`);
-  assert(
-    (await configured.app.request(
-      "http://localhost/api/v1/email-verifications",
-      {
-        body: JSON.stringify({ token }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      },
-    )).status === 200,
-    `${email} verifies`,
-  );
-  const signed = await configured.app.request(
-    "http://localhost/api/v1/sessions",
-    {
-      body: JSON.stringify({ email, password }),
-      headers: jsonHeaders,
-      method: "POST",
-    },
-  );
-  const body = await signed.json() as {
-    readonly member: { readonly id: string };
-    readonly workspace: { readonly id: string };
-  };
-  const cookie = signed.headers.get("set-cookie")?.split(";")[0];
-  assert(signed.status === 200 && cookie, `${email} signs in`);
+  await resetDatabase(sql);
+  const owner = await api.register(email, workspaceName, {
+    firstName: "Impact",
+    lastName: "Owner",
+  });
   // Registration audits the new workspace. The preview is about what the
   // cascade destroys, so the trail is cleared to keep the empty counts exact.
   await sql`delete from crm.audit_events
-    where workspace_id = ${body.workspace.id}::uuid`;
-  return {
-    cookie,
-    memberId: body.member.id,
-    workspaceId: body.workspace.id,
-  };
+    where workspace_id = ${owner.workspaceId}::uuid`;
+  return owner;
 }
 
-async function request(
+function request(
   fixture: Fixture,
   path: string,
-  options: { readonly body?: unknown; readonly method?: string } = {},
+  options: { readonly body?: unknown; readonly method?: HttpMethod } = {},
 ): Promise<Response> {
-  return await configured.app.request(`http://localhost${path}`, {
-    ...(options.body === undefined
-      ? {}
-      : { body: JSON.stringify(options.body) }),
-    headers: {
-      ...jsonHeaders,
-      cookie: fixture.cookie,
-      "X-Workspace-Id": fixture.workspaceId,
-    },
-    method: options.method ?? "GET",
-  });
+  return api.request(fixture, path, options.method, options.body);
 }
 
 async function created(

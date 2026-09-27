@@ -1,4 +1,3 @@
-import postgres from "postgres";
 import { sql as kyselySql } from "kysely";
 import {
   CapturedVerificationMail,
@@ -42,71 +41,29 @@ import {
   PostgresWorkspaceInvitations,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/workspace_invitations.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
+import {
+  openSql,
+  requireDatabaseUrl,
+  resetDatabase,
+} from "../support/database.ts";
+import {
+  apiSupport,
+  originHeaders,
+  PASSWORD as password,
+} from "../support/api.ts";
 
-const databaseUrl = Deno.env.get("DATABASE_URL");
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required for integration tests");
-}
-const sql = postgres(databaseUrl, {
-  max: 3,
-  onnotice: () => undefined,
-  prepare: false,
-});
+const databaseUrl = requireDatabaseUrl();
+const sql = openSql(databaseUrl, { max: 3, prepare: false });
 const mail = new CapturedVerificationMail();
 const configured = createConfiguredApiApp(
   databaseUrl,
   mail,
   browserSecurityPolicy("test", "http://localhost"),
 );
-const password = "correct horse battery staple";
-const originHeaders = {
-  "content-type": "application/json",
-  origin: "http://localhost",
-};
+const api = apiSupport(configured.app, mail, sql);
 
-async function registerVerifySignIn(
-  email: string,
-  workspaceName: string,
-): Promise<{ readonly cookie: string; readonly workspaceId: string }> {
-  const registration = await configured.app.request(
-    "http://localhost/api/v1/registrations",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        email,
-        firstName: "Test",
-        lastName: "Member",
-        password,
-        workspaceName,
-      }),
-    },
-  );
-  assert(registration.status === 202, `registration failed for ${email}`);
-  const verificationToken = mail.latestToken(email);
-  assert(verificationToken, "verification delivery captured");
-  const verification = await configured.app.request(
-    "http://localhost/api/v1/email-verifications",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token: verificationToken }),
-    },
-  );
-  assert(verification.status === 200, `verification failed for ${email}`);
-  const signIn = await configured.app.request(
-    "http://localhost/api/v1/sessions",
-    {
-      method: "POST",
-      headers: originHeaders,
-      body: JSON.stringify({ email, password }),
-    },
-  );
-  const body = await signIn.json() as { workspace: { id: string } };
-  const setCookie = signIn.headers.get("set-cookie");
-  assert(signIn.status === 200 && setCookie, `sign-in failed for ${email}`);
-  return { cookie: setCookie.split(";")[0]!, workspaceId: body.workspace.id };
-}
+const registerVerifySignIn = (email: string, workspaceName: string) =>
+  api.register(email, workspaceName);
 
 async function invite(
   cookie: string,
@@ -133,7 +90,7 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
-    await sql`truncate table crm.users, crm.workspaces, crm.audit_events restart identity cascade`;
+    await resetDatabase(sql);
     const ownerEmail = "invite-owner@example.test";
     const inviteeEmail = "invitee@example.test";
     const foreignEmail = "foreign@example.test";
@@ -696,7 +653,7 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
-    await sql`truncate table crm.users, crm.workspaces, crm.audit_events restart identity cascade`;
+    await resetDatabase(sql);
     const email = "entry-reset-race@example.test";
     await registerVerifySignIn(email, "Entry reset race");
     await sql`
@@ -783,7 +740,7 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
-    await sql`truncate table crm.users, crm.workspaces, crm.audit_events restart identity cascade`;
+    await resetDatabase(sql);
     const owner = await registerVerifySignIn(
       "race-owner@example.test",
       "Race owner",
@@ -980,7 +937,7 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
-    await sql`truncate table crm.users, crm.workspaces, crm.audit_events restart identity cascade`;
+    await resetDatabase(sql);
     let failVerification = true;
     const deliveryMail = new CapturedVerificationMail();
     const failingMail = {
@@ -1069,7 +1026,7 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
-    await sql`truncate table crm.users, crm.workspaces, crm.audit_events restart identity cascade`;
+    await resetDatabase(sql);
     const owner = await registerVerifySignIn(
       "replacement-owner@example.test",
       "Replacement owner",

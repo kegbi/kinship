@@ -1394,7 +1394,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
       root test:unit (the gateway log-capture fixture passed in a copy that
       trusts this environment's proxy).
 
-- [ ] **GAP-035 — Integration test support and file splits.** M-L. Depends: 014.
+- [x] **GAP-035 — Integration test support and file splits.** M-L. Depends: 014.
   - Scope: `tests/support/` with `database.ts` (disposable schema reset per
     file, truncate helper), `api.ts` (register, verify, sign in, workspace
     header), `fixtures.ts` (create person, tags, dates through the API). Migrate
@@ -1403,6 +1403,32 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     `planning_postgres_test.ts` (4,103) into tasks, reminders, cadences.
   - Verify: `test:integration` green; largest integration file under 1,500
     lines.
+  - Delivered 2026-09-27: `tests/support/` holds the integration suites' shared
+    support:
+    - `database.ts`: the pool opener, database URL, `truncate`, `resetDatabase`,
+      and the revocable-actor and membership helpers;
+    - `api.ts`: register, verify, sign in, and workspace-scoped requests over
+      the in-process app;
+    - `fixtures.ts`: people and important dates through the API.
+    - Migration: the 16 local register/verify/sign-in sets, nine identical
+      revocable-actor copies, the request helpers, and every inline truncate and
+      pool setup moved onto it. No suite creates tags through the API, so no tag
+      fixture was added.
+    - Splits: people into directory, profile, lifecycle, dates, facts, and
+      relationships; planning into tasks, Today, reminders, cadences, and
+      delivery; settings into preferences and personalization; authentication
+      into budget and sign-in; interactions into activities and communications.
+      Every integration file is now under 1,500 lines (largest 1,437, from
+      5,964). Each split file opens its own resources through its family's
+      helper and closes them in its own final test, because Deno loads every
+      test file in its own isolate.
+    - Test parity: every test name and body is unchanged apart from helper
+      calls. A block-by-block comparison of all 130 old tests confirms it, and
+      the 12 new per-file close tests are the only additions.
+    - Evidence: 42 files changed (+13,816/-14,251); integration 142 passed and 0
+      failed (130 before); every unit set unchanged; every coverage set that
+      measures integration suites has the same totals.
+    - Gates: fmt:check, lint, check, check:architecture (14), contracts:check.
 
 - [ ] **GAP-036 — E2E support, feature-named specs, flow-ID consistency check.**
       M-L. Depends: 003.

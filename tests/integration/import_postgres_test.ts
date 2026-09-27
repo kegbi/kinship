@@ -1,4 +1,3 @@
-import postgres from "postgres";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
@@ -29,97 +28,33 @@ import {
   PostgresAuditEventRecorder,
 } from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
+import {
+  openSql,
+  requireDatabaseUrl,
+  revocableActor,
+  revokeMembership,
+} from "../support/database.ts";
+import { apiSupport, type SignedInFixture } from "../support/api.ts";
 
-const databaseUrl = Deno.env.get("DATABASE_URL");
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
-const sql = postgres(databaseUrl, { max: 2, onnotice: () => undefined });
+const databaseUrl = requireDatabaseUrl();
+const sql = openSql(databaseUrl);
 const mail = new CapturedVerificationMail();
 const configured = createConfiguredApiApp(
   databaseUrl,
   mail,
   browserSecurityPolicy("test", "http://localhost"),
 );
-const password = "correct horse battery staple";
-
-interface Fixture {
-  cookie: string;
-  memberId: string;
-  userId: string;
-  workspaceId: string;
-}
-async function register(email: string): Promise<Fixture> {
-  const registered = await configured.app.request(
-    "http://localhost/api/v1/registrations",
-    {
-      body: JSON.stringify({
-        email,
-        firstName: "Import",
-        lastName: "Admin",
-        password,
-        workspaceName: email,
-      }),
-      headers: { "content-type": "application/json" },
-      method: "POST",
-    },
-  );
-  assert(registered.status === 202, "import fixture registers");
-  const token = mail.latestToken(email);
-  assert(token, "verification token captured");
-  assert(
-    (await configured.app.request(
-      "http://localhost/api/v1/email-verifications",
-      {
-        body: JSON.stringify({ token }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      },
-    )).status === 200,
-    "import fixture verifies",
-  );
-  const signed = await configured.app.request(
-    "http://localhost/api/v1/sessions",
-    {
-      body: JSON.stringify({ email, password }),
-      headers: {
-        "content-type": "application/json",
-        origin: "http://localhost",
-      },
-      method: "POST",
-    },
-  );
-  const body = await signed.json() as {
-    member: { id: string };
-    workspace: { id: string };
-  };
-  const cookie = signed.headers.get("set-cookie")?.split(";")[0];
-  assert(signed.status === 200 && cookie, "import fixture signs in");
-  const [identity] = await sql<
-    { user_id: string }[]
-  >`select user_id::text from crm.workspace_members where id = ${body.member.id}::uuid`;
-  assert(identity, "import fixture resolves principal");
-  return {
-    cookie,
-    memberId: body.member.id,
-    userId: identity.user_id,
-    workspaceId: body.workspace.id,
-  };
-}
+type Fixture = SignedInFixture;
+const api = apiSupport(configured.app, mail, sql);
+const register = (email: string) =>
+  api.register(email, email, { firstName: "Import", lastName: "Admin" });
 function request(
   fixture: Fixture,
   path: string,
   method: "GET" | "POST",
   body?: unknown,
 ) {
-  return configured.app.request(`http://localhost${path}`, {
-    ...(body ? { body: JSON.stringify(body) } : {}),
-    headers: {
-      "content-type": "application/json",
-      cookie: fixture.cookie,
-      origin: "http://localhost",
-      "X-Workspace-Id": fixture.workspaceId,
-    },
-    method,
-  });
+  return api.request(fixture, path, method, body);
 }
 const source = {
   format: "monica-json",
@@ -338,51 +273,6 @@ Deno.test("[IMPORT-001] owning-boundary failure rolls back every commit effect a
 
 // --- GAP-009 -------------------------------------------------------------
 
-/**
- * A workspace whose only member can be revoked mid-test. The actor is built
- * directly so the use case is exercised without the session layer refusing
- * first.
- */
-async function revocableActor(name: string): Promise<{
-  readonly memberId: string;
-  readonly personId: string;
-  readonly role: "owner";
-  readonly userId: string;
-  readonly workspaceId: string;
-}> {
-  const userId = crypto.randomUUID();
-  const workspaceId = crypto.randomUUID();
-  const memberId = crypto.randomUUID();
-  const personId = crypto.randomUUID();
-  await sql.begin(async (transaction) => {
-    await transaction`
-      insert into crm.users (id, email, first_name, status)
-      values (${userId}, ${`${name}@example.test`}, 'Revocable', 'active')
-    `;
-    await transaction`
-      insert into crm.workspaces (id, name, status, created_by_user_id)
-      values (${workspaceId}, ${name}, 'active', ${userId})
-    `;
-    await transaction`
-      insert into crm.workspace_members (
-        id, workspace_id, user_id, role, status, joined_at
-      ) values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active', now())
-    `;
-    await transaction`
-      insert into crm.people (id, workspace_id, created_by_member_id, given_name)
-      values (${personId}, ${workspaceId}, ${memberId}, 'Revocation subject')
-    `;
-  });
-  return { memberId, personId, role: "owner", userId, workspaceId };
-}
-
-async function revokeMembership(memberId: string): Promise<void> {
-  await sql`
-    update crm.workspace_members set status = 'left', left_at = now()
-    where id = ${memberId}
-  `;
-}
-
 Deno.test({
   name:
     "[IMPORT-001] GAP-009 a revoked member cannot stage or commit an import",
@@ -392,6 +282,7 @@ Deno.test({
     const connection = connectDatabase(databaseUrl);
     try {
       const actor = await revocableActor(
+        sql,
         `import-revocation-${crypto.randomUUID()}`,
       );
       const imports = createImportManagement({
@@ -412,7 +303,7 @@ Deno.test({
       const allowed = await imports.dryRun(actor, source);
       assert(allowed.status === "dry_run", "an active member stages an import");
 
-      await revokeMembership(actor.memberId);
+      await revokeMembership(sql, actor.memberId);
 
       const refusedDryRun = await imports.dryRun(actor, source);
       const refusedCommit = await imports.commit(

@@ -3,7 +3,6 @@ import {
   createApiTokenManagement,
 } from "../../packages/backend/modules/api-access/public.ts";
 import { apiTokenAuditFrom } from "../../packages/backend/modules/api-access/public.ts";
-import postgres from "postgres";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
@@ -23,88 +22,33 @@ import {
   PostgresActorRevalidation,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
+import {
+  openSql,
+  requireDatabaseUrl,
+  revocableActor,
+  revokeMembership,
+} from "../support/database.ts";
+import { apiSupport, type SignedInFixture } from "../support/api.ts";
 
-const databaseUrl = Deno.env.get("DATABASE_URL");
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
-const sql = postgres(databaseUrl, { max: 2, onnotice: () => undefined });
+const databaseUrl = requireDatabaseUrl();
+const sql = openSql(databaseUrl);
 const mail = new CapturedVerificationMail();
 const configured = createConfiguredApiApp(
   databaseUrl,
   mail,
   browserSecurityPolicy("test", "http://localhost"),
 );
-const password = "correct horse battery staple";
-
-interface Fixture {
-  readonly cookie: string;
-  readonly workspaceId: string;
-}
-
-async function register(
-  email: string,
-  workspaceName: string,
-): Promise<Fixture> {
-  const registered = await configured.app.request(
-    "http://localhost/api/v1/registrations",
-    {
-      body: JSON.stringify({
-        email,
-        firstName: "API",
-        lastName: "Tester",
-        password,
-        workspaceName,
-      }),
-      headers: { "content-type": "application/json" },
-      method: "POST",
-    },
-  );
-  assert(registered.status === 202, "API token fixture registers");
-  const token = mail.latestToken(email);
-  assert(token, "verification token captured");
-  assert(
-    (await configured.app.request(
-      "http://localhost/api/v1/email-verifications",
-      {
-        body: JSON.stringify({ token }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      },
-    )).status === 200,
-    "fixture verifies",
-  );
-  const signed = await configured.app.request(
-    "http://localhost/api/v1/sessions",
-    {
-      body: JSON.stringify({ email, password }),
-      headers: {
-        "content-type": "application/json",
-        origin: "http://localhost",
-      },
-      method: "POST",
-    },
-  );
-  const body = await signed.json() as { workspace: { id: string } };
-  const cookie = signed.headers.get("set-cookie")?.split(";")[0];
-  assert(signed.status === 200 && cookie, "fixture signs in");
-  return { cookie, workspaceId: body.workspace.id };
-}
+const api = apiSupport(configured.app, mail, sql);
+const register = (email: string, workspaceName: string) =>
+  api.register(email, workspaceName, { firstName: "API", lastName: "Tester" });
 
 function management(
-  fixture: Fixture,
+  fixture: SignedInFixture,
   path = "/api/v1/settings/api-tokens",
   method: "DELETE" | "GET" | "POST" = "GET",
   body?: unknown,
 ) {
-  return configured.app.request(`http://localhost${path}`, {
-    ...(body ? { body: JSON.stringify(body) } : {}),
-    headers: {
-      "content-type": "application/json",
-      cookie: fixture.cookie,
-      origin: "http://localhost",
-      "X-Workspace-Id": fixture.workspaceId,
-    },
-    method,
-  });
+  return api.request(fixture, path, method, body);
 }
 
 Deno.test("[API-001] PostgreSQL API tokens are hashed, scoped, tenant-bound, expiring, and revocable", async () => {
@@ -231,51 +175,6 @@ Deno.test("[API-001] PostgreSQL API tokens are hashed, scoped, tenant-bound, exp
 
 // --- GAP-009 -------------------------------------------------------------
 
-/**
- * A workspace whose only member can be revoked mid-test. The actor is built
- * directly so the use case is exercised without the session layer refusing
- * first.
- */
-async function revocableActor(name: string): Promise<{
-  readonly memberId: string;
-  readonly personId: string;
-  readonly role: "owner";
-  readonly userId: string;
-  readonly workspaceId: string;
-}> {
-  const userId = crypto.randomUUID();
-  const workspaceId = crypto.randomUUID();
-  const memberId = crypto.randomUUID();
-  const personId = crypto.randomUUID();
-  await sql.begin(async (transaction) => {
-    await transaction`
-      insert into crm.users (id, email, first_name, status)
-      values (${userId}, ${`${name}@example.test`}, 'Revocable', 'active')
-    `;
-    await transaction`
-      insert into crm.workspaces (id, name, status, created_by_user_id)
-      values (${workspaceId}, ${name}, 'active', ${userId})
-    `;
-    await transaction`
-      insert into crm.workspace_members (
-        id, workspace_id, user_id, role, status, joined_at
-      ) values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active', now())
-    `;
-    await transaction`
-      insert into crm.people (id, workspace_id, created_by_member_id, given_name)
-      values (${personId}, ${workspaceId}, ${memberId}, 'Revocation subject')
-    `;
-  });
-  return { memberId, personId, role: "owner", userId, workspaceId };
-}
-
-async function revokeMembership(memberId: string): Promise<void> {
-  await sql`
-    update crm.workspace_members set status = 'left', left_at = now()
-    where id = ${memberId}
-  `;
-}
-
 Deno.test({
   name: "[API-001] GAP-009 a revoked member cannot mint or list API tokens",
   sanitizeOps: false,
@@ -284,6 +183,7 @@ Deno.test({
     const connection = connectDatabase(databaseUrl);
     try {
       const actor = await revocableActor(
+        sql,
         `api-token-revocation-${crypto.randomUUID()}`,
       );
       const actors = new PostgresActorRevalidation();
@@ -304,7 +204,7 @@ Deno.test({
       });
       assert(allowed.status === "created", "an active member mints a token");
 
-      await revokeMembership(actor.memberId);
+      await revokeMembership(sql, actor.memberId);
 
       const refusedCreate = await tokens.create(actor, {
         name: "Refused token",

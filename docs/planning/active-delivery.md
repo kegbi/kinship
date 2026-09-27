@@ -573,6 +573,18 @@ Playwright test carrying its stable flow ID.
       already holds the rule), and make the helper fail on a missing path so the
       class cannot recur.
 
+- [ ] **REL-054 — Signing in with a pending legal version can outlast the spec's
+      navigation window on Linux WebKit.** Main CI run `36294196846` on
+      `84ed13b` (GAP-032, CSS only) failed `app-008b.spec.ts:127`
+      (`[GOVERNANCE-001]`) on WebKit: after `Sign in` the page reached `/app`,
+      and the shell's redirect to `/app/compliance?next=%2Fapp` committed just
+      after the 5-second `toHaveURL` window closed. The flow passed on WebKit in
+      the two previous main runs on the same island code. The member makes two
+      sequential page loads before seeing the review. Watch: if it recurs, fix
+      the product side so a sign-in whose session reports a required legal
+      acceptance navigates straight to `/app/compliance?next=…` instead of
+      loading Today first, with a unit test; never by lengthening the timeout.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.

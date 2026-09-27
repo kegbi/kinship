@@ -1,4 +1,3 @@
-import postgres from "postgres";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import {
   PostgresPersonProfileRepository,
@@ -10,10 +9,11 @@ import {
   PostgresWorkspaceSettings,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/settings_management.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
+import { openSql, requireDatabaseUrl } from "../support/database.ts";
 
 Deno.test("APR-009 settings resolve member, workspace, and UTC timezone without granting admin access", async () => {
-  const url = Deno.env.get("DATABASE_URL")!;
-  const sql = postgres(url, { max: 1, onnotice: () => undefined });
+  const url = requireDatabaseUrl();
+  const sql = openSql(url, { max: 1 });
   const connection = connectDatabase(url);
   const transaction = new PostgresRegistrationTransaction(connection.db);
   const repository = new PostgresWorkspaceSettings();
