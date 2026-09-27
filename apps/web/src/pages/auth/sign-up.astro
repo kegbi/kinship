@@ -12,7 +12,8 @@ export const prerender = true;
       <ul id="signup-next" aria-label="What happens next">
         <li>Your password is protected with Argon2id.</li>
         <li>Your verification link works once.</li>
-        <li>Your workspace starts with you as its owner.</li>
+        <li data-signup-owner>Your workspace starts with you as its owner.</li>
+        <li data-signup-invited hidden>Your membership begins only after you accept the invitation.</li>
       </ul>
     </section>
 
@@ -36,12 +37,14 @@ export const prerender = true;
         <button type="submit">Create workspace</button>
       </form>
       <div id="registration-status" class="form-status" role="status" aria-live="polite" tabindex="-1"></div>
+      <template id="registration-sent-template"><strong>Check your email.</strong><span>We sent a private, single-use verification link. It expires in 24 hours.</span></template>
+      <template id="registration-delayed-template"><strong></strong><span>You can safely request another verification delivery.</span><button id="retry-verification-delivery" type="button">Retry verification email</button></template>
     </section>
   </main>
 </AuthLayout>
 
 <script>
-  import { mountRegistrationForm } from "../../lib/registration-form.ts";
+  import { mountRegistrationForm } from "../../features/auth/sign-up/registration-form.ts";
   const form = document.querySelector<HTMLFormElement>("#registration-form");
   if (form) mountRegistrationForm(form);
 </script>

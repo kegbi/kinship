@@ -14,13 +14,17 @@ import {
       { label: "Journal item" },
     ]} />
     <header class="page-heading"><div><p class="eyebrow">Personal history · <span data-workspace-name></span></p><h1>Journal item</h1></div></header>
-    <p data-journal-state class="section-state" role="status" aria-live="polite">Loading journal item…</p>
-    <button data-journal-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry item</button>
-    <ol data-journal-list class="journal-list" aria-label="Journal item"></ol>
+    <div class="contents" data-journal-surface="item">
+      <p data-journal-state class="section-state" role="status" aria-live="polite">Loading journal item…</p>
+      <button data-journal-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry item</button>
+      <ol data-journal-list class="journal-list" aria-label="Journal item"></ol>
+    </div>
   </main>
 </ApplicationLayout>
 
 <script>
-  import { mountJournal } from "../../lib/journal.ts";
+  // The journal island (`features/journal/`, GAP-033) shows the item the
+  // path names.
+  import { mountJournal } from "../../features/journal/journal.tsx";
   void mountJournal();
 </script>

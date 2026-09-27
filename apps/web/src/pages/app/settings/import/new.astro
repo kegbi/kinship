@@ -15,6 +15,7 @@ export const prerender = true;
       { label: "New import" },
     ]} />
     <header class="settings-heading"><div><p class="eyebrow">Data settings</p><h1>New import</h1><p>Monica JSON export, version 1.</p></div></header>
+    <div class="contents" data-import-new-surface>
     <form method="post" data-import-form class="import-form">
       <label for="import-source">Monica JSON export</label>
       <input id="import-source" name="source" type="file" accept="application/json,.json" required />
@@ -29,8 +30,15 @@ export const prerender = true;
       <label class="confirmation-control"><input data-import-confirm type="checkbox" /> I confirm this validated import</label>
       <button data-import-commit type="button" disabled>Commit import</button>
     </section>
+    </div>
       </div>
     </div>
   </main>
 </ApplicationLayout>
-<script>import { mountImports } from "../../../../lib/imports.ts"; void mountImports();</script>
+<script>
+  // The new-import flow is an island (`features/settings/imports/`, GAP-033)
+  // that takes over the region drawn above; a validation submitted before it
+  // knows its workspace is held, never submitted natively.
+  import { mountNewImport } from "../../../../features/settings/imports/import-new.tsx";
+  void mountNewImport();
+</script>

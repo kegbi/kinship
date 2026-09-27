@@ -4,8 +4,9 @@
  * shell the gateway serves for every person. It renders from the section
  * registry (GAP-028): the hero, the section directory, the profile facts
  * rail, and the four stream zones, each section through its partial under
- * `components/person/`. `lib/people-profile.ts` resolves the person and
- * activates each section's owner.
+ * `components/person/`. `features/person/workspace.ts` resolves the person
+ * and activates each section's owner; it fills, toggles, and focuses what
+ * the shell draws here and renders nothing itself (GAP-033).
  */
 import ApplicationLayout from "../../layouts/ApplicationLayout.astro";
 import AuditSummarySection from "../../components/person/AuditSummarySection.astro";
@@ -30,6 +31,10 @@ import {
   STREAM_ZONES,
   zoneSections,
 } from "../../features/person/sections.ts";
+import {
+  RAIL_DIALOG_TEMPLATE_ID,
+  SECTION_NOTICE_LINK_TEMPLATE_ID,
+} from "../../features/person/shell-templates.ts";
 import { buttonVariants, segmentVariants } from "../../components/ui/variants.ts";
 
 export const prerender = true;
@@ -71,7 +76,15 @@ const zones = STREAM_ZONES.map((zone) => ({ ...zone, sections: zoneSections(zone
   title="Person — Kinship"
 >
   <main id="main-content" class="page-frame people-profile-page" tabindex="-1">
-    <section id="person-profile-state" class="person-profile-state" role="status" aria-live="polite" tabindex="-1" hidden></section>
+    {/* A rail editor's phone sheet, cloned per opening (`features/person/rail-editor-presentation.ts`). */}
+    <template id={RAIL_DIALOG_TEMPLATE_ID}><dialog class="profile-rail-dialog" aria-modal="true"><h2>Editor</h2></dialog></template>
+    <section id="person-profile-state" class="person-profile-state" role="status" aria-live="polite" tabindex="-1" hidden>
+      <p class="eyebrow">Person workspace</p>
+      <h1 data-profile-state-heading>Person unavailable</h1>
+      <p data-profile-state-detail>Your current session or active workspace does not permit this view.</p>
+      <a class={buttonVariants({ className: "mt-(--space-4)", shape: "pill" })} data-profile-state-link href="/app">Return to Today</a>
+    </section>
+    <template id={SECTION_NOTICE_LINK_TEMPLATE_ID}><a href="/app/settings/personalization?section=profile-modules">Open personalization</a></template>
 
     <section id="person-profile-ready" class="person-workspace" aria-labelledby="person-profile-name" aria-busy="true">
       <PersonHero />
@@ -144,6 +157,6 @@ const zones = STREAM_ZONES.map((zone) => ({ ...zone, sections: zoneSections(zone
 </ApplicationLayout>
 
 <script>
-  import { mountPeopleProfile } from "../../lib/people-profile.ts";
-  void mountPeopleProfile();
+  import { mountPersonWorkspace } from "../../features/person/workspace.ts";
+  void mountPersonWorkspace();
 </script>

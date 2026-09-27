@@ -9,6 +9,7 @@ import type {
   PersonProfileSummary,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import { jsonResponse } from "../../../testing/api.ts";
+import { TOAST_REGION } from "../../../testing/shell.ts";
 import {
   ids,
   personProfile,
@@ -21,6 +22,7 @@ import {
   mountPending,
   mountSettled,
 } from "../../../testing/render.tsx";
+import { RAIL_DIALOG_TEMPLATE_ID } from "../rail-editor-presentation.ts";
 import type { SectionMount, SectionProps } from "../section-mounts.ts";
 
 export const { person: personId, workspace: workspaceId } = ids;
@@ -107,10 +109,13 @@ export function tagsBlock(): string {
     </div>`;
 }
 
-/** Draws the given blocks, with the application's toast region. */
+/**
+ * Draws the given blocks, with the application's toast region and the phone
+ * sheet's template the person shell draws.
+ */
 export function shell(...blocks: readonly string[]): HTMLElement {
   drawShell(
-    `<ul id="app-toasts"></ul><main id="person-profile-ready">${
+    `${TOAST_REGION}<template id="${RAIL_DIALOG_TEMPLATE_ID}"><dialog class="profile-rail-dialog" aria-modal="true"><h2></h2></dialog></template><main id="person-profile-ready">${
       blocks.join("")
     }</main>`,
   );

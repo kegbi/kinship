@@ -27,52 +27,56 @@ import {
       <p class="honesty-note">Start with only what you know. Unknown names stay unknown, and you can mark an incomplete identity explicitly.</p>
     </header>
 
-    <form method="post" id="people-create-form" class="person-form" novalidate>
-      <p id="people-form-errors" class="form-error-summary" role="alert" tabindex="-1" hidden></p>
-      <div class="name-grid">
-        <div class="name-field">
+    {/* The add-a-person island (`features/people/create/`, GAP-033) renders this form again
+      at once, keeping whatever was typed; until then its save controls stay disabled. */}
+    <div class="contents" data-people-create>
+      <form method="post" id="people-create-form" class="person-form" novalidate>
+        <p id="people-form-errors" class="form-error-summary" role="alert" tabindex="-1" hidden></p>
+        <div class="name-grid">
+          <div class="name-field">
+            <label>
+              <span class="field-label">Given name</span>
+              <input name="givenName" maxlength="200" autocomplete="given-name" aria-describedby="person-given-name-error" />
+            </label>
+            <small id="person-given-name-error" data-field-error="givenName"></small>
+          </div>
           <label>
-            <span class="field-label">Given name</span>
-            <input name="givenName" maxlength="200" autocomplete="given-name" aria-describedby="person-given-name-error" />
+            <span class="field-label">Middle name <small>Optional</small></span>
+            <input name="middleName" maxlength="200" autocomplete="additional-name" />
           </label>
-          <small id="person-given-name-error" data-field-error="givenName"></small>
+          <label>
+            <span class="field-label">Family name <small>Optional</small></span>
+            <input name="familyName" maxlength="200" autocomplete="family-name" />
+          </label>
+          <label>
+            <span class="field-label">Nickname <small>Optional</small></span>
+            <input name="nickname" maxlength="200" />
+          </label>
         </div>
-        <label>
-          <span class="field-label">Middle name <small>Optional</small></span>
-          <input name="middleName" maxlength="200" autocomplete="additional-name" />
-        </label>
-        <label>
-          <span class="field-label">Family name <small>Optional</small></span>
-          <input name="familyName" maxlength="200" autocomplete="family-name" />
-        </label>
-        <label>
-          <span class="field-label">Nickname <small>Optional</small></span>
-          <input name="nickname" maxlength="200" />
-        </label>
-      </div>
-      <div class="partial-person-control">
-        <input id="person-is-partial" name="isPartial" type="checkbox" />
-        <span class="partial-person-copy"><label for="person-is-partial"><strong>Some identity details are unknown</strong></label><small>Use this when the given name or other identity information is incomplete. Kinship will not invent a value.</small><small data-field-error="isPartial"></small></span>
-      </div>
-      <section id="duplicate-warning" class="duplicate-warning" role="alert" tabindex="-1" hidden>
-        <h2>Possible duplicate</h2>
-        <p id="duplicate-detail"></p>
+        <div class="partial-person-control">
+          <input id="person-is-partial" name="isPartial" type="checkbox" />
+          <span class="partial-person-copy"><label for="person-is-partial"><strong>Some identity details are unknown</strong></label><small>Use this when the given name or other identity information is incomplete. Kinship will not invent a value.</small><small data-field-error="isPartial"></small></span>
+        </div>
+        <section id="duplicate-warning" class="duplicate-warning" role="alert" tabindex="-1" hidden>
+          <h2>Possible duplicate</h2>
+          <p id="duplicate-detail"></p>
+          <div class={formActionsVariants()}>
+            <button id="create-anyway" type="button" class={buttonVariants({ variant: "outline" })} disabled>Create anyway</button>
+            <button id="review-person" type="button" class={buttonVariants()} disabled>Review the names</button>
+          </div>
+        </section>
         <div class={formActionsVariants()}>
-          <button id="create-anyway" type="button" class={buttonVariants({ variant: "outline" })}>Create anyway</button>
-          <button id="review-person" type="button" class={buttonVariants()}>Review the names</button>
+          <button id="save-person" type="submit" class={buttonVariants()} disabled>Save person</button>
+          <button id="save-add-another" type="submit" class={buttonVariants({ variant: "outline" })} disabled>Save and add another</button>
         </div>
-      </section>
-      <div class={formActionsVariants()}>
-        <button id="save-person" type="submit" class={buttonVariants()}>Save person</button>
-        <button id="save-add-another" type="submit" class={buttonVariants({ variant: "outline" })}>Save and add another</button>
-      </div>
-      <p id="people-create-status" role="status" aria-live="polite"></p>
-    </form>
+        <p id="people-create-status" role="status" aria-live="polite"></p>
+      </form>
+    </div>
 
   </main>
 </ApplicationLayout>
 
 <script>
-  import { mountPeopleCreate } from "../../../lib/people-create.ts";
-  void mountPeopleCreate();
+  import { mountPeopleCreate } from "../../../features/people/create/person-create.tsx";
+  mountPeopleCreate();
 </script>

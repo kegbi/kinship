@@ -1,17 +1,16 @@
 /**
  * Who mounts each person section, and how (GAP-028).
  *
- * `sections.ts` says whether an island or a vanilla module owns a section;
- * this says where that owner's code is. Every owner loads on demand and
+ * `sections.ts` says how a section's owner mounts — an island, for every
+ * section since GAP-033; this says where that owner's code is. Every owner
+ * loads on demand and
  * answers one contract, `SectionMount`: given the workspace element the
  * sections live in and the `SectionProps` every section receives, it renders
  * or wires its sections and resolves, once its first answer has settled, with
  * the function that unmounts it. A module that owns several sections — notes
  * and activities, calls and conversations, reminders and the stay-in-touch
- * cadence — is one owner shared by those entries, so it mounts once.
- *
- * Until a section migrates, its entry adapts the vanilla module's existing
- * mount function to the contract; the module's own behaviour is unchanged.
+ * cadence, documents and photos — is one owner shared by those entries, so
+ * it mounts once.
  */
 
 import type {
@@ -58,8 +57,6 @@ export interface SectionMountEntry<Kind extends SectionMountKind> {
   readonly load: () => Promise<SectionMount>;
 }
 
-const nothing = (): void => undefined;
-
 /**
  * Whether the workspace turned `key`'s profile module off. Tags are a module
  * without a section of their own: the hero previews them.
@@ -77,19 +74,6 @@ function island(
   load: () => Promise<SectionMount>,
 ): SectionMountEntry<"island"> {
   return { kind: "island", load };
-}
-
-/** A vanilla module's mount, adapted to the contract; it never unmounts. */
-function vanilla(
-  load: () => Promise<(props: SectionProps) => Promise<void>>,
-): SectionMountEntry<"vanilla"> {
-  return {
-    kind: "vanilla",
-    load: () =>
-      load().then((mount) => (_container, props) =>
-        mount(props).then(() => nothing)
-      ),
-  };
 }
 
 // The hero island owns the identity section's editor with the rest of the
@@ -191,24 +175,16 @@ const gifts = island(() =>
   )
 );
 
-const files = vanilla(() =>
-  import("../../lib/person-files.ts").then(({ mountPersonFiles }) => (props) =>
-    mountPersonFiles({
-      archived: props.archived,
-      personId: props.personId,
-      workspaceId: props.workspaceId,
-    })
-  )
+// Documents and photos are one island (GAP-033), loaded with the Things
+// zone; one list read answers both cards.
+const files = island(() =>
+  import("./files/person-files.tsx").then((module) => module.mountPersonFiles)
 );
 
-const auditSummary = vanilla(() =>
-  import("../../lib/audit-history.ts").then(
-    ({ mountPersonAuditSummary }) => (props) =>
-      mountPersonAuditSummary(
-        props.personId,
-        props.workspaceId,
-        props.preferences,
-      ),
+// The audit summary card is an island (GAP-033), loaded with the Admin zone.
+const auditSummary = island(() =>
+  import("./audit-summary/audit-summary.tsx").then((module) =>
+    module.mountPersonAuditSummary
   )
 );
 

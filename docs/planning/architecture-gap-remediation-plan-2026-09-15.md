@@ -1262,7 +1262,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     `docs/product/dashboard-settings-design.md`.
   - Verify: stylesheet contract tests; visual check at 390, 768, and 1440.
 
-- [ ] **GAP-033 — Migrate the remaining surfaces and retire the vanilla DOM
+- [x] **GAP-033 — Migrate the remaining surfaces and retire the vanilla DOM
       layer.** L. Depends: 029, 031.
   - Scope: move settings, personalization, the people directory and create flow,
     Today, journal, the tasks page, authentication forms, imports and exports,
@@ -1272,6 +1272,60 @@ project once. Full three-browser E2E and image builds run at the end of Phases
   - Verify: `grep` finds no `document.createElement` in `apps/web/src` outside
     `components/ui/` and tests; full three-browser E2E at the Phase 4
     checkpoint.
+  - Delivered 2026-09-27: implemented in four parts combined into one candidate,
+    each part reviewed on its own.
+    - Today, journal, and the activity report are islands under
+      `features/today/`, `features/journal/`, and
+      `features/interactions/activity-report/`. The Today attention queue is one
+      island with one read slot and a pure reducer. Every read sequence settles
+      every region it marked loading, and REL-048's reducer and island tests
+      prove it.
+    - The people directory, add-a-person, person files, the audit summary, and
+      the audit history pages are islands under `features/people/`,
+      `features/person/`, and `features/audit/`. The person workspace
+      orchestration moved to `features/person/workspace.ts` with its REL-045 and
+      REL-046 placement, focus, and settle behaviour unchanged. The shell's
+      state region and the phone sheet are cloned from `<template>`s, and
+      `section-mounts.ts` has no vanilla owner left.
+    - Settings, personalization, members, integrations, API access, storage,
+      imports, exports, the workspace and personal lifecycles, and the legal
+      review are islands under `features/settings/` and `features/compliance/`.
+      They keep the `?section=` history, the one-active-draft rule, the danger
+      zone's owner-only rules, and early-submit replay.
+    - The application shell and toasts (`features/shell/`) and the
+      authentication, registration, invitation, and verify-email pages
+      (`features/auth/`) render static Astro markup with `<template>`s. Their
+      scripts only query, toggle attributes, set text, and clone templates, so
+      every public page stays React-free, which a new build test enforces for
+      prerendered and on-demand pages alike.
+    - Scope and coverage: 24 vanilla `lib/` modules and their suites are deleted
+      or trimmed to non-UI helpers, and every case is ported by role. `grep`
+      finds no `document.createElement` in `apps/web/src` outside
+      `components/ui/` and tests. The form-method contract now also scans island
+      forms, with Quick capture the only `dialog` form and every other island
+      form POST or the allowlisted audit GET. `repository-layout.md` describes
+      the result.
+    - Review fixed nine defects, each with a failing test first: a journal save
+      racing a removal, a completion state kept across principals, the activity
+      report heading stuck on loading, a files Upload left enabled while busy,
+      lost pre-mount tag search text, an import Validate enabled during its file
+      read, both destructive lifecycle actions runnable at once, a
+      personalization draft snapshot that ignored selects and checkboxes, and a
+      file chosen before the import island mounted being dropped. The only proof
+      that a failed preferences save sends no layout event moved into the
+      settings suite.
+    - Evidence: 227 files changed (+30,166/-18,995); no spec changed. The 51
+      measured island entries are 514-14,959 B gzip over the shared 81,552 B
+      React runtime. Web tests 1,290, web coverage 98.64/95.38/99.43/99.86
+      against 95.70/90.13/95.91/97.42 before, with every surviving file's row
+      unchanged or higher except the shrunk `lib/app-shell.ts`; every Deno set
+      unchanged.
+    - Gates: Chromium E2E 57 passed, WebKit 56 and Firefox 56 passed with
+      `perf-001`'s own skip; the api, web, and gateway images built and the
+      gateway log-capture fixture passed in a copy that trusts this
+      environment's proxy; build (14 web-build tests), fmt:check, lint, check,
+      check:architecture (14), contracts:check, and root test:coverage all
+      passed.
 
 ### Phase 5 — Test organization
 

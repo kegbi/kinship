@@ -43,7 +43,7 @@ import {
 } from "../../../../../packages/contracts/generated/auth-client.ts";
 import { badgeVariants, breadcrumbVariants } from "@/components/ui/variants.ts";
 import { displayPersonName } from "../../lib/person-name.ts";
-import { showToast } from "../../lib/toasts.ts";
+import { showToast } from "../../features/shell/toasts/toasts.ts";
 import {
   markFormSaved,
   saveWithLockedForm,

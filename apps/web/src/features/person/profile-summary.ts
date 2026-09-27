@@ -10,7 +10,7 @@
  * DOM directly; now every owner publishes the fact here, one document event
  * per change, and the owning island folds
  * it into its state with the pure reducers below. The islands mount before
- * any section loads (`lib/people-profile.ts`), so no change is sent before
+ * any section loads (`features/person/workspace.ts`), so no change is sent before
  * its reader listens.
  */
 

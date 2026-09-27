@@ -2,12 +2,15 @@
  * The bridge from an island to the application's toast region.
  *
  * `ApplicationLayout.astro` renders one `#app-toasts` list, and
- * `lib/toasts.ts` owns its stacking, auto-dismissal, and focus rules. An
- * island announces through that same owner rather than rendering a second
- * region, so vanilla surfaces and islands share one stack.
+ * `features/shell/toasts/toasts.ts` owns its stacking, auto-dismissal, and focus
+ * rules. An island announces through that same owner rather than rendering a
+ * second region, so the shell and islands share one stack.
  */
 
-import { showToast, type ToastTone } from "../../lib/toasts.ts";
+import {
+  showToast,
+  type ToastTone,
+} from "../../features/shell/toasts/toasts.ts";
 
 export type { ToastTone };
 

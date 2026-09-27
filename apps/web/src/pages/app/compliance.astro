@@ -8,7 +8,7 @@ import {
 ---
 
 <ApplicationLayout current="today" description="Review and accept required legal document versions." pageId="compliance.accept" title="Required legal review — Kinship">
-  <main id="main-content" class="page-frame compliance-page" tabindex="-1">
+  <main id="main-content" class="page-frame compliance-page" tabindex="-1" data-compliance-page>
     <p data-compliance-state class="section-state" role="status" aria-live="polite">Checking required legal documents…</p>
     <section data-compliance-review hidden>
       <p data-compliance-kind class="eyebrow"></p>
@@ -25,6 +25,9 @@ import {
 </ApplicationLayout>
 
 <script>
-  import { mountCompliance } from "../../lib/legal.ts";
+  // The review is an island (`features/compliance/`, GAP-033) that takes
+  // over the page drawn above; Accept stays disabled until the reader
+  // confirms this exact version.
+  import { mountCompliance } from "../../features/compliance/compliance.tsx";
   void mountCompliance();
 </script>

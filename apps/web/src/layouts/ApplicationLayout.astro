@@ -2,6 +2,13 @@
 import "../styles/application.css";
 import "../styles/islands.css";
 import { buttonVariants } from "../components/ui/variants.ts";
+import {
+  ACCESS_FORBIDDEN_TEMPLATE_ID,
+  ACCESS_SIGN_IN_TEMPLATE_ID,
+  ACCESS_UNAVAILABLE_TEMPLATE_ID,
+  TOAST_TEMPLATE_ID,
+  WORKSPACE_OPTION_TEMPLATE_ID,
+} from "../features/shell/templates.ts";
 
 interface Props {
   readonly current: "journal" | "people" | "settings" | "tasks" | "today";
@@ -38,6 +45,10 @@ interface Props {
 }
 
 const { current, description, pageId, title } = Astro.props;
+const accessAction = buttonVariants({
+  className: "mt-(--space-4)",
+  shape: "pill",
+});
 ---
 
 <!doctype html>
@@ -69,6 +80,10 @@ const { current, description, pageId, title } = Astro.props;
         <p>Resolving your secure session and active workspace.</p>
       </div>
     </section>
+    {/* The access state's answers, cloned by features/shell/application-shell/application-shell.ts. */}
+    <template id={ACCESS_SIGN_IN_TEMPLATE_ID}><h1>Sign in to Kinship</h1><p>Your session is missing, expired, revoked, or no longer active in this workspace.</p><a class={accessAction} href="/auth/sign-in">Go to sign-in</a></template>
+    <template id={ACCESS_UNAVAILABLE_TEMPLATE_ID}><h1>Kinship is temporarily unavailable</h1><p>We could not confirm your active workspace. Any saved workspace choice is unchanged.</p><button class={accessAction} type="button">Try again</button></template>
+    <template id={ACCESS_FORBIDDEN_TEMPLATE_ID}><main id="forbidden-main-content" tabindex="-1"><h1>You don’t have access to Members</h1><p>Only workspace owners and admins can view members and invitations.</p><a class={accessAction} href="/app/settings">Return to settings</a></main></template>
 
     <div id="protected-shell" class="application" hidden>
       <header class="app-header">
@@ -103,6 +118,7 @@ const { current, description, pageId, title } = Astro.props;
                   <strong data-workspace-name></strong>
                   <div id="workspace-switcher-container" class="workspace-switcher" hidden>
                     <select id="workspace-switcher"></select>
+                    <template id={WORKSPACE_OPTION_TEMPLATE_ID}><option></option></template>
                   </div>
                 </div>
                 <a class="menu-item compact-add-person" href="/app/people/new" tabindex="0">Add person</a>
@@ -119,13 +135,13 @@ const { current, description, pageId, title } = Astro.props;
       {/* Quick capture (features/interactions/) renders its dialog through a
         portal; this root carries the island's readiness marker. */}
       <div class="contents" data-quick-capture-root></div>
-      <ul id="app-toasts" class="app-toasts" aria-live="polite" aria-label="Notifications"></ul>
+      <ul id="app-toasts" class="app-toasts" aria-live="polite" aria-label="Notifications"></ul><template id={TOAST_TEMPLATE_ID}><li class="app-toast"><p class="app-toast-message"></p><button class="app-toast-action" type="button"></button><button class="app-toast-dismiss" type="button" aria-label="Dismiss notification"><span aria-hidden="true">×</span></button></li></template>
     </div>
   </body>
 </html>
 
 <script>
-  import { mountApplicationShell } from "../lib/app-shell.ts";
+  import { mountApplicationShell } from "../features/shell/application-shell/application-shell.ts";
   import { mountThemeSync } from "../lib/theme.ts";
   void mountApplicationShell();
   void mountThemeSync();
@@ -133,7 +149,7 @@ const { current, description, pageId, title } = Astro.props;
 
 <script>
   // The people palette (GAP-027) and Quick capture (GAP-031) are React
-  // islands. Their own script lets the shell's vanilla modules start without
+  // islands. Their own script lets the shell's static modules start without
   // waiting for React to load; every Quick capture opener stays disabled
   // until the island has wired it.
   import { mountGlobalPeopleSearch } from "../islands/global-people-search/mount.tsx";

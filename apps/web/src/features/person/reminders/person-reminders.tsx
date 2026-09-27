@@ -13,8 +13,8 @@
  *
  * It tells the hero and the rail what they show — the stay-in-touch due
  * state, the next reminder after a write, the block's count and empty state
- * — through `profile-summary.ts` at the moments `lib/reminders.ts` did: when
- * a read starts and when it answers. Only the profile summary knows the next
+ * — through `profile-summary.ts` at the moments the retired vanilla module
+ * did: when a read starts and when it answers. Only the profile summary knows the next
  * pending reminder across every record, so a write re-reads it.
  *
  * The cadence form keeps the rail editors' rules (`lib/rail-editors.ts`); the

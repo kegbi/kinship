@@ -25,6 +25,7 @@ import {
     <header class="settings-heading">
       <div><p class="eyebrow">Developer settings</p><h1>API access</h1><p>Personal credentials for approved programmatic access to this workspace.</p></div>
     </header>
+    <div class="contents" data-api-surface>
     <p data-api-state class="api-access-state" role="status" aria-live="polite"></p>
 
     <section class="api-access-section" aria-labelledby="create-token-heading">
@@ -49,12 +50,15 @@ import {
       <p data-api-empty hidden>No API tokens yet.</p>
       <ul data-api-list class="api-token-list" aria-label="Personal API tokens"></ul>
     </section>
+    </div>
       </div>
     </div>
   </main>
 </ApplicationLayout>
 
 <script>
-  import { mountApiAccess } from "../../../lib/api-access.ts";
+  // The API access page is an island (`features/settings/api-access/`,
+  // GAP-033) that takes over the region drawn above.
+  import { mountApiAccess } from "../../../features/settings/api-access/api-access.tsx";
   void mountApiAccess();
 </script>

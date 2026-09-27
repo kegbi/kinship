@@ -4,8 +4,9 @@
  * spelling `datetime-local` fields read and write.
  *
  * Quick capture, the person's notes and activities, calls and conversations,
- * and the Today and activity-report projections (`lib/interactions.ts`) all
- * import these, so an event keeps one name and a time field one format.
+ * and the Today and activity-report projections (`features/today/`,
+ * `activity-report/`) all import these, so an event keeps one name and a
+ * time field one format.
  */
 
 /**

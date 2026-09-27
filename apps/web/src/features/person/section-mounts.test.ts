@@ -10,8 +10,8 @@ import {
   sectionProps,
 } from "../../testing/fixtures.ts";
 import { drawShell } from "../../testing/render.tsx";
-import { mountPersonFiles } from "../../lib/person-files.ts";
-import { mountPersonAuditSummary } from "../../lib/audit-history.ts";
+import { mountPersonFiles } from "./files/person-files.tsx";
+import { mountPersonAuditSummary } from "./audit-summary/audit-summary.tsx";
 import { mountGiftsIsland } from "../../islands/person-gifts/mount.tsx";
 import { mountPersonTimeline } from "../../islands/person-timeline/mount.tsx";
 import { mountPersonLifeEvents } from "../../islands/person-life-events/mount.tsx";
@@ -41,12 +41,6 @@ import {
 } from "./section-mounts.ts";
 import { PERSON_SECTIONS, railSections, zoneSections } from "./sections.ts";
 
-vi.mock("../../lib/person-files.ts", () => ({
-  mountPersonFiles: vi.fn(async () => {}),
-}));
-vi.mock("../../lib/audit-history.ts", () => ({
-  mountPersonAuditSummary: vi.fn(async () => {}),
-}));
 vi.mock("../../islands/person-gifts/mount.tsx", () => ({
   mountGiftsIsland: vi.fn(() => Promise.resolve(() => {})),
 }));
@@ -198,20 +192,34 @@ describe("GAP-028 section owners", () => {
     expect(sectionHidden(sectionProps(), "notes")).toBe(false);
   });
 
-  it("hands each vanilla module the arguments it always took", async () => {
-    const hidden = props(["activities", "calls"]);
-    await mount("photos", hidden);
-    expect(mountPersonFiles).toHaveBeenCalledWith({
-      archived: true,
-      personId,
-      workspaceId,
-    });
-    await mount("audit-summary", hidden);
-    expect(mountPersonAuditSummary).toHaveBeenCalledWith(
-      personId,
-      workspaceId,
-      preferences,
+  it("GAP-033 mounts documents with photos, and the audit summary, as islands", async () => {
+    for (const id of ["documents", "photos"] as const) {
+      expect(SECTION_MOUNTS[id].kind).toBe("island");
+      expect(await SECTION_MOUNTS[id].load()).toBe(mountPersonFiles);
+    }
+    expect(SECTION_MOUNTS.photos).toBe(SECTION_MOUNTS.documents);
+    expect(SECTION_MOUNTS["audit-summary"].kind).toBe("island");
+    expect(await SECTION_MOUNTS["audit-summary"].load()).toBe(
+      mountPersonAuditSummary,
     );
+    expect(sectionOwners(zoneSections("things"))).toEqual([
+      SECTION_MOUNTS.gifts,
+      SECTION_MOUNTS.documents,
+    ]);
+    expect(PERSON_SECTIONS.every((section) => section.mount === "island"))
+      .toBe(true);
+  });
+
+  it("GAP-033 resolves the files and audit summary islands with nothing to own at once", async () => {
+    const api = stubApi();
+    drawShell("");
+    await mount("documents", sectionProps());
+    await mount("audit-summary", sectionProps());
+    expect(api.fetch).not.toHaveBeenCalled();
+  });
+
+  it("hands the gifts island the arguments it always took", async () => {
+    const hidden = props(["activities", "calls"]);
     await mount("debts", hidden);
     expect(mountGiftsIsland).toHaveBeenCalledWith({
       archived: true,

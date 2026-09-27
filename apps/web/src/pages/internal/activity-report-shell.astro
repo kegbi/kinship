@@ -31,19 +31,23 @@ import {
       <button class={buttonVariants({ variant: "outline" })} type="submit">Filter report</button>
       <a href="?">Clear year</a>
     </form>
-    <p id="activity-report-state" class="section-state" role="status" aria-live="polite">Loading activities and notes…</p>
-    <ol id="activity-report-list" class="interaction-list" aria-label="Activities and notes in reverse chronological order"></ol>
-    <button id="activity-report-more" class={buttonVariants({ variant: "outline" })} type="button" hidden>Load more</button>
+    <div class="contents" data-activity-report>
+      <p id="activity-report-state" class="section-state" role="status" aria-live="polite">Loading activities and notes…</p>
+      <ol id="activity-report-list" class="interaction-list" aria-label="Activities and notes in reverse chronological order"></ol>
+    </div>
   </main>
 </ApplicationLayout>
 
 <script>
-  import { mountActivityReport } from "../../lib/interactions.ts";
+  // The report island (`features/interactions/activity-report/`, GAP-033)
+  // takes over the region above and names the person in the heading and the
+  // breadcrumb; the filter keeps the year the page was asked for.
+  import { mountActivityReport } from "../../features/interactions/activity-report/activity-report.tsx";
   const personId = /^\/app\/people\/([0-9a-f-]{36})\/activity-report\/?$/i.exec(location.pathname)?.[1];
   const personCrumb = document.querySelector<HTMLAnchorElement>("[data-breadcrumb-person]");
   if (personCrumb && personId) personCrumb.href = `/app/people/${encodeURIComponent(personId)}`;
   const year = new URLSearchParams(location.search).get("year");
   const input = document.querySelector<HTMLInputElement>('[name="year"]');
   if (input && year) input.value = year;
-  void mountActivityReport(personId);
+  void mountActivityReport(document, personId);
 </script>

@@ -23,7 +23,7 @@ export const prerender = true;
 </AuthLayout>
 
 <script>
-  import { mountSignIn } from "../../lib/auth-forms.ts";
+  import { mountSignIn } from "../../features/auth/credentials/auth-forms.ts";
   const form = document.querySelector<HTMLFormElement>("#sign-in-form");
   if (form) mountSignIn(form);
 </script>

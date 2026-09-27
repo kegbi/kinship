@@ -81,20 +81,119 @@ describe("REL-041 native form submission contract", () => {
   });
 
   it("gives every script-created form a POST method", () => {
+    // No helper left in `lib/` builds a form since GAP-033 moved settings,
+    // personalization, and the legal review to islands; one that does must
+    // still make it a POST form.
     const libraries = readdirSync(join(sourceRoot, "lib"))
       .filter((path) => path.endsWith(".ts") && !path.endsWith(".test.ts"));
-    const creators = libraries.filter((path) =>
-      readFileSync(join(sourceRoot, "lib", path), "utf8").includes(
-        'createElement("form")',
-      )
-    );
-    expect(creators.length).toBeGreaterThan(0);
-    for (const path of creators) {
+    for (const path of libraries) {
       const source = readFileSync(join(sourceRoot, "lib", path), "utf8");
       expect(
         source.split('createElement("form")').length - 1,
         path,
       ).toBe(source.split('.method = "post"').length - 1);
+    }
+  });
+});
+
+// Island forms (GAP-033). An island renders over a static form the page
+// drew, and some islands render forms no page draws, so their JSX obeys the
+// same rule: POST, a dialog, or an allowlisted GET filter.
+
+// Island GET filters, exactly: the audit filters the two audit pages draw.
+const intentionalIslandQueryForms: Readonly<Record<string, number>> = {
+  "features/audit/audit-history.tsx": 1,
+};
+
+interface IslandForm {
+  readonly file: string;
+  readonly method: string | undefined;
+  readonly body: string;
+}
+
+function islandFiles(): string[] {
+  return readdirSync(sourceRoot, { recursive: true, encoding: "utf8" })
+    .map((path) => path.replaceAll("\\", "/"))
+    .filter((path) =>
+      path.endsWith(".tsx") && !path.endsWith(".test.tsx") &&
+      !path.startsWith("testing/")
+    )
+    .sort();
+}
+
+/**
+ * Each `<form` element in a JSX source: its opening tag runs to the first
+ * `>` outside braces, so `onSubmit={(event) => …}` does not end it.
+ */
+function islandForms(file: string): IslandForm[] {
+  const source = readFileSync(join(sourceRoot, file), "utf8");
+  const forms: IslandForm[] = [];
+  for (const match of source.matchAll(/<form\b/g)) {
+    let depth = 0;
+    let end = match.index + 5;
+    for (; end < source.length; end += 1) {
+      const character = source[end];
+      if (character === "{") depth += 1;
+      else if (character === "}") depth -= 1;
+      else if (character === ">" && depth === 0) break;
+    }
+    const tag = source.slice(match.index, end + 1);
+    const close = source.indexOf("</form>", end);
+    forms.push({
+      body: source.slice(match.index, close < 0 ? source.length : close),
+      file,
+      method: /\smethod="([^"]*)"/.exec(tag)?.[1],
+    });
+  }
+  return forms;
+}
+
+describe("REL-041 island form submission contract", () => {
+  const forms = islandFiles().flatMap(islandForms);
+  const count = (
+    predicate: (form: IslandForm) => boolean,
+  ): Record<string, number> => {
+    const counts: Record<string, number> = {};
+    for (const form of forms.filter(predicate)) {
+      counts[form.file] = (counts[form.file] ?? 0) + 1;
+    }
+    return counts;
+  };
+
+  it("finds the islands' forms", () => {
+    expect(forms.length).toBeGreaterThan(10);
+  });
+
+  it("gives every island form a POST or dialog method, except the allowlisted GET filters", () => {
+    expect(
+      count(({ method }) =>
+        method !== undefined && method !== "post" && method !== "dialog" &&
+        method !== "get"
+      ),
+    ).toEqual({});
+    expect(count(({ method }) => method === "get")).toEqual(
+      intentionalIslandQueryForms,
+    );
+  });
+
+  it("gives every island form a method", () => {
+    expect(count(({ method }) => method === undefined)).toEqual({});
+  });
+
+  it("keeps Quick capture's form the only dialog form", () => {
+    expect(count(({ method }) => method === "dialog")).toEqual({
+      "features/interactions/quick-capture.tsx": 1,
+    });
+  });
+
+  it("keeps each island GET filter free of personal fields", () => {
+    for (const form of forms.filter(({ method }) => method === "get")) {
+      const names = [...form.body.matchAll(/\sname="([^"]+)"/g)].map((
+        match,
+      ) => match[1]!);
+      expect(names.length, form.file).toBeGreaterThan(0);
+      expect(names.filter((name) => personalFieldNames.test(name)), form.file)
+        .toEqual([]);
     }
   });
 });

@@ -16,12 +16,20 @@ import {
       { href: "/app/settings", label: "Settings" },
       { label: "Export" },
     ]} />
+    <div class="contents" data-export-surface>
     <header class="settings-heading"><div><p class="eyebrow">Data settings</p><h1>Export</h1><p>Portable person data with versioned checksums and short-lived downloads.</p></div><button data-export-create class={buttonVariants()} type="button" disabled>Create export</button></header>
     <p data-export-state class="section-state" role="status" aria-live="polite">Loading export history…</p>
     <button data-export-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry</button>
     <section aria-labelledby="export-history-heading"><h2 id="export-history-heading">Export history</h2><ol data-export-history class="import-history" aria-label="Export history"></ol></section>
+    </div>
       </div>
     </div>
   </main>
 </ApplicationLayout>
-<script>import { mountExports } from "../../../lib/exports.ts"; void mountExports();</script>
+<script>
+  // The export page is an island (`features/settings/exports/`, GAP-033)
+  // that takes over the region drawn above; Create export stays disabled
+  // until the island knows its workspace.
+  import { mountExports } from "../../../features/settings/exports/exports.tsx";
+  void mountExports();
+</script>

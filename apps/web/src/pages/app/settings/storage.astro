@@ -19,6 +19,7 @@ import {
     <header class="settings-heading">
       <div><p class="eyebrow">Data settings</p><h1>Storage</h1><p>Workspace-wide file usage and provider state.</p></div>
     </header>
+    <div class="contents" data-storage-surface>
     <p data-storage-state class="storage-page-state" role="status" aria-live="polite"></p>
     <button data-storage-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry</button>
 
@@ -55,8 +56,14 @@ import {
         <ul data-storage-results class="storage-results" aria-label="File metadata results"></ul>
       </section>
     </div>
+    </div>
       </div>
     </div>
   </main>
 </ApplicationLayout>
-<script>import { mountStorageSettings } from "../../../lib/storage-settings.ts"; void mountStorageSettings();</script>
+<script>
+  // The storage page is an island (`features/settings/storage/`, GAP-033)
+  // that takes over the region drawn above.
+  import { mountStorageSettings } from "../../../features/settings/storage/storage-settings.tsx";
+  void mountStorageSettings();
+</script>

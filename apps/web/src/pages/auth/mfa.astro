@@ -22,7 +22,7 @@ Astro.response.headers.set("Referrer-Policy", "no-referrer");
 </AuthLayout>
 
 <script>
-  import { mountMfa } from "../../lib/auth-forms.ts";
+  import { mountMfa } from "../../features/auth/credentials/auth-forms.ts";
   const form = document.querySelector<HTMLFormElement>("#mfa-form");
   if (form) mountMfa(form);
 </script>

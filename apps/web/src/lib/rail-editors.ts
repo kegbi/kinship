@@ -2,7 +2,7 @@ import { requestFormDiscard } from "./unsaved-changes.ts";
 import {
   mountRailEditorPresentation,
   RAIL_EDITOR_OPEN_EVENT,
-} from "./rail-editor-presentation.ts";
+} from "../features/person/rail-editor-presentation.ts";
 
 const RAIL_EDITOR_REQUEST_EVENT = "kinship:rail-editor-request";
 

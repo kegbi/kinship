@@ -12,38 +12,13 @@ Astro.response.headers.set("Referrer-Policy", "no-referrer");
       <h1 id="verification-heading">Opening your circle…</h1>
       <div id="verification-status" role="status" aria-live="polite" tabindex="-1">
         <p>Checking this single-use link securely.</p>
+        <a class="button-link" href="/auth/sign-up" hidden>Return to registration</a>
       </div>
     </section>
   </main>
 </AuthLayout>
 
 <script>
-  import { verifyEmail } from "../../../../../packages/contracts/generated/auth-client.ts";
-  const status = document.querySelector<HTMLElement>("#verification-status");
-  const token = new URL(window.location.href).searchParams.get("token");
-  history.replaceState({}, "", "/auth/verify-email");
-  if (status) {
-    if (!token) {
-      status.innerHTML = '<p>This verification link is invalid.</p><a class="button-link" href="/auth/sign-up">Create an account</a>';
-      status.focus();
-    } else {
-      verifyEmail(token).then((result) => {
-        if (result.ok) {
-          status.innerHTML = "<p>Email verified. Taking you to your workspace…</p>";
-          window.location.assign(result.value.next);
-          return;
-        }
-        const messages: Record<string, string> = {
-          verification_expired: "This verification link has expired.",
-          verification_replayed: "This verification link was already used.",
-          invalid_verification: "This verification link is invalid.",
-        };
-        status.innerHTML = `<p>${messages[result.problem.code] ?? "Email verification is temporarily unavailable."}</p><a class="button-link" href="/auth/sign-up">Return to registration</a>`;
-        status.focus();
-      }).catch(() => {
-        status.textContent = "Email verification is temporarily unavailable. Please try again.";
-        status.focus();
-      });
-    }
-  }
+  import { mountEmailVerification } from "../../features/auth/verify-email/verify-email.ts";
+  void mountEmailVerification();
 </script>

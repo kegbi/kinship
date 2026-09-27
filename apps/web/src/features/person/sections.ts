@@ -5,14 +5,14 @@
  * the page catalog lists for `people.profile`, in catalog order. This file is
  * the one place that says what each section is: its stable id and title,
  * where it renders (`zone`), its glyph, the workspace profile module that
- * will switch it off (`visibilityKey`, GAP-047), and whether an island or a
- * vanilla module owns it (`mount`). Every consumer reads it rather than
- * keeping its own list:
+ * will switch it off (`visibilityKey`, GAP-047), and how its owner mounts
+ * (`mount`: since GAP-033 every section is an island). Every consumer reads
+ * it rather than keeping its own list:
  *
  * - the static shell renders each section's chrome, the section directory,
  *   and the zones from it (`person-profile-shell.astro`, `PersonSection`);
- * - `lib/people-profile.ts` maps sections to filter zones, activates each
- *   zone's owners, and resolves `?section=` deep links with it;
+ * - `features/person/workspace.ts` maps sections to filter zones, activates
+ *   each zone's owners, and resolves `?section=` deep links with it;
  * - `features/person/section-mounts.ts` supplies each owner's loader and is
  *   typed so a loader's kind always matches the entry here;
  * - `tools/gateway_contract_test.ts` imports it to prove the shell keeps the
@@ -36,8 +36,12 @@ export type SectionZone = "hero" | "rail" | StreamZoneId;
 /** The filter a section belongs to; `facts` stays visible under every view. */
 export type FilterZone = "facts" | StreamZoneId;
 
-/** Who owns a section's DOM: a React island or its vanilla module. */
-export type SectionMountKind = "island" | "vanilla";
+/**
+ * Who owns a section's DOM. Every section is a React island since GAP-033
+ * retired the vanilla modules; the kind stays so a loader's type is tied to
+ * its entry.
+ */
+export type SectionMountKind = "island";
 
 /**
  * The workspace profile modules (`workspace_profile_modules.key`) a section
@@ -181,9 +185,9 @@ export const PERSON_SECTIONS = [
   ),
   section("gifts", "Gifts", "things", "gifts", null, "island"),
   section("debts", "Debts", "things", "debts", null, "island"),
-  section("documents", "Documents", "things", "documents", null, "vanilla"),
-  section("photos", "Photos", "things", "photos", null, "vanilla"),
-  section("audit-summary", "Audit summary", "admin", "audit", null, "vanilla"),
+  section("documents", "Documents", "things", "documents", null, "island"),
+  section("photos", "Photos", "things", "photos", null, "island"),
+  section("audit-summary", "Audit summary", "admin", "audit", null, "island"),
 ] as const;
 
 export type PersonSectionId = typeof PERSON_SECTIONS[number]["id"];

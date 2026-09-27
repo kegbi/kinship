@@ -18,6 +18,7 @@ import {
       { label: "General" },
     ]} />
     <header class="settings-heading"><div><p class="eyebrow">Workspace settings</p><h1>General</h1><p>Identity and defaults apply only to this active workspace.</p></div></header>
+    <div class="contents" data-settings-workspace>
     <form method="post" id="workspace-form" class={cardVariants({ className: "settings-form" })}>
       <p id="settings-errors" class="form-error-summary" role="alert" tabindex="-1" hidden></p>
       <label>Workspace name<input name="name" maxlength="200" required disabled /></label><label>Workspace slug<input name="slug" maxlength="100" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" disabled /></label>
@@ -25,8 +26,14 @@ import {
       <label>Default currency<input name="defaultCurrencyCode" maxlength="3" pattern="[A-Za-z]{3}" aria-describedby="default-currency-error" disabled /><small id="default-currency-error" data-field-error="defaultCurrencyCode"></small></label><label>Default reminder time<input name="defaultReminderTime" type="time" required disabled /></label>
       <button type="submit" class={buttonVariants()} disabled>Save changes</button><p id="settings-dirty" role="status" aria-live="polite"></p><p id="settings-status" role="status" aria-live="polite">Loading workspace settings…</p>
     </form>
+    </div>
       </div>
     </div>
   </main>
 </ApplicationLayout>
-<script>import { mountWorkspaceSettings } from "../../../lib/settings.ts"; void mountWorkspaceSettings();</script>
+<script>
+  // The general settings form is an island (`features/settings/workspace/`,
+  // GAP-033) that takes over the disabled form drawn above.
+  import { mountWorkspaceSettings } from "../../../features/settings/workspace/workspace-settings.tsx";
+  void mountWorkspaceSettings();
+</script>

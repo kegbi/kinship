@@ -744,7 +744,7 @@ describe("application control presentation", () => {
     // scroll-into-view (the browser's, a keyboard user's, or an automation
     // retry's) into a multi-frame glide, so a click aimed at a control lands
     // on whatever slides under the pointer. A section the reader picks glides
-    // from script instead (`people-profile.ts`).
+    // from script instead (`features/person/workspace.ts`).
     mountStyles();
     expect(getComputedStyle(document.documentElement).scrollBehavior)
       .not.toBe("smooth");

@@ -1,23 +1,12 @@
+/**
+ * The public privacy and terms pages' document (GAP-033). A public page
+ * ships no React, so this helper only reads the published version and sets
+ * the text of the elements the page drew; it creates none. The protected
+ * required legal review is an island (`features/compliance/`).
+ */
+
 import { formatInstant } from "./time-presentation.ts";
-import {
-  acceptLegalDocument,
-  getLegalRequirements,
-  getPublicLegalDocument,
-  type LegalDocument,
-  signOut,
-} from "../../../../packages/contracts/generated/auth-client.ts";
-import { clearSessionCache, readActiveWorkspace } from "./workspace-context.ts";
-
-type Navigate = (path: string) => void;
-const browserNavigate: Navigate = (path) => globalThis.location.assign(path);
-
-function safeNext(): string {
-  const requested = new URLSearchParams(globalThis.location.search).get("next");
-  return (requested === "/app" || requested?.startsWith("/app/")) &&
-      !requested.startsWith("/app/compliance")
-    ? requested
-    : "/app";
-}
+import { getPublicLegalDocument } from "../../../../packages/contracts/generated/auth-client.ts";
 
 export async function mountPublicLegal(
   documentType: "privacy" | "terms",
@@ -49,128 +38,4 @@ export async function mountPublicLegal(
   }`;
   content.textContent = result.value.document.content;
   state.textContent = "";
-}
-
-interface ComplianceElements {
-  readonly accept: HTMLButtonElement;
-  readonly confirm: HTMLInputElement;
-  readonly content: HTMLElement;
-  readonly decline: HTMLButtonElement;
-  readonly kind: HTMLElement;
-  readonly review: HTMLElement;
-  readonly state: HTMLElement;
-  readonly title: HTMLElement;
-  readonly version: HTMLElement;
-}
-
-function complianceElements(): ComplianceElements | undefined {
-  const accept = document.querySelector<HTMLButtonElement>(
-    "[data-compliance-accept]",
-  );
-  const confirm = document.querySelector<HTMLInputElement>(
-    "[data-compliance-confirm]",
-  );
-  const content = document.querySelector<HTMLElement>(
-    "[data-compliance-content]",
-  );
-  const decline = document.querySelector<HTMLButtonElement>(
-    "[data-compliance-decline]",
-  );
-  const kind = document.querySelector<HTMLElement>("[data-compliance-kind]");
-  const review = document.querySelector<HTMLElement>(
-    "[data-compliance-review]",
-  );
-  const state = document.querySelector<HTMLElement>(
-    "[data-compliance-state]",
-  );
-  const title = document.querySelector<HTMLElement>(
-    "[data-compliance-title]",
-  );
-  const version = document.querySelector<HTMLElement>(
-    "[data-compliance-version]",
-  );
-  return accept && confirm && content && decline && kind && review && state &&
-      title && version
-    ? { accept, confirm, content, decline, kind, review, state, title, version }
-    : undefined;
-}
-
-function renderDocument(elements: ComplianceElements, document: LegalDocument) {
-  elements.kind.textContent = "Required legal review";
-  elements.title.textContent = document.documentType === "terms"
-    ? "Terms of service"
-    : document.documentType === "privacy"
-    ? "Privacy policy"
-    : "Required policy";
-  elements.version.textContent = `Version ${document.version}`;
-  elements.content.textContent = document.content;
-  elements.confirm.checked = false;
-  elements.accept.disabled = true;
-  elements.accept.dataset.documentId = document.id;
-  elements.review.hidden = false;
-  elements.state.textContent = "Review the exact version before continuing.";
-}
-
-export async function mountCompliance(
-  navigate: Navigate = browserNavigate,
-): Promise<void> {
-  const elements = complianceElements();
-  if (!elements) return;
-  let accepting = false;
-  const refresh = async (): Promise<void> => {
-    elements.review.hidden = true;
-    elements.state.textContent = "Checking required legal documents…";
-    const result = await getLegalRequirements(readActiveWorkspace()).catch(() =>
-      undefined
-    );
-    if (!result?.ok) {
-      elements.state.textContent =
-        "Required legal documents cannot be confirmed. Try again.";
-      return;
-    }
-    const next = result.value.documents[0];
-    if (!next) {
-      navigate(safeNext());
-      return;
-    }
-    renderDocument(elements, next);
-  };
-
-  elements.confirm.addEventListener("change", () => {
-    elements.accept.disabled = !elements.confirm.checked || accepting;
-  });
-  elements.accept.addEventListener("click", async () => {
-    if (accepting || !elements.confirm.checked) return;
-    const documentId = elements.accept.dataset.documentId;
-    if (!documentId) return;
-    accepting = true;
-    elements.accept.disabled = true;
-    elements.state.textContent = "Recording acceptance…";
-    const result = await acceptLegalDocument(
-      documentId,
-      readActiveWorkspace(),
-    ).catch(() => undefined);
-    accepting = false;
-    if (!result?.ok) {
-      elements.state.textContent = result?.problem.status === 409
-        ? "A newer version is required. Loading it now…"
-        : result?.problem.detail ??
-          "Acceptance could not be recorded. Try again.";
-      await refresh();
-      return;
-    }
-    await refresh();
-  });
-  elements.decline.addEventListener("click", async () => {
-    elements.decline.disabled = true;
-    elements.state.textContent = "Leaving the protected workspace…";
-    const result = await signOut().catch(() => undefined);
-    elements.decline.disabled = false;
-    if (result?.ok) {
-      clearSessionCache();
-      navigate(result.value.next);
-    } else {elements.state.textContent =
-        "Sign-out could not be completed. Try again.";}
-  });
-  await refresh();
 }

@@ -18,11 +18,12 @@ Astro.response.headers.set("Referrer-Policy", "no-referrer");
         <a id="invitation-sign-in" class="button-link secondary-link" href="/auth/sign-in">Sign in as the invited person</a>
         <a id="invitation-register" href="/auth/sign-up">Create an account, then return to this link</a>
       </div>
+      <template id="invitation-open-template"><a class="button-link" href="/app">Open workspace</a></template>
     </section>
   </main>
 </AuthLayout>
 
 <script>
-  import { mountInvitationAcceptance } from "../../lib/invitation.ts";
+  import { mountInvitationAcceptance } from "../../features/auth/invitation/invitation.ts";
   void mountInvitationAcceptance();
 </script>

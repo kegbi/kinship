@@ -2,7 +2,7 @@
 import Breadcrumb from "../../../components/Breadcrumb.astro";
 import SettingsNavigation from "../../../components/SettingsNavigation.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
-import { PERSONALIZATION_SECTIONS } from "../../../lib/personalization.ts";
+import { PERSONALIZATION_SECTIONS } from "../../../features/settings/personalization/personalization.ts";
 export const prerender = true;
 ---
 
@@ -16,7 +16,7 @@ export const prerender = true;
       { label: "Personalization" },
     ]} />
     <header class="settings-heading"><div><p class="eyebrow">Workspace settings</p><h1>Personalization</h1><p>Manage one workspace-owned profile section at a time. Disabling a module never deletes person history.</p></div></header>
-    <div class="personalization-layout">
+    <div class="personalization-layout" data-personalization>
       <nav class="personalization-nav" aria-label="Personalization sections">
         {PERSONALIZATION_SECTIONS.map(({ id, label }) => <a href={`/app/settings/personalization?section=${id}`} data-personalization-section={id}>{label}</a>)}
       </nav>
@@ -34,4 +34,10 @@ export const prerender = true;
   </main>
 </ApplicationLayout>
 
-<script>import { mountPersonalization } from "../../../lib/personalization.ts"; void mountPersonalization();</script>
+<script>
+  // The layout above is drawn with its section links and a hidden create
+  // form; the personalization island (`features/settings/personalization/`,
+  // GAP-033) takes it over once it knows the workspace.
+  import { mountPersonalization } from "../../../features/settings/personalization/personalization.tsx";
+  void mountPersonalization();
+</script>

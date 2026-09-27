@@ -3,7 +3,8 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatInstant } from "../../lib/time-presentation.ts";
-import { clearToasts } from "../../lib/toasts.ts";
+import { clearToasts } from "../../features/shell/toasts/toasts.ts";
+import { TOAST_REGION } from "../../testing/shell.ts";
 import { mountUnsavedChangesGuard } from "../../lib/unsaved-changes.ts";
 import {
   setFirstMeetingDate,
@@ -50,7 +51,7 @@ const IMPACT = `GET ${PERSON}/deletion-impact`;
 /** The hero as the static shell draws it, every wired control disabled. */
 function markup(): HTMLElement {
   drawShell(`
-    <ul id="app-toasts" aria-live="polite" aria-label="Notifications"></ul>
+    ${TOAST_REGION}
     <section id="person-profile-ready">
       <header class="person-profile-hero">
         <div class="contents" data-person-hero>

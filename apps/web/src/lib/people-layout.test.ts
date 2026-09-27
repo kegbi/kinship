@@ -63,7 +63,7 @@ const heroParts = readFileSync(
   "utf8",
 );
 const profileController = readFileSync(
-  resolve("apps/web/src/lib/people-profile.ts"),
+  resolve("apps/web/src/features/person/workspace.ts"),
   "utf8",
 );
 
@@ -449,7 +449,7 @@ describe("people form layout regressions", () => {
     // filter zone; the profile controller keeps no copy of its own.
     expect(profileController).not.toContain("const SECTION_ZONE");
     expect(profileController).toMatch(
-      /import \{[^}]*\bfilterZone\b[^}]*\} from "\.\.\/features\/person\/sections\.ts";/s,
+      /import \{[^}]*\bfilterZone\b[^}]*\} from "\.\/sections\.ts";/s,
     );
     expect(PERSON_SECTIONS).toHaveLength(22);
     for (const section of PERSON_SECTIONS) {

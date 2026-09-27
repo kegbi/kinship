@@ -14,9 +14,9 @@
  * or reopening a task moves its row at once, busy, and puts it back exactly
  * where it was if the server refuses.
  *
- * Every write tells other surfaces through `TASK_CHANGED_EVENT`, as
- * `lib/tasks.ts` did. Every control renders with its handler attached; Add
- * task stays disabled until the surface knows the workspace it writes to.
+ * Every write tells other surfaces through `TASK_CHANGED_EVENT`. Every
+ * control renders with its handler attached; Add task stays disabled until
+ * the surface knows the workspace it writes to.
  */
 
 import {

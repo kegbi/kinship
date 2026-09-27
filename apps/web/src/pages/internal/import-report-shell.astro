@@ -18,11 +18,18 @@ import {
       { label: "Import report" },
     ]} />
     <header class="settings-heading"><div><p class="eyebrow">Data settings</p><h1>Import report</h1></div></header>
+    <div class="contents" data-import-report-surface>
     <p data-import-state class="section-state" role="status" aria-live="polite">Loading import report…</p>
     <button data-import-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry</button>
     <section data-import-report hidden aria-labelledby="import-report-heading"><h2 id="import-report-heading">Summary</h2><p data-import-status></p><dl class="import-counts"><div><dt>Contacts</dt><dd data-import-contacts></dd></div><div><dt>Orphans</dt><dd data-import-orphans></dd></div><div><dt>Missing files</dt><dd data-import-missing></dd></div><div><dt>Legacy identities discarded</dt><dd data-import-credentials></dd></div><div><dt>Unsupported records</dt><dd data-import-unsupported></dd></div></dl><ul data-import-diagnostics></ul></section>
+    </div>
       </div>
     </div>
   </main>
 </ApplicationLayout>
-<script>import { mountImports } from "../../lib/imports.ts"; void mountImports();</script>
+<script>
+  // The import report is an island (`features/settings/imports/`, GAP-033)
+  // that reads the import its URL names and takes over the region above.
+  import { mountImportReport } from "../../features/settings/imports/import-report.tsx";
+  void mountImportReport();
+</script>

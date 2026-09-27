@@ -105,21 +105,25 @@ executable boundaries.
   `apps/web/src/components/ui/` holds the vendored source-owned shadcn/ui
   components, `apps/web/src/islands/` holds the hydrated React islands, and
   `apps/web/src/islands/core/` is the island kit GAP-026 builds. A section of a
-  static shell becomes an island through that kit's `mountIsland`. By GAP-033
-  `apps/web/src/lib` shrinks to non-UI helpers.
+  static shell becomes an island through that kit's `mountIsland`. Since GAP-033
+  `apps/web/src/lib` holds only non-UI helpers, and no production module outside
+  `components/ui/` builds DOM with `document.createElement`: public pages render
+  static Astro markup whose scripts only query, toggle attributes, set text, and
+  clone `<template>` content.
 - The person workspace renders from one section registry,
   `apps/web/src/features/person/sections.ts` (GAP-028): pure data the static
   shell, the section navigation, and `tools/gateway_contract_test.ts` all read.
-  `features/person/section-mounts.ts` names each section's one owner, an island
-  or, until it migrates, its vanilla module; `apps/web/src/components/person/`
-  holds the shell's per-section Astro partials.
+  `features/person/section-mounts.ts` names each section's one owner, always an
+  island since GAP-033; `apps/web/src/components/person/` holds the shell's
+  per-section Astro partials.
 - `apps/web/src/features/<area>/` holds one product area's islands, hooks, and
   pure helpers, each migrated surface in its own subfolder beside the area's
   shared registry and summaries (GAP-029: `features/person/facts/` holds the
   seven profile fact islands, the `FactEditor` they share, and their pure record
   helpers). `apps/web/src/islands/` keeps the island kit and the islands not yet
   filed under an area, and `apps/web/src/lib/` keeps cross-cutting non-UI
-  helpers.
+  helpers (time presentation, workspace context, routing and destinations, the
+  unsaved-changes guard, early submission).
 - `apps/web/src/testing/` is the web suites' one shared test support (GAP-030):
   `render.tsx` mounts and renders islands and tears them down after each test,
   `api.ts` stubs `fetch` by route (`stubApi`, `jsonResponse`,

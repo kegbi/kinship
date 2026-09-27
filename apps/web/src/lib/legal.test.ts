@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mountCompliance, mountPublicLegal } from "./legal.ts";
+import { mountPublicLegal } from "./legal.ts";
 
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -18,17 +18,6 @@ const legal = {
   version: "2026-08",
 };
 
-function complianceMarkup(): string {
-  return `
-    <p data-compliance-state></p><section data-compliance-review hidden>
-      <p data-compliance-kind></p><h1 data-compliance-title></h1>
-      <p data-compliance-version></p><article data-compliance-content></article>
-      <label><input data-compliance-confirm type="checkbox"> Confirm</label>
-      <button data-compliance-accept disabled>Accept</button>
-      <button data-compliance-decline>Not now</button>
-    </section>`;
-}
-
 afterEach(() => {
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
@@ -36,31 +25,7 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
-describe("GOVERNANCE-001 legal review", () => {
-  it("APR-005 completes required legal review when workspace storage is disabled", async () => {
-    document.body.innerHTML = complianceMarkup();
-    vi.stubGlobal("sessionStorage", {
-      getItem() {
-        throw new DOMException("Disabled", "SecurityError");
-      },
-    });
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({ documents: [legal], status: "ready" }))
-      .mockResolvedValueOnce(response({ status: "accepted" }, 201))
-      .mockResolvedValueOnce(response({ documents: [], status: "ready" }));
-    vi.stubGlobal("fetch", fetchMock);
-    const navigate = vi.fn();
-
-    await mountCompliance(navigate);
-    document.querySelector<HTMLInputElement>("[data-compliance-confirm]")!
-      .click();
-    document.querySelector<HTMLButtonElement>("[data-compliance-accept]")!
-      .click();
-
-    await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith("/app"));
-    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/v1/legal-acceptances");
-  });
-
+describe("GOVERNANCE-001 public legal documents", () => {
   it("renders the exact public version as text", async () => {
     document.body.innerHTML =
       "<p data-legal-state></p><h1 data-legal-title></h1><p data-legal-version></p><article data-legal-content></article>";
@@ -81,98 +46,6 @@ describe("GOVERNANCE-001 legal review", () => {
     );
     expect(document.querySelector("[data-legal-content]")?.innerHTML).not
       .toContain("<script");
-  });
-
-  it("requires explicit review, accepts once, refreshes, and continues safely", async () => {
-    history.replaceState({}, "", "/app/compliance?next=%2Fapp%2Fjournal");
-    document.body.innerHTML = complianceMarkup();
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({ documents: [legal], status: "ready" }))
-      .mockResolvedValueOnce(response({
-        acceptedAt: "2026-08-23T10:00:00.000Z",
-        documentId: legal.id,
-        status: "accepted",
-      }, 201))
-      .mockResolvedValueOnce(response({ documents: [], status: "ready" }));
-    vi.stubGlobal("fetch", fetchMock);
-    const navigate = vi.fn();
-
-    await mountCompliance(navigate);
-    const confirm = document.querySelector<HTMLInputElement>(
-      "[data-compliance-confirm]",
-    )!;
-    const accept = document.querySelector<HTMLButtonElement>(
-      "[data-compliance-accept]",
-    )!;
-    expect(accept.disabled).toBe(true);
-    confirm.click();
-    expect(accept.disabled).toBe(false);
-    accept.click();
-
-    await vi.waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith("/app/journal")
-    );
-    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/v1/legal-acceptances");
-    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe("POST");
-  });
-
-  it("keeps access interrupted when requirements or acceptance cannot be confirmed", async () => {
-    history.replaceState({}, "", "/app/compliance?next=%2F%2Fevil.example");
-    document.body.innerHTML = complianceMarkup();
-    const privacy = {
-      ...legal,
-      documentType: "privacy",
-      id: "00000000-0000-4000-8000-000000000102",
-    };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(
-        response({ documents: [privacy], status: "ready" }),
-      )
-      .mockResolvedValueOnce(response({
-        detail: "The selected legal version is no longer current.",
-        status: 409,
-        title: "Legal document superseded",
-        type: "about:blank",
-      }, 409))
-      .mockRejectedValueOnce(new Error("requirements unavailable"));
-    vi.stubGlobal("fetch", fetchMock);
-    const navigate = vi.fn();
-
-    await mountCompliance(navigate);
-    const confirm = document.querySelector<HTMLInputElement>(
-      "[data-compliance-confirm]",
-    )!;
-    confirm.click();
-    document.querySelector<HTMLButtonElement>("[data-compliance-accept]")!
-      .click();
-
-    await vi.waitFor(() => {
-      expect(document.querySelector("[data-compliance-state]")?.textContent)
-        .toContain("cannot be confirmed");
-    });
-    expect(document.querySelector("[data-compliance-title]")?.textContent).toBe(
-      "Privacy policy",
-    );
-    expect(navigate).not.toHaveBeenCalled();
-  });
-
-  it("signs out on decline and uses only the returned destination", async () => {
-    document.body.innerHTML = complianceMarkup();
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({ documents: [legal], status: "ready" }))
-      .mockResolvedValueOnce(
-        response({ next: "/sign-in", status: "signed-out" }),
-      );
-    vi.stubGlobal("fetch", fetchMock);
-    const navigate = vi.fn();
-    sessionStorage.setItem("kinship.session", "cached session");
-
-    await mountCompliance(navigate);
-    document.querySelector<HTMLButtonElement>("[data-compliance-decline]")!
-      .click();
-
-    await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith("/sign-in"));
-    expect(sessionStorage.getItem("kinship.session")).toBeNull();
   });
 
   it("renders unavailable public state without interpreting response content", async () => {
@@ -206,40 +79,5 @@ describe("GOVERNANCE-001 legal review", () => {
     expect(document.querySelector("[data-legal-version]")?.textContent).toBe(
       "Version 2026-08",
     );
-  });
-
-  it("falls back to Today when an unsafe return path has no pending requirement", async () => {
-    history.replaceState({}, "", "/app/compliance?next=%2Fapplication");
-    document.body.innerHTML = complianceMarkup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        response({ documents: [], status: "ready" }),
-      ),
-    );
-    const navigate = vi.fn();
-
-    await mountCompliance(navigate);
-
-    expect(navigate).toHaveBeenCalledWith("/app");
-  });
-
-  it("keeps the interruption visible when sign-out fails", async () => {
-    document.body.innerHTML = complianceMarkup();
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({ documents: [legal], status: "ready" }))
-      .mockRejectedValueOnce(new Error("offline"));
-    vi.stubGlobal("fetch", fetchMock);
-    sessionStorage.setItem("kinship.session", "live session");
-
-    await mountCompliance(vi.fn());
-    document.querySelector<HTMLButtonElement>("[data-compliance-decline]")!
-      .click();
-
-    await vi.waitFor(() => {
-      expect(document.querySelector("[data-compliance-state]")?.textContent)
-        .toContain("Sign-out could not be completed");
-    });
-    expect(sessionStorage.getItem("kinship.session")).toBe("live session");
   });
 });

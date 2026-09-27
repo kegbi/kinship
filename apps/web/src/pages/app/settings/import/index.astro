@@ -17,11 +17,18 @@ import {
       { label: "Import" },
     ]} />
     <header class="settings-heading"><div><p class="eyebrow">Data settings</p><h1>Import</h1><p>Validated Monica imports and their current status.</p></div><a class={buttonVariants({ className: "mt-(--space-4)", shape: "pill" })} href="/app/settings/import/new">New import</a></header>
+    <div class="contents" data-import-history-surface>
     <p data-import-state class="section-state" role="status" aria-live="polite">Loading import history…</p>
     <button data-import-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry</button>
     <ol data-import-history class="import-history" aria-label="Import history"></ol>
+    </div>
       </div>
     </div>
   </main>
 </ApplicationLayout>
-<script>import { mountImports } from "../../../../lib/imports.ts"; void mountImports();</script>
+<script>
+  // The import history is an island (`features/settings/imports/`, GAP-033)
+  // that takes over the region drawn above.
+  import { mountImportHistory } from "../../../../features/settings/imports/import-history.tsx";
+  void mountImportHistory();
+</script>

@@ -22,6 +22,7 @@ export const prerender = true;
     <header class="settings-heading">
       <div><p class="eyebrow">Developer settings</p><h1>Integrations</h1><p>Synchronize CardDAV contacts and CalDAV tasks while keeping connection state separate from CRM records.</p></div>
     </header>
+    <div class="contents" data-integrations-surface>
     <p data-integration-state class="api-access-state" role="status" aria-live="polite"></p>
 
     <section class="api-access-section" aria-labelledby="configure-dav-heading">
@@ -40,12 +41,15 @@ export const prerender = true;
       <p data-integration-empty hidden>No DAV connections yet.</p>
       <ul data-integration-list class="api-token-list" aria-label="DAV connections"></ul>
     </section>
+    </div>
       </div>
     </div>
   </main>
 </ApplicationLayout>
 
 <script>
-  import { mountIntegrations } from "../../../lib/integrations.ts";
+  // The integrations page is an island (`features/settings/integrations/`,
+  // GAP-033) that takes over the region drawn above.
+  import { mountIntegrations } from "../../../features/settings/integrations/integrations.tsx";
   void mountIntegrations();
 </script>

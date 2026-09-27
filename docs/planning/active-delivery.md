@@ -54,14 +54,15 @@ prerequisite queues.
   next ticket, GAP-025, needs the product owner's decision on the UI stack
   before it starts.
 - Phase 4 of that plan is under way under ADR 0006 (shadcn/ui in React islands):
-  GAP-025 through GAP-031 are integrated, and GAP-039 and GAP-040 from Phase 6
-  ran in parallel and are integrated too. The CI workflow runs on every push to
-  `main`; the first-run Linux faults and the E2E intermittents found on the way
-  are fixed as `REL-032`, `REL-033`, and `REL-039` through `REL-045` (`REL-034`,
-  `REL-035`, `REL-036`, and `REL-038` stay parked). On 2026-09-26 the product
-  owner removed AI assistance (GAP-054, DG-08) from scope and paused the plan
-  after REL-045; it resumed the same day with `REL-046` and GAP-030. GAP-041
-  from Phase 6 is integrated too; the next tickets are GAP-032 and GAP-033.
+  GAP-025 through GAP-031 and GAP-033 are integrated, and GAP-039 and GAP-040
+  from Phase 6 ran in parallel and are integrated too. The CI workflow runs on
+  every push to `main`; the first-run Linux faults and the E2E intermittents
+  found on the way are fixed as `REL-032`, `REL-033`, and `REL-039` through
+  `REL-045` (`REL-034`, `REL-035`, `REL-036`, and `REL-038` stay parked). On
+  2026-09-26 the product owner removed AI assistance (GAP-054, DG-08) from scope
+  and paused the plan after REL-045; it resumed the same day with `REL-046` and
+  GAP-030. GAP-041 from Phase 6 is integrated too; the next ticket is GAP-032,
+  then the Phase 4 checkpoint.
 - User-directed follow-up: responsive person blocks, focus-border repair, then
   an evidence-backed application repair plan and execution in a clean task.
 - Remaining repair statuses and execution order belong to the
@@ -550,6 +551,18 @@ Playwright test carrying its stable flow ID.
       deliberately hold a section read open. No assertion changed and no retry,
       sleep, or timeout was added. `app-004c` in full with the touched specs
       passed 12 of 12 on each of Firefox, WebKit, and Chromium; web tests 1,043.
+
+- [ ] **REL-052 — Lazily mounted person sections can lose their status live
+      region.** Found reviewing GAP-033: `promoteSectionStatusRegions` in
+      `features/person/workspace.ts` gives each section's `.section-state` line
+      `role="status"` once, when the workspace settles, but the files, gifts,
+      reminders, and audit-summary islands render that line only when their zone
+      activates. A zone opened after settle therefore announces "File uploaded."
+      or "Removing file…" without a live region; the vanilla modules' static
+      line kept it. Fix by having each island render its own status line with
+      `role="status"` (and `aria-live="polite"`) from its first commit, checking
+      that no spec's `getByRole("status")` becomes ambiguous, with a unit test
+      per island and the affected specs unchanged.
 
 ## Just-In-Time Technical Capabilities
 

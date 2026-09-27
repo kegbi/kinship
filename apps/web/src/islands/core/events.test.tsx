@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { clearToasts } from "../../lib/toasts.ts";
+import { clearToasts } from "../../features/shell/toasts/toasts.ts";
+import { TOAST_REGION } from "../../testing/shell.ts";
 import { drawShell } from "../../testing/render.tsx";
 import { toast } from "./toast.ts";
 import { useDocumentEvent } from "./document-event.ts";
@@ -32,8 +33,8 @@ describe("GAP-026 useDocumentEvent", () => {
 });
 
 describe("GAP-026 toast", () => {
-  it("writes to the application's toast region the way the vanilla code does", () => {
-    drawShell('<ol id="app-toasts"></ol>');
+  it("writes to the application's toast region through the shell's one toast owner", () => {
+    drawShell(TOAST_REGION);
     toast("Gift saved.", "success");
     toast("Saved without a tone.");
     const items = [...document.querySelectorAll<HTMLElement>(".app-toast")];

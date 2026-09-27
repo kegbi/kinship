@@ -2,7 +2,7 @@
  * Mounting the gifts and debts island into the person profile shell.
  *
  * The shell is static, so the person and workspace arrive at runtime and the
- * cards activate with their zone. `people-profile.ts` registers this mount in
+ * cards activate with their zone. `features/person/workspace.ts` mounts it in
  * the "things" zone exactly where it registered the vanilla module, and the
  * zone's settle waits for the first list answer as it did before.
  */

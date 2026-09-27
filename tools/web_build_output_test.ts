@@ -8,9 +8,13 @@
  * preload lists Vite writes for them — and fails when a public page can reach
  * a chunk that carries React. Protected pages load React for one island in
  * their layout, the people palette; the person page adds its own islands —
- * the hero, the rail summary, the timeline, life events, gifts, and the seven
- * profile fact sections — each loaded on demand. Every island's bytes are
- * measured, so the evidence line records real numbers.
+ * the hero, the rail summary, the timeline, life events, gifts, files, the
+ * audit summary, and the seven profile fact sections — each loaded on
+ * demand — and the protected pages in `PAGE_ISLANDS` (Today, the journal,
+ * people, tasks, and every settings page) mount theirs from their own page
+ * script, as the on-demand pages in `ON_DEMAND_ISLANDS` (the required legal
+ * review) do. Every island's bytes are measured, so the evidence line
+ * records real numbers.
  *
  * It needs `apps/web/dist`, so it runs from the `build` verb right after
  * `astro build` rather than in the aggregate unit gate.
@@ -42,11 +46,59 @@ const PUBLIC_PAGES = [
 /** The static person shell, which loads its islands lazily. */
 const PERSON_SHELL = "internal/person-profile-shell/index.html";
 
-/** A protected page with no island of its own: Today. */
-const TODAY = "app/index.html";
+/** A protected page with no island of its own: the settings overview. */
+const PALETTE_ONLY_PAGE = "app/settings/index.html";
 
-/** The workspace tasks page, whose script mounts the task surface island. */
-const TASKS_PAGE = "app/tasks/index.html";
+/**
+ * The protected pages whose own script mounts islands (GAP-031, GAP-033),
+ * and the islands each one mounts.
+ */
+const PAGE_ISLANDS: Readonly<Record<string, readonly string[]>> = {
+  "app/index.html": [
+    "today-attention",
+    "today-reminders",
+    "today-recent-people",
+    "today-favorite-notes",
+    "today-recent-activity",
+  ],
+  "app/journal/index.html": ["journal-surface"],
+  "app/people/archived/index.html": ["people-directory"],
+  "app/people/index.html": ["people-directory"],
+  "app/people/new/index.html": ["people-create"],
+  "app/settings/api/index.html": ["settings-api-access"],
+  "app/settings/audit/index.html": ["audit-history"],
+  "app/settings/export/index.html": ["settings-exports"],
+  "app/settings/import/index.html": ["settings-import-history"],
+  "app/settings/import/new/index.html": ["settings-import-new"],
+  "app/settings/integrations/index.html": ["settings-integrations"],
+  "app/settings/members/index.html": ["settings-members"],
+  "app/settings/personalization/index.html": ["settings-personalization"],
+  "app/settings/preferences/index.html": ["settings-preferences"],
+  "app/settings/profile/index.html": [
+    "settings-profile",
+    "settings-personal-lifecycle",
+  ],
+  "app/settings/security/index.html": ["settings-security"],
+  "app/settings/storage/index.html": ["settings-storage"],
+  "app/settings/workspace/danger-zone/index.html": [
+    "settings-workspace-danger",
+  ],
+  "app/settings/workspace/index.html": ["settings-workspace"],
+  "app/tasks/index.html": ["tasks-page"],
+  "internal/activity-report-shell/index.html": ["activity-report"],
+  "internal/import-report-shell/index.html": ["settings-import-report"],
+  "internal/journal-item-shell/index.html": ["journal-surface"],
+  "internal/person-audit-shell/index.html": ["audit-history"],
+};
+
+/**
+ * The protected pages rendered on demand whose own script mounts islands
+ * (GAP-033): they have no HTML in the client output, so each is found by
+ * its page script's name, and the islands it mounts.
+ */
+const ON_DEMAND_ISLANDS: Readonly<Record<string, readonly string[]>> = {
+  compliance: ["compliance-review"],
+};
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -161,6 +213,17 @@ async function islandEntries(name: string): Promise<string[]> {
   return entries.sort();
 }
 
+/** The one page script an on-demand page named `page` ships. */
+async function onDemandScript(page: string): Promise<string> {
+  const scripts: string[] = [];
+  const pattern = new RegExp(`^${page}\\.astro_astro_type_script_.*\\.js$`);
+  for await (const entry of Deno.readDir(new URL("_astro/", CLIENT))) {
+    if (pattern.test(entry.name)) scripts.push(`_astro/${entry.name}`);
+  }
+  assert(scripts.length === 1, `one ${page} page script, not ${scripts}`);
+  return scripts[0]!;
+}
+
 /** The layout script that mounts the people palette on every protected page. */
 async function paletteScript(): Promise<string> {
   const entries = await islandEntries("global-people-search");
@@ -200,32 +263,35 @@ async function logHydratedBytes(
 }
 
 /**
- * The tasks page's own script (GAP-031), which mounts the task surface
- * island: the one page script the tasks page loads beyond its layout's.
+ * A protected page's own script (GAP-031, GAP-033), which mounts its
+ * islands: the one page script the page loads beyond its layout's.
  */
-async function tasksPageScript(): Promise<string> {
-  const scripts = [...eagerScripts(await read(TASKS_PAGE))].filter((chunk) =>
+async function pageScript(page: string): Promise<string> {
+  const scripts = [...eagerScripts(await read(page))].filter((chunk) =>
     !/ApplicationLayout\.astro_astro_type_script_/.test(chunk) &&
     /\.astro_astro_type_script_/.test(chunk)
   );
-  assert(scripts.length === 1, `one tasks page script, not ${scripts}`);
+  assert(scripts.length === 1, `one ${page} page script, not ${scripts}`);
   return scripts[0]!;
 }
 
-Deno.test("[GAP-027] no page script but the palette's, the person shell's, and the tasks page's can reach React", async () => {
+Deno.test("[GAP-027] no page script but the palette's, the person shell's, and the island pages' can reach React", async () => {
   // Pages rendered on demand (auth resets, invitations) have no HTML in the
   // client output, but their scripts do: every page script is checked.
   const palette = await paletteScript();
-  const tasks = await tasksPageScript();
+  const allowed = new Set([palette]);
+  for (const page of Object.keys(PAGE_ISLANDS)) {
+    allowed.add(await pageScript(page));
+  }
+  for (const page of Object.keys(ON_DEMAND_ISLANDS)) {
+    allowed.add(await onDemandScript(page));
+  }
   let scripts = 0;
   for await (const entry of Deno.readDir(new URL("_astro/", CLIENT))) {
     const chunk = `_astro/${entry.name}`;
     if (!/.astro_astro_type_script_.*.js$/.test(entry.name)) continue;
     scripts += 1;
-    if (
-      chunk === palette || chunk === tasks ||
-      /^person-profile-shell\./.test(entry.name)
-    ) {
+    if (allowed.has(chunk) || /^person-profile-shell\./.test(entry.name)) {
       continue;
     }
     for (const loaded of await reachable([chunk])) {
@@ -240,11 +306,11 @@ Deno.test("[GAP-027] no page script but the palette's, the person shell's, and t
 
 Deno.test("[GAP-027] a protected page loads React only for the people palette", async () => {
   const palette = await paletteScript();
-  const react = await reactChunksOf(TODAY);
-  assert(react.length > 0, "Today can load the palette island");
+  const react = await reactChunksOf(PALETTE_ONLY_PAGE);
+  assert(react.length > 0, "the page can load the palette island");
   assert(
-    eagerScripts(await read(TODAY)).has(palette),
-    "Today mounts the palette from its layout",
+    eagerScripts(await read(PALETTE_ONLY_PAGE)).has(palette),
+    "the page mounts the palette from its layout",
   );
   const fromPalette = await reachable([palette]);
   for (const chunk of react) {
@@ -264,8 +330,9 @@ Deno.test("[GAP-027] a protected page loads React only for the people palette", 
  * the rail; the timeline, life events, notes and activities, and calls and
  * conversations with the Timeline zone; tasks with the Planning zone;
  * reminders, which also draw the rail's stay-in-touch block, with whichever of
- * the rail and the Planning zone activates first; and gifts and debts with the
- * Things zone.
+ * the rail and the Planning zone activates first; gifts and debts, and
+ * documents and photos, with the Things zone; and the audit summary with the
+ * Admin zone.
  */
 const PERSON_ISLANDS = [
   "person-hero",
@@ -286,6 +353,8 @@ const PERSON_ISLANDS = [
   "person-relationships",
   "person-reminders",
   "person-tasks",
+  "person-files",
+  "person-audit-summary",
 ] as const;
 
 Deno.test("[GAP-028] the person shell loads each of its islands on demand", async () => {
@@ -304,20 +373,85 @@ Deno.test("[GAP-028] the person shell loads each of its islands on demand", asyn
   }
 });
 
-Deno.test("[GAP-031] the tasks page loads the task surface island from its own script", async () => {
-  const react = await reactChunksOf(TASKS_PAGE);
-  const [entry, ...others] = await islandEntries("tasks-page");
-  assert(entry && others.length === 0, "one tasks-page island entry");
-  const tasks = await tasksPageScript();
-  assert(
-    (await reachable([tasks])).has(entry),
-    "the tasks page script loads the task surface",
-  );
-  assert(
-    !(await reachable([await paletteScript()])).has(entry),
-    "the task surface does not load with the palette",
-  );
-  await logHydratedBytes("tasks-page", entry, react);
+Deno.test("[GAP-031] [GAP-033] each island page loads its islands from its own script", async () => {
+  const fromPalette = await reachable([await paletteScript()]);
+  for (const [page, islands] of Object.entries(PAGE_ISLANDS)) {
+    const react = await reactChunksOf(page);
+    const script = await pageScript(page);
+    const fromScript = await reachable([script]);
+    for (const chunk of react) {
+      assert(
+        fromPalette.has(chunk) || fromScript.has(chunk),
+        `${page} carries React through ${chunk} outside its islands`,
+      );
+    }
+    for (const name of islands) {
+      const [entry, ...others] = await islandEntries(name);
+      assert(entry && others.length === 0, `one ${name} island entry`);
+      assert(fromScript.has(entry), `${page}'s script loads ${name}`);
+      assert(!fromPalette.has(entry), `${name} does not load with the palette`);
+      await logHydratedBytes(`${page} ${name}`, entry, react);
+    }
+  }
+});
+
+/**
+ * The public pages rendered on demand (GAP-033): their HTML is not in the
+ * client output, so they are named by the page scripts the build wrote.
+ */
+const ON_DEMAND_PUBLIC_SCRIPTS = [
+  /^mfa\.astro_astro_type_script_/,
+  /^reset-password\.astro_astro_type_script_/,
+  /^verify-email\.astro_astro_type_script_/,
+  /^_token_\.astro_astro_type_script_/,
+] as const;
+
+Deno.test("[GAP-033] no public page, prerendered or on demand, reaches React or builds an element", async () => {
+  const entries: string[] = [];
+  for (const page of PUBLIC_PAGES) {
+    entries.push(...chunkReferences(await read(page), page));
+  }
+  const names: string[] = [];
+  for await (const entry of Deno.readDir(new URL("_astro/", CLIENT))) {
+    names.push(entry.name);
+  }
+  for (const pattern of ON_DEMAND_PUBLIC_SCRIPTS) {
+    const matched = names.filter((name) => pattern.test(name));
+    assert(
+      matched.length === 1,
+      `${pattern} names one on-demand page script, not ${matched}`,
+    );
+    entries.push(`_astro/${matched[0]}`);
+  }
+  for (const chunk of await reachable(entries)) {
+    const source = await read(chunk);
+    assert(!carriesReact(source), `${chunk} carries React to a public page`);
+    assert(
+      !source.includes("createElement("),
+      `${chunk} builds an element on a public page`,
+    );
+  }
+});
+
+Deno.test("[GAP-033] each on-demand island page loads its islands from its own script", async () => {
+  const palette = await paletteScript();
+  const fromPalette = await reachable([palette]);
+  for (const [page, islands] of Object.entries(ON_DEMAND_ISLANDS)) {
+    const script = await onDemandScript(page);
+    const fromScript = await reachable([script]);
+    const react: string[] = [];
+    for (const chunk of fromScript) {
+      if (carriesReact(await read(chunk))) react.push(chunk);
+    }
+    assert(react.length > 0, `${page}'s script loads React for its islands`);
+    for (const name of islands) {
+      const [entry, ...others] = await islandEntries(name);
+      assert(entry && others.length === 0, `one ${name} island entry`);
+      assert(fromScript.has(entry), `${page}'s script loads ${name}`);
+      assert(!fromPalette.has(entry), `${name} does not load with the palette`);
+      await logHydratedBytes(`${page} ${name}`, entry, react);
+    }
+  }
 });
 
 Deno.test("[GAP-027] no chunk ships cmdk's unused Radix Dialog", async () => {

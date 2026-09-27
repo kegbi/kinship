@@ -101,6 +101,7 @@ export function GiftEditor(
       aria-busy={props.gated ? "true" : undefined}
       className="profile-fact-form"
       data-gift-form=""
+      method="post"
       noValidate
       onSubmit={(event) => void submit(event)}
     >
@@ -236,6 +237,7 @@ export function DebtEditor(
       aria-busy={props.gated ? "true" : undefined}
       className="profile-fact-form"
       data-gift-form=""
+      method="post"
       noValidate
       onSubmit={(event) => void submit(event)}
     >

@@ -31,6 +31,7 @@ import {
       </div>
     </header>
 
+    <div class="contents" data-settings-members>
     <section class={cardVariants({ className: "member-section invite-panel" })} aria-labelledby="invite-heading">
       <div class="section-heading">
         <div><p class="section-kicker">Single-use access</p><h2 id="invite-heading">Invite a member</h2></div>
@@ -61,12 +62,16 @@ import {
       <div id="pending-state" class="list-state" role="status" aria-live="polite">Loading pending invitations…</div>
       <ul id="pending-list" class="member-list" hidden></ul>
     </section>
+    </div>
       </div>
     </div>
   </main>
 </ApplicationLayout>
 
 <script>
-  import { mountMembersPage } from "../../../lib/members.ts";
+  // The members page is an island (`features/settings/members/`, GAP-033)
+  // that takes over the region drawn above; an invitation sent before it
+  // loads is held, never submitted natively.
+  import { mountMembersPage } from "../../../features/settings/members/members.tsx";
   void mountMembersPage();
 </script>

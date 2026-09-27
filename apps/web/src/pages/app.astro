@@ -20,12 +20,12 @@ import {
       <div>
         <p class="eyebrow">Today · <span data-workspace-name></span></p>
         <h1 id="today-heading">Opening your workspace…</h1>
-        <time data-today-date>Loading date…</time>
+        <span class="contents" data-today-date-root><time data-today-date>Loading date…</time></span>
       </div>
       <p class="honesty-note">Tasks, reminders, important dates, and stay-in-touch cadence are ordered in your effective time zone.</p>
     </header>
 
-    <section class={cardVariants({ className: "today-section attention-section" })} aria-labelledby="attention-heading">
+    <section class={cardVariants({ className: "today-section attention-section" })} aria-labelledby="attention-heading" data-today-attention>
       <div class="section-heading">
         <div>
           <p class="section-kicker">Current priorities</p>
@@ -48,7 +48,7 @@ import {
       <p class="projection-note">Task completion here uses the same planning action as the person and global task surfaces.</p>
     </section>
 
-    <section class={cardVariants({ className: "today-section" })} aria-labelledby="reconnect-heading">
+    <section class={cardVariants({ className: "today-section" })} aria-labelledby="reconnect-heading" data-today-reminders>
       <div class="section-heading"><h2 id="reconnect-heading">People to reconnect</h2><span class={badgeVariants({ variant: "secondary" })}>Stay-in-touch cadence</span></div>
       <p id="today-cadences-state" class="section-state" role="status" aria-live="polite">Loading reconnect suggestions…</p>
       <ul id="today-cadences-list" class="task-list" aria-label="People due for contact"></ul>
@@ -63,9 +63,11 @@ import {
 
     <section class={cardVariants({ className: "today-section" })} aria-labelledby="upcoming-heading">
       <div class="section-heading"><h2 id="upcoming-heading">Upcoming</h2><span class={badgeVariants({ variant: "secondary" })}>Remainder through 30 days</span></div>
-      <p id="today-upcoming-state" class="section-state" role="status" aria-live="polite">Loading upcoming work…</p>
-      <ul id="today-upcoming-list" class="task-list" aria-label="Upcoming relationship work"></ul>
-      <div class={formActionsVariants()}><button id="today-upcoming-retry" class={buttonVariants({ variant: "outline", wrap: true })} type="button" hidden>Retry upcoming</button><a class={buttonVariants({ variant: "outline", wrap: true })} href="/app/tasks">Open all tasks</a></div>
+      <div class="contents" data-today-upcoming>
+        <p id="today-upcoming-state" class="section-state" role="status" aria-live="polite">Loading upcoming work…</p>
+        <ul id="today-upcoming-list" class="task-list" aria-label="Upcoming relationship work"></ul>
+        <div class={formActionsVariants()}><button id="today-upcoming-retry" class={buttonVariants({ variant: "outline", wrap: true })} type="button" hidden>Retry upcoming</button><a class={buttonVariants({ variant: "outline", wrap: true })} href="/app/tasks">Open all tasks</a></div>
+      </div>
     </section>
 
     <section id="today-recent-people-region" class={cardVariants({ className: "today-section" })} aria-labelledby="recent-people-heading" data-region-state="loading">
@@ -92,12 +94,8 @@ import {
 </ApplicationLayout>
 
 <script>
-  import { mountTodayInteractions } from "../lib/interactions.ts";
-  import { mountTodayReminders } from "../lib/reminders.ts";
-  import { mountTodayAttention } from "../lib/tasks.ts";
-  import { mountTodayRecentPeople } from "../lib/today-recent-people.ts";
-  void mountTodayInteractions();
-  void mountTodayReminders();
-  void mountTodayAttention();
-  void mountTodayRecentPeople();
+  // Every section above is drawn in its loading state; each is an island
+  // (`features/today/`, GAP-033) that takes it over with its own read.
+  import { mountToday } from "../features/today/mount.tsx";
+  void mountToday();
 </script>

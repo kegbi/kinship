@@ -1,5 +1,9 @@
 ---
-/** The audit summary card `lib/audit-history.ts` owns (GAP-033). */
+/**
+ * The audit summary card. Its island (`features/person/audit-summary/`,
+ * GAP-033) renders it again when the Admin zone activates; its full-history
+ * link carries the person's `href` only once an authorized read has answered.
+ */
 import PersonSection from "./PersonSection.astro";
 import type { PersonSectionEntry } from "../../features/person/sections.ts";
 import {

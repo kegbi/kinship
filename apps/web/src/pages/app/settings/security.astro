@@ -18,9 +18,14 @@ import {
       { label: "Security & sessions" },
     ]} />
     <header class="settings-heading"><div><p class="eyebrow">Personal security</p><h1>Security &amp; sessions</h1><p>Review only your active sessions. Revoking the current session signs you out immediately.</p></div></header>
-    <section class={cardVariants({ className: "member-section" })}><div class="section-heading"><h2>Active sessions</h2><span id="session-count" class={badgeVariants({ variant: "secondary" })}>Loading…</span></div><p id="settings-status" role="status" aria-live="polite">Loading sessions securely…</p><ul id="session-list" class="member-list"></ul></section>
+    <section class={cardVariants({ className: "member-section" })} data-settings-security><div class="section-heading"><h2>Active sessions</h2><span id="session-count" class={badgeVariants({ variant: "secondary" })}>Loading…</span></div><p id="settings-status" role="status" aria-live="polite">Loading sessions securely…</p><ul id="session-list" class="member-list"></ul></section>
       </div>
     </div>
   </main>
 </ApplicationLayout>
-<script>import { mountSecuritySettings } from "../../../lib/settings.ts"; void mountSecuritySettings();</script>
+<script>
+  // The sessions list is an island (`features/settings/security/`, GAP-033)
+  // that takes over the section drawn above.
+  import { mountSecuritySettings } from "../../../features/settings/security/security-sessions.tsx";
+  void mountSecuritySettings();
+</script>

@@ -12,6 +12,7 @@ import {
   unreachable,
 } from "../../testing/api.ts";
 import { ids, sectionProps } from "../../testing/fixtures.ts";
+import { TOAST_REGION } from "../../testing/shell.ts";
 import {
   drawShell,
   element,
@@ -70,7 +71,7 @@ function markup(): void {
       }</h3><span data-gift-badge class="state-badge">Loading</span></div></header>
       <p data-gift-state class="section-state">Loading…</p>
     </section>`
-    ).join("") + '<ol id="app-toasts"></ol>',
+    ).join("") + TOAST_REGION,
   );
 }
 

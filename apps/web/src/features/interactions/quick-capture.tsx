@@ -507,6 +507,7 @@ export function QuickCapture(props: QuickCaptureProps) {
         <form
           aria-busy={controls.busy || undefined}
           id="interaction-capture-form"
+          method="dialog"
           noValidate
           onInput={() => {
             if (!latest.current.dirty) edit({});

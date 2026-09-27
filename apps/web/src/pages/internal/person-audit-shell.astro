@@ -27,27 +27,31 @@ import {
         <p>Archived people remain readable. Sensitive values stay redacted.</p>
       </div>
     </header>
-    <form data-audit-filters class="audit-filters" method="get">
-      <label>Actor member ID <input name="actorMemberId" type="text" autocomplete="off" /></label>
-      <label>Action <input name="action" type="search" maxlength="200" placeholder="people.person-updated" /></label>
-      <label>From <input name="from" type="datetime-local" /></label>
-      <label>Before <input name="to" type="datetime-local" /></label>
-      <div class={formActionsVariants({ className: "col-span-full" })}>
-        <button class={buttonVariants()} type="submit">Apply filters</button>
-        <button data-audit-clear class={buttonVariants({ variant: "outline" })} type="button">Clear filters</button>
+    {/* The audit history island (`features/audit/`, GAP-033) renders this region again once it
+      loads, keeping whatever was typed; until then its actions stay disabled, as drawn. */}
+    <div class="contents" data-audit-history>
+      <form data-audit-filters class="audit-filters" method="get">
+        <label>Actor member ID <input name="actorMemberId" type="text" autocomplete="off" /></label>
+        <label>Action <input name="action" type="search" maxlength="200" placeholder="people.person-updated" /></label>
+        <label>From <input name="from" type="datetime-local" /></label>
+        <label>Before <input name="to" type="datetime-local" /></label>
+        <div class={formActionsVariants({ className: "col-span-full" })}>
+          <button class={buttonVariants()} type="submit" disabled>Apply filters</button>
+          <button data-audit-clear class={buttonVariants({ variant: "outline" })} type="button" disabled>Clear filters</button>
+        </div>
+      </form>
+      <p data-audit-state class="section-state" role="status" aria-live="polite">Loading audit history…</p>
+      <ol data-audit-list class="audit-event-list" aria-label="Person audit events in immutable newest-first order"></ol>
+      <div class={formActionsVariants()}>
+        <button data-audit-more class={buttonVariants({ variant: "outline" })} type="button" hidden>Load older events</button>
+        <button data-audit-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry audit history</button>
       </div>
-    </form>
-    <p data-audit-state class="section-state" role="status" aria-live="polite">Loading audit history…</p>
-    <ol data-audit-list class="audit-event-list" aria-label="Person audit events in immutable newest-first order"></ol>
-    <div class={formActionsVariants()}>
-      <button data-audit-more class={buttonVariants({ variant: "outline" })} type="button" hidden>Load older events</button>
-      <button data-audit-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry audit history</button>
     </div>
   </main>
 </ApplicationLayout>
 
 <script>
-  import { mountAuditHistory } from "../../lib/audit-history.ts";
+  import { mountAuditHistory } from "../../features/audit/audit-history.tsx";
   const personId = /^\/app\/people\/([0-9a-f-]{36})\/audit\/?$/i.exec(location.pathname)?.[1];
   const personCrumb = document.querySelector<HTMLAnchorElement>("[data-breadcrumb-person]");
   if (personCrumb && personId) personCrumb.href = `/app/people/${encodeURIComponent(personId)}`;

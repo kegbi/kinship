@@ -6,6 +6,7 @@ import {
   jsonResponse,
   problemResponse,
   stubApi,
+  unreachable,
 } from "../testing/api.ts";
 import {
   resolveWorkspaceSession,
@@ -308,5 +309,65 @@ describe("protected workspace session resolution", () => {
       });
       expect(api.fetch).toHaveBeenCalledTimes(1);
     }
+  });
+
+  it("answers unavailable when the default session read after a stale saved workspace fails", async () => {
+    sessionStorage.setItem("kinship.active-workspace", "stale");
+    const api = stubApi({
+      [SESSION]: [
+        problemResponse(401, { code: "session_invalid" }),
+        unreachable,
+      ],
+    });
+    vi.resetModules();
+    const context = await import("./workspace-context.ts");
+
+    await expect(context.resolveWorkspaceSession()).resolves.toEqual({
+      status: "unavailable",
+    });
+    expect(api.calls()).toEqual([SESSION, SESSION]);
+    expect(sessionStorage.getItem("kinship.active-workspace")).toBe("stale");
+  });
+
+  it("answers unavailable when the entry exchange cannot be reached", async () => {
+    const api = stubApi({
+      [SESSION]: problemResponse(401, { code: "session_invalid" }),
+      [ENTRY]: unreachable,
+    });
+    vi.resetModules();
+    const context = await import("./workspace-context.ts");
+
+    await expect(context.resolveWorkspaceSession()).resolves.toEqual({
+      status: "unavailable",
+    });
+    expect(api.calls()).toEqual([SESSION, ENTRY]);
+  });
+
+  it("replays a completed revalidation once, on a microtask, to a late handler", async () => {
+    sessionStorage.setItem(
+      SESSION_CACHE_KEY,
+      JSON.stringify({ savedAt: Date.now(), session }),
+    );
+    const fresh = {
+      ...session,
+      workspace: { id: "workspace", name: "Renamed" },
+    };
+    stubApi({ [SESSION]: jsonResponse(fresh) });
+    vi.resetModules();
+    const context = await import("./workspace-context.ts");
+    await context.resolveWorkspaceSession();
+    const early = vi.fn();
+    context.onSessionRevalidated(early);
+    await vi.waitFor(() => expect(early).toHaveBeenCalledOnce());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const late = vi.fn();
+    context.onSessionRevalidated(late);
+    expect(late).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(late).toHaveBeenCalledOnce();
+    expect(late).toHaveBeenCalledWith({ session: fresh, status: "ready" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(late).toHaveBeenCalledOnce();
   });
 });
