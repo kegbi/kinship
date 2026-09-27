@@ -3,6 +3,17 @@ export {
   type PersonNameParts,
   UNNAMED_PERSON,
 } from "./domain/person_name.ts";
+export {
+  AVATAR_PALETTE,
+  avatarColor,
+  avatarView,
+  isAvatarColor,
+} from "./domain/avatar.ts";
+export type {
+  AvatarSource,
+  PersonAvatarRecord,
+  PersonAvatarView,
+} from "./domain/avatar.ts";
 export type {
   CreatePersonInput,
   PersonIdentity,
@@ -38,11 +49,18 @@ export type {
 } from "./domain/profile_facts/values.ts";
 export type {
   ImportantDateAudit,
+  PersonAvatarAudit,
   PersonCreatedAudit,
   PersonLifecycleAudit,
   ProfileFactAudit,
 } from "./ports/audit.ts";
 export type { PeopleActor, PeopleTransaction } from "./ports/context.ts";
+export type {
+  AvatarImageInput,
+  PersonAvatarImages,
+  PersonAvatarRepository,
+  PersonAvatarState,
+} from "./ports/avatar.ts";
 export type {
   PeopleRepository,
   PersonIdentityLookup,
@@ -67,6 +85,13 @@ export type {
 export { createPeopleManagement } from "./application/create_person.ts";
 export { createImportantDateManagement } from "./application/important_dates.ts";
 export { createPersonLifecycle } from "./application/lifecycle_person.ts";
+export { createPersonAvatarManagement } from "./application/person_avatar.ts";
+export type {
+  PersonAvatarDependencies,
+  PersonAvatarManagement,
+  RemovePersonAvatarResult,
+  ReplacePersonAvatarResult,
+} from "./application/person_avatar.ts";
 export { createProfileFactManagement } from "./application/profile_facts.ts";
 export type { ProfileFactManagement } from "./application/profile_facts.ts";
 export type { ProfileFactDependencies } from "./application/profile_fact_context.ts";
@@ -131,6 +156,7 @@ export type {
 } from "./application/export_people_boundary.ts";
 export {
   importantDateAuditFrom,
+  personAvatarAuditFrom,
   personCreatedAuditFrom,
   personLifecycleAuditFrom,
   profileFactAuditFrom,

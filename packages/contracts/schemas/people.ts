@@ -384,7 +384,27 @@ export const peopleDirectoryTag = z.strictObject({
   name: z.string(),
 }).meta({ id: "PeopleDirectoryTag" });
 
+/**
+ * How a person is drawn (GAP-045): the colour their initials sit on and, when
+ * an uploaded image backs the avatar, the private URL that serves it through
+ * the person-file download route. The initials are the reader's: they follow
+ * the name in the member's own name order, so the web app derives them.
+ */
+export const personAvatar = z.strictObject({
+  color: z.string().regex(/^#[0-9a-f]{6}$/),
+  imageUrl: z.string().regex(
+    /^\/api\/v1\/people\/[0-9a-f-]{36}\/files\/[0-9a-f-]{36}\/content$/,
+  ).optional(),
+}).meta({ id: "PersonAvatar" });
+
+/** A person's avatar after it changed. */
+export const personAvatarChanged = z.strictObject({
+  avatar: personAvatar,
+  status: z.enum(["removed", "updated"]),
+}).meta({ id: "PersonAvatarChanged" });
+
 export const peopleDirectoryPerson = z.strictObject({
+  avatar: personAvatar.optional(),
   familyName: z.string().optional(),
   givenName: z.string(),
   id: z.uuid(),
@@ -590,6 +610,7 @@ export const personProfileSectionId = z.enum([
 ]).meta({ id: "PersonProfileSectionId" });
 
 export const personProfileIdentity = z.strictObject({
+  avatar: personAvatar.optional(),
   description: z.string().optional(),
   familyName: z.string().optional(),
   gender: z.string().optional(),

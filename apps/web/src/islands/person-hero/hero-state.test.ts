@@ -182,3 +182,74 @@ describe("GAP-028 hero state", () => {
     expect(initials({ givenName: " ", familyName: "Byron" })).toBe("B");
   });
 });
+
+describe("GAP-045 hero avatar state", () => {
+  const avatar = {
+    color: "#1f6f5c",
+    imageUrl: `/api/v1/people/${identity.id}/files/${identity.id}/content`,
+  };
+
+  it("opens and cancels the avatar editor from the menu", () => {
+    let state = heroReducer(heroReducer(start(), { type: "menu-toggled" }), {
+      type: "avatar-opened",
+    });
+    expect(state).toMatchObject({ avatarEditing: true, menuOpen: false });
+    state = heroReducer(state, { type: "avatar-cancelled" });
+    expect(state).toMatchObject({
+      avatarEditing: false,
+      menuOpen: true,
+      status: "Avatar unchanged.",
+    });
+  });
+
+  it("holds the editor busy while an upload or a removal runs", () => {
+    let state = heroReducer(start(), { type: "avatar-opened" });
+    state = heroReducer(state, { removing: false, type: "avatar-started" });
+    expect(state).toMatchObject({
+      avatarBusy: true,
+      status: "Uploading avatar…",
+    });
+    state = heroReducer(state, {
+      detail: "Choose a JPEG, PNG, or WebP image.",
+      type: "avatar-failed",
+    });
+    expect(state).toMatchObject({
+      avatarBusy: false,
+      avatarEditing: true,
+      status: "Choose a JPEG, PNG, or WebP image.",
+    });
+    state = heroReducer(state, { removing: true, type: "avatar-started" });
+    expect(state.status).toBe("Removing avatar…");
+  });
+
+  it("draws the new avatar once it is saved, and the initials once removed", () => {
+    let state = heroReducer(
+      heroReducer(start(), { type: "avatar-opened" }),
+      { avatar, removed: false, type: "avatar-changed" },
+    );
+    expect(state).toMatchObject({
+      avatarBusy: false,
+      avatarEditing: false,
+      identity: { avatar },
+      status: "Avatar updated.",
+    });
+    expect(state.updatedAt).toBe(identity.updatedAt);
+    state = heroReducer(state, {
+      avatar: { color: "#1f6f5c" },
+      removed: true,
+      type: "avatar-changed",
+    });
+    expect(state.identity.avatar).toEqual({ color: "#1f6f5c" });
+    expect(state.status).toBe("Avatar removed. Initials are shown instead.");
+  });
+
+  it("closes the avatar editor when the person is archived", () => {
+    const state = heroReducer(heroReducer(start(), { type: "avatar-opened" }), {
+      archived: true,
+      person: lifecycle({ lifecycle: "archived" }),
+      type: "transition-succeeded",
+    });
+    expect(state.avatarEditing).toBe(false);
+    expect(state.identity.avatar).toBe(identity.avatar);
+  });
+});

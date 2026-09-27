@@ -1,7 +1,7 @@
 /**
  * The Kinship primitives' class strings (GAP-027): the one definition of how a
  * button, badge, card, text field, form-action row, segmented filter,
- * breadcrumb, and skeleton look.
+ * breadcrumb, skeleton, and avatar look.
  *
  * The vendored shadcn/ui components render these classes, the Astro templates
  * write them into static markup (`class={buttonVariants({ variant:
@@ -167,3 +167,35 @@ export function skeletonVariants(
 
 /** The stack several skeleton lines sit in. */
 export const skeletonLinesVariants = "grid w-full gap-(--space-2)";
+
+const avatar = cva(
+  "relative inline-grid shrink-0 place-items-center overflow-hidden rounded-full bg-(--positive) font-bold text-(--ink-inverse) select-none",
+  {
+    variants: {
+      size: {
+        // The hero draws its own size and shape (`person-hero.css`).
+        custom: "",
+        sm: "size-7 text-[.65rem]",
+        md: "size-10 text-[.75rem]",
+      },
+    },
+    defaultVariants: { size: "md" },
+  },
+);
+
+export type AvatarVariantProps = VariantProps<typeof avatar>;
+
+/**
+ * A person's avatar (GAP-045): a circle holding their image, or their
+ * initials on the colour the server chose for them.
+ */
+export function avatarVariants(
+  props: AvatarVariantProps & { readonly className?: string } = {},
+): string {
+  const { className, ...variants } = props;
+  return cn(avatar(variants), className);
+}
+
+/** The image inside an avatar, cropped to fill it. */
+export const avatarImageVariants =
+  "block size-full rounded-[inherit] object-cover";

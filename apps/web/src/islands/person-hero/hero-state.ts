@@ -11,6 +11,7 @@
  */
 
 import type {
+  PersonAvatar,
   PersonLifecycleIdentity,
   PersonProfileIdentity,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
@@ -40,7 +41,11 @@ export interface HeroState {
   readonly transitioning: boolean;
   readonly menuOpen: boolean;
   readonly editing: boolean;
-  /** The lifecycle status line. */
+  /** The avatar editor is open (GAP-045). */
+  readonly avatarEditing: boolean;
+  /** An avatar upload or removal is in flight; its controls wait. */
+  readonly avatarBusy: boolean;
+  /** The lifecycle status line, which the avatar editor also speaks on. */
   readonly status: string;
   readonly deletion: DeleteDialogState;
 }
@@ -69,7 +74,16 @@ export type HeroAction =
   | { readonly type: "delete-failed"; readonly detail: string }
   | { readonly type: "delete-submitted" }
   | { readonly type: "delete-cancelled" }
-  | { readonly type: "delete-finished" };
+  | { readonly type: "delete-finished" }
+  | { readonly type: "avatar-opened" }
+  | { readonly type: "avatar-cancelled" }
+  | { readonly type: "avatar-started"; readonly removing: boolean }
+  | { readonly type: "avatar-failed"; readonly detail: string }
+  | {
+    readonly type: "avatar-changed";
+    readonly avatar: PersonAvatar;
+    readonly removed: boolean;
+  };
 
 export function initialHeroState(
   identity: HeroIdentity,
@@ -77,6 +91,8 @@ export function initialHeroState(
 ): HeroState {
   return {
     archived,
+    avatarBusy: false,
+    avatarEditing: false,
     deletion: { phase: "closed" },
     editing: false,
     identity,
@@ -149,6 +165,7 @@ export function heroReducer(state: HeroState, action: HeroAction): HeroState {
       return {
         ...state,
         archived: action.archived,
+        avatarEditing: false,
         editing: false,
         identity: merged(state.identity, action.person),
         transitioning: false,
@@ -199,6 +216,35 @@ export function heroReducer(state: HeroState, action: HeroAction): HeroState {
       };
     case "delete-finished":
       return { ...state, deletion: { phase: "closed" } };
+    case "avatar-opened":
+      return { ...state, avatarEditing: true, menuOpen: false };
+    case "avatar-cancelled":
+      // Focus returns to Change avatar, inside the menu it was opened from.
+      return {
+        ...state,
+        avatarEditing: false,
+        menuOpen: true,
+        status: "Avatar unchanged.",
+      };
+    case "avatar-started":
+      return {
+        ...state,
+        avatarBusy: true,
+        status: action.removing ? "Removing avatar…" : "Uploading avatar…",
+      };
+    case "avatar-failed":
+      return { ...state, avatarBusy: false, status: action.detail };
+    case "avatar-changed":
+      // An avatar is not part of the person's revision: `updatedAt` stays.
+      return {
+        ...state,
+        avatarBusy: false,
+        avatarEditing: false,
+        identity: { ...state.identity, avatar: action.avatar },
+        status: action.removed
+          ? "Avatar removed. Initials are shown instead."
+          : "Avatar updated.",
+      };
   }
 }
 

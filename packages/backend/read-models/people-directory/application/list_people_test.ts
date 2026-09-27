@@ -261,3 +261,33 @@ Deno.test("PEOPLE-006 selected hydration is bound to the requested lifecycle", a
     "selected hydration receives normalized lifecycle criteria",
   );
 });
+
+Deno.test("[PEOPLE-007] a directory row carries the person's avatar record", async () => {
+  const fileId = fixtures.uuid(700);
+  const directory = createPeopleDirectory({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
+    repository: {
+      findSelected: () =>
+        Promise.resolve({
+          ...record(9),
+          avatar: { backgroundColor: "#abcdef" },
+        }),
+      list: () =>
+        Promise.resolve({
+          people: [{ ...record(1), avatar: { fileId } }, record(2)],
+          status: "ready",
+        }),
+    },
+  });
+  const result = await directory.list(actor, {
+    selectedPersonId: record(9).id,
+  });
+  assert(result.status === "ready", "directory is ready");
+  assert(result.people[0]?.avatar?.fileId === fileId, "the image is named");
+  assert(!("avatar" in result.people[1]!), "no record, no avatar member");
+  assert(
+    result.selected?.avatar?.backgroundColor === "#abcdef",
+    "the selected person keeps their colour",
+  );
+});

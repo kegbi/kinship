@@ -32,6 +32,7 @@ import {
 } from "../../packages/backend/modules/journal/public.ts";
 import {
   importantDateAuditFrom,
+  personAvatarAuditFrom,
   personCreatedAuditFrom,
   personLifecycleAuditFrom,
   profileFactAuditFrom,
@@ -219,6 +220,17 @@ const WRITERS: ReadonlyArray<readonly [string, Writer]> = [
         occurredAt: OCCURRED_AT,
         transaction,
       } as never),
+  ],
+  [
+    "people avatar",
+    (recorder, actor) =>
+      personAvatarAuditFrom(recorder).record({
+        action: "updated",
+        actor,
+        occurredAt: OCCURRED_AT,
+        personId: PERSON,
+        transaction,
+      }),
   ],
   [
     "people profile fact",

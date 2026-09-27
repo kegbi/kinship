@@ -1,5 +1,6 @@
 import type { Failure } from "../../../shared-kernel/result.ts";
 import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
+import type { PersonAvatarRecord } from "../../../modules/people/public.ts";
 
 export interface ReadModelTransaction {
   readonly opaque: unknown;
@@ -26,6 +27,8 @@ export interface PeopleDirectoryTag {
 }
 
 export interface PeopleDirectoryPerson {
+  /** The stored colour, and the image file only while it can be drawn. */
+  readonly avatar?: PersonAvatarRecord;
   readonly familyName?: string;
   readonly givenName: string;
   readonly id: string;
@@ -206,6 +209,7 @@ function encodeCursor(
 
 function person(record: PeopleDirectoryPersonRecord): PeopleDirectoryPerson {
   return {
+    ...(record.avatar ? { avatar: record.avatar } : {}),
     ...(record.familyName ? { familyName: record.familyName } : {}),
     givenName: record.givenName,
     id: record.id,

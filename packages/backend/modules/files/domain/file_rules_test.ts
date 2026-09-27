@@ -1,10 +1,13 @@
 import { assertEquals } from "../../../testing/assert.ts";
 import {
+  AVATAR_MAX_BYTES,
   checksum,
   isAllowedMedia,
+  maximumUploadBytes,
   PERSON_FILE_MAX_BYTES,
   type PersonFileKind,
   publicFile,
+  recordsReads,
   scannedStatus,
   type StoredPersonFile,
   validateUpload,
@@ -188,4 +191,51 @@ Deno.test("[GAP-017] an upload keeps the trimmed names and the lower-cased media
 Deno.test("[GAP-017] a file is available only when the scanner found it clean", () => {
   assertEquals(scannedStatus("clean"), "available");
   assertEquals(scannedStatus("quarantined"), "quarantined");
+});
+
+Deno.test("[GAP-045] an avatar is an image no larger than its own limit", () => {
+  const avatar = (bytes: Uint8Array, mimeType = "image/png") =>
+    validateUpload(upload({
+      bytes,
+      filename: "ada.png",
+      kind: "avatar",
+      mimeType,
+      title: "Avatar",
+    }));
+  assertEquals(AVATAR_MAX_BYTES, 1024 * 1024);
+  assertEquals(maximumUploadBytes("avatar"), AVATAR_MAX_BYTES);
+  assertEquals(maximumUploadBytes("photo"), PERSON_FILE_MAX_BYTES);
+  assertEquals(
+    avatar(new Uint8Array(AVATAR_MAX_BYTES)).status,
+    "ready",
+    "the limit itself is admitted",
+  );
+  assertEquals(
+    avatar(new Uint8Array(AVATAR_MAX_BYTES + 1)).status,
+    "storage-limit",
+    "an avatar past its own limit is refused although a photo would fit",
+  );
+  for (const mimeType of ["image/jpeg", "image/png", "image/webp"]) {
+    assertEquals(isAllowedMedia("avatar", mimeType), true, mimeType);
+  }
+  for (
+    const mimeType of ["application/pdf", "text/plain", "image/svg+xml"]
+  ) {
+    assertEquals(isAllowedMedia("avatar", mimeType), false, mimeType);
+  }
+  assertEquals(
+    avatar(new Uint8Array([1]), "image/svg+xml").status,
+    "rejected-media",
+    "an avatar reuses the photo allowlist, so a scriptable image is refused",
+  );
+});
+
+Deno.test("[GAP-045] reading an avatar is not a recorded read", () => {
+  assertEquals(recordsReads("document"), true);
+  assertEquals(recordsReads("photo"), true);
+  assertEquals(
+    recordsReads("avatar"),
+    false,
+    "an avatar is drawn on every list it appears in, so its reads are not audited",
+  );
 });

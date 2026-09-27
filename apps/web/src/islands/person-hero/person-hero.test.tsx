@@ -446,6 +446,7 @@ describe("PEOPLE-001 person hero island", () => {
       [...menu.children].map((item) => item.textContent),
     ).toEqual([
       "Edit person",
+      "Change avatar",
       "Export vCard",
       "Archive person",
       "Audit history",
@@ -952,5 +953,137 @@ describe("PEOPLE-004 person lifecycle in the hero", () => {
         "Deletion impact is temporarily unavailable.",
       )
     );
+  });
+});
+
+describe("PEOPLE-007 person hero avatar", () => {
+  const AVATAR = `${PERSON}/avatar`;
+  const imageUrl = `/api/v1/people/${personId}/files/${personId}/content`;
+  const png = () =>
+    new File([new Uint8Array([0x89, 0x50])], "ada.png", {
+      type: "image/png",
+    });
+
+  it("draws the avatar's colour behind the initials", async () => {
+    markup();
+    await mount(profile({ person: { avatar: { color: "#1f6f5c" } } }));
+    const avatar = element("#person-profile-avatar");
+    expect(avatar.textContent).toBe("AL");
+    expect(avatar.style.backgroundColor).toBe("#1f6f5c");
+    expect(avatar.getAttribute("aria-hidden")).toBe("true");
+    expect(avatar.classList.contains("person-profile-avatar")).toBe(true);
+  });
+
+  it("uploads an avatar, holding its controls while it saves, and removes it", async () => {
+    markup();
+    await mount(profile({ person: { avatar: { color: "#1f6f5c" } } }));
+    const user = userEvent.setup();
+    await openMenu();
+    await user.click(screen.getByRole("button", { name: "Change avatar" }));
+    const form = screen.getByRole("form", { name: "Change avatar" });
+    const input = within(form).getByLabelText("Avatar image");
+    expect(form.hidden).toBe(false);
+    expect(document.activeElement, "focused inside the opening click").toBe(
+      input,
+    );
+    expect(within(form).queryByRole("button", { name: "Remove avatar" }))
+      .toBeNull();
+
+    const held = deferred<Response>();
+    const api = stubApi({
+      [`PUT ${AVATAR}`]: held.promise,
+      [`DELETE ${AVATAR}`]: jsonResponse({
+        avatar: { color: "#1f6f5c" },
+        status: "removed",
+      }),
+    });
+    await user.upload(input, png());
+    await user.click(
+      within(form).getByRole("button", { name: "Upload avatar" }),
+    );
+    await waitFor(() =>
+      expect(text("#person-lifecycle-status")).toBe("Uploading avatar…")
+    );
+    expect(
+      within(form).getByRole("button", { name: "Upload avatar" }),
+    ).toHaveProperty("disabled", true);
+    const [upload] = api.requests();
+    expect(upload?.method).toBe("PUT");
+    expect(upload?.headers.get("content-type")).toBe("image/png");
+    expect(upload?.headers.get("X-File-Name")).toBe("ada.png");
+    expect(upload?.headers.get("X-Workspace-Id")).toBe(workspaceId);
+    await act(async () => {
+      held.resolve(jsonResponse({
+        avatar: { color: "#1f6f5c", imageUrl },
+        status: "updated",
+      }));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(text("#person-lifecycle-status")).toBe("Avatar updated.")
+    );
+    expect(form.hidden).toBe(true);
+    expect(document.activeElement).toBe(heading());
+
+    await openMenu();
+    await user.click(screen.getByRole("button", { name: "Change avatar" }));
+    await user.click(
+      within(form).getByRole("button", { name: "Remove avatar" }),
+    );
+    await waitFor(() =>
+      expect(text("#person-lifecycle-status")).toBe(
+        "Avatar removed. Initials are shown instead.",
+      )
+    );
+    expect(api.calls()).toContain(`DELETE /api/v1/people/${personId}/avatar`);
+    expect(element("#person-profile-avatar").textContent).toBe("AL");
+  });
+
+  it("keeps a refused image in the editor with the problem's words", async () => {
+    markup();
+    await mount();
+    const user = userEvent.setup();
+    await openMenu();
+    await user.click(screen.getByRole("button", { name: "Change avatar" }));
+    const form = screen.getByRole("form", { name: "Change avatar" });
+    await user.click(
+      within(form).getByRole("button", { name: "Upload avatar" }),
+    );
+    expect(text("#person-lifecycle-status")).toBe("Choose an image to upload.");
+    stubApi({
+      [`PUT ${AVATAR}`]: problemResponse(413, {
+        code: "avatar_too_large",
+        detail: "Choose an image of 1 MB or less.",
+      }),
+    });
+    await user.upload(within(form).getByLabelText("Avatar image"), png());
+    await user.click(
+      within(form).getByRole("button", { name: "Upload avatar" }),
+    );
+    await waitFor(() =>
+      expect(text("#person-lifecycle-status")).toBe(
+        "Choose an image of 1 MB or less.",
+      )
+    );
+    expect(form.hidden).toBe(false);
+    expect(
+      within(form).getByRole("button", { name: "Upload avatar" }),
+    ).toHaveProperty("disabled", false);
+
+    await user.click(within(form).getByRole("button", { name: "Cancel" }));
+    expect(form.hidden).toBe(true);
+    expect(text("#person-lifecycle-status")).toBe("Avatar unchanged.");
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Change avatar" }),
+    );
+  });
+
+  it("offers no avatar change for an archived person", async () => {
+    markup();
+    await mount(profile({ status: "archived" }));
+    await openMenu();
+    expect(
+      screen.queryByRole("button", { name: "Change avatar" }),
+    ).toBeNull();
   });
 });

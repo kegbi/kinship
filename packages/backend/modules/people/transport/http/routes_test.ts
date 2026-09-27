@@ -58,8 +58,10 @@ Deno.test("[GAP-021] the mounted people concerns register every route in order",
       "POST /api/v1/people/:personId/restore",
       "GET /api/v1/people/:personId/deletion-impact",
       "DELETE /api/v1/people/:personId",
+      "PUT /api/v1/people/:personId/avatar",
+      "DELETE /api/v1/people/:personId/avatar",
     ].join("\n"),
-    "six mounted concerns register what one file used to",
+    "seven mounted concerns register what one file used to, plus the avatar",
   );
 });
 

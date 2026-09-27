@@ -20,7 +20,11 @@ import {
   decodePersonFileCursor,
   encodePersonFileCursor,
 } from "../domain/cursors.ts";
-import { type PersonFileRecord, publicFile } from "../domain/file_rules.ts";
+import {
+  type PersonFileRecord,
+  publicFile,
+  recordsReads,
+} from "../domain/file_rules.ts";
 import type { PersonFileActor } from "../ports/context.ts";
 import {
   active,
@@ -162,6 +166,9 @@ export function createPersonFileReads(
             return { status: "missing" } as const;
           },
         );
+      }
+      if (!recordsReads(found.file.kind)) {
+        return { bytes, file: publicFile(found.file), status: "ready" };
       }
       const recorded = await runOrUnavailable(
         dependencies.transaction,

@@ -1,6 +1,7 @@
 import type { Failure } from "../../../shared-kernel/result.ts";
 import type { DatePrecision } from "../../../shared-kernel/partial_date.ts";
 import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
+import type { PersonAvatarRecord } from "../../../modules/people/public.ts";
 
 export interface ReadModelTransaction {
   readonly opaque: unknown;
@@ -94,6 +95,8 @@ export interface PersonProfileSummary {
 }
 
 export interface PersonProfileIdentity {
+  /** The stored colour, and the image file only while it can be drawn. */
+  readonly avatar?: PersonAvatarRecord;
   readonly description?: string;
   readonly familyName?: string;
   readonly gender?: string;

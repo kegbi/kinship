@@ -15,13 +15,13 @@ The current baseline contains:
 - 39 cataloged pages (30 `static-shell-islands`, 5 `on-demand`, 4 `static`), all
   implemented, except `settings.billing`, which the catalog marks as an optional
   module and Phase 10 `APP-010C` withholds;
-- 31 required flows: 17 P0, 11 P1, and 3 P2;
-- 30 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
+- 32 required flows: 17 P0, 12 P1, and 3 P2;
+- 31 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
   still planned with an empty `testRefs` array, consistent with its withheld
   optional module; and
-- 35 Playwright specs under `tests/e2e/`. Flow specs are named
+- 36 Playwright specs under `tests/e2e/`. Flow specs are named
   `<feature>.<FLOW-ID>.spec.ts` (GAP-036); specs with no flow keep a feature
-  name. The flows' `testRefs` name 33 of them; `perf.PERF-001.spec.ts` and
+  name. The flows' `testRefs` name 34 of them; `perf.PERF-001.spec.ts` and
   `public-home.spec.ts` prove no catalog flow.
 
 Verified against `docs/architecture/module-boundaries.yaml`,
@@ -108,6 +108,7 @@ and exercise the production-like gateway, not an internal service URL.
 | `PEOPLE-004`       | P0       |              2 | profile, people, archived people                 | Edit, archive, restore, and delete are one mutation flow; no fictional read-only subset                 |
 | `PEOPLE-005`       | P0       |              2 | person profile                                   | Valid full/partial/unknown dates, chronology, display, recurrence behavior                              |
 | `PEOPLE-006`       | P1       |              2 | person profile                                   | All remaining enabled profile facts and section visibility behavior                                     |
+| `PEOPLE-007`       | P1       |              5 | person profile, people                           | Avatar upload/replace/remove through files and people, initials fallback, quarantined/missing objects   |
 | `RELATIONSHIP-001` | P0       |              2 | person profile                                   | Directional graph, valid types, remove/change behavior, and romantic details only if DG-07 accepts them |
 | `INTERACTION-001`  | P0       |              3 | person profile, activity report, Today           | Add/review note or activity and observe projections/audit                                               |
 | `INTERACTION-002`  | P1       |              3 | person profile                                   | Calls, conversations/messages, participants, emotion and chronology behavior                            |
@@ -125,7 +126,7 @@ and exercise the production-like gateway, not an internal service URL.
 | `GOVERNANCE-002`   | P1       |              3 | person audit, profile, workspace audit           | Authorized history, redaction, ordering, and forbidden cases                                            |
 | `BILLING-001`      | P2       |              8 | billing settings                                 | Optional entitlement and provider workflow with module disabled by default                              |
 
-For the current 31-flow snapshot, this assignment places all 17 P0 and all 11 P1
+For the current 32-flow snapshot, this assignment places all 17 P0 and all 12 P1
 flows at or before Slice 7, so the accepted MVP and Core feature complete cuts
 coincide there. The milestone meanings remain distinct and future catalog
 changes regenerate their membership and maximum slice. Slice 4 is the accepted

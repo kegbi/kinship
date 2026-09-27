@@ -40,7 +40,11 @@ import {
   tokenOrSessionActor,
 } from "../../../../../http-kit/session.ts";
 import { parseQuery, parseValue } from "../../../../../http-kit/validate.ts";
-import { type PeopleHttpServices, PERSON_FORBIDDEN } from "./shared.ts";
+import {
+  type PeopleHttpServices,
+  PERSON_FORBIDDEN,
+  withAvatarDescriptor,
+} from "./shared.ts";
 
 /** What the directory, its tag options, and the recent list are served from. */
 export type PeopleDirectoryHttpServices = Pick<
@@ -186,8 +190,10 @@ export function createDirectoryRoutes(
     return context.json({
       lifecycle: parsed.data.lifecycle,
       ...(result.nextCursor ? { nextCursor: result.nextCursor } : {}),
-      people: result.people,
-      ...(result.selected ? { selected: result.selected } : {}),
+      people: result.people.map(withAvatarDescriptor),
+      ...(result.selected
+        ? { selected: withAvatarDescriptor(result.selected) }
+        : {}),
       status: "ready",
     });
   });

@@ -19,13 +19,16 @@
  * reach only the services its own routes use.
  */
 
-import type {
-  ImportantDateManagement,
-  PeopleManagement,
-  PersonIdentity,
-  PersonLifecycle,
-  PersonLifecycleRecord,
-  ProfileFactManagement,
+import {
+  avatarView,
+  type ImportantDateManagement,
+  type PeopleManagement,
+  type PersonAvatarManagement,
+  type PersonAvatarRecord,
+  type PersonIdentity,
+  type PersonLifecycle,
+  type PersonLifecycleRecord,
+  type ProfileFactManagement,
 } from "../../public.ts";
 import type { PersonProfile } from "../../../../read-models/person-profile/public.ts";
 import type { TodayRecentPeople } from "../../../../read-models/today/public.ts";
@@ -54,6 +57,8 @@ export interface PeopleHttpServices {
    * the composition root hands api-access's facade in.
    */
   readonly apiTokens?: ScopedTokenAuthority;
+  /** A person's avatar (GAP-045); without it the avatar routes answer 503. */
+  readonly avatars?: PersonAvatarManagement;
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly directory: PeopleDirectory;
   readonly importantDates?: ImportantDateManagement;
@@ -74,6 +79,42 @@ export function identity(person: PersonIdentity) {
     isPartial: person.isPartial,
     ...(person.middleName ? { middleName: person.middleName } : {}),
     ...(person.nickname ? { nickname: person.nickname } : {}),
+  };
+}
+
+/**
+ * The avatar a reader draws a person with (GAP-045): the colour, and the
+ * private person-file URL of the image when one backs the avatar.
+ */
+export function avatarDescriptor(
+  personId: string,
+  record: PersonAvatarRecord = {},
+): { readonly color: string; readonly imageUrl?: string } {
+  const view = avatarView(personId, record);
+  return {
+    color: view.color,
+    ...(view.fileId
+      ? {
+        imageUrl: `/api/v1/people/${personId}/files/${view.fileId}/content`,
+      }
+      : {}),
+  };
+}
+
+/**
+ * A read model's person with its avatar record presented as the descriptor.
+ * A person the read model said nothing about keeps saying nothing.
+ */
+export function withAvatarDescriptor<
+  Person extends {
+    readonly avatar?: PersonAvatarRecord;
+    readonly id: string;
+  },
+>(person: Person) {
+  const { avatar, ...rest } = person;
+  return {
+    ...rest,
+    ...(avatar ? { avatar: avatarDescriptor(person.id, avatar) } : {}),
   };
 }
 

@@ -15,6 +15,7 @@ import type {
   PeopleDirectoryPage,
   PeopleTagOptionsInput,
   PeopleTagOptionsPage,
+  PersonAvatarChanged,
   PersonDeletionImpact,
   PersonDueInformation,
   PersonEditInput,
@@ -416,6 +417,37 @@ export function editPerson(
     method: "PATCH",
     headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
     body: JSON.stringify(input),
+  });
+}
+
+/**
+ * Makes the image the person's avatar (GAP-045). The body is the file itself,
+ * typed by its own media type, and the filename travels percent-encoded.
+ */
+export function replacePersonAvatar(
+  personId: string,
+  file: File,
+  workspaceId?: string,
+): Promise<ApiResult<PersonAvatarChanged>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/avatar`, {
+    method: "PUT",
+    body: file,
+    headers: {
+      "content-type": file.type,
+      "X-File-Name": encodeURIComponent(file.name),
+      ...(workspaceId ? { "X-Workspace-Id": workspaceId } : {}),
+    },
+  });
+}
+
+/** Draws the person with their initials again (GAP-045). */
+export function removePersonAvatar(
+  personId: string,
+  workspaceId?: string,
+): Promise<ApiResult<PersonAvatarChanged>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/avatar`, {
+    method: "DELETE",
+    headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
   });
 }
 

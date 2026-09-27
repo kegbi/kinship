@@ -6,6 +6,7 @@ import {
 } from "../backend/testing/assert.ts";
 import {
   JSON_BODY_MAX_BYTES,
+  readBoundedBody,
   REQUEST_TOO_LARGE,
   requestBodyLimit,
 } from "./body_limit.ts";
@@ -98,4 +99,45 @@ Deno.test("[GAP-019] the declared cap sits above every ordinary JSON payload", (
     "one mebibyte is the documented cap",
   );
   assertEquals(REQUEST_TOO_LARGE.status, 413, "and it answers 413");
+});
+
+Deno.test("[GAP-045] a self-bounded body is read whole, or refused past its own ceiling", async () => {
+  const post = (body: BodyInit | null, headers: HeadersInit = {}) =>
+    new Request("http://localhost/upload", { body, headers, method: "POST" });
+  assertEquals(
+    [...(await readBoundedBody(post(new Uint8Array([1, 2, 3])), 3))!],
+    [1, 2, 3],
+    "a body at the ceiling is read",
+  );
+  assertEquals(
+    await readBoundedBody(post(new Uint8Array(4)), 3),
+    undefined,
+    "a body one byte past it is refused",
+  );
+  assertEquals(
+    await readBoundedBody(post("x", { "content-length": "99" }), 3),
+    undefined,
+    "a declared length past it is refused before reading",
+  );
+  assertEquals((await readBoundedBody(post(null), 3))?.byteLength, 0);
+  const streamed = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array(2));
+      controller.enqueue(new Uint8Array(2));
+      controller.close();
+    },
+  });
+  assertEquals(
+    await readBoundedBody(post(streamed), 3),
+    undefined,
+    "a stream that says nothing of its length is stopped by what it sent",
+  );
+  const chunked = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array([7]));
+      controller.enqueue(new Uint8Array([8, 9]));
+      controller.close();
+    },
+  });
+  assertEquals([...(await readBoundedBody(post(chunked), 3))!], [7, 8, 9]);
 });

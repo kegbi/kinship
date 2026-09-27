@@ -95,7 +95,10 @@ import {
   peopleTransactionRunner,
   personBoundary,
 } from "../../packages/backend/modules/people/composition.ts";
-import type { ImportantDateManagement } from "../../packages/backend/modules/people/public.ts";
+import type {
+  ImportantDateManagement,
+  PersonAvatarImages,
+} from "../../packages/backend/modules/people/public.ts";
 import {
   composePlanning,
   personDateReminderPublisher,
@@ -205,6 +208,7 @@ import {
 
 export interface ApiServices extends RegistrationHttpServices {
   readonly apiTokens?: ApiTokenManagement;
+  readonly avatars?: PeopleHttpServices["avatars"];
   readonly activityReport?: ActivityReport;
   readonly auditHistory?: AuditHistory;
   readonly directory?: PeopleDirectory;
@@ -252,13 +256,15 @@ export interface ApiServices extends RegistrationHttpServices {
 }
 
 /**
- * The two routes that bound their own, larger request body: the person-file
- * upload streams against a ten megabyte ceiling and the Monica import staging
- * route refuses anything past its 1.5 MB envelope. The global cap stays out of
- * their way so each keeps answering its own, more specific refusal.
+ * The routes that bound their own request body: the person-file upload
+ * streams against a ten megabyte ceiling, the avatar upload against its own
+ * one megabyte (GAP-045), and the Monica import staging route refuses anything
+ * past its 1.5 MB envelope. The global cap stays out of their way so each
+ * keeps answering its own, more specific refusal.
  */
 const SELF_BOUNDED_BODIES: readonly RegExp[] = [
   /^\/api\/v1\/people\/[^/]+\/files$/,
+  /^\/api\/v1\/people\/[^/]+\/avatar$/,
   /^\/api\/v1\/imports\/dry-runs$/,
 ];
 
@@ -504,6 +510,7 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
         "/",
         createPeopleRoutes({
           ...(services.apiTokens ? { apiTokens: services.apiTokens } : {}),
+          ...(services.avatars ? { avatars: services.avatars } : {}),
           browserSecurity: services.browserSecurity,
           directory: services.directory,
           ...(services.importantDates
@@ -676,6 +683,33 @@ function davPeople(
   };
 }
 
+/**
+ * The avatar bridge into files (GAP-045).
+ *
+ * People owns which image a person is drawn with and files owns the bytes, but
+ * people may not depend on files, so people names the port it needs and the
+ * root fills it with the files facade: the `avatar` upload kind to store, and
+ * the ordinary person-file removal to discard.
+ */
+function avatarImages(files: PersonFileManagement): PersonAvatarImages {
+  return {
+    store: async ({ actor, personId, ...image }) => {
+      const result = await files.uploadAvatar(actor, personId, image);
+      return result.status === "created"
+        ? {
+          fileId: result.file.fileId,
+          status: result.file.status === "quarantined"
+            ? "quarantined"
+            : "available",
+        }
+        : result;
+    },
+    discard: async ({ actor, fileId, personId }) => {
+      await files.remove(actor, personId, fileId);
+    },
+  };
+}
+
 /** The DAV bridge into planning, on the same borrowed-use-case terms. */
 function davTasks(
   tasks: ReturnType<typeof composePlanning>["tasks"],
@@ -786,7 +820,12 @@ export function createConfiguredApiApp(
   const apiAccess = composeApiAccess(shared, { subjectKeyset });
   const configuration = composeWorkspaceBoundaries();
   const persons = personBoundary();
+  const files = composeFiles(shared, {
+    giftTarget: giftAttachmentTarget(),
+    objectStore,
+  });
   const people = composePeople(shared, {
+    avatarImages: avatarImages(files.files),
     importantDatePublisher: personDateReminderPublisher(shared),
     profileFactWorkspace: configuration.profileFacts,
   });
@@ -808,10 +847,6 @@ export function createConfiguredApiApp(
     activities: journalActivityBoundary(),
     people: persons,
     workspace: configuration.lifeEvents,
-  });
-  const files = composeFiles(shared, {
-    giftTarget: giftAttachmentTarget(),
-    objectStore,
   });
   const gifts = composeGifts(shared, {
     attachments: files.giftAttachments,
@@ -891,6 +926,7 @@ export function createConfiguredApiApp(
   const app = createApiApp({
     activityReport: composeActivityReport(shared),
     apiTokens: apiAccess.apiTokens,
+    avatars: people.avatars,
     auditHistory: composeAuditHistory(shared, { cursorKeyset: subjectKeyset }),
     browserSecurity: policy,
     ...(dav ? { dav } : {}),

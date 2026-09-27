@@ -68,6 +68,7 @@ const source = {
       nickname: "Enchantress",
       is_starred: 1,
       avatar_file_name: "avatars/ada.png",
+      default_avatar_color: "#B3D5FE",
     }],
     users: [{
       id: 7,
@@ -151,6 +152,14 @@ Deno.test("[IMPORT-001] PostgreSQL import is tenant-safe, atomic, idempotent, an
   assert(
     avatar?.status === "missing" && avatar.storage_key === null,
     "manifest creates recoverable missing metadata without unsafe object key",
+  );
+  const [presentation] = await sql<
+    { background_color: string | null; source: string }[]
+  >`select background_color, source from crm.person_avatars where person_id = ${person.id}::uuid`;
+  assert(
+    presentation?.background_color === "#b3d5fe" &&
+      presentation.source === "file",
+    "[GAP-045] the Monica avatar colour lands in person_avatars beside the file avatar",
   );
   const [leaked] = await sql<
     { leaked: boolean }[]

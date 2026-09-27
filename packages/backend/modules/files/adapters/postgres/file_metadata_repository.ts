@@ -48,7 +48,10 @@ function file(row: FileRow): StoredPersonFile {
   };
 }
 
-/** Photos before documents, written once for the filter and the order. */
+/**
+ * Photos before documents, written once for the filter and the order. The
+ * listing names both kinds, so a person's avatar (GAP-045) is never listed.
+ */
 const kindRank = sql`case link.kind when 'photo' then 0 else 1 end`;
 
 const selectedColumns = sql`
@@ -191,6 +194,7 @@ export class PostgresFileMetadataRepository implements FileMetadataRepository {
       join crm.files stored on stored.id = link.file_id
         and stored.workspace_id = ${command.workspaceId}::uuid
       where link.person_id = ${command.personId}::uuid
+        and link.kind in ('document', 'photo')
         and stored.deleted_at is null and stored.status <> 'deleted'
         ${
       after

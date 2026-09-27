@@ -439,7 +439,9 @@ readModels:
 
   - id: people-directory
     path: packages/backend/read-models/people-directory
-    sourceModules: [people, workspaces]
+    # files (GAP-045): a row's avatar image is offered only while its file is
+    # available, so a quarantined, missing, or removed image is never drawn.
+    sourceModules: [files, people, workspaces]
     consumers: [apps/api]
     writeAccess: false
 

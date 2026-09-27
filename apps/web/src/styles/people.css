@@ -311,6 +311,19 @@
   transform: translateY(-1px);
 }
 
+/* The avatar beside the name (GAP-045). */
+.directory-person-heading {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-width: 0;
+}
+
+.directory-person-heading h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .person-directory-link h2 {
   margin: 0;
   font-size: 1.15rem;

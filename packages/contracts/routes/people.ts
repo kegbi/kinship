@@ -22,6 +22,7 @@ import {
   importantDateUpdateInput,
   peopleDirectoryPage,
   peopleTagOptionsPage,
+  personAvatarChanged,
   personCreated,
   personDeleted,
   personDeleteInput,
@@ -251,6 +252,72 @@ export const archivePerson = defineRoute({
       description: "Atomic current-workspace person lifecycle change",
       content: {
         "application/json": personLifecycleChanged,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+/** The images an avatar may be, each bounded by the avatar's own limit. */
+const AVATAR_MAX_BYTES = 1048576;
+const avatarImage = z.string().max(AVATAR_MAX_BYTES).meta({ format: "binary" });
+
+export const replacePersonAvatar = defineRoute({
+  method: "put",
+  path: "/api/v1/people/{personId}/avatar",
+  operationId: "replacePersonAvatar",
+  security: [{ kinship_session: [] }],
+  request: {
+    params: z.object({
+      personId: uuid,
+    }),
+    headers: z.object({
+      Origin: z.url().meta({
+        description: "Must exactly match the configured public web origin.",
+      }),
+      "X-Workspace-Id": z.uuid().optional().meta({
+        description:
+          "Optional requested workspace; validated against active membership.",
+      }),
+      "X-File-Name": z.string().max(500),
+    }),
+    body: {
+      required: true,
+      content: {
+        "image/jpeg": avatarImage,
+        "image/png": avatarImage,
+        "image/webp": avatarImage,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description:
+        "The image is stored, scanned, and now the person's avatar; the one it replaced is removed",
+      content: {
+        "application/json": personAvatarChanged,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 413, 415, 423, 503),
+  },
+});
+
+export const removePersonAvatar = defineRoute({
+  method: "delete",
+  path: "/api/v1/people/{personId}/avatar",
+  operationId: "removePersonAvatar",
+  security: [{ kinship_session: [] }],
+  request: {
+    params: z.object({
+      personId: uuid,
+    }),
+    headers: originAndWorkspaceHeaders,
+  },
+  responses: {
+    200: {
+      description: "The person is drawn with their initials again",
+      content: {
+        "application/json": personAvatarChanged,
       },
     },
     ...problemResponses(400, 401, 403, 404, 409, 503),
@@ -747,6 +814,8 @@ export const PEOPLE_ROUTES: readonly RouteDescriptor[] = [
   getPerson,
   editPerson,
   archivePerson,
+  replacePersonAvatar,
+  removePersonAvatar,
   listImportantDates,
   createImportantDate,
   deleteImportantDate,

@@ -513,3 +513,35 @@ Deno.test("[GAP-023] a person's files page behind a cursor bound to the workspac
     "the default page, the clamped page, and nothing for a refused cursor",
   );
 });
+
+Deno.test("[GAP-045] an avatar is stored as the avatar kind, scanned, and served without a recorded read", async () => {
+  const context = management();
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2]);
+  const stored = await context.files.uploadAvatar(actor, personId, {
+    bytes: png,
+    filename: "ada.png",
+    mimeType: "image/png",
+  });
+  assert(stored.status === "created", "the avatar is stored");
+  assert(stored.file.kind === "avatar", "as the avatar kind");
+  assert(stored.file.title === "Avatar", "under the avatar title");
+  const read = await context.files.download(actor, personId, fileId);
+  assert(read.status === "ready", "its bytes are served");
+  assert(
+    context.audit.actions.join(",") === "uploaded",
+    "drawing an avatar records no read",
+  );
+
+  const refused = await context.files.uploadAvatar(actor, personId, {
+    bytes: new Uint8Array(1024 * 1024 + 1),
+    filename: "huge.png",
+    mimeType: "image/png",
+  });
+  assert(refused.status === "storage-limit", "the avatar limit applies");
+  const pdf = await context.files.uploadAvatar(actor, personId, {
+    bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+    filename: "cv.pdf",
+    mimeType: "application/pdf",
+  });
+  assert(pdf.status === "rejected-media", "only an image may be an avatar");
+});

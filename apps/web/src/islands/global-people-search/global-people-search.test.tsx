@@ -98,7 +98,9 @@ const SESSION = "GET /api/v1/session";
 
 /** The API behind the palette: a session, recent people, and a directory. */
 function stubPeople(
-  people: readonly ReturnType<typeof directoryPerson>[] = [],
+  people: readonly (ReturnType<typeof directoryPerson> & {
+    readonly avatar?: { readonly color: string };
+  })[] = [],
   recent: readonly { archived: boolean; id: string; name: string }[] = [],
   sessionAnswer: Response | Promise<Response> = jsonResponse(session),
 ): StubbedApi {
@@ -285,6 +287,23 @@ describe("UXD-004 global people search", () => {
     await waitFor(() => expect(statusLine()).toBe("1 person found"));
     expect(optionNames()[0]).toBe("Lovelace Ada");
     expect(getMemberPreferences).toHaveBeenCalledWith(workspaceId);
+  });
+
+  it("PEOPLE-007 draws each person row with their avatar and initials", async () => {
+    markup();
+    stubPeople([{
+      ...directoryPerson(adaId, "Ada", "Lovelace"),
+      avatar: { color: "#1f6f5c" },
+    }]);
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Find a person" }));
+    type("Ada");
+    await waitFor(() => expect(statusLine()).toBe("1 person found"));
+    const [person, add] = screen.getAllByRole("option");
+    const avatar = person!.querySelector<HTMLElement>("[data-slot=avatar]")!;
+    expect(avatar.textContent).toBe("AL");
+    expect(avatar.style.backgroundColor).toBe("#1f6f5c");
+    expect(add!.querySelector("[data-slot=avatar]")).toBeNull();
   });
 
   it("renders command rows locally for > without a people request", async () => {

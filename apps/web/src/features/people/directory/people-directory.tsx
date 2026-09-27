@@ -35,13 +35,17 @@ import {
   type PeopleDirectoryPerson,
   type PeopleDirectorySort,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
+import { Avatar } from "@/components/ui/avatar.tsx";
 import { buttonVariants } from "@/components/ui/variants.ts";
 import {
   mountIsland,
   settle,
   useLatestRequest,
 } from "../../../islands/core/index.ts";
-import type { PersonNameOrder } from "../../../lib/person-name.ts";
+import {
+  nameInitials,
+  type PersonNameOrder,
+} from "../../../lib/person-name.ts";
 import { readStaticForm } from "../../../lib/static-form.ts";
 import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
 import {
@@ -469,7 +473,10 @@ function PersonItem(
   return (
     <li>
       <a className="person-directory-link" href={`/app/people/${person.id}`}>
-        <h2>{name}</h2>
+        <span className="directory-person-heading">
+          <Avatar avatar={person.avatar} initials={nameInitials(name)} />
+          <h2>{name}</h2>
+        </span>
         <p className="directory-person-details">{personDetails(person)}</p>
         {person.tagCount > 0
           ? (

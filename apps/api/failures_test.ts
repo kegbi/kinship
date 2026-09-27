@@ -62,6 +62,7 @@ import {
   INVITATION_SIGN_IN_FAILURES,
 } from "../../packages/backend/modules/workspaces/transport/http/invitations.ts";
 import {
+  AVATAR_FAILURES,
   IMPORTANT_DATE_FAILURES,
   PEOPLE_PROBLEMS,
   PERSON_LIFECYCLE_FAILURES,
@@ -895,5 +896,22 @@ Deno.test("[GAP-020] the refusals that name what they refused are unchanged", ()
       "409 | possible_duplicate | Possible duplicate | A person named Ada Lovelace already exists in this workspace. Review the match or create anyway.",
     ].join("\n"),
     "every built refusal",
+  );
+});
+
+Deno.test("[GAP-045] the refusals avatar.ts answers are pinned", () => {
+  assertEquals(
+    pinned(AVATAR_FAILURES),
+    [
+      "archived-write-rejected | 409 | archived_write_rejected | Archived person is read-only | Restore this person before changing their avatar.",
+      "forbidden | 403 | people_forbidden | Avatar unavailable | Your active workspace membership no longer permits this change.",
+      "not-found | 404 | person_not_found | Person not found | No person with this identifier exists in the current workspace.",
+      "quarantined | 423 | avatar_quarantined | Image held for review | This image did not pass the file check and was held for review. Choose another image.",
+      "rejected-media | 415 | avatar_media_rejected | Image type rejected | Choose a JPEG, PNG, or WebP image.",
+      "storage-limit | 413 | avatar_too_large | Image too large | Choose an image of 1 MB or less.",
+      "validation-error | 400 | avatar_invalid | Invalid image | Choose a non-empty image with a filename.",
+      "(fallback) | 503 | avatar_unavailable | Avatar unavailable | The avatar could not be changed right now.",
+    ].join("\n"),
+    "AVATAR_FAILURES",
   );
 });

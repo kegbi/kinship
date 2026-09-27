@@ -211,6 +211,32 @@ describe("PEOPLE-002 people directory island", () => {
     await expectNoAxeViolations(element("main"));
   });
 
+  it("PEOPLE-007 draws each person with their avatar beside the name", async () => {
+    markup();
+    stubApi({
+      [PEOPLE]: page([
+        person({
+          avatar: {
+            color: "#1f6f5c",
+            imageUrl: `/api/v1/people/${personId}/files/${personId}/content`,
+          },
+          familyName: "Lovelace",
+        }),
+      ]),
+      [PREFERENCES]: savedPreferences(),
+      [SESSION]: session,
+      [TAGS]: noTags,
+    });
+    await mount();
+    const link = region().getByRole("link", { name: /Ada Lovelace/ });
+    const avatar = link.querySelector<HTMLElement>("[data-slot=avatar]")!;
+    expect(avatar.getAttribute("aria-hidden")).toBe("true");
+    expect(avatar.textContent).toBe("AL");
+    expect(avatar.style.backgroundColor).toBe("#1f6f5c");
+    expect(link.getAttribute("aria-label")).toBeNull();
+    await expectNoAxeViolations(element("main"));
+  });
+
   it("describes partial and archived people and a single hidden tag", async () => {
     markup("archived");
     stubApi({

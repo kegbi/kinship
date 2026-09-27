@@ -23,7 +23,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { Avatar } from "@/components/ui/avatar.tsx";
 import { buttonVariants } from "@/components/ui/variants.ts";
+import { nameInitials } from "../../lib/person-name.ts";
 import { type ApiCall, useLatestRequest } from "../../islands/core/index.ts";
 import {
   type Choice,
@@ -64,6 +66,12 @@ export interface OptionPickerProps {
     /** The `data-*` attribute the "Load more" control carries. */
     readonly data: string;
   };
+  /**
+   * The label of a list that draws each chosen option with its avatar
+   * (GAP-045). A native option cannot hold an image, so the people picker
+   * shows who was chosen, avatar and name, beneath the list box.
+   */
+  readonly showChosen?: string | undefined;
 }
 
 interface Page extends OptionPage {
@@ -162,6 +170,25 @@ export function OptionPicker(
       >
         {props.more.label}
       </button>
+      {props.showChosen === undefined ? null : (
+        <ul
+          aria-label={props.showChosen}
+          className="capture-chosen"
+          data-participants-chosen=""
+          hidden={props.chosen.length === 0}
+        >
+          {props.chosen.map((entry) => (
+            <li key={entry.id}>
+              <Avatar
+                avatar={entry.avatar}
+                initials={nameInitials(entry.name)}
+                size="sm"
+              />
+              <span>{entry.name}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   );
 }

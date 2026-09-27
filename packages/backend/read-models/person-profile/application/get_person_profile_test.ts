@@ -376,3 +376,38 @@ Deno.test("[PEOPLE-003] person life events use the read-only profile boundary", 
     "life-event reads preserve the active-workspace actor",
   );
 });
+Deno.test("[PEOPLE-007] the profile identity carries the person's avatar record", async () => {
+  const fileId = fixtures.uuid(700);
+  const profile = createPersonProfile({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
+    repository: {
+      get: () =>
+        Promise.resolve({
+          dueInformation: { openTaskCount: 0 },
+          person: {
+            avatar: { backgroundColor: "#abcdef", fileId },
+            givenName: "Ada",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            tagCount: 0,
+            tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
+          },
+          status: "ready",
+        }),
+      listLifeEvents,
+      listTimeline,
+    },
+  });
+  const result = await profile.get(actor, personId);
+  assert(result.status === "ready", "the profile is ready");
+  assert(
+    result.person.avatar?.fileId === fileId &&
+      result.person.avatar.backgroundColor === "#abcdef",
+    "the avatar record reaches the reader unchanged",
+  );
+});

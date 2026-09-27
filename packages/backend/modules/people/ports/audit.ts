@@ -99,3 +99,14 @@ export interface ProfileFactAudit {
     readonly transaction: PeopleTransaction;
   }): Promise<void>;
 }
+
+/** A person's avatar changed: a new image, or back to their initials. */
+export interface PersonAvatarAudit {
+  record(command: {
+    readonly action: "removed" | "updated";
+    readonly actor: PeopleActor;
+    readonly occurredAt: Date;
+    readonly personId: string;
+    readonly transaction: PeopleTransaction;
+  }): Promise<string>;
+}

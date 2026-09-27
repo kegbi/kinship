@@ -54,8 +54,21 @@ export interface ImportReport {
 /** The counts a dry run arrives at, before they are explained. */
 export type ImportCounts = ImportReport["counts"];
 
+/**
+ * What a contact's Monica avatar columns become in `person_avatars` (GAP-045),
+ * as `monica_column_mapping_v7.csv` maps them: `default_avatar_color` is the
+ * background colour, and `avatar_source` with its provider URL is the source
+ * and `external_url`. A file avatar is the separate attachment.
+ */
+export interface ImportedAvatarPresentation {
+  readonly backgroundColor?: string;
+  readonly externalUrl?: string;
+  readonly source?: "default" | "external" | "gravatar";
+}
+
 /** One contact as it is staged, before anything is written to people. */
 export interface StagedContact {
+  readonly avatarPresentation?: ImportedAvatarPresentation;
   readonly avatar?: {
     readonly byteSize: number;
     readonly fileId: string;
@@ -82,6 +95,7 @@ export interface StagedContact {
 /** A staged contact the repository has handed back to be committed. */
 export interface PreparedImportContact {
   readonly archived: boolean;
+  readonly avatarPresentation?: ImportedAvatarPresentation;
   readonly deletedAt?: string;
   readonly description?: string;
   readonly familyName?: string;
@@ -177,6 +191,7 @@ export type ImportCommitResult =
 /** The person a committed contact becomes. */
 export interface ImportedPersonValues {
   readonly archived: boolean;
+  readonly avatar?: ImportedAvatarPresentation;
   readonly deletedAt?: Date;
   readonly description?: string;
   readonly familyName?: string;
@@ -210,6 +225,75 @@ export type StagedSource =
  * Identifiers are drawn from the caller rather than generated here so the rule
  * stays reproducible: the suite hands it a counter and reads the result back.
  */
+const AVATAR_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+/** A provider URL worth keeping: an absolute http(s) URL of sane length. */
+function providerUrl(value: unknown): string | undefined {
+  const text = textValue(value, 2048);
+  if (!text) return undefined;
+  try {
+    const url = new URL(text);
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.href
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The provider URL each Monica `avatar_source` is read from. */
+function providerFor(
+  contact: Readonly<Record<string, unknown>>,
+): Pick<ImportedAvatarPresentation, "externalUrl" | "source"> {
+  const source = textValue(contact.avatar_source, 32)?.toLowerCase();
+  const url = source === "gravatar"
+    ? providerUrl(contact.avatar_gravatar_url) ??
+      providerUrl(contact.gravatar_url)
+    : source === "adorable"
+    ? providerUrl(contact.avatar_adorable_url)
+    : source === "external"
+    ? providerUrl(contact.avatar_external_url)
+    : source === "default"
+    ? providerUrl(contact.avatar_default_url)
+    : undefined;
+  if (!url) return {};
+  return {
+    externalUrl: url,
+    source: source === "gravatar"
+      ? "gravatar"
+      : source === "default"
+      ? "default"
+      : "external",
+  };
+}
+
+/**
+ * What a contact's avatar columns say, or nothing when they say nothing
+ * usable. An unsafe URL or a value that is not a colour is dropped rather
+ * than stored, so nothing the importer keeps can be drawn as something else.
+ */
+export function importedAvatarPresentation(
+  contact: Readonly<Record<string, unknown>>,
+): ImportedAvatarPresentation | undefined {
+  const color = textValue(contact.default_avatar_color, 7);
+  const digits = color && AVATAR_COLOR.test(color)
+    ? color.slice(1).toLowerCase()
+    : undefined;
+  const presentation: ImportedAvatarPresentation = {
+    ...(digits
+      ? {
+        backgroundColor: `#${
+          digits.length === 3
+            ? [...digits].map((digit) => digit + digit).join("")
+            : digits
+        }`,
+      }
+      : {}),
+    ...providerFor(contact),
+  };
+  return Object.keys(presentation).length > 0 ? presentation : undefined;
+}
+
 export function stageContacts(
   parsed: ParsedMonicaSource,
   nextId: () => string,
@@ -262,7 +346,9 @@ export function stageContacts(
     if (avatarPath && (!attachment || !attachment.present)) missingFiles++;
     const rawSnapshot = redacted(contact);
     if (sourceUuid) rawSnapshot.uuid = sourceUuid;
+    const avatarPresentation = importedAvatarPresentation(contact);
     contacts.push({
+      ...(avatarPresentation ? { avatarPresentation } : {}),
       ...(avatarPath
         ? {
           avatar: {
@@ -398,6 +484,9 @@ export function importedPerson(
 ): ImportedPersonValues {
   return {
     archived: contact.archived,
+    ...(contact.avatarPresentation
+      ? { avatar: contact.avatarPresentation }
+      : {}),
     ...(contact.deletedAt ? { deletedAt: new Date(contact.deletedAt) } : {}),
     ...(contact.description ? { description: contact.description } : {}),
     ...(contact.familyName ? { familyName: contact.familyName } : {}),

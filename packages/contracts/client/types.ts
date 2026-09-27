@@ -478,6 +478,9 @@ export type PeopleDirectoryTag = components["schemas"]["PeopleDirectoryTag"];
 
 export type PeopleDirectoryPerson =
   components["schemas"]["PeopleDirectoryPerson"];
+/** How a person is drawn: a colour, and an image when one backs it. */
+export type PersonAvatar = components["schemas"]["PersonAvatar"];
+export type PersonAvatarChanged = components["schemas"]["PersonAvatarChanged"];
 
 export interface PeopleDirectoryInput {
   readonly cursor?: string;

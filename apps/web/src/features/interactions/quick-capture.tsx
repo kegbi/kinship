@@ -113,6 +113,7 @@ function peoplePage(
       ...page.people,
       ...(page.selected ? [page.selected] : []),
     ].map((person) => ({
+      ...(person.avatar ? { avatar: person.avatar } : {}),
       id: person.id,
       name: displayPersonName(person, order),
     })),
@@ -551,6 +552,7 @@ export function QuickCapture(props: QuickCaptureProps) {
             key={`people-${state.generation}`}
             load={people}
             more={{ data: "participants-more", label: "Load more people" }}
+            showChosen="Chosen participants"
             multiple={!note}
             onChoose={(participants) => edit({ participants })}
             search={{

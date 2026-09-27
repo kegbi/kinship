@@ -106,12 +106,13 @@ duplicate-delivery tests.
 
 ## Slice 5: Files, Gifts, And Debts
 
-Flows: `FILES-001` and `GIFTS-001`.
+Flows: `FILES-001`, `GIFTS-001`, and `PEOPLE-007`.
 
 Deliver object-storage adapters, person documents/photos, gift attachments,
 gifts, debts, storage limits, missing/quarantined object states, and authorized
-downloads. Include the workspace storage settings surface without exposing file
-inventory to ordinary members.
+downloads, including a person's avatar with its initials fallback. Include the
+workspace storage settings surface without exposing file inventory to ordinary
+members.
 
 ## Slice 6: Journal And Governance
 

@@ -16,6 +16,7 @@ import { correlationOf } from "../../../shared-kernel/telemetry.ts";
 import type { PersonLifecycleAction } from "../domain/lifecycle_rules.ts";
 import type {
   ImportantDateAudit,
+  PersonAvatarAudit,
   PersonCreatedAudit,
   PersonLifecycleAudit,
   ProfileFactAudit,
@@ -203,6 +204,40 @@ export function profileFactAuditFrom(
         auditId: command.auditId,
         event: describeProfileFactEvent(command),
         failure: "Profile-fact audit postcondition failed.",
+        transaction: command.transaction,
+      }),
+  };
+}
+
+/**
+ * A person's avatar changed (GAP-045). The payload is empty: the image is the
+ * files module's record, and `files.file-uploaded` already names it.
+ */
+export function describePersonAvatarEvent(
+  command: Parameters<PersonAvatarAudit["record"]>[0],
+): AuditEvent {
+  return {
+    action: `people.avatar-${command.action}`,
+    actorMemberId: command.actor.memberId,
+    occurredAt: command.occurredAt,
+    payload: {},
+    personId: command.personId,
+    subjectId: command.personId,
+    subjectType: "person",
+    visibleOnDashboard: true,
+    workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
+  };
+}
+
+export function personAvatarAuditFrom(
+  recorder: AuditEventRecorder,
+): PersonAvatarAudit {
+  return {
+    record: (command) =>
+      recorder.record({
+        event: describePersonAvatarEvent(command),
+        missing: "Person avatar audit insert failed.",
         transaction: command.transaction,
       }),
   };

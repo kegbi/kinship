@@ -1,9 +1,10 @@
 /**
  * People composition.
  *
- * Only a declared composition root imports this file. Besides the four person
- * use cases it returns the outbound ports other modules know people by — the
- * person boundary relationships, interactions, and planning read through, the
+ * Only a declared composition root imports this file. Besides the person use
+ * cases (identity, dates, lifecycle, profile facts, and the avatar) it
+ * returns the outbound ports other modules know people by — the person
+ * boundary relationships, interactions, and planning read through, the
  * personalization reference counters, and the import and export boundaries.
  *
  * `peopleTransactionRunner` is separate because the transaction it builds is
@@ -22,6 +23,7 @@ import {
   PostgresPeopleTransaction,
 } from "./adapters/postgres/people_repository.ts";
 import { PostgresPeoplePersonalizationReferences } from "./adapters/postgres/personalization_references.ts";
+import { PostgresPersonAvatarRepository } from "./adapters/postgres/person_avatar_repository.ts";
 import { PostgresPersonLifecycleRepository } from "./adapters/postgres/person_lifecycle_repository.ts";
 import { PostgresProfileFactOrganizations } from "./adapters/postgres/profile_fact_organizations.ts";
 import { PostgresProfileFactRepository } from "./adapters/postgres/profile_fact_repository.ts";
@@ -31,10 +33,13 @@ import { PostgresPeopleWorkspaceLifecycleImpact } from "./adapters/postgres/work
 import {
   createImportantDateManagement,
   createPeopleManagement,
+  createPersonAvatarManagement,
   createPersonLifecycle,
   createProfileFactManagement,
   importantDateAuditFrom,
   type ImportantDatePublisher,
+  personAvatarAuditFrom,
+  type PersonAvatarImages,
   personCreatedAuditFrom,
   personLifecycleAuditFrom,
   profileFactAuditFrom,
@@ -58,6 +63,8 @@ export function personBoundary(): PostgresRelationshipPersonBoundary {
 }
 
 export interface PeoplePorts {
+  /** The files module's avatar uploads, which the avatar is stored with. */
+  readonly avatarImages: PersonAvatarImages;
   /** Planning's publisher for the reminders a person's dates imply. */
   readonly importantDatePublisher: ImportantDatePublisher;
   /** The workspace vocabulary a profile fact is validated against. */
@@ -74,6 +81,14 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
     transaction: shared.peopleTransaction,
   });
   return {
+    avatars: createPersonAvatarManagement({
+      actors: shared.actors,
+      audit: personAvatarAuditFrom(shared.audit),
+      clock: shared.clock,
+      images: ports.avatarImages,
+      repository: new PostgresPersonAvatarRepository(),
+      transaction: shared.peopleTransaction,
+    }),
     exportBoundary: new PostgresPeopleExportBoundary(),
     importBoundary: new PostgresPeopleImportBoundary(),
     importantDates: createImportantDateManagement({

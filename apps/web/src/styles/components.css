@@ -24,6 +24,22 @@
 }
 
 .interaction-capture-dialog label,
+/* The chosen participants, each with their avatar (GAP-045). */ .interaction-capture-dialog .capture-chosen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.interaction-capture-dialog .capture-chosen li {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: .85rem;
+}
+
 .interaction-capture-dialog [data-interaction-kind] {
   display: grid;
   gap: var(--space-2);

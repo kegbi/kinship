@@ -1,7 +1,7 @@
 /**
  * The person hero's parts: the person menu, the vital stats, the tag
  * preview, the identity editor, the delete dialog, and the archived banner
- * (GAP-028). Each renders what `PersonHero` hands it and reports every
+ * (GAP-028). The avatar editor (GAP-045) is its own file beside these. Each renders what `PersonHero` hands it and reports every
  * action back; none owns state of its own.
  *
  * They keep the ids, labels, roles, and `data-*` hooks the static shell drew
@@ -44,11 +44,14 @@ export interface PersonMenuProps {
   readonly busy: boolean;
   readonly vcardHref: string;
   readonly editRef: Ref<HTMLButtonElement>;
+  readonly avatarRef: Ref<HTMLButtonElement>;
   readonly deleteRef: Ref<HTMLButtonElement>;
   readonly onToggle: () => void;
   /** Any item chosen: the menu closes before the item acts. */
   readonly onItem: () => void;
   readonly onEdit: () => void;
+  /** Change avatar (GAP-045); it opens the avatar editor. */
+  readonly onAvatar: () => void;
   readonly onArchive: () => void;
   readonly onAuditHistory: () => void;
   readonly onDelete: () => void;
@@ -57,10 +60,12 @@ export interface PersonMenuProps {
 export function PersonMenu(
   {
     archived,
+    avatarRef,
     busy,
     deleteRef,
     editRef,
     onArchive,
+    onAvatar,
     onAuditHistory,
     onDelete,
     onEdit,
@@ -98,6 +103,17 @@ export function PersonMenu(
           variant="outline"
         >
           Edit person
+        </Button>
+        <Button
+          disabled={busy}
+          hidden={archived}
+          id="person-avatar-open"
+          onClick={item(onAvatar)}
+          ref={avatarRef}
+          type="button"
+          variant="outline"
+        >
+          Change avatar
         </Button>
         <a
           className={buttonVariants({ variant: "outline" })}

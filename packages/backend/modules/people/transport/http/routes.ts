@@ -1,11 +1,12 @@
 /**
- * People over HTTP: the six concerns of a person, mounted as one surface.
+ * People over HTTP: the seven concerns of a person, mounted as one surface.
  *
  * This was the widest file in the API — twenty-one routes over five surfaces
  * in fifteen hundred lines — and GAP-021 split it into one file per concern:
  * the directory a person is found in, the page they are read on, the profile
  * facts and important dates that page holds, the identity they are created
- * and renamed with, and the lifecycle that archives and deletes them. What
+ * and renamed with, and the lifecycle that archives and deletes them. The
+ * avatar they are drawn with (GAP-045) joined as the seventh. What
  * more than one concern needs lives in `people/shared.ts`.
  *
  * The mounted order is the registration order, and it is contract: Hono
@@ -97,6 +98,7 @@ import {
   PERSON_NOT_CHANGED,
   PERSON_NOT_DELETED,
 } from "./lifecycle.ts";
+import { createAvatarRoutes } from "./avatar.ts";
 import {
   type PeopleHttpServices,
   PERSON_FORBIDDEN,
@@ -105,6 +107,7 @@ import {
 
 export type { PeopleHttpServices } from "./shared.ts";
 export { PERSON_LIFECYCLE_FAILURES } from "./shared.ts";
+export { AVATAR_FAILURES } from "./avatar.ts";
 export { IMPORTANT_DATE_FAILURES } from "./dates.ts";
 export { PROFILE_FACT_FAILURES } from "./facts.ts";
 export { possibleDuplicate } from "./identity.ts";
@@ -181,5 +184,6 @@ export function createPeopleRoutes(
   routes.route("/", createDatesRoutes(services));
   routes.route("/", createIdentityRoutes(services));
   routes.route("/", createLifecycleRoutes(services));
+  routes.route("/", createAvatarRoutes(services));
   return routes;
 }

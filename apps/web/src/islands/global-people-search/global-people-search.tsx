@@ -30,6 +30,7 @@ import {
   getTodayRecentPeople,
   listPeople,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
+import { Avatar } from "@/components/ui/avatar.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Command, CommandItem, CommandList } from "@/components/ui/command.tsx";
 import {
@@ -111,6 +112,9 @@ async function recentAnswer(
         return identity.status === "ready"
           ? {
             archived: identity.data!.status === "archived",
+            ...(identity.data!.person.avatar
+              ? { avatar: identity.data!.person.avatar }
+              : {}),
             id: person.id,
             name: displayPersonName(identity.data!.person, nameOrder),
           }
@@ -178,6 +182,7 @@ function openQuickCapture(): () => void {
   return () => handoff.disconnect();
 }
 
+/** The glyph an add or command row shows where a person row has an avatar. */
 const AVATAR =
   "grid aspect-square w-10 place-items-center rounded-full bg-(--positive) text-[.75rem] font-bold text-(--ink-inverse)";
 
@@ -196,13 +201,13 @@ function PaletteOption(
       onSelect={() => props.onSelect(row)}
       value={row.key}
     >
-      <span aria-hidden="true" className={AVATAR}>
-        {row.kind === "person"
-          ? initials(row.label)
-          : row.kind === "add"
-          ? "+"
-          : ">"}
-      </span>
+      {row.kind === "person"
+        ? <Avatar avatar={row.avatar} initials={initials(row.label)} />
+        : (
+          <span aria-hidden="true" className={AVATAR}>
+            {row.kind === "add" ? "+" : ">"}
+          </span>
+        )}
       {row.kind === "person"
         ? (
           <span className="grid min-w-0 wrap-anywhere">

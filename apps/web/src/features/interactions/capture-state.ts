@@ -23,6 +23,8 @@ export type CaptureKind = "activity" | "note";
 
 /** One option a selector offers: a person, an activity type, an emotion. */
 export interface Choice {
+  /** How a chosen person is drawn (GAP-045); initials when absent. */
+  readonly avatar?: { readonly color: string; readonly imageUrl?: string };
   readonly id: string;
   readonly name: string;
 }
@@ -562,7 +564,14 @@ export function selectorOptions(
   page: readonly Choice[],
   chosen: readonly Choice[],
 ): readonly Choice[] {
-  const merged = new Map(page.map((entry) => [entry.id, entry.name]));
-  for (const entry of chosen) merged.set(entry.id, entry.name);
-  return [...merged].slice(0, 70).map(([id, name]) => ({ id, name }));
+  const merged = new Map(page.map((entry) => [entry.id, entry]));
+  for (const entry of chosen) {
+    // A chosen entry keeps its avatar when the page it came from had one.
+    merged.set(entry.id, { ...merged.get(entry.id), ...entry });
+  }
+  return [...merged.values()].slice(0, 70).map((entry) => ({
+    ...(entry.avatar ? { avatar: entry.avatar } : {}),
+    id: entry.id,
+    name: entry.name,
+  }));
 }

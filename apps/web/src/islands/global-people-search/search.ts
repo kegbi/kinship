@@ -9,6 +9,7 @@
 
 import type {
   PeopleDirectoryPerson,
+  PersonAvatar,
   SessionContext,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
 import {
@@ -27,6 +28,8 @@ export interface PaletteCommand {
 
 export interface SearchPerson {
   readonly archived: boolean;
+  /** How the row draws the person (GAP-045); initials when absent. */
+  readonly avatar?: PersonAvatar | undefined;
   readonly formalNames?: readonly string[];
   readonly id: string;
   readonly name: string;
@@ -37,6 +40,7 @@ export interface SearchPerson {
 export type PaletteRow =
   | {
     readonly archived: boolean;
+    readonly avatar?: PersonAvatar | undefined;
     readonly key: string;
     readonly kind: "person";
     readonly label: string;
@@ -137,14 +141,8 @@ export function commandAnswer(
   };
 }
 
-/** The initials a person's avatar shows. */
-export function initials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "?";
-  return `${words[0]![0] ?? ""}${
-    words.length > 1 ? words.at(-1)?.[0] ?? "" : ""
-  }`.toLocaleUpperCase();
-}
+/** The initials a person's avatar shows, from the name the row reads. */
+export { nameInitials as initials } from "../../lib/person-name.ts";
 
 /** A directory answer's person, named in the member's order. */
 export function directorySearchPerson(
@@ -153,6 +151,7 @@ export function directorySearchPerson(
 ): SearchPerson {
   return {
     archived: person.lifecycle === "archived",
+    ...(person.avatar ? { avatar: person.avatar } : {}),
     formalNames: [
       displayPersonName({ ...person, nickname: "" }, "given_family_nickname"),
       displayPersonName({ ...person, nickname: "" }, "family_given_nickname"),
@@ -198,6 +197,7 @@ export function peopleAnswer(
 ): PaletteAnswer {
   const rows: PaletteRow[] = people.map((person) => ({
     archived: person.archived,
+    ...(person.avatar ? { avatar: person.avatar } : {}),
     key: `person:${person.id}`,
     kind: "person",
     label: person.name,

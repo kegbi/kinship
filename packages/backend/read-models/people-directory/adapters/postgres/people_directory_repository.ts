@@ -15,7 +15,13 @@ import type {
   PeopleTagOptionsRepository,
 } from "../../application/list_tag_options.ts";
 
-interface PersonRow {
+/** The avatar columns both directory reads select. */
+interface AvatarColumns {
+  readonly avatar_background_color: string | null;
+  readonly avatar_file_id: string | null;
+}
+
+interface PersonRow extends AvatarColumns {
   readonly family_name: string | null;
   readonly given_name: string;
   readonly id: string;
@@ -33,6 +39,34 @@ interface TagOptionRow {
   readonly id: string;
   readonly name: string;
   readonly sort_primary: string;
+}
+
+/**
+ * The person's avatar (GAP-045): the stored colour, and the image file only
+ * while it is available to be drawn, so a quarantined, missing, or removed
+ * image is never offered.
+ */
+function avatarJoin(workspaceId: string) {
+  return sql`
+    left join crm.person_avatars avatar on avatar.person_id = person.id
+    left join crm.files avatar_file on avatar_file.id = avatar.file_id
+      and avatar_file.workspace_id = ${workspaceId}::uuid
+      and avatar_file.status = 'available'
+      and avatar_file.deleted_at is null
+  `;
+}
+
+const avatarColumns = sql`
+  avatar.background_color as avatar_background_color,
+  case when avatar.source = 'file' then avatar_file.id::text end
+    as avatar_file_id
+`;
+
+function avatar(row: AvatarColumns) {
+  return pickDefined({
+    backgroundColor: row.avatar_background_color,
+    fileId: row.avatar_file_id,
+  });
 }
 
 function filters(
@@ -125,19 +159,22 @@ export class PostgresPeopleDirectoryRepository
       NonNullable<PeopleDirectoryRepository["findSelected"]>
     >[0],
   ): Promise<PeopleDirectoryPersonRecord | undefined> {
-    const selected = await sql<{
-      readonly family_name: string | null;
-      readonly given_name: string;
-      readonly id: string;
-      readonly is_partial: boolean;
-      readonly is_starred: boolean;
-      readonly middle_name: string | null;
-      readonly nickname: string | null;
-    }>`
+    const selected = await sql<
+      AvatarColumns & {
+        readonly family_name: string | null;
+        readonly given_name: string;
+        readonly id: string;
+        readonly is_partial: boolean;
+        readonly is_starred: boolean;
+        readonly middle_name: string | null;
+        readonly nickname: string | null;
+      }
+    >`
       select person.id::text, person.given_name, person.middle_name,
         person.family_name, person.nickname, person.is_partial,
-        person.is_starred
+        person.is_starred, ${avatarColumns}
       from crm.people person
+      ${avatarJoin(command.workspaceId)}
       where person.id = ${command.personId}::uuid
         and person.workspace_id = ${command.workspaceId}::uuid
         and case when ${command.lifecycle} = 'archived'
@@ -150,6 +187,7 @@ export class PostgresPeopleDirectoryRepository
     const row = selected.rows[0];
     if (!row) return undefined;
     return {
+      avatar: avatar(row),
       cursor: {
         id: row.id,
         primary: row.given_name.toLowerCase(),
@@ -209,8 +247,9 @@ export class PostgresPeopleDirectoryRepository
         person.is_starred, ${sort.primary} as sort_primary,
         ${sort.secondary} as sort_secondary,
         coalesce(tag_summary.tag_count, 0)::int as tag_count,
-        coalesce(tag_preview.tags, '[]'::jsonb) as tags
+        coalesce(tag_preview.tags, '[]'::jsonb) as tags, ${avatarColumns}
       from crm.people person
+      ${avatarJoin(command.workspaceId)}
       left join lateral (
         select count(*)::int as tag_count
         from crm.person_tags counted_link
@@ -245,6 +284,7 @@ export class PostgresPeopleDirectoryRepository
     `.execute(this.database);
     return {
       people: people.rows.map((row): PeopleDirectoryPersonRecord => ({
+        avatar: avatar(row),
         cursor: {
           id: row.id,
           primary: row.sort_primary,

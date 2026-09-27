@@ -11,6 +11,15 @@ export interface PeopleImportTransaction {
 
 export interface ImportedPerson {
   readonly archived: boolean;
+  /**
+   * The avatar presentation the source carried (GAP-045): a colour, and a
+   * provider URL with its source. A file avatar is linked separately.
+   */
+  readonly avatar?: {
+    readonly backgroundColor?: string;
+    readonly externalUrl?: string;
+    readonly source?: "default" | "external" | "gravatar";
+  };
   readonly deletedAt?: Date;
   readonly description?: string;
   readonly familyName?: string;

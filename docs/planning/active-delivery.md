@@ -616,6 +616,37 @@ Playwright test carrying its stable flow ID.
       prompt, the late `saved` answer closes the fresh editor. Disable or hide
       the button while `state.editor?.busy`, with a reducer or island test.
 
+- [ ] **REL-056 — Avatar files have gaps in their removal paths.** Found
+      reviewing GAP-045: - The generic
+      `DELETE /people/{personId}/files/{fileId}` removes an avatar-kind file.
+      The avatar row keeps pointing at the soft-deleted file, and only
+      `files.file-removed` is audited. The read side does fall back to initials.
+      - A quarantined avatar has no removal path, because file listings leave
+      out the `avatar` kind. - If the person is archived, or the member revoked,
+      between storing and linking a replacement, the new image's discard fails
+      and leaves an orphaned file. - Unaudited avatar reads are documented only
+      in `file_rules.ts`.
+
+      Fix: refuse the `avatar` kind in the generic remove, give quarantined
+      avatars a removal path, make the discard independent of the person
+      state, and record the read exception in the FILES-001 flow or the
+      architecture docs.
+
+- [ ] **REL-057 — The legal-acceptance spec disturbs concurrent E2E specs.**
+      Found in GAP-045's full local E2E run with three workers:
+      `legal-acceptance.GOVERNANCE-001` publishes an active legal document. At
+      that moment IMPORT-001 answered `legal_acceptance_required` (403), and
+      JOURNAL-001 and AUTH-002 failed too. All of them pass alone. Isolate the
+      spec's legal document from other specs' workspaces, or run it in serial
+      mode, without adding retries or longer timeouts.
+
+- [ ] **REL-058 — The concurrent-leave test covers only whichever order wins.**
+      "AUTH-005 concurrent leave preserves a final active owner"
+      (`tests/integration/personal_lifecycle_postgres_test.ts`) races two leave
+      requests, so `personal_lifecycle.ts#revokeSessions` runs only when one
+      particular member wins. The `lifecycle` coverage set moves between runs
+      (functions 93.8% or 91.7%). Cover both orders deterministically.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.

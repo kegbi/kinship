@@ -7,10 +7,10 @@
  * (GAP-019, GAP-020).
  *
  * The upload does not use the shared body reader. It streams against its own
- * ten megabyte ceiling and refuses as soon as the running total passes it, so
- * a browser that ignores the declared length is stopped by what it actually
- * sent rather than by what it claimed; the composition root exempts this route
- * from the global cap for that reason.
+ * ten megabyte ceiling with the kit's `readBoundedBody` and refuses as soon as
+ * the running total passes it, so a browser that ignores the declared length
+ * is stopped by what it actually sent rather than by what it claimed; the
+ * composition root exempts this route from the global cap for that reason.
  */
 
 import { Hono } from "hono";
@@ -32,6 +32,7 @@ import {
 import { personFileKind } from "../../../../../contracts/schemas/files.ts";
 import { uuid } from "../../../../../contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "../../../../../http-kit/security_policy.ts";
+import { readBoundedBody } from "../../../../../http-kit/body_limit.ts";
 import { fileDownload } from "../../../../../http-kit/downloads.ts";
 import {
   failureResponder,
@@ -162,41 +163,6 @@ export const STORAGE_FAILURES: FailureTable = {
 const failure = failureResponder(FILE_FAILURES);
 const storageFailure = failureResponder(STORAGE_FAILURES);
 
-/**
- * The whole body, or nothing when it is too large.
- *
- * The declared length is refused first so an oversized upload costs nothing,
- * and the running total is checked again per chunk so a missing or lying
- * `Content-Length` cannot get past it.
- */
-async function boundedBytes(request: Request): Promise<Uint8Array | undefined> {
-  const declared = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declared) && declared > PERSON_FILE_MAX_BYTES) {
-    return undefined;
-  }
-  if (!request.body) return new Uint8Array();
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  while (true) {
-    const result = await reader.read();
-    if (result.done) break;
-    size += result.value.byteLength;
-    if (size > PERSON_FILE_MAX_BYTES) {
-      await reader.cancel();
-      return undefined;
-    }
-    chunks.push(result.value);
-  }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes;
-}
-
 /** A filename or title carried in a header, percent-encoded by the browser. */
 function decodedHeader(value: string | undefined): string | undefined {
   if (!value) return undefined;
@@ -251,7 +217,10 @@ export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
       ) return failure(context, "validation-error");
       const actor = await requireActor(context);
       if (actor instanceof Response) return actor;
-      const bytes = await boundedBytes(context.req.raw).catch(() => undefined);
+      const bytes = await readBoundedBody(
+        context.req.raw,
+        PERSON_FILE_MAX_BYTES,
+      ).catch(() => undefined);
       if (!bytes) return failure(context, "storage-limit");
       const result = await services.files.upload(actor, personId.data, {
         bytes,

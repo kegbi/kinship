@@ -1698,7 +1698,7 @@ require a synchronized schema v8 and are called out explicitly.
   - Verify: unit tests for channel selection and idempotent delivery;
     Mailpit-backed integration test; E2E `PLANNING-003`.
 
-- [ ] **GAP-045 — Avatar upload and display.** M-L. Depends: 017, 028. Flow
+- [x] **GAP-045 — Avatar upload and display.** M-L. Depends: 017, 028. Flow
       `PEOPLE-007`.
   - Scope: `files` upload kind `avatar` with size/type limits and scanning hook;
     `people` links via `person_avatars`; API
@@ -1707,6 +1707,32 @@ require a synchronized schema v8 and are called out explicitly.
     quick-capture render the avatar with an initials fallback; import maps
     Monica avatars.
   - Verify: unit, integration (missing-object case), E2E.
+  - Delivered 2026-09-27: flow `PEOPLE-007`.
+    - `files` gains the `avatar` upload kind: the photo allowlist with magic
+      bytes, a 1 MiB limit, the declared media scan, and quarantine. The image
+      is a `person_file_links` row of kind `avatar`, served by the existing file
+      content route with the same authorization and headers. Person file
+      listings leave it out.
+    - `people` owns `person_avatars` through a `PersonAvatarImages` port that
+      the API composition root fills from the `files` facade.
+      `PUT /people/{personId}/avatar` replaces the avatar, storing the new image
+      before discarding the old one. `DELETE` resets to initials. A quarantined
+      upload answers 423. Archived people are read-only. The changes are audited
+      as `people.avatar-updated` and `people.avatar-removed`.
+    - The person-profile and people-directory read models return an avatar
+      descriptor with an image only while the file is `available`, so a missing
+      or quarantined object shows initials. `module-boundaries.yaml` adds
+      `files` to people-directory's sources for that check.
+    - One Base UI `Avatar` primitive renders in the hero (with a "Change avatar"
+      editor), directory rows, palette rows, and Quick capture's chosen
+      participants. Monica import now maps the avatar colour, source, and
+      external URL columns. External URLs are stored and never drawn.
+    - Evidence: the PEOPLE-007 integration suites (missing object,
+      cross-workspace, quarantined, oversized, archived) and the
+      `avatars.PEOPLE-007` spec with PEOPLE-002, PEOPLE-003, INTERACTION-001,
+      IMPORT-001, and JOURNAL-002 on Chromium and WebKit.
+    - Gates: fmt:check, lint, check, check:architecture (14), contracts:check
+      (128 documented, 131 mounted), unit, integration, and build.
 
 - [x] **GAP-046 — Life-event create, edit, delete.** M. Depends: 017, 028. Flow
       `JOURNAL-002`.

@@ -128,7 +128,7 @@ pages:
     access: active-member
     rendering: static-shell-islands
     owner: people
-    flowIds: [PEOPLE-002]
+    flowIds: [PEOPLE-002, PEOPLE-007]
     sections:
       - search
       - saved-filters
@@ -160,6 +160,7 @@ pages:
       - PEOPLE-004
       - PEOPLE-005
       - PEOPLE-006
+      - PEOPLE-007
       - RELATIONSHIP-001
       - INTERACTION-001
       - INTERACTION-002

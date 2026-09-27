@@ -49,3 +49,40 @@ export function requestBodyLimit(
     return await limited(context, next);
   };
 }
+
+/**
+ * The whole body, or nothing when it is past `maxBytes`.
+ *
+ * What a self-bounded route reads its body with (the person-file upload and
+ * the avatar, GAP-045). The declared length is refused first so an oversized
+ * upload costs nothing, and the running total is checked again per chunk so a
+ * missing or lying `Content-Length` cannot get past it.
+ */
+export async function readBoundedBody(
+  request: Request,
+  maxBytes: number,
+): Promise<Uint8Array | undefined> {
+  const declared = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declared) && declared > maxBytes) return undefined;
+  if (!request.body) return new Uint8Array();
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (true) {
+    const result = await reader.read();
+    if (result.done) break;
+    size += result.value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel();
+      return undefined;
+    }
+    chunks.push(result.value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}

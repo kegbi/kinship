@@ -51,7 +51,16 @@ const SECRET_KEYS = new Set([
 
 /** The contact columns this profile understands; the rest are counted. */
 const SUPPORTED_CONTACT_FIELDS = new Set([
+  // The avatar columns `monica_column_mapping_v7.csv` maps into
+  // `person_avatars` (GAP-045); the file itself arrives as an attachment.
+  "avatar_adorable_url",
+  "avatar_default_url",
+  "avatar_external_url",
   "avatar_file_name",
+  "avatar_gravatar_url",
+  "avatar_source",
+  "default_avatar_color",
+  "gravatar_url",
   "deleted_at",
   "description",
   "first_name",

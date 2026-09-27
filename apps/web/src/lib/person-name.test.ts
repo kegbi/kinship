@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { displayPersonName, type PersonNameOrder } from "./person-name.ts";
+import {
+  displayPersonName,
+  nameInitials,
+  type PersonNameOrder,
+} from "./person-name.ts";
 
 describe("APR-008 explicit person-name preferences", () => {
   it.each(
@@ -35,4 +39,22 @@ describe("APR-008 explicit person-name preferences", () => {
       expect(displayPersonName(person, order)).toBe(expected);
     }
   });
+});
+
+describe("PEOPLE-007 the initials an avatar shows", () => {
+  it.each([
+    ["Ada Lovelace", "AL"],
+    ["Lovelace Ada Byron", "LB"],
+    ["Ada Byron Lovelace “Enchantress”", "AL"],
+    ["“Enchantress”", "E"],
+    ["prince", "P"],
+    ["  ", "?"],
+    ["Unnamed person", "UP"],
+    ["Élodie d’Arc", "ÉD"],
+  ])(
+    "draws %j as %j, from the name as the member reads it",
+    (name, expected) => {
+      expect(nameInitials(name)).toBe(expected);
+    },
+  );
 });

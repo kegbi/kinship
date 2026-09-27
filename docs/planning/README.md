@@ -54,8 +54,8 @@ flows.
 | Backend modules              | 15 accepted module boundaries with exact table ownership                                                                                                    |
 | Cross-module read models     | 6 accepted, query-only compositions                                                                                                                         |
 | Cataloged pages              | 39                                                                                                                                                          |
-| Cataloged flows              | 31 total: 17 P0, 11 P1, and 3 P2                                                                                                                            |
-| Delivered flows              | 30 of 31; `BILLING-001` alone remains `planned` with empty `testRefs`                                                                                       |
+| Cataloged flows              | 32 total: 17 P0, 12 P1, and 3 P2                                                                                                                            |
+| Delivered flows              | 31 of 32; `BILLING-001` alone remains `planned` with empty `testRefs`                                                                                       |
 | Existing executable code     | Runnable Deno API and worker, Astro web app, gateway, shared contracts, and application test suites                                                         |
 | Current application scaffold | API, worker, web app, contracts, main Compose stack, and application tests are present; CI and hooks remain pending                                         |
 

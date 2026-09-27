@@ -3,7 +3,8 @@
  * them — the breadcrumb, avatar, name, state badges, and description; the
  * person menu and its lifecycle actions (edit, archive, restore, delete); the
  * vital stats, stay-in-touch due state, and tag preview; and the identity
- * section's editor.
+ * section's editor, and the avatar the person is drawn with and its editor
+ * (GAP-045).
  *
  * The page's static hero keeps its layout, so the island renders its root —
  * the identity — in place and every other part through a portal into the
@@ -30,7 +31,7 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import {
   archivePerson,
   deletePerson,
@@ -38,9 +39,12 @@ import {
   getPersonDeletionImpact,
   type PersonDueInformation,
   type PersonLifecycleIdentity,
+  removePersonAvatar,
+  replacePersonAvatar,
   type ResolvedMemberPreferences,
   restorePerson,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
+import { Avatar } from "@/components/ui/avatar.tsx";
 import { badgeVariants, breadcrumbVariants } from "@/components/ui/variants.ts";
 import { displayPersonName } from "../../lib/person-name.ts";
 import { showToast } from "../../features/shell/toasts/toasts.ts";
@@ -54,6 +58,7 @@ import type {
 } from "../../features/person/profile-summary.ts";
 import { SECTION_REQUEST_EVENT } from "../../features/person/sections.ts";
 import { settle, useContractForm, useDocumentEvent } from "../core/index.ts";
+import { AvatarEditor } from "./avatar-editor.tsx";
 import {
   ArchivedBanner,
   DeleteDialog,
@@ -105,6 +110,7 @@ export interface PersonHeroProps {
 }
 
 type FocusTarget =
+  | "avatar-open"
   | "heading"
   | "edit-field"
   | "edit-open"
@@ -131,6 +137,9 @@ export function PersonHero(props: PersonHeroProps) {
   const editForm = useRef<HTMLFormElement>(null);
   const editOpen = useRef<HTMLButtonElement>(null);
   const deleteOpen = useRef<HTMLButtonElement>(null);
+  const avatarOpen = useRef<HTMLButtonElement>(null);
+  const avatarForm = useRef<HTMLFormElement>(null);
+  const avatarInput = useRef<HTMLInputElement>(null);
   const focus = useRef<FocusTarget | undefined>(undefined);
   // The latest state, for work that settles after a later render: the undo
   // toast and every write name the revision current when they run.
@@ -149,6 +158,7 @@ export function PersonHero(props: PersonHeroProps) {
     if (target === "heading") heading.current?.focus();
     else if (target === "edit-open") editOpen.current?.focus();
     else if (target === "delete-open") deleteOpen.current?.focus();
+    else if (target === "avatar-open") avatarOpen.current?.focus();
     else if (target === "confirmation") deletion.setFocus("confirmation");
     else if (target === "edit-field") editor.setFocus("givenName");
   }, [deletion, editor, state]);
@@ -220,6 +230,66 @@ export function PersonHero(props: PersonHeroProps) {
     announceRevision(person.updatedAt);
     focus.current = "heading";
     dispatch({ person, type: "edit-saved" });
+  };
+
+  // The file field takes focus inside the opening click, so a keyboard user
+  // keeps their focus ring (REL-051).
+  const openAvatarEditor = () => {
+    avatarForm.current?.reset();
+    flushSync(() => dispatch({ type: "avatar-opened" }));
+    avatarInput.current?.focus();
+  };
+
+  const cancelAvatarEditor = () => {
+    // The native reset is the explicit discard the unsaved-changes guard
+    // listens for (APR-001).
+    avatarForm.current?.reset();
+    focus.current = "avatar-open";
+    dispatch({ type: "avatar-cancelled" });
+  };
+
+  const changeAvatar = async (
+    removing: boolean,
+    call: () => ReturnType<typeof removePersonAvatar>,
+  ): Promise<void> => {
+    const form = avatarForm.current!;
+    dispatch({ removing, type: "avatar-started" });
+    const answer = await saveWithLockedForm(form, () => settle(call));
+    if (answer.status !== "ready" || !answer.data) {
+      dispatch({
+        detail: answer.problem?.detail ??
+          "The avatar could not be changed right now.",
+        type: "avatar-failed",
+      });
+      return;
+    }
+    form.reset();
+    markFormSaved(form);
+    focus.current = "heading";
+    dispatch({
+      avatar: answer.data.avatar,
+      removed: removing,
+      type: "avatar-changed",
+    });
+  };
+
+  const uploadAvatar = (event: SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (latest.current.avatarBusy) return;
+    const file = avatarInput.current?.files?.[0];
+    if (!file) {
+      dispatch({ detail: "Choose an image to upload.", type: "avatar-failed" });
+      return;
+    }
+    void changeAvatar(
+      false,
+      () => replacePersonAvatar(personId, file, workspaceId),
+    );
+  };
+
+  const removeAvatar = () => {
+    if (latest.current.avatarBusy) return;
+    void changeAvatar(true, () => removePersonAvatar(personId, workspaceId));
   };
 
   const transition = async (action: "archive" | "restore"): Promise<void> => {
@@ -351,13 +421,13 @@ export function PersonHero(props: PersonHeroProps) {
         <span aria-hidden="true">/</span>
         <span aria-current="page" data-person-breadcrumb-name="">{name}</span>
       </nav>
-      <div
-        aria-hidden="true"
+      <Avatar
+        avatar={identity.avatar}
         className="person-profile-avatar"
         id="person-profile-avatar"
-      >
-        {initials(identity)}
-      </div>
+        initials={initials(identity)}
+        size="custom"
+      />
       <div className="person-profile-heading">
         <div className="person-profile-title">
           <h1 id="person-profile-name" ref={heading} tabIndex={-1}>{name}</h1>
@@ -419,10 +489,12 @@ export function PersonHero(props: PersonHeroProps) {
       {createPortal(
         <PersonMenu
           archived={state.archived}
+          avatarRef={avatarOpen}
           busy={busy}
           deleteRef={deleteOpen}
           editRef={editOpen}
           onArchive={() => void transition("archive")}
+          onAvatar={openAvatarEditor}
           onAuditHistory={requestAuditHistory}
           onDelete={openDeletion}
           onEdit={openEditor}
@@ -455,6 +527,16 @@ export function PersonHero(props: PersonHeroProps) {
             onSubmit={(event: SubmitEvent<HTMLFormElement>) =>
               void editor.handleSubmit(saveIdentity)(event)}
             open={state.editing}
+          />
+          <AvatarEditor
+            busy={state.avatarBusy}
+            formRef={avatarForm}
+            inputRef={avatarInput}
+            onCancel={cancelAvatarEditor}
+            onRemove={removeAvatar}
+            onSubmit={uploadAvatar}
+            open={state.avatarEditing && !state.archived}
+            removable={Boolean(identity.avatar?.imageUrl)}
           />
           <DeleteDialog
             confirmable={confirmable}

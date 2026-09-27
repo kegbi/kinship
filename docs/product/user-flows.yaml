@@ -479,6 +479,39 @@ flows:
       testRefs: [tests/e2e/profile-facts.PEOPLE-006.spec.ts],
     }
 
+  - id: PEOPLE-007
+    title: Give a person an avatar, replace it, or return to initials
+    deliveryStatus: delivered
+    priority: P1
+    actor: crm-writer
+    trigger: The member changes the avatar from the person workspace hero.
+    preconditions: [active-membership, person-in-active-workspace]
+    steps:
+      - Choose a JPEG, PNG, or WebP image of 1 MB or less from the hero's avatar editor.
+      - Store it as the files module's avatar upload kind, scanned before it is kept.
+      - Link it as the person's avatar through the people facade and discard the image it replaced.
+      - Draw the same avatar descriptor in the hero, directory rows, people palette rows, and Quick capture's chosen participants.
+      - Serve the image only through the authorized person-file download route.
+      - Remove the avatar to return to the person's initials on their colour.
+    alternateOutcomes: [
+      invalid-type,
+      oversized,
+      quarantined,
+      missing-object,
+      archived-read-only,
+      cross-workspace-concealed,
+    ]
+    result: The person is drawn with their image everywhere they appear, or with their initials when there is none or its bytes are missing.
+    auditEffect: people-avatar-updated-or-removed
+    pageIds: [people.profile, people.index]
+    moduleIds: [people, files, workspaces]
+    permissions: [people.write, files.write]
+    testLayers: [unit, integration, e2e]
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/avatars.PEOPLE-007.spec.ts],
+    }
+
   - id: RELATIONSHIP-001
     title: Create or change a relationship between people
     deliveryStatus: delivered

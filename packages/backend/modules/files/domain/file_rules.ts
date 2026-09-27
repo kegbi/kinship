@@ -27,7 +27,20 @@ import { boundedText } from "../../../shared-kernel/validation.ts";
 
 export const PERSON_FILE_MAX_BYTES = 10 * 1024 * 1024;
 
-export type PersonFileKind = "document" | "photo";
+/**
+ * The largest avatar a person may be given (GAP-045).
+ *
+ * An avatar is drawn at a few dozen pixels on every list a person appears in,
+ * so it has a limit of its own, well inside the gateway's 1.5 MB request
+ * envelope that bounds every `/api/v1/` body.
+ */
+export const AVATAR_MAX_BYTES = 1024 * 1024;
+
+/**
+ * What a stored file is to the person it belongs to. `avatar` is the image a
+ * person is drawn with; it is never one of their listed photos or documents.
+ */
+export type PersonFileKind = "avatar" | "document" | "photo";
 export type PersonFileStatus =
   | "available"
   | "deleted"
@@ -78,15 +91,39 @@ export type PersonFileUploadCheck =
   | { readonly status: "storage-limit" }
   | { readonly status: "validation-error" };
 
+/** The images a photo, and so an avatar, may be. No SVG: it can script. */
+const IMAGE_MEDIA: ReadonlySet<string> = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
 /** The media each kind of file is stored as, and nothing else. */
 const ALLOWED_MEDIA: Readonly<Record<PersonFileKind, ReadonlySet<string>>> = {
+  avatar: IMAGE_MEDIA,
   document: new Set([
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "text/plain",
   ]),
-  photo: new Set(["image/jpeg", "image/png", "image/webp"]),
+  photo: IMAGE_MEDIA,
 };
+
+/** The largest upload each kind of file admits. */
+export function maximumUploadBytes(kind: PersonFileKind): number {
+  return kind === "avatar" ? AVATAR_MAX_BYTES : PERSON_FILE_MAX_BYTES;
+}
+
+/**
+ * Whether opening this kind of file is a read the module records.
+ *
+ * A document or photo is opened on purpose, and who looked is a fact worth
+ * keeping. An avatar is drawn on every row a person appears in, so recording
+ * each of those would bury the reads that mean something.
+ */
+export function recordsReads(kind: PersonFileKind): boolean {
+  return kind !== "avatar";
+}
 
 /** Whether a media type is one this kind of file is stored as. */
 export function isAllowedMedia(
@@ -130,7 +167,7 @@ export async function checksum(bytes: Uint8Array): Promise<string> {
 export function validateUpload(
   input: PersonFileUploadInput,
 ): PersonFileUploadCheck {
-  if (input.bytes.byteLength > PERSON_FILE_MAX_BYTES) {
+  if (input.bytes.byteLength > maximumUploadBytes(input.kind)) {
     return { status: "storage-limit" };
   }
   const filename = boundedText(input.filename, 500);

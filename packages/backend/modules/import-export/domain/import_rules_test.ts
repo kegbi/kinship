@@ -451,3 +451,106 @@ Deno.test("[GAP-020] only an owner or an administrator may import or read one", 
   assertEquals(mayImport("admin"), true, "an administrator may import");
   assertEquals(mayImport("member"), false, "a member may not");
 });
+
+Deno.test("[GAP-045] a contact's Monica avatar columns become its avatar presentation", () => {
+  const [colour, gravatar, adorable, external, fallback, plain] = staged([
+    { first_name: "Ada", id: 1, default_avatar_color: "#B3D5FE" },
+    {
+      first_name: "Grace",
+      id: 2,
+      avatar_source: "gravatar",
+      avatar_gravatar_url: "https://www.gravatar.com/avatar/abc",
+      default_avatar_color: "#abc",
+    },
+    {
+      first_name: "Alan",
+      id: 3,
+      avatar_source: "adorable",
+      avatar_adorable_url: "https://api.adorable.io/avatars/alan",
+    },
+    {
+      first_name: "Edsger",
+      id: 4,
+      avatar_source: "external",
+      avatar_external_url: "https://example.test/edsger.png",
+    },
+    {
+      first_name: "Barbara",
+      id: 5,
+      avatar_source: "gravatar",
+      gravatar_url: "javascript:alert(1)",
+      default_avatar_color: "not a colour",
+    },
+    { first_name: "Linus", id: 6 },
+  ]);
+  assertEquals(colour?.avatarPresentation, { backgroundColor: "#b3d5fe" });
+  assertEquals(gravatar?.avatarPresentation, {
+    backgroundColor: "#aabbcc",
+    externalUrl: "https://www.gravatar.com/avatar/abc",
+    source: "gravatar",
+  });
+  assertEquals(adorable?.avatarPresentation, {
+    externalUrl: "https://api.adorable.io/avatars/alan",
+    source: "external",
+  });
+  assertEquals(external?.avatarPresentation, {
+    externalUrl: "https://example.test/edsger.png",
+    source: "external",
+  });
+  assertEquals(
+    fallback?.avatarPresentation,
+    undefined,
+    "an unsafe URL and an unusable colour are dropped, not stored",
+  );
+  assertEquals(plain?.avatarPresentation, undefined);
+});
+
+Deno.test("[GAP-045] the avatar presentation reaches the committed person", () => {
+  const person = importedPerson({
+    archived: false,
+    avatarPresentation: { backgroundColor: "#b3d5fe", source: "default" },
+    givenName: "Ada",
+    isDeceased: false,
+    isPartial: false,
+    isStarred: false,
+    sourcePrimaryKey: "1",
+    targetPersonId: "fresh",
+  }, "fresh");
+  assertEquals(person.avatar, {
+    backgroundColor: "#b3d5fe",
+    source: "default",
+  });
+});
+
+Deno.test("[GAP-045] every Monica avatar source is read from its own column", () => {
+  const [unparsable, fallback, photo, unknown, oversized] = staged([
+    {
+      first_name: "A",
+      id: 1,
+      avatar_source: "external",
+      avatar_external_url: "not a url at all",
+    },
+    {
+      first_name: "B",
+      id: 2,
+      avatar_source: "default",
+      avatar_default_url: "https://example.test/default.png",
+    },
+    { first_name: "C", id: 3, avatar_source: "photo" },
+    { first_name: "D", id: 4, avatar_source: "mystery" },
+    {
+      first_name: "E",
+      id: 5,
+      avatar_source: "Gravatar",
+      gravatar_url: `https://example.test/${"x".repeat(2100)}`,
+    },
+  ]);
+  assertEquals(unparsable?.avatarPresentation, undefined);
+  assertEquals(fallback?.avatarPresentation, {
+    externalUrl: "https://example.test/default.png",
+    source: "default",
+  });
+  assertEquals(photo?.avatarPresentation, undefined);
+  assertEquals(unknown?.avatarPresentation, undefined);
+  assertEquals(oversized?.avatarPresentation, undefined, "a URL past 2048");
+});

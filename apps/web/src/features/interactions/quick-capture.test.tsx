@@ -338,6 +338,33 @@ describe("INTERACTION-001 Quick capture", () => {
     expect(api.calls()).toContain("GET /api/v1/people?limit=20&search=Ada");
   });
 
+  it("PEOPLE-007 draws each chosen participant with their avatar", async () => {
+    shell();
+    stub({
+      [PEOPLE]: peoplePage([
+        person(personId, "Ada", {
+          avatar: { color: "#1f6f5c" },
+          familyName: "Lovelace",
+        }),
+        grace(),
+      ]),
+    });
+    await mountCapture();
+    await openReady(headerOpener());
+    const strip = () =>
+      element("#interaction-capture-form [data-participants-chosen]");
+    expect(strip().hidden).toBe(true);
+    chooseOptions(participants(), [personId, otherId]);
+    await waitFor(() => expect(strip().hidden).toBe(false));
+    expect(strip().getAttribute("aria-label")).toBe("Chosen participants");
+    const avatars = [
+      ...strip().querySelectorAll<HTMLElement>("[data-slot=avatar]"),
+    ];
+    expect(avatars.map((avatar) => avatar.textContent)).toEqual(["AL", "G"]);
+    expect(avatars[0]!.style.backgroundColor).toBe("#1f6f5c");
+    expect(strip().textContent).toContain("Ada Lovelace");
+  });
+
   it("keeps the opened quick capture form gated until options are ready", async () => {
     shell();
     const people = deferred<Response>();

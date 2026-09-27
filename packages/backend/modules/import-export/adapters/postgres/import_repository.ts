@@ -111,7 +111,14 @@ export class PostgresImportRepository implements ImportRepository {
             'is_starred', ${contact.isStarred}::boolean,
             'is_dead', ${contact.isDeceased}::boolean,
             'is_active', ${!contact.archived}::boolean,
-            'deleted_at', ${contact.deletedAt ?? null}::text
+            'deleted_at', ${contact.deletedAt ?? null}::text,
+            'default_avatar_color',
+            ${contact.avatarPresentation?.backgroundColor ?? null}::text,
+            'avatar_source', ${
+        contact.avatarPresentation?.source ?? null
+      }::text,
+            'avatar_external_url',
+            ${contact.avatarPresentation?.externalUrl ?? null}::text
           ))
         )
       `.execute(database);
@@ -198,6 +205,9 @@ export class PostgresImportRepository implements ImportRepository {
       readonly is_starred: boolean;
       readonly middle_name: string | null;
       readonly nickname: string | null;
+      readonly avatar_color: string | null;
+      readonly avatar_external_url: string | null;
+      readonly avatar_source: "default" | "external" | "gravatar" | null;
       readonly source_primary_key: string;
       readonly source_uuid: string | null;
       readonly target_key: string;
@@ -213,7 +223,10 @@ export class PostgresImportRepository implements ImportRepository {
         coalesce(raw_snapshot->>'is_starred' in ('true', '1'), false) as is_starred,
         coalesce(raw_snapshot->>'is_dead' in ('true', '1'), false) as is_dead,
         coalesce(raw_snapshot->>'is_active' not in ('false', '0'), true) as is_active,
-        (raw_snapshot->>'deleted_at')::timestamptz as deleted_at
+        (raw_snapshot->>'deleted_at')::timestamptz as deleted_at,
+        raw_snapshot->>'default_avatar_color' as avatar_color,
+        raw_snapshot->>'avatar_source' as avatar_source,
+        raw_snapshot->>'avatar_external_url' as avatar_external_url
       from crm.data_import_entities
       where import_id = ${importId}::uuid and source_table = 'contacts'
       order by created_at, id
@@ -240,8 +253,16 @@ export class PostgresImportRepository implements ImportRepository {
         order by prior.completed_at desc, prior.id
         limit 1
       `.execute(database);
+      const avatarPresentation = pickDefined({
+        backgroundColor: contact.avatar_color,
+        externalUrl: contact.avatar_external_url,
+        source: contact.avatar_source,
+      });
       preparedContacts.push({
         archived: !contact.is_active,
+        ...(Object.keys(avatarPresentation).length > 0
+          ? { avatarPresentation }
+          : {}),
         ...(contact.deleted_at
           ? { deletedAt: contact.deleted_at.toISOString() }
           : {}),

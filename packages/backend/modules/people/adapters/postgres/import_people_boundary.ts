@@ -38,6 +38,18 @@ export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
       returning id::text
     `.execute(databaseFromSession(command.transaction));
     if (!result.rows[0]) throw new Error("Imported person context is invalid.");
+    const avatar = command.person.avatar;
+    if (avatar) {
+      await sql`
+        insert into crm.person_avatars (
+          person_id, source, external_url, background_color, updated_at
+        ) values (
+          ${command.person.id}::uuid, ${avatar.source ?? "default"},
+          ${avatar.externalUrl ?? null}, ${avatar.backgroundColor ?? null},
+          ${command.occurredAt}
+        )
+      `.execute(databaseFromSession(command.transaction));
+    }
   }
 
   async exists(
@@ -62,6 +74,8 @@ export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
       from crm.people person
       where person.id = ${command.personId}::uuid
         and person.workspace_id = ${command.actor.workspaceId}::uuid
+      on conflict (person_id) do update set
+        source = 'file', file_id = excluded.file_id, updated_at = now()
       returning person_id::text
     `.execute(databaseFromSession(command.transaction));
     if (!result.rows[0]) throw new Error("Imported avatar context is invalid.");

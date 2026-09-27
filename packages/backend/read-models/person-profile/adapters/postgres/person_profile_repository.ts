@@ -32,6 +32,8 @@ import type {
 
 interface PersonProfileRow {
   readonly archived_at: Date | null;
+  readonly avatar_background_color: string | null;
+  readonly avatar_file_id: string | null;
   readonly description: string | null;
   readonly family_name: string | null;
   readonly gender: string | null;
@@ -122,6 +124,10 @@ function identity(row: PersonProfileRow): PersonProfileIdentity | undefined {
     return undefined;
   }
   return {
+    avatar: pickDefined({
+      backgroundColor: row.avatar_background_color,
+      fileId: row.avatar_file_id,
+    }),
     ...pickDefined({
       description: row.description,
       familyName: row.family_name,
@@ -299,6 +305,9 @@ export class PostgresPersonProfileRepository
         person.family_name, person.nickname, person.description,
         gender.name as gender, person.is_partial, person.is_starred,
         person.is_deceased, person.archived_at,
+        avatar.background_color as avatar_background_color,
+        case when avatar.source = 'file' then avatar_file.id::text end
+          as avatar_file_id,
         ${instantColumn("person.updated_at")} as updated_at,
         coalesce((select self.self_person_id from crm.workspace_members self
           where self.id = ${command.memberId}::uuid) = person.id,
@@ -318,6 +327,11 @@ export class PostgresPersonProfileRepository
       left join crm.gender_options gender
         on gender.id = person.gender_option_id
         and gender.workspace_id = workspace.id
+      left join crm.person_avatars avatar on avatar.person_id = person.id
+      left join crm.files avatar_file on avatar_file.id = avatar.file_id
+        and avatar_file.workspace_id = workspace.id
+        and avatar_file.status = 'available'
+        and avatar_file.deleted_at is null
       left join lateral (
         select ${
       millisecondInstantColumn("max(contacted_at)")
