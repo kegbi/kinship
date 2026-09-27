@@ -35,6 +35,7 @@ import {
   personAvatarAuditFrom,
   personCreatedAuditFrom,
   personLifecycleAuditFrom,
+  personMergeAuditFrom,
   profileFactAuditFrom,
 } from "../../packages/backend/modules/people/public.ts";
 import {
@@ -229,6 +230,19 @@ const WRITERS: ReadonlyArray<readonly [string, Writer]> = [
         actor,
         occurredAt: OCCURRED_AT,
         personId: PERSON,
+        transaction,
+      }),
+  ],
+  [
+    "people merge",
+    (recorder, actor) =>
+      personMergeAuditFrom(recorder).record({
+        actor,
+        discarded: [],
+        duplicateId: SUBJECT,
+        occurredAt: OCCURRED_AT,
+        primaryId: PERSON,
+        tables: {},
         transaction,
       }),
   ],

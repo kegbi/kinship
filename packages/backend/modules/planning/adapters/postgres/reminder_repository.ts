@@ -501,15 +501,7 @@ export class PostgresReminderRepository implements ReminderRepository {
       )
       update crm.stay_in_touch_cadences cadence set
         last_contacted_at = selected.contacted,
-        next_due_at = (
-          (selected.contacted at time zone selected.timezone) +
-          case selected.interval_unit
-            when 'day' then make_interval(days => selected.interval_count)
-            when 'week' then make_interval(days => selected.interval_count * 7)
-            when 'month' then make_interval(months => selected.interval_count)
-            else make_interval(years => selected.interval_count)
-          end
-        ) at time zone selected.timezone,
+        next_due_at = ${CADENCE_NEXT_DUE},
         updated_at = greatest(cadence.updated_at + interval '1 microsecond', selected.contacted)
       from selected where cadence.id = selected.id
     `.execute(databaseFromSession(command.transaction));
@@ -1189,4 +1181,65 @@ export class PostgresInAppReminderEffectStore
       ? { receipt: effect.provider_receipt, status: "confirmed" }
       : { code: "in-app-effect-not-confirmed", status: "transient" };
   }
+}
+
+/**
+ * When a cadence is next due after its last contact, in the member's zone:
+ * the one expression both an interaction and a person merge (GAP-049) move a
+ * cadence forward with. It reads `selected.contacted`, `selected.timezone`,
+ * and the interval of the row it is written for.
+ */
+const CADENCE_NEXT_DUE = sql`(
+          (selected.contacted at time zone selected.timezone) +
+          case selected.interval_unit
+            when 'day' then make_interval(days => selected.interval_count)
+            when 'week' then make_interval(days => selected.interval_count * 7)
+            when 'month' then make_interval(months => selected.interval_count)
+            else make_interval(years => selected.interval_count)
+          end
+        ) at time zone selected.timezone`;
+
+/**
+ * A person merge's cadences (GAP-049): the primary keeps its own interval,
+ * and when the duplicate was contacted more recently the primary takes that
+ * last contact and becomes due again from it, in the acting member's zone,
+ * exactly as an interaction would have moved it.
+ */
+export async function mergeStayInTouchCadences(command: {
+  readonly duplicateId: string;
+  readonly memberId: string;
+  readonly occurredAt: Date;
+  readonly primaryId: string;
+  readonly transaction: { readonly opaque: unknown };
+  readonly workspaceId: string;
+}): Promise<void> {
+  await sql`
+    with context as (
+      select coalesce(
+        (select preference.timezone from crm.member_preferences preference
+          where preference.member_id = ${command.memberId}::uuid),
+        (select setting.default_timezone from crm.workspace_settings setting
+          where setting.workspace_id = ${command.workspaceId}::uuid),
+        'UTC') as timezone
+    ), selected as (
+      select kept.id, kept.interval_count, kept.interval_unit,
+        duplicate.last_contacted_at as contacted, context.timezone
+      from crm.stay_in_touch_cadences kept
+      join crm.stay_in_touch_cadences duplicate
+        on duplicate.person_id = ${command.duplicateId}::uuid
+      cross join context
+      where kept.person_id = ${command.primaryId}::uuid
+        and duplicate.last_contacted_at is not null
+        and (kept.last_contacted_at is null
+          or duplicate.last_contacted_at > kept.last_contacted_at)
+    )
+    update crm.stay_in_touch_cadences cadence set
+      last_contacted_at = selected.contacted,
+      next_due_at = ${CADENCE_NEXT_DUE},
+      updated_at = greatest(
+        ${command.occurredAt}::timestamptz,
+        cadence.updated_at + interval '1 microsecond'
+      )
+    from selected where cadence.id = selected.id
+  `.execute(databaseFromSession(command.transaction));
 }

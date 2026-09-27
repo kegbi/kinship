@@ -40,6 +40,10 @@ import {
     </div>
   </header>
 
+  {/* The duplicate review (`features/people/duplicates/`, GAP-049) is its own island in its
+    own region: empty until it has something to review, and on active people only. */}
+  {!archived && <div class="contents" data-people-duplicates></div>}
+
   {/* The directory island (`features/people/directory/`, GAP-033) renders this region again
     at once, keeping a search typed while it loaded; until then its actions stay disabled. */}
   <div class="contents" data-people-directory>

@@ -644,6 +644,9 @@ DG-06D, the applicable remaining DG-07 product gates, and DG-09 are resolved;
 DG-11 is resolved by synchronized schema v7. Under the current accepted catalog,
 this is the point at which every P0 and P1 flow is assigned for delivery; that
 statement is not a promotion claim until the required evidence passes.
+`PEOPLE-008` (GAP-049) joins it: a person merge is the same kind of atomic,
+every-module data-lifecycle change, and its re-import proof rests on the import
+identity map.
 
 ### Server and data
 

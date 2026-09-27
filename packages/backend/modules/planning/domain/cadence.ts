@@ -108,3 +108,8 @@ export async function cadenceFingerprint(
     value.toString(16).padStart(2, "0")
   ).join("");
 }
+
+/** A cadence's interval as words: "every week", "every 3 months". */
+export function cadenceIntervalText(count: number, unit: CadenceUnit): string {
+  return count === 1 ? `every ${unit}` : `every ${count} ${unit}s`;
+}

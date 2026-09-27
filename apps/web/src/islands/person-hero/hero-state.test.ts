@@ -6,7 +6,9 @@ import {
   type HeroState,
   initialHeroState,
   initials,
+  mergeAnchor,
 } from "./hero-state.ts";
+import { ids, personIdentity } from "../../testing/fixtures.ts";
 
 const identity = {
   familyName: "Lovelace",
@@ -307,6 +309,46 @@ describe("GAP-047 the wider identity", () => {
     expect(state.identity).toMatchObject({
       gender: "Woman",
       genderOptionId: optionId,
+    });
+  });
+});
+
+describe("PEOPLE-008 the merge dialog's anchor", () => {
+  it("names the person with the names they have, and no revision", () => {
+    const bare = initialHeroState(personIdentity(), false);
+    expect(mergeAnchor(bare, ids.person)).toEqual({
+      givenName: "Ada",
+      id: ids.person,
+    });
+    const full = initialHeroState(
+      personIdentity({
+        avatar: { color: "#b3d5fe" },
+        familyName: "Lovelace",
+        middleName: "Augusta",
+        nickname: "Countess",
+      }),
+      false,
+    );
+    expect(mergeAnchor(full, ids.person)).toEqual({
+      avatar: { color: "#b3d5fe" },
+      familyName: "Lovelace",
+      givenName: "Ada",
+      id: ids.person,
+      middleName: "Augusta",
+      nickname: "Countess",
+    });
+  });
+
+  it("opens the merge from the menu and cancels back to it", () => {
+    const opened = heroReducer(
+      { ...initialHeroState(personIdentity(), false), menuOpen: true },
+      { type: "merge-opened" },
+    );
+    expect(opened).toMatchObject({ menuOpen: false, merging: true });
+    expect(heroReducer(opened, { type: "merge-cancelled" })).toMatchObject({
+      menuOpen: true,
+      merging: false,
+      status: "Merge cancelled. No changes were made.",
     });
   });
 });

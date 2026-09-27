@@ -4,6 +4,7 @@ import {
   CADENCE_REQUEST_NAMESPACE,
   cadenceDueAt,
   cadenceFingerprint,
+  cadenceIntervalText,
   type CreateCadenceInput,
   validateCreateCadence,
 } from "./cadence.ts";
@@ -126,4 +127,12 @@ Deno.test("[GAP-016] the request fingerprint is stable and names what was asked 
       "a different cadence must fingerprint differently",
     );
   }
+});
+
+Deno.test("[PEOPLE-008] a cadence interval reads as words", () => {
+  assertEquals(cadenceIntervalText(1, "day"), "every day");
+  assertEquals(cadenceIntervalText(7, "day"), "every 7 days");
+  assertEquals(cadenceIntervalText(1, "week"), "every week");
+  assertEquals(cadenceIntervalText(3, "month"), "every 3 months");
+  assertEquals(cadenceIntervalText(2, "year"), "every 2 years");
 });

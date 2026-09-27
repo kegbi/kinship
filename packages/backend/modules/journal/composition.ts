@@ -3,6 +3,7 @@
  */
 
 import type { SharedComposition } from "../../platform/composition.ts";
+import { PostgresJournalPersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
 import { PostgresJournalPersonalizationReferences } from "./adapters/postgres/personalization_references.ts";
 import { PostgresJournalRepository } from "./adapters/postgres/journal_repository.ts";
 import { PostgresLifeEventRepository } from "./adapters/postgres/life_event_repository.ts";
@@ -52,4 +53,13 @@ export function composeJournal(
     lifecycleImpact: PostgresJournalWorkspaceLifecycleImpact,
     personalizationReferences: PostgresJournalPersonalizationReferences,
   };
+}
+
+/**
+ * This module's rows in a person merge (life events, GAP-049). It depends on
+ * nothing the module composes, so the root registers it before composing
+ * people.
+ */
+export function journalPersonMergeParticipant(): PostgresJournalPersonMergeParticipant {
+  return new PostgresJournalPersonMergeParticipant();
 }

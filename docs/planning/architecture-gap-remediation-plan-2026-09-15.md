@@ -1874,7 +1874,7 @@ require a synchronized schema v8 and are called out explicitly.
       (129 documented, 132 mounted), unit, integration, coverage (search
       100/100/100), and build.
 
-- [ ] **GAP-049 — Person merge and duplicate review.** L. Depends: 015, 017.
+- [x] **GAP-049 — Person merge and duplicate review.** L. Depends: 015, 017.
       Flow `PEOPLE-008`.
   - Scope: `people` `mergePeople(primary, duplicate)` coordinating relinks
     through owning-module facades (relationships, interactions, planning, gifts,
@@ -1882,6 +1882,44 @@ require a synchronized schema v8 and are called out explicitly.
     review list on the directory; audit trail; undo not supported (state
     explicitly).
   - Verify: unit, integration proving every table relinks, E2E.
+  - Delivered 2026-09-27: flow `PEOPLE-008`. No schema change.
+    - `people` coordinates the merge through a `PersonMergeParticipant` port.
+      Each owning module relinks only its own tables: relationships,
+      interactions, journal, planning, gifts, files, integrations, governance,
+      workspaces, and import-export. The API composition root orders them.
+    - Everything runs in one people transaction:
+      - lock both people in id order, then inspect and relink;
+      - fill the primary's empty fields and soft-delete the duplicate;
+      - check that every counted reference was relinked or removed;
+      - audit `people.person-merged` with per-table counts and a snapshot of
+        every discarded fact. Any failure rolls it all back.
+    - An integration guard reads every foreign key to `crm.people` and fails on
+      any key no participant handles. At delivery there were 26 foreign keys
+      plus the import identity map's text key.
+    - Unique-constraint conflicts are handled per table. Single-valued dates,
+      the first meeting, a non-default avatar, and the stay-in-touch interval
+      keep the primary's value. The cadence takes the later last contact and
+      recomputes its next due date.
+    - `GET /people/{primaryId}/merge-preview` lists every conflicting value,
+      with both the kept and the discarded value. It returns a conflicts digest
+      and both revisions.
+    - `POST /people/{primaryId}/merge` requires `confirmed: true`, both
+      revisions, and that digest. The server recomputes the digest under lock
+      and answers 409 when anything changed after the preview.
+    - Merging two people who both represent workspace members is refused, and
+      the merge cannot be undone.
+    - `GET /people/duplicates` pairs people with the same normalized name or a
+      shared email or phone. It ignores values shared by more than five people.
+      The directory shows a duplicates review, and the person menu gains "Merge
+      with another person…". `people.merge` is granted like delete.
+    - Evidence: the merge integration suites (every table relinked, the
+      foreign-key guard, rollback, cross-workspace, permission, archived, stale,
+      conflicts changed, both members, and re-import idempotency after a merge);
+      `people-merge.PEOPLE-008` with PEOPLE-002, PEOPLE-003, PEOPLE-004,
+      IMPORT-001, and RELATIONSHIP-001 on Chromium and WebKit. Review took three
+      rounds, and the product owner allowed the third.
+    - Gates: fmt:check, lint, check, check:architecture (14), contracts:check,
+      unit, integration, coverage (people-domain 100/100/100), and build.
 
 - [ ] **GAP-050 — Import vCard and CSV; export CSV and all-people vCard.** L.
       Depends: 018. Flows `IMPORT-002`, `EXPORT-002`.

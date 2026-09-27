@@ -158,12 +158,30 @@ pages:
     access: active-member
     rendering: static-shell-islands
     owner: people
-    flowIds: [PEOPLE-002, PEOPLE-007]
+    flowIds: [PEOPLE-002, PEOPLE-007, PEOPLE-008]
     sections:
       - search
       - saved-filters
       - tags
       - active-people
+      - duplicates
+    # GAP-049: the duplicate review. It stays out of the page while `loading`,
+    # when there is nothing to review (`empty`), and when it could not be read
+    # (`unavailable`); `ready` shows the folded summary, `reviewing` the pairs,
+    # `merging` a pair's confirmation, and `stale` a merge refused because one
+    # of the pair, or what it would discard, changed; the confirmation then
+    # reads the preview again. A name or an email or phone value shared by
+    # more than 5 people pairs nobody, so such a crowd never floods the
+    # review; any of them can still be merged from their person menu.
+    sectionStates:
+      duplicates:
+        - loading
+        - empty
+        - unavailable
+        - ready
+        - reviewing
+        - merging
+        - stale
 
   - id: people.archived
     path: /app/people/archived
@@ -191,6 +209,7 @@ pages:
       - PEOPLE-005
       - PEOPLE-006
       - PEOPLE-007
+      - PEOPLE-008
       - RELATIONSHIP-001
       - INTERACTION-001
       - INTERACTION-002
@@ -238,6 +257,7 @@ pages:
       - export-vcard
       - archive
       - restore
+      - merge
       - delete
     # JOURNAL-002: the life-events section's own states beyond the page's
     # authenticated defaults. `read-only` is an archived person's list without

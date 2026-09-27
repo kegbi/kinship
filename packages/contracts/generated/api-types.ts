@@ -448,6 +448,22 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/people/duplicates": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get: operations["listPeopleDuplicates"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/people/tag-options": {
         readonly parameters: {
             readonly query?: never;
@@ -906,6 +922,38 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         readonly post: operations["recordPersonView"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/people/{primaryId}/merge": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post: operations["mergePeople"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/people/{primaryId}/merge-preview": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get: operations["previewPeopleMerge"];
+        readonly put?: never;
+        readonly post?: never;
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -2838,6 +2886,27 @@ export interface components {
             readonly id: string;
             readonly name: string;
         };
+        readonly PeopleDuplicatePair: {
+            readonly people: readonly components["schemas"]["PeopleDuplicatePerson"][];
+            readonly reasons: readonly ("email" | "name" | "phone")[];
+        };
+        readonly PeopleDuplicatePerson: {
+            readonly avatar?: components["schemas"]["PersonAvatar"];
+            readonly familyName?: string;
+            readonly givenName: string;
+            /** Format: uuid */
+            readonly id: string;
+            readonly middleName?: string;
+            readonly nickname?: string;
+            /** Format: date-time */
+            readonly updatedAt: string;
+        };
+        readonly PeopleDuplicates: {
+            readonly pairs: readonly components["schemas"]["PeopleDuplicatePair"][];
+            /** @constant */
+            readonly status: "ready";
+            readonly truncated: boolean;
+        };
         readonly PeopleTagOptionsPage: {
             /** @constant */
             readonly status: "ready";
@@ -3042,6 +3111,41 @@ export interface components {
             readonly nickname?: string;
             /** Format: date-time */
             readonly updatedAt: string;
+        };
+        readonly PersonMergeConflict: {
+            readonly discarded: string;
+            /** @enum {string} */
+            readonly fact: "avatar" | "birthday" | "deceased" | "first-meeting" | "first_met" | "stay-in-touch";
+            readonly kept: string;
+        };
+        readonly PersonMergeInput: {
+            /** @constant */
+            readonly confirmed: true;
+            readonly conflictsDigest: string;
+            /** Format: uuid */
+            readonly duplicateId: string;
+            /** Format: date-time */
+            readonly duplicateRevision: string;
+            /** Format: date-time */
+            readonly primaryRevision: string;
+        };
+        readonly PersonMergePreview: {
+            readonly conflicts: readonly components["schemas"]["PersonMergeConflict"][];
+            readonly conflictsDigest: string;
+            readonly duplicate: components["schemas"]["PersonLifecycleIdentity"];
+            readonly moves: number;
+            readonly primary: components["schemas"]["PersonLifecycleIdentity"];
+            /** @constant */
+            readonly status: "ready";
+        };
+        readonly PersonMerged: {
+            /** Format: uuid */
+            readonly duplicateId: string;
+            readonly moved: number;
+            readonly next: string;
+            readonly person: components["schemas"]["PersonLifecycleIdentity"];
+            /** @constant */
+            readonly status: "merged";
         };
         readonly PersonPrimaryContactMethod: {
             readonly href?: string;
@@ -6266,6 +6370,56 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly listPeopleDuplicates: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Bounded pairs of active people in the workspace who share a full name, an email address, or a phone number */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PeopleDuplicates"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -9727,6 +9881,172 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly mergePeople: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly primaryId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["PersonMergeInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Every record of the duplicate now belongs to the primary and the duplicate is deleted; a merge cannot be undone */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PersonMerged"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly previewPeopleMerge: {
+        readonly parameters: {
+            readonly query: {
+                readonly duplicateId: string;
+            };
+            readonly header?: {
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly primaryId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description What merging the duplicate into the primary would keep, discard, and move, from the same decision the merge takes */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PersonMergePreview"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

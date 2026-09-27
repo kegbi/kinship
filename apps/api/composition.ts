@@ -39,6 +39,7 @@ import {
 import {
   composeFiles,
   composeObjectStorage,
+  filePersonMergeParticipant,
 } from "../../packages/backend/modules/files/composition.ts";
 import type {
   ObjectStorage,
@@ -48,9 +49,11 @@ import type {
 import {
   composeGifts,
   giftAttachmentTarget,
+  giftPersonMergeParticipant,
 } from "../../packages/backend/modules/gifts/composition.ts";
 import type { GiftManagement } from "../../packages/backend/modules/gifts/public.ts";
 import {
+  auditPersonMergeParticipant,
   composeGovernance,
   governanceAuditRecorder,
 } from "../../packages/backend/modules/governance/composition.ts";
@@ -60,7 +63,10 @@ import {
   decodeMfaEncryptionKeyset,
 } from "../../packages/backend/modules/identity/composition.ts";
 import type { MfaEncryptionKeyset } from "../../packages/backend/modules/identity/public.ts";
-import { composeImportExport } from "../../packages/backend/modules/import-export/composition.ts";
+import {
+  composeImportExport,
+  importPersonMergeParticipant,
+} from "../../packages/backend/modules/import-export/composition.ts";
 import type {
   ExportManagement,
   ImportManagement,
@@ -68,6 +74,7 @@ import type {
 import {
   composeDavSync,
   composeIntegrations,
+  davPersonMergeParticipant,
   type DavPorts,
   decodeDavEncryptionKeyset,
 } from "../../packages/backend/modules/integrations/composition.ts";
@@ -78,13 +85,17 @@ import type {
 } from "../../packages/backend/modules/integrations/public.ts";
 import {
   composeInteractions,
+  interactionPersonMergeParticipant,
   journalActivityBoundary,
 } from "../../packages/backend/modules/interactions/composition.ts";
 import type {
   CommunicationManagement,
   InteractionManagement,
 } from "../../packages/backend/modules/interactions/public.ts";
-import { composeJournal } from "../../packages/backend/modules/journal/composition.ts";
+import {
+  composeJournal,
+  journalPersonMergeParticipant,
+} from "../../packages/backend/modules/journal/composition.ts";
 import type {
   JournalManagement,
   LifeEventManagement,
@@ -98,16 +109,22 @@ import {
 import type {
   ImportantDateManagement,
   PersonAvatarImages,
+  PersonMerge,
+  PersonMergeParticipant,
 } from "../../packages/backend/modules/people/public.ts";
 import {
   composePlanning,
   personDateReminderPublisher,
+  planningPersonMergeParticipant,
 } from "../../packages/backend/modules/planning/composition.ts";
 import type {
   ReminderManagement,
   TaskManagement,
 } from "../../packages/backend/modules/planning/public.ts";
-import { composeRelationships } from "../../packages/backend/modules/relationships/composition.ts";
+import {
+  composeRelationships,
+  relationshipPersonMergeParticipant,
+} from "../../packages/backend/modules/relationships/composition.ts";
 import type { RelationshipManagement } from "../../packages/backend/modules/relationships/public.ts";
 import {
   activeWorkspaceResolver,
@@ -115,6 +132,7 @@ import {
   composeWorkspaceBoundaries,
   composeWorkspaces,
   passwordResetMail,
+  selfPersonMergeParticipant,
   workspaceActors,
   workspaceTransactionRunner,
 } from "../../packages/backend/modules/workspaces/composition.ts";
@@ -134,6 +152,7 @@ import type { JournalTimeline } from "../../packages/backend/read-models/journal
 import { composePeopleDirectory } from "../../packages/backend/read-models/people-directory/composition.ts";
 import type {
   PeopleDirectory,
+  PeopleDuplicates,
   PeopleTagOptions,
 } from "../../packages/backend/read-models/people-directory/public.ts";
 import { composePersonProfile } from "../../packages/backend/read-models/person-profile/composition.ts";
@@ -214,6 +233,8 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly activityReport?: ActivityReport;
   readonly auditHistory?: AuditHistory;
   readonly directory?: PeopleDirectory;
+  readonly duplicates?: PeopleDuplicates;
+  readonly merge?: Pick<PersonMerge, "merge" | "preview">;
   readonly files?: PersonFileManagement;
   readonly storageSettings?: StorageSettings;
   readonly gifts?: GiftManagement;
@@ -516,12 +537,14 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
           ...(services.avatars ? { avatars: services.avatars } : {}),
           browserSecurity: services.browserSecurity,
           directory: services.directory,
+          ...(services.duplicates ? { duplicates: services.duplicates } : {}),
           ...(services.importantDates
             ? { importantDates: services.importantDates }
             : {}),
           ...(services.profileFacts
             ? { profileFacts: services.profileFacts }
             : {}),
+          ...(services.merge ? { merge: services.merge } : {}),
           people: services.people,
           profile: services.profile,
           protectedSessions: services.protectedSessions,
@@ -714,6 +737,31 @@ function avatarImages(files: PersonFileManagement): PersonAvatarImages {
   };
 }
 
+/**
+ * The person-merge participants (GAP-049), in the order a merge relinks them.
+ *
+ * People depends on none of these modules, so each hands the root the one
+ * participant that rewrites its own rows and the root registers them here,
+ * the way the workspace-cascade impact map is assembled. Planning runs before
+ * people's own tables so the reminders a dropped date drives are already the
+ * primary's when planning retires them. `person_merge_postgres_test.ts`
+ * compares what these name with every foreign key to `crm.people`.
+ */
+export function personMergeParticipants(): readonly PersonMergeParticipant[] {
+  return [
+    relationshipPersonMergeParticipant(),
+    interactionPersonMergeParticipant(),
+    journalPersonMergeParticipant(),
+    planningPersonMergeParticipant(),
+    giftPersonMergeParticipant(),
+    filePersonMergeParticipant(),
+    davPersonMergeParticipant(),
+    auditPersonMergeParticipant(),
+    selfPersonMergeParticipant(),
+    importPersonMergeParticipant(),
+  ];
+}
+
 /** The DAV bridge into planning, on the same borrowed-use-case terms. */
 function davTasks(
   tasks: ReturnType<typeof composePlanning>["tasks"],
@@ -835,6 +883,7 @@ export function createConfiguredApiApp(
       shared,
       configuration.reminderDelivery,
     ),
+    mergeParticipants: personMergeParticipants(),
     profileFactWorkspace: configuration.profileFacts,
   });
   const planning = composePlanning(shared, {
@@ -940,6 +989,7 @@ export function createConfiguredApiApp(
     browserSecurity: policy,
     ...(dav ? { dav } : {}),
     directory: directory.directory,
+    duplicates: directory.duplicates,
     establishVerifiedEntry: (command) =>
       workspaces.protectedSessions.establishVerifiedEntry(command),
     exports: transfer.exports,
@@ -955,6 +1005,7 @@ export function createConfiguredApiApp(
     legal: governance.legal,
     lifeEvents: journal.lifeEvents,
     ...(logger ? { logger } : {}),
+    merge: people.merge,
     memberUiState: workspaces.memberUiState,
     passwordRecovery: identity.passwordRecovery,
     people: { ...people.people, ...people.lifecycle },

@@ -110,3 +110,28 @@ export interface PersonAvatarAudit {
     readonly transaction: PeopleTransaction;
   }): Promise<string>;
 }
+
+/**
+ * Two people became one (GAP-049): the primary kept, the duplicate deleted,
+ * and every reference that moved counted by table.
+ */
+export interface PersonMergeAudit {
+  record(command: PersonMergeAuditCommand): Promise<string>;
+  assertPostcondition(
+    command: PersonMergeAuditCommand & { readonly auditId: string },
+  ): Promise<void>;
+}
+
+export interface PersonMergeAuditCommand {
+  readonly actor: PeopleActor;
+  /** Each single-valued fact of the duplicate's that was not kept, as it was. */
+  readonly discarded: readonly Readonly<Record<string, unknown>>[];
+  readonly duplicateId: string;
+  readonly occurredAt: Date;
+  readonly primaryId: string;
+  /** Reference name to the rows relinked and removed there. */
+  readonly tables: Readonly<
+    Record<string, { readonly relinked: number; readonly removed: number }>
+  >;
+  readonly transaction: PeopleTransaction;
+}

@@ -6,6 +6,7 @@
  */
 
 import type { SharedComposition } from "../../platform/composition.ts";
+import { PostgresImportPersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
 import {
   PostgresExportRepository,
   PostgresExportTransaction,
@@ -61,4 +62,13 @@ export function composeImportExport(
     }),
     lifecycleImpact: PostgresImportExportWorkspaceLifecycleImpact,
   };
+}
+
+/**
+ * This module's rows in a person merge (the import identity map, GAP-049). It depends on
+ * nothing the module composes, so the root registers it before composing
+ * people.
+ */
+export function importPersonMergeParticipant(): PostgresImportPersonMergeParticipant {
+  return new PostgresImportPersonMergeParticipant();
 }

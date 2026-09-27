@@ -1,10 +1,11 @@
 /**
  * The person hero (GAP-028): who this person is and what can be done to
  * them — the breadcrumb, avatar, name, state badges, and description; the
- * person menu and its lifecycle actions (edit, archive, restore, delete); the
- * vital stats, stay-in-touch due state, and tag preview; and the identity
- * section's editor, and the avatar the person is drawn with and its editor
- * (GAP-045).
+ * person menu and its lifecycle actions (edit, archive, restore, merge,
+ * delete); the vital stats, stay-in-touch due state, and tag preview; and the
+ * identity section's editor, and the avatar the person is drawn with and its
+ * editor (GAP-045). Merge (GAP-049) opens the people feature's merge dialog,
+ * which the hero only opens and closes.
  *
  * The page's static hero keeps its layout, so the island renders its root —
  * the identity — in place and every other part through a portal into the
@@ -61,6 +62,7 @@ import {
 } from "../../features/person/profile-summary.ts";
 import { SECTION_REQUEST_EVENT } from "../../features/person/sections.ts";
 import { settle, useContractForm, useDocumentEvent } from "../core/index.ts";
+import { MergeDialog } from "../../features/people/merge/merge-dialog.tsx";
 import { AvatarEditor } from "./avatar-editor.tsx";
 import {
   ArchivedBanner,
@@ -81,6 +83,7 @@ import {
   heroReducer,
   initialHeroState,
   initials,
+  mergeAnchor,
 } from "./hero-state.ts";
 
 /** The slots in the static hero each part renders into. */
@@ -161,6 +164,7 @@ export function PersonHero(props: PersonHeroProps) {
   const editForm = useRef<HTMLFormElement>(null);
   const editOpen = useRef<HTMLButtonElement>(null);
   const deleteOpen = useRef<HTMLButtonElement>(null);
+  const mergeOpen = useRef<HTMLButtonElement>(null);
   const avatarOpen = useRef<HTMLButtonElement>(null);
   const avatarForm = useRef<HTMLFormElement>(null);
   const avatarInput = useRef<HTMLInputElement>(null);
@@ -451,6 +455,10 @@ export function PersonHero(props: PersonHeroProps) {
     navigate(answer.data.next);
   };
 
+  // The dialog opens inside the click, so its search field takes focus while
+  // the click is still being handled (REL-051).
+  const openMerge = () => flushSync(() => dispatch({ type: "merge-opened" }));
+
   const requestAuditHistory = () =>
     document.dispatchEvent(
       new CustomEvent(SECTION_REQUEST_EVENT, {
@@ -552,12 +560,14 @@ export function PersonHero(props: PersonHeroProps) {
           busy={busy}
           deleteRef={deleteOpen}
           editRef={editOpen}
+          mergeRef={mergeOpen}
           onArchive={() => void transition("archive")}
           onAvatar={openAvatarEditor}
           onAuditHistory={requestAuditHistory}
           onDelete={openDeletion}
           onEdit={openEditor}
           onItem={() => dispatch({ type: "menu-closed" })}
+          onMerge={openMerge}
           onToggle={() => dispatch({ type: "menu-toggled" })}
           open={state.menuOpen}
           vcardHref={`/api/v1/people/${
@@ -611,6 +621,19 @@ export function PersonHero(props: PersonHeroProps) {
               void deletion.handleSubmit(confirmDeletion)(event)}
             open={state.deletion.phase !== "closed"}
           />
+          {state.merging && !state.archived
+            ? (
+              <MergeDialog
+                anchor={mergeAnchor(state, personId)}
+                finalFocus={mergeOpen}
+                nameOrder={nameOrder}
+                onCancel={() => dispatch({ type: "merge-cancelled" })}
+                onMerged={(merged) => navigate(merged.next)}
+                roles={{ anchor: "this person", other: "chosen person" }}
+                workspaceId={workspaceId}
+              />
+            )
+            : null}
         </>,
         slots.lifecycle,
       )}

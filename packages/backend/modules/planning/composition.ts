@@ -7,6 +7,7 @@
  */
 
 import type { SharedComposition } from "../../platform/composition.ts";
+import { PostgresPlanningPersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
 import type { Logger } from "../../shared-kernel/telemetry.ts";
 import { InAppReminderDelivery } from "./adapters/in_app/reminder_delivery.ts";
 import { PostgresPersonDateReminderPublisher } from "./adapters/postgres/person_date_reminders.ts";
@@ -120,4 +121,13 @@ export function composeReminderDelivery(
       : {}),
     transaction: shared.peopleTransaction,
   });
+}
+
+/**
+ * This module's rows in a person merge (tasks, reminders, and the stay-in-touch cadence, GAP-049). It depends on
+ * nothing the module composes, so the root registers it before composing
+ * people.
+ */
+export function planningPersonMergeParticipant(): PostgresPlanningPersonMergeParticipant {
+  return new PostgresPlanningPersonMergeParticipant();
 }

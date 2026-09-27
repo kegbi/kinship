@@ -1,7 +1,9 @@
 /**
  * The person hero's parts: the person menu, the vital stats, the tag
  * preview, the identity editor, the delete dialog, and the archived banner
- * (GAP-028). The avatar editor (GAP-045) is its own file beside these. Each renders what `PersonHero` hands it and reports every
+ * (GAP-028). The avatar editor (GAP-045) is its own file beside these, and
+ * the merge dialog (GAP-049) is the people feature's, shared with the
+ * directory's duplicate review. Each renders what `PersonHero` hands it and reports every
  * action back; none owns state of its own.
  *
  * They keep the ids, labels, roles, and `data-*` hooks the static shell drew
@@ -48,6 +50,7 @@ export interface PersonMenuProps {
   readonly editRef: Ref<HTMLButtonElement>;
   readonly avatarRef: Ref<HTMLButtonElement>;
   readonly deleteRef: Ref<HTMLButtonElement>;
+  readonly mergeRef: Ref<HTMLButtonElement>;
   readonly onToggle: () => void;
   /** Any item chosen: the menu closes before the item acts. */
   readonly onItem: () => void;
@@ -57,6 +60,8 @@ export interface PersonMenuProps {
   readonly onArchive: () => void;
   readonly onAuditHistory: () => void;
   readonly onDelete: () => void;
+  /** Merge with another person (GAP-049); it opens the merge dialog. */
+  readonly onMerge: () => void;
 }
 
 export function PersonMenu(
@@ -66,12 +71,14 @@ export function PersonMenu(
     busy,
     deleteRef,
     editRef,
+    mergeRef,
     onArchive,
     onAvatar,
     onAuditHistory,
     onDelete,
     onEdit,
     onItem,
+    onMerge,
     onToggle,
     open,
     vcardHref,
@@ -143,6 +150,17 @@ export function PersonMenu(
           variant="outline"
         >
           Audit history
+        </Button>
+        <Button
+          disabled={busy}
+          hidden={archived}
+          id="person-merge-open"
+          onClick={item(onMerge)}
+          ref={mergeRef}
+          type="button"
+          variant="outline"
+        >
+          Merge with another person…
         </Button>
         <Button
           className="person-menu-danger"

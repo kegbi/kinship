@@ -9,6 +9,7 @@
 
 import { Client as MinioClient } from "minio";
 import type { SharedComposition } from "../../platform/composition.ts";
+import { PostgresFilePersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
 import {
   WebCryptoFileIdentifiers,
   WebCryptoObjectKeys,
@@ -101,4 +102,13 @@ export function composeFiles(shared: SharedComposition, ports: FilePorts) {
       transaction: shared.peopleTransaction,
     }),
   };
+}
+
+/**
+ * This module's rows in a person merge (person file links, GAP-049). It depends on
+ * nothing the module composes, so the root registers it before composing
+ * people.
+ */
+export function filePersonMergeParticipant(): PostgresFilePersonMergeParticipant {
+  return new PostgresFilePersonMergeParticipant();
 }

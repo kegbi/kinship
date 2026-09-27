@@ -25,6 +25,7 @@ import {
 import { PostgresPeoplePersonalizationReferences } from "./adapters/postgres/personalization_references.ts";
 import { PostgresPersonAvatarRepository } from "./adapters/postgres/person_avatar_repository.ts";
 import { PostgresPersonLifecycleRepository } from "./adapters/postgres/person_lifecycle_repository.ts";
+import { PostgresPersonMergeRepository } from "./adapters/postgres/person_merge_repository.ts";
 import { PostgresProfileFactOrganizations } from "./adapters/postgres/profile_fact_organizations.ts";
 import { PostgresProfileFactRepository } from "./adapters/postgres/profile_fact_repository.ts";
 import { PostgresRelationshipPersonBoundary } from "./adapters/postgres/relationship_person_boundary.ts";
@@ -35,6 +36,7 @@ import {
   createPeopleManagement,
   createPersonAvatarManagement,
   createPersonLifecycle,
+  createPersonMerge,
   createProfileFactManagement,
   importantDateAuditFrom,
   type ImportantDatePublisher,
@@ -43,6 +45,8 @@ import {
   personCreatedAuditFrom,
   type PersonGenderOptions,
   personLifecycleAuditFrom,
+  personMergeAuditFrom,
+  type PersonMergeParticipant,
   profileFactAuditFrom,
   type ProfileFactWorkspaceBoundary,
 } from "./public.ts";
@@ -70,6 +74,11 @@ export interface PeoplePorts {
   readonly genderOptions: PersonGenderOptions;
   /** Planning's publisher for the reminders a person's dates imply. */
   readonly importantDatePublisher: ImportantDatePublisher;
+  /**
+   * Every other module's rows that name a person, relinked in this order when
+   * two people are merged (GAP-049).
+   */
+  readonly mergeParticipants: readonly PersonMergeParticipant[];
   /** The workspace vocabulary a profile fact is validated against. */
   readonly profileFactWorkspace: ProfileFactWorkspaceBoundary;
 }
@@ -112,6 +121,15 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
       transaction: shared.peopleTransaction,
     }),
     lifecycleImpact: PostgresPeopleWorkspaceLifecycleImpact,
+    merge: createPersonMerge({
+      actors: shared.actors,
+      audit: personMergeAuditFrom(shared.audit),
+      clock: shared.clock,
+      participants: ports.mergeParticipants,
+      publisher: ports.importantDatePublisher,
+      repository: new PostgresPersonMergeRepository(),
+      transaction: shared.peopleTransaction,
+    }),
     people,
     personalizationReferences: PostgresPeoplePersonalizationReferences,
     profileFacts: createProfileFactManagement({

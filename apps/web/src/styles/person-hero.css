@@ -91,9 +91,11 @@
   padding-inline: 0;
 }
 
+/* Above the sticky section navigation (z-index 3) that follows the hero, so
+   the menu's lower items are never covered by it (GAP-049 made it taller). */
 .person-menu-popover {
   position: absolute;
-  z-index: 3;
+  z-index: 4;
   top: calc(100% + .65rem);
   right: 0;
   display: grid;

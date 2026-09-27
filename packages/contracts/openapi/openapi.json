@@ -3132,6 +3132,70 @@
         }
       }
     },
+    "/api/v1/people/duplicates": {
+      "get": {
+        "operationId": "listPeopleDuplicates",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded pairs of active people in the workspace who share a full name, an email address, or a phone number",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeopleDuplicates"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/people/tag-options": {
       "get": {
         "operationId": "listPeopleTagOptions",
@@ -8387,6 +8451,241 @@
             }
           },
           "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{primaryId}/merge": {
+      "post": {
+        "operationId": "mergePeople",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "primaryId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonMergeInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Every record of the duplicate now belongs to the primary and the duplicate is deleted; a merge cannot be undone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonMerged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{primaryId}/merge-preview": {
+      "get": {
+        "operationId": "previewPeopleMerge",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "primaryId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "duplicateId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What merging the duplicate into the primary would keep, discard, and move, from the same decision the merge takes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonMergePreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
             "description": "RFC 9457 problem details",
             "content": {
               "application/problem+json": {
@@ -17779,6 +18078,95 @@
         ],
         "additionalProperties": false
       },
+      "PeopleDuplicatePair": {
+        "type": "object",
+        "properties": {
+          "people": {
+            "minItems": 2,
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PeopleDuplicatePerson"
+            }
+          },
+          "reasons": {
+            "minItems": 1,
+            "maxItems": 3,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "email",
+                "name",
+                "phone"
+              ]
+            }
+          }
+        },
+        "required": [
+          "people",
+          "reasons"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleDuplicatePerson": {
+        "type": "object",
+        "properties": {
+          "avatar": {
+            "$ref": "#/components/schemas/PersonAvatar"
+          },
+          "familyName": {
+            "type": "string"
+          },
+          "givenName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "middleName": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "givenName",
+          "id",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleDuplicates": {
+        "type": "object",
+        "properties": {
+          "pairs": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PeopleDuplicatePair"
+            }
+          },
+          "status": {
+            "const": "ready"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pairs",
+          "status",
+          "truncated"
+        ],
+        "additionalProperties": false
+      },
       "PeopleTagOptionsPage": {
         "type": "object",
         "properties": {
@@ -18529,6 +18917,135 @@
           "isPartial",
           "lifecycle",
           "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "PersonMergeConflict": {
+        "type": "object",
+        "properties": {
+          "discarded": {
+            "type": "string"
+          },
+          "fact": {
+            "type": "string",
+            "enum": [
+              "avatar",
+              "birthday",
+              "deceased",
+              "first-meeting",
+              "first_met",
+              "stay-in-touch"
+            ]
+          },
+          "kept": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "discarded",
+          "fact",
+          "kept"
+        ],
+        "additionalProperties": false
+      },
+      "PersonMergeInput": {
+        "type": "object",
+        "properties": {
+          "confirmed": {
+            "const": true
+          },
+          "conflictsDigest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "duplicateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "duplicateRevision": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "primaryRevision": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "confirmed",
+          "conflictsDigest",
+          "duplicateId",
+          "duplicateRevision",
+          "primaryRevision"
+        ],
+        "additionalProperties": false
+      },
+      "PersonMergePreview": {
+        "type": "object",
+        "properties": {
+          "conflicts": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonMergeConflict"
+            }
+          },
+          "conflictsDigest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "duplicate": {
+            "$ref": "#/components/schemas/PersonLifecycleIdentity"
+          },
+          "moves": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "primary": {
+            "$ref": "#/components/schemas/PersonLifecycleIdentity"
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "conflicts",
+          "conflictsDigest",
+          "duplicate",
+          "moves",
+          "primary",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "PersonMerged": {
+        "type": "object",
+        "properties": {
+          "duplicateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "moved": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "next": {
+            "type": "string",
+            "pattern": "^\\/app\\/people\\/[0-9a-f-]{36}$"
+          },
+          "person": {
+            "$ref": "#/components/schemas/PersonLifecycleIdentity"
+          },
+          "status": {
+            "const": "merged"
+          }
+        },
+        "required": [
+          "duplicateId",
+          "moved",
+          "next",
+          "person",
+          "status"
         ],
         "additionalProperties": false
       },

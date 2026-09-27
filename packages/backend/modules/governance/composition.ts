@@ -7,6 +7,7 @@
 
 import type { AuditEventRecorder } from "../../shared-kernel/audit_event.ts";
 import type { SharedComposition } from "../../platform/composition.ts";
+import { PostgresAuditPersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
 import { PostgresAuditEventRecorder } from "./adapters/postgres/audit_event_recorder.ts";
 import { PostgresGovernanceWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
 import { PostgresLegalAcceptanceRepository } from "./adapters/postgres/legal_acceptance_repository.ts";
@@ -33,4 +34,13 @@ export function composeGovernance(shared: SharedComposition) {
     }),
     lifecycleImpact: PostgresGovernanceWorkspaceLifecycleImpact,
   };
+}
+
+/**
+ * This module's rows in a person merge (the audit history, GAP-049). It depends on
+ * nothing the module composes, so the root registers it before composing
+ * people.
+ */
+export function auditPersonMergeParticipant(): PostgresAuditPersonMergeParticipant {
+  return new PostgresAuditPersonMergeParticipant();
 }

@@ -533,6 +533,76 @@ flows:
       testRefs: [tests/e2e/avatars.PEOPLE-007.spec.ts],
     }
 
+  # GAP-049: two records of one person become one. The merge runs in one
+  # people transaction through a participant per owning module, relinks every
+  # row that names the duplicate, checks its postconditions, soft-deletes the
+  # duplicate as person delete does, and records `people.person-merged` with
+  # per-table counts and a snapshot of every discarded single-valued fact.
+  # There is no undo, and the confirmation says so. Rules beyond relinking:
+  # - The server refuses a merge that is not confirmed against both people's
+  #   current revisions and the preview's `conflictsDigest`, a SHA-256 over
+  #   each conflict's fact and kept and discarded values; dates, photos, and
+  #   cadences change without moving a revision, so a changed digest answers
+  #   409 `merge_conflicts_changed` and the confirmation reads the preview
+  #   again before the member confirms.
+  # - The duplicate review pairs nobody by a full name, email address, or
+  #   phone number more than 5 people share; any of them can still be merged
+  #   from the person menu.
+  # - Two people who both represent a workspace member are never merged
+  #   (409 `merge_both_members`): one member would lose their own record.
+  # - An exact copy of a contact method is dropped; a conversation thread
+  #   that pointed at the dropped copy keeps its channel type but loses the
+  #   link to the method.
+  # - `audit_events.person_id` is re-pointed to the survivor, which the schema
+  #   already treats as mutable through ON DELETE SET NULL; an event's
+  #   action, payload, actor, and time are never changed.
+  - id: PEOPLE-008
+    title: Review possible duplicates and merge two people into one
+    deliveryStatus: delivered
+    priority: P1
+    actor: crm-writer
+    trigger: The member reviews the directory's possible duplicates, or chooses Merge from a person's menu.
+    preconditions: [active-membership, both-people-active-in-workspace]
+    steps:
+      - Review possible duplicates on the people directory, paired by the same full name, email address, or phone number within the workspace.
+      - Choose the primary record to keep; from a person's menu, first find the other person.
+      - Read the merge preview — how many records move, each single-valued fact labelled "Kept … discarded …", and that a merge cannot be undone — then confirm against both revisions it names.
+      - Relink every record that names the duplicate to the primary through each owning module in one transaction, keeping the primary's single-valued facts, and delete the duplicate.
+      - Land on the primary's person workspace.
+    alternateOutcomes: [
+      archived-refused,
+      cross-workspace-refused,
+      stale-revision,
+      conflicts-changed,
+      self-merge-refused,
+      both-members-refused,
+      conflicting-single-valued-dates,
+      no-undo,
+      reimport-stays-idempotent,
+    ]
+    result: One person holds everything both records held, the duplicate's page is not found, and a re-import of the same export lands on the primary.
+    auditEffect: people-person-merged
+    pageIds: [people.index, people.profile]
+    moduleIds: [
+      people,
+      relationships,
+      interactions,
+      journal,
+      planning,
+      files,
+      gifts,
+      integrations,
+      governance,
+      workspaces,
+      import-export,
+    ]
+    permissions: [people.merge]
+    testLayers: [unit, integration, e2e]
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/people-merge.PEOPLE-008.spec.ts],
+    }
+
   - id: RELATIONSHIP-001
     title: Create or change a relationship between people
     deliveryStatus: delivered

@@ -6,6 +6,7 @@
  */
 
 import type { SharedComposition } from "../../platform/composition.ts";
+import { PostgresInteractionPersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
 import { PostgresCommunicationRepository } from "./adapters/postgres/communication_repository.ts";
 import { PostgresInteractionRepository } from "./adapters/postgres/interaction_repository.ts";
 import { PostgresJournalActivityBoundary } from "./adapters/postgres/journal_activity_boundary.ts";
@@ -67,4 +68,13 @@ export function composeInteractions(
     lifecycleImpact: PostgresInteractionWorkspaceLifecycleImpact,
     personalizationReferences: PostgresInteractionPersonalizationReferences,
   };
+}
+
+/**
+ * This module's rows in a person merge (notes, calls, conversations, and activity participants, GAP-049). It depends on
+ * nothing the module composes, so the root registers it before composing
+ * people.
+ */
+export function interactionPersonMergeParticipant(): PostgresInteractionPersonMergeParticipant {
+  return new PostgresInteractionPersonMergeParticipant();
 }

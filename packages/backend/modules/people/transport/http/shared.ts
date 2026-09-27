@@ -28,6 +28,7 @@ import {
   type PersonIdentity,
   type PersonLifecycle,
   type PersonLifecycleRecord,
+  type PersonMerge,
   type ProfileFactManagement,
 } from "../../public.ts";
 import type { PersonProfile } from "../../../../read-models/person-profile/public.ts";
@@ -35,6 +36,7 @@ import type { TodayRecentPeople } from "../../../../read-models/today/public.ts"
 import type { WorkspaceSearch } from "../../../../read-models/search/public.ts";
 import type {
   PeopleDirectory,
+  PeopleDuplicates,
   PeopleTagOptions,
 } from "../../../../read-models/people-directory/public.ts";
 import type {
@@ -62,7 +64,11 @@ export interface PeopleHttpServices {
   readonly avatars?: PersonAvatarManagement;
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly directory: PeopleDirectory;
+  /** The directory's duplicate review (GAP-049); without it, 503. */
+  readonly duplicates?: PeopleDuplicates;
   readonly importantDates?: ImportantDateManagement;
+  /** Merging two people (GAP-049); without it the merge route answers 503. */
+  readonly merge?: Pick<PersonMerge, "merge" | "preview">;
   readonly people: PeopleManagement & PersonLifecycle;
   readonly profileFacts?: ProfileFactManagement;
   readonly profile: PersonProfile;

@@ -14,6 +14,13 @@ import type {
   PeopleTagOptionRecord,
   PeopleTagOptionsRepository,
 } from "../../application/list_tag_options.ts";
+import type {
+  PeopleDuplicatePairRecord,
+  PeopleDuplicatePerson,
+  PeopleDuplicateReason,
+  PeopleDuplicatesRepository,
+} from "../../application/list_duplicates.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 
 /** The avatar columns both directory reads select. */
 interface AvatarColumns {
@@ -150,8 +157,26 @@ function seek(
   )`;
 }
 
+interface DuplicatePairRow {
+  readonly first_id: string;
+  readonly reasons: readonly PeopleDuplicateReason[];
+  readonly second_id: string;
+}
+
+interface DuplicatePersonRow extends AvatarColumns {
+  readonly family_name: string | null;
+  readonly given_name: string;
+  readonly id: string;
+  readonly middle_name: string | null;
+  readonly nickname: string | null;
+  readonly updated_at: string;
+}
+
 export class PostgresPeopleDirectoryRepository
-  implements PeopleDirectoryRepository, PeopleTagOptionsRepository {
+  implements
+    PeopleDirectoryRepository,
+    PeopleDuplicatesRepository,
+    PeopleTagOptionsRepository {
   constructor(private readonly database: Kysely<ApplicationDatabase>) {}
 
   async findSelected(
@@ -347,5 +372,121 @@ export class PostgresPeopleDirectoryRepository
       ...(selected ? { selected } : {}),
       status: "ready",
     };
+  }
+  /**
+   * The possible duplicates (GAP-049): active people with the same full name
+   * once case and spacing are ignored, or sharing an email address or phone
+   * number. An email is compared lowercased and trimmed, a phone by its digits
+   * alone, and a phone of fewer than seven digits is never a match. A name or
+   * value more than `groupLimit` people share pairs nobody.
+   */
+  async listPairs(
+    command: Parameters<PeopleDuplicatesRepository["listPairs"]>[0],
+  ): Promise<readonly PeopleDuplicatePairRecord[]> {
+    const pairs = await sql<DuplicatePairRow>`
+      with candidate as (
+        select person.id, person.created_at,
+          lower(regexp_replace(btrim(concat_ws(' ',
+            nullif(btrim(person.given_name), ''),
+            nullif(btrim(person.middle_name), ''),
+            nullif(btrim(person.family_name), ''))), '[[:space:]]+', ' ', 'g'))
+            as full_name
+        from crm.people person
+        where person.workspace_id = ${command.workspaceId}::uuid
+          and person.archived_at is null and person.deleted_at is null
+      ), named as (
+        select candidate.*,
+          count(*) over (partition by candidate.full_name) as sharing
+        from candidate
+      ), contact_value as (
+        select method.person_id, method_type.kind,
+          case method_type.kind
+            when 'email' then lower(btrim(method.value))
+            else regexp_replace(method.value, '[^0-9]', '', 'g')
+          end as value
+        from crm.person_contact_methods method
+        join candidate on candidate.id = method.person_id
+        join crm.contact_method_types method_type
+          on method_type.id = method.type_id
+          and method_type.workspace_id = ${command.workspaceId}::uuid
+        where method_type.kind in ('email', 'phone')
+      ), contact as (
+        select contact_value.*
+        from contact_value
+        join (
+          select kind, value from contact_value
+          group by kind, value
+          having count(distinct person_id) <= ${command.groupLimit}
+        ) bounded on bounded.kind = contact_value.kind
+          and bounded.value = contact_value.value
+      ), matched as (
+        select first_person.id as first_id, second_person.id as second_id,
+          'name' as reason
+        from named first_person
+        join named second_person
+          on second_person.full_name = first_person.full_name
+          and second_person.id <> first_person.id
+          and (second_person.created_at, second_person.id)
+            > (first_person.created_at, first_person.id)
+        where first_person.full_name <> ''
+          and first_person.sharing <= ${command.groupLimit}
+        union
+        select first_contact.person_id, second_contact.person_id,
+          first_contact.kind
+        from contact first_contact
+        join contact second_contact
+          on second_contact.kind = first_contact.kind
+          and second_contact.value = first_contact.value
+          and second_contact.person_id <> first_contact.person_id
+        join candidate first_person on first_person.id = first_contact.person_id
+        join candidate second_person
+          on second_person.id = second_contact.person_id
+          and (second_person.created_at, second_person.id)
+            > (first_person.created_at, first_person.id)
+        where (first_contact.kind = 'email' and first_contact.value like '%_@_%')
+          or (first_contact.kind = 'phone' and length(first_contact.value) >= 7)
+      )
+      select matched.first_id::text, matched.second_id::text,
+        array_agg(distinct matched.reason order by matched.reason) as reasons
+      from matched
+      join candidate first_person on first_person.id = matched.first_id
+      join candidate second_person on second_person.id = matched.second_id
+      group by matched.first_id, matched.second_id,
+        first_person.created_at, second_person.created_at
+      order by first_person.created_at, matched.first_id,
+        second_person.created_at, matched.second_id
+      limit ${command.limit}
+    `.execute(this.database);
+    if (pairs.rows.length === 0) return [];
+    const ids = [
+      ...new Set(pairs.rows.flatMap((row) => [row.first_id, row.second_id])),
+    ];
+    const people = await sql<DuplicatePersonRow>`
+      select person.id::text, person.given_name, person.middle_name,
+        person.family_name, person.nickname,
+        ${instantColumn("person.updated_at")} as updated_at,
+        ${avatarColumns}
+      from crm.people person
+      ${avatarJoin(command.workspaceId)}
+      where person.workspace_id = ${command.workspaceId}::uuid
+        and person.id = any(${ids}::uuid[])
+    `.execute(this.database);
+    const byId = new Map(
+      people.rows.map((row): [string, PeopleDuplicatePerson] => [row.id, {
+        ...(Object.keys(avatar(row)).length > 0 ? { avatar: avatar(row) } : {}),
+        ...pickDefined({ familyName: row.family_name }),
+        givenName: row.given_name,
+        id: row.id,
+        ...pickDefined({ middleName: row.middle_name, nickname: row.nickname }),
+        updatedAt: row.updated_at,
+      }]),
+    );
+    return pairs.rows.flatMap((row) => {
+      const first = byId.get(row.first_id);
+      const second = byId.get(row.second_id);
+      return first && second
+        ? [{ people: [first, second] as const, reasons: row.reasons }]
+        : [];
+    });
   }
 }

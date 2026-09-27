@@ -9,6 +9,7 @@ import { recipientChannels } from "./reminder_repository.ts";
 
 interface ReminderRow {
   readonly id: string;
+  readonly is_active: boolean;
 }
 
 function title(command: Parameters<ImportantDatePublisher["regenerate"]>[0]) {
@@ -37,7 +38,7 @@ export class PostgresPersonDateReminderPublisher
       throw new Error("Person-date reminder regeneration has no target.");
     }
     const existing = await sql<ReminderRow>`
-      select id::text
+      select id::text, is_active
       from crm.reminders
       where person_date_id = ${personDateId}::uuid
       order by created_at, id
@@ -54,6 +55,19 @@ export class PostgresPersonDateReminderPublisher
       `.execute(database);
     }
 
+    // A merge moves a date to another person without deciding whether its
+    // reminder runs: a paused reminder follows its date and stays paused.
+    if (
+      command.keepActive && reminderId && command.after &&
+      existing.rows[0]?.is_active === false
+    ) {
+      await sql`
+        update crm.reminders set person_id = ${personId}::uuid,
+          updated_at = ${command.occurredAt}::timestamptz
+        where id = ${reminderId}::uuid
+      `.execute(database);
+      return;
+    }
     const schedulable = command.after?.month !== undefined &&
       command.after.day !== undefined;
     if (!command.after || !schedulable) {

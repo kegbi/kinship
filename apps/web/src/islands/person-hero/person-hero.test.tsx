@@ -453,6 +453,7 @@ describe("PEOPLE-001 person hero island", () => {
       "Export vCard",
       "Archive person",
       "Audit history",
+      "Merge with another person…",
       "Delete person",
     ]);
     await user.click(toggle);
@@ -1363,5 +1364,134 @@ describe("GAP-047 the identity editor's breadth", () => {
     await waitFor(() => expect(form.hidden).toBe(true));
     expect(document.activeElement).toBe(taker);
     document.removeEventListener(DATE_REQUEST_EVENT, take);
+  });
+});
+
+describe("PEOPLE-008 merge from the person menu", () => {
+  const other = "00000000-0000-4000-8000-000000000200";
+
+  it("finds the other person, keeps this one, says it cannot be undone, and lands on the kept person", async () => {
+    markup();
+    const navigate = vi.fn();
+    await mount(profile(), utc, personHeroMount(navigate));
+    const api = stubApi({
+      "GET /api/v1/people": jsonResponse({
+        lifecycle: "active",
+        people: [{
+          familyName: "Lovelace",
+          givenName: "Ada",
+          id: other,
+          isPartial: false,
+          isStarred: false,
+          lifecycle: "active",
+          tagCount: 0,
+          tags: [],
+        }],
+        status: "ready",
+      }),
+      [`GET ${PERSON}/merge-preview`]: jsonResponse({
+        conflicts: [{
+          discarded: "12 March",
+          fact: "birthday",
+          kept: "10 December",
+        }],
+        conflictsDigest: "ef".repeat(32),
+        duplicate: {
+          familyName: "Lovelace",
+          givenName: "Ada",
+          id: other,
+          isDeceased: false,
+          isPartial: false,
+          lifecycle: "active",
+          updatedAt: "2026-08-15T11:00:00.000000Z",
+        },
+        moves: 2,
+        primary: personAnswer("active", "2026-08-15T12:00:00.000000Z"),
+        status: "ready",
+      }),
+      [`POST ${PERSON}/merge`]: jsonResponse({
+        duplicateId: other,
+        moved: 2,
+        next: `/app/people/${personId}`,
+        person: personAnswer("active", "2026-08-15T13:00:00.000000Z"),
+        status: "merged",
+      }),
+    });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Open person menu" }));
+    await user.click(
+      screen.getByRole("button", { name: "Merge with another person…" }),
+    );
+    const dialog = within(
+      await screen.findByRole("dialog", { name: "Merge two people?" }),
+    );
+    const search = dialog.getByLabelText("Find the person to merge with");
+    await waitFor(() => expect(document.activeElement).toBe(search));
+    expect(dialog.getByRole("button", { name: "Merge people" }))
+      .toHaveProperty("disabled", true);
+    await user.type(search, "Ada{Enter}");
+    await user.click(
+      await dialog.findByRole("button", { name: "Merge with Ada Lovelace" }),
+    );
+    expect(
+      dialog.getByRole("radio", { name: "Keep Ada Lovelace (this person)" }),
+    ).toHaveProperty("checked", true);
+    expect(dialog.getByText("A merge cannot be undone.")).toBeTruthy();
+    expect(
+      await dialog.findByText(
+        "Birthday — Kept: 10 December, discarded: 12 March",
+      ),
+    ).toBeTruthy();
+    await user.click(dialog.getByRole("button", { name: "Merge people" }));
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith(`/app/people/${personId}`)
+    );
+    const search_ = api.requests().find((entry) =>
+      entry.url.pathname === "/api/v1/people"
+    );
+    expect(search_?.url.searchParams.get("excludePersonId")).toBe(personId);
+    expect(search_?.url.searchParams.get("search")).toBe("Ada");
+    const merged = api.requests().find((entry) => entry.method === "POST");
+    expect(merged?.url.pathname).toBe(`/api/v1/people/${personId}/merge`);
+    // The merge is confirmed against the revisions the preview read, the
+    // chosen person's included, not the revision the hero holds.
+    expect(merged?.body).toEqual({
+      confirmed: true,
+      conflictsDigest: "ef".repeat(32),
+      duplicateId: other,
+      duplicateRevision: "2026-08-15T11:00:00.000000Z",
+      primaryRevision: "2026-08-15T12:00:00.000000Z",
+    });
+  });
+
+  it("cancels back to the menu and offers no merge for an archived person", async () => {
+    markup();
+    await mount();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Open person menu" }));
+    const open = screen.getByRole("button", {
+      name: "Merge with another person…",
+    });
+    await user.click(open);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Merge two people?",
+    });
+    await user.click(
+      within(dialog).getByRole("button", { name: "Cancel merge" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Merge two people?" }))
+        .toBeNull()
+    );
+    expect(element("#person-lifecycle-status").textContent).toBe(
+      "Merge cancelled. No changes were made.",
+    );
+    await waitFor(() => expect(document.activeElement).toBe(open));
+
+    markup();
+    await mount(profile({ status: "archived" }));
+    expect(
+      element<HTMLButtonElement>("#person-menu #person-merge-open").hidden,
+    ).toBe(true);
   });
 });

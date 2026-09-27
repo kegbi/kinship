@@ -15,13 +15,13 @@ The current baseline contains:
 - 39 cataloged pages (30 `static-shell-islands`, 5 `on-demand`, 4 `static`), all
   implemented, except `settings.billing`, which the catalog marks as an optional
   module and Phase 10 `APP-010C` withholds;
-- 34 required flows: 17 P0, 14 P1, and 3 P2;
-- 33 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
+- 35 required flows: 17 P0, 15 P1, and 3 P2;
+- 34 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
   still planned with an empty `testRefs` array, consistent with its withheld
   optional module; and
-- 39 Playwright specs under `tests/e2e/`. Flow specs are named
+- 40 Playwright specs under `tests/e2e/`. Flow specs are named
   `<feature>.<FLOW-ID>.spec.ts` (GAP-036); specs with no flow keep a feature
-  name. The flows' `testRefs` name 37 of them; `perf.PERF-001.spec.ts` and
+  name. The flows' `testRefs` name 38 of them; `perf.PERF-001.spec.ts` and
   `public-home.spec.ts` prove no catalog flow.
 
 Verified against `docs/architecture/module-boundaries.yaml`,
@@ -49,7 +49,7 @@ repository, adapter, or transport implementation.
 | --------------- | -------- | ---------------------------------------------------------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `identity`      | core     |                              Core sign-in/session 1; lifecycle 7 | Flow-backed registration, verification, sign-in/session security, and recovery in Slice 1; identity deletion in Slice 7; any broader credential/MFA/passkey settings await DG-07 | Auth contract/unit/integration suites; malicious token and session cases; accepted `AUTH-*` E2E |
 | `workspaces`    | core     |                     Membership 1; personalization 2; lifecycle 7 | Membership, invitations, active workspace, preferences, controlled vocabularies, and safe reset/delete                                                                           | Role/scope matrix, cross-workspace rejection, invitation races, lifecycle transaction tests     |
-| `people`        | core     |                                                                2 | Person identity and profile facts, contact methods, locations, organizations, tags, and pets                                                                                     | Tenant-safe repositories, partial dates, archive/restore/delete, `PEOPLE-*` E2E                 |
+| `people`        | core     |                                                                2 | Person identity and profile facts, contact methods, locations, organizations, tags, and pets; `PEOPLE-008` merge through every owning module                                     | Tenant-safe repositories, partial dates, archive/restore/delete, `PEOPLE-*` E2E                 |
 | `relationships` | core     |                                                                2 | Directional relationship graph; romantic metadata only if DG-07 accepts its product behavior                                                                                     | Directionality, uniqueness, permissions, archive interactions, `RELATIONSHIP-001`               |
 | `interactions`  | core     |                                                                3 | Notes, activities, calls, conversations, messages, participants, and emotions                                                                                                    | Composition and authorization tests, immutable audit effects, interaction E2E                   |
 | `journal`       | core     |                                                                6 | Journal posts, ratings, and ordered items; person life-event writes through `JOURNAL-002`                                                                                        | Ordering/concurrency and life-event tests; `JOURNAL-001`/`-002` E2E                             |
@@ -78,7 +78,7 @@ still invokes the owning module's public use case.
 
 | Read model         | Begins | Complete | Consumers and acceptance                                                                                                                                              |
 | ------------------ | -----: | -------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `people-directory` |      1 |        1 | People list/search/archive states; tenant, pagination, ordering, and query-budget tests                                                                               |
+| `people-directory` |      1 |        1 | People list/search/archive states; tenant, pagination, ordering, and query-budget tests; the bounded `PEOPLE-008` duplicate review                                    |
 | `person-profile`   |      1 |        6 | Starts as a typed shell; completion is Slice 6 after every enabled core section is present; `PEOPLE-003` is accepted there; its life-event edits follow `JOURNAL-002` |
 | `activity-report`  |      3 |        3 | Scale-heavy person-specific interaction report with permission and pagination proof                                                                                   |
 | `audit-history`    |      3 |        3 | Person/workspace audit query composition arrives in Slice 3; governance audit writes begin with Slice 1 mutations                                                     |
@@ -110,6 +110,7 @@ and exercise the production-like gateway, not an internal service URL.
 | `PEOPLE-005`       | P0       |              2 | person profile                                   | Valid full/partial/unknown dates, chronology, display, recurrence behavior                              |
 | `PEOPLE-006`       | P1       |              2 | person profile                                   | All remaining enabled profile facts and section visibility behavior                                     |
 | `PEOPLE-007`       | P1       |              5 | person profile, people                           | Avatar upload/replace/remove through files and people, initials fallback, quarantined/missing objects   |
+| `PEOPLE-008`       | P1       |              7 | people, person profile                           | Duplicate review and atomic merge through every owning module; no undo; re-import stays idempotent      |
 | `RELATIONSHIP-001` | P0       |              2 | person profile                                   | Directional graph, valid types, remove/change behavior, and romantic details only if DG-07 accepts them |
 | `INTERACTION-001`  | P0       |              3 | person profile, activity report, Today           | Add/review note or activity and observe projections/audit                                               |
 | `INTERACTION-002`  | P1       |              3 | person profile                                   | Calls, conversations/messages, participants, emotion and chronology behavior                            |
@@ -129,7 +130,7 @@ and exercise the production-like gateway, not an internal service URL.
 | `GOVERNANCE-002`   | P1       |              3 | person audit, profile, workspace audit           | Authorized history, redaction, ordering, and forbidden cases                                            |
 | `BILLING-001`      | P2       |              8 | billing settings                                 | Optional entitlement and provider workflow with module disabled by default                              |
 
-For the current 34-flow snapshot, this assignment places all 17 P0 and all 14 P1
+For the current 35-flow snapshot, this assignment places all 17 P0 and all 15 P1
 flows at or before Slice 7, so the accepted MVP and Core feature complete cuts
 coincide there. The milestone meanings remain distinct and future catalog
 changes regenerate their membership and maximum slice. Slice 4 is the accepted

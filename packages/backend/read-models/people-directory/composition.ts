@@ -1,13 +1,17 @@
 /**
  * People-directory composition. Only a declared composition root imports it.
  *
- * The directory and its tag options read the same repository, so they share
- * one instance.
+ * The directory, its tag options, and its duplicate review (GAP-049) read the
+ * same repository, so they share one instance.
  */
 
 import type { SharedComposition } from "../../platform/composition.ts";
 import { PostgresPeopleDirectoryRepository } from "./adapters/postgres/people_directory_repository.ts";
-import { createPeopleDirectory, createPeopleTagOptions } from "./public.ts";
+import {
+  createPeopleDirectory,
+  createPeopleDuplicates,
+  createPeopleTagOptions,
+} from "./public.ts";
 
 export function composePeopleDirectory(shared: SharedComposition) {
   const dependencies = {
@@ -17,6 +21,7 @@ export function composePeopleDirectory(shared: SharedComposition) {
   };
   return {
     directory: createPeopleDirectory(dependencies),
+    duplicates: createPeopleDuplicates(dependencies),
     tagOptions: createPeopleTagOptions(dependencies),
   };
 }

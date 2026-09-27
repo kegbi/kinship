@@ -21,6 +21,7 @@ import {
   importantDateList,
   importantDateUpdateInput,
   peopleDirectoryPage,
+  peopleDuplicates,
   peopleTagOptionsPage,
   personAvatarChanged,
   personCreated,
@@ -35,6 +36,9 @@ import {
   personLifeEventInput,
   personLifeEventsReady,
   personLifeEventUpdateInput,
+  personMerged,
+  personMergeInput,
+  personMergePreview,
   personReady,
   personTimelinePage,
   personTransitionInput,
@@ -261,6 +265,84 @@ export const archivePerson = defineRoute({
 /** The images an avatar may be, each bounded by the avatar's own limit. */
 const AVATAR_MAX_BYTES = 1048576;
 const avatarImage = z.string().max(AVATAR_MAX_BYTES).meta({ format: "binary" });
+
+export const listPeopleDuplicates = defineRoute({
+  method: "get",
+  path: "/api/v1/people/duplicates",
+  operationId: "listPeopleDuplicates",
+  security: [{ kinship_session: [] }],
+  request: {
+    headers: workspaceHeaders,
+  },
+  responses: {
+    200: {
+      description:
+        "Bounded pairs of active people in the workspace who share a full name, an email address, or a phone number",
+      content: {
+        "application/json": peopleDuplicates,
+      },
+    },
+    ...problemResponses(401, 403, 503),
+  },
+});
+
+/** What `previewPeopleMerge` accepts in the query string. */
+export const previewPeopleMergeQuery = z.strictObject({
+  duplicateId: z.uuid(),
+});
+
+export const previewPeopleMerge = defineRoute({
+  method: "get",
+  path: "/api/v1/people/{primaryId}/merge-preview",
+  operationId: "previewPeopleMerge",
+  security: [{ kinship_session: [] }],
+  request: {
+    params: z.object({
+      primaryId: uuid,
+    }),
+    query: previewPeopleMergeQuery,
+    headers: workspaceHeaders,
+  },
+  responses: {
+    200: {
+      description:
+        "What merging the duplicate into the primary would keep, discard, and move, from the same decision the merge takes",
+      content: {
+        "application/json": personMergePreview,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const mergePeople = defineRoute({
+  method: "post",
+  path: "/api/v1/people/{primaryId}/merge",
+  operationId: "mergePeople",
+  security: [{ kinship_session: [] }],
+  request: {
+    params: z.object({
+      primaryId: uuid,
+    }),
+    headers: originAndWorkspaceHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": personMergeInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description:
+        "Every record of the duplicate now belongs to the primary and the duplicate is deleted; a merge cannot be undone",
+      content: {
+        "application/json": personMerged,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
 
 export const replacePersonAvatar = defineRoute({
   method: "put",
@@ -810,6 +892,7 @@ export const PEOPLE_ROUTES: readonly RouteDescriptor[] = [
   listPeople,
   createPerson,
   listPeopleTagOptions,
+  listPeopleDuplicates,
   deletePerson,
   getPerson,
   editPerson,
@@ -830,6 +913,8 @@ export const PEOPLE_ROUTES: readonly RouteDescriptor[] = [
   updatePersonLifeEvent,
   deletePersonLifeEvent,
   restorePerson,
+  previewPeopleMerge,
+  mergePeople,
   listPersonTimeline,
   recordPersonView,
   getTodayRecentPeople,

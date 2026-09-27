@@ -13,6 +13,7 @@ import type {
   ImportantDateInput,
   PeopleDirectoryInput,
   PeopleDirectoryPage,
+  PeopleDuplicates,
   PeopleTagOptionsInput,
   PeopleTagOptionsPage,
   PersonAvatarChanged,
@@ -27,6 +28,9 @@ import type {
   PersonLifeEventInput,
   PersonLifeEventType,
   PersonLifeEventUpdateInput,
+  PersonMerged,
+  PersonMergeInput,
+  PersonMergePreview,
   PersonProfileIdentity,
   PersonProfileSummary,
   PersonTimelineKind,
@@ -450,6 +454,47 @@ export function removePersonAvatar(
   return request(`/api/v1/people/${encodeURIComponent(personId)}/avatar`, {
     method: "DELETE",
     headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+  });
+}
+
+/** The possible duplicates the directory offers for review (GAP-049). */
+export function listPeopleDuplicates(
+  workspaceId?: string,
+): Promise<ApiResult<PeopleDuplicates>> {
+  return request("/api/v1/people/duplicates", {
+    headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+  });
+}
+
+/**
+ * What merging the duplicate into the primary would keep, discard, and move,
+ * with the revisions a confirmation names (GAP-049).
+ */
+export function previewPeopleMerge(
+  primaryId: string,
+  duplicateId: string,
+  workspaceId?: string,
+): Promise<ApiResult<PersonMergePreview>> {
+  const query = new URLSearchParams({ duplicateId });
+  return request(
+    `/api/v1/people/${encodeURIComponent(primaryId)}/merge-preview?${query}`,
+    { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined },
+  );
+}
+
+/**
+ * Merges the duplicate into the primary (GAP-049). The duplicate's records
+ * move to the primary and the duplicate is deleted; this cannot be undone.
+ */
+export function mergePeople(
+  primaryId: string,
+  input: PersonMergeInput,
+  workspaceId?: string,
+): Promise<ApiResult<PersonMerged>> {
+  return request(`/api/v1/people/${encodeURIComponent(primaryId)}/merge`, {
+    method: "POST",
+    headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+    body: JSON.stringify(input),
   });
 }
 

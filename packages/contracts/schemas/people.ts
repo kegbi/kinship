@@ -403,6 +403,33 @@ export const personAvatarChanged = z.strictObject({
   status: z.enum(["removed", "updated"]),
 }).meta({ id: "PersonAvatarChanged" });
 
+/**
+ * One person of a possible duplicate pair (GAP-049): enough to tell the two
+ * apart, and the revision a merge of the pair is decided against.
+ */
+export const peopleDuplicatePerson = z.strictObject({
+  avatar: personAvatar.optional(),
+  familyName: z.string().optional(),
+  givenName: z.string(),
+  id: z.uuid(),
+  middleName: z.string().optional(),
+  nickname: z.string().optional(),
+  updatedAt: z.iso.datetime({ offset: true }),
+}).meta({ id: "PeopleDuplicatePerson" });
+
+/** Two active people who look like one, the one added first first. */
+export const peopleDuplicatePair = z.strictObject({
+  people: z.array(peopleDuplicatePerson).length(2),
+  reasons: z.array(z.enum(["email", "name", "phone"])).min(1).max(3),
+}).meta({ id: "PeopleDuplicatePair" });
+
+/** The bounded duplicate review on the people directory. */
+export const peopleDuplicates = z.strictObject({
+  pairs: z.array(peopleDuplicatePair).max(20),
+  status: z.literal("ready"),
+  truncated: z.boolean(),
+}).meta({ id: "PeopleDuplicates" });
+
 export const peopleDirectoryPerson = z.strictObject({
   avatar: personAvatar.optional(),
   familyName: z.string().optional(),
@@ -594,6 +621,61 @@ export const personLifecycleChanged = z.strictObject({
   person: personLifecycleIdentity,
   status: z.enum(["updated", "archived", "restored"]),
 }).meta({ id: "PersonLifecycleChanged" });
+
+/** The merge preview's fingerprint of what a merge discards: SHA-256, hex. */
+const conflictsDigest = z.string().regex(/^[0-9a-f]{64}$/);
+
+/**
+ * Merge the duplicate into the person named in the path (GAP-049), confirmed
+ * against the revisions of both people the member reviewed and the digest of
+ * the conflicts the preview listed; any of them no longer current is refused.
+ * A merge cannot be undone.
+ */
+export const personMergeInput = z.strictObject({
+  /** The member read the confirmation, which says a merge cannot be undone. */
+  confirmed: z.literal(true),
+  /** `conflictsDigest` of the merge preview the member confirmed. */
+  conflictsDigest,
+  duplicateId: z.uuid(),
+  duplicateRevision: z.iso.datetime({ offset: true }),
+  primaryRevision: z.iso.datetime({ offset: true }),
+}).meta({ id: "PersonMergeInput" });
+
+/** A single-valued fact only the primary keeps, and what is discarded. */
+export const personMergeConflict = z.strictObject({
+  discarded: z.string(),
+  fact: z.enum([
+    "avatar",
+    "birthday",
+    "deceased",
+    "first-meeting",
+    "first_met",
+    "stay-in-touch",
+  ]),
+  kept: z.string(),
+}).meta({ id: "PersonMergeConflict" });
+
+/**
+ * What merging the duplicate into the primary would do, and the revisions and
+ * conflicts digest a confirmation of it names.
+ */
+export const personMergePreview = z.strictObject({
+  conflicts: z.array(personMergeConflict).max(20),
+  conflictsDigest,
+  duplicate: personLifecycleIdentity,
+  moves: z.number().int().min(0),
+  primary: personLifecycleIdentity,
+  status: z.literal("ready"),
+}).meta({ id: "PersonMergePreview" });
+
+/** The person who is left, and where their workspace is. */
+export const personMerged = z.strictObject({
+  duplicateId: z.uuid(),
+  moved: z.number().int().min(0),
+  next: z.string().regex(/^\/app\/people\/[0-9a-f-]{36}$/),
+  person: personLifecycleIdentity,
+  status: z.literal("merged"),
+}).meta({ id: "PersonMerged" });
 
 export const personPrimaryContactMethod = z.strictObject({
   href: z.string().optional(),

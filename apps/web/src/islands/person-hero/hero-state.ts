@@ -15,6 +15,7 @@ import type {
   PersonLifecycleIdentity,
   PersonProfileIdentity,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
+import type { MergePerson } from "../../features/people/merge/merge-state.ts";
 
 /** The identity the hero shows: the profile's, updated by each save. */
 export type HeroIdentity = PersonProfileIdentity;
@@ -48,6 +49,8 @@ export interface HeroState {
   /** The lifecycle status line, which the avatar editor also speaks on. */
   readonly status: string;
   readonly deletion: DeleteDialogState;
+  /** The merge dialog is open (GAP-049); it owns its own steps. */
+  readonly merging: boolean;
 }
 
 export type HeroAction =
@@ -80,6 +83,8 @@ export type HeroAction =
   | { readonly type: "delete-submitted" }
   | { readonly type: "delete-cancelled" }
   | { readonly type: "delete-finished" }
+  | { readonly type: "merge-opened" }
+  | { readonly type: "merge-cancelled" }
   | { readonly type: "avatar-opened" }
   | { readonly type: "avatar-cancelled" }
   | { readonly type: "avatar-started"; readonly removing: boolean }
@@ -102,6 +107,7 @@ export function initialHeroState(
     editing: false,
     identity,
     menuOpen: false,
+    merging: false,
     status: "",
     transitioning: false,
     updatedAt: identity.updatedAt,
@@ -243,6 +249,16 @@ export function heroReducer(state: HeroState, action: HeroAction): HeroState {
       };
     case "delete-finished":
       return { ...state, deletion: { phase: "closed" } };
+    case "merge-opened":
+      return { ...state, menuOpen: false, merging: true };
+    case "merge-cancelled":
+      // Focus returns to the merge action, inside the menu it was opened from.
+      return {
+        ...state,
+        menuOpen: true,
+        merging: false,
+        status: "Merge cancelled. No changes were made.",
+      };
     case "avatar-opened":
       return { ...state, avatarEditing: true, menuOpen: false };
     case "avatar-cancelled":
@@ -302,4 +318,22 @@ export function deletionMessage(deletion: DeleteDialogState): string {
     default:
       return "Loading deletion impact…";
   }
+}
+
+/**
+ * The person as the merge dialog shows them (GAP-049): the names they have
+ * and their avatar. The revisions a merge is confirmed against come from the
+ * server's merge preview, never from what the hero holds.
+ */
+export function mergeAnchor(state: HeroState, personId: string): MergePerson {
+  const { avatar, familyName, givenName, middleName, nickname } =
+    state.identity;
+  return {
+    ...(avatar ? { avatar } : {}),
+    ...(familyName ? { familyName } : {}),
+    givenName,
+    id: personId,
+    ...(middleName ? { middleName } : {}),
+    ...(nickname ? { nickname } : {}),
+  };
 }

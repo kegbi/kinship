@@ -38,6 +38,7 @@ import {
   PostgresWorkspaceRegistration,
 } from "./adapters/postgres/registration_repository.ts";
 import { PostgresRelationshipWorkspaceBoundary } from "./adapters/postgres/relationship_workspace_boundary.ts";
+import { PostgresSelfPersonMergeParticipant } from "./adapters/postgres/self_person_merge.ts";
 import { PostgresReminderDeliveryPreferences } from "./adapters/postgres/reminder_delivery_preferences.ts";
 import { PostgresWorkspaceSettings } from "./adapters/postgres/settings_management.ts";
 import {
@@ -323,4 +324,13 @@ export function composeWorkspaceCleanup(
     repository: new PostgresWorkspaceLifecycleRepository(shared.database),
     storage: ports.storage,
   });
+}
+
+/**
+ * The member a person represents, in a person merge (GAP-049). It answers
+ * people's merge-participant port by shape, since workspaces does not depend
+ * on people, and the root registers it beside the other modules'.
+ */
+export function selfPersonMergeParticipant(): PostgresSelfPersonMergeParticipant {
+  return new PostgresSelfPersonMergeParticipant();
 }

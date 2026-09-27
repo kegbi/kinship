@@ -9,7 +9,7 @@ import type {
   ImportantDateValue,
 } from "../../public.ts";
 
-interface ImportantDateRow {
+export interface ImportantDateRow {
   readonly created_at: string;
   readonly day: number | null;
   readonly id: string;
@@ -25,7 +25,10 @@ interface ImportantDateRow {
   readonly year: number | null;
 }
 
-function record(row: ImportantDateRow): ImportantDateRecord {
+/** A `person_dates` row as the module's record (shared with the merge). */
+export function importantDateRecord(
+  row: ImportantDateRow,
+): ImportantDateRecord {
   return {
     ...(row.day === null ? {} : { day: row.day }),
     createdAt: row.created_at,
@@ -44,7 +47,8 @@ function record(row: ImportantDateRow): ImportantDateRecord {
   };
 }
 
-const projection = sql`
+/** The columns every date statement reads a date back with. */
+export const IMPORTANT_DATE_COLUMNS = sql`
   id::text, person_id::text, kind, label, year::int, month::int, day::int,
   precision, is_year_approximate, is_age_based, notes,
   ${instantColumn("created_at")} as created_at,
@@ -91,7 +95,7 @@ export class PostgresImportantDateRepository
     command: Parameters<ImportantDateRepository["lockDate"]>[0],
   ): Promise<Awaited<ReturnType<ImportantDateRepository["lockDate"]>>> {
     const result = await sql<ImportantDateRow>`
-      select ${projection}
+      select ${IMPORTANT_DATE_COLUMNS}
       from crm.person_dates
       where id = ${command.dateId}::uuid
         and person_id = ${command.personId}::uuid
@@ -99,7 +103,7 @@ export class PostgresImportantDateRepository
     `.execute(databaseFromSession(command.transaction));
     const row = result.rows[0];
     return row
-      ? { date: record(row), status: "ready" }
+      ? { date: importantDateRecord(row), status: "ready" }
       : { status: "not-found" };
   }
 
@@ -107,7 +111,7 @@ export class PostgresImportantDateRepository
     command: Parameters<ImportantDateRepository["list"]>[0],
   ): Promise<readonly ImportantDateRecord[]> {
     const result = await sql<ImportantDateRow>`
-      select ${projection}
+      select ${IMPORTANT_DATE_COLUMNS}
       from crm.person_dates
       where person_id = ${command.personId}::uuid
       order by year nulls last, month nulls last, day nulls last,
@@ -119,7 +123,7 @@ export class PostgresImportantDateRepository
         end,
         lower(coalesce(label, '')), id
     `.execute(databaseFromSession(command.transaction));
-    return result.rows.map(record);
+    return result.rows.map(importantDateRecord);
   }
 
   async create(
@@ -138,10 +142,10 @@ export class PostgresImportantDateRepository
         ${command.occurredAt}::timestamptz
       )
       on conflict do nothing
-      returning ${projection}
+      returning ${IMPORTANT_DATE_COLUMNS}
     `.execute(databaseFromSession(command.transaction));
     const row = result.rows[0];
-    return row ? record(row) : undefined;
+    return row ? importantDateRecord(row) : undefined;
   }
 
   async update(
@@ -170,10 +174,10 @@ export class PostgresImportantDateRepository
               and singleton.id <> ${command.dateId}::uuid
           )
         )
-      returning ${projection}
+      returning ${IMPORTANT_DATE_COLUMNS}
     `.execute(databaseFromSession(command.transaction));
     const row = result.rows[0];
-    return row ? record(row) : undefined;
+    return row ? importantDateRecord(row) : undefined;
   }
 
   async delete(

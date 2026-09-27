@@ -697,6 +697,19 @@ Playwright test carrying its stable flow ID.
       bound. There is no leak today, because the bound is transaction-scoped.
       Run the parallel check through `connection.db`.
 
+- [ ] **REL-063 — A merged duplicate's unused avatar image is never reclaimed.**
+      Found reviewing GAP-049: when the primary keeps its own avatar, the
+      duplicate's image stays on the primary as a hidden avatar-kind file link.
+      Nothing lists it, so its bytes can never be removed. Discard it after the
+      merge commits, through the files facade, as avatar replacement does (see
+      `REL-056`).
+
+- [ ] **REL-064 — A false duplicate pair can never be dismissed.** Found
+      reviewing GAP-049: two genuinely different people with the same name, or
+      sharing a phone number, stay in the directory's duplicates review forever.
+      Let a member mark a pair "not duplicates". Where that decision would be
+      stored needs a product and schema decision first.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.

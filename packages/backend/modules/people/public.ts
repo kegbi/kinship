@@ -49,12 +49,33 @@ export type {
   TagsFact,
 } from "./domain/profile_facts/values.ts";
 export type {
+  MergeCandidate,
+  MergeConflict,
+  MergeConflictFact,
+  MergedIdentity,
+  MergePeopleInput,
+  MergeRevisions,
+  PersonMergeFacts,
+  ReferenceCounts,
+  ReferenceOutcome,
+} from "./domain/merge_rules.ts";
+export type {
   ImportantDateAudit,
   PersonAvatarAudit,
   PersonCreatedAudit,
   PersonLifecycleAudit,
+  PersonMergeAudit,
+  PersonMergeAuditCommand,
   ProfileFactAudit,
 } from "./ports/audit.ts";
+export type {
+  LockedMergePair,
+  PersonMergeCommand,
+  PersonMergeInspection,
+  PersonMergePairScope,
+  PersonMergeParticipant,
+  PersonMergeRepository,
+} from "./ports/person_merge.ts";
 export type { PeopleActor, PeopleTransaction } from "./ports/context.ts";
 export type { PersonGenderOptions } from "./ports/gender_options.ts";
 export type {
@@ -88,6 +109,13 @@ export { createPeopleManagement } from "./application/create_person.ts";
 export { createImportantDateManagement } from "./application/important_dates.ts";
 export { createPersonLifecycle } from "./application/lifecycle_person.ts";
 export { createPersonAvatarManagement } from "./application/person_avatar.ts";
+export { createPersonMerge } from "./application/merge_people.ts";
+export type {
+  MergePeopleResult,
+  PersonMerge,
+  PersonMergeDependencies,
+  PreviewPeopleMergeResult,
+} from "./application/merge_people.ts";
 export type {
   PersonAvatarDependencies,
   PersonAvatarManagement,
@@ -161,5 +189,6 @@ export {
   personAvatarAuditFrom,
   personCreatedAuditFrom,
   personLifecycleAuditFrom,
+  personMergeAuditFrom,
   profileFactAuditFrom,
 } from "./application/audit_events.ts";

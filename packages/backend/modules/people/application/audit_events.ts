@@ -19,6 +19,8 @@ import type {
   PersonAvatarAudit,
   PersonCreatedAudit,
   PersonLifecycleAudit,
+  PersonMergeAudit,
+  PersonMergeAuditCommand,
   ProfileFactAudit,
 } from "../ports/audit.ts";
 
@@ -238,6 +240,56 @@ export function personAvatarAuditFrom(
       recorder.record({
         event: describePersonAvatarEvent(command),
         missing: "Person avatar audit insert failed.",
+        transaction: command.transaction,
+      }),
+  };
+}
+
+/**
+ * Two people merged (GAP-049). The event is about the primary, the person who
+ * is left; the payload names the duplicate that is gone and, per reference,
+ * how many rows moved and how many were dropped as duplicates of the
+ * primary's own, and a snapshot of every single-valued fact of the
+ * duplicate's that was discarded. A merge cannot be undone, so this row is its
+ * only record.
+ */
+export function describePersonMergeEvent(
+  command: PersonMergeAuditCommand,
+): AuditEvent {
+  return {
+    action: "people.person-merged",
+    actorMemberId: command.actor.memberId,
+    occurredAt: command.occurredAt,
+    payload: {
+      discarded: command.discarded,
+      duplicateId: command.duplicateId,
+      primaryId: command.primaryId,
+      tables: command.tables,
+    },
+    personId: command.primaryId,
+    subjectId: command.primaryId,
+    subjectType: "person",
+    visibleOnDashboard: true,
+    workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
+  };
+}
+
+export function personMergeAuditFrom(
+  recorder: AuditEventRecorder,
+): PersonMergeAudit {
+  return {
+    record: (command) =>
+      recorder.record({
+        event: describePersonMergeEvent(command),
+        missing: "Person merge audit insert failed.",
+        transaction: command.transaction,
+      }),
+    assertPostcondition: (command) =>
+      recorder.assertRecorded({
+        auditId: command.auditId,
+        event: describePersonMergeEvent(command),
+        failure: "Person merge audit postcondition failed.",
         transaction: command.transaction,
       }),
   };

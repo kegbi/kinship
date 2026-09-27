@@ -174,6 +174,27 @@ FND-002 records this contract but does not implement or prove the application
 behavior, rollback, or postconditions. Protected walking-skeleton and Slice 1
 executable proof remains required.
 
+### Person merge coordination
+
+A person merge (GAP-049, `PEOPLE-008`) applies the same rule to a people-owned
+use case. `people` declares one `PersonMergeParticipant` port; each module that
+owns rows naming a person implements it for its own tables only, and
+`apps/api/composition.ts` registers the participants, in relink order, the way
+it assembles the workspace-cascade impact map. The people use case runs every
+participant inside the one people transaction, relinks its own tables last,
+soft-deletes the duplicate, and checks its postconditions before commit: every
+reference counted before is relinked or removed, none is left, and the audit row
+reads back. Any failure rolls the whole merge back. `people` imports no
+participant module, and no participant writes a table it does not own. An
+integration guard compares the registered participants with every foreign key to
+`crm.people` in the canonical schema. The one audit exception:
+`audit_events.person_id` is re-pointed to the survivor, which the schema already
+treats as mutable through `ON DELETE SET NULL`; an event's action, payload,
+actor, and time are never changed. A participant may also `inspect` the pair
+before anything moves, to refuse it or to name a value only the primary keeps;
+the preview and the merge share that inspection, and the merge refuses a
+confirmation whose conflicts digest no longer matches the locked pair's.
+
 The first implementation milestone must execute the audited baseline against a
 supported real PostgreSQL image. It must verify clean apply, teardown or
 rollback, catalog introspection, generated-type agreement, and every validation

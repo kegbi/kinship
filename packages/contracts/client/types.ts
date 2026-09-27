@@ -523,6 +523,14 @@ export interface PeopleTagOptionsInput {
 
 export type PeopleTagOptionsPage =
   components["schemas"]["PeopleTagOptionsPage"];
+export type PeopleDuplicatePair = components["schemas"]["PeopleDuplicatePair"];
+export type PeopleDuplicatePerson =
+  components["schemas"]["PeopleDuplicatePerson"];
+export type PeopleDuplicates = components["schemas"]["PeopleDuplicates"];
+export type PersonMergeInput = components["schemas"]["PersonMergeInput"];
+export type PersonMerged = components["schemas"]["PersonMerged"];
+export type PersonMergeConflict = components["schemas"]["PersonMergeConflict"];
+export type PersonMergePreview = components["schemas"]["PersonMergePreview"];
 
 export type ProfileFactSectionId =
   components["schemas"]["ProfileFactSectionId"];

@@ -64,6 +64,7 @@ import {
 import {
   AVATAR_FAILURES,
   IMPORTANT_DATE_FAILURES,
+  MERGE_FAILURES,
   PEOPLE_PROBLEMS,
   PERSON_LIFECYCLE_FAILURES,
   PROFILE_FACT_FAILURES,
@@ -586,6 +587,8 @@ Deno.test("[GAP-020] the refusals people.ts answers are unchanged", () => {
       "404 | person_not_found | Person not found | No active person with this identifier exists in the current workspace.",
       "404 | person_not_found | Person not found | No person with this identifier exists in the current workspace.",
       "503 | people_unavailable | Deletion impact unavailable | The person service is temporarily unavailable.",
+      "403 | people_forbidden | Duplicates unavailable | Your active workspace membership no longer permits this view.",
+      "503 | people_unavailable | Duplicates unavailable | Possible duplicates are temporarily unavailable.",
       "400 | validation_failed | Invalid important date | Review the precision and known components.",
       "400 | validation_failed | Invalid important date deletion | Refresh this important date before deleting it.",
       "503 | important_dates_unavailable | Important date could not be deleted | The important-date service is temporarily unavailable.",
@@ -596,8 +599,12 @@ Deno.test("[GAP-020] the refusals people.ts answers are unchanged", () => {
       "403 | people_forbidden | Life events unavailable | Your active workspace membership no longer permits this view.",
       "503 | person_life_events_unavailable | Life events unavailable | Other person sections remain available.",
       "400 | validation_failed | Invalid lifecycle request | Refresh this person before trying again.",
+      "400 | validation_failed | Invalid merge preview | Name both people to merge by their canonical identifiers.",
+      "503 | people_unavailable | Merge preview unavailable | What a merge would change is temporarily unavailable.",
+      "400 | validation_failed | Invalid merge request | Choose the duplicate to merge by its canonical identifier.",
       "409 | stale_cursor | People list changed | Refresh the directory before continuing from this page.",
       "403 | people_forbidden | People unavailable | Your active workspace membership no longer permits this view.",
+      "503 | people_unavailable | People could not be merged | Nothing was merged. The person service is temporarily unavailable.",
       "400 | people_query_invalid | Invalid people query | Review the search, tag, sort, lifecycle, and pagination criteria.",
       "503 | people_unavailable | People unavailable | The people directory is temporarily unavailable.",
       "403 | people_forbidden | Person could not be created | Your active workspace membership no longer permits this change.",
@@ -916,5 +923,22 @@ Deno.test("[GAP-045] the refusals avatar.ts answers are pinned", () => {
       "(fallback) | 503 | avatar_unavailable | Avatar unavailable | The avatar could not be changed right now.",
     ].join("\n"),
     "AVATAR_FAILURES",
+  );
+});
+
+Deno.test("[GAP-049] the refusals merge.ts answers are pinned", () => {
+  assertEquals(
+    pinned(MERGE_FAILURES),
+    [
+      "archived-write-rejected | 409 | archived_write_rejected | Archived person is read-only | Restore both people before merging them.",
+      "both-members | 409 | merge_both_members | Both people represent members | Both people are workspace members' own records. Merging them would leave one member without theirs, so they cannot be merged.",
+      "forbidden | 403 | people_forbidden | People unavailable | Your active workspace membership no longer permits this change.",
+      "conflicts-changed | 409 | merge_conflicts_changed | Merge changed | What this merge would discard changed since it was reviewed. Review it again before merging.",
+      "not-found | 404 | person_not_found | Person not found | Both people must exist in the current workspace to be merged.",
+      "self-merge | 400 | merge_self | A person cannot be merged into themselves | Choose two different people to merge.",
+      "stale | 409 | person_stale | Person changed | One of these people changed. Review them again before merging.",
+      "(fallback) | 503 | people_unavailable | People could not be merged | Nothing was merged. The person service is temporarily unavailable.",
+    ].join("\n"),
+    "MERGE_FAILURES",
   );
 });

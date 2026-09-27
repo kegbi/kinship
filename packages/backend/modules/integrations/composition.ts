@@ -7,6 +7,7 @@
  */
 
 import type { SharedComposition } from "../../platform/composition.ts";
+import { PostgresDavPersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
 import { AesGcmDavSecretBox } from "./adapters/crypto/dav_secret_box.ts";
 import { HttpDavClient } from "./adapters/dav/http_dav_client.ts";
 import { PostgresDavRepository } from "./adapters/postgres/dav_repository.ts";
@@ -78,4 +79,13 @@ export function composeDavSync(
     secrets: new AesGcmDavSecretBox(ports.keyset),
     tasks: ports.tasks,
   });
+}
+
+/**
+ * This module's rows in a person merge (DAV objects, GAP-049). It depends on
+ * nothing the module composes, so the root registers it before composing
+ * people.
+ */
+export function davPersonMergeParticipant(): PostgresDavPersonMergeParticipant {
+  return new PostgresDavPersonMergeParticipant();
 }

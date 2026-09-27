@@ -99,6 +99,13 @@ permissions:
     scope: active-workspace
     requires: [explicit-confirmation]
 
+  # GAP-049: a merge destroys the duplicate as a separate record, so it is
+  # granted exactly as a person delete is, behind an explicit confirmation.
+  - id: people.merge
+    roles: [owner, admin, member]
+    scope: active-workspace
+    requires: [explicit-confirmation]
+
   - id: people.vcard.export
     roles: [owner, admin, member]
     scope: active-workspace

@@ -1,5 +1,5 @@
 /**
- * People over HTTP: the eight concerns of a person, mounted as one surface.
+ * People over HTTP: the nine concerns of a person, mounted as one surface.
  *
  * This was the widest file in the API — twenty-one routes over five surfaces
  * in fifteen hundred lines — and GAP-021 split it into one file per concern:
@@ -7,7 +7,9 @@
  * facts and important dates that page holds, the identity they are created
  * and renamed with, and the lifecycle that archives and deletes them. The
  * avatar they are drawn with (GAP-045) joined as the seventh, and the
- * workspace search that grew out of the directory (GAP-048) as the eighth. What
+ * workspace search that grew out of the directory (GAP-048) as the eighth, and
+ * duplicate review and merge (GAP-049) as the ninth, mounted before the page
+ * so `duplicates` stays a literal. What
  * more than one concern needs lives in `people/shared.ts`.
  *
  * The mounted order is the registration order, and it is contract: Hono
@@ -107,6 +109,15 @@ import {
   SEARCH_UNAVAILABLE,
 } from "./search.ts";
 import {
+  createMergeRoutes,
+  DUPLICATES_FORBIDDEN,
+  DUPLICATES_UNAVAILABLE,
+  MERGE_PREVIEW_INVALID,
+  MERGE_PREVIEW_UNAVAILABLE,
+  MERGE_REQUEST_INVALID,
+  PEOPLE_NOT_MERGED,
+} from "./merge.ts";
+import {
   type PeopleHttpServices,
   PERSON_FORBIDDEN,
   PERSON_ID_INVALID,
@@ -115,6 +126,7 @@ import {
 export type { PeopleHttpServices } from "./shared.ts";
 export { PERSON_LIFECYCLE_FAILURES } from "./shared.ts";
 export { AVATAR_FAILURES } from "./avatar.ts";
+export { MERGE_FAILURES } from "./merge.ts";
 export { IMPORTANT_DATE_FAILURES } from "./dates.ts";
 export { PROFILE_FACT_FAILURES } from "./facts.ts";
 export { possibleDuplicate } from "./identity.ts";
@@ -124,6 +136,8 @@ export const PEOPLE_PROBLEMS: readonly ProblemDefinition[] = [
   ACTIVE_PERSON_NOT_FOUND,
   CURRENT_PERSON_NOT_FOUND,
   DELETION_IMPACT_UNAVAILABLE,
+  DUPLICATES_FORBIDDEN,
+  DUPLICATES_UNAVAILABLE,
   IMPORTANT_DATE_CREATE_INVALID,
   IMPORTANT_DATE_DELETE_INVALID,
   IMPORTANT_DATE_NOT_DELETED,
@@ -134,8 +148,12 @@ export const PEOPLE_PROBLEMS: readonly ProblemDefinition[] = [
   LIFE_EVENTS_FORBIDDEN,
   LIFE_EVENTS_UNAVAILABLE,
   LIFECYCLE_REQUEST_INVALID,
+  MERGE_PREVIEW_INVALID,
+  MERGE_PREVIEW_UNAVAILABLE,
+  MERGE_REQUEST_INVALID,
   PEOPLE_CURSOR_STALE,
   PEOPLE_FORBIDDEN,
+  PEOPLE_NOT_MERGED,
   PEOPLE_QUERY_INVALID,
   PEOPLE_UNAVAILABLE,
   PERSON_CREATE_FORBIDDEN,
@@ -189,6 +207,7 @@ export function createPeopleRoutes(
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   routes.route("/", createDirectoryRoutes(services));
+  routes.route("/", createMergeRoutes(services));
   routes.route("/", createProfileRoutes(services));
   routes.route("/", createFactsRoutes(services));
   routes.route("/", createDatesRoutes(services));

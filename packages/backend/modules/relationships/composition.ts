@@ -3,6 +3,7 @@
  */
 
 import type { SharedComposition } from "../../platform/composition.ts";
+import { PostgresRelationshipPersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
 import { PostgresRelationshipPersonalizationReferences } from "./adapters/postgres/personalization_references.ts";
 import { PostgresRelationshipRepository } from "./adapters/postgres/relationship_repository.ts";
 import { PostgresRelationshipWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
@@ -42,4 +43,13 @@ export function composeRelationships(
       workspace: ports.workspace,
     }),
   };
+}
+
+/**
+ * This module's rows in a person merge (the relationship graph, GAP-049). It depends on
+ * nothing the module composes, so the root registers it before composing
+ * people.
+ */
+export function relationshipPersonMergeParticipant(): PostgresRelationshipPersonMergeParticipant {
+  return new PostgresRelationshipPersonMergeParticipant();
 }

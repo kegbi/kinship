@@ -86,6 +86,11 @@ export interface ImportantDatePublisher {
     command: PeopleActor & {
       readonly after?: ImportantDateRecord;
       readonly before?: ImportantDateRecord;
+      /**
+       * Keep the reminder's active state as it is rather than activating it:
+       * a merge moves a date without deciding whether its reminder runs.
+       */
+      readonly keepActive?: boolean;
       readonly occurredAt: Date;
       readonly transaction: PeopleTransaction;
     },

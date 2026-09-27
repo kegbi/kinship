@@ -31,3 +31,16 @@ export type {
   PeopleTagOptionsRepository,
   PeopleTagOptionsRepositoryResult,
 } from "./application/list_tag_options.ts";
+export {
+  createPeopleDuplicates,
+  PEOPLE_DUPLICATE_GROUP_LIMIT,
+  PEOPLE_DUPLICATE_PAIR_LIMIT,
+} from "./application/list_duplicates.ts";
+export type {
+  ListPeopleDuplicatesResult,
+  PeopleDuplicatePairRecord,
+  PeopleDuplicatePerson,
+  PeopleDuplicateReason,
+  PeopleDuplicates,
+  PeopleDuplicatesRepository,
+} from "./application/list_duplicates.ts";

@@ -132,13 +132,16 @@ workspace section, journal item, or tasks page it lives on.
 
 ## Slice 7: Data Lifecycle, Import, And Export
 
-Flows: `IMPORT-001`, `EXPORT-001`, `AUTH-005`, and `WORKSPACE-002`.
+Flows: `IMPORT-001`, `EXPORT-001`, `AUTH-005`, `WORKSPACE-002`, and
+`PEOPLE-008`.
 
 Deliver format detection, bounded staging, identity mapping, dry-run reports,
 atomic commit, idempotent rerun, attachment manifests, vCard export, workspace
 exports, and explicit legacy credential non-activation. Complete workspace reset
 and deletion only after every introduced module participates in the atomic data
-lifecycle and impact preview.
+lifecycle and impact preview. `PEOPLE-008` merges two people the same way: every
+owning module relinks its own rows in one transaction, and a re-import of the
+same export lands on the person who was kept.
 
 > **Proposed Slice 7 amendment:** complete the durable import/export job design,
 > destructive-lifecycle coordinator, legacy-credential policy, surviving

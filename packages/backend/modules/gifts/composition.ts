@@ -3,6 +3,7 @@
  */
 
 import type { SharedComposition } from "../../platform/composition.ts";
+import { PostgresGiftPersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
 import { PostgresGiftAttachmentTarget } from "./adapters/postgres/gift_attachment_target.ts";
 import { PostgresGiftRepository } from "./adapters/postgres/gift_repository.ts";
 import { PostgresGiftWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
@@ -38,4 +39,13 @@ export function composeGifts(shared: SharedComposition, ports: GiftPorts) {
     }),
     lifecycleImpact: PostgresGiftWorkspaceLifecycleImpact,
   };
+}
+
+/**
+ * This module's rows in a person merge (gifts and debts, GAP-049). It depends on
+ * nothing the module composes, so the root registers it before composing
+ * people.
+ */
+export function giftPersonMergeParticipant(): PostgresGiftPersonMergeParticipant {
+  return new PostgresGiftPersonMergeParticipant();
 }
