@@ -6,6 +6,7 @@ import {
   isGlob,
   listProductionFiles,
   listRepositoryTestFiles,
+  misplacedBackendTests,
   MODULES,
   type TaskModule,
   TEST_AGGREGATE,
@@ -414,5 +415,33 @@ Deno.test("[GAP-030] the web suites' shared test support is not production code"
   assert(
     !production.some((file) => file.startsWith(`${WEB_TEST_SUPPORT}/`)),
     "no coverage set measures the web test support",
+  );
+});
+
+Deno.test("[GAP-034] a backend unit suite at a module root is misplaced", () => {
+  const misplaced = misplacedBackendTests([
+    "packages/backend/modules/people/create_person_test.ts",
+    "packages/backend/read-models/today/today_tasks_test.ts",
+    "packages/backend/modules/api-access/authentication_subject_test.ts",
+    "packages/backend/modules/people/application/create_person_test.ts",
+    "packages/backend/read-models/today/application/get_today_tasks_test.ts",
+    "packages/backend/shared-kernel/clock_test.ts",
+  ]);
+  assert(
+    misplaced.join() ===
+      [
+        "packages/backend/modules/people/create_person_test.ts",
+        "packages/backend/read-models/today/today_tasks_test.ts",
+        "packages/backend/modules/api-access/authentication_subject_test.ts",
+      ].join(),
+    `every suite at a unit root is misplaced: ${misplaced}`,
+  );
+});
+
+Deno.test("[GAP-034] every backend unit suite sits next to the file it exercises", async () => {
+  const misplaced = misplacedBackendTests(await repositoryTests());
+  assert(
+    misplaced.length === 0,
+    `move these suites next to the file they exercise: ${misplaced.join(", ")}`,
   );
 });

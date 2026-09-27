@@ -83,7 +83,7 @@
     ],
     "query": [
       {
-        "path": "packages/backend/read-models/people-directory/list_people_test.ts",
+        "path": "packages/backend/read-models/people-directory/application/list_people_test.ts",
         "markers": [
           "directory normalizes criteria and emits a bounded opaque cursor",
           "directory rejects malformed, mismatched, and stale cursors"
@@ -101,7 +101,7 @@
     ],
     "import": [
       {
-        "path": "packages/backend/modules/import-export/import_management_test.ts",
+        "path": "packages/backend/modules/import-export/application/import_management_test.ts",
         "markers": [
           "Monica JSON dry-run redacts credentials and commits idempotently",
           "rejects unsupported, hostile, oversized, and unconfirmed imports"
@@ -110,7 +110,7 @@
     ],
     "export": [
       {
-        "path": "packages/backend/modules/import-export/export_management_test.ts",
+        "path": "packages/backend/modules/import-export/application/export_management_test.ts",
         "markers": [
           "persists resumable history and validates each short-lived download",
           "resumes one running export and finalizes its verified artifact"

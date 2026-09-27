@@ -564,6 +564,16 @@ Playwright test carrying its stable flow ID.
       that no spec's `getByRole("status")` becomes ambiguous, with a unit test
       per island and the affected specs unchanged.
 
+- [ ] **REL-053 — A boundary test checks a file that no longer exists.** Found
+      in GAP-034: "workspaces interaction boundary owns its actor and
+      transaction types" runs `deno info` on
+      `workspaces/application/interaction_workspace_boundary.ts`, which no
+      longer exists, and `deno info` exits 0 for a missing module, so the test
+      passes without checking anything. Point it at the file that now carries
+      that boundary (or delete it if the boundary is gone and another test
+      already holds the rule), and make the helper fail on a missing path so the
+      class cannot recur.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.

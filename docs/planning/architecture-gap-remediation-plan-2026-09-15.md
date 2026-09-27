@@ -1329,12 +1329,39 @@ project once. Full three-browser E2E and image builds run at the end of Phases
 
 ### Phase 5 — Test organization
 
-- [ ] **GAP-034 — Backend test placement convention.** S-M. Depends: 014.
+- [x] **GAP-034 — Backend test placement convention.** S-M. Depends: 014.
   - Scope: rule in `docs/architecture/quality-gates.md`: unit tests sit next to
     the file they exercise (`application/x.ts` → `application/x_test.ts`,
     `domain/x.ts` → `domain/x_test.ts`); module-root tests are moved; split
     `identity_test.ts` per behavior. Manifest globs updated.
   - Verify: `deno task test:unit` green; no `_test.ts` at a module root.
+  - Delivered 2026-09-27: `quality-gates.md` states the rule, and
+    `misplacedBackendTests()` in `tools/tasks/manifest.ts`, with two
+    `manifest_test.ts` tests, fails any `_test.ts` placed directly at a backend
+    module or read-model root.
+    - The 38 root suites in the modules and read models moved beside the file
+      each exercises, mostly into `application/` (as `get_*`/`list_*` names in
+      the read models), and six were split per behaviour:
+      - `identity_test.ts` into the Argon2id and TOTP adapter suites;
+      - the object-storage suite into the S3-compatible store, media scanner,
+        and file-identifier suites;
+      - the DAV adapter suite into the HTTP client and secret-box suites;
+      - reminder management into management, delivery, and the in-app channel;
+      - settings management, whose UI-state cases joined
+        `member_ui_state_test.ts`;
+      - the person profile into the profile and timeline suites.
+    - `api-access/authentication_subject.ts` moved into `application/` with its
+      suite so no root keeps a test. Every test name and body is unchanged (752
+      names before, 754 after with the two new checks), and 92 manifest entries
+      now point at the new paths.
+    - Evidence: 54 files changed (+1,204/-1,117), no production code changed
+      beyond that move's import paths. Every unit set has its baseline count
+      (tools 66 to 68). Every coverage set measures the same 555 files at the
+      same percentages; the two integration-only adapter rows that dipped on one
+      run returned on a rerun, the REL-038 class. Web tests 1,290.
+    - Gates: fmt:check, lint, check, check:architecture (14), contracts:check,
+      root test:unit (the gateway log-capture fixture passed in a copy that
+      trusts this environment's proxy).
 
 - [ ] **GAP-035 — Integration test support and file splits.** M-L. Depends: 014.
   - Scope: `tests/support/` with `database.ts` (disposable schema reset per

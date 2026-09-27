@@ -106,3 +106,180 @@ Deno.test("UXD-016C member UI-state accepts only non-empty recognised theme inpu
   );
   assert(!locked, "invalid theme input acquired a persistence lock");
 });
+
+const uiStateActor = fixtures.actor();
+const uiStateTransaction = { opaque: {} };
+const uiStateTransactionRunner = {
+  run<T>(work: (value: typeof uiStateTransaction) => Promise<T>) {
+    return work(uiStateTransaction);
+  },
+};
+const manageUiState = (repository: MemberUiStateRepository) =>
+  createMemberUiStateManagement({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    repository,
+    transaction: uiStateTransactionRunner,
+  });
+
+Deno.test("UXD-002C3 member UI-state write preserves every unowned stored key", async () => {
+  let stored: unknown = JSON.stringify({
+    dismissedWelcome: true,
+    recentPersonIds: ["00000000-0000-4000-8000-000000000010"],
+  });
+  const uiState = manageUiState({
+    read: () => Promise.resolve({ status: "ready", uiState: stored }),
+    lock: () => Promise.resolve({ status: "ready", uiState: stored }),
+    save(command) {
+      stored = command.uiState;
+      return Promise.resolve(true);
+    },
+  });
+
+  const saved = await uiState.save(uiStateActor, {
+    personWorkspaceView: "planning",
+  });
+  assert(saved.status === "ready", "valid presentation state saves");
+  assert(
+    saved.uiState.personWorkspaceView === "planning",
+    "save returns the recognised projection",
+  );
+  const value = stored as Readonly<Record<string, unknown>>;
+  assert(value.dismissedWelcome === true, "unknown stored key was clobbered");
+  assert(
+    JSON.stringify(value.recentPersonIds) ===
+      JSON.stringify(["00000000-0000-4000-8000-000000000010"]),
+    "recent-person history was clobbered",
+  );
+});
+
+Deno.test("UXD-002C3 member UI-state rejects invalid input before persistence", async () => {
+  let locked = false;
+  let saved = false;
+  const uiState = manageUiState({
+    read: () => Promise.resolve({ status: "ready", uiState: {} }),
+    lock: () => {
+      locked = true;
+      return Promise.resolve({ status: "ready", uiState: {} });
+    },
+    save: () => {
+      saved = true;
+      return Promise.resolve(true);
+    },
+  });
+
+  const result = await uiState.save(uiStateActor, {
+    personWorkspaceView: "unknown",
+  } as never);
+  assert(result.status === "forbidden", "invalid view fails closed");
+  assert(!locked && !saved, "invalid input reached persistence");
+});
+
+Deno.test("UXD-002C3 member UI-state reads missing preferences as empty state", async () => {
+  const result = await manageUiState({
+    read: () => Promise.resolve({ status: "ready", uiState: undefined }),
+    lock: () => Promise.resolve({ status: "ready", uiState: undefined }),
+    save: () => Promise.resolve(true),
+  }).read(uiStateActor);
+  assert(result.status === "ready", "authorised missing row is ready");
+  assert(
+    Object.keys(result.uiState).length === 0,
+    "missing preference row projects empty state",
+  );
+});
+
+Deno.test("UXD-002C3 member UI-state ignores unknown reads and stops forbidden access", async () => {
+  let saved = false;
+  const unknown = await manageUiState({
+    read: () =>
+      Promise.resolve({
+        status: "ready",
+        uiState: { personWorkspaceView: "invalid", recentPersonIds: [] },
+      }),
+    lock: () => Promise.resolve({ status: "forbidden" }),
+    save: () => {
+      saved = true;
+      return Promise.resolve(true);
+    },
+  }).read(uiStateActor);
+  assert(
+    unknown.status === "ready" && Object.keys(unknown.uiState).length === 0,
+    "read leaked unrecognised presentation state",
+  );
+
+  const deniedRepository: MemberUiStateRepository = {
+    read: () => Promise.resolve({ status: "forbidden" }),
+    lock: () => Promise.resolve({ status: "forbidden" }),
+    save: () => {
+      saved = true;
+      return Promise.resolve(true);
+    },
+  };
+  const denied = manageUiState(deniedRepository);
+  assert(
+    (await denied.read(uiStateActor)).status === "forbidden",
+    "read allowed denial",
+  );
+  assert(
+    (await denied.save(uiStateActor, { personWorkspaceView: "things" }))
+      .status === "forbidden",
+    "write allowed denial",
+  );
+  assert(!saved, "denied write reached save");
+});
+
+Deno.test("UXD-002C3 member UI-state repairs malformed storage and fails closed", async () => {
+  for (const malformed of [null, [], "{"] as const) {
+    const result = await manageUiState({
+      read: () => Promise.resolve({ status: "ready", uiState: malformed }),
+      lock: () => Promise.resolve({ status: "ready", uiState: malformed }),
+      save: () => Promise.resolve(true),
+    }).read(uiStateActor);
+    assert(
+      result.status === "ready" && Object.keys(result.uiState).length === 0,
+      "malformed stored state leaked through the projection",
+    );
+  }
+
+  const inputGuard = manageUiState({
+    read: () => Promise.resolve({ status: "ready", uiState: {} }),
+    lock: () => Promise.resolve({ status: "ready", uiState: {} }),
+    save: () => Promise.resolve(true),
+  });
+  assert(
+    (await inputGuard.save(uiStateActor, null as never)).status ===
+        "forbidden" &&
+      (await inputGuard.save(uiStateActor, {
+          personWorkspaceView: "all",
+          recentPersonIds: [],
+        } as never)).status === "forbidden",
+    "loose UI-state input reached persistence",
+  );
+
+  for (
+    const personWorkspaceView of [
+      "all",
+      "timeline",
+      "planning",
+      "things",
+      "admin",
+    ] as const
+  ) {
+    const result = await inputGuard.save(uiStateActor, { personWorkspaceView });
+    assert(
+      result.status === "ready" &&
+        result.uiState.personWorkspaceView === personWorkspaceView,
+      `${personWorkspaceView} was not accepted`,
+    );
+  }
+
+  const rejected = await manageUiState({
+    read: () => Promise.resolve({ status: "ready", uiState: {} }),
+    lock: () =>
+      Promise.resolve({
+        status: "ready",
+        uiState: { personWorkspaceView: "admin" },
+      }),
+    save: () => Promise.resolve(false),
+  }).save(uiStateActor, {});
+  assert(rejected.status === "forbidden", "repository refusal reported ready");
+});

@@ -11,6 +11,6 @@ export type {
 export {
   AuthenticationSubjectDigester,
   decodeAuthenticationSubjectKeyset,
-} from "./authentication_subject.ts";
-export type { AuthenticationSubjectKeyset } from "./authentication_subject.ts";
+} from "./application/authentication_subject.ts";
+export type { AuthenticationSubjectKeyset } from "./application/authentication_subject.ts";
 export { apiTokenAuditFrom } from "./application/audit_events.ts";

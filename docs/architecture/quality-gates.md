@@ -259,6 +259,14 @@ their canonical owner.
 | API contract            | OpenAPI validity, generated-client drift, RFC 9457 errors                   | Built API or in-process HTTP adapter                     |
 | E2E                     | Complete user and Monica compatibility workflows                            | Production-like Compose stack with Playwright            |
 
+A backend unit test sits next to the file it exercises: `application/x.ts` is
+tested by `application/x_test.ts`, `domain/x.ts` by `domain/x_test.ts`, and an
+adapter or transport file the same way inside its own folder. A suite that
+exercises several files with separate behaviours is split per file rather than
+kept whole at the module root. No `_test.ts` sits at a module or read-model
+root; `tools/tasks/manifest_test.ts` fails a suite placed there. Moving a suite
+keeps its single unit home and the coverage sets that run it.
+
 Run Playwright against Chromium, Firefox, and WebKit in CI. Add automated
 accessibility checks such as axe to each representative page state, plus
 keyboard-only workflow assertions. Accessibility checks complement, rather than

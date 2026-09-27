@@ -5,7 +5,7 @@ import type {
   AuthenticationAttemptBudget,
   AuthenticationRequestStatusCode,
 } from "../../../workspaces/public.ts";
-import type { AuthenticationSubjectDigester } from "../../authentication_subject.ts";
+import type { AuthenticationSubjectDigester } from "../../application/authentication_subject.ts";
 
 const WINDOW_MILLISECONDS = 5 * 60_000;
 const FAILURE_LIMIT = 5;
